@@ -125,13 +125,14 @@ def _flow(monkeypatch, tmp_path):
         output = io.StringIO()
         with redirect_stdout(output):
             assert run_script.dispatch(argparse.Namespace(script_name="research-sources", script_args=[])) == 0
-            mark = ["--mark-read", "web:hacker-news"]
+            mark = ["--mark-read", "changelog:claude-code", "web:hacker-news"]
             assert run_script.dispatch(argparse.Namespace(script_name="research-sources", script_args=mark)) == 0
         collected = json.loads(output.getvalue().partition("\n}\n")[0] + "\n}")
         sources = {source["source"]: source for source in collected["sources"]}
         lines = [f"- {name}: {value['status']} {value['count']}件 {value['reason']}" for name, value in sources.items()]
         posts = [item for source in collected["sources"] if source["source"].startswith("x:") for item in source["items"]]
         lines += [f"- {post['url']}（{post['created_at']}）: {post['text'][:20]}" for post in posts]
+        lines += ["- Claude Code 2.3.0: " + ("採用候補（hook）" if state.proposals else "見送り（既存WI）")]
         body = "## 読んだ情報源\n\n" + "\n".join(lines) + "\n- web:hacker-news: read\n"
         if state.proposals:
             message = f"# 外部情報の調査の提案\n\n{body}\n## 提案\n\n- P1: Claude Code 2.3.0のhookを使う\n"
@@ -205,6 +206,7 @@ def test_manual_research_saves_one_result_without_full_text(flow, capsys, x_key,
     assert data["question_type"] == question_type
     assert data["weekly_slot"] == "research@2026-11-22"
     assert "changelog:claude-code: read 1件" in body
+    assert "Claude Code 2.3.0: " + ("採用候補（hook）" if proposals else "見送り（既存WI）") in body
     if x_key:
         assert "x:account:poteto: read 1件" in body
         assert "https://x.com/poteto/status/1001" in body

@@ -17,6 +17,7 @@ import time
 
 from agent_toolkit._atk import outcome
 from agent_toolkit._atk.managed_temp import paths as managed_temp_paths
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 UNIT_NAME = "atk-weekly"
 TASK_NAME = "agent-toolkit-weekly"
@@ -188,6 +189,53 @@ def uninstall() -> int:
 
 
 SERVE_CHECK_SECONDS = 15 * 60
+_SERVE_WEEKLY_UNIT = "atk-serve-weekly"
+_SERVE_SUBMIT_SECONDS = 3
+
+
+def _submit_user_service(
+    command: list[str], root: pathlib.Path, log_path: pathlib.Path, env: dict[str, str], batch_env: str
+) -> None:
+    from agent_toolkit._common import plugin_environment  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    # 資格情報をunitのプロパティへ渡さない。  # pyfltr: allow-comment
+    names = (
+        "PATH",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        plugin_environment.RUNTIME_DATA_ENV,
+    )
+    submission = [
+        "systemd-run",
+        "--user",
+        "--collect",
+        f"--unit={_SERVE_WEEKLY_UNIT}",
+        "--property=Type=exec",
+        f"--property=UnsetEnvironment={batch_env}",
+        f"--working-directory={root}",
+        f"--property=StandardOutput=append:{log_path}",
+        "--property=StandardError=inherit",
+        *(f"--setenv={name}={env[name]}" for name in names if name in env),
+        "--",
+        *(argument.replace("$", "$$") for argument in command),
+    ]
+    try:
+        result = subprocess.run(  # noqa: S603  # 自身の配布物を固定の引数で起動する。
+            submission,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=_SERVE_SUBMIT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise OSError(f"systemd-runの受付結果を{_SERVE_SUBMIT_SECONDS}秒以内に確認できない") from error
+    if result.returncode != 0:
+        diagnostic = redact_secrets(result.stderr.strip() or result.stdout.strip())
+        raise OSError(f"systemd-runが終了{result.returncode}: {diagnostic}")
 
 
 class ServeLauncher:
@@ -207,10 +255,17 @@ class ServeLauncher:
         root = pathlib.Path(__file__).resolve().parents[2]
         log_path = session_review.directory() / "weekly" / "serve-run.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        env = plugin_environment.direct_environment(root, orchestrator.child_env(drop=(session_review.BATCH_ENV,)))
+        env = orchestrator.child_env(drop=(session_review.BATCH_ENV,))
+        if sys.platform == "linux":
+            env[plugin_environment.RUNTIME_DATA_ENV] = str(plugin_environment.runtime_data(env))
+            command = diagnostic_process.command([sys.executable, "-m", "agent_toolkit.atk", "weekly", "run"])
+            _submit_user_service(command, root, log_path, env, session_review.BATCH_ENV)
+            return True
+        env = plugin_environment.direct_environment(root, env)
+        command = diagnostic_process.command([sys.executable, str(root / "agent_toolkit" / "atk.py"), "weekly", "run"])
         with log_path.open("ab") as log:
             self._process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with  # 自身の配布物のCLIを固定の引数で起動する。
-                diagnostic_process.command([sys.executable, str(root / "agent_toolkit" / "atk.py"), "weekly", "run"]),
+                command,
                 cwd=root,
                 env=env,
                 stdin=subprocess.DEVNULL,

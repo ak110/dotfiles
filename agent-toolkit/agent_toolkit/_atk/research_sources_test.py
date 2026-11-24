@@ -83,7 +83,7 @@ def _base_responses():
             200,
             _releases(("rust-v0.9", "2026-11-20T00:00:00Z"), ("rust-v0.8", "2026-11-01T00:00:00Z")),
         ),
-        "https://api.github.com/repos/sst/opencode/releases": (500, b'{"message": "Server Error"}'),
+        "https://api.github.com/repos/anomalyco/opencode/releases": (500, b'{"message": "Server Error"}'),
     }
 
 
@@ -139,6 +139,7 @@ def test_reads_only_after_previous_position_and_commits_after_save(x_settings, m
     assert first["x:account:poteto"]["count"] == 3
     assert "start_time" in fetch.x_calls()[1]
     assert not research_sources.load_state()["positions"]
+    research_sources.mark_read(_SLOT, ("changelog:claude-code",))
     assert research_sources.commit_positions(_SLOT)
     state = research_sources.load_state()
     assert state["positions"]["x:account:poteto"] == "105"
@@ -353,6 +354,11 @@ def test_claude_code_position_is_not_skipped(position, baseline, status, version
     sources = _by_source(research_sources.collect(_SLOT, fetch=_Recorded(responses), now=_NOW))
     assert sources["changelog:claude-code"]["status"] == status
     assert [item["version"] for item in sources["changelog:claude-code"]["items"]] == versions
+    if status == "read":
+        research_sources.mark_read(_SLOT, ("changelog:claude-code",))
+    else:
+        with pytest.raises(ValueError, match="changelog:claude-code"):
+            research_sources.mark_read(_SLOT, ("changelog:claude-code",))
     research_sources.commit_positions(_SLOT)
     expected = "2.3.0" if status == "read" else position
     assert research_sources.load_state()["positions"]["changelog:claude-code"] == expected
@@ -378,6 +384,8 @@ def test_github_releases_follow_pages_until_previous_position(monkeypatch, reach
     responses = {**_base_responses(), "https://api.github.com/repos/openai/codex/releases": _release_pages([newer, older])}
     sources = _by_source(research_sources.collect(_SLOT, fetch=_Recorded(responses), now=_NOW))
     codex = sources["changelog:codex"]
+    if reach_previous:
+        research_sources.mark_read(_SLOT, ("changelog:codex",))
     research_sources.commit_positions(_SLOT)
     position = research_sources.load_state()["positions"].get("changelog:codex")
     if reach_previous:
@@ -385,7 +393,7 @@ def test_github_releases_follow_pages_until_previous_position(monkeypatch, reach
         assert position == "2026-11-21T01:39:00+00:00"
     else:
         assert codex["status"] == "failed"
-        assert position is None
+        assert position == (_NOW - datetime.timedelta(days=7)).isoformat()
 
 
 def test_model_sources_advance_only_when_marked_read(monkeypatch):
@@ -394,7 +402,7 @@ def test_model_sources_advance_only_when_marked_read(monkeypatch):
     since = {source["source"]: source["since"] for source in first["model_sources"]}
     assert set(since) == {*research_sources.MODEL_SOURCES, "web:tools:github.com/test/package"}
     assert set(since.values()) == {(_NOW - datetime.timedelta(days=7)).isoformat()}
-    with pytest.raises(ValueError, match="model_sources"):
+    with pytest.raises(ValueError, match="x:account:poteto"):
         research_sources.mark_read(_SLOT, ("x:account:poteto",))
     assert research_sources.mark_read(_SLOT, ("web:antigravity",)) == ["web:antigravity"]
     assert research_sources.commit_positions(_SLOT)
@@ -412,11 +420,10 @@ def test_script_marks_model_sources_read(monkeypatch, capsys):
     assert run_script.dispatch(args) == 0
     assert json.loads(capsys.readouterr().out) == {"slot": _SLOT, "marked": ["web:hacker-news"]}
     research_sources.commit_positions(_SLOT)
-    assert research_sources.load_state()["positions"] == {
-        "changelog:claude-code": "2.3.0",
-        "changelog:codex": "2026-11-20T00:00:00+00:00",
-        "web:hacker-news": _NOW.isoformat(),
-    }
+    state = research_sources.load_state()["positions"]
+    assert state["web:hacker-news"] == _NOW.isoformat()
+    assert state["changelog:claude-code"] == "2.2.0"
+    assert state["changelog:codex"] == (_NOW - datetime.timedelta(days=7)).isoformat()
 
 
 @pytest.mark.parametrize(
@@ -461,3 +468,43 @@ def test_unread_range_result_is_kept_when_newer_range_fails(
     state = research_sources.load_state()
     assert state["positions"]["x:account:poteto"] == position
     assert state["gaps"].get("x:account:poteto") == gap
+
+
+def test_weekly_releases_require_review_of_truncated_versions_before_advancing():
+    release_url = "https://github.com/anomalyco/opencode/releases/tag/v2.4.0"
+    releases = [
+        {
+            "tag_name": "v2.4.0",
+            "published_at": "2026-11-20T00:00:00Z",
+            "html_url": release_url,
+            "body": "x" * 4001 + "\nMCP Events",
+        },
+        {"tag_name": "v2.3.2", "published_at": "2026-11-01T00:00:00Z"},
+    ]
+    responses = _base_responses()
+    responses.update(
+        {
+            "https://api.github.com/repos/anomalyco/opencode/releases": (200, json.dumps(releases).encode()),
+            "https://api.github.com/repos/modelcontextprotocol/modelcontextprotocol/releases": (200, b"[]"),
+            "https://api.github.com/repos/modelcontextprotocol/python-sdk/releases": (200, b"[]"),
+        }
+    )
+    fetch = _Recorded(responses)
+    result = research_sources.collect(_SLOT, fetch=fetch, now=_NOW)
+    sources = _by_source(result)
+    (item,) = sources["changelog:opencode"]["items"]
+    assert item["version"] == "v2.4.0"
+    assert item["url"] == release_url
+    assert item["truncated"] is True
+    assert sources["changelog:mcp-spec"]["status"] == "read"
+    assert sources["changelog:mcp-python-sdk"]["status"] == "read"
+    assert next(source for source in result["model_sources"] if source["source"] == "web:antigravity")["url"]
+
+    assert research_sources.commit_positions(_SLOT)
+    assert research_sources.load_state()["positions"]["changelog:opencode"] == (_NOW - datetime.timedelta(days=7)).isoformat()
+    next_slot = "research@2026-11-29"
+    later = _by_source(research_sources.collect(next_slot, fetch=fetch, now=_NOW + datetime.timedelta(days=7)))
+    assert [item["version"] for item in later["changelog:opencode"]["items"]] == ["v2.4.0"]
+    assert research_sources.mark_read(next_slot, ("changelog:opencode",)) == ["changelog:opencode"]
+    assert research_sources.commit_positions(next_slot)
+    assert research_sources.load_state()["positions"]["changelog:opencode"] == "2026-11-20T00:00:00+00:00"

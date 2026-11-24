@@ -4,7 +4,7 @@
 情報源ごとの読んだ位置（投稿ID、版数、日時）とアカウントIDの対応だけを残す。
 読んだ位置は回の結果のUWIを保存した後に確定し（`commit_positions`）、実際に読めた情報源だけを進める。
 件数の上限で読み残した区間は、X APIでは情報源ごとの未読区間として残し、次回は新しい分より先に読む。
-モデルが無料の手段で調べる情報源（`model_sources`）は、モデルが`mark_read`で読めたと記録した分だけ進める。
+変更履歴とモデルが調べる情報源は、モデルが`mark_read`で読めたと記録した分だけ進める。
 
 X APIは従量課金であり、ユーザーが`weekly_research_x_api`を`true`にするまで呼ばない（疎通確認も含む）。
 資格情報は読み取り専用のBearer Token（app-only認証）だけを使い、値は出力・状態・ログへ出さない。
@@ -31,6 +31,7 @@ from agent_toolkit._common.diagnostic_redaction import redact_secrets
 X_API_BASE = "https://api.x.com/2"
 X_TOKEN_VARIABLE = "X_BEARER_TOKEN"
 INITIAL_DAYS = 7
+RELEASE_EXCERPT_CHARS = 4000
 
 X_MIN_RESULTS = {"timeline": 5, "search": 10}
 
@@ -45,7 +46,14 @@ _USER_AGENT = "agent-toolkit-weekly-research"
 
 CLAUDE_CODE_REPOSITORY = "anthropics/claude-code"
 CLAUDE_CODE_CHANGELOG = f"https://raw.githubusercontent.com/{CLAUDE_CODE_REPOSITORY}/main/CHANGELOG.md"
-GITHUB_RELEASES = {"codex": "openai/codex", "opencode": "sst/opencode"}
+GITHUB_RELEASES = {
+    "claude-agent-sdk": "anthropics/claude-agent-sdk-python",
+    "codex": "openai/codex",
+    "opencode": "anomalyco/opencode",
+    "mcp-spec": "modelcontextprotocol/modelcontextprotocol",
+    "mcp-python-sdk": "modelcontextprotocol/python-sdk",
+}
+ANTIGRAVITY_CHANGELOG = "https://antigravity.google/docs/changelog?tab=cli"
 
 Fetch = Callable[[str, dict[str, str]], tuple[int, bytes]]
 
@@ -64,7 +72,7 @@ RESULT_UWI = {
         "読んだ情報源と件数を書く。"
     ),
     "common": (
-        "どちらにも読めなかった情報源と理由を書く。"
+        "どちらにも固定の変更履歴の版ごとの採否・理由、読めなかった情報源と理由を書く。"
         "X由来の内容はURL・投稿ID・日時・短い抜粋と改善案だけを書き、本文の全文を書かない。"
     ),
     "answer_handling": (
@@ -95,6 +103,7 @@ class SourceResult:
     items: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     position: str | None = None
     gap: dict[str, str] | None = None
+    baseline: str | None = None
 
 
 @dataclasses.dataclass
@@ -137,10 +146,14 @@ def mark_read(slot: str, sources: tuple[str, ...]) -> list[str]:
     pending = _read(pending_path())
     if pending.get("slot") != slot:
         raise ValueError(f"回 {slot} の取得結果が無い。先に `atk run-script research-sources` を実行する")
-    unknown = [source for source in sources if source not in pending.get("model_sources", [])]
+    review_positions = {
+        **dict.fromkeys(pending.get("model_sources", []), pending["collected_at"]),
+        **pending.get("release_positions", {}),
+    }
+    unknown = [source for source in sources if source not in review_positions]
     if unknown:
-        raise ValueError(f"出力のmodel_sourcesに無い情報源: {', '.join(unknown)}")
-    pending["positions"] = {**pending.get("positions", {}), **dict.fromkeys(sources, pending["collected_at"])}
+        raise ValueError(f"読取を記録できない情報源: {', '.join(unknown)}")
+    pending["positions"] = {**pending.get("positions", {}), **{source: review_positions[source] for source in sources}}
     session_review.write(pending_path(), pending)
     return list(sources)
 
@@ -196,8 +209,14 @@ def _error_title(body: bytes) -> str:
     return f"（{str(title)[:120]}）" if isinstance(title, str) and title else ""
 
 
-def _excerpt(text: str, limit: int = 4000) -> str:
-    return text if len(text) <= limit else text[:limit] + "…"
+def _release_item(version: str, text: str, url: str) -> dict[str, Any]:
+    truncated = len(text) > RELEASE_EXCERPT_CHARS
+    return {
+        "version": version,
+        "url": url,
+        "text": text[:RELEASE_EXCERPT_CHARS] + "…" if truncated else text,
+        "truncated": truncated,
+    }
 
 
 def _changelog_sections(body: bytes) -> list[tuple[str, str]]:
@@ -247,8 +266,9 @@ def read_claude_code(fetch: Fetch, position: str | None, *, now: datetime.dateti
     for version, text in sections:
         if version == stop:
             break
-        items.append({"version": version, "text": _excerpt(text)})
-    return SourceResult("changelog:claude-code", "read", reason, items, versions[0] if versions else position)
+        url = f"https://github.com/{CLAUDE_CODE_REPOSITORY}/blob/main/CHANGELOG.md"
+        items.append(_release_item(version, text, url))
+    return SourceResult("changelog:claude-code", "read", reason, items, versions[0] if versions else position, baseline=stop)
 
 
 def read_github_releases(
@@ -271,17 +291,19 @@ def read_github_releases(
             if not isinstance(published, str) or release.get("draft"):
                 continue
             published_at = datetime.datetime.fromisoformat(published.replace("Z", "+00:00"))
+            if published_at.tzinfo is None:
+                raise SourceError("リリースの公開日時にタイムゾーンが無い")
             if published_at <= since:
                 reached = True
                 continue
-            items.append(
-                {
-                    "version": release.get("tag_name"),
-                    "published_at": published,
-                    "url": release.get("html_url"),
-                    "text": _excerpt(release.get("body") or ""),
-                }
-            )
+            tag = release.get("tag_name")
+            if not isinstance(tag, str) or not tag:
+                raise SourceError("リリースのタグを読み取れない")
+            text = release.get("body")
+            if text is not None and not isinstance(text, str):
+                raise SourceError("リリースの本文を読み取れない")
+            url = f"https://github.com/{repository}/releases/tag/{urllib.parse.quote(tag, safe='')}"
+            items.append({**_release_item(tag, text or "", url), "published_at": published})
             latest = max(latest, published_at)
         if reached:
             return SourceResult(f"changelog:{name}", "read", items=items, position=latest.isoformat())
@@ -562,10 +584,21 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         **{f"web:tools:{repository}": f"{repository}が使う主要なツールと言語処理系の変更履歴" for repository in repositories},
     }
     initial = (now - datetime.timedelta(days=INITIAL_DAYS)).isoformat()
+    baselines = {
+        **dict.fromkeys((f"changelog:{name}" for name in GITHUB_RELEASES), initial),
+        "web:antigravity": initial,
+        **{result.source: result.baseline for result in read if result.baseline},
+    }
     pending = {
         "slot": slot,
         "collected_at": now.isoformat(),
-        "positions": {result.source: result.position for result in read if result.position},
+        "positions": {
+            **{source: baseline for source, baseline in baselines.items() if source not in positions},
+            **{result.source: result.position for result in read if result.source.startswith("x:") and result.position},
+        },
+        "release_positions": {
+            result.source: result.position for result in read if result.source.startswith("changelog:") and result.position
+        },
         "gaps": {result.source: result.gap for result in read if result.source.startswith("x:")},
         "user_ids": user_ids,
         "model_sources": list(model_sources),
@@ -577,11 +610,18 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         "x_api": {"enabled": enabled, "posts_read": budget.posts, "users_looked_up": budget.users},
         "x_subscriptions": {"accounts": list(accounts), "queries": list(queries)},
         "sources": [
-            {key: value for key, value in dataclasses.asdict(result).items() if key != "gap"} | {"count": len(result.items)}
+            {key: value for key, value in dataclasses.asdict(result).items() if key not in {"gap", "baseline"}}
+            | {"count": len(result.items)}
             for result in results
         ],
         "model_sources": [
-            {"source": source, "what": what, "since": positions.get(source, initial)} for source, what in model_sources.items()
+            {
+                "source": source,
+                "what": what,
+                "since": positions.get(source, initial),
+                **({"url": ANTIGRAVITY_CHANGELOG} if source == "web:antigravity" else {}),
+            }
+            for source, what in model_sources.items()
         ],
         "result_uwi": RESULT_UWI,
     }
