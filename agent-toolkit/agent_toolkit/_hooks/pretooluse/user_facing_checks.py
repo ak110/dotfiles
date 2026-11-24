@@ -7,6 +7,7 @@ import unicodedata
 from collections.abc import Iterable
 
 lazy from markdown_it import MarkdownIt
+lazy from markdown_it.token import Token
 
 from agent_toolkit._common import response_language_check as _response_language_check
 from agent_toolkit._common.session_state import read_state, update_state
@@ -26,7 +27,10 @@ _UNDERSTANDING_HEADING = re.compile(r"^発話の理解\s*(?:[:：]\s*(.*)|$)")
 _ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
 
 
-_ALTERNATIVE_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*別案(?:[*_]*\s*[:：]|[:：][*_]+)")
+_ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*(?:[-*+][^\S\n]+)?[*_]*別案(?:[*_]*[^\S\n]*[:：]|[:：][*_]+)")
+_INLINE_ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*[*_]*別案[*_]*[^\S\n]*[:：]")
+_ALTERNATIVE_BOUNDARY = re.compile(r"[「」『』。\n]")
+_QUOTE_END = {"「": "」", "『": "』"}
 _POLICY_APPROVAL = re.compile(r"方針[^？?\n]{0,80}で(?:進めて|起草して|実施して)(?:よい|いい)")
 SOURCE_REVIEW_FILE = "external-source-review.md"
 _SOURCE_REVIEW_WORK = re.compile(r"^\s*-?\s*作業[:：]\s*`?([^\s`]+)`?\s*$")
@@ -37,8 +41,9 @@ _SOURCE_DECISION_COLUMN = "採否と理由"
 _SOURCE_REVIEW_COLUMNS = (_SOURCE_URL_COLUMN, _SOURCE_DEFINITION_COLUMN, _SOURCE_COMPARISON_COLUMN, _SOURCE_DECISION_COLUMN)
 
 
-def _understanding_section_lines(message: str) -> Iterable[str]:
+def _understanding_section_lines(message: str) -> Iterable[tuple[str, bool]]:
     section_level = 0
+    plain_paragraph = False
     paragraph_break = False
     for line in without_literal_blocks(message).splitlines():
         heading = _MARKDOWN_HEADING.match(line)
@@ -57,10 +62,11 @@ def _understanding_section_lines(message: str) -> Iterable[str]:
         if (target := _UNDERSTANDING_HEADING.fullmatch(title)) is not None:
             section_level = level or 6
             paragraph_break = False
-            if target[1]:
-                yield target[1]
+            plain_paragraph = not level and target[1] is not None
+            if target[1] or plain_paragraph:
+                yield target[1] or "", plain_paragraph
             continue
-        if heading and level <= section_level:
+        if (heading and level <= section_level) or (plain_paragraph and not line.strip()):
             section_level = 0
             continue
         if not section_level:
@@ -73,18 +79,62 @@ def _understanding_section_lines(message: str) -> Iterable[str]:
             section_level = 0
             continue
         paragraph_break = not line.strip()
-        yield title if heading else line
+        yield line, plain_paragraph
+
+
+def _without_heading_marker(line: str) -> str:
+    return heading[2].strip(" #*_") if (heading := _MARKDOWN_HEADING.match(line)) else line
 
 
 def has_original_text_label_in_understanding(message: str) -> bool:
-    return any(_ORIGINAL_TEXT_LABEL.match(line) for line in _understanding_section_lines(message))
+    return any(_ORIGINAL_TEXT_LABEL.match(_without_heading_marker(line)) for line, _ in _understanding_section_lines(message))
+
+
+def _alternative_text(token: Token) -> str:
+    if token.type == "text":
+        return token.content
+    if token.type in {"softbreak", "hardbreak"}:
+        return "\n"
+    if token.type in {"em_open", "em_close", "strong_open", "strong_close"}:
+        return token.markup
+    return "\0"
+
+
+def _has_alternative(lines: list[str]) -> bool:
+    text = "\n".join(lines)
+    if "`" in text:
+        text = "\n".join(
+            "".join(_alternative_text(child) for child in block.children or [])
+            for block in MarkdownIt("commonmark").parse(text)
+            if block.type == "inline"
+        )
+    else:
+        text = "\n".join(map(_without_heading_marker, lines))
+    if _ALTERNATIVE_LABEL.match(text):
+        return True
+    quote_ends: list[str] = []
+    for boundary in _ALTERNATIVE_BOUNDARY.finditer(text):
+        mark = boundary[0]
+        if mark in _QUOTE_END:
+            quote_ends.append(_QUOTE_END[mark])
+        elif quote_ends:
+            if mark == quote_ends[-1]:
+                quote_ends.pop()
+        elif (
+            mark == "。"
+            and _INLINE_ALTERNATIVE_LABEL.match(text, boundary.end())
+            or mark == "\n"
+            and _ALTERNATIVE_LABEL.match(text, boundary.end())
+        ):
+            return True
+    return False
 
 
 def missing_alternative(message: str) -> bool:
-    lines = [
-        line for line in _understanding_section_lines(message) if line.strip() and not bugfix_gate.is_classification_line(line)
-    ]
-    return len(lines) > 1 and not any(_ALTERNATIVE_LABEL.match(line) for line in lines)
+    section = list(_understanding_section_lines(message))
+    lines = [line for line, _ in section if not bugfix_gate.is_classification_line(_without_heading_marker(line))]
+    required = sum(bool(line.strip()) for line in lines) > 1 or any(plain for _, plain in section)
+    return required and not _has_alternative(lines)
 
 
 def _external_source_urls(lines: Iterable[str]) -> set[str]:

@@ -357,7 +357,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         if isinstance(message, str) and user_facing_checks.missing_alternative(message):
             return Decision(
                 block=_block_notice(
-                    "複数行の「発話の理解」に「別案」の項目がない。",
+                    "「発話の理解」に「別案」の項目がない。",
                     fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
                 )
             )
