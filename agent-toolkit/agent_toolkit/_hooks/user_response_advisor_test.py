@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+from unittest.mock import patch
 
 import pytest
 
@@ -52,12 +53,44 @@ def test_synthetic_api_notice_does_not_answer_human(
 def _stop(entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], **extra: str) -> dict:
     path = tmp_path / "transcript.jsonl"
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")
-    with notice_cycle("response-case", "Stop", "main"):
+    checks = tuple(name for name in stop.CHECK_MODULE_NAMES if name != "bugfix_gate")
+    with patch.object(stop, "CHECK_MODULE_NAMES", checks), notice_cycle("response-case", "Stop", "main"):
         result = stop.main(json.dumps({"session_id": "response-case", "transcript_path": str(path), **extra}))
     assert result == 0
     output = json.loads(capsys.readouterr().out)
     record_delivery(output_text(output))
     return output
+
+
+def test_public_stop_keeps_advisor_notice_with_unclassified_turn(tmp_path, monkeypatch):
+    for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_HANDOFF_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    path = tmp_path / "transcript.jsonl"
+    call = {
+        "type": "tool_use",
+        "id": "understanding",
+        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+        "input": {"message": "## 発話の理解\n分類: 非是正"},
+    }
+    delivered = {"type": "tool_result", "tool_use_id": "understanding", "is_error": False}
+    payload = {"session_id": "advisor-with-bugfix", "transcript_path": str(path)}
+    path.write_text(json.dumps(_HUMAN, ensure_ascii=False), encoding="utf-8")
+    blocked = _run_hook_in_process("stop", payload)
+    assert blocked.returncode == 0
+    output = json.loads(blocked.stdout)
+    assert output["decision"] == "block"
+    assert 'source="bugfix_gate"' in output["reason"]
+    assert 'source="user_response_advisor"' in output["reason"]
+
+    records = [
+        _HUMAN,
+        {"type": "assistant", "message": {"content": [call]}},
+        {"type": "user", "message": {"content": [delivered]}},
+    ]
+    path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in records), encoding="utf-8")
+    allowed = _run_hook_in_process("stop", payload)
+    assert allowed.returncode == 0
+    assert json.loads(allowed.stdout or "{}").get("decision") != "block"
 
 
 @pytest.mark.parametrize(
