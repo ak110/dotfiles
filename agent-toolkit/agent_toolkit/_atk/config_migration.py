@@ -6,7 +6,7 @@ import stat
 import tomllib
 from typing import Any
 
-from agent_toolkit._atk import config_repositories
+from agent_toolkit._atk import config_repositories, research_subscriptions
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import file_lock, runtime_environment, usage_settings
@@ -232,6 +232,34 @@ def remote_hosts_environment() -> tuple[str, str]:
         ) from error
 
 
+_RESEARCH_REPOS = "weekly_research_repos"
+_RESEARCH_SUBSCRIPTIONS = {"accounts": "weekly_research_x_accounts", "queries": "weekly_research_x_queries"}
+
+
+def _migrate_research_settings(config: dict[str, str]) -> None:
+    raw_repos = config.get(_RESEARCH_REPOS, "[]")
+    try:
+        old_repos = _config_settings.parse_string_list(raw_repos)
+        if old_repos:
+            raw = config.get("repositories", "{}")
+            repositories = config_repositories.parse(raw, check_paths=False)
+            for value in old_repos:
+                repo_id, path = config_repositories.identifier(value)
+                repositories.setdefault(repo_id, {"edit": "deny", **({"path": path} if path else {})})
+            config["repositories"] = json.dumps(repositories, ensure_ascii=False)
+        initial = research_subscriptions.parse(
+            {field: json.loads(config[key]) for field, key in _RESEARCH_SUBSCRIPTIONS.items() if key in config}
+        )
+    except (TypeError, ValueError) as error:
+        raise _next_action.ActionableError(
+            f"旧調査設定を移行できない: {error}",
+            next_action="設定ファイルの旧調査設定を確認し、有効なリポジトリ・Xアカウント・検索語に直して再実行する",
+        ) from error
+    research_subscriptions.migrate({field: values for field, values in initial.items() if values})
+    for key in (_RESEARCH_REPOS, *_RESEARCH_SUBSCRIPTIONS.values()):
+        config.pop(key, None)
+
+
 def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | None = None) -> dict[str, str]:
     changes = dict(updates or {})
     migrated = config_repositories.migrate(plan_connection_migration(config, changes))
@@ -244,7 +272,7 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
         migrated["remote_hosts"] = merge_remote_hosts(*old_hosts)
     migrated.update(changes)
     if not any(key in config for key in _config_settings.RETIRED_MODEL_KEYS):
-        return migrate_fixed_settings(migrated)
+        return _finish_legacy_migration(migrated)
     stages = {
         "execute": ("execute", "high"),
         "review": ("review", "medium"),
@@ -284,9 +312,16 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
                     ),
                 )
             _config_settings.validate_mutable_setting(target, migrated[target])
-    return migrate_fixed_settings(
+    return _finish_legacy_migration(
         {key: value for key, value in migrated.items() if key not in _config_settings.RETIRED_MODEL_KEYS}
     )
+
+
+def _finish_legacy_migration(config: dict[str, str]) -> dict[str, str]:
+    migrated = migrate_fixed_settings(config)
+    if any(key in migrated for key in (_RESEARCH_REPOS, *_RESEARCH_SUBSCRIPTIONS.values())):
+        _migrate_research_settings(migrated)
+    return migrated
 
 
 def migrate_legacy_settings() -> None:
@@ -297,6 +332,8 @@ def migrate_legacy_settings() -> None:
         *_config_settings.RETIRED_CONNECTION_KEYS,
         *_config_settings.RETIRED_FIXED_KEYS,
         "process_loop_repositories",
+        _RESEARCH_REPOS,
+        *_RESEARCH_SUBSCRIPTIONS.values(),
         "codex_auto_reset",
         "usage_auto_allocation",
         *_config_settings.LEGACY_REMOTE_HOSTS_KEYS,

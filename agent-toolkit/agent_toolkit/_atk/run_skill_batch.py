@@ -535,10 +535,17 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
     try:
         research_repo = None
         if work == "research":
-            targets = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_repos"))
-            if not targets:
-                raise ValueError("外部情報の調査の対象リポジトリが空。`atk config set weekly_research_repos` で一覧を設定する")
-            research_repo = targets[0]
+            targets = research_sources.repositories()
+            for target, settings in targets.items():
+                if (path := settings.get("path")) and pathlib.Path(path).is_dir():
+                    research_repo = target
+                    if work_dir is None:
+                        work_dir = pathlib.Path(path)
+                    break
+            if research_repo is None:
+                if work_dir is None or not targets:
+                    raise ValueError("外部情報の調査には `atk config repos` で登録したGit作業ツリーが必要")
+                research_repo = next(iter(targets))
         if work_dir is None:
             source = repo.resolve_repo_id_or_raise(research_repo or _plugin_repository())
             registered = config_settings.repository_settings(check_paths=False).get(source)

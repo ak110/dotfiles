@@ -15,18 +15,23 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import functools
+import itertools
 import json
 import pathlib
 import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections import Counter, defaultdict
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
-from agent_toolkit._atk import config, config_settings
+from agent_toolkit._atk import config, config_migration, config_settings, research_subscriptions, weekly_schedule
+from agent_toolkit._atk.wi import layout, sync
+from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 from agent_toolkit._common import claude_connection, runtime_environment, session_review
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._git import command as git
 
 X_API_BASE = "https://api.x.com/2"
 X_TOKEN_VARIABLE = "X_BEARER_TOKEN"
@@ -65,21 +70,27 @@ RESULT_UWI = {
     ),
     "proposal_fields": (
         "提案ごとに一意の提案ID（P1など）、出所（URLと投稿日時）、対象リポジトリ、何をどう変えるか、便益、推奨を書く。"
-        "購読するアカウントと検索語の追加・削除の候補は、提案ID（S1など）を付けて同じUWIで選べるようにする。"
+        "未購読の発信者は`subscription_candidates`を優先し、関心との関連と本人のXアカウントを確認する。"
+        "Zennの著者IDを同名のXアカウントとみなさない。検証できた追加・削除候補だけに提案ID（S1など）を付ける。"
+        "検索語はWIや発信で繰り返し現れた話題から提案し、既存の購読と重複させない。"
+        "各購読提案に対象・追加か削除か・根拠・実行するフラグと値を書き、同じUWIで選べるようにする。"
     ),
     "without_proposals": (
         "提案が0件の回は、frontmatterに`run_skill_report: true`を持つ`--question-type=post-approval`の報告用UWIへ、"
         "読んだ情報源と件数を書く。"
     ),
     "common": (
+        "読了の記録は `atk run-script research-sources -- --mark-read <source>...` で行う。"
         "どちらにも固定の変更履歴の版ごとの採否・理由、読めなかった情報源と理由を書く。"
         "X由来の内容はURL・投稿ID・日時・短い抜粋と改善案だけを書き、本文の全文を書かない。"
     ),
     "answer_handling": (
         "UWI本文に次を書く: 回答の処理では、選ばれた提案ごとにfrontmatterへ`proposal_id: <weekly_slot>/<提案ID>`を書いたAWIを"
         "対象のリポジトリへ登録し（同じ提案IDのAWIがあれば`atk wi add`が登録を省く）、"
-        "選ばれた購読の変更を、アカウントは`weekly_research_x_accounts`、検索語は`weekly_research_x_queries`へ"
-        "`atk config set <キー> <JSON配列>`で反映する（`atk config show`の現在値に加除した配列を渡す）。"
+        "選ばれた購読提案だけを `atk run-script research-sources -- --add-account=<アカウント>` などで反映する。"
+        "削除は `--remove-account=<アカウント>`、検索語は `--add-query=<検索語>` または `--remove-query=<検索語>` とする。"
+        "値はシェルの1引数として渡し、実行できる命令として解釈しない。フラグは同じ実行に複数指定できる。"
+        "操作はprivate-notesの最新の一覧へ加除して同期する。正常終了を確かめてから回答の処理を完了する。"
     ),
 }
 
@@ -87,7 +98,10 @@ MODEL_SOURCES = {
     "web:antigravity": "Antigravityの変更履歴",
     "web:hacker-news": "Hacker Newsの話題",
     "web:topics": "WebSearchで探す話題のトピック",
-    "web:engineers": "購読中（`x_subscriptions`）以外の著名なエンジニアの発信",
+    "web:engineers": (
+        "`subscription_candidates`の発信者や記事の著者を起点に、"
+        "購読中（`x_subscriptions`）以外の関心に近い発信を確認し、WebSearchで補う"
+    ),
 }
 
 
@@ -577,7 +591,123 @@ def _scrub(text: str, token: str | None) -> str:
     return redact_secrets(text)
 
 
+_X_POST = re.compile(
+    r"https?://(?:(?:www|mobile)\.)?(?:x|twitter)\.com/"
+    rf"({research_subscriptions.ACCOUNT})/status/([0-9]+)(?![a-zA-Z0-9_])",
+    re.IGNORECASE | re.ASCII,
+)
+_ZENN_ARTICLE = re.compile(r"https?://zenn\.dev/([a-z0-9_-]+)/(?:articles|books)/([a-z0-9_-]+)", re.IGNORECASE | re.ASCII)
+_NORM_PATHS = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".claude/rules",
+    ".claude/skills",
+    ".agents/skills",
+    "agent-toolkit/skills",
+    "agent-basics/skills",
+)
+
+
+def repositories() -> dict[str, dict[str, Any]]:
+    config_migration.migrate_legacy_settings()
+    return config_settings.repository_settings(check_paths=False)
+
+
+def _norm_paths(registered: dict[str, dict[str, Any]]) -> Iterator[tuple[pathlib.Path, pathlib.Path]]:
+    roots = {pathlib.Path(item["path"]).resolve() for item in registered.values() if item.get("path")}
+    for root in sorted(roots):
+        if not root.is_dir():
+            continue
+        result = git.run(["ls-files", "-z", "--", *_NORM_PATHS], root, capture_output=True, text=True)
+        if result.returncode == 0:
+            yield from ((root, root / path) for path in result.stdout.split("\0") if path.endswith(".md"))
+
+
+def _reference_texts(notes: pathlib.Path, registered: dict[str, dict[str, Any]], *, year: int | None) -> Iterator[str]:
+    wi_paths = (
+        (notes, path)
+        for path in layout.iter_entry_paths(notes)
+        if year is None or path.relative_to(notes).parts[0] == str(year)
+    )
+    for root, path in itertools.chain(wi_paths, _norm_paths(registered)):
+        if not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(root):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        # 過去の調査結果の再引用で自分の提案を押し上げない。  # pyfltr: allow-comment
+        entry = parse_frontmatter(text) if root == notes else None
+        if entry is None or not str(entry[0].get("weekly_slot", "")).startswith("research@"):
+            yield text
+
+
+def subscription_candidates(
+    texts: Iterable[str], accounts: tuple[str, ...] = (), *, limit: int | None = 10
+) -> list[dict[str, Any]]:
+    already = research_subscriptions.account_identities(accounts)
+    documents: Counter[tuple[str, str]] = Counter()
+    references: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for text in texts:
+        found: set[tuple[str, str]] = set()
+        for source, pattern in (("x", _X_POST), ("zenn", _ZENN_ARTICLE)):
+            for author, reference in pattern.findall(text):
+                key = (source, author.lower())
+                if source != "x" or key[1] not in already:
+                    found.add(key)
+                    references[key].add(reference.lower())
+        documents.update(found)
+    ranked = sorted(references, key=lambda key: (-len(references[key]), -documents[key], key))
+    return [
+        {
+            "source": source,
+            "author": author,
+            "references": len(references[source, author]),
+            "documents": documents[source, author],
+        }
+        for source, author in ranked[:limit]
+    ]
+
+
+def subscription_evidence(
+    registered: dict[str, dict[str, Any]],
+    *,
+    year: int | None = None,
+    limit: int | None = 10,
+    include_subscribed: bool = False,
+) -> tuple[research_subscriptions.Subscriptions, list[dict[str, Any]]]:
+    notes = research_subscriptions.root()
+    with sync.repo_lock(notes):
+        sync.pull_with_recent_reuse(notes)
+        subscriptions = research_subscriptions.read(notes)
+        accounts = () if include_subscribed else subscriptions.get("accounts", ())
+        return subscriptions, subscription_candidates(_reference_texts(notes, registered, year=year), accounts, limit=limit)
+
+
+def select_x_sources(
+    slot: str, accounts: tuple[str, ...], queries: tuple[str, ...], budget: XBudget
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    timeline, search = X_MIN_RESULTS["timeline"], X_MIN_RESULTS["search"]
+    max_accounts = min(len(accounts), budget.max_users)
+    # 満杯でも両方の種別が進むよう、検索へ最小枠を半分まで先に取る。  # pyfltr: allow-comment
+    reserved_queries = min(len(queries), budget.max_posts // (2 * search)) if max_accounts else 0
+    account_count = min(max_accounts, (budget.max_posts - search * reserved_queries) // timeline)
+    query_count = min(len(queries), (budget.max_posts - timeline * account_count) // search)
+    _work, date = weekly_schedule.parse_slot_id(slot)
+    week = date.toordinal() // 7
+
+    def weekly_slice(values: tuple[str, ...], count: int) -> tuple[str, ...]:
+        if count >= len(values):
+            return values
+        start = (week * count) % len(values)
+        return (values + values)[start : start + count]
+
+    return weekly_slice(accounts, account_count), weekly_slice(queries, query_count)
+
+
 def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | None = None) -> dict[str, Any]:
+    registered = repositories()
+    subscriptions, candidates = subscription_evidence(registered)
     fetch = fetch or default_fetch
     now = now or datetime.datetime.now(datetime.UTC)
     state = load_state()
@@ -597,8 +727,7 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         max_posts=config_settings.X_MAX_POSTS,
         max_users=config_settings.X_MAX_USERS,
     )
-    accounts = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_x_accounts"))
-    queries = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_x_queries"))
+    accounts, queries = subscriptions.get("accounts", ()), subscriptions.get("queries", ())
     token = None
     x_failure = None
     if enabled:
@@ -611,15 +740,30 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         results.extend(SourceResult(source, "failed", x_failure) for source in sources)
         user_ids: dict[str, str] = {}
     else:
+        selected_accounts, selected_queries = (accounts, queries)
+        if enabled and token is not None:
+            selected_accounts, selected_queries = select_x_sources(slot, accounts, queries, budget)
         x_results, user_ids = read_x(
-            fetch, state, accounts=accounts, queries=queries, budget=budget, now=now, enabled=enabled, token=token
+            fetch,
+            state,
+            accounts=selected_accounts,
+            queries=selected_queries,
+            budget=budget,
+            now=now,
+            enabled=enabled,
+            token=token,
         )
         results.extend(x_results)
+        results.extend(
+            SourceResult(f"x:{kind}:{value}", "skipped", "取得上限に合わせた輪番の対象外")
+            for kind, all_values, selected in (("account", accounts, selected_accounts), ("search", queries, selected_queries))
+            for value in all_values
+            if value not in selected
+        )
     read = [result for result in results if result.status == "read"]
-    repositories = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_repos"))
     model_sources = {
         **MODEL_SOURCES,
-        **{f"web:tools:{repository}": f"{repository}が使う主要なツールと言語処理系の変更履歴" for repository in repositories},
+        **{f"web:tools:{repository}": f"{repository}が使う主要なツールと言語処理系の変更履歴" for repository in registered},
     }
     initial = (now - datetime.timedelta(days=INITIAL_DAYS)).isoformat()
     baselines = {
@@ -647,6 +791,7 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         "slot": slot,
         "x_api": {"enabled": enabled, "posts_read": budget.posts, "users_looked_up": budget.users},
         "x_subscriptions": {"accounts": list(accounts), "queries": list(queries)},
+        "subscription_candidates": candidates,
         "sources": [
             {key: value for key, value in dataclasses.asdict(result).items() if key not in {"gap", "baseline"}}
             | {"count": len(result.items)}

@@ -7,8 +7,9 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._atk import research_sources, run_script, run_skill
-from agent_toolkit._common import session_review
+from agent_toolkit._atk import research_sources, research_subscriptions, run_script, run_skill
+from agent_toolkit._common import private_notes, session_review
+from agent_toolkit._testing import git_repository
 
 _SLOT = "research@2026-11-22"
 _NOW = datetime.datetime(2026, 11, 22, 6, tzinfo=datetime.UTC)
@@ -87,13 +88,24 @@ def _base_responses():
     }
 
 
+@pytest.fixture(autouse=True)
+def _init_notes():
+    git_repository.init_repository(private_notes.default_private_notes())
+
+
+def _subscriptions(**changes):
+    path = private_notes.default_private_notes() / research_subscriptions.FILENAME
+    saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    path.write_text(json.dumps(saved | changes), encoding="utf-8")
+
+
 @pytest.fixture(name="x_settings")
 def _x_settings(monkeypatch, tmp_path):
     env_file = tmp_path / "x-api.env"
     env_file.write_text(f"{research_sources.X_TOKEN_VARIABLE}={_TOKEN}\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ENV_FILE", str(env_file))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto", "mattpocockuk"]))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_QUERIES", json.dumps(["claude code hooks"]))
+    _subscriptions(accounts=["poteto", "mattpocockuk"])
+    _subscriptions(queries=["claude code hooks"])
     return env_file
 
 
@@ -116,7 +128,7 @@ def test_without_usage_start_x_api_is_not_called(x_settings):
 
 def test_missing_key_does_not_call_x_api(monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
+    _subscriptions(accounts=["poteto"])
     fetch = _Recorded(_base_responses())
     result = research_sources.collect(_SLOT, fetch=fetch, now=_NOW)
     assert fetch.x_calls() == []
@@ -172,6 +184,7 @@ def test_read_limit_stops_by_kind_without_overrequest(x_settings, monkeypatch, m
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
     monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", max_posts)
     monkeypatch.setattr(research_sources.config_settings, "X_MAX_USERS", 1)
+    _subscriptions(accounts=["poteto"])
     responses = {
         **_base_responses(),
         f"{research_sources.X_API_BASE}/users/by/username/poteto": (200, b'{"data": {"id": "11"}}'),
@@ -184,20 +197,16 @@ def test_read_limit_stops_by_kind_without_overrequest(x_settings, monkeypatch, m
     assert _max_results(fetch, "/users/11/tweets") == timeline_requests
     assert _max_results(fetch, "/tweets/search/recent") == []
     assert result["x_api"]["posts_read"] == posts_read
-    assert result["x_api"]["users_looked_up"] == 1
+    assert result["x_api"]["users_looked_up"] == (1 if timeline_requests else 0)
     assert sources["x:account:poteto"]["count"] == posts_read
-    assert "件数上限" in sources["x:account:poteto"]["reason"] or posts_read == 10
-    assert sources["x:account:mattpocockuk"]["status"] == "failed"
-    assert "照会の件数上限" in sources["x:account:mattpocockuk"]["reason"]
     assert sources["x:search:claude code hooks"]["status"] == "skipped"
-    assert "件数上限" in sources["x:search:claude code hooks"]["reason"]
-    assert not any("mattpocockuk" in url for url in fetch.x_calls())
+    assert "輪番" in sources["x:search:claude code hooks"]["reason"]
 
 
 def test_search_requests_at_least_ten_within_budget(x_settings, monkeypatch):
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", "[]")
+    _subscriptions(accounts=[])
     monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", 10)
     responses = {**_base_responses(), f"{research_sources.X_API_BASE}/tweets/search/recent": _timeline(3, newest=310)}
     fetch = _Recorded(responses)
@@ -210,8 +219,8 @@ def test_partial_read_keeps_unread_range_for_next_run(x_settings, monkeypatch):
     """上限で古い側を読み残した区間は次回に先に読み、どの投稿も欠かさず二重にも読まない。  pyfltr: allow-comment"""
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_QUERIES", "[]")
+    _subscriptions(accounts=["poteto"])
+    _subscriptions(queries=[])
     monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", 5)
     session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
     session_review.write(
@@ -237,7 +246,7 @@ def test_partial_read_keeps_unread_range_for_next_run(x_settings, monkeypatch):
 def test_search_lower_bound_is_kept_within_seven_days(x_settings, monkeypatch):
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", "[]")
+    _subscriptions(accounts=[])
     old = _NOW - datetime.timedelta(days=7, minutes=1)
     old_id = str((int(old.timestamp() * 1000) - research_sources._X_EPOCH_MS) << 22)  # noqa: SLF001  # pylint: disable=protected-access
     session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
@@ -397,7 +406,7 @@ def test_github_releases_follow_pages_until_previous_position(monkeypatch, reach
 
 
 def test_model_sources_advance_only_when_marked_read(monkeypatch):
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_REPOS", json.dumps(["github.com/test/package"]))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", '{"github.com/test/package":{"edit":"deny"}}')
     first = research_sources.collect(_SLOT, fetch=_Recorded(_base_responses()), now=_NOW)
     since = {source["source"]: source["since"] for source in first["model_sources"]}
     assert set(since) == {*research_sources.MODEL_SOURCES, "web:tools:github.com/test/package"}
@@ -440,8 +449,8 @@ def test_unread_range_result_is_kept_when_newer_range_fails(
     """未読区間の読取と新しい分の読取を分けて確定し、後半の失敗で前半の結果を失わない。  pyfltr: allow-comment"""
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_QUERIES", "[]")
+    _subscriptions(accounts=["poteto"])
+    _subscriptions(queries=[])
     session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
     session_review.write(
         research_sources.positions_path(),
@@ -538,3 +547,55 @@ def test_shared_x_budget_reads_all_subscriptions(first_posts):
     assert sum(timelines[1:] + searches) == (100 if first_posts == 0 else 100 - timelines[0])
     if first_posts == 0:
         assert sum(timelines[1:]) > 7 * 5
+
+
+def test_subscription_candidates_use_distinct_posts_and_articles(tmp_path):
+    notes = private_notes.default_private_notes()
+    wi = notes / "2026" / "11"
+    wi.mkdir(parents=True)
+    one = "https://x.com/Example/status/1"
+    two = "https://twitter.com/example/status/2"
+    (wi / "20261121-000000-001.md").write_text(f"{one} {one} {two} https://x.com/subscribed/status/10", encoding="utf-8")
+    (wi / "20261121-000000-002.md").write_text(f"{one} https://zenn.dev/example/articles/distinct", encoding="utf-8")
+    (wi / "20261121-000000-003.md").write_text(
+        "---\nweekly_slot: research@2026-11-22\n---\nhttps://x.com/self_quote/status/10", encoding="utf-8"
+    )
+    root = git_repository.init_repository(
+        tmp_path / "work",
+        files={
+            "AGENTS.md": "https://zenn.dev/example/articles/distinct https://zenn.dev/example/articles/another",
+            "README.md": "https://x.com/ignored/status/3",
+        },
+        commit_message="規範を登録",
+    )
+    _subscriptions(accounts=["@Subscribed"])
+
+    _, candidates = research_sources.subscription_evidence({"work": {"path": str(root)}}, year=2026)
+
+    assert candidates == [
+        {"source": "x", "author": "example", "references": 2, "documents": 2},
+        {"source": "zenn", "author": "example", "references": 2, "documents": 2},
+    ]
+
+
+def test_initial_subscription_size_fits_one_week():
+    accounts = tuple(f"account{i}" for i in range(8))
+    queries = tuple(f"query {i}" for i in range(5))
+    assert research_sources.select_x_sources(_SLOT, accounts, queries, research_sources.XBudget(100, 20)) == (
+        accounts,
+        queries,
+    )
+
+
+def test_oversized_subscriptions_rotate_both_kinds_within_budget():
+    accounts = tuple(f"account{i}" for i in range(22))
+    queries = tuple(f"query {i}" for i in range(12))
+    budget = research_sources.XBudget(100, 20)
+    weeks = ("research@2026-11-22", "research@2026-11-29", "research@2026-12-06")
+    selections = [research_sources.select_x_sources(slot, accounts, queries, budget) for slot in weeks]
+    for selected_accounts, selected_queries in selections:
+        assert 0 < len(selected_accounts) <= budget.max_users
+        assert selected_queries
+        assert 5 * len(selected_accounts) + 10 * len(selected_queries) <= budget.max_posts
+    assert {account for group, _ in selections for account in group} == set(accounts)
+    assert {query for _, group in selections for query in group} == set(queries)
