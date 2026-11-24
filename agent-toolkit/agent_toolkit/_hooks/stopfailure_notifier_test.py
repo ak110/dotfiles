@@ -4,11 +4,17 @@
 """
 
 import json
+import os
 import pathlib
 import tempfile
+from unittest.mock import Mock
 
 import pytest
 
+from agent_toolkit._atk.wi import process_loop_env as _pl_env
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
+from agent_toolkit._atk.wi.process_loop_session import _raise_claude_usage_limit
+from agent_toolkit._common import process_loop_session, process_tree
 from agent_toolkit._hooks import stopfailure_notifier
 from agent_toolkit._testing import fork_runner as _fork_runner
 
@@ -67,15 +73,35 @@ def test_unidentified_interactive_failure_has_no_resume_request(
     assert not (tmp_path / "claude").exists()
 
 
-def test_process_loop_keeps_session_scoped_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("launch", ["explicit", "picker"])
+@pytest.mark.parametrize("session", ["coordinator", "nested"])
+@pytest.mark.parametrize("error", ["rate_limit", "server_error"])
+def test_process_loop_routes_recovery_only_for_the_coordinator(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, launch: str, session: str, error: str
+) -> None:
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "s1")
-    payload = {"session_id": "s1", "prompt_id": "p1", "error": "rate_limit"}
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
+    if launch == "explicit":
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "coordinator")
+    else:
+        monkeypatch.setenv(process_loop_session.CLAIM_ENV, "picker-test")
+        process_loop_session.claim_process_loop_session("coordinator", os.environ)
+        resolved = _fork_runner.run_script(pathlib.Path(process_loop_session.__file__))
+        assert resolved.returncode == 0, resolved.stderr
+        assert resolved.stdout.strip() == "coordinator"
+    payload = {"session_id": session, "prompt_id": "p1", "error": error}
     assert stopfailure_notifier.main(json.dumps(payload)) == 0
-    request = tmp_path / "claude/agent-toolkit-function-hooks/rate-limit-s1.txt"
-    assert request.read_text(encoding="utf-8") == "requested"
+    base = tmp_path / "claude/agent-toolkit-function-hooks"
+    if session == "coordinator":
+        expected = ["rate-limit-coordinator.txt"] if error == "rate_limit" else []
+    else:
+        expected = [f"{error.replace('_', '-')}-nested.p1.txt"]
+    assert sorted(p.name for p in base.glob("*.txt")) == expected
+    for name in expected:
+        assert (base / name).read_text(encoding="utf-8") == "requested"
 
 
 @pytest.mark.parametrize(
@@ -116,3 +142,33 @@ def test_failure_does_not_create_a_log_or_transcript_summary(
 def test_invalid_json_exits_safely():
     result = _fork_runner.run_script(_SCRIPT, argv=("stopfailure_notifier",), input="not json")
     assert result.returncode == 0
+
+
+@pytest.mark.parametrize("picker", [False, True], ids=["explicit", "picker"])
+def test_stopfailure_rate_limit_reaches_the_coordinator_monitor(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, picker: bool
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv(_pl_env.PROCESS_LOOP_SESSION_ENV, "1")
+    monkeypatch.delenv(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    session_id = "orchestrator"
+    if picker:
+        monkeypatch.setenv(process_loop_session.CLAIM_ENV, "picker-monitor-test")
+        process_loop_session.claim_process_loop_session(session_id, os.environ)
+    else:
+        monkeypatch.setenv(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, session_id)
+    process = Mock()
+    stop = Mock()
+    monkeypatch.setattr(_pl_session, "_stop_orchestrator", stop)
+    for source in ("nested", session_id):
+        assert stopfailure_notifier.main(json.dumps({"session_id": source, "prompt_id": "p1", "error": "rate_limit"})) == 0
+        if source != session_id:
+            _raise_claude_usage_limit(process, dict(os.environ), session_id, known=[], pins=process_tree.ProcessIdentityPins())
+            stop.assert_not_called()
+    with pytest.raises(_pl_session.ClaudeUsageLimit):
+        _raise_claude_usage_limit(process, dict(os.environ), session_id, known=[], pins=process_tree.ProcessIdentityPins())
+    stop.assert_called_once()
+    assert not (tmp_path / "agent-toolkit-function-hooks/rate-limit-orchestrator.txt").exists()
+    assert (tmp_path / "agent-toolkit-function-hooks/rate-limit-nested.p1.txt").read_text(encoding="utf-8") == "requested"

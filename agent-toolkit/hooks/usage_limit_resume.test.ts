@@ -4,7 +4,7 @@ import { type Engine, expect, mock, test } from "claude-code/testing";
 // 入力はClaude Codeの型宣言SessionRateLimit、TurnCompleteInput、StopFailureHookInputに従う。
 const TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" as const };
 
-async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }, server?: { value: string }, prompt = { value: "first-prompt" }) {
+async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }, server?: { value: string }, prompt = { value: "first-prompt" }, owner = "") {
   mock.env(on, env);
   let release: (() => void) | undefined;
   let cleared: (() => void) | undefined;
@@ -24,6 +24,7 @@ async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Recor
   on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: 0, window: 1, percent: 0 }, rateLimits: windows } }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("session.id", () => ({ value: "usage-test" }));
+  on("process.run", () => ({ value: { exitCode: 0, stdout: owner, stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
   on("session.info", () => ({ value: { transcriptPath: "", promptId: prompt.value } }));
   const requestAt = (path: string) => path.endsWith(".first-prompt.txt") ?
     path.includes("rate-limit-") ? request : path.includes("server-error-") ? server : undefined : undefined;
@@ -262,3 +263,33 @@ for (const reason of ["answer", "error"] as const) {
     expect(prompts).toEqual([]);
   });
 }
+
+
+for (const [launch, identity] of [
+  ["explicit", { AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID: "coordinator" }],
+  ["picker", { AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM: "launch-token" }],
+] as const) {
+  for (const cause of ["rate_limit", "server_error", "100%"]) {
+    test(`統括の入れ子は自分の要求を読める（${launch}: ${cause}）`, async ($, on) => {
+      const rate = { value: cause === "rate_limit" ? "requested" : "consumed" };
+      const server = { value: cause === "server_error" ? "requested" : "consumed" };
+      const windows = cause === "100%" ? [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }] : [];
+      const env = { ...identity, AGENT_TOOLKIT_PROCESS_LOOP_SESSION: "1", HOME: "/home/tester" };
+      const { clock, prompts } = await engine($, on, windows, env, undefined, rate, server, undefined, "coordinator");
+      await $.turn.complete({ ...TURN, reason: "error" });
+      await clock.advance(300_000);
+      expect(rate.value).toBe("consumed");
+      expect(server.value).toBe("consumed");
+      expect(prompts.length).toBe(1);
+    });
+  }
+}
+
+test("pickerで選んだ統括は使用率100%でも会話内の再開を予約しない", async ($, on) => {
+  const env = { AGENT_TOOLKIT_PROCESS_LOOP_SESSION: "1", AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM: "launch-token" };
+  const windows = [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }];
+  const { clock, prompts } = await engine($, on, windows, env, undefined, undefined, undefined, undefined, "usage-test");
+  await $.turn.complete(TURN);
+  await clock.advance(300_000);
+  expect(prompts).toEqual([]);
+});

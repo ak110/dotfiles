@@ -10,7 +10,7 @@ import json
 lazy import os
 lazy import re
 
-lazy from agent_toolkit._common import delegated_session, host_homes
+lazy from agent_toolkit._common import delegated_session, host_homes, process_loop_session
 
 
 def main(payload_text: str) -> int:
@@ -30,7 +30,9 @@ def main(payload_text: str) -> int:
         and re.fullmatch(r"[A-Za-z0-9_-]+", session_id)
     ):
         prompt_id = payload.get("prompt_id")
-        if error == "rate_limit" and os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID") == session_id:
+        if process_loop_session.is_identified_process_loop_session(session_id, os.environ):
+            if error != "rate_limit":
+                return 0
             name = f"rate-limit-{session_id}.txt"
         elif isinstance(prompt_id, str) and re.fullmatch(r"[A-Za-z0-9_-]+", prompt_id):
             name = f"{error.replace('_', '-')}-{session_id}.{prompt_id}.txt"

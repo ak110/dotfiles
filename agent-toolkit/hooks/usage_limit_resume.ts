@@ -1,6 +1,6 @@
 import type { EngineInterface, On, SessionRateLimit, Timer } from "claude-code";
 import { automatedMessage, startNextTurn } from "./automated_message.ts";
-import { pluginLaunchRoot } from "./plugin_launch.ts";
+import { pluginLaunchCommand, pluginLaunchRoot } from "./plugin_launch.ts";
 import { exitStatePath } from "./session_exit.ts";
 
 // Python側のclaude_usage_limit.RECHECK_SECONDSと同じ再確認間隔を使う。
@@ -30,10 +30,26 @@ function maximumWindow(windows: SessionRateLimit[]): SessionRateLimit | undefine
       maximum === undefined || window.percentUsed > maximum.percentUsed ? window : maximum, undefined);
 }
 
+async function readClaimedProcessLoopOwner($: EngineInterface): Promise<string | undefined> {
+  if (!(await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM"))) return undefined;
+  try {
+    const result = await $.process.run(
+      pluginLaunchCommand($.plugin.root, "agent_toolkit/_common/process_loop_session.py"),
+      { timeoutMs: 5000 },
+    );
+    const owner = result.stdout.trim();
+    if (result.exitCode === 0 && !result.isStdoutTruncated && /^[A-Za-z0-9_-]+$/.test(owner)) return owner;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 // 委譲先の判定はregister.tsのsession.startが初期化する。環境変数の所有者を同じ初期化処理で設定する。
 export function register(on: On, session: { delegated: boolean }): void {
   const state: Reservation = { turnsStarted: 0, generation: 0, serverRetries: 0, stopped: false };
 
+  let claimedOwner: string | undefined;
   let mainTurn: { id: string; promptId: Promise<string | undefined> } | undefined;
 
   on("turn.start", async ($, e, next) => {
@@ -52,13 +68,15 @@ export function register(on: On, session: { delegated: boolean }): void {
     const result = await next(e);
     if (session.delegated || e.agentId !== undefined || (identity !== undefined && identity.id !== e.turnId)) return result;
     // process-loopとrun-skillが旧プロセスの終了後に接続を選ぶため、ホスト内の予約を重ねない。
-    const processLoop = await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION");
-    const processLoopId = await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID");
-    if ((processLoop === "1" && (!processLoopId || processLoopId === await $.session.id())) ||
-      await $.env.get("AGENT_TOOLKIT_RUN_SKILL_ID")) return result;
+    if (await $.env.get("AGENT_TOOLKIT_RUN_SKILL_ID")) return result;
+    const sessionId = await $.session.id();
+    if (await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") === "1") {
+      const explicitOwner = await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID");
+      const owner = explicitOwner || (claimedOwner ??= await readClaimedProcessLoopOwner($));
+      if (owner === undefined || owner === sessionId) return result;
+    }
     const configured = await $.env.get("CLAUDE_CONFIG_DIR");
     const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
-    const sessionId = await $.session.id();
     const promptId = await identity?.promptId;
     const ratePath = promptId === undefined ? undefined : exitStatePath(sessionId, configured, home, "rate-limit", promptId);
     const serverPath = promptId === undefined ? undefined : exitStatePath(sessionId, configured, home, "server-error", promptId);
