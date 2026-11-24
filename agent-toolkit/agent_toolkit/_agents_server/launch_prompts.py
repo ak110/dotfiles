@@ -247,8 +247,8 @@ def plugin_resource_instructions(toolkit_root: pathlib.Path, host: str, project:
     return _normative(
         toolkit_notice + f"agent-basics plugin root: {basics_root}\n"
         "`agent-basics:`で始まる品質資料はagent-basicsのroot、"
-        "`agent-toolkit:`のスキルと実行基盤の内部資源はagent-toolkitのrootから読む。"
-        "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てない。" + completion,
+        "`agent-toolkit:`のスキルと実行基盤の内部資源はagent-toolkitのrootから読んでください。"
+        "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てないでください。" + completion,
         kind="plugin-resources",
     )
 

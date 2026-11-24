@@ -131,10 +131,10 @@ def test_hook_failure_passes_and_reports_recovery(
     output = capsys.readouterr().err
     assert "通過" in output
     if failure == "decode":
-        assert "UTF-8" in output and "入力" in output and "そろえよ" in output
+        assert "UTF-8" in output and "入力" in output and "そろえてください" in output
     else:
         assert "Traceback" in output
-        assert "委譲元" in output and "ユーザー" in output and "報告せよ" in output
+        assert "委譲元" in output and "ユーザー" in output and "報告してください" in output
     if failure == "import":
         assert "update-dotfiles" in output and "make sync" in output
 
