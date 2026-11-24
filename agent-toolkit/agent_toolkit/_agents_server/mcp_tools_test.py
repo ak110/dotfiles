@@ -52,7 +52,7 @@ def test_public_tools_expose_single_start_with_modes() -> None:
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     assert tuple(properties["mode"]["anyOf"][0]["enum"]) == tool_names.START_MODES
     assert properties["mode"]["default"] is None
-    assert "省略時は`task`" in properties["mode"]["description"]
+    assert "whole_contract_pathを渡すと`delegate`" in properties["mode"]["description"]
     assert "required" not in start_tool.parameters
     for name in properties.keys() - {"cwd", "mode"}:
         assert properties[name]["default"] is None, name

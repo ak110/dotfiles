@@ -17,7 +17,8 @@ Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力�
 2026年10月1日にユーザーが「出来るだけまとめた方がいい」と指示し、説明と引数説明を分かりやすく整理することも追加で求めた。
 統合前の`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`はいずれも同じ非同期のsession開始だった。
 違いは入力の組み立て、起動区分、モデルとlabelだけだったため、公開する起動ツールを`start`の1つへまとめる。
-入力の形は`mode`（`task`・`delegate`・`explore`・`write`・`shell`、省略時は`task`）で選ぶ。
+入力の形は`mode`で選ぶ。
+省略時に役割文書なしで`prompt`と`whole_contract_path`を渡すと`delegate`、それ以外は`task`を使う。
 継続・中断・破棄・一覧・詳細は開始と異なる操作であり、統合しない。
 
 構造の理由は、`mode`固有の入力を平坦な引数として持ち、`mode`が必要とする入力の欠落と受理しない入力の混在を委譲先の起動前に拒否する点にある。

@@ -55,6 +55,7 @@ from agent_toolkit._agents_server.tool_descriptions import (
     schema_text,
 )
 from agent_toolkit._common import (
+    agents_server_tools,
     delegated_session,
     function_hook_requests,
     mcp_environment,
@@ -345,7 +346,9 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         public["cwd"] = response["cwd"]
         public["model_type"] = response["model_type"]
         return public
-    mode = mode or "task"
+    mode = mode or agents_server_tools.default_start_mode(
+        subagent_md_path=subagent_md_path, prompt=prompt, whole_contract_path=whole_contract_path
+    )
     if cwd is None:
         launch_requests.require_start_cwd()
     assert cwd is not None
