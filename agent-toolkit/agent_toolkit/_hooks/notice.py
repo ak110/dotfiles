@@ -253,7 +253,10 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
     return format_notice
 
 
-def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, limit: int = 16) -> bool:
+RESEND_PASSED_KEY = "resend_passed_by_actor"
+
+
+def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, label: str = "", limit: int = 16) -> bool:
     """同じ主体が同じ本文を再発行した時に真を返し、記録を消費する。初回は記録して偽を返す。  pyfltr: allow-comment
 
     遮断の解消を特定の手段（スキルの起動、資料の取得）だけに頼らず、誤検出や手段が使えない時にも進められるようにする。
@@ -271,6 +274,12 @@ def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, li
         repeated = fingerprint in values
         if repeated:
             values.remove(fingerprint)
+            if label:
+                passed = state.get(RESEND_PASSED_KEY, {})
+                passed = dict(passed) if isinstance(passed, dict) else {}
+                labels = [value for value in passed.get(actor, []) if isinstance(value, str)]
+                passed[actor] = [*dict.fromkeys([*labels, label])][-limit:]
+                state[RESEND_PASSED_KEY] = passed
         else:
             values.append(fingerprint)
         prior[actor] = values[-limit:]
@@ -278,6 +287,22 @@ def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, li
         return state
 
     return repeated if update_state(session_id, update) else True
+
+
+def take_resend_passed(session_id: str, actor: str) -> list[str]:
+    taken: list[str] = []
+
+    def update(state: dict) -> dict | None:
+        passed = state.get(RESEND_PASSED_KEY)
+        if not isinstance(passed, dict) or not passed.get(actor):
+            return None
+        taken.extend(value for value in passed[actor] if isinstance(value, str))
+        state[RESEND_PASSED_KEY] = {key: value for key, value in passed.items() if key != actor}
+        return state
+
+    if session_id:
+        update_state(session_id, update)
+    return taken
 
 
 def block_formatter(hook_id: str) -> Callable[..., str]:

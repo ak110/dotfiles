@@ -314,7 +314,13 @@ def send_block(payload: dict, message: object = None) -> str | None:
     if (
         isinstance(message, str)
         and isinstance(session_id, str)
-        and notice.consume_resend(session_id, resolve_hook_agent_id(payload), _SEND_RESEND_KEY, message)
+        and notice.consume_resend(
+            session_id,
+            resolve_hook_agent_id(payload),
+            _SEND_RESEND_KEY,
+            message,
+            label="欠陥の指摘の後にagent-basics:bugfixを起動せずに報告した",
+        )
     ):
         return None
     return _block_body("ユーザーへの送達")

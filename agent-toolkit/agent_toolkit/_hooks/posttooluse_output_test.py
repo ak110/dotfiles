@@ -83,7 +83,31 @@ def test_report_cannot_use_unread_persisted_output_as_evidence(tmp_path, capsys,
     }
     assert posttooluse.main(json.dumps(read)) == 0
     capsys.readouterr()
-    assert ("未取得の退避出力" not in report(f"完了: `{source}`で対象がなかった。")) is complete
+    assert ("未取得の退避出力" not in report(f"完了: `{source}`で対象がなかった（再確認）。")) is complete
+
+
+def test_unread_evidence_block_passes_once_on_resend(tmp_path, capsys):
+    source = tmp_path / "saved.txt"
+    source.write_text("先頭\n残り\n", encoding="utf-8")
+    payload = {
+        "session_id": "output-evidence-resend",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "printf trial"},
+        "tool_response": {"persistedOutputPath": str(source)},
+    }
+    assert posttooluse.main(json.dumps(payload)) == 0
+    capsys.readouterr()
+    send = {
+        "session_id": "output-evidence-resend",
+        "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+        "tool_input": {"message": f"完了: `{source}`で対象がなかった。"},
+    }
+    outputs = []
+    for _ in range(3):
+        assert dispatch.main(json.dumps(send)) == 0
+        outputs.append(capsys.readouterr().out)
+    assert ["未取得の退避出力" in output for output in outputs] == [True, False, True]
 
 
 @pytest.mark.parametrize("envelope", ["ending-row", "child-body"])

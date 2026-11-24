@@ -496,3 +496,23 @@ def test_process_loop_point_lists_merge_candidate(monkeypatch):
     notice = progress_self_check.claim_notice(payload, now=1801.0)
     assert notice and f"{name} (source: implement、merge_branch: あり)" in notice
     progress_self_check.release_reservations()
+
+
+def test_self_check_lists_skipped_notices_once() -> None:
+    sid = _session_id()
+    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
+    assert not notice_module.consume_resend(sid, "main", "test_resend", "本文", label="資料を取得せずに報告した")
+    assert notice_module.consume_resend(sid, "main", "test_resend", "本文", label="資料を取得せずに報告した")
+
+    def advise(state: dict) -> dict:
+        state[operation_skills.NOTIFIED_KEY] = {"main": ["agent-basics:search"]}
+        return state
+
+    assert session_state.update_state(sid, advise)
+    first = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
+    assert first is not None
+    assert "資料を取得せずに報告した" in first and "agent-basics:search" in first
+    progress_self_check.release_reservations()
+    second = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + 3 * _INTERVAL)
+    assert second is not None
+    assert "対応を確認できていない通知" not in second

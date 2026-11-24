@@ -237,12 +237,32 @@ def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: b
         if main_agent and process_loop_session.is_identified_process_loop_session(session_id, os.environ)
         else ""
     )
-    body = elapsed_text + previous + _saturation_text(session_id) + new_wis + instruction
+    body = (
+        elapsed_text
+        + previous
+        + _saturation_text(session_id)
+        + new_wis
+        + _skipped_notices_text(session_id, agent_id)
+        + instruction
+    )
     text = _llm_notice(body, tag="notice")
     if not text:
         return None
     _notice.stage_delivery(text, session_id, DELIVERED_KEY, agent_id, repr(current_time))
     return text
+
+
+def _skipped_notices_text(session_id: str, agent_id: str) -> str:
+    from agent_toolkit._hooks.pretooluse import operation_skills  # pylint: disable=import-outside-toplevel
+
+    items = [*_notice.take_resend_passed(session_id, agent_id), *operation_skills.unconfirmed_skills_text(session_id, agent_id)]
+    if not items:
+        return ""
+    return (
+        "前回の点検以後に、対応を確認できていない通知がある: "
+        + "、".join(items)
+        + "。それぞれ必要な対応（スキルの起動、資料の取得、報告の訂正）を済ませたか確かめ、未対応なら今行え。"
+    )
 
 
 def release_reservations() -> None:

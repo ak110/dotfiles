@@ -97,6 +97,7 @@ lazy from agent_toolkit._hooks import (
     repository_protection,
     work_contract,
 )
+lazy from agent_toolkit._hooks import notice as _notice
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -303,6 +304,23 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
         return _emit(decision, pending_notices, is_codex=is_codex)
 
 
+_RESEND_KEY = "pretooluse_read_gate_resend_by_actor"
+_RESEND_FIX = "取得できない場合や取得済みの場合は、同じ操作を再発行すれば1回通る。"
+_RESEND_LABELS = {
+    "review-receipt": "レビュー返却が指定した資料を取得しないまま採否を記録した",
+    "unread-evidence": "未取得の退避出力を根拠に報告した",
+    "completion-playbook": "完了報告の手順書を取得しないまま完了報告を送った",
+}
+
+
+def _resent(payload: dict, session_id: str, kind: str, text: object) -> bool:
+    if not isinstance(text, str) or not session_id:
+        return False
+    return _notice.consume_resend(
+        session_id, _agent_id.resolve_hook_agent_id(payload), _RESEND_KEY, f"{kind}\n{text}", label=_RESEND_LABELS[kind]
+    )
+
+
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
     # Code Modeも個々のMCP呼出しをこの設定hookへ通す。MCP起動環境には無い組込みagent_idもここで判定する。
     if tool_name in _MAIN_ONLY_MCP_TOOLS and (
@@ -338,11 +356,13 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
         from agent_toolkit._hooks.review_receipt import missing_before_response  # pylint: disable=import-outside-toplevel
 
-        if missing := missing_before_response(payload, session_id, tool_input):
+        if (missing := missing_before_response(payload, session_id, tool_input)) and not _resent(
+            payload, session_id, "review-receipt", tool_input.get("command")
+        ):
             return Decision(
                 block=_block_notice(
                     "レビュー返却が指定した資料の取得を確認できない。",
-                    fix=f"{'、'.join(missing)}を取得してから採否を記録する。",
+                    fix=f"{'、'.join(missing)}を取得してから採否を記録する。{_RESEND_FIX}",
                 )
             )
     if is_send_to_user_tool(tool_name):
@@ -370,18 +390,22 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                     fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返す。",
                 )
             )
-        if unread := unread_evidence(payload, session_id, message):
+        if (unread := unread_evidence(payload, session_id, message)) and not _resent(
+            payload, session_id, "unread-evidence", message
+        ):
             return Decision(
                 block=_block_notice(
                     "画面へ送る根拠に未取得の退避出力がある。",
-                    fix=f"`{unread}`の全文を取得するか、取得済みの限定した根拠へ置き換える。",
+                    fix=f"`{unread}`の全文を取得するか、取得済みの限定した根拠へ置き換える。{_RESEND_FIX}",
                 )
             )
-        if playbook := missing_completion_before_report(payload, session_id, message):
+        if (playbook := missing_completion_before_report(payload, session_id, message)) and not _resent(
+            payload, session_id, "completion-playbook", message
+        ):
             return Decision(
                 block=_block_notice(
                     "作業完了報告の手順書の取得を確認できない。",
-                    fix=f"`{playbook}`を全文読む。",
+                    fix=f"`{playbook}`を全文読む。{_RESEND_FIX}",
                 )
             )
     if (
