@@ -4,9 +4,9 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config
-from agent_toolkit._hooks import work_contract
+from agent_toolkit._hooks import progress_self_check, work_contract
 from agent_toolkit._hooks.pretooluse import publication_gate
-from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_uwi_file
+from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
 
 
 def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkeypatch):
@@ -56,3 +56,58 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
     assert gate("git push") is None
     _write_uwi_file(notes, names[0], answer="")
     assert gate("git push") is None
+
+
+def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path, monkeypatch):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    repository = config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    session = "processing-new-wis"
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", session)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+
+    def run(*args: str) -> None:
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", *args], home=tmp_path)
+        assert result.value.code == 0
+
+    run("list", "--skip-pull", "--count", "--configured-repos", "--snapshot-output", str(tmp_path / "baseline.json"))
+    names = tuple(f"20261124-085010-00{number}.md" for number in range(1, 4))
+    for name in names:
+        _write_awi_file(notes, name)
+    run("start-processing", *names[:2], f"--target-repo={repo}")
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", session)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "direct-delegate")
+    run("start-processing", names[2], f"--target-repo={repo}")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
+
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+
+    def gate(command: str):
+        return publication_gate.check(payload, session, "Bash", {"command": command})
+
+    assert gate("git push origin develop") is None
+    assert gate("gh pr create --base master --head develop") is None
+
+    outside = "20261124-085011-001.md"
+    _write_awi_file(notes, outside)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "other-session")
+    run("start-processing", outside, f"--target-repo={repo}")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
+    run("return-to-inbox", names[2], f"--target-repo={repo}")
+
+    pending = gate("git push origin develop")
+    assert pending is not None and outside in pending[0] and names[2] in pending[0]
+    assert all(name not in pending[0] for name in names[:2])
+    assert progress_self_check.claim_notice(payload, now=1.0) is None
+    try:
+        notice = progress_self_check.claim_notice(payload, now=1801.0)
+        assert notice is not None and outside in notice and names[2] in notice
+        assert all(name not in notice for name in names[:2])
+    finally:
+        progress_self_check.release_reservations()

@@ -20,7 +20,7 @@ from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
-from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATES, WI_TYPE_UWI, WI_TYPES
+from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATE_PROCESSING, WI_STATES, WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import (
     body_summary,
@@ -556,10 +556,13 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
             elif _git_command.run(["remote"], cwd=private_notes, capture_output=True, check=True).stdout.strip():
                 raise ValueError("private-notesの同期先が設定されていない")
         snapshots = configured_repo_snapshot(private_notes, tuple(by_key[scope] for scope in scopes))
+        started = _wi_snapshot.processing_started(session_id, private_notes)
         for snapshot in snapshots:
             repo = snapshot.repository
             baseline = baselines[repo.repo_id, repo.branch]
-            for path, _repo, body, _state, _kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
+            for path, _repo, body, state, _kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
+                if state == WI_STATE_PROCESSING and path.name in started:
+                    continue
                 source = parse_source(body) or "未指定"
                 if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
                     source = "その他"

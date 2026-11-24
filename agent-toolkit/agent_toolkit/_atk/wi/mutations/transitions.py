@@ -16,6 +16,7 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import show as _wi_show
+from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import (
     BULK_SOURCE_STATES,
@@ -577,6 +578,7 @@ def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, 
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="start-processing")
         if filenames:
+            _wi_snapshot.remember_processing_started(private_notes, filenames)
             _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
             _report_user_fields(private_notes, filenames)
         return
@@ -588,6 +590,7 @@ def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, 
         now=now,
         target_repo=args.target_repo,
     )
+    _wi_snapshot.remember_processing_started(private_notes, filenames)
     _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
     _report_user_fields(private_notes, filenames)
 
