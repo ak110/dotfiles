@@ -53,13 +53,7 @@ class RepositorySnapshot:
             for entry in self.entries
             if entry[3] in WI_PROCESSABLE_STATES
             and (entry[3] == "processing" or entry[0].name in names)
-            and not (
-                entry[4] == WI_TYPE_UWI
-                and (
-                    (parse_frontmatter(entry[2]) or ({}, ""))[0].get("run_skill_report") == "true"
-                    or not _wi_uwi_scan.is_uwi_answered(entry[2])
-                )
-            )
+            and not (entry[4] == WI_TYPE_UWI and not _wi_uwi_scan.is_uwi_answered(entry[2]))
         )
 
     @property
