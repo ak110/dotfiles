@@ -56,7 +56,7 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
      分母0は件数だけを報告する。
      実行レビューは、配布日以降に2回目の合否を判定できた表が初めて50件に達した回に累計の合格率を95%と比べて報告する。
      それまでは判定済み件数だけを示し、未達とは扱わない。
-     配布日は本変更を含む版の実際の公開日とし、その日付を公開担当が本節に記録する。
+     この集計の配布日は `2026-11-26` とし、`--release-date` に渡す。
    - レーンを独立の対象として準備した場合、起動元の会話の確認には `session-review-evidence --claude-session-id <起動元ID>` を使う（Codexは `--codex-thread-id`）。
      起動元からレーンの記録を取得するには `session-review-prepare --agents-session-id <レーンID>` を使う。
      統括が検収後に `stop` していないレーンは従来どおり統括の素材に含める。
