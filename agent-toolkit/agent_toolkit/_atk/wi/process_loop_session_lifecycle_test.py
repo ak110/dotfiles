@@ -17,7 +17,7 @@ import psutil
 import pytest
 
 from agent_toolkit._atk import claude_connection
-from agent_toolkit._atk.wi import process_loop_control, process_loop_log
+from agent_toolkit._atk.wi import process_loop_compaction, process_loop_control, process_loop_log
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import (
@@ -125,7 +125,9 @@ def test_process_loop_restarts_limited_claude_after_owned_exit(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="合成Claude CLIをPOSIXのshebangで起動する")
-@pytest.mark.parametrize("case", ["success", "nonzero", "no-boundary", "unreadable", "native", "picker", "cancelled"])
+@pytest.mark.parametrize(
+    "case", ["success", "nonzero", "timeout", "no-boundary", "unreadable", "native", "picker", "cancelled"]
+)
 def test_claude_resume_launch_preserves_reservation_on_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -141,7 +143,7 @@ def test_claude_resume_launch_preserves_reservation_on_failure(
     binary = tmp_path / "claude"
     binary.write_text(
         f"#!{sys.executable}\n"
-        "import json, os, pathlib, sys\n"
+        "import json, os, pathlib, sys, time\n"
         "root = pathlib.Path.cwd()\n"
         "case = os.environ['COMPACTION_CASE']\n"
         "if '--resume' in sys.argv:\n"
@@ -149,6 +151,7 @@ def test_claude_resume_launch_preserves_reservation_on_failure(
         "    assert '-p' in sys.argv and sys.argv[-1] == '/compact'\n"
         "    assert '--settings' in sys.argv and os.environ.get('AGENT_TOOLKIT_PROCESS_LOOP_SESSION') is None\n"
         "    if case == 'nonzero': sys.exit(14)\n"
+        "    if case == 'timeout': time.sleep(30)\n"
         "    if case == 'success':\n"
         "        with (root / 'claude-home/projects/cwd/saved-session.jsonl').open('a', encoding='utf-8') as f:\n"
         "            f.write(json.dumps({'type':'system','subtype':'compact_boundary'})+'\\n')\n"
@@ -160,6 +163,8 @@ def test_claude_resume_launch_preserves_reservation_on_failure(
         encoding="utf-8",
     )
     binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    if case == "timeout":
+        monkeypatch.setattr(process_loop_compaction, "TIMEOUT", 3)
     if case == "unreadable":
         registry = session_registry.registry_directory()
         registry.mkdir(parents=True, exist_ok=True)
@@ -215,10 +220,14 @@ def test_claude_resume_launch_preserves_reservation_on_failure(
             with pytest.raises(next_action.ActionableError) as caught:
                 launch()
             assert identifier in str(caught.value)
+            if case == "nonzero":
+                assert "/compact の終了コード: 14" in str(caught.value)
+            if case == "timeout":
+                assert "TimeoutExpired（上限 3 秒）" in str(caught.value)
             assert process_loop_control.read_resume_request() == request
         assert process_loop_log.read_instructions() == ["保持する指示"]
     assert (tmp_path / "interactive-called").exists() == (case == "success")
-    assert (tmp_path / "compaction-called").exists() == (case in {"success", "nonzero", "no-boundary"})
+    assert (tmp_path / "compaction-called").exists() == (case in {"success", "nonzero", "timeout", "no-boundary"})
 
 
 @pytest.mark.parametrize("new_turn", [False, True])
