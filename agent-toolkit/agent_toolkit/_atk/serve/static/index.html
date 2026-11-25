@@ -189,7 +189,7 @@
           <textarea id="decision-note"></textarea>
         </section>
       </div>
-      <footer id="detail-footer" class="dialog-footer detail-footer">
+      <footer id="detail-footer" class="dialog-footer detail-footer form-actions">
         <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="UWIへの回答" hidden>
           <p id="waiting-progress" class="secondary-text" role="status" hidden></p>
           <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
@@ -277,7 +277,7 @@
           </div>
         </div>
       </div>
-      <footer class="dialog-footer">
+      <footer class="dialog-footer form-actions">
         <button id="create-submit-button" class="button-primary" type="submit">追加</button>
       </footer>
     </form>
@@ -304,7 +304,7 @@
         </label>
         <p id="delete-error" class="inline-error" hidden></p>
       </div>
-      <footer class="dialog-footer">
+      <footer class="dialog-footer form-actions">
         <button id="delete-submit-button" class="button-danger-confirm" type="submit">削除する</button>
       </footer>
     </form>
@@ -431,12 +431,25 @@
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
-    <div class="settings-toolbar">
+    <p id="settings-status" role="status"></p>
+    <main id="settings-app">
+      <div class="settings-search">
+        <label for="settings-search">設定を絞り込む</label>
+        <input id="settings-search" type="search">
+        <button id="settings-search-clear" type="button" hidden>絞り込みを解除</button>
+        <p id="settings-no-matches" role="status" hidden>一致する設定はありません。</p>
+      </div>
+      <section aria-labelledby="settings-shared-heading">
+        <h2 id="settings-shared-heading">全ホスト共通</h2>
+        <div id="settings-shared"></div>
+      </section>
+      <h2>ホスト別</h2>
+      <div class="settings-toolbar">
       <label for="settings-host">設定対象ホスト</label>
       <select id="settings-host" disabled><option value="">ローカル</option></select>
-      <p id="settings-status" role="status"></p>
-    </div>
-    <main id="settings-app">
+      </div>
+      <details id="settings-compare"><summary>ホスト別の設定を比較</summary><div id="settings-comparison" tabindex="0" role="region" aria-label="ホスト別の設定の比較"></div></details>
+      <div id="settings-unsaved"></div>
       <div class="settings-layout">
         <nav id="settings-nav" aria-label="設定の分類"></nav>
         <div id="settings-content"></div>

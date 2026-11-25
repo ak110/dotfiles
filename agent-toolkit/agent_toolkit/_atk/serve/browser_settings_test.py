@@ -216,7 +216,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
             assert release_update.wait(10)
             remote_value = "updated"
             return subprocess.CompletedProcess(args, 0, b"", b"")
-        assert command == "atk config snapshot"
+        assert command in {"atk config snapshot", "atk config snapshot --read-only"}
         snapshot = config.settings_snapshot(tmp_path)
         snapshot["settings"]["serve_host"].update(effective=remote_value, saved=remote_value)
         return subprocess.CompletedProcess(args, 0, json.dumps(snapshot).encode(), b"")
@@ -619,3 +619,66 @@ async def test_settings_periodic_read_preserves_draft_and_detects_conflict(
     expect = playwright.async_api.expect
     await expect(editor.locator("[data-conflict]")).to_be_visible()
     await expect(field).to_have_value("draft-host")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_settings_search_and_unsaved_navigation(
+    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/settings")
+    expect = playwright.async_api.expect
+    search = page.get_by_label("設定を絞り込む")
+    await search.fill("serve_host")
+    editor = page.locator('[data-setting="serve_host"]')
+    await expect(editor).to_be_visible()
+    await expect(page.locator('[data-setting="execute_model"]')).to_be_hidden()
+    await editor.get_by_label("保存値").fill("draft-host")
+    await expect(page.locator("#settings-unsaved")).to_contain_text("未保存の変更: 1件")
+    page.once("dialog", lambda dialog: dialog.dismiss())
+    await page.get_by_role("navigation", name="画面").get_by_role("link", name="セッション").click()
+    await expect(editor.get_by_label("保存値")).to_have_value("draft-host")
+    await page.get_by_role("button", name="未保存の変更を取り消す").click()
+    await expect(page.locator("#settings-unsaved")).to_be_empty()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_settings_common_edit_survives_host_switch_and_saves_locally(
+    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    snapshot = config.settings_snapshot(tmp_path)
+    shared = snapshot["settings"]["execute_model"]
+    shared.update(shared=True, shared_sync=True, saved="claude:sonnet/medium", effective="claude:sonnet/medium")
+    snapshot.update(shared_identity="same", hosts=["remote"])
+    peer = copy.deepcopy(snapshot)
+    snapshot["comparison"] = {"remote": {"state": "ready", **peer}}
+    posts = []
+
+    async def settings(route):
+        is_remote = "host=remote" in route.request.url
+        if route.request.method == "POST":
+            assert not is_remote
+            posts.append(route.request.post_data_json)
+            shared["saved"] = posts[-1]["value"]
+            await route.fulfill(json={"saved": True})
+        else:
+            await route.fulfill(json=peer if is_remote else snapshot)
+
+    page = screen_harness.page
+    await page.route("**/api/settings**", settings)
+    await page.goto(screen_harness.base_url + "/settings")
+    expect = playwright.async_api.expect
+    editor = page.locator('#settings-shared [data-setting="execute_model"]')
+    await editor.get_by_label("保存値").fill("codex:sol/high")
+    await page.get_by_label("設定対象ホスト").select_option("remote")
+    await expect(editor.get_by_label("保存値")).to_have_value("codex:sol/high")
+    await expect(page.locator('#settings-content [data-setting="execute_model"]')).to_have_count(0)
+    await editor.get_by_role("button", name="保存").click()
+    await expect(editor.get_by_role("alert")).to_contain_text("設定を保存しました")
+    assert posts == [{"action": "set", "key": "execute_model", "value": "codex:sol/high"}]

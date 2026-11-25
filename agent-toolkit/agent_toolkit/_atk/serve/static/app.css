@@ -421,3 +421,5 @@ main > .toolbar {
 .metric-warning { color: var(--color-warning); }
 
 .update-status { padding: 4px 16px; background: var(--color-warning-quiet); }
+
+.form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }

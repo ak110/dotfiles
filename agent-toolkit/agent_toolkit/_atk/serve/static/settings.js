@@ -5,6 +5,10 @@ import {formatLocalMinute, renderResetPermissions} from "./reset_permissions.js"
 const status = document.getElementById("settings-status");
 const content = document.getElementById("settings-content");
 const hostPicker = document.getElementById("settings-host");
+const shared = document.getElementById("settings-shared");
+const comparison = document.getElementById("settings-comparison");
+const search = document.getElementById("settings-search");
+let localData;
 const navigation = document.getElementById("settings-nav");
 let host = "";
 let activeGroup = "models";
@@ -69,9 +73,9 @@ function field(parent, label, value = "", choices, type = "text", labels = {}) {
   return input;
 }
 
-async function request(payload, cached = false, background = false, retry = false) {
+async function request(payload, cached = false, background = false, retry = false, target = host) {
   const parameters = new URLSearchParams();
-  if (host) parameters.set("host", host);
+  if (target) parameters.set("host", target);
   if (cached) parameters.set("cached", "1");
   if (background) parameters.set("background", "1");
   if (retry) parameters.set("retry", "1");
@@ -186,6 +190,7 @@ async function operate(payload, output, submittedEditor = null) {
     render(data);
     const savedEditor = restoreEditors(drafts, editorKey);
     renderConflicts();
+    updateUnsaved();
     const notice = savedEditor?.querySelector("[data-settings-result]");
     scroll.scrollTop = scrollTop;
     restoreSettingFocus(focus);
@@ -237,11 +242,13 @@ function form(parent, perform) {
 function submit(form, label) {
   const control = element("button", label);
   control.type = "submit";
-  form.append(control);
+  const actions = element("div", "", "form-actions");
+  actions.append(control);
+  form.append(actions);
   return control;
 }
 
-function keyEditor(parent, key, item, data) {
+function keyEditor(parent, key, item, data, save = operate) {
   const listen = data.listen ?? {};
   const block = element("div");
   block.dataset.setting = key;
@@ -283,22 +290,22 @@ function keyEditor(parent, key, item, data) {
   const output = settingResult();
   if (key === "usage_reset_permissions") {
     renderResetPermissions(controls, JSON.parse(item.saved), data.reset_editor,
-      (entries, editor) => operate({action: "set", key, value: JSON.stringify(entries)}, output, editor),
+      (entries, editor) => save({action: "set", key, value: JSON.stringify(entries)}, output, editor),
       {element, field, form, button, submit, setWriteUnavailable});
   } else if (item.array) {
     const list = element("ul");
     for (const value of JSON.parse(item.saved)) {
       const row = element("li", value + " ");
-      row.append(button(`${value}を削除`, () => operate({action: "array-remove", key, value}, output)));
+      row.append(button(`${value}を削除`, () => save({action: "array-remove", key, value}, output)));
       list.append(row);
     }
     controls.append(list);
-    const editor = form(controls, () => operate({action: "array-add", key, value: input.value}, output));
+    const editor = form(controls, () => save({action: "array-add", key, value: input.value}, output));
     const input = field(editor, "追加するホスト");
     input.required = true;
     submit(editor, "追加");
   } else if (key !== "repositories") {
-    const editor = form(controls, () => operate({action: "set", key, value: input.value}, output));
+    const editor = form(controls, () => save({action: "set", key, value: input.value}, output));
     const input = field(editor, "保存値", item.saved, item.choices, "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
     if (key === "serve_port") input.inputMode = "numeric";
     if (!item.choices && item.format) {
@@ -347,8 +354,194 @@ function repositoryEditor(parent, repo = "", attributes = {}) {
   parent.append(box);
 }
 
+function sameSharedSetting(data, key) {
+  const here = localData?.settings[key];
+  const there = data.settings[key];
+  return Boolean(localData?.shared_identity && data.shared_identity === localData.shared_identity &&
+    here?.shared && !here.migration_pending && there?.shared && !there.migration_pending);
+}
+
+function groupId(key) {
+  return key.endsWith("_model") ? "models" : (key.startsWith("serve_") || key === "remote_hosts") ? "serve" :
+    key === "repositories" ? "repos" : /usage|reset/.test(key) ? "usage" :
+    /connections|provider|env_file/.test(key) ? "connections" : "other";
+}
+
+const groupTitles = {models: "工程別モデル", connections: "接続", usage: "利用枠", other: "その他の設定とパス"};
+
+async function saveShared(payload, output) {
+  if (busy) return;
+  busy = true;
+  updateWriteControls();
+  try {
+    await request(payload, false, false, false, "");
+    const updated = await request(undefined, false, false, false, "");
+    localData = updated;
+    renderComparison(displayedData ?? updated);
+    renderShared(output.closest("[data-setting]")?.dataset.setting);
+    const notice = shared.querySelector(`[data-setting="${CSS.escape(payload.key ?? "")}"] [data-settings-result]`);
+    if (notice) revealSettingResult(notice, "設定を保存しました。", true);
+  } catch (error) {
+    revealSettingResult(output, error.message, true);
+  } finally {
+    busy = false;
+    updateWriteControls();
+    updateUnsaved();
+  }
+}
+
+function renderShared(savedKey) {
+  const data = localData;
+  if (!data) return;
+  const old = new Map([...shared.querySelectorAll("[data-setting]")].map(node => [node.dataset.setting, node]));
+  const note = element("p", "保存先: private-notesの共有設定ファイル");
+  const nodes = [note];
+  const sections = new Map();
+  for (const [key, item] of Object.entries(data.settings)) {
+    if (!item.shared) continue;
+    const group = groupId(key);
+    if (!sections.has(group)) {
+      const node = element("section");
+      node.append(element("h3", groupTitles[group] ?? "その他の設定"));
+      sections.set(group, node);
+      nodes.push(node);
+    }
+    const target = sections.get(group);
+    const prior = old.get(key);
+    if (prior && key !== savedKey && editorFields(prior).some(field => field.value !== field.dataset.initialValue)) {
+      target.append(prior);
+    } else {
+      keyEditor(target, key, item, data, saveShared);
+    }
+  }
+  if (sections.size === 0) nodes.push(element("p", "共有設定はありません。"));
+  for (const [preset, values] of Object.entries(data.presets ?? {})) {
+    if (!Object.keys(values).length || !Object.keys(values).every(key => data.settings[key]?.shared)) continue;
+    const detail = element("details");
+    detail.append(element("summary", preset));
+    for (const [key, value] of Object.entries(values)) detail.append(element("p", `${key}: ${value}`));
+    const output = settingResult();
+    const actions = element("div", "", "form-actions");
+    actions.append(button("適用", () => saveShared({action: "preset", preset}, output)));
+    detail.append(actions, output);
+    nodes.push(detail);
+  }
+  for (const [name, peer] of Object.entries(data.comparison ?? {})) {
+    const common = Object.keys(data.settings).filter(key => sameSharedSetting(peer, key));
+    const summary = peer.state === "pending" ? "未取得" : peer.state === "error" ? "取得失敗" :
+      common.length === 0 ? "共有設定の一致を確認できません" :
+      common.some(key => data.settings[key].saved !== peer.settings[key].saved) ? "値が異なります（同期の遅れの可能性）" :
+      "同じ共有設定を使用";
+    note.append(element("span", ` · ${name}: ${summary}`));
+  }
+  shared.replaceChildren(...nodes);
+}
+
+function renderComparison(data) {
+  const hosts = [ ["", {state: "ready", ...localData}], ...Object.entries(data.comparison ?? localData?.comparison ?? {}) ];
+  const table = element("table");
+  const headers = table.createTHead().insertRow();
+  const label = element("th", "設定");
+  label.scope = "col";
+  headers.append(label);
+  for (const [name, info] of hosts) {
+    const header = element("th");
+    header.scope = "col";
+    header.append(button(name || "ローカル", () => selectHost(name)));
+    if (info.state === "pending" || info.state === "error") {
+      header.append(element("p", info.state === "pending" ? "未取得" : "取得失敗"),
+        button("再取得", () => loadHost(true, true)));
+    } else if (info.state === "legacy") header.append(element("p", "旧版のため自動取得なし"));
+    headers.append(header);
+  }
+  const body = table.createTBody();
+  for (const key of new Set(hosts.flatMap(([, value]) => Object.keys(value.settings ?? {})))) {
+    const values = hosts.map(([name, info]) => {
+      if (name ? sameSharedSetting(info, key) : info.settings?.[key]?.shared) return null;
+      return info.settings?.[key]?.saved ?? null;
+    });
+    if (values.every(value => value == null)) continue;
+    const row = body.insertRow();
+    const heading = element("th", key);
+    heading.scope = "row";
+    row.append(heading);
+    for (const value of values) {
+      const cell = row.insertCell();
+      cell.textContent = value == null ? "—" : String(value);
+      if (value != null && value !== values[0]) cell.className = "settings-different";
+    }
+  }
+  comparison.replaceChildren(table);
+}
+
+function filterSettings() {
+  const needle = search.value.trim().toLowerCase();
+  let count = 0;
+  for (const root of [shared, content]) {
+    for (const editor of root.querySelectorAll("[data-setting]")) {
+      const text = editor.querySelector("div")?.textContent ?? editor.dataset.setting;
+      editor.hidden = !!needle && !text.toLowerCase().includes(needle);
+      if (!editor.hidden) count++;
+    }
+    for (const group of root.querySelectorAll("section")) {
+      if (needle) group.hidden = !group.querySelector("[data-setting]:not([hidden])");
+      else if (root === shared) group.hidden = false;
+    }
+  }
+  if (!needle) showGroup();
+  document.getElementById("settings-search-clear").hidden = !needle;
+  document.getElementById("settings-no-matches").hidden = !needle || count > 0;
+}
+
+function updateUnsaved() {
+  const list = document.getElementById("settings-unsaved");
+  const drafts = [...shared.querySelectorAll("[data-editor]"), ...content.querySelectorAll("[data-editor]")]
+    .filter(editor => editorFields(editor).some(input => input.value !== input.dataset.initialValue));
+  const other = [...hostDrafts.entries()].filter(([name]) => name !== host).flatMap(([name, {editors}]) =>
+    [...editors].filter(([, draft]) => draft.values.some(Boolean)).map(([slot]) => [name, slot]));
+  const count = drafts.length + other.length;
+  list.replaceChildren();
+  if (!count) return;
+  list.append(element("p", `未保存の変更: ${count}件`));
+  for (const editor of drafts) list.append(button(editor.dataset.editor, () => {
+    const group = editor.closest("section[id^=settings-group-]");
+    if (group) activeGroup = group.id.replace("settings-group-", "");
+    search.value = "";
+    filterSettings();
+    if (editor.tagName === "DETAILS") editor.open = true;
+    editorFields(editor)[0]?.focus();
+  }));
+  for (const [name, slot] of other) list.append(button(`${name || "ローカル"}: ${slot}`, () => selectHost(name)));
+  list.append(button("未保存の変更を取り消す", () => {
+    for (const editor of drafts) for (const input of editorFields(editor)) input.value = input.dataset.initialValue;
+    hostDrafts.clear();
+    updateUnsaved();
+  }));
+}
+
+search.addEventListener("input", filterSettings);
+document.getElementById("settings-search-clear").addEventListener("click", () => {
+  search.value = "";
+  filterSettings();
+  search.focus();
+});
+for (const root of [shared, content]) root.addEventListener("input", updateUnsaved);
+window.addEventListener("beforeunload", event => {
+  if (!document.getElementById("settings-unsaved").hasChildNodes()) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+document.addEventListener("click", event => {
+  if (document.body.dataset.screen !== "settings" || !document.getElementById("settings-unsaved").hasChildNodes()) return;
+  const link = event.target.closest("nav.app-nav a[href]");
+  if (link && new URL(link.href).pathname !== location.pathname && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey &&
+      !window.confirm("未保存の設定があります。この画面を離れますか？")) event.preventDefault();
+}, true);
+
 function render(data) {
   displayedData = data;
+  if (!host) { localData = data; renderShared(); }
+  renderComparison(data);
   const root = document.createDocumentFragment();
   const groups = {
     models: section(root, "工程別モデル", "claude-code-models.md#工程別モデル設定"),
@@ -368,9 +561,8 @@ function render(data) {
   const settings = Object.entries(data.settings).sort(([left], [right]) =>
     Number(right === "remote_hosts") - Number(left === "remote_hosts"));
   for (const [key, item] of settings) {
-    const group = key.endsWith("_model") ? groups.models : (key.startsWith("serve_") || key === "remote_hosts") ? groups.serve :
-      key === "repositories" ? groups.repos : /usage|reset/.test(key) ? groups.usage :
-      /connections|provider|env_file/.test(key) ? groups.connections : groups.other;
+    if ((!host && item.shared) || (host && sameSharedSetting(data, key))) continue;
+    const group = groups[groupId(key)];
     if (key !== "repositories" || !data.repositories) keyEditor(group, key, item, data);
   }
   for (const [key, value] of Object.entries(data.paths)) groups.other.append(element("p", `${key}: ${value}`));
@@ -391,13 +583,16 @@ function render(data) {
     item.dataset.editor = `preset:${preset}`;
     item.append(element("summary", preset));
     if (Object.keys(values).some(name => !data.settings[name] || data.settings[name].read_only)) continue;
+    if (Object.keys(values).every(name => host ? sameSharedSetting(data, name) : data.settings[name].shared)) continue;
     const sharedSetting = Object.keys(values).find(name => data.settings[name].shared);
     if (sharedSetting) item.append(element("p", sharedScope(data.settings[sharedSetting].shared_sync)));
     for (const [name, presetValue] of Object.entries(values)) {
       item.append(element("p", `${name}: 現在 ${data.settings[name].effective} → 保存 ${presetValue}`));
     }
     const output = settingResult();
-    item.append(button("適用", () => operate({action: "preset", preset}, output)), output);
+    const actions = element("div", "", "form-actions");
+    actions.append(button("適用", () => operate({action: "preset", preset}, output)));
+    item.append(actions, output);
     presets.append(item);
   }
   navigation.replaceChildren();
@@ -420,6 +615,7 @@ function render(data) {
   const options = [new Option("ローカル", ""), ...(data.hosts ?? []).map(name => new Option(name, name))];
   hostPicker.replaceChildren(...options);
   hostPicker.value = host;
+  filterSettings();
   updateWriteControls();
 }
 
@@ -478,11 +674,11 @@ function setWriteUnavailable(control, unavailable) {
 }
 
 function updateWriteControls() {
-  for (const control of content.querySelectorAll("button:not([data-conflict-action], [data-local-edit])")) {
+  for (const control of [...content.querySelectorAll("button:not([data-conflict-action], [data-local-edit])"), ...shared.querySelectorAll("button")]) {
     const editor = control.closest("[data-editor]");
     if (!editor) continue;
     const setting = control.closest("[data-setting]") || editor;
-    const blocked = busy || loading || conflicts.has(setting.dataset.editor);
+    const blocked = busy || (!shared.contains(control) && (loading || conflicts.has(setting.dataset.editor)));
     if (blocked) {
       control.dataset.writeBlocked = "";
       const reason = busy || loading ? "settings-status" : setting.querySelector("[data-conflict]")?.id;
@@ -507,6 +703,7 @@ function resolveConflict(slot, keepDraft) {
     render(displayedData);
     restoreEditors(drafts);
     renderConflicts();
+    updateUnsaved();
   } else {
     content.querySelector(`[data-editor="${CSS.escape(slot)}"] [data-conflict]`)?.remove();
     updateWriteControls();
@@ -548,7 +745,13 @@ async function loadHost(background = false, retry = false) {
     const displayedHost = host;
     const savedDrafts = hostDrafts.get(displayedHost);
     const editingSnapshot = displayedData ?? savedDrafts?.snapshot;
-    const initial = await request(undefined, !background && Boolean(host) && !displayedData, background, retry);
+    if (background && displayedHost) {
+      const local = await request(undefined, false, true, retry, "");
+      if (generation !== loadGeneration) return;
+      localData = local;
+      renderShared();
+    }
+    const initial = await request(undefined, !background && Boolean(host) && !displayedData, background, retry && !displayedHost);
     if (generation !== loadGeneration) return;
     const focus = rememberSettingFocus(document.activeElement);
     const scroll = content.closest("main");
@@ -583,6 +786,7 @@ async function loadHost(background = false, retry = false) {
     render(rendered);
     restoreEditors(drafts);
     renderConflicts();
+    updateUnsaved();
     scroll.scrollTop = scrollTop;
     restoreSettingFocus(focus);
     loading = false;
@@ -630,6 +834,7 @@ function selectHost(selected) {
   conflicts.clear();
   navigation.replaceChildren();
   content.replaceChildren();
+  updateUnsaved();
   void loadHost();
 }
 

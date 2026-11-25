@@ -185,6 +185,26 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
     unsupported: set[str] = set()
     errors: dict[str, str] = {}
 
+    def comparison(hosts: tuple[str, ...]) -> dict[str, typing.Any]:
+        return {
+            name: {
+                "state": "legacy"
+                if name in unsupported
+                else "error"
+                if name in errors
+                else "ready"
+                if name in snapshots
+                else "pending",
+                "shared_identity": snapshots.get(name, {}).get("shared_identity"),
+                "settings": {
+                    key: {field: item.get(field) for field in ("saved", "shared", "migration_pending")}
+                    for key, item in snapshots.get(name, {}).get("settings", {}).items()
+                    if isinstance(item, dict)
+                },
+            }
+            for name in hosts
+        }
+
     async def refresh_remote(host: str) -> None:
         async with locks.setdefault(host, asyncio.Lock()):
             try:
@@ -279,6 +299,7 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                         "hosts": hosts,
                         "automatic_errors": {key: errors[key] for key in hosts if key in errors},
                         "automatic_unsupported": sorted(unsupported.intersection(hosts)),
+                        "comparison": comparison(hosts),
                     }
                 )
         except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:

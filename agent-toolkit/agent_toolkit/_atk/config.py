@@ -51,6 +51,7 @@ from agent_toolkit._common import state_paths as _state_paths
 lazy from agent_toolkit._atk import git_sync
 lazy from agent_toolkit._atk.wi import sync as wi_sync
 lazy from agent_toolkit._git import command as git_command
+lazy from agent_toolkit._git import remote as git_remote
 
 __all__ = [
     "CONNECTION_KINDS",
@@ -353,6 +354,34 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
         _outcome.report_warning(message, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
 
 
+def _shared_settings_identity(path: pathlib.Path) -> str | None:
+    directory = path.parent
+    branch = git_command.optional_stdout(["symbolic-ref", "-q", "HEAD"], directory)
+    if not branch:
+        return None
+    upstream = git_command.optional_stdout(
+        ["for-each-ref", "--format=%(upstream:remotename)%00%(upstream:remoteref)", branch.strip()], directory
+    )
+    if not upstream:
+        return None
+    remote, _, ref = upstream.rstrip("\n").partition("\0")
+    if not remote or remote == "." or not ref:
+        return None
+    url = git_command.optional_stdout(["remote", "get-url", "--push", "--", remote], directory)
+    if not url:
+        return None
+    try:
+        location = git_remote.parse_remote_location(url)
+    except ValueError:
+        return None
+    if not location.hostname or location.protocol not in (None, "http", "https", "ssh"):
+        return None
+    default_port = {None: 22, "ssh": 22, "http": 80, "https": 443}[location.protocol]
+    endpoint = None if location.port in (None, default_port) else (location.protocol, location.port)
+    identity = (location.hostname.lower(), endpoint, location.project_path, ref, path.name)
+    return hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+
+
 def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[str, Any]:
     effective = resolved_settings(home, read_only=read_only)
     saved = _config_settings.load_config()
@@ -375,6 +404,7 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
             "source": source,
             "shared": shared_key,
             "shared_sync": shared_key and shared_sync,
+            "migration_pending": migration_pending,
             "description": description,
             "format": _config_settings.setting_format(key),
             "choices": _config_settings.SETTING_CHOICES.get(key),
@@ -389,6 +419,7 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
     return {
         "settings": settings,
+        "shared_identity": _shared_settings_identity(shared_path) if shared_path is not None and shared_sync else None,
         "paths": effective,
         "presets": _config_settings.PRESET_MODELS,
         "temporary": {"values": temporary, "until": state.get("until")},

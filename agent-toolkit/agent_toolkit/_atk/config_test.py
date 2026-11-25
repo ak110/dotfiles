@@ -560,3 +560,19 @@ def test_migration_revision_includes_fallback_for_missing_shared_key(tmp_path, m
     assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"], "--keep-shared", "execute_model") == 2
     assert "比較後に" in capsys.readouterr().err
     assert _saved(tmp_path) == original
+
+
+def test_shared_identity_uses_remote_and_upstream_branch_without_exposing_credentials(tmp_path, monkeypatch):
+    commands = {
+        "symbolic-ref": "refs/heads/current",
+        "for-each-ref": "upstream\0refs/heads/first",
+        "remote": "https://fixture-credential@example.org/owner/notes.git",
+    }
+    monkeypatch.setattr(config_module.git_command, "optional_stdout", lambda args, _directory: commands[args[0]])
+    path = tmp_path / "atk-config.json"
+    identity = config_module._shared_settings_identity(path)
+    assert identity is not None and len(identity) == 64 and "fixture-credential" not in identity
+    commands["remote"] = "git@example.org:owner/notes.git"
+    assert config_module._shared_settings_identity(path) == identity
+    commands["for-each-ref"] = "upstream\0refs/heads/second"
+    assert config_module._shared_settings_identity(path) != identity
