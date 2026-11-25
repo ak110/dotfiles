@@ -541,7 +541,9 @@ def main(
         if since is not None and boundary is not None and boundary < since:
             return _print_error("観測境界は開始境界以後を指定する", next_action=_BOUNDARY_NEXT_ACTION)
         deliveries = delivery_events(collected, since=since, boundary=boundary)
-        events.extend(event for event in deliveries if event["kind"] == "delivery-repost-candidate")
+        events.extend(
+            event for event in deliveries if event["kind"] in {"delivery-repost-candidate", "post-delivery-long-text-candidate"}
+        )
         events.append(delivery_summary(deliveries, since=since, boundary=boundary))
         events.extend(_unresolved_events(unresolved))
     if args.warn:

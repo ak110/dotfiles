@@ -74,9 +74,9 @@ import re
 lazy import dataclasses
 
 lazy from agent_toolkit._atk.config_settings import APPLY_PRESET_SHOW, CONNECTION_ORDER_KEYS, MODEL_DEFAULTS
+lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
-lazy from agent_toolkit._common import delegated_session
-lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._common import delegated_session, send_to_user
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
 lazy from agent_toolkit._common.session_state import read_state
@@ -259,7 +259,9 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
                     "未取得の退避出力を根拠にした報告",
                 )
             )
-        if playbook := missing_completion_before_report(payload, session_id, message):
+        if not send_to_user.from_repl(payload.get("tool_use_id")) and (
+            playbook := missing_completion_before_report(payload, session_id, message, tool_input.get("kind"))
+        ):
             found.append(
                 (
                     "作業完了報告の手順書の取得を確認できないまま、完了報告を送る操作である。",
@@ -273,6 +275,34 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
         _notice.record_skipped(session_id, actor, label)
         notices.append(_llm_notice(body, tag="warn", fix=fix, removable_cause=True, escalate_on_repeat=False))
     return [text for text in notices if text]
+
+
+def _send_understanding_block(message: object) -> str | None:
+    if isinstance(message, str) and user_facing_checks.has_original_text_label_in_understanding(message):
+        return _block_notice(
+            "「発話の理解」に「原文」の見出しがある。",
+            fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送してください。",
+        )
+    if isinstance(message, str) and user_facing_checks.missing_alternative(message):
+        return _block_notice(
+            "「発話の理解」に「別案」の項目がない。",
+            fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
+        )
+    return None
+
+
+def _retry_send(
+    payload: dict, tool_name: str, tool_input: dict, session_id: str, reason: str, *, edit_body: bool = True
+) -> Decision:
+    guidance = resend_guidance(
+        session_id,
+        tool_input.get("message"),
+        tool_name=tool_name,
+        tool_use_id=payload.get("tool_use_id"),
+        kind=tool_input.get("kind"),
+        edit_body=edit_body,
+    )
+    return Decision(block=f"{reason}\n\n{guidance}")
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
@@ -294,12 +324,13 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             actor=_agent_id.resolve_hook_agent_id(payload),
         )
     ):
-        return Decision(
-            block=_block_notice(
-                f"決定の原文と適用範囲を見直すため、まだ送信していない。\n\n{reminder}",
-                fix="今回の対象と除外を確かめ、必要なら本文を直して再送してください。",
-            )
+        reason = _block_notice(
+            f"決定の原文と適用範囲を見直すため、まだ送信していない。\n\n{reminder}",
+            fix="今回の対象と除外を確かめ、必要なら本文を直して再送してください。",
         )
+        if isinstance(reason, str) and is_send_to_user_tool(tool_name):
+            return _retry_send(payload, tool_name, tool_input, session_id, reason)
+        return Decision(block=reason)
     question_tool = "request_user_input" if is_codex else "AskUserQuestion"
     if tool_name == question_tool and _agent_id.is_main_agent_context(payload):
         if user_facing_checks.policy_approval_form_invalid(tool_input):
@@ -350,51 +381,41 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             return Decision(block=_block_notice(invalid_plan, fix="指摘を直し、同じ計画を提示してください。"))
     if tool_name in user_facing_checks.USER_FACING_TEXT_TOOL_NAMES:
         return user_facing_checks.decide_user_facing_text_tool(payload, tool_name, tool_input)
+    send_warnings: list[str] = []
     if is_send_to_user_tool(tool_name):
         from agent_toolkit._hooks.agents_server_session_advisor import outstanding_before_completion  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
 
         message = tool_input.get("message")
-        if isinstance(message, str) and user_facing_checks.has_original_text_label_in_understanding(message):
-            return Decision(
-                block=_block_notice(
-                    "「発話の理解」に「原文」の見出しがある。",
-                    fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送してください。",
-                )
-            )
-        if isinstance(message, str) and user_facing_checks.missing_alternative(message):
-            return Decision(
-                block=_block_notice(
-                    "「発話の理解」に「別案」の項目がない。",
-                    fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
-                )
-            )
-        if (
-            session_id
-            and isinstance(message, str)
-            and message.lstrip().partition("\n")[0].strip() == "## 作業完了報告"
-            and (pending := outstanding_before_completion(session_id, _agent_id.resolve_hook_agent_id(payload)))
-        ):
-            return Decision(
-                block=_block_notice(
+        kind = tool_input.get("kind")
+        reason = _send_understanding_block(message)
+        edit_body = True
+        if reason is None and session_id and send_to_user.is_completion(message, kind):
+            if pending := outstanding_before_completion(session_id, _agent_id.resolve_hook_agent_id(payload)):
+                reason = _block_notice(
                     f"完了報告の前に委譲先の結果と続行を確認してください。{pending}",
                     fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返してください。",
                 )
+            elif send_to_user.from_repl(payload.get("tool_use_id")) and (
+                playbook := missing_completion_before_report(payload, session_id, message, kind)
+            ):
+                reason = _block_notice(
+                    "完了報告の手順書を読んだ証拠がないため、まだ表示していない。",
+                    fix=f"`Read`で`{playbook}`を全文読む。Bashの全文表示でも可。`file(...).text()`は証拠にならない。",
+                )
+            edit_body = reason is None
+        if reason is None:
+            reason = bugfix_gate.send_block(payload, message, kind=kind, warnings=send_warnings) or (
+                norm_excuse_gate.text_block(payload, message, "ユーザーへの送達")
             )
-    if (
-        tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX)
-        and (bugfix_block := bugfix_gate.send_block(payload, tool_input.get("message"))) is not None
-    ):
-        return Decision(block=bugfix_block)
-    if tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX) and (
-        excuse_block := norm_excuse_gate.text_block(payload, tool_input.get("message"), "ユーザーへの送達")
-    ):
-        return Decision(block=excuse_block)
+        if reason is not None:
+            return _retry_send(payload, tool_name, tool_input, session_id, reason, edit_body=edit_body)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (
             clock_claims.warning([message], payload) if is_send_to_user_tool(tool_name) and isinstance(message, str) else None
         )
-        return Decision(allow=True, context=timing)
+        return Decision(allow=True, context=timing, notices=tuple(send_warnings))
     if tool_name == "Skill":
         return Decision()
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
@@ -425,7 +446,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return Decision(block=_check_task_stop(session_id, tool_input))
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-    notices: tuple[str, ...] = ()
+    notices = tuple(send_warnings)
     if record_warning := session_record_reference_warning(tool_name, tool_input, cwd):
         notices += (record_warning,)
     file_path = tool_input.get("file_path")

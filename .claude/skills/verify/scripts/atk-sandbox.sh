@@ -21,13 +21,32 @@ require_sandbox() {
     [[ "$1" == /* && -f "$1/sandbox.env" && -f "$1/evidence-dir" ]] || fail "setupで作った作業領域の絶対パスを指定する: $1"
 }
 
-isolated() {
-    local scratch="$1"
+isolated() (
+    local scratch="$1" home path setting
     shift
+    home="$(realpath -e -- "${scratch}")/home" || fail "作業領域の実体を解決できない: ${scratch}"
+    [[ "$(realpath -m -- "${home}")" == "${home}" ]] || fail "検証領域の外を指すHOME: ${home}"
+    for path in .claude .claude.json .claude/settings.json .claude/.credentials.json .claude/.last-update-result.json \
+        .config .cache .local/share .local/share/claude/versions .local/state .local/bin/claude; do
+        [[ "$(realpath -m -- "${home}/${path}")" == "${home}/"* ]] || fail "検証領域の外を指す保存先: ${home}/${path}"
+    done
     local -a variables
     mapfile -t variables <"${scratch}/sandbox.env"
-    (cd -- "${scratch}/work" && exec env -i "${variables[@]}" "$@")
-}
+    for setting in "${variables[@]}"; do
+        case "${setting}" in
+        HOME="${scratch}/home" | CLAUDE_CONFIG_DIR="${scratch}/home/.claude" | \
+            XDG_CONFIG_HOME="${scratch}/home/.config" | XDG_CACHE_HOME="${scratch}/home/.cache" | \
+            XDG_DATA_HOME="${scratch}/home/.local/share" | XDG_STATE_HOME="${scratch}/home/.local/state") ;;
+        HOME=* | CLAUDE_CONFIG_DIR=* | XDG_CONFIG_HOME=* | XDG_CACHE_HOME=* | XDG_DATA_HOME=* | XDG_STATE_HOME=*)
+            fail "検証領域と一致しない環境変数: ${setting%%=*}"
+            ;;
+        esac
+    done
+    cd -- "${scratch}/work" && exec env -i "${variables[@]}" \
+        HOME="${home}" CLAUDE_CONFIG_DIR="${home}/.claude" \
+        XDG_CONFIG_HOME="${home}/.config" XDG_CACHE_HOME="${home}/.cache" \
+        XDG_DATA_HOME="${home}/.local/share" XDG_STATE_HOME="${home}/.local/state" "$@"
+)
 
 setup() {
     local scratch="$1" evidence="$2"
@@ -42,6 +61,7 @@ setup() {
         printf 'PATH=%s\n' "${scratch}/bin:${PATH}"
         printf 'LANG=C.UTF-8\n'
         printf 'HOME=%s\n' "${scratch}/home"
+        printf 'CLAUDE_CONFIG_DIR=%s\n' "${scratch}/home/.claude"
         printf 'XDG_CONFIG_HOME=%s\n' "${scratch}/home/.config"
         printf 'XDG_CACHE_HOME=%s\n' "${scratch}/home/.cache"
         printf 'XDG_DATA_HOME=%s\n' "${scratch}/home/.local/share"
@@ -89,7 +109,9 @@ record() {
 }
 
 remaining_sandbox_processes() {
-    grep -lzxsF -- "HOME=$1/home" /proc/[0-9]*/environ || true
+    local scratch
+    scratch="$(realpath -e -- "$1")"
+    grep -lzxsF -- "HOME=${scratch}/home" /proc/[0-9]*/environ || true
 }
 
 run() {

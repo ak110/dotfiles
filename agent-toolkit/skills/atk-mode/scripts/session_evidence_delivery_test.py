@@ -244,7 +244,7 @@ def test_bundle_reuses_timeline_without_similarity_scan(
     def reject_unused_scan(*_args: Any, **_kwargs: Any) -> Any:
         pytest.fail("通常bundleでは送達集計の再抽出・4-gram比較を実行しない")
 
-    monkeypatch.setattr(delivery, "_extract_records", reject_unused_scan)
+    monkeypatch.setattr(delivery, "_extract_claude", reject_unused_scan)
     monkeypatch.setattr(delivery, "_grams", reject_unused_scan)
     body = "送達後の終了本文" * 400
     path = tmp_path / "main.jsonl"
@@ -271,3 +271,56 @@ def test_bundle_excludes_sidechain_long_candidate(tmp_path: Path, capsys: pytest
     capsys.readouterr()
     candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
     assert not any(event.get("candidate_kind") == "post-delivery-long-text" for event in candidates)
+
+
+def test_new_delivery_candidate_requires_success_and_counts_once(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = tmp_path / "main.jsonl"
+    report = "".join(chr(0x4E00 + index) for index in range(80))
+    paraphrase = "The report was completed successfully. " * 7
+    human = {"type": "user", "message": {"role": "user", "content": "次の依頼"}}
+
+    def result(call: str, *, failed: bool = False) -> dict[str, Any]:
+        return {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": call, "is_error": failed, "content": "結果"},
+                ],
+            },
+        }
+
+    _write(
+        path,
+        [
+            _send(report, "success"),
+            result("success"),
+            _text("…"),
+            _text(paraphrase[:200]),
+            _text(paraphrase),
+            _text(paraphrase),
+            human,
+            _send(report, "failed"),
+            result("failed", failed=True),
+            _text(paraphrase),
+            human,
+            _send(report, "missing"),
+            _text(paraphrase),
+            human,
+            _send(report, "after-boundary"),
+            result("after-boundary"),
+            human,
+            _text(paraphrase),
+        ],
+    )
+    assert evidence.main([str(path), "--delivery-reposts"]) == 0
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    summary = next(event for event in events if event["kind"] == "delivery-repost-summary")
+    assert summary["delivery_count"] == 4
+    assert summary["candidate_count"] == 0 and summary["candidate_ratio"] == 0
+    candidates = [event for event in events if event["kind"] == "post-delivery-long-text-candidate"]
+    assert [(event["delivery_line"], event["line"]) for event in candidates] == [(1, 5)]
+    metric = summary["post_delivery_long_text"]
+    assert metric["successful_delivery_count"] == 2
+    assert metric["candidate_count"] == 1 and metric["candidate_ratio"] == 0.5
+    assert metric["excluded_failed_count"] == metric["excluded_missing_result_count"] == 1

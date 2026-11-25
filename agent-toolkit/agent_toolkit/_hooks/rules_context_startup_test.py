@@ -202,6 +202,7 @@ def test_startup_input_is_delivered_only_to_main(source, host, actor, monkeypatc
         assert "playbooks/report-completion.md" in contract and "answer-transitions" not in contract
         guidance = contract.splitlines()[0]
         assert ("`Read`" in guidance) == (host == "claude")
+        assert ("`Bash`" in guidance) == (host == "claude")
         assert ("全文" in guidance) == (host == "claude")
         assert ("`/atk-mode report-completion`" in guidance) == (host == "claude")
     else:

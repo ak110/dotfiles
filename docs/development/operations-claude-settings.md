@@ -17,6 +17,7 @@ armedされた場合も、端末フォーカスが`focused`の間は自動継続
 この事象はこの条件によると推定している（herdrがfocus-inを報告することは観測していない）。
 2026年11月10日のユーザー回答に従い、process-loopのClaude統括も`AskUserQuestion`を使える。
 フォーカスによる待機延長はユーザーが離席時のペイン状態に気を付けて対処し、質問を拒否してUWIへ固定するhookは撤去した。
+Claude Code 2.1.331で`askUserQuestionTimeout`を`never`にしても、REPL経由の質問は2時間後に`REPL execution exceeded its wall-clock limit`で中断した。
 `dialogExpiry`は対話TUIが描画する`AskUserQuestion`を対象にしない。
 `dialogExpiry`が未設定の場合の値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3箇所だけであり、`AskUserQuestion`の転送はいずれにも該当しない。
 このため`atk wi process-loop`のClaude起動は`--settings`へ`remoteControlAtStartup`の偽を渡し、常駐実行のセッションでbridgeを接続しない。

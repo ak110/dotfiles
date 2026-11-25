@@ -68,6 +68,8 @@ from agent_toolkit._common import (
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.send_to_user import CLAUDE_TOOL_NAME
+lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common.operation_approvals import request_display
 
@@ -113,9 +115,6 @@ _UI_UNAVAILABLE_NEXT_ACTIONS: dict[str, dict[str, str]] = {
 }
 
 
-_SEND_TO_USER_RESEND_NEXT_ACTION = "本文は表示されていない。拒否理由が示す行を本文へ補い、同じ報告をsend_to_userで送り直す"
-
-
 async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
@@ -128,7 +127,14 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
         return await function_hook_requests.request(identifier, operation, inputs)
     except function_hook_requests.HookRequestRejected as error:
         if operation == "send_to_user" and error.resend:
-            next_action = _SEND_TO_USER_RESEND_NEXT_ACTION
+            next_action = await run_file_operation(
+                resend_guidance,
+                identifier,
+                inputs.get("message"),
+                tool_name=CLAUDE_TOOL_NAME,
+                tool_use_id=inputs.get("tool_use_id"),
+                kind=inputs.get("kind"),
+            )
         elif operation == "send_to_user":
             next_action = _UI_UNAVAILABLE_NEXT_ACTIONS[operation]["claude"]
         elif operation == "apply_runtime_changes":
@@ -773,13 +779,23 @@ async def show_session(
 @mcp.tool(name="send_to_user", title="ユーザー画面への本文表示", annotations=ToolAnnotations(destructive_hint=False))
 async def send_to_user(
     message: Annotated[str, Field(description="画面へそのまま表示する日本語のMarkdown本文")],
+    kind: Annotated[str | None, Field(description="最終の完了報告では completion。途中の報告では省略する")] = None,
 ) -> dict[str, Any]:
     """メイン専用。会話内modが表示を確認した場合だけ成功を返す。表示後の本文は再掲しない。"""
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
+    tool_use_id = _TOOL_USE_ID.get()
     if response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN:
-        raise ValueError("本文を日本語で書き直すまで画面へ表示していない。")
+        action = await run_file_operation(
+            resend_guidance,
+            _manager().launcher_session_id(),
+            message,
+            tool_name=CLAUDE_TOOL_NAME,
+            tool_use_id=tool_use_id,
+            kind=kind,
+        )
+        raise ActionableError("本文を日本語で書き直すまで画面へ表示していない。", next_action=action)
     try:
         guidance = ""
         if runtime_inserted.reported_improvement_lines(message):
@@ -806,8 +822,12 @@ async def send_to_user(
             "報告した逸脱は`agent-basics:bugfix`を起動して診断と是正を行う。"
         )
 
-    tool_use_id = _TOOL_USE_ID.get()
-    result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})
+    inputs: dict[str, Any] = {"message": message}
+    if kind is not None:
+        inputs["kind"] = kind
+    if tool_use_id:
+        inputs["tool_use_id"] = tool_use_id
+    result = await _ui_request("send_to_user", inputs)
     if guidance:
         result["guidance"] = guidance
     return result

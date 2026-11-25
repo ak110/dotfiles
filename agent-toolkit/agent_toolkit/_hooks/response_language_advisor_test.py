@@ -126,3 +126,60 @@ def test_stop_language_follows_user_delivery_path(tmp_path, monkeypatch, marker_
     payload["agent_id"] = "child"
     payload["last_assistant_message"] = "The work is complete."
     assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "missing", "previous-turn", "codex"])
+def test_language_notice_recommends_only_unsent_results(tmp_path, monkeypatch, outcome):
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    records = [
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "send-1",
+                        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                        "input": {"message": "作業が完了した。"},
+                    }
+                ],
+            },
+        },
+    ]
+    if outcome != "missing":
+        records.append(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "send-1",
+                            "is_error": outcome == "failure",
+                        }
+                    ],
+                },
+            }
+        )
+    if outcome == "previous-turn":
+        records.append(
+            {"type": "user", "origin": {"kind": "human"}, "message": {"role": "user", "content": "新しい依頼です。"}}
+        )
+    path = tmp_path / "transcript.jsonl"
+    path.write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
+    payload = {
+        "session_id": "delivered-language",
+        "transcript_path": str(path),
+        "last_assistant_message": "The work is complete.",
+        **({"turn_id": "codex-turn"} if outcome == "codex" else {}),
+    }
+    decision, reason = response_language_advisor.evaluate(json.dumps(payload))
+    assert decision == "block"
+    if outcome == "success":
+        assert all(value in reason for value in ("送達済み", "`…` だけ", "新しい結果", "`send_to_user`"))
+        assert "日本語で書き直して" not in reason and "そのまま再出力" not in reason
+    else:
+        assert "日本語で書き直して" in reason and "そのまま再出力" in reason
