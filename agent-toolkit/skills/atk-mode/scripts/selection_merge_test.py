@@ -98,10 +98,11 @@ def test_public_merge_reads_judgments_and_mapping_from_stdin(inputs, tmp_path, c
     data.pop("見込みの補正")
     data["レーン対応"] = {"lane-03": "lane-01", "lane-04": "lane-02"}
     candidates = tmp_path / "existing-candidates.jsonl"
+    data["除外候補"] = ["見送り.md"]
+    records = [{"filename": item["WI"], "staleness": item.pop("鮮度"), "state": "processing"} for item in data["選定"]]
+    records.append({"filename": "見送り.md", "staleness": {}, "state": "processing"})
     candidates.write_text(
-        "\n".join(
-            json.dumps({"filename": item["WI"], "staleness": item.pop("鮮度"), "state": "processing"}) for item in data["選定"]
-        ),
+        "\n".join(map(json.dumps, records)),
         encoding="utf-8",
     )
     output = tmp_path / "merged.yaml"

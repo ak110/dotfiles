@@ -431,10 +431,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--history", action="store_true", help="保存済み選定の履歴を表示する。実行配分の成立判定や更新と併用しない"
     )
-    parser.add_argument("--merge", type=pathlib.Path, metavar="PATH|-", help="追加選定YAMLのパス。-は標準入力の意味判断")
-    parser.add_argument(
-        "--extend-write-targets", type=pathlib.Path, metavar="PATH|-", help="書込対象の追加入力YAML。-は標準入力"
-    )
+    parser.add_argument("--merge", type=pathlib.Path, metavar="PATH", help="追加選定YAMLのパス。-は標準入力の意味判断")
+    parser.add_argument("--extend-write-targets", type=pathlib.Path, metavar="PATH", help="書込対象の追加入力YAML。-は標準入力")
     parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
     parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した選定結果の保存先")
     parser.add_argument("--require-integrated", action="store_true", help="公開前に全レーンの統合完了を読み取り専用で確認する")

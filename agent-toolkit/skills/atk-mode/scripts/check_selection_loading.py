@@ -185,21 +185,25 @@ def load_inline_addition(
                 "--with-staleness",
                 "--skip-pull",
                 "--status=processable",
+                "--target-branch=auto",
                 "--target-repo",
                 str(work_dir),
             ],
             env=environment,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if result.returncode:
             raise ValueError(f"追加WIの候補を取得できない（終了コード{result.returncode}）: {result.stderr.strip()}")
         candidates = [json.loads(line) for line in split_lines(result.stdout) if line.strip()]
+        excluded = decisions.get("除外候補", [])
+        relevant = names + excluded if isinstance(excluded, list) else names
+        candidates = [candidate for candidate in candidates if candidate.get("filename") in relevant]
     else:
         candidates = _candidate_records(candidate_file)
-    selected = [candidate for candidate in candidates if isinstance(candidate, dict) and candidate.get("filename") in names]
-    return _generate_selection(decisions, selected, additional=True), mapping
+    return _generate_selection(decisions, candidates, additional=True), mapping
 
 
 def load_selection(

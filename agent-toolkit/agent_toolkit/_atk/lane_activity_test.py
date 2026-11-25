@@ -33,6 +33,7 @@ def test_agent_lane_create_returns_handoff_without_copying_large_history(
     record = pathlib.Path(first["record_path"])
     stored = json.loads(record.read_text(encoding="utf-8"))
     stored["previous_integration"] = {"phase": "finalized", "verification_output": "計測記録" * 8000}
+    stored["procedure_results"] = {"prepare": {"record_path": "prepare.json", "stdout_path": "stdout", "stderr_path": "stderr"}}
     record.write_text(json.dumps(stored), encoding="utf-8")
     monkeypatch.setattr(lane, "is_agent_environment", lambda: True)
 
@@ -41,6 +42,8 @@ def test_agent_lane_create_returns_handoff_without_copying_large_history(
     assert result["record_path"] == str(record)
     assert result["worktree"] == first["worktree"]
     assert result["initial_head"] == first["initial_head"]
+    assert result["base_branch"] == first["base_branch"]
+    assert result["prepare"] == stored["procedure_results"]["prepare"]
     assert result["ready"] and result["reused"]
     assert len(json.dumps(result).encode()) < 4096
     assert json.loads(record.read_text(encoding="utf-8"))["previous_integration"] == stored["previous_integration"]

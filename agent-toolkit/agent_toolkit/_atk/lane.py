@@ -170,10 +170,12 @@ def dispatch(args: argparse.Namespace) -> int:
                     _lane_records.save(pathlib.Path(result["result_path"]), result)
         shown = result
         if args.lane_subcommand == "create" and is_agent_environment():
-            shown = {
-                key: result[key]
-                for key in ("session_id", "lane", "record_path", "worktree", "branch", "initial_head", "ready", "reused")
-            }
+            keys = ("session_id", "lane", "record_path", "worktree", "branch", "base_branch", "initial_head", "ready", "reused")
+            shown = {key: result[key] for key in keys}
+            prepare = result.get("procedure_results", {}).get("prepare")
+            if prepare:
+                path_keys = ("record_path", "stdout_path", "stderr_path")
+                shown["prepare"] = {key: prepare[key] for key in path_keys if key in prepare}
         print(json.dumps(shown, ensure_ascii=False))
         if result.get("target_advanced"):
             outcome.report_warning(

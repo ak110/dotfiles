@@ -64,7 +64,7 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
         return None
     reason, fix, rows = found
     if rows is not None:
-        recipient = f"publication:{actor}"
+        recipient = actor
         reason, snapshot = notice.new_wi_preview(session_id, recipient, rows)
         reason = reason.replace("処理可能な新着WI:", "公開前に判定を要する新着WI:", 1)
         notice.stage_new_wi_preview(reason, session_id, recipient, snapshot)
