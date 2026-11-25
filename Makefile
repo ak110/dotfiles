@@ -46,8 +46,23 @@ update-actions:
 # 開発環境のセットアップ
 setup: check-worktree-venv
 	mise run bootstrap
+	$(MAKE) install-plugin-version-hook
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり。mise install chezmoiで導入してください。"
+
+# prekは複数refのpushで最初のrefしか検査しないため、Gitの入力を直接読む。
+install-plugin-version-hook:
+	@set -eu; \
+	hook="$$(git rev-parse --git-path hooks/pre-push)"; \
+	if test -e "$$hook" || test -L "$$hook"; then \
+	    test -f "$$hook" && test ! -L "$$hook" && \
+	        printf '%s\n' '#!/bin/sh' 'exec uv run --frozen python scripts/check_plugin_version.py --pre-push' | cmp -s - "$$hook" || \
+	        { echo "既存のpre-pushを保持しました: $$hook。版数検査を既存のフックへ統合してください。" >&2; exit 1; }; \
+	else \
+	    mkdir -p "$$(dirname "$$hook")"; \
+	    (set -C; printf '%s\n' '#!/bin/sh' 'exec uv run --frozen python scripts/check_plugin_version.py --pre-push' > "$$hook"); \
+	    chmod +x "$$hook"; \
+	fi
 
 # ChromiumとLinuxのシステム依存を初期環境へ導入
 setup-browser: check-worktree-venv
@@ -118,4 +133,4 @@ test-browser: sync
 test-agents-live: sync
 	$(PYTEST_RUN) -m live_agents agent-toolkit/agent_toolkit/agents_server_live_test.py
 
-.PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh check-worktree-venv sync ci-deps-check format test test-browser test-agents-live
+.PHONY: help update update-mise-locks update-actions setup install-plugin-version-hook setup-browser setup-pwsh check-worktree-venv sync ci-deps-check format test test-browser test-agents-live
