@@ -60,7 +60,6 @@
   flex-shrink: 0;
   white-space: nowrap;
   padding: 0.2rem 0.5rem;
-  font-size: var(--font-size-secondary);
 }
 #screen-wi .entry-heading-meta {
   display: flex;
@@ -276,7 +275,7 @@
 #screen-wi .entry-meta { display: contents; }
 #screen-wi :is(.entry-meta, .status-cell) {
   color: var(--color-secondary-text);
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
   font-variant-numeric: tabular-nums;
 }
 #screen-wi .filename-cell { grid-area: 2 / 1; }
@@ -290,7 +289,7 @@
   overflow: hidden;
   white-space: nowrap;
 }
-#screen-wi .status-cell > .status-chip { font-size: 0.75rem; }
+#screen-wi .status-cell > .status-chip { font-size: var(--font-size-small); }
 #screen-wi .status-cell > .state-badge {
   flex-shrink: 0;
 }
@@ -301,6 +300,7 @@
   #screen-wi .entry-row { padding-inline-end: 0; }
   #screen-wi .entry-select {
     grid-template-columns: minmax(0, 1fr) fit-content(75%);
+    grid-template-rows: 1.25em auto;
     padding-inline: var(--space-1);
   }
   #screen-wi .summary-cell { grid-area: 1 / 1; }
@@ -308,6 +308,7 @@
   #screen-wi .entry-meta {
     grid-area: 2 / 1 / 3 / -1;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1);
   }

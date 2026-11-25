@@ -55,7 +55,7 @@
   border-color: var(--color-primary);
 }
 .pane-item-title {
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-base);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;

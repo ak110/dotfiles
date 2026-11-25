@@ -17,7 +17,7 @@
   border: 1px solid var(--color-border);
   border-radius: 6px;
   background: var(--color-warning-quiet);
-  font-size: calc(var(--font-size-base) * 0.95);
+  font-size: var(--font-size-base);
 }
 /* 区切り線は木構造の行が1本だけ持ち、行内の項目は下線を持たない。 */
 #screen-sessions .session-tree-row {
@@ -58,7 +58,7 @@
 }
 #screen-sessions .session-item .session-warning {
   color: var(--color-warning);
-  font-size: calc(var(--font-size-base) * 0.88);
+  font-size: var(--font-size-small);
 }
 #screen-sessions main {
   display: flex;
@@ -90,7 +90,7 @@
 }
 #screen-sessions .secondary-text {
   color: var(--color-secondary-text);
-  font-size: calc(var(--font-size-base) * 0.95);
+  font-size: var(--font-size-secondary);
 }
 
 /* 計画ファイル画面の本文と同じ最大幅と左右余白にそろえる。 */
@@ -125,7 +125,7 @@
   padding: 6px 10px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background);
-  font-size: calc(var(--font-size-base) * 0.95);
+  font-size: var(--font-size-base);
 }
 
 /* 左余白は`spawn_depth`に応じて描画側が設定する。 */
@@ -140,7 +140,7 @@
   border-bottom: 1px solid var(--color-border);
   background: transparent;
   text-align: left;
-  font-size: calc(var(--font-size-base) * 0.95);
+  font-size: var(--font-size-base);
 }
 #screen-sessions .subagent-item:last-child {
   border-bottom: none;
