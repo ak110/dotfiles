@@ -387,6 +387,9 @@ def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
         "繰り返し処理の進み具合を表示して。",
         "確認画面が何度も表示されるフローに、各回の進捗を追加して。",
         "以前も使った確認画面を今回の設定画面にも追加して。",
+        "研修では何度も入力を間違える操作を練習させたい。",
+        "故障試験では何度も壊して再発を確かめる。",
+        "前にも使った画面を再利用して。",
     ],
 )
 def test_public_add_accepts_steady_behavior_wording_without_recurrence_line(
@@ -404,3 +407,30 @@ def test_public_add_accepts_steady_behavior_wording_without_recurrence_line(
     )
     _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
     assert "成功:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "過去に指摘した問題の再発が多すぎる。",
+        "この問題過去に何度も指摘してるんだけど。",
+        "前にも言ったけど、また同じ間違いをしている。",
+    ],
+)
+def test_public_add_requires_recurrence_line_for_repeated_complaints(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    quote: str,
+) -> None:
+    """本人が過去の指摘の反復を述べた逐語引用には、`再発:`の行を求める。 pyfltr: allow-comment"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body = (
+        f"# 同じ指摘の反復を減らす\n\n説明\n\n## 反映内容と反映先\n対象\n\n## ユーザー指摘の逐語引用\n\n```text\n{quote}\n```\n"
+    )
+    with pytest.raises(SystemExit) as stopped:
+        _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert stopped.value.code != 0
+    assert "反復に触れているのに`再発:`の行が無い" in capsys.readouterr().err
