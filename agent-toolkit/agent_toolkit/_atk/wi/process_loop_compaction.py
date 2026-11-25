@@ -8,7 +8,14 @@ from collections.abc import Sequence
 import psutil
 
 from agent_toolkit._atk.wi import process_loop_env, process_loop_log
-from agent_toolkit._common import host_homes, next_action, session_activity, session_record_paths, session_registry
+from agent_toolkit._common import (
+    host_homes,
+    next_action,
+    process_tree,
+    session_activity,
+    session_record_paths,
+    session_registry,
+)
 
 # 予約を変更するコマンドのロック待ち上限より短くする。  # pyfltr: allow-comment
 TIMEOUT = 60
@@ -63,7 +70,7 @@ def compact_before_resume(
             path: path.stat().st_size for path in session_record_paths.find_claude_records(session_id, claude_home=config_dir)
         }
         with diagnostic.open("ab") as output:
-            result = subprocess.run(
+            result = process_tree.run_with_timeout(
                 [*argv, "-p", "--resume", session_id, "/compact"],
                 env=process_loop_env.compaction_env(env),
                 cwd=cwd,
