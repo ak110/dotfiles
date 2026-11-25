@@ -73,3 +73,21 @@ def test_live_agents_fixture_isolates_service_namespace(tmp_path: pathlib.Path) 
     assert any(mark.mark.name == "usefixtures" and "live_agents_environment" in mark.mark.args for mark in live.pytestmark)
     caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
     assert service_transport.namespace(caller).parent == tmp_path / "agents-state" / "agent-toolkit" / "services"
+
+
+@pytest.mark.parametrize(
+    ("mode", "status", "message", "accepted"),
+    [
+        ("delegate", "completed", "状態: completed\n結果: AUTO_RESUME_COMPLETED", True),
+        ("delegate", "running", "状態: completed\n結果: AUTO_RESUME_COMPLETED", False),
+        ("delegate", "completed", "状態: failed\n結果: AUTO_RESUME_COMPLETED", False),
+        ("delegate", "completed", "状態: completed\n結果: 未完了", False),
+        ("delegate", "completed", "AUTO_RESUME_COMPLETED", False),
+        ("shell", "completed", "AUTO_RESUME_COMPLETED", True),
+        ("shell", "completed", "状態: completed\n結果: AUTO_RESUME_COMPLETED", False),
+    ],
+)
+def test_background_completion_requires_the_launch_result_contract(
+    mode: str, status: str, message: str, accepted: bool
+) -> None:
+    assert live._has_completed_resume(mode, status, message) is accepted  # pylint: disable=protected-access

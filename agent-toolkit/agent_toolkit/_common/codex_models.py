@@ -20,9 +20,22 @@ _CHANGE_CANDIDATES_NEXT_ACTION = (
 """系列を完全IDへ解決できない場合に添える次の操作。"""
 
 
+class CatalogResponseError(ValueError):
+    pass
+
+
+class CatalogResolutionError(_next_action.ActionableError):
+    pass
+
+
+def requires_catalog(candidate: tuple[str, str, str]) -> bool:
+    engine, model, _effort = candidate
+    return engine == "codex" and model in FAMILIES
+
+
 def needs_catalog(candidates: list[tuple[str, str, str]]) -> bool:
     """系列名を持つCodex候補が1件以上あるか返す。"""
-    return any(engine == "codex" and model in FAMILIES for engine, model, _effort in candidates)
+    return any(map(requires_catalog, candidates))
 
 
 def _latest_model(family: str, catalog: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
@@ -47,27 +60,27 @@ def latest_model(family: str, catalog: list[dict[str, Any]]) -> str:
     return _latest_model(family, catalog)[0]
 
 
-def resolve_candidates(candidates: list[tuple[str, str, str]], catalog: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
-    resolved: list[tuple[str, str, str]] = []
-    for engine, model, effort in candidates:
-        if engine != "codex" or model not in FAMILIES:
-            resolved.append((engine, model, effort))
-            continue
-        try:
-            selected_id, selected = _latest_model(model, catalog)
-        except ValueError as error:
-            raise _next_action.ActionableError(str(error), next_action=_CHANGE_CANDIDATES_NEXT_ACTION) from error
-        efforts = selected.get("supportedReasoningEfforts")
-        supported = (
-            {item.get("reasoningEffort") for item in efforts if isinstance(item, dict)} if isinstance(efforts, list) else set()
+def resolve_candidate(candidate: tuple[str, str, str], catalog: list[dict[str, Any]]) -> tuple[str, str, str]:
+    if not requires_catalog(candidate):
+        return candidate
+    engine, model, effort = candidate
+    try:
+        selected_id, selected = _latest_model(model, catalog)
+    except ValueError as error:
+        raise CatalogResolutionError(str(error), next_action=_CHANGE_CANDIDATES_NEXT_ACTION) from error
+    efforts = selected.get("supportedReasoningEfforts")
+    if not isinstance(efforts, list) or not any(
+        isinstance(item, dict) and item.get("reasoningEffort") == effort for item in efforts
+    ):
+        raise CatalogResolutionError(
+            f"Codexモデル{selected_id}はreasoning effort {effort}を受理しません",
+            next_action=_CHANGE_CANDIDATES_NEXT_ACTION,
         )
-        if effort not in supported:
-            raise _next_action.ActionableError(
-                f"Codexモデル{selected_id}はreasoning effort {effort}を受理しません",
-                next_action=_CHANGE_CANDIDATES_NEXT_ACTION,
-            )
-        resolved.append((engine, selected_id, effort))
-    return resolved
+    return engine, selected_id, effort
+
+
+def resolve_candidates(candidates: list[tuple[str, str, str]], catalog: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
+    return [resolve_candidate(candidate, catalog) for candidate in candidates]
 
 
 async def fetch_catalog(request: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -79,15 +92,15 @@ async def fetch_catalog(request: Callable[[str, dict[str, Any]], Awaitable[dict[
         if cursor is not None:
             params["cursor"] = cursor
         response = await request("model/list", params)
-        data = response.get("data")
+        data = response.get("data") if isinstance(response, dict) else None
         if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
-            raise ValueError("Codex App Serverのmodel/listがモデル配列を返しませんでした")
+            raise CatalogResponseError("Codex App Serverのmodel/listがモデル配列を返しませんでした")
         result.extend(data)
         next_cursor = response.get("nextCursor")
         if next_cursor is None:
             return result
         if not isinstance(next_cursor, str) or not next_cursor or next_cursor in seen_cursors:
-            raise ValueError("Codex App Serverのmodel/listのページ送りが不正です")
+            raise CatalogResponseError("Codex App Serverのmodel/listのページ送りが不正です")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
 

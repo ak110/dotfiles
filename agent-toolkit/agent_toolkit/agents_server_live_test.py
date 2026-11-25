@@ -56,13 +56,21 @@ class LiveInput:
     required_tools: frozenset[str]
 
 
+def _has_completed_resume(mode: str, status: str, message: str) -> bool:
+    if status != "completed":
+        return False
+    expected = "状態: completed\n結果: AUTO_RESUME_COMPLETED" if mode == "delegate" else "AUTO_RESUME_COMPLETED"
+    return message.strip().splitlines() == expected.splitlines()
+
+
 # Bash背景実行の完了通知による自動再開を確かめる入力。Bashを公開する起動区分だけへ渡す。
 BACKGROUND_RESUME_INPUTS: dict[str, LiveInput] = {
     "delegate": LiveInput(
         "delegate",
         (
             """Bashツールで`{command}`を背景実行し、待たずにturnを終えよ。
-バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。""",
+バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答は次の2行にせよ。
+1行目を`状態: completed`、2行目を`結果: AUTO_RESUME_COMPLETED`とし、他の行を加えないこと。""",
         ),
         frozenset({"Bash"}),
     ),
@@ -325,8 +333,7 @@ async def test_live_launch_waits_for_automatic_resume(
         finally:
             release.touch()
 
-        assert result["status"] == "completed", result
-        assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED"
+        assert _has_completed_resume(mode, result["status"], result["agent_message"]), result
 
 
 @pytest.mark.asyncio
@@ -369,12 +376,16 @@ GRANDCHILD_INPUT = LiveInput(
         """`agents_server`の起動ツールで、コマンド`{command}`を実行して終了状態を要約させる委譲を1件起動せよ。
 起動ツールが`mode`を受け取る場合は`start`へ`mode`の`shell`を渡し、受け取らない場合は`start_shell`を使う。
 起動の直後は`atk agents wait`を実行せず、`待機中: <起動したsession_id>`の1行だけを出力してターンを終えよ。
-自動的に再開したターンでは`atk agents wait`でその委譲の結果を回収し、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。""",
+自動的に再開したターンでは`atk agents wait`でその委譲の結果を回収せよ。
+最終応答は次の2行にせよ。
+1行目を`状態: completed`、2行目を`結果: AUTO_RESUME_COMPLETED`とし、他の行を加えないこと。""",
     ),
     frozenset({"Bash"}),
 )
 
 
+@pytest.mark.cpu_limit(1.2, reason="実CLIの2世代の起動・結果配送を含み、実測で通常上限0.5秒を超える")
+@pytest.mark.timeout(240)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("candidate", [("codex", "sol", "medium"), ("claude", "sonnet[1m]", "medium")])
 async def test_live_grandchild_wait_resumes_same_session(
@@ -401,14 +412,13 @@ async def test_live_grandchild_wait_resumes_same_session(
             session = manager.sessions[started["session_id"]]
             async with asyncio.timeout(120):
                 while not (release.with_suffix(".ready").exists() and session.awaiting_auto_resume):
-                    await asyncio.sleep(0.01)
+                    await asyncio.sleep(0.1)
             release.touch()
             result = await _wait_terminal(manager)
         finally:
             release.touch()
 
-        assert result["status"] == "completed", result
-        assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED", result
+        assert _has_completed_resume("delegate", result["status"], result["agent_message"]), result
         assert "unobservedSessions" not in (result.get("error") or {}), result
         assert session.turn_seq == 2
 
