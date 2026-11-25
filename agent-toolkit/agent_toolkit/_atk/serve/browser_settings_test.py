@@ -342,7 +342,7 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     await expect(field).to_have_value("cached-value")
     await picker.select_option("")
     await expect(field).not_to_have_value("cached-value")
-    error = "SSH先で設定を非昇格で取得できません。接続先で利用者がログオンしていることを確認してください"
+    error = "SSH先で設定を非昇格で取得できません。接続先でユーザーがログオンしていることを確認してください"
     failures["cached-host"] = error
     await picker.select_option("cached-host")
     await expect(status).to_contain_text(error)

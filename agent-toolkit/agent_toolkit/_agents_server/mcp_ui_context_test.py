@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -220,22 +221,58 @@ async def test_conversation_mod_rejection_returns_operation_recovery(
     assert "引数の受理形式" not in message
 
 
+@pytest.mark.parametrize("case", ("format", "language", "unwritable", "unavailable", "delegated"))
 @pytest.mark.asyncio
-async def test_send_to_user_format_rejection_asks_to_resend_instead_of_final_answer(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_toolkit._agents_server.manager import AgentsServerManager  # pylint: disable=import-outside-toplevel
+async def test_send_rejection_preserves_body_only_when_resend_can_recover(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, case: str
+) -> None:
+    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
 
-    manager = AgentsServerManager(None, launcher_environment={})
-    monkeypatch.setattr(manager, "launcher_session_id", lambda: "launcher-main")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
-    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
-    monkeypatch.setattr(
-        function_hook_requests,
-        "request",
-        AsyncMock(side_effect=function_hook_requests.HookRequestRejected("再発防止の行が無い", resend=True)),
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", case == "delegated")
+
+    def resolve(session_id: str) -> pathlib.Path:
+        assert session_id == "launcher-main"
+        if case == "unwritable":
+            raise OSError("保存先が使えない")
+        return tmp_path
+
+    def create(prefix: str, root: pathlib.Path) -> pathlib.Path:
+        assert root == tmp_path
+        area = root / prefix
+        area.mkdir()
+        return area
+
+    monkeypatch.setattr(managed_temp, "resolve_session_temp", resolve)
+    monkeypatch.setattr(managed_temp, "create_session_temp", create)
+    reason = "再発防止の行が無い"
+    mod = AsyncMock(side_effect=function_hook_requests.HookRequestRejected(reason, resend=case != "unavailable"))
+    monkeypatch.setattr(function_hook_requests, "request", mod)
+    body = "The description must be provided in Japanese." if case == "language" else "期待: 期待した結果\r\n末尾。"
+    args = {"message": body, "kind": "completion"}
+    params = CallToolRequestParams.model_validate(
+        {"name": "send_to_user", "arguments": args, "_meta": {"claudecode/toolUseId": "repl_rejected"}}
     )
     with pytest.raises(ToolError) as raised:
-        await mcp_tools.mcp.call_tool("send_to_user", {"message": "期待: a"})
-    message = str(raised.value)
-    assert "再発防止の行が無い" in message and "send_to_userで送り直す" in message
-    assert "最終応答に書く" not in message
+        async with mcp_tools._request_scope(params):  # pylint: disable=protected-access
+            await mcp_tools.mcp.call_tool("send_to_user", args)
+    rejection = str(raised.value)
+    if case in {"format", "language"}:
+        saved = re.search(r"本文の保存先: `([^`]+)`", rejection)
+        assert saved is not None
+        assert pathlib.Path(saved[1]).read_bytes() == body.encode("utf-8")
+        assert rejection.index("`Read`") < rejection.index("`edit()`") < rejection.index(".text()")
+        assert 'kind: "completion"' in rejection
+        assert "最終応答に書く" not in rejection
+    else:
+        assert not list(tmp_path.iterdir())
+    if case == "language":
+        assert "日本語で書き直す" in rejection
+    elif case != "delegated":
+        assert reason in rejection
+    if case == "unwritable":
+        assert "本文を書き出せなかった" in rejection
+    if case == "unavailable":
+        assert "最終応答に書く" in rejection
+    assert mod.await_count == (0 if case in {"language", "delegated"} else 1)

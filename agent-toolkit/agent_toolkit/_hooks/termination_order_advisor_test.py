@@ -9,6 +9,7 @@ import contextlib
 import io
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -16,6 +17,7 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._common import automated_prompt, session_state
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import (
+    plugin_resources,
     stop,
     termination_evidence,
     termination_evidence_operations,
@@ -26,10 +28,11 @@ from agent_toolkit._hooks import (
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import emit_response, notice_cycle
 from agent_toolkit._hooks.pretooluse import dispatch
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, termination_evidence_support
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _write_transcript
-from agent_toolkit._testing.termination_evidence_support import isolated_session  # noqa: F401  # pylint: disable=unused-import
+
+isolated_session = termination_evidence_support.isolated_session
 
 
 @pytest.fixture(autouse=True)
@@ -93,25 +96,45 @@ def test_formal_completion_report_requires_current_playbook_but_progress_does_no
     sid = "sess-formal-report"
     _start_skill(sid, trace, "agent-toolkit:atk-mode", arguments="process-wi")
 
-    def check(message: str) -> str:
+    def check(message: str, *, call_id: str | None = None, kind: str | None = None) -> str:
         payload = json.loads(_payload(sid, str(trace)))
         payload.update(tool_name="mcp__plugin_agent-toolkit_agents_server__send_to_user", tool_input={"message": message})
+        if call_id is not None:
+            payload["tool_use_id"] = call_id
+        if kind is not None:
+            payload["tool_input"]["kind"] = kind
         assert dispatch.main(json.dumps(payload)) == 0
         return capsys.readouterr().out
 
     assert "作業完了報告の手順書の取得" not in check("途中経過を報告する。")
     report = "## 作業完了報告\n作業の結果を報告する。"
-    assert "作業完了報告の手順書の取得" in check(report)
-    _start_skill(sid, trace, "agent-toolkit:atk-mode", "toolu_report", arguments="report-completion")
+    body = "見出しなしで完了したことを報告する。"
+    assert "permissionDecisionReason" not in check(body, call_id="repl_progress")
+    assert "作業完了報告の手順書の取得" in check(body, call_id="toolu_direct", kind="completion")
+    rejected = json.loads(check(body, call_id="repl_completion", kind="completion"))["hookSpecificOutput"]
+    assert rejected["permissionDecision"] == "deny"
+    reason = rejected["permissionDecisionReason"]
+    saved = re.search(r"本文の保存先: `([^`]+)`", reason)
+    assert saved is not None
+    assert pathlib.Path(saved[1]).read_text(encoding="utf-8") == body
+    assert "`Read`" in reason and "`file(...).text()`は証拠にならない" in reason
+    assert "保存した本文は編集せず" in reason and 'kind: "completion"' in reason
+    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
+    response = termination_evidence_support.claude_read_response(playbook)
+    _observe(sid, trace, "repl_read", "Read", {"file_path": str(playbook)}, response)
+    saved_body = pathlib.Path(saved[1]).read_text(encoding="utf-8")
+    assert "permissionDecisionReason" not in check(saved_body, call_id="repl_retry", kind="completion")
     assert "作業完了報告の手順書の取得" not in check(report)
     session_state.update_state(
         sid,
         lambda state: {**state, "agents_server_sessions": {"child": {"owner_agent_id": "main", "pending_observation": True}}},
     )
-    assert "委譲先の結果と続行を確認" in check(report)
+    blocked = check(body, call_id="repl_pending", kind="completion")
+    assert "委譲先の結果と続行を確認" in blocked
+    assert "保存した本文は編集せず" in blocked
     assert "委譲先の結果と続行を確認" not in check("担当の結果は未回収です。")
     session_state.update_state(sid, lambda state: {**state, "agents_server_sessions": {}})
-    assert "委譲先の結果と続行を確認" not in check(report)
+    assert "permissionDecisionReason" not in check(body, call_id="repl_collected", kind="completion")
 
 
 def _evaluate_delivered(payload: str) -> tuple[str, str]:

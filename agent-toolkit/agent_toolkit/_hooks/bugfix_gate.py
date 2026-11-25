@@ -1,7 +1,9 @@
 """ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。  pyfltr: allow-comment
 
 送達前とStopで、最新の実ユーザー発話に届いた最初の分類を使う。
-未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動と種類付きの再発防止を求める。
+未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動を求める。
+送達前は、報告の見出しや再発防止の行を含む送信とkind: completionの送信に限り、種類付きの再発防止を求める。
+Stopでは報告の形によらず、同じ発話に対する種類付きの再発防止を最終応答か送達済みの報告に求める。
 同じ発話に対する種類付きの報告を送達済みなら、報告の構造を含まない最終応答に再掲を求めない。
 起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
 
@@ -19,10 +21,11 @@ import re
 from collections.abc import Iterator
 lazy import os
 
+from agent_toolkit._common.send_to_user import COMPLETION_KIND
 from agent_toolkit._hooks import notice
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.json_lines import split_lines
-lazy from agent_toolkit._common.prevention_kinds import starts_with_kind
+lazy from agent_toolkit._common.prevention_kinds import PREVENTION_KINDS, starts_with_kind
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
@@ -98,6 +101,7 @@ def _turn_classification(entries: list[dict]) -> str | None:
 
 
 _block_notice = notice.block_formatter("bugfix_gate")
+_regression_warning = notice.warning_formatter("bugfix_gate")
 _failure_notice = notice.formatter("verification-bugfix")
 FAILURE_STATE_KEY = "verification_bugfix"
 _REPL_SKILL_TURN_KEY = "bugfix_repl_human_turn"
@@ -340,19 +344,49 @@ def _has_typed_prevention(text: object) -> bool:
     return bool(bodies) and all(starts_with_kind(body) and not _names_regression_test(body) for body in bodies)
 
 
-def _names_regression_test(body: str) -> bool:
-    """回帰テストは今回の事象だけを検出する処置であり、再発防止の行に置かない。
+_PREVENTION_ITEM = re.compile(r"(?:^|[。；;])\s*(?:" + "|".join(map(re.escape, PREVENTION_KINDS)) + r")\s*[:：]\s*")
+_REGRESSION_AS_MEASURE = re.compile(
+    r"\s*(?:今回は[、，]?\s*)?(?:[A-Za-z0-9一-龯々ァ-ヶーのな]+[をの]\s*)?"
+    r"回帰テスト(?:（[^（）]*）|\([^()]*\))?"
+    r"(?:を(?:[A-Za-z0-9一-龯々ァ-ヶーの]+に(?:含め|入れ|加え)|追加|導入|作成|新設|増や|足|加え|書)|に(?:追加|入れ|加え))"
+    r"(?:し?て(?:[一-龯々ァ-ヶー]+を)?(?:固定|保存|記録|確認|検証)(?:する|した|します|しました)|"
+    r"(?:する|した|る|た|す|し|く|いた|きます|きました|します|しました|したい|し?て(?:いる|います|おる|おります))?)"
+    r"(?=[。．、，;；]|$)"
+)
 
-    根拠はbugfixの`prevention.md`「言葉の区別」。  pyfltr: allow-comment
-    """
-    return "回帰テスト" in body
+
+def _names_regression_test(body: str) -> bool:
+    for item in _PREVENTION_ITEM.split(body)[1:]:
+        unquoted = re.sub(r"「[^」]*」|『[^』]*』|`[^`]*`", "", item)
+        if _REGRESSION_AS_MEASURE.match(unquoted):
+            return True
+    return False
 
 
 def _mentions_regression_prevention(text: object) -> bool:
     return isinstance(text, str) and any(_names_regression_test(body) for _, body in prevention_lines(text))
 
 
-def _has_report_structure(message: object) -> bool:
+def _warn_about_regression_mention(message: object, session_id: object, warnings: list[str] | None) -> None:
+    if (
+        warnings is None
+        or not isinstance(message, str)
+        or not any("回帰テスト" in body for _, body in prevention_lines(message) if starts_with_kind(body))
+    ):
+        return
+    if warning := _regression_warning(
+        "種類付きの再発防止の行に回帰テストへの言及があります。策として加えたと確定できないため、操作は止めません。",
+        fix="今の事象を確認するために加えたテストなら「処置:」か「確認:」へ移す。説明や履歴への言及ならそのまま続ける。",
+        cause="regression_mention",
+        session_id=session_id if isinstance(session_id, str) else "",
+        removable_cause=True,
+    ):
+        warnings.append(warning)
+
+
+def _has_report_structure(message: object, kind: object = None) -> bool:
+    if kind == COMPLETION_KIND:
+        return True
     if not isinstance(message, str):
         return False
     unquoted = QUOTED_MATERIAL_RE.sub("", message).replace("**", "").replace("__", "")
@@ -360,7 +394,14 @@ def _has_report_structure(message: object) -> bool:
 
 
 def _turn_block(
-    payload: dict, turn: tuple[str, list[dict], str | None], message: object, delivery: str, *, can_classify: bool
+    payload: dict,
+    turn: tuple[str, list[dict], str | None],
+    message: object,
+    delivery: str,
+    *,
+    can_classify: bool,
+    send_kind: object = None,
+    warnings: list[str] | None = None,
 ) -> str | None:
     _, entries, human_id = turn
     if (
@@ -395,7 +436,12 @@ def _turn_block(
             f"是正を受けた後に`agent-basics:bugfix`を起動していないため、{delivery}を止めた。",
             fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。",
         )
-    if _has_typed_prevention(message) or (
+    if can_classify and not _has_report_structure(message, send_kind):
+        return None
+    if _has_typed_prevention(message):
+        _warn_about_regression_mention(message, session_id, warnings)
+        return None
+    if (
         not can_classify
         and not _has_report_structure(message)
         and any(_understanding_kind(text) is None and _has_typed_prevention(text) for text in _delivered_messages(entries))
@@ -414,11 +460,11 @@ def _turn_block(
     )
 
 
-def send_block(payload: dict, message: object = None) -> str | None:
+def send_block(payload: dict, message: object = None, *, kind: object = None, warnings: list[str] | None = None) -> str | None:
     lines = _read_human_lines(payload)
     if lines is None or (turn := latest_human_turn_context(lines)) is None:
         return None
-    return _turn_block(payload, turn, message, "ユーザーへの送達", can_classify=True)
+    return _turn_block(payload, turn, message, "ユーザーへの送達", can_classify=True, send_kind=kind, warnings=warnings)
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -429,9 +475,12 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     lines = _read_human_lines(payload)
     if lines is None or (turn := latest_human_turn_context(lines)) is None:
         return "approve", ""
-    body = _turn_block(payload, turn, payload.get("last_assistant_message"), "ターンの終了", can_classify=False)
+    warnings: list[str] = []
+    body = _turn_block(
+        payload, turn, payload.get("last_assistant_message"), "ターンの終了", can_classify=False, warnings=warnings
+    )
     if body is None:
-        return "approve", ""
+        return ("notify", warnings[0]) if warnings else ("approve", "")
     _stop_session.append_stop_log(session_id, "block_bugfix_not_invoked", {})
     return "block", body
 

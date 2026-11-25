@@ -1,9 +1,9 @@
-r"""成果作業で完了報告の手順書（入口`atk-mode`の`playbooks/report-completion.md`）の読取を忘れた終了をStopフックで検出する。
+r"""成果作業で完了報告の手順書の読取を忘れた終了を検出する。  pyfltr: allow-comment
 
 成果作業（入口`atk-mode`の作業`process-wi`と`add-awi-by-user`の開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行）を行った作業で、最後の会話圧縮以降の読込証拠が無く、
 有効なプロジェクト規範による省略も無い場合は、手順書の読取と残工程への続行を一度通知する。
-読込証拠は、主体別の共通取得記録にある手順書の取得（Claude Codeの`Read`、Codexの読取）と、
+読込証拠は、主体別の共通取得記録にある手順書の取得（Claude Codeの`Read`・`Bash`、Codexの読取）と、
 Claude Codeの入口の起動（引数の先頭語`report-completion`）の記録とする。
 受理する証拠は`skills/atk-mode/references/termination-evidence.md`「受理する証拠」が定める。
 報告本文の見出し・区切り・区分・候補IDは判定に使わない。
@@ -24,6 +24,7 @@ CodexのStopは非遮断通知を配送できないため対象外とし、手�
 import json
 import pathlib
 
+from agent_toolkit._common.send_to_user import is_completion
 from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import transcript
@@ -139,8 +140,8 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
     return waiting
 
 
-def missing_completion_before_report(payload: dict, session_id: str, message: object) -> str | None:
-    if not session_id or not isinstance(message, str) or message.lstrip().partition("\n")[0].strip() != "## 作業完了報告":
+def missing_completion_before_report(payload: dict, session_id: str, message: object, kind: object = None) -> str | None:
+    if not session_id or not is_completion(message, kind):
         return None
     if not termination_evidence.evidence_available(payload) or completion_in_context(session_id):
         return None
@@ -206,7 +207,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         + termination_evidence.decision_hint(payload),
         fix=(
             f"完了報告の手順書`{playbook}`を全文読み、終了工程を進めてください。"
-            "既にユーザーへ送信した内容は再掲せず、まだ伝えていない結果と残る終了工程だけを扱ってください。"
+            "追加事項か残る終了工程があれば、それだけを扱ってください。既報や、求められていない操作をしなかったことは書きません。"
+            "報告済みで追加事項も残工程も無ければ、固定文まで送達済みなら `…`、"
+            "通常本文の報告で固定文がまだなら固定文1行で終えてください。"
             f"受理する証拠は{termination_evidence.termination_evidence_reference()}「受理する証拠」、"
             "読み取りの省略と終了方法の判断は同じ資料の「終了方法の分岐」に従ってください。"
         ),

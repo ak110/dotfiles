@@ -158,7 +158,8 @@ def compose_session_start(
                 playbook = f"完了報告の手順書`{completion_playbook_path()}`"
                 if host == "claude":
                     guidance += (
-                        f"\n次の終了契約: `Read`で{playbook}を全文読むか、`/atk-mode report-completion`を起動してください。"
+                        f"\n次の終了契約: {playbook}の全文を`Read`または`Bash`で受け取るか、"
+                        "`/atk-mode report-completion`を起動してください。"
                     )
                 else:
                     guidance += f"\n次の終了契約を読んでください: {playbook}"

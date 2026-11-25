@@ -64,7 +64,9 @@ def _is_subagent_record(entries: list[dict[str, Any]]) -> bool:
     return bool(conversation) and all(entry.get("isSidechain") is True for entry in conversation)
 
 
-def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
+def _extract_claude(
+    entries: list[dict[str, Any]], lines: list[int], *, include_delivery_id: bool = False
+) -> list[dict[str, Any]]:
     """Claude Code形式を由来別の共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
     pending_claude_questions: dict[str, _PendingQuestion] = {}
@@ -86,6 +88,8 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
                         if name != _HANDBACK_TOOL and not name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX):
                             last_work_position = (line, block_index)
         for event in _claude_entry_events(entry, line, pending_claude_questions, subagent_record):
+            if include_delivery_id and isinstance(message, dict) and event.get("delivery") == "send_to_user":
+                event["delivery_tool_use_id"] = message["content"][event["_content_index"]].get("id")
             if event.get("kind") == "failed-tool":
                 tool_name, operation = tool_uses.get(str(event.get("tool", "")), ("", ""))
                 event["tool_name"] = tool_name

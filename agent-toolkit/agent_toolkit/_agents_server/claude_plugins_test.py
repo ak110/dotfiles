@@ -14,9 +14,6 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from hypothesis import given
-from hypothesis import settings as hypothesis_settings
-from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from agent_toolkit._agents_server import claude_plugins, plugin_root
@@ -597,34 +594,39 @@ async def test_external_inventory_variants_do_not_block_prepare(tmp_path: Path, 
     options["setting_sources"] = ["user", "project"]
     reloader = claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop())
     fields = ("scope", "enabled", "projectPath", "installPath", "id", "futureField")
+    external = _installed(tmp_path / "external", id="other@mine", scope="project", projectPath=str(tmp_path))
     samples: list[dict[str, Any]] = []
 
-    def check(field: str, present: bool, value: Any) -> None:
-        extra = _installed(tmp_path / "external", id="other@mine", scope="project", projectPath=str(tmp_path))
+    def add_sample(field: str, present: bool, value: Any) -> None:
+        extra = external.copy()
         if present:
             extra[field] = value
         else:
             extra.pop(field, None)
-        inventory.items = [toolkit, None, extra]
-        assert reloader._inventory()[0] == expected
         samples.append(extra)
 
-    variants: tuple[object, ...] = (None, "", "future", 0, [])
-    for field in fields:
-        check(field, False, None)
-        for variant in variants:
-            check(field, True, variant)
-
-    @given(
-        field=st.sampled_from(fields),
-        value=st.one_of(st.integers(), st.lists(st.integers()), st.dictionaries(st.text(max_size=24), st.booleans())),
+    variants: tuple[object, ...] = (
+        None,
+        "",
+        "future",
+        0,
+        [],
+        -1,
+        2**128,
+        [1],
+        [-1, 0],
+        [0, 2**128],
+        {},
+        {"future": True},
+        {"項目": False},
     )
-    @hypothesis_settings(max_examples=48)
-    def check_generated(field: str, value: Any) -> None:
-        check(field, True, value)
+    for field in fields:
+        add_sample(field, False, None)
+        for variant in variants:
+            add_sample(field, True, variant)
 
-    check_generated()  # pylint: disable=no-value-for-parameter
     inventory.items = [toolkit, None, *samples]
+    assert reloader._inventory()[0] == expected
     async with reloader:
         assert reloader._source == root
         assert reloader._watch_keys is not None

@@ -78,7 +78,14 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "send_to_user": {
         "annotations": {"destructive_hint": False},
-        "input_schema": {"properties": {"message": {"type": "string"}}, "required": ["message"], "type": "object"},
+        "input_schema": {
+            "properties": {
+                "message": {"type": "string"},
+                "kind": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+            },
+            "required": ["message"],
+            "type": "object",
+        },
         "output_schema": {"additionalProperties": True, "title": "send_to_userDictOutput", "type": "object"},
     },
     "show": {
