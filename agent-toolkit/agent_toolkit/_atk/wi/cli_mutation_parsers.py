@@ -178,6 +178,10 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     )
     start_processing.set_defaults(subparser=start_processing)
 
+    take_over = _atk_help.add_command(sub, "take-over", **_atk_help.HELP["atk wi take-over"])
+    take_over.add_argument("filenames", metavar="FILENAME", nargs="+", help="担当を引き継ぐprocessingのファイル名")
+    take_over.add_argument("--reason", help="別ホストの担当が停止したことを確認した方法（別ホストでは必須）")
+
     hold = _atk_help.add_command(sub, "hold", **_atk_help.HELP["atk wi hold"])
     hold.add_argument(
         "filenames",

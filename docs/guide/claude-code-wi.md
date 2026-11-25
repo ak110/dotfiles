@@ -129,6 +129,26 @@ GitHub CopilotのレビューとDependabotアラートの確認は、既定の�
 `status`では中断要求、再開予約、保持している追加指示を確認できる。
 各リポジトリの処理結果と残作業は巡回会話の報告で確認する。
 
+公開GitHubリポジトリの開いているIssueとPRの取り込みは、登録ごとに有効にできる（初期値は無効）。
+
+```bash
+atk config repos set github.com/OWNER/REPO --github-issues
+```
+
+巡回は`atk wi check-alerts --periodic`でCI失敗と合わせて照会する。
+既定の確認間隔はリポジトリごとに1,800秒。
+起動時の`atk wi process-loop --alert-interval SECONDS`で間隔を変更し、`--no-alerts`で両方の定期確認を止める。
+`--periodic`を付けずに手動で`atk wi check-alerts`を実行すると、CI失敗だけを確認する。
+`gh`はGitHubでの認証が必要で、`gh auth status --hostname github.com`で確認できる。
+非公開のリポジトリや公開を確認できないリポジトリからは取り込まない。
+
+信頼する作成者のIssueはAWIにし、それ以外のIssueとPRは取り込みの可否を尋ねるUWIにする。
+信頼する作成者のPRは取り込まない。
+初期値として個人リポジトリは所有者だけを、組織リポジトリは誰も信頼しない。
+変更するには同じ登録に`--github-issue-trusted-authors OWNER,ACCOUNT`を指定する。
+空文字列は誰も信頼せず、`@default`は既定に戻す。
+`--no-github-issues`で取り込みを無効にする。
+
 次回に再開する会話は、常駐が停止中でも予約できる。
 
 ```bash

@@ -12,7 +12,9 @@ remoteの読取同士）はsleep setで1通りだけ実行する。
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
+import datetime
 import functools
 import hashlib
 import os
@@ -29,8 +31,9 @@ import pytest
 from pytilpack import modelcheck
 
 from agent_toolkit._atk import git_sync
-from agent_toolkit._atk.wi import background_sync
+from agent_toolkit._atk.wi import background_sync, frontmatter, processing_owner
 from agent_toolkit._atk.wi import sync as wi_sync
+from agent_toolkit._atk.wi.mutations import transitions
 from agent_toolkit._git import command as git_command
 from agent_toolkit._testing import git_repository
 
@@ -264,7 +267,7 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _Repositories:
-    def __init__(self, root: pathlib.Path, scenario: _Scenario) -> None:
+    def __init__(self, root: pathlib.Path, scenario: _Scenario, *, initial_files: dict[str, str] | None = None) -> None:
         self.work = root / "work"
         self._pristine = root / "pristine"
         self.remote = git_repository.init_bare_repository(self.work / "origin.git")
@@ -272,7 +275,7 @@ class _Repositories:
             self.work / "seed",
             initial_branch="main",
             origin=str(self.remote),
-            files={_entry(update.entry): _base_content(update.entry) for update in scenario.updates},
+            files=initial_files or {_entry(update.entry): _base_content(update.entry) for update in scenario.updates},
             commit_message="base",
         )
         git_repository.run_git(seed, "push", "-u", "origin", "main")
@@ -538,7 +541,12 @@ class _Exploration:
         return {prop for verdict in self.verdicts for prop in verdict.violations}
 
 
-def _schedules(repositories: _Repositories, scenario: _Scenario) -> Iterator[_Run]:
+def _schedules(
+    repositories: _Repositories,
+    scenario: _Scenario,
+    *,
+    update_fn: Callable[[_Repositories, _Run, _Update], str] | None = None,
+) -> Iterator[_Run]:
     shared = _shared_resources(repositories, scenario)
     run = _Run(shared, repositories.remote)
 
@@ -550,7 +558,8 @@ def _schedules(repositories: _Repositories, scenario: _Scenario) -> Iterator[_Ru
 
     def actor(update: _Update) -> str:
         _ACTOR.name = update.actor
-        return (_atk_update if update.via_atk else _remote_commit)(repositories, run, update)
+        perform = update_fn or (_atk_update if update.via_atk else _remote_commit)
+        return perform(repositories, run, update)
 
     def worker() -> str:
         _ACTOR.name = "W"
@@ -692,3 +701,59 @@ def test_every_interleaving_keeps_sync_contract(tmp_path: pathlib.Path, scenario
 def test_separate_clones_publish_every_update_by_operation_end(tmp_path: pathlib.Path) -> None:
     exploration = _explored(tmp_path, _SEPARATE_CLONES)
     assert "性質1（操作の終了時）" not in exploration.violated(), _summary(exploration)
+
+
+@pytest.mark.usefixtures("scheduled_git")
+def test_every_owner_handoff_interleaving_rejects_stale_terminal_change(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = _Scenario("owner-handoff", "担当の交代と終了", (_Update("A", "x", 1), _Update("B", "y", 1)), conflict=True)
+    original = {"host": "x", "session": "A"}
+    body = "\n# 担当付きの項目\n"
+    content = frontmatter.serialize_frontmatter(
+        {"target_repo": "github.com/example/repo", "type": "awi", "state": "processing", "processing_owner": original}, body
+    )
+    repositories = _Repositories(tmp_path, scenario, initial_files={_entry(1): content})
+
+    def actor_owner() -> processing_owner.Owner:
+        return processing_owner.Owner("x", "A") if _ACTOR.name == "A" else processing_owner.Owner("y", "B")
+
+    monkeypatch.setattr(processing_owner, "current", actor_owner)
+
+    def update(repositories: _Repositories, _run: _Run, operation: _Update) -> str:
+        clone = repositories.path(operation.clone)
+        filename = pathlib.Path(operation.path).name
+        if operation.actor == "A":
+            with wi_sync.local_save(True):
+                transitions.transition_entries(
+                    clone, action="adopt", filenames=[filename], actor_is_agent=True, now=datetime.datetime.now(datetime.UTC)
+                )
+        else:
+            transitions.cmd_take_over(argparse.Namespace(filenames=[filename], reason="前の会話の停止を確認"), clone)
+        return "ok"
+
+    counted = 0
+    observed: set[str] = set()
+    for run in _schedules(repositories, scenario, update_fn=update):
+        counted += 1
+        detail = {"outcomes": run.outcomes, "trace": run.trace}
+        winners = [actor for actor, result in run.outcomes.items() if result == "ok"]
+        assert len(winners) == 1, detail
+        winner = winners[0]
+        observed.add(winner)
+        saved = frontmatter.parse_frontmatter(
+            git_repository.git_output(repositories.remote, "show", f"refs/heads/main:{_entry(1)}")
+        )
+        assert saved is not None, detail
+        data, _ = saved
+        if winner == "A":
+            assert data["state"] == "adopted" and "processing_owner" not in data, detail
+        else:
+            assert data["state"] == "processing" and data["processing_owner"] == {"host": "y", "session": "B"}, detail
+        for clone in repositories.clones:
+            path = repositories.path(clone)
+            assert not git_sync.is_rebase_in_progress(path), detail
+            assert not git_repository.git_output(path, "status", "--porcelain"), detail
+    assert observed == {"A", "B"}
+    print(f"担当の交代と終了: {counted}通り")

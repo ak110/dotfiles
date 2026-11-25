@@ -63,6 +63,25 @@ def test_legacy_confirmation_is_preserved_without_a_special_operation(tmp_path: 
     assert not hasattr(operations, "set_confirmation")
 
 
+def test_web_add_preserves_literal_cli_draft_reference(tmp_path: pathlib.Path) -> None:
+    git_repository.init_repository(tmp_path)
+    literal = "説明の例: {{key:EXAMPLE}}"
+    (name,) = wi_operations.Operations(tmp_path).add(
+        [f"# 原稿キーの使い方\n\n{literal}"], entry_type="awi", target_repo="github.com/example/repo"
+    )
+    assert literal in entries.entry_path(tmp_path, name).read_text(encoding="utf-8")
+
+
+def test_web_add_preserves_legacy_proposal_deduplication(tmp_path: pathlib.Path) -> None:
+    git_repository.init_repository(tmp_path)
+    operations = wi_operations.Operations(tmp_path)
+    metadata = "---\nproposal_id: project/P1\n---\n\n"
+    (name,) = operations.add([metadata + "# 最初の提案\n\n最初の本文"], entry_type="awi", target_repo="github.com/example/repo")
+    assert not operations.add([metadata + "# 別の本文を同じIDで再送"], entry_type="awi", target_repo="github.com/example/repo")
+    assert [path.name for path in entries.iter_entry_paths(tmp_path)] == [name]
+    assert "最初の本文" in entries.entry_path(tmp_path, name).read_text(encoding="utf-8")
+
+
 @pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     1.0,

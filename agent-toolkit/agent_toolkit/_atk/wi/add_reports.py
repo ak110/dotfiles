@@ -14,7 +14,7 @@ from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi import uwi as _uwi
+from agent_toolkit._atk.wi import uwi_body as _uwi
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.web_input import WebInputError
