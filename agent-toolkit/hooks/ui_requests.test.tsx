@@ -3,6 +3,13 @@ import { expect, mock, test } from "claude-code/testing";
 import outputPolicy from "./output-policy.ts";
 import { placedMessage } from "./ui_requests.tsx";
 
+function assertOutputPolicy(profile: keyof typeof outputPolicy.acceptance, text: string) {
+  const check = outputPolicy.acceptance[profile];
+  expect(text.length).toBeLessThan(check.max_chars + 1);
+  for (const word of check.includes) expect(text).toContain(word);
+  for (const word of check.excludes) expect(text).not.toContain(word);
+}
+
 function queue(on: On, session: string, id: string) {
   on("fs.list", () => ({ value: [{ name: `ui-request-${session}-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false }] }));
   on("fs.exists", () => ({ value: true }));
@@ -62,7 +69,7 @@ for (const placed of [true, false]) {
       const rendered = JSON.stringify(await $.ui.render({ surface: "terminal", component: "Placed", requestId: "placed-row", props: { plugin: "agent-toolkit", id } }));
       expect(rendered).toContain('"text":"表示する本文"');
       expect(rendered).not.toContain("送達時刻");
-      expect(response.reason.length).toBeLessThan(outputPolicy.send_max_chars + 1);
+      assertOutputPolicy("send_first", response.reason);
     } else {
       expect(response.reason).toContain("対応画面なし");
       expect(response.reason).toContain("未送信");
@@ -91,7 +98,7 @@ test("MCP送信済みの詳しい案内は初回だけ返し、新しい警告�
   expect(responses.length).toBe(2);
   expect(responses[0]).toContain("新しい報告はsend_to_userで送る");
   expect(responses[1]).not.toContain("新しい報告はsend_to_userで送る");
-  expect((responses[1]?.split("\n")[0] ?? "").length).toBeLessThan(outputPolicy.send_repeat_max_chars + 1);
+  assertOutputPolicy("send_repeat", responses[1]?.split("\n")[0] ?? "");
   expect(responses[1]).toContain("時刻の一部が伏せ字");
   expect((responses[1] ?? "").length).toBeLessThan((responses[0] ?? "").length);
 });

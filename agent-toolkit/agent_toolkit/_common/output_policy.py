@@ -4,6 +4,12 @@ import pathlib
 from typing import TypedDict, cast
 
 
+class Acceptance(TypedDict):
+    max_chars: int
+    includes: list[str]
+    excludes: list[str]
+
+
 class OutputPolicy(TypedDict):
     suppress_repeats: bool
     show_total_with_delta: bool
@@ -13,10 +19,7 @@ class OutputPolicy(TypedDict):
     wait_improvement_guidance: str
     send_guidance: str
     send_repeat: str
-    search_max_chars: int
-    wait_improvement_max_chars: int
-    send_max_chars: int
-    send_repeat_max_chars: int
+    acceptance: dict[str, Acceptance]
 
 
 @functools.cache

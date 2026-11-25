@@ -21,6 +21,7 @@ from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import posttooluse, progress_self_check
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing.output_policy_support import assert_output_policy
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -507,7 +508,9 @@ def test_new_wi_preview_counts_all_but_repeats_only_undelivered_ids() -> None:
     notice_module.stage_new_wi_preview(text, sid, "main", snapshot)
     assert old in text and "merge_branch" not in text
     assert old in notice_module.new_wi_preview(sid, "main", before)[0]
+    assert_output_policy("wi_progress_first", text)
     notice_module.record_delivery(text)
+    assert_output_policy("wi_progress_repeat", notice_module.new_wi_preview(sid, "main", before)[0])
 
     after = (*before, NewWorkItem(new, "implement", True))
     text, _ = notice_module.new_wi_preview(sid, "main", after)

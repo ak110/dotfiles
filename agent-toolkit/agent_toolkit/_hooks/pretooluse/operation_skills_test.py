@@ -23,6 +23,7 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import delegated_session, session_state
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.termination_evidence_state import STATE_KEY as TERMINATION_EVIDENCE_KEY
+from agent_toolkit._testing.output_policy_support import assert_output_policy
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
@@ -115,10 +116,10 @@ def test_notice_is_given_once_per_subject(tmp_path: pathlib.Path) -> None:
     child = {**main, "agent_id": "child"}
     first = _run(main, env)
     assert _notified(first) == {_SEARCH_SKILL}
-    from agent_toolkit._common.output_policy import rules  # pylint: disable=import-outside-toplevel
-
-    assert len(_additional_context(first)) <= rules()["search_max_chars"]
-    assert not _notified(_run(main, env))
+    assert_output_policy("search", _additional_context(first))
+    repeat = _run(main, env)
+    assert not _notified(repeat)
+    assert_output_policy("search_repeat", _additional_context(repeat))
     assert _notified(_run(child, env)) == {_SEARCH_SKILL}
     assert not _notified(_run(child, env))
 

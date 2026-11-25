@@ -14,6 +14,7 @@ from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_wait_support import _running_body, _wait_for_session_1_result, _write_own_status
 from agent_toolkit._testing.agents_wait_support import _short_wait as _short_wait
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
+from agent_toolkit._testing.output_policy_support import assert_output_policy
 
 
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
@@ -288,9 +289,7 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
     assert (result_projection.improvement_result_next_action() in action) is marked
     if marked:
         assert action.count(result_projection.improvement_result_next_action()) == 1
-        assert (
-            len(result_projection.improvement_result_next_action()) <= result_projection.rules()["wait_improvement_max_chars"]
-        )
+        assert_output_policy("wait_improvement", result_projection.improvement_result_next_action())
     if status == "completed" and label.endswith("-review"):
         if label.endswith("reader-fit-review"):
             assert result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION in action

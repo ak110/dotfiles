@@ -10,6 +10,7 @@ from agent_toolkit._atk.wi.formatters import NewWorkItem
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import progress_self_check, work_contract
 from agent_toolkit._hooks.pretooluse import publication_gate
+from agent_toolkit._testing.output_policy_support import assert_output_policy
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
 
 
@@ -450,4 +451,5 @@ def test_publication_keeps_gate_but_does_not_repeat_delivered_progress_wis(tmp_p
     assert denied is not None
     reason, _ = denied
     assert "計2件" in reason and new in reason and old not in reason
+    assert_output_policy("wi_publication_delta", reason)
     assert publication_gate.check(payload, sid, "Bash", command) is None
