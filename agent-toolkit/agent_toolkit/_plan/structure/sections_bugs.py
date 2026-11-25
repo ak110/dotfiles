@@ -164,15 +164,12 @@ def _recurrence_line_errors(lines: list[CauseRecordLine]) -> list[str]:
 
 
 def findings_recurrence_errors(findings_content: str) -> list[str]:
-    """`## 調査結果と判断根拠`に置いた`再発:`の行が、区分の語で始まらない時の違反を返す。
+    """`## 調査結果と判断根拠`に置いた`再発:`の行へ、原因分析の節と同じ判定を当てた違反を返す。
 
-    原因が未確定の原稿はこの節にも`再発:`の行を置ける。原因分析の節と同じ区分を求める。 pyfltr: allow-comment
+    原因が未確定の原稿はこの節にも`再発:`の行を置ける。
+    区分の語と、文書・手順だけの対策の制限を同じく求める。 pyfltr: allow-comment
     """
-    return [
-        f"`## 調査結果と判断根拠`の`再発:`の行が区分の語で始まらない（{RECURRENCE_GUIDANCE}）"
-        for line in cause_record_lines(findings_content)
-        if line.label == "再発" and line.text and recurrence_kind(line.text) is None
-    ]
+    return [f"`## 調査結果と判断根拠`: {error}" for error in _recurrence_line_errors(cause_record_lines(findings_content))]
 
 
 def recurrence_quote_errors(cause_content: str, quote_content: str) -> list[str]:

@@ -42,7 +42,7 @@ TEXT_ONLY_KINDS = frozenset({"手順", "文書"})
 STRUCTURE_EXCEPTION_LABEL = "構造化不可"
 """再発への対策が文書・手順だけになる時に、構造・検査で防げない理由を書く欄の語。 pyfltr: allow-comment"""
 
-_STRUCTURE_EXCEPTION = re.compile(STRUCTURE_EXCEPTION_LABEL + r"[ \t　]*[:：][ \t　]*[^\s。．]")
+_STRUCTURE_EXCEPTION = re.compile(STRUCTURE_EXCEPTION_LABEL + r"[ \t　]*[:：][ \t　]*[^\s。．；;、，,.]")
 
 
 def has_structure_exception(text: str) -> bool:
@@ -100,10 +100,16 @@ def recurrence_kind(text: str) -> str | None:
 
 
 _RECURRENCE_MENTION = re.compile(
-    r"何度も|何回も|何度か|前にも|以前にも|以前も|過去にも|過去に何|また同じ|また(?:起き|発生|壊)"
-    r"|繰り返し(?:指摘|言|書|起き|発生)|再発(?!防止)"
+    r"(?:何度も|何回も|何度か|前にも|以前にも|以前も|過去にも|過去に何度|繰り返し|また)[^。！？\n]{0,12}?"
+    r"(?:指摘|言(?:って|った|う|わ)|書(?:いて|いた|く)|伝え|注意|直し|起き|起こ|発生|壊|間違|誤|失敗|ミス|問題|不具合|バグ|再発)"
+    r"|また同じ|再発(?!防止)"
 )
-"""同じ問題の反復への言及。「毎回表示される」のような定常の挙動の説明は含めない。 pyfltr: allow-comment"""
+"""同じ問題の反復への言及。
+
+反復の語の直後に、指摘・不具合など問題に当たる語が続く時だけ数える。
+「何度も表示される」「以前も使った」のような定常の挙動や過去の正常な操作は、
+問題の反復と確定できないため数えない。 pyfltr: allow-comment
+"""
 
 
 def mentions_recurrence(text: str) -> bool:

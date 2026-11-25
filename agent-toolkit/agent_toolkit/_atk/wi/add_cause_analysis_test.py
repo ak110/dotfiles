@@ -80,6 +80,11 @@ _RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
         + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
         "再発した事象への`再発防止:`が`文書`・`手順`だけである",
     ),
+    "recurrence_text_only_with_separator_only": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可：；")
+        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
+        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
+    ),
     "recurrence_structural": (f"{_RECORD}\n- 再発: 範囲不足: 前回は1つの経路だけを検査した。", None),
     "recurrence_not_applicable": (
         _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。") + "\n- 再発: 該当なし: 前回の対策が無い。",
@@ -332,6 +337,12 @@ _REPEATED_QUOTE = "過去に何度もしているという指摘も過去に何�
         ("- 再発: 未適用: 前回は規範の追記で対処した。今回は保存時の検査へ変える。", False),
         ("- 再発: 該当なし: 同じ指摘への前回の対策は無い。", False),
         ("- 再発: 未調査: 前回の対策を調べていない。", True),
+        ("- 再発: 未適用: 前回は規範の追記で対処した。\n- 再発防止: 文書: 実例を載せる。", True),
+        (
+            "- 再発: 未適用: 前回は規範の追記で対処した。\n"
+            "- 再発防止: 文書: 実例を載せる。構造化不可: 判定に文脈の意味が要る。",
+            False,
+        ),
     ],
 )
 def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
@@ -356,7 +367,14 @@ def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
             _run_public_add(args, notes, _FIXED_DT, tmp_path)
         assert stopped.value.code != 0
         err = capsys.readouterr().err
-        assert "反復に触れているのに`再発:`の行が無い" in err or "`再発:`の行が区分の語で始まらない" in err
+        assert any(
+            text in err
+            for text in (
+                "反復に触れているのに`再発:`の行が無い",
+                "`再発:`の行が区分の語で始まらない",
+                "`文書`・`手順`だけである",
+            )
+        )
     else:
         _run_public_add(args, notes, _FIXED_DT, tmp_path)
         assert "成功:" in capsys.readouterr().out
@@ -364,7 +382,12 @@ def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
 
 @pytest.mark.parametrize(
     "quote",
-    ["毎回表示される確認画面に説明を足して。", "繰り返し処理の進み具合を表示して。"],
+    [
+        "毎回表示される確認画面に説明を足して。",
+        "繰り返し処理の進み具合を表示して。",
+        "確認画面が何度も表示されるフローに、各回の進捗を追加して。",
+        "以前も使った確認画面を今回の設定画面にも追加して。",
+    ],
 )
 def test_public_add_accepts_steady_behavior_wording_without_recurrence_line(
     tmp_path: pathlib.Path,
