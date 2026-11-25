@@ -183,13 +183,14 @@ def require_cause_analysis_format(body: str, *, original: str | None = None, ent
         )
 
 
-def _recurrence_sections(body: str) -> tuple[str, str]:
+def _recurrence_sections(body: str) -> tuple[str, str, str]:
     def section(heading: str) -> str:
         lines = _headings.last_h2_section_lines(body, heading)
         return "\n".join(lines) if lines is not None else ""
 
-    records = "\n".join(section(heading) for heading in (_CAUSE_ANALYSIS_HEADING, _FINDINGS_HEADING))
-    return section(_plan_structure.REQUEST_H2_QUOTATION), records
+    findings = section(_FINDINGS_HEADING)
+    records = "\n".join((section(_CAUSE_ANALYSIS_HEADING), findings))
+    return section(_plan_structure.REQUEST_H2_QUOTATION), records, findings
 
 
 def _require_recurrence_record(body: str, original: str | None) -> None:
@@ -199,10 +200,11 @@ def _require_recurrence_record(body: str, original: str | None) -> None:
     `再発:`の行を持つものは2件だった）。原因が未確定の原稿は`## 調査結果と判断根拠`に書いた行も数える。
     逐語引用と記録の節が保存済みの本文と変わらない編集（追記など）は、既存の項目を理由に拒否しない。 pyfltr: allow-comment
     """
-    quote, records = _recurrence_sections(body)
-    if original is not None and _recurrence_sections(original) == (quote, records):
+    quote, records, findings = _recurrence_sections(body)
+    if original is not None and _recurrence_sections(original) == (quote, records, findings):
         return
-    if errors := _plan_structure.recurrence_quote_errors(records, quote):
+    errors = _plan_structure.recurrence_quote_errors(records, quote) + _plan_structure.findings_recurrence_errors(findings)
+    if errors:
         raise WebInputError(
             "原因分析の書式が不正です: " + "。".join(errors),
             next_action=(

@@ -75,6 +75,11 @@ _RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
         + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
         None,
     ),
+    "recurrence_text_only_with_empty_reason": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可:")
+        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
+        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
+    ),
     "recurrence_structural": (f"{_RECORD}\n- 再発: 範囲不足: 前回は1つの経路だけを検査した。", None),
     "recurrence_not_applicable": (
         _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。") + "\n- 再発: 該当なし: 前回の対策が無い。",
@@ -326,6 +331,7 @@ _REPEATED_QUOTE = "過去に何度もしているという指摘も過去に何�
         ("過去対策の配置と読込契機を比べ、原因に作用する箇所を直す。", True),
         ("- 再発: 未適用: 前回は規範の追記で対処した。今回は保存時の検査へ変える。", False),
         ("- 再発: 該当なし: 同じ指摘への前回の対策は無い。", False),
+        ("- 再発: 未調査: 前回の対策を調べていない。", True),
     ],
 )
 def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
@@ -349,7 +355,29 @@ def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
         with pytest.raises(SystemExit) as stopped:
             _run_public_add(args, notes, _FIXED_DT, tmp_path)
         assert stopped.value.code != 0
-        assert "反復に触れているのに`再発:`の行が無い" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "反復に触れているのに`再発:`の行が無い" in err or "`再発:`の行が区分の語で始まらない" in err
     else:
         _run_public_add(args, notes, _FIXED_DT, tmp_path)
         assert "成功:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "quote",
+    ["毎回表示される確認画面に説明を足して。", "繰り返し処理の進み具合を表示して。"],
+)
+def test_public_add_accepts_steady_behavior_wording_without_recurrence_line(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    quote: str,
+) -> None:
+    """定常の挙動を説明する「毎回」「繰り返し」だけの逐語引用では、`再発:`の行を求めない。 pyfltr: allow-comment"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body = (
+        f"# 確認画面に説明を足す\n\n説明\n\n## 反映内容と反映先\n対象\n\n## ユーザー指摘の逐語引用\n\n```text\n{quote}\n```\n"
+    )
+    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert "成功:" in capsys.readouterr().out

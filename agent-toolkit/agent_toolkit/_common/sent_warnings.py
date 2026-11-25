@@ -13,7 +13,9 @@ _HELD_LIMIT = 20
 """取り出されずに残る預かりの上限。PostToolUseが動かない環境でも状態が増え続けないようにする。 pyfltr: allow-comment"""
 
 
-def stash(session_id: str, tool_use_id: str, warnings: list[str]) -> None:
+def stash(session_id: str, tool_use_id: str, warnings: list[str]) -> bool:
+    """警告を預ける。預けられなかった時は偽を返し、呼出し側は警告を結果に残す。 pyfltr: allow-comment"""
+
     def put(state: dict) -> dict:
         held = state.get(_STATE_KEY)
         held = dict(held) if isinstance(held, dict) else {}
@@ -21,7 +23,7 @@ def stash(session_id: str, tool_use_id: str, warnings: list[str]) -> None:
         state[_STATE_KEY] = dict(list(held.items())[-_HELD_LIMIT:])
         return state
 
-    session_state.update_state(session_id, put)
+    return session_state.update_state(session_id, put)
 
 
 def take(session_id: str, tool_use_id: str) -> list[str]:

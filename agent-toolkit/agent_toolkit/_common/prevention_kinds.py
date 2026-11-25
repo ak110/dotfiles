@@ -42,6 +42,14 @@ TEXT_ONLY_KINDS = frozenset({"手順", "文書"})
 STRUCTURE_EXCEPTION_LABEL = "構造化不可"
 """再発への対策が文書・手順だけになる時に、構造・検査で防げない理由を書く欄の語。 pyfltr: allow-comment"""
 
+_STRUCTURE_EXCEPTION = re.compile(STRUCTURE_EXCEPTION_LABEL + r"[ \t　]*[:：][ \t　]*[^\s。．]")
+
+
+def has_structure_exception(text: str) -> bool:
+    """`構造化不可:`の後に理由が書かれているかを返す。語だけの行は理由の無い例外として扱わない。 pyfltr: allow-comment"""
+    return _STRUCTURE_EXCEPTION.search(text) is not None
+
+
 _ADOPTED_LABEL = re.compile(
     r"(?:^|[。．;；、,\s])(?P<kind>"
     + "|".join(re.escape(kind) for kind in sorted(ADOPTED_KINDS, key=len, reverse=True))
@@ -92,8 +100,10 @@ def recurrence_kind(text: str) -> str | None:
 
 
 _RECURRENCE_MENTION = re.compile(
-    r"何度も|何回も|何度か|前にも|以前にも|以前も|過去にも|過去に何|また同じ|毎回|繰り返し|再発(?!防止)"
+    r"何度も|何回も|何度か|前にも|以前にも|以前も|過去にも|過去に何|また同じ|また(?:起き|発生|壊)"
+    r"|繰り返し(?:指摘|言|書|起き|発生)|再発(?!防止)"
 )
+"""同じ問題の反復への言及。「毎回表示される」のような定常の挙動の説明は含めない。 pyfltr: allow-comment"""
 
 
 def mentions_recurrence(text: str) -> bool:

@@ -30,3 +30,12 @@ def test_held_warnings_are_bounded() -> None:
         sent_warnings.stash("sid", f"toolu_{index}", [f"警告{index}"])
     assert not sent_warnings.take("sid", "toolu_0")
     assert sent_warnings.take("sid", "toolu_29") == ["警告29"]
+
+
+def test_stash_reports_failure_so_the_caller_keeps_warnings() -> None:
+    """預け先へ書けない時は偽を返し、呼出し側が警告を結果に残せる。 pyfltr: allow-comment"""
+    path = state_path("sid-broken")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.mkdir()
+    assert sent_warnings.stash("sid-broken", "toolu_1", [_WARN]) is False
+    assert sent_warnings.stash("sid", "toolu_1", [_WARN]) is True

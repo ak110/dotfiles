@@ -17,10 +17,13 @@ _WARN = (
 _NOTICE = '<atk-auto source="pretooluse" kind="notice">\n検索の前に、スキルを起動してください。\n</atk-auto>'
 
 
-def _attachment(body: str, *, event: str = "PreToolUse", record_type: str = "hook_additional_context") -> dict:
+def _attachment(
+    body: str, *, event: str = "PreToolUse", record_type: str = "hook_additional_context", uuid: str = "warn-1"
+) -> dict:
     content: object = [body] if record_type == "hook_additional_context" else body
     return {
         "type": "attachment",
+        "uuid": uuid,
         "attachment": {
             "type": record_type,
             "content": content,
@@ -186,10 +189,28 @@ def test_send_block_ignores_notice_and_previous_turn(tmp_path: pathlib.Path) -> 
     assert _send_block([_attachment(_WARN), _HUMAN], tmp_path, _SEND_TO_USER, {"message": "報告"}) is None
 
 
-def test_send_block_is_independent_from_stop_claim(tmp_path: pathlib.Path) -> None:
-    """送達前に一度止めた組でも、対応しないまま終える時はStopで止める。 pyfltr: allow-comment"""
+def test_send_block_and_stop_share_one_block_per_set(tmp_path: pathlib.Path) -> None:
+    """送達前に一度止めた組は、対応しないまま終える時のStopで再び止めない。 pyfltr: allow-comment"""
     entries = [_HUMAN, _attachment(_WARN), _text("終えた。")]
     assert _send_block(entries, tmp_path, _SEND_TO_USER, {"message": "報告"}) is not None
     path = tmp_path / "transcript.jsonl"
     payload = {"session_id": "hook-notice-send", "transcript_path": str(path)}
-    assert gate.evaluate(json.dumps(payload))[0] == "block"
+    assert gate.evaluate(json.dumps(payload))[0] == "approve"
+
+
+def test_same_text_warning_after_next_human_input_is_a_new_set(tmp_path: pathlib.Path) -> None:
+    """別の発話の後に同じ文面で新しく届いた警告は、新しい組として1回止める。 pyfltr: allow-comment"""
+    first = [_HUMAN, _attachment(_WARN), _text("終えた。")]
+    assert _evaluate(first, tmp_path)[0] == "block"
+    second = [*first, _HUMAN, _attachment(_WARN, uuid="warn-2"), _text("終えた。")]
+    assert _evaluate(second, tmp_path)[0] == "block"
+
+
+def test_warning_before_completion_notice_is_kept(tmp_path: pathlib.Path) -> None:
+    """人間入力の後に届いた未対応の警告は、その後の完了通知で捨てない。 pyfltr: allow-comment"""
+    notification = {
+        "type": "user",
+        "message": {"content": "<task-notification>\n<status>completed</status>\n</task-notification>"},
+    }
+    entries = [_HUMAN, _attachment(_WARN), _text("待つ。"), notification, _text("終えた。")]
+    assert _evaluate(entries, tmp_path)[0] == "block"

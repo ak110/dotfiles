@@ -1,13 +1,15 @@
 """このターンに届いた警告のhook通知へ、`hook通知への対応:`の行を書かずに終える応答を一度止める。  pyfltr: allow-comment
 
-対象は、最後のターン境界（人間の入力、完了通知、機械生成の入力、会話の圧縮）の後に届いた`kind="warn"`の通知である。
+対象は、最後の人間入力か会話の圧縮の後に届いた`kind="warn"`の通知である。
+完了通知や機械生成の入力はターンを分けるが、その前に届いた未対応の警告を捨てないよう境界に数えない。
 hookの添付（`hook_additional_context`・`hook_system_message`）だけから集める。
 ツール結果の本文は、ツール自身の警告と、取得した資料や委譲先の報告に引用された同じ形の文字列を区別できないため数えない。
 `send_to_user`の警告は、呼出しを識別できる送達ではPostToolUseの添付として届くため、添付の側で数える。
 最後の警告より後のアシスタントの本文かツールの入力（`send_to_user`の本文、REPLのコード）に、行頭が`hook通知への対応:`の行があれば通す。
 対応の中身（処置したか、誤検出の根拠か）は判定せず、行の有無だけを見る。
-同じ警告の組で一度止めた後の終了は通し、止めるのは組ごとに1回とする（再発行で通す）。
-ユーザーへ届く次の操作（`send_to_user`と`AskUserQuestion`）も、PreToolUseから`send_block`で組ごとに1回止める。
+ユーザーへ届く次の操作（`send_to_user`と`AskUserQuestion`）はPreToolUseから`send_block`で、ターンの終わりはStopで止める。
+止めるのは警告の組ごとに、両方の経路を通じて1回とする（再発行で通す）。
+組は警告の添付の記録の識別子で区別し、別の発話の後に同じ文面で届いた警告は新しい組として扱う。
 
 通知を遮断にする根拠: hook通知の処置と対応行は規範で定めていたが
 （`agent-toolkit:atk-mode`の`references/conduct.md`「方針が衝突する場合の優先順位」）、
@@ -28,12 +30,11 @@ lazy from agent_toolkit._common import session_state, transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._common.message_format import AUTO_ELEMENT_NAME_PATTERN
 lazy from agent_toolkit._hooks import stop_session as _stop_session
-lazy from agent_toolkit._hooks.delivered_repost_gate import _conversation_entries, _current_turn
+lazy from agent_toolkit._hooks.delivered_repost_gate import _conversation_entries, _human_prompt, _input_text
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 
 RESPONSE_PREFIX = "hook通知への対応:"
 _STATE_KEY = "hook_notice_response_gate"
-_SEND_STATE_KEY = "hook_notice_response_gate_send"
 _HOOK_RECORD_TYPES = frozenset({"hook_additional_context", "hook_system_message"})
 _SUMMARY_LENGTH = 60
 _LISTED_LIMIT = 3
@@ -73,9 +74,23 @@ def _input_has_response(text: str) -> bool:
     return re.search(rf"(?:^|[\n`\"'])[ \t\-*>]*{RESPONSE_PREFIX}", text) is not None
 
 
-def _scan(turn: list[dict]) -> tuple[list[str], int, int]:
-    """ターンの警告の一覧と、最後の警告と最後の対応行の位置を返す。位置が無ければ-1とする。 pyfltr: allow-comment"""
+def _since_human_input(entries: list[dict]) -> list[dict]:
+    """最後の人間入力か会話の圧縮より後の記録を返す。 pyfltr: allow-comment"""
+    for index in range(len(entries) - 1, -1, -1):
+        entry = entries[index]
+        if entry.get("isCompactSummary") is True or (
+            entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"
+        ):
+            return entries[index + 1 :]
+        if (text := _input_text(entry)) is not None and _human_prompt(entry, text) is not None:
+            return entries[index + 1 :]
+    return entries
+
+
+def _scan(turn: list[dict]) -> tuple[list[str], list[str], int, int]:
+    """警告の一覧、警告の添付の識別子、最後の警告と最後の対応行の位置を返す。位置が無ければ-1とする。 pyfltr: allow-comment"""
     warnings: list[str] = []
+    identities: list[str] = []
     last_warning = last_response = -1
     for index, entry in enumerate(turn):
         attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
@@ -85,6 +100,9 @@ def _scan(turn: list[dict]) -> tuple[list[str], int, int]:
                 for text in _strings(attachment.get("content")):
                     if found := _warnings(text):
                         warnings.extend(found)
+                        identities.append(
+                            str(entry.get("uuid") or entry.get("timestamp") or attachment.get("toolUseID") or index)
+                        )
                         last_warning = index
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
@@ -100,11 +118,14 @@ def _scan(turn: list[dict]) -> tuple[list[str], int, int]:
                     _input_has_response(value) for value in arguments.values() if isinstance(value, str)
                 ):
                     last_response = index
-    return warnings, last_warning, last_response
+    return warnings, identities, last_warning, last_response
 
 
-def _unanswered(payload: dict, session_id: str, key: str) -> list[str] | None:
-    """最後の警告より後に対応行が無ければ、未対応の警告の一覧を返す。同じ組には`key`ごとに1回だけ返す。 pyfltr: allow-comment"""
+def _unanswered(payload: dict, session_id: str) -> list[str] | None:
+    """最後の警告より後に対応行が無ければ、未対応の警告の一覧を返す。
+
+    同じ組には送達・質問・終了を通じて1回だけ返す。 pyfltr: allow-comment
+    """
     path = payload.get("transcript_path")
     if (
         not session_id
@@ -118,15 +139,15 @@ def _unanswered(payload: dict, session_id: str, key: str) -> list[str] | None:
     lines = transcript.read_transcript_lines(path)
     if not lines:
         return None
-    warnings, last_warning, last_response = _scan(_current_turn(_conversation_entries(lines)))
+    warnings, identities, last_warning, last_response = _scan(_since_human_input(_conversation_entries(lines)))
     if last_warning < 0 or last_response > last_warning:
         return None
-    signature = hashlib.sha256(json.dumps(warnings, ensure_ascii=False).encode("utf-8")).hexdigest()
+    signature = hashlib.sha256(json.dumps([warnings, identities], ensure_ascii=False).encode("utf-8")).hexdigest()
 
     def claim(state: dict) -> dict | None:
-        if state.get(key) == signature:
+        if state.get(_STATE_KEY) == signature:
             return None
-        return {**state, key: signature}
+        return {**state, _STATE_KEY: signature}
 
     if not session_state.update_state(session_id, claim):
         return None
@@ -144,7 +165,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if resolved is None:
         return "approve", ""
     session_id, payload = resolved
-    listed = _unanswered(payload, session_id, _STATE_KEY)
+    listed = _unanswered(payload, session_id)
     if not listed:
         return "approve", ""
     return "block", _block_notice(
@@ -167,7 +188,7 @@ def send_block(payload: dict, session_id: str, tool_name: str, tool_input: dict)
     message = tool_input.get("message")
     if isinstance(message, str) and _has_response(message):
         return None
-    listed = _unanswered(payload, session_id, _SEND_STATE_KEY)
+    listed = _unanswered(payload, session_id)
     if not listed:
         return None
     where = (

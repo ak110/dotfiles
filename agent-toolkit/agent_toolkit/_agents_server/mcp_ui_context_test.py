@@ -240,3 +240,38 @@ async def test_send_to_user_format_rejection_asks_to_resend_instead_of_final_ans
     message = str(raised.value)
     assert "再発防止の行が無い" in message and "send_to_userで送り直す" in message
     assert "最終応答に書く" not in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stashed", [True, False], ids=["stashed", "stash-failed"])
+async def test_send_to_user_keeps_warnings_in_result_when_stash_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *, stashed: bool
+) -> None:
+    """預けられた警告は結果から除き、預けられなかった警告は結果に残す（警告を消さない）。 pyfltr: allow-comment"""
+    warning = '<atk-auto source="send-to-user" kind="warn">\n本文は表示済みである。\n</atk-auto>'
+    request = AsyncMock(side_effect=lambda *_args: {"status": "confirmed", "warnings": [warning]})
+    monkeypatch.setattr(function_hook_requests, "request", request)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    calls: list[tuple[str, str, list[str]]] = []
+
+    def stash(session_id: str, tool_use_id: str, warnings: list[str]) -> bool:
+        calls.append((session_id, tool_use_id, warnings))
+        return stashed
+
+    monkeypatch.setattr(mcp_tools.sent_warnings, "stash", stash)
+    params = CallToolRequestParams.model_validate(
+        {"name": "send_to_user", "arguments": {"message": "確認が完了した。"}, "_meta": {"claudecode/toolUseId": "toolu_01"}}
+    )
+    with runtime_environment.bind(runtime_environment.CallerContext({}, tmp_path)):
+        async with mcp_tools._request_scope(params):  # pylint: disable=protected-access
+            response = await mcp_tools.mcp.call_tool("send_to_user", {"message": "確認が完了した。"})
+    assert calls == [("launcher-main", "toolu_01", [warning])]
+    assert isinstance(response, CallToolResult)
+    assert response.structured_content is not None
+    assert "warnings" not in response.structured_content
+    if stashed:
+        assert "guidance" not in response.structured_content
+    else:
+        assert warning in response.structured_content["guidance"]

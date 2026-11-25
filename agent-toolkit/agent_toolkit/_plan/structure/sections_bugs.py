@@ -17,6 +17,7 @@ from agent_toolkit._common.prevention_kinds import (
     STRUCTURE_EXCEPTION_LABEL,
     TEXT_ONLY_KINDS,
     adopted_kinds,
+    has_structure_exception,
     mentions_recurrence,
     recurrence_kind,
     starts_with_kind,
@@ -153,13 +154,25 @@ def _recurrence_line_errors(lines: list[CauseRecordLine]) -> list[str]:
         return errors
     preventions = [line.text for line in lines if line.label == "再発防止" and line.text]
     kinds = set().union(*(adopted_kinds(text) for text in preventions)) if preventions else set()
-    if kinds and kinds <= TEXT_ONLY_KINDS and not any(STRUCTURE_EXCEPTION_LABEL in text for text in preventions):
+    if kinds and kinds <= TEXT_ONLY_KINDS and not any(has_structure_exception(text) for text in preventions):
         errors.append(
             "再発した事象への`再発防止:`が`文書`・`手順`だけである。"
             "前回の対策と同じ種類を重ねず、`原因の除去`・`入力の制限`・`判断の集約`・`設計`・`自動検出`・`確認項目`のどれかを含めるか、"
             f"構造・検査で防げない理由を`{STRUCTURE_EXCEPTION_LABEL}: <理由>`で同じ行に書く"
         )
     return errors
+
+
+def findings_recurrence_errors(findings_content: str) -> list[str]:
+    """`## 調査結果と判断根拠`に置いた`再発:`の行が、区分の語で始まらない時の違反を返す。
+
+    原因が未確定の原稿はこの節にも`再発:`の行を置ける。原因分析の節と同じ区分を求める。 pyfltr: allow-comment
+    """
+    return [
+        f"`## 調査結果と判断根拠`の`再発:`の行が区分の語で始まらない（{RECURRENCE_GUIDANCE}）"
+        for line in cause_record_lines(findings_content)
+        if line.label == "再発" and line.text and recurrence_kind(line.text) is None
+    ]
 
 
 def recurrence_quote_errors(cause_content: str, quote_content: str) -> list[str]:

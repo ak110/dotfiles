@@ -811,10 +811,15 @@ async def send_to_user(
     result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})
     relayed = result.pop("warnings", None)
     warnings = [text for text in [*(relayed if isinstance(relayed, list) else []), guidance] if isinstance(text, str) and text]
-    if warnings and tool_use_id and (session_id := _manager().launcher_session_id()):
+    if (
+        warnings
+        and tool_use_id
+        and (session_id := _manager().launcher_session_id())
+        and sent_warnings.stash(session_id, tool_use_id, warnings)
+    ):
         # pyfltr: allow-comment -- 警告は送信結果の本文（データとして読まれる）に入れない。
-        # pyfltr: allow-comment -- PostToolUseのhookが同じ呼出しの添付として届ける。
-        sent_warnings.stash(session_id, tool_use_id, warnings)
+        # pyfltr: allow-comment -- PostToolUseのhookが同じ呼出しの添付として届ける。預けられなければ結果に残す。
+        pass
     elif warnings:
         result["guidance"] = "\n".join(warnings)
     return result
