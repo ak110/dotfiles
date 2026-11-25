@@ -1,8 +1,11 @@
 """効果記録と旧確認キーの公開契約を検証する。"""
 
+import contextlib
 import datetime
 import json
+import os
 import pathlib
+import signal
 import subprocess
 import time
 import types
@@ -14,6 +17,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import background_sync, effect_check, frontmatter, readiness, sync
 from agent_toolkit._atk.wi.mutations import targets
+from agent_toolkit._common.windows_job import WindowsJob, start_owned_process
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_entry_files import entry_path, write_awi, write_uwi
 
@@ -24,26 +28,38 @@ _SYNC_WORKER_TIMEOUT = 30
 def _sync_workers(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[subprocess.Popen]]:
     workers: list[subprocess.Popen] = []
 
-    def start(*args: Any, **kwargs: Any) -> subprocess.Popen:
-        worker = subprocess.Popen(*args, **kwargs)  # noqa: SIM115  # pylint: disable=consider-using-with
-        workers.append(worker)
-        return worker
+    with contextlib.ExitStack() as stack:
+        job = stack.enter_context(WindowsJob()) if os.name == "nt" else None
 
-    worker_subprocess = types.SimpleNamespace(**vars(subprocess))
-    worker_subprocess.Popen = start
-    monkeypatch.setattr(background_sync, "subprocess", worker_subprocess)
-    try:
-        yield workers
-    finally:
-        for worker in workers:
-            worker.kill()
-        unreaped = []
-        for worker in workers:
+        def start(args: list[str], **kwargs: Any) -> subprocess.Popen:
+            kwargs.pop("start_new_session")
+            kwargs.pop("creationflags")
+            worker = start_owned_process(args, job=job, **kwargs)
+            workers.append(worker)
+            return worker
+
+        worker_subprocess = types.SimpleNamespace(**vars(subprocess))
+        worker_subprocess.Popen = start
+        monkeypatch.setattr(background_sync, "subprocess", worker_subprocess)
+        try:
+            yield workers
+        finally:
             try:
-                worker.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                unreaped.append(worker.pid)
-        assert not unreaped, f"同期workerを回収できない: {unreaped}"
+                if job is not None:
+                    if workers:
+                        job.terminate()
+                else:
+                    for worker in workers:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(worker.pid, signal.SIGKILL)
+            finally:
+                unreaped = []
+                for worker in workers:
+                    try:
+                        worker.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        unreaped.append(worker.pid)
+                assert not unreaped, f"同期workerを回収できない: {unreaped}"
 
 
 def _wait_for_push(notes: pathlib.Path, workers: list[subprocess.Popen]) -> None:
