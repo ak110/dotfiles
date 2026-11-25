@@ -1,6 +1,6 @@
 import type { On } from "claude-code";
 import { expect, mock, test } from "claude-code/testing";
-import outputPolicy from "./output-policy.ts";
+import outputPolicy from "../agent_toolkit/_common/output-policy.ts";
 import { placedMessage } from "./ui_requests.tsx";
 
 function assertOutputPolicy(profile: keyof typeof outputPolicy.acceptance, text: string) {

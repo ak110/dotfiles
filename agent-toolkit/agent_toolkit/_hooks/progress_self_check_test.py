@@ -545,3 +545,28 @@ def test_self_check_lists_skipped_notices_once() -> None:
     fourth = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + 5 * _INTERVAL)
     assert fourth is not None
     assert "資料を取得せずに報告した" in fourth and "agent-basics:search" not in fourth
+
+
+def test_scoped_notices_merge_at_delivery_even_if_built_before_either_was_sent() -> None:
+    sid = _session_id()
+    left = NewWorkItem("20261123-152201-001.md", "implement", False)
+    right = NewWorkItem("20261123-152201-002.md", "implement", False)
+    extra = NewWorkItem("20261123-152201-003.md", "implement", False)
+
+    def stage(row: NewWorkItem) -> str:
+        text, snapshot = notice_module.new_wi_preview(sid, "main", [row])
+        assert row.filename in text
+        notice_module.stage_new_wi_preview(text, sid, "main", snapshot, scoped=True)
+        return text
+
+    left_text = stage(left)
+    right_text = stage(right)
+    stage(extra)
+    notice_module.record_delivery(left_text)
+    notice_module.record_delivery(right_text)
+    text, _ = notice_module.new_wi_preview(sid, "main", [left, right, extra])
+    assert left.filename not in text and right.filename not in text and extra.filename in text
+    text, snapshot = notice_module.new_wi_preview(sid, "main", [right])
+    notice_module.stage_new_wi_preview(text, sid, "main", snapshot)
+    notice_module.record_delivery(text)
+    assert left.filename in notice_module.new_wi_preview(sid, "main", [left])[0]

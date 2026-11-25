@@ -24,7 +24,7 @@ class OutputPolicy(TypedDict):
 
 @functools.cache
 def rules() -> OutputPolicy:
-    path = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "output-policy.ts"
+    path = pathlib.Path(__file__).with_name("output-policy.ts")
     source = path.read_text(encoding="utf-8").strip()
     # Claude Function hooksはコードだけをimportできるため、定義はJSON互換のTSとして共有する。  # pyfltr: allow-comment
     return cast(OutputPolicy, json.loads(source.removeprefix("export default ").removesuffix(";")))

@@ -1,5 +1,5 @@
 import { automatedMessage } from "./automated_message.ts";
-import outputPolicy from "./output-policy.ts";
+import outputPolicy from "../agent_toolkit/_common/output-policy.ts";
 
 export const questionRoute = "回答を求める質問・選択は、ツール一覧に`AskUserQuestion`があればそれで尋ね、なければmessageで送る。";
 export function deliveryGuidance(alreadyDelivered: boolean): string {
