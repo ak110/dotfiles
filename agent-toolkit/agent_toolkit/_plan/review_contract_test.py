@@ -82,3 +82,18 @@ def test_automatically_numbered_conditions_follow_item_order() -> None:
 
     with pytest.raises(ValueError, match="補足条件 2 が原本の全文と一致しない"):
         review_contract.validate(table.replace("<br>最後まで保つ。", ""), required, originals=originals)
+
+
+@pytest.mark.parametrize("second_marker", ["3.", "4.", "9."])
+def test_preserve_the_start_number_of_a_markdown_ordered_list(second_marker: str) -> None:
+    original = f"## 完成条件\n\n3. 第三の条件。\n{second_marker} 第四の条件。\n"
+    table = _TABLE.replace(
+        f"| {_FIRST} | 1 | 補足条件 | 先頭の文。<br>末尾も保つ。 | 完成条件 1 |",
+        f"| {_FIRST} | 3 | 補足条件 | 第三の条件。 | 完成条件 3 |\n"
+        f"| {_FIRST} | 4 | 補足条件 | {second_marker} 第四の条件。 | 完成条件 4 |",
+    )
+    required = {**_REQUIRED, _FIRST: (2, 1)}
+    originals = {**_ORIGINALS, _FIRST: original}
+    review_contract.validate(table, required, originals=originals)
+    with pytest.raises(ValueError, match="補足条件 4 が原本の全文と一致しない"):
+        review_contract.validate(table.replace("第四の条件。", "省略。"), required, originals=originals)

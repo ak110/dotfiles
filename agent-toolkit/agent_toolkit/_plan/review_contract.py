@@ -39,12 +39,50 @@ def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, tuple[pa
         raise ValueError(f"評価用WI原本を読み込めない: {path}: {error}。一覧と保存本文を直して再準備する") from error
 
 
+def _labelled_conditions(original: str) -> list[tuple[int, str, bool]]:
+    lines = last_h2_section_lines(original, "完成条件") or []
+    items: list[tuple[int | None, str]] = []
+    number: int | None = None
+    for token in MarkdownIt().parse("\n".join(lines)):
+        if token.level == 0 and token.type in {"ordered_list_open", "bullet_list_open"}:
+            number = int(token.attrGet("start") or 1) if token.type == "ordered_list_open" else None
+        elif token.level == 1 and token.type == "list_item_open" and token.map is not None:
+            item = "\n".join(lines[token.map[0] : token.map[1]]).strip()
+            items.append((number, item))
+            if number is not None:
+                number += 1
+    if not items:
+        return [(number, item, False) for number, item in enumerate(last_h2_section_items(original, "完成条件"), 1)]
+
+    reserved = [number for number, _ in items if number is not None]
+    used = set(reserved)
+    if len(used) != len(reserved):
+        raise ValueError("完成条件に同じ表示番号がある。順序付きリストの開始番号が重ならないよう原本を見直す")
+    conditions = []
+    next_number = 1
+    for number, item in items:
+        if number is not None:
+            conditions.append((number, item, True))
+        else:
+            while next_number in used:
+                next_number += 1
+            conditions.append((next_number, item, False))
+            next_number += 1
+    return conditions
+
+
+def completion_conditions(original: str) -> list[tuple[int, str]]:
+    return [(number, item) for number, item, _ in _labelled_conditions(original)]
+
+
 def _numbered_conditions(original: str) -> dict[str, tuple[str, str]]:
-    conditions: dict[str, tuple[str, str]] = {}
-    for number, item in enumerate(last_h2_section_items(original, "完成条件"), 1):
-        match = re.fullmatch(r"([0-9]+)[.)][ \t]+(.+)", item, re.DOTALL)
-        if match:
-            conditions[str(number)] = (" ".join(match[2].split()), " ".join(item.split()))
+    conditions = {}
+    for number, item, ordered in _labelled_conditions(original):
+        if not ordered:
+            continue
+        match = re.fullmatch(r"[0-9]+[.)][ \t]+(.+)", item, re.DOTALL)
+        if match is not None:
+            conditions[str(number)] = (" ".join(match[1].split()), " ".join(item.split()))
     return conditions
 
 

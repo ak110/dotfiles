@@ -257,16 +257,17 @@ def _contract_rows(texts: dict[str, str]) -> list[str]:
     for name in _requirements(texts):
         text = texts[name]
         sections = {name for name, _body in headings.h2_sections(text)}
-        items = headings.last_h2_section_items(text, "完成条件")
-        for number, item in enumerate(items, start=1):
+        items = review_contract.completion_conditions(text)
+        for number, item in items:
             rows.append(f"| {name} | {number} | 補足条件 | {_cell(item)} | 完成条件 {number} |")
+        last_number = max((number for number, _ in items), default=0)
         excluded = review_contract.excluded_reflections(text)
         for number, item in enumerate(headings.last_h2_section_items(text, "反映内容と反映先"), start=1):
             if number in excluded:
                 item = f"除外: 本文「採らないもの」により実施しない。{item}"
-            rows.append(f"| {name} | {len(items) + number} | 主要完成状態 | {_cell(item)} | {name} 反映内容{number} |")
+            rows.append(f"| {name} | {last_number + number} | 主要完成状態 | {_cell(item)} | {name} 反映内容{number} |")
         if "反映内容と反映先" not in sections:
-            rows.append(f"| {name} | {len(items) + 1} | 主要完成状態 | {_cell(_opening(text))} | H1と冒頭 |")
+            rows.append(f"| {name} | {last_number + 1} | 主要完成状態 | {_cell(_opening(text))} | H1と冒頭 |")
     return rows
 
 
