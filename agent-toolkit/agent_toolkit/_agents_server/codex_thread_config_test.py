@@ -29,6 +29,11 @@ from agent_toolkit._testing.codex_plugin_support import _make_plugin_root, _owne
 pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 
+@pytest.fixture(autouse=True)
+def _disable_auto_speed_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
+
+
 @pytest.mark.asyncio
 async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
