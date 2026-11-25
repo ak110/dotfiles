@@ -30,6 +30,8 @@ def test_digest_keeps_user_text_and_shortens_older_assistant_text() -> None:
     assert "Read" not in document and "委譲先の発話" not in document and "2026-01-01" not in document
     assert meta == {
         "mode": "digest",
+        "redundant_assistant_count": 0,
+        "redundant_status_line_count": 0,
         "user_count": 1,
         "assistant_count": 9,
         "request_count": 0,
@@ -157,3 +159,61 @@ def test_digest_keeps_delegation_request_of_delegated_session() -> None:
     rows = [line for line in document.splitlines() if line.startswith("- ")]
     assert rows == [f"- 委譲元の依頼: {request}", "- エージェント: 調査を開始する"]
     assert meta["request_count"] == 1 and meta["user_count"] == 0 and meta["assistant_count"] == 1
+
+
+def test_compact_reports_preserves_delivered_text_locators_and_changed_facts() -> None:
+    text = "検証結果: 12件合格"
+    repeated = text + "\n" + text
+    other_record = _utterance("assistant", text, record="claude:child")
+    new_result = _utterance("assistant", "検証結果: 13件合格")
+    waiting = _utterance("assistant", "完了を待ちます。")
+    user = _utterance("user", text)
+    request = {**_utterance("user", text), "kind": "delegation-request"}
+    delivered = {**_utterance("assistant", text), "delivery": "send_to_user", "line": 10}
+    after_user = {**_utterance("assistant", text), "line": 13}
+    after_request = {**_utterance("assistant", text), "line": 15}
+    events = [
+        _utterance("assistant", repeated),
+        other_record,
+        waiting,
+        delivered,
+        new_result,
+        user,
+        user,
+        after_user,
+        request,
+        after_request,
+    ]
+    output, counts = session_conversation.compact_assistant_reports(events)
+    assert output == [other_record, delivered, new_result, user, user, after_user, request, after_request]
+    assert events[0]["text"] == repeated
+    assert counts == {"redundant_assistant_count": 2, "redundant_status_line_count": 0}
+
+
+def test_compaction_keeps_truncated_reports_and_whitespace_in_literal_values() -> None:
+    reports = [
+        _utterance("assistant", '目的: 値は "a b"'),
+        _utterance("assistant", '目的: 値は "a  b"'),
+        {**_utterance("assistant", '目的: 値は "a b"'), "text_truncated": True},
+    ]
+    assert session_conversation.compact_assistant_reports(reports)[0] == reports
+
+
+def test_compact_status_lines_keeps_changes_and_resets_for_user() -> None:
+    events = [
+        _utterance("assistant", "進捗: 検証を開始"),
+        _utterance("assistant", "進捗: 検証を開始\n検証結果: 12件"),
+        _utterance("assistant", "検証結果: 13件"),
+        _utterance("user", "進捗: 検証を開始"),
+        _utterance("assistant", "進捗: 検証を開始\n```text\n進捗: 検証を開始\n```"),
+    ]
+    rows, meta = session_conversation.compact_assistant_reports(events)
+    assert rows == [events[0], {**events[1], "text": "検証結果: 12件"}, *events[2:]]
+    assert meta["redundant_status_line_count"] == 1
+
+
+def test_compact_reports_preserves_return_to_previous_decision() -> None:
+    wait = _utterance("assistant", "状態: 次のCI結果を待つ")
+    proceed = _utterance("assistant", "状態: 公開へ進む")
+    rows = [wait, proceed, wait, proceed]
+    assert session_conversation.compact_assistant_reports(rows)[0] == rows

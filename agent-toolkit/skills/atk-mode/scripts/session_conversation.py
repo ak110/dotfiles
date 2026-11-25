@@ -5,8 +5,98 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import re
 import shlex
 from typing import Any
+
+_WAIT_ONLY = re.compile(
+    r"(?:待機中: [A-Za-z0-9_-]+|(?:結果|完了|応答|連絡)を待ちます[。.]?|"
+    r"(?:作業を)?(?:続けます|継続します)[。.]?)"
+)
+_MIN_RECLAIMED_EXCERPT_BYTES = 96
+
+_STATUS_LINE = re.compile(
+    r"(状態|進捗|検証結果|再発防止|次の操作|次の区切り|残作業|別案|処置|原因|残している分|"
+    r"問い|要求|上位の対象|lane-[0-9]+(?:（[^）]+）)?)[：:] *[^\s].*"
+)
+
+
+def _compact_status_lines(text: str, latest: dict[str, str]) -> tuple[str, int]:
+    if any(mark in text for mark in ("```", "~~~", "<atk-auto")):
+        return text, 0
+    kept: list[str] = []
+    removed = 0
+    for line in text.splitlines(keepends=True):
+        message = line.removesuffix("\n").strip().removeprefix("- ")
+        match = _STATUS_LINE.fullmatch(message) if not line.startswith(("    ", "\t")) else None
+        if match:
+            label = match[1]
+            if latest.get(label) == message:
+                removed += 1
+                continue
+            latest[label] = message
+        kept.append(line)
+    return "".join(kept).strip(), removed
+
+
+def compact_assistant_reports(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """元記録を変えず、同じ人間の発話間にある冗長なアシスタント発話だけを省く。  pyfltr: allow-comment"""
+    reported: dict[str, tuple[str, int]] = {}
+    kept: list[dict[str, Any] | None] = []
+    omitted = 0
+    for event in events:
+        kind = event.get("kind")
+        role = event.get("role")
+        record = event.get("record")
+        if not isinstance(record, str) or kind != "utterance" or role != "assistant":
+            if isinstance(record, str) and (kind == "delegation-request" or kind == "utterance" and role == "user"):
+                reported.pop(record, None)
+            kept.append(event)
+            continue
+        text = event.get("text")
+        if not isinstance(text, str) or not text.strip() or event.get("text_truncated"):
+            reported.pop(record, None)
+            kept.append(event)
+            continue
+        if _WAIT_ONLY.fullmatch(text.strip()):
+            omitted += 1
+            continue
+        delivered = event.get("delivery") == "send_to_user"
+        identity, _ = _compact_status_lines(text, {})
+        previous_report = reported.get(record)
+        if previous_report is not None and previous_report[0] == identity:
+            old_position = previous_report[1]
+            previous = kept[old_position]
+            omitted += 1
+            if not delivered or (previous is not None and previous.get("delivery") == "send_to_user"):
+                continue
+            kept[old_position] = None
+        reported[record] = (identity, len(kept))
+        kept.append(event)
+    status_by_record: dict[str, dict[str, str]] = {}
+    compacted: list[dict[str, Any]] = []
+    repeated = 0
+    for event in kept:
+        if event is None:
+            continue
+        record = event.get("record")
+        kind = event.get("kind")
+        role = event.get("role")
+        if isinstance(record, str):
+            if kind == "delegation-request" or kind == "utterance" and role == "user":
+                status_by_record.pop(record, None)
+            elif kind == "utterance" and role == "assistant" and not event.get("text_truncated"):
+                text = event.get("text")
+                if isinstance(text, str):
+                    body, removed = _compact_status_lines(text, status_by_record.setdefault(record, {}))
+                    if removed and body:
+                        event = {**event, "text": body}
+                        repeated += removed
+                    elif removed and event.get("delivery") != "send_to_user":
+                        omitted += 1
+                        continue
+        compacted.append(event)
+    return compacted, {"redundant_assistant_count": omitted, "redundant_status_line_count": repeated}
 
 
 def positive_integer(value: str) -> int:
@@ -242,6 +332,7 @@ def digest_document(
         and str(event.get("record")) == main_record
         and str(event.get("text", "")).strip()
     ]
+    rows, compacted = compact_assistant_reports(rows)
     header = (
         "# 会話の要約（発話のみ）\n\n"
         "この会話の発話を古い順に並べる。ユーザー発話と委譲元の依頼は全文を示す。"
@@ -276,6 +367,15 @@ def digest_document(
         total -= len(lines.pop(index).encode("utf-8"))
         omitted += 1
 
+    if omitted and any(compacted.values()):
+        index = older[omitted - 1]
+        shorter_note = _omission_note(omitted - 1)
+        allowance = max_bytes - total - len(shorter_note.encode("utf-8")) - len(line(index, "").encode("utf-8"))
+        if allowance >= _MIN_RECLAIMED_EXCERPT_BYTES:
+            lines[index] = line(index, _clip(bodies[index], allowance))
+            total += len(lines[index].encode("utf-8"))
+            omitted -= 1
+
     note = _omission_note(omitted)
     budget = max_bytes - len(note.encode("utf-8"))
     for index in recent:
@@ -308,6 +408,7 @@ def digest_document(
     document = header + note + "".join(lines[index] for index in sorted(lines))
     return document, {
         "mode": "digest",
+        **compacted,
         "user_count": len(users),
         "assistant_count": len(assistants),
         "request_count": len(requests),
