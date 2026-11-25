@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import datetime
 import json
 import pathlib
@@ -200,14 +201,16 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 errors.pop(host, None)
 
     async def refresh_remotes() -> None:
-        while True:
+        shutdown = typing.cast(asyncio.Event, app.shutdown_event)
+        while not shutdown.is_set():
             try:
                 hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
             except ValueError, OSError:
                 app.logger.warning("自動更新の対象ホストを取得できません")
             else:
                 await asyncio.gather(*(refresh_remote(host) for host in hosts if host not in unsupported))
-            await asyncio.sleep(60)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(shutdown.wait(), 60)
 
     background_started = False
 

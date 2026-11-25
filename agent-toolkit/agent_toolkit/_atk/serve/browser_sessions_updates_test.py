@@ -367,3 +367,27 @@ async def test_session_failures_preserve_host_engine_and_record(screen_harness: 
     await playwright.async_api.expect(alert).to_contain_text("セッション / browser-test / Claude")
     await playwright.async_api.expect(alert).to_contain_text(path)
     await playwright.async_api.expect(alert).to_contain_text("見つかりません" if failure == "disappeared" else "取得できません")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_connection_failure_uses_shared_status_and_recovers(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.add_init_script("""
+        const NativeSource = window.EventSource;
+        window.EventSource = class extends NativeSource {
+          constructor(url) {
+            super(url);
+            if (url.endsWith("/api/sessions/events")) window.sessionSource = this;
+          }
+        };
+    """)
+    await page.goto(screen_harness.base_url + "/sessions")
+    await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(2)
+    await page.evaluate("""() => {
+        window.sessionSource.close();
+        window.sessionSource.dispatchEvent(new Event("error"));
+    }""")
+    banner = page.locator("#update-status")
+    await playwright.async_api.expect(banner).to_contain_text("再接続中")
+    await banner.get_by_role("button", name="再取得").click()
+    await playwright.async_api.expect(banner).to_be_hidden()

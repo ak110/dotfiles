@@ -108,3 +108,30 @@ async def test_usage_fetch_is_scoped_to_the_visible_screen(
     await page.go_forward()
     await expect(page).to_have_title("利用枠 - atk serve")
     await expect(page.locator("#screen-usage")).to_be_visible()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_visible_usage_retries_every_five_minutes(
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempts = 0
+
+    def refresh_for_display(*, force: bool = False):
+        nonlocal attempts
+        attempts += 1
+        return {
+            "refresh_context": usage_settings.context_id(),
+            "last_refresh_at": time.time(),
+            "refresh_failures": ["Codex: 接続できない"] if attempts == 1 else [],
+        }
+
+    monkeypatch.setattr(usage_refresh, "refresh_for_display", refresh_for_display)
+    page = screen_harness.page
+    await page.clock.install()
+    await page.goto(screen_harness.base_url + "/usage")
+    banner = page.locator("#update-status")
+    await playwright.async_api.expect(banner).to_be_visible()
+    assert attempts == 1
+    await page.clock.fast_forward(300_000)
+    await playwright.async_api.expect(banner).to_be_hidden()
+    assert attempts == 2

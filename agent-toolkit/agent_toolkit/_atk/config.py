@@ -153,7 +153,7 @@ def resolved_settings(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         "state_dir": str(_state_paths.state_dir()),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes.default_private_notes(home)),
-        **{key: resolve_mutable_setting(key, read_only=read_only) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
+        **{key: resolve_mutable_setting(key, read_only=True) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
     }
     return settings
 

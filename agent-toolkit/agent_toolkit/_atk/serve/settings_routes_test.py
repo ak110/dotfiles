@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import re
@@ -186,3 +187,40 @@ def test_background_snapshot_never_falls_back_to_legacy_reads(monkeypatch, suppo
         with pytest.raises(settings_routes._ReadOnlyUnsupported):
             settings_routes._remote_snapshot("host", read_only=True)
     assert calls == ["uname -s", "atk config snapshot --read-only"]
+
+
+@pytest.mark.asyncio
+async def test_opening_settings_prefetches_unselected_hosts_without_migrating_them(monkeypatch):
+    calls = []
+    monkeypatch.setattr(settings_routes, "_remote_hosts", lambda *, read_only=False: ("current", "legacy"))
+    monkeypatch.setattr(settings_routes.config, "settings_snapshot", lambda *_args, **_kwargs: {"settings": {}})
+
+    def run(command, **_kwargs):
+        host, operation = command[-2:]
+        calls.append((host, operation))
+        if operation == "uname -s":
+            return subprocess.CompletedProcess(command, 0, b"Linux\n", b"")
+        assert operation == "atk config snapshot --read-only"
+        return subprocess.CompletedProcess(command, 0 if host == "current" else 2, b'{"settings":{}}', b"")
+
+    monkeypatch.setattr(settings_routes, "run_with_timeout", run)
+    app = quart.Quart(__name__)
+    shell_routes.register_error_handlers(app)
+    settings_routes.register_settings_routes(app, ServeConfig("127.0.0.1", 8080))
+    await app.startup()
+    try:
+        client = app.test_client()
+        assert (await client.get("/api/settings")).status_code == 200
+        async with asyncio.timeout(3):
+            while True:
+                listing = await (await client.get("/api/settings?background=1")).get_json()
+                if listing["automatic_unsupported"] == ["legacy"]:
+                    break
+                await asyncio.sleep(0.01)
+        cached = await (await client.get("/api/settings?host=current&background=1")).get_json()
+        assert cached["settings"] == {}
+        assert set(calls) == {
+            (host, operation) for host in ("current", "legacy") for operation in ("uname -s", "atk config snapshot --read-only")
+        }
+    finally:
+        await app.shutdown()
