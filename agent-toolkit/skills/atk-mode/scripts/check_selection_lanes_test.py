@@ -110,18 +110,15 @@ def test_public_check_requires_single_stage_estimate(
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     data["レーン間の重なり"] = [_overlap_record("src/model.py", "交わる")]
     field = "単一段階案の完了見込み秒数"
-    for value, code in ((None, 1), (0, 0), (1320, 0)):
+    for value in (None, 0, 1320):
         data.pop(field, None)
         if value is not None:
             data[field] = value
         path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-        assert _dispatch(str(path), "--work-dir", str(repo), "--body-wi", "a.md") == code
+        assert _dispatch(str(path), "--work-dir", str(repo), "--body-wi", "a.md") == 0
         result = capsys.readouterr()
-        if code:
-            assert field in result.err and "次の操作:" in result.err
-            assert "配分の説明" in result.err
-        else:
-            assert f"{field}: {value}" in result.out and not result.err
+        assert not result.err
+        assert (field in result.out) == (value is not None)
     path = _write_selection(tmp_path / "single.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}])
     assert _dispatch(str(path), "--work-dir", str(repo)) == 0
     assert field not in capsys.readouterr().out

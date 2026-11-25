@@ -18,7 +18,7 @@ from agent_toolkit._testing.selection_check_support import fixture_env as fixtur
         ("public-valid", 0),
         ("public-duplicate", 1),
         ("public-surplus", 1),
-        ("staged-missing", 1),
+        ("staged-missing", 0),
         ("staged-number", 0),
         ("staged-impossible", 0),
         ("staged-type", 2),

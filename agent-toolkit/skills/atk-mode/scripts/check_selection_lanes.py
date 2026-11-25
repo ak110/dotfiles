@@ -31,9 +31,6 @@ _OBSERVATION_PLAN_RE = re.compile(r"計画:\s*([^）]+)")
 _ABSOLUTE_PLAN_RE = re.compile(r"(?<!\S)(/\S+?\.md)(?=$|[\s、。）])")
 
 
-_NEXT_STAGED = "比較した段階案の秒数か`成立する段階案なし`を最上位の`段階案の完了見込み秒数`へ書く"
-
-
 _NEXT_CORRECTION = (
     "最上位の`見込みの補正`へ実装係数・統合係数・共有待ち秒数・参照した記録・除外した記録を、"
     "各行へ`補正前の実装秒数`・`補正前の統合秒数`を書き、実装秒数・統合秒数を"
@@ -126,14 +123,6 @@ def _check_estimate_records(
         for legacy, current in _LEGACY_SECONDS_KEYS.items():
             if current not in row and legacy in row:
                 row[current] = row[legacy]
-    if (
-        _selection.PROCESS_ESTIMATE_KEY not in selection
-        and costs
-        and all(row.get(_selection.STAGE_KEY, 1) == 1 for row in costs)
-        and any(typing.cast(float, row[_IMPLEMENTATION_SECONDS_KEY]) > 6000 for row in costs)
-        and _selection.STAGED_ESTIMATE_KEY not in selection
-    ):
-        errors.append(Violation(f"6000秒超の単一段階案に`{_selection.STAGED_ESTIMATE_KEY}`がない", next_action=_NEXT_STAGED))
     correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
     if not isinstance(correction, dict):
         return [*errors, Violation(f"`{_selection.ESTIMATE_CORRECTION_KEY}`がない", next_action=_NEXT_CORRECTION)]

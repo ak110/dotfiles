@@ -11,6 +11,7 @@ from agent_toolkit._testing.selection_check_support import (
     _dispatch,
     _initial_allocation,
     _write_selection,
+    additional_active_items,
 )
 from agent_toolkit._testing.selection_check_support import fixture_env as fixture_env
 
@@ -285,8 +286,8 @@ def test_transfer_drops_emptied_source_lane(env: tuple[pathlib.Path, pathlib.Pat
     assert [row["レーン"] for row in after["レーンの所要時間"]] == ["lane-01", "lane-02"]
 
 
-@pytest.mark.parametrize(("final_lane", "code"), [("lane-04", 1), ("lane-03", 0)])
-def test_emptied_source_lane_still_counts_toward_cumulative_bound(
+@pytest.mark.parametrize(("final_lane", "code"), [("lane-04", 1), ("lane-02", 0)])
+def test_new_addition_counts_only_unfinished_lanes_after_transfer(
     env: tuple[pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -298,6 +299,10 @@ def test_emptied_source_lane_still_counts_toward_cumulative_bound(
     assert _transfer(path, repo, tmp_path, "d.md", "lane-02", {"lane-02": _COST}) == 0
     saved = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert next(item for item in saved["選定"] if item["WI"] == "d.md")["移管元レーン"] == ["lane-03"]
+    active = additional_active_items(repo, notes, "lane-02", 15)
+    saved["選定"].extend(active)
+    saved["追加WI"].extend(row["WI"] for row in active)
+    path.write_text(yaml.safe_dump(saved, allow_unicode=True), encoding="utf-8")
     (repo / "target-4.md").write_text("x", encoding="utf-8")
     _awi(notes, "e.md", "`target-4.md`を変える。")
     addition = tmp_path / "addition.yaml"
@@ -330,11 +335,11 @@ def test_emptied_source_lane_still_counts_toward_cumulative_bound(
         == code
     )
     if code:
-        assert "上限B=3、実レーン数=4" in capsys.readouterr().err
+        assert "N=20、上限B=2、実レーン数=3" in capsys.readouterr().err
         assert path.read_bytes() == before
     else:
         lanes = [row["レーン"] for row in yaml.safe_load(path.read_text(encoding="utf-8"))["レーンの所要時間"]]
-        assert lanes == ["lane-01", "lane-02", "lane-03"]
+        assert lanes == ["lane-01", "lane-02"]
 
 
 @pytest.mark.parametrize(

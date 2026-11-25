@@ -192,3 +192,22 @@ def _norm_spec_selection(
     }
     path.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
     return path
+
+
+def additional_active_items(repo: pathlib.Path, notes: pathlib.Path, lane: str, count: int) -> list[dict[str, typing.Any]]:
+    """上限の算定集合に含める、互いに独立した処理対象WIを作る。  pyfltr: allow-comment"""
+    items = []
+    for index in range(count):
+        stem = f"active-{lane}-{index}"
+        target = stem + ".py"
+        (repo / target).write_text("x\n", encoding="utf-8")
+        _awi(notes, stem + ".md", f"`{target}`を変更する。")
+        items.append(
+            {
+                "WI": stem + ".md",
+                "レーン": lane,
+                "鮮度": {"status": "current", "later_commit_count": 0},
+                "書込対象": [target],
+            }
+        )
+    return items

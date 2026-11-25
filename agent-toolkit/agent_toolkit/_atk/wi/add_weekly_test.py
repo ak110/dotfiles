@@ -4,6 +4,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._atk import weekly_schedule
 from agent_toolkit._atk.wi import add, frontmatter, layout, sync
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import session_review
@@ -108,3 +109,21 @@ def test_different_drafts_with_same_proposal_id_are_rejected_before_saving(notes
     with pytest.raises(WebInputError, match="proposal_idが重複"):
         _add(notes, [draft.format("A"), draft.format("B")], source="add-awi-by-user")
     assert not _saved(notes)
+
+
+@pytest.mark.parametrize("mode", ["architecture", "ui-sweep"])
+@pytest.mark.parametrize("result", ["対象なし", "指摘なし"])
+def test_new_weekly_report_without_proposals_completes_slot(notes, monkeypatch, mode, result):
+    slot = f"{mode}@2026-11-22"
+    monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", "run-1")
+    monkeypatch.setenv(session_review.WEEKLY_SLOT_ENV, slot)
+    names = _add(
+        notes,
+        [f"---\nrun_skill_report: true\n---\n# {result}\n\n点検した範囲。"],
+        source="run-skill",
+        entry_type="uwi",
+        scope=f"agent-toolkit:review-session {mode}",
+        question_type="post-approval",
+    )
+    assert _saved(notes)[names[0]][0]["weekly_slot"] == slot
+    assert weekly_schedule.completed(mode, datetime.date(2026, 11, 22))

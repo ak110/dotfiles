@@ -21,7 +21,7 @@ from agent_toolkit._common import claude_connection as _claude_settings
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import mcp_environment, recorded_process, session_review, skill_modes
+from agent_toolkit._common import mcp_environment, recorded_process, session_review, skill_modes, weekly_work
 from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
@@ -84,8 +84,10 @@ def run_locked(
     """ロックを取得した状態で候補を選び、子セッションを実行する。"""
     record = _run_state.load(args.run_id) if getattr(args, "resume_record", None) is not None else None
     remaining = float(args.timeout)
+    scope = skill_modes.invocation_scope(args.skill, args.args)
+    requires_weekly_result = scope in weekly_work.REQUIRED_RESULT_SCOPES
     if record is not None:
-        if record.status == "completed":
+        if record.status == "completed" and not requires_weekly_result:
             _outcome.report_success(f"既に完了した実行: {record.input.run_id}（ログ: {record.log_path}）")
             return 0
         if record.session_id is None:
@@ -114,12 +116,15 @@ def run_locked(
     )
     run_id = getattr(args, "run_id", None) or uuid.uuid4().hex
     env["AGENT_TOOLKIT_RUN_SKILL_ID"] = run_id
+    if requires_weekly_result:
+        args.run_id = run_id
     if getattr(args, "work_dir", None) is not None:
         env[session_review.TARGET_ENV] = args.target_repo
     if manifest := getattr(args, "batch_manifest", None):
         env[session_review.BATCH_ENV] = manifest
     env.pop(session_review.WEEKLY_SLOT_ENV, None)
-    if slot := getattr(args, "weekly_slot", None):
+    slot = getattr(args, "weekly_slot", None)
+    if slot:
         env[session_review.WEEKLY_SLOT_ENV] = slot
     log_line(log, f"実行識別子: {run_id}")
 
@@ -237,6 +242,7 @@ def run_locked(
                 "session_id": session_id,
                 "connection": connection,
                 "remaining": remaining,
+                "weekly_slot": slot,
             }
         )
     )
@@ -244,7 +250,12 @@ def run_locked(
         output = _SessionOutput()
 
         def completed(current: _SessionOutput = output) -> bool:
-            return current.exit_code == 0 and current.usage_limit is None and not getattr(args, "batch_manifest", None)
+            return (
+                current.exit_code == 0
+                and current.usage_limit is None
+                and not getattr(args, "batch_manifest", None)
+                and not requires_weekly_result
+            )
 
         with (
             usage_refresh.cli_activity(orchestrator, model, effort, connection.kind if connection is not None else provider),
@@ -305,7 +316,6 @@ def run_locked(
                 from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
                 run_skill_batch.record_executor(args, process.pid)
-            scope = skill_modes.invocation_scope(args.skill, args.args)
             allow_connection_switch = (
                 orchestrator == "claude" and len(_connection.candidates("orchestrator", env=env, cli=True).connections) > 1
             )

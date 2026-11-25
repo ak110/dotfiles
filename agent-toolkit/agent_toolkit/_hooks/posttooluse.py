@@ -61,6 +61,7 @@ lazy from agent_toolkit._hooks import (
     codex_truncation,
     command_timing,
     full_reads,
+    process_wi_notifications,
     review_receipt,
     session_title,
     source_review_receipt,
@@ -153,6 +154,7 @@ def _reset_process_wi_invoked(state: dict) -> dict | None:
     if not state.get("process_wi_skill_invoked", False):
         return None
     state["process_wi_skill_invoked"] = False
+    process_wi_notifications.clear(state)
     return state
 
 
@@ -449,6 +451,8 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         uwi_notice = _uwi_completion.build_notice(session_id)
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
+        if queue_notice := process_wi_notifications.build_notice(session_id):
+            notices.append(_llm_notice(queue_notice, tag="notice"))
 
     if tool_name == _ASK_USER_QUESTION_TOOL:
         if answers := _free_text_answers(payload.get("tool_response")):

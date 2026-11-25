@@ -4,12 +4,15 @@
 
 `_atk/run_skill_state.py`が`state_dir/run-skill/runs/<run_id>.json`を検証・更新する。
 元のSessionStart入力、会話ID、cwd、モデルとeffort、接続の所在、ログ、残時間、実行中のdeadlineとCLIのPID世代を保持する。
+週次の起動では元の週枠も `weekly_slot` に保存する。
 認証値は保存しない。
 `_atk/run_skill.py`は公開`--resume`で同じ入力を復元し、元と同じスキル・モード・cwdの排他を取得してから旧CLIの終了を確認する。
 CLI出力readerによる会話ID更新は、同じPID世代の実行中に限定して起動側の更新と直列化する。
 
 `running`はCLI実行中、`interrupted`は未完了、`completed`は同期済み報告までの完了を表す。
 batchでは`_atk/run_skill_batch.py`が保存済みの準備範囲を確定した後に`completed`へ移す。
+設計の点検と画面の巡回では、`_atk/run_skill_weekly_result.py`が元の週枠の結果UWIを確認した後に`completed`へ移す。
+週をまたいで再開しても、別の週枠の失敗回数や完了状態は更新しない。
 通常の実行終了で残時間を確定し、利用上限の待機とprobeの間は予算を消費しない。
 実行中に所有者が消失して終了時刻を確定できない場合は、保存済みdeadlineを上限として残時間を算出し、予算を増やさない。
 未完了の入力とログを保持し、完了済みの再開記録とログは最終更新から30日経過後の起動時に回収する。

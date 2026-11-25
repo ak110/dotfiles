@@ -38,7 +38,9 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     )
     loop_sub = _atk_help.add_subcommands(loop, dest="process_loop_subcommand", required=False)
     resume = _atk_help.add_command(loop_sub, "resume", **_atk_help.HELP["atk wi process-loop resume"])
-    resume.add_argument("value", nargs="?", metavar="ID", help="指定会話ID。省略時はCLIのpicker。")
+    resume.add_argument(
+        "value", nargs="?", metavar="ID", help="再開する会話ID。Claude Codeでは必須。省略できる実行系では会話選択画面を開く。"
+    )
     _atk_help.add_command(loop_sub, "resume-cancel", **_atk_help.HELP["atk wi process-loop resume-cancel"])
     _atk_help.add_command(loop_sub, "abort", **_atk_help.HELP["atk wi process-loop abort"])
     _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])
