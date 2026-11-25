@@ -45,6 +45,9 @@
    WIの要求を超える変更は、`agent-toolkit:atk-mode/playbooks/subagent.md`「確認事項の即時通知」でメインへ返し、判断を受けてから行う。
 7. Git管理外のファイルは、各ファイルの最初の変更の直前に本文をmanaged-temp（`agent-toolkit:atk-mode/playbooks/managed-temp.md`）へ複製し、原本と複製の絶対パスの対を引き継ぎ記録へ残す（実行レビュー担当が変更の前後を比べるため）。
 8. 変更の前に作成規範を確かめ、担当のファイルと直接影響範囲だけを変える。
+   ソースの初回編集前に、`agent-basics:writing-standards`「作業を始める」のコードを書く手順でコメントとdocstringの基準を使う。
+   同じ版を取得済みなら読み直さない。
+   コメント検査を持つプロジェクトでは、その手順に従い初回の代表編集で結果を得てから、同じ書き方を展開する。
    生成元を変えたら、生成と配布の手段も合わせて直す。
 9. 要件か外部仕様の水準の技術判断が実装中に生じたら、その時点の結論をレビュー指摘管理表（計画なしでは引き継ぎ記録）へ書いて実装を続ける。
    表へ行を足す時は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」に従う。
@@ -88,7 +91,8 @@
 19. commitの直前に`agent-toolkit:atk-mode/playbooks/commit.md`に従う。
     そのcommitの実装単位に属する継続的な方針の保存と既存箇所の見直しの項目（計画かAWIの`## 反映内容と反映先`。8節形式では`### 恒久化`と`### リファクタリング`の行）を差分と比べ、足りなければ同じcommitに含める。
     最後の実装commitの前に、全ての項目がどれかのcommitに対応することを確かめる。
-    追加した分岐・検査・変数・設定・フォールバックを要求か観測した欠陥と照らし、対応の無いものを除く（`agent-basics:writing-standards/references/design-heuristics.md`「問題と手段の比例性」）。
+    追加した分岐・検査・変数・設定・フォールバックを要求か観測した欠陥と照らし、対応の無いものを除く。
+    判断には`agent-basics:writing-standards/references/implementation-time.md`「コードの簡潔さ」を使う。
     依頼で除外された対象を変更・再実行していないことは、`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「終了と報告内容の確認」の表の証拠で確かめる。
     実装、レビュー修正、CI修正の各commitの対応は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」で記録する（最初の記録では、専用worktreeの絶対パスとブランチ名を`--result`へ渡す）。
 20. `agent-toolkit:atk-mode/playbooks/review-fix.md`「返却前の確認」を行い、結果を`agent-toolkit:atk-mode/roles/exec.subagent.md`「出力」の`実装完了`の形式でまとめる。
@@ -183,4 +187,8 @@
   決める問いが無ければ試作せずに通常の実装へ進む。
 - 見た目の完全一致を求められた移行: `agent-toolkit:atk-mode/playbooks/visual-parity.md`に従う。
 
-返す報告に含める項目: `検証結果`（変更範囲の検証のコマンド・終了コード・検証HEAD、受入シナリオごとの合否、直接影響範囲の探索の保存先）、`画面差分`、作ったcommit、外したか変えた完成条件と判断の所在、要求を超えるため通知した事項、未実施と観測できなかった範囲。
+返す報告に含める項目:
+
+- `検証結果`: 検証のコマンド・終了コード・HEAD、受入シナリオごとの結果、直接影響範囲の探索の保存先
+- `画面差分`: 画面資産か画面仕様を変えた場合は `同種の既存画面` も添える
+- 作ったcommit、変えた完成条件と判断の所在、要求を超えるため通知した事項、未実施と観測できなかった範囲

@@ -41,15 +41,6 @@ FORMAT_AWI = "awi"
 
 
 def detect_plan_format(plan_path: pathlib.Path, text: str) -> str:
-    """計画ファイルの形式を返す。 pyfltr: allow-comment
-
-    frontmatterへ計画用のキーを持てばAWI書式とする。
-    それ以外で対応する`<stem>.detail.md`があれば旧二ファイル形式とする。
-    それ以外は、8節形式の2節を両方持てば8節形式とする。
-    `## 反映内容と反映先`を持つか、計画メタ情報をH1直下に置いていれば現行の形式とする。
-    必須節を欠いた現行の形式の原稿を旧形式と誤認しないよう、計画メタ情報の配置でも判別する。
-    どれでもなければ旧単一ファイル形式とする。
-    """
     if is_awi_plan(text):
         return FORMAT_AWI
     if _detail_path_for(plan_path).is_file():
@@ -118,16 +109,6 @@ def check(
     agent_rule_paths: tuple[str, ...] = (),
     warning_details: list[_ClassifiedWarning] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """計画ファイルが基準を満たすか判定し、エラーと警告を返す。 pyfltr: allow-comment
-
-    `~/.claude/plans`直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
-    `~/.claude/plans`直下の対象では、保存工程と同じ条件でファイル名が所定の形式であるかも確かめる。
-    形式は`detect_plan_format`で判別する。旧形式は作成済みの計画を読み、完了させるために受理する。
-    警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
-    種類を分けずに新規作成を失敗させると、行数の助言だけを伴う現行形式の計画まで遮断する。
-    移行警告の拒否と、起草時の`## 進捗ログ`内容行の拒否は呼び出し側が独立に指定する。
-    既存計画の改訂では移行警告を拒否し、実行工程が記録した進捗行は保持するためである。
-    """
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
     body_start = structure.markdown_body_start_index(text)

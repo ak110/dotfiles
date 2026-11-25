@@ -34,6 +34,8 @@
 | `assumption-transcription` | エージェントが補った前提を、ユーザーの要求として書き写さない |
 | `suppression-scope-agent`、`suppression-scope-user` | 抑止の範囲を、原文どおりに自ら決める場面と、原文に無い延長を本人へ確認する場面 |
 | `merge-depth-agent` | 統合の深さを本人へ尋ねず、公開事実から群ごとの扱いを決める |
+| `scope-excel-first`、`scope-excel-correction`、`scope-preserve-existing` | 指定された取り込みの追加、依頼外の追加と拒否の除去、作業前からある別形式の維持 |
+| `scope-shared-options`、`scope-past-decision` | 全画面を同じ仕様にそろえ、前提が変わった過去の判断を今の認可へ照らす |
 
 - 名前が`-agent`と`-user`で終わる課題は確認判断の対で、依頼文と`task.py`が同じで`facts.json`だけが違う。
   確認の基準を変える時は両方を同じ条件で試し、不要な質問と必要な確認の省略の両方向を比べる。

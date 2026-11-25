@@ -160,6 +160,12 @@ def _usability_result_reason(lines: list[str]) -> str | None:
             or any(word in values[0] for word in _UNCONFIRMED_USABILITY)
         ):
             missing.append(label)
+    if "類例の比較" not in missing:
+        comparison = next(line.removeprefix("類例の比較:").strip() for line in lines if line.startswith("類例の比較:"))
+        compared, _, appearance = comparison.partition(" | 外見:")
+        absent = {"", "なし", "対象外", "N/A"}
+        if compared.strip(" ・—ー-") in absent or appearance.strip(" ・—ー-") in absent:
+            missing.append("類例の比較の外見")
     if missing:
         return "ユーザビリティレビューの合格に必要な確認結果がありません: " + "、".join(missing)
     return None
