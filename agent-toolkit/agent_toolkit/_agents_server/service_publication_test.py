@@ -488,6 +488,7 @@ asyncio.run(service.run(pathlib.Path(directory), generation))
 
 _PARENT, _SESSION = "parent-conversation", "child-session"
 _OWNED = {"parent": _PARENT, "session_id": _SESSION}
+_PREVIOUS_IMPORT_TIMEOUT = 35
 
 
 def _isolated_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
@@ -521,9 +522,16 @@ async def _launch_previous_generation(
     arguments = [str(directory), _PARENT, _SESSION, turn, str(tmp_path / "inject-failure"), str(tmp_path / "finish-turn"), mode]
     # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、呼出元が終了を見届けた後で手放す。
     processes.append(subprocess.Popen([sys.executable, str(script), *arguments], cwd=tmp_path))  # pylint: disable=consider-using-with
-    # import完了までは試験全体の上限を使い、実サービスの公開準備はその後に10秒で観測する。  # pyfltr: allow-comment
-    await _wait_for_child_file(script.with_suffix(".ready"), processes[-1])
-    old = await _wait_for_discovery(directory, "old", processes[-1])
+    process = processes[-1]
+    try:
+        async with asyncio.timeout(_PREVIOUS_IMPORT_TIMEOUT):
+            await _wait_for_child_file(script.with_suffix(".ready"), process)
+    except TimeoutError as error:
+        process.kill()
+        process.wait(timeout=5)
+        processes.pop()
+        raise TimeoutError("旧世代の子からimport完了通知が届かなかった") from error
+    old = await _wait_for_discovery(directory, "old", process)
     registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
     async with asyncio.timeout(30):
         while not await service_rpc.request(old, "owns", _OWNED):

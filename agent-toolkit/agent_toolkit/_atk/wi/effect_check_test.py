@@ -4,7 +4,9 @@ import datetime
 import json
 import pathlib
 import subprocess
+import time
 import types
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -15,9 +17,11 @@ from agent_toolkit._atk.wi.mutations import targets
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_entry_files import entry_path, write_awi, write_uwi
 
+_SYNC_WORKER_TIMEOUT = 30
+
 
 @pytest.fixture(name="sync_workers")
-def _sync_workers(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen]:
+def _sync_workers(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[subprocess.Popen]]:
     workers: list[subprocess.Popen] = []
 
     def start(*args: Any, **kwargs: Any) -> subprocess.Popen:
@@ -28,13 +32,25 @@ def _sync_workers(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen]:
     worker_subprocess = types.SimpleNamespace(**vars(subprocess))
     worker_subprocess.Popen = start
     monkeypatch.setattr(background_sync, "subprocess", worker_subprocess)
-    return workers
+    try:
+        yield workers
+    finally:
+        for worker in workers:
+            worker.kill()
+        unreaped = []
+        for worker in workers:
+            try:
+                worker.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                unreaped.append(worker.pid)
+        assert not unreaped, f"同期workerを回収できない: {unreaped}"
 
 
 def _wait_for_push(notes: pathlib.Path, workers: list[subprocess.Popen]) -> None:
     assert workers, "ローカル保存後に同期workerが起動していない"
+    deadline = time.monotonic() + _SYNC_WORKER_TIMEOUT
     for worker in workers:
-        assert worker.wait() == 0
+        assert worker.wait(timeout=max(0, deadline - time.monotonic())) == 0
     workers.clear()
     status = background_sync.read_status(notes).get("state")
     assert status == "synced", f"同期worker終了後の状態: {status!r}"
