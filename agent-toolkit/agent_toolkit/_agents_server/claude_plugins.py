@@ -11,6 +11,7 @@ import shlex
 import shutil
 import subprocess
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +111,20 @@ class _InstalledPlugin(BaseModel):
         if not Path(value).is_absolute():
             raise ValueError("Claudeの導入情報には絶対パスが必要")
         return value
+
+
+def _watch_path(value: Any) -> Path | None:
+    if not isinstance(value, str) or not Path(value).is_absolute():
+        return None
+    try:
+        return Path(value).resolve()
+    except OSError, RuntimeError, ValueError:
+        return None
+
+
+@dataclass(frozen=True)
+class _WatchPlugin:
+    install_path: Path
 
 
 class _Changes(FileSystemEventHandler):
@@ -222,7 +237,7 @@ class _LoadedPlugin(BaseModel):
 class _ReloadResponse(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
-    plugins: list[dict[str, Any]]
+    plugins: list[Any]
     error_count: int = Field(ge=0)
 
 
@@ -363,7 +378,7 @@ class ClaudePluginReloader:
             path == file or file.is_relative_to(path) for file in self._files
         )
 
-    def _inventory(self) -> list[_InstalledPlugin]:
+    def _inventory(self) -> list[_InstalledPlugin | _WatchPlugin]:
         command = [str(self.options.get("cli_path") or "claude")]
         if (sources := self.options.get("setting_sources")) is not None:
             command.extend(["--setting-sources", ",".join(sources)])
@@ -403,37 +418,64 @@ class ClaudePluginReloader:
                 "同じcwdと設定でclaude plugin list --jsonを確認する"
             )
         try:
-            entries = TypeAdapter(list[dict[str, Any]]).validate_json(result.stdout)
+            entries = TypeAdapter(list[Any]).validate_json(result.stdout)
         except ValidationError as error:
             raise _InventoryUnavailable(
                 "Claudeの導入一覧の構造が不正。同じcwdと設定でclaude plugin list --jsonを確認する"
             ) from error
         cwd = Path(self.options["cwd"]).resolve()
         sources = self.options.get("setting_sources")
-        items: list[_InstalledPlugin] = []
+        items: list[_InstalledPlugin | _WatchPlugin] = []
         for entry in entries:
-            scope = TypeAdapter(str).validate_python(entry.get("scope"), strict=True)
-            if scope not in _LOADABLE_SCOPES or sources is not None and scope not in sources:
-                continue
-            if not TypeAdapter(bool).validate_python(entry.get("enabled"), strict=True):
-                continue
-            if scope != "user":
-                project = TypeAdapter(str | None).validate_python(entry.get("projectPath"), strict=True)
-                if project is None or (cwd / project).resolve() != cwd:
-                    continue
-                if not Path(project).is_absolute():
-                    raise PluginReloadError("利用対象のprojectPathには絶対パスが必要。Claudeの導入状態を確認する")
-            if entry.get("installPath") in (None, ""):
-                plugin_id = entry.get("id")
-                if isinstance(plugin_id, str) and plugin_id and not plugin_id.startswith("agent-toolkit@"):
-                    continue
-            items.append(_InstalledPlugin.model_validate(entry))
+            plugin_id = entry.get("id") if isinstance(entry, dict) else None
+            if isinstance(plugin_id, str) and plugin_id.startswith("agent-toolkit@"):
+                plugin = self._toolkit_entry(entry, cwd, sources)
+            else:
+                plugin = self._watch_entry(entry, cwd, sources)
+            if plugin is not None:
+                items.append(plugin)
         return items
 
-    def _select_source(self, installed: list[_InstalledPlugin]) -> Path | None:
+    @staticmethod
+    def _toolkit_entry(entry: dict[str, Any], cwd: Path, sources: list[str] | None) -> _InstalledPlugin | None:
+        scope = TypeAdapter(str).validate_python(entry.get("scope"), strict=True)
+        if scope not in _LOADABLE_SCOPES or sources is not None and scope not in sources:
+            return None
+        if not TypeAdapter(bool).validate_python(entry.get("enabled"), strict=True):
+            return None
+        if scope != "user":
+            project = TypeAdapter(str | None).validate_python(entry.get("projectPath"), strict=True)
+            if project is None or (cwd / project).resolve() != cwd:
+                return None
+            if not Path(project).is_absolute():
+                raise PluginReloadError("利用対象のprojectPathには絶対パスが必要。Claudeの導入状態を確認する")
+        return _InstalledPlugin.model_validate(entry)
+
+    @staticmethod
+    def _watch_entry(entry: Any, cwd: Path, sources: list[str] | None) -> _WatchPlugin | None:
+        if not isinstance(entry, dict):
+            _LOG.debug("プラグイン監視の対象外: 一覧項目がオブジェクトでない")
+            return None
+        scope, enabled = entry.get("scope"), entry.get("enabled")
+        if not isinstance(scope, str) or scope not in _LOADABLE_SCOPES or sources is not None and scope not in sources:
+            _LOG.debug("プラグイン監視の対象外: scopeが利用対象でない")
+            return None
+        if enabled is not True:
+            _LOG.debug("プラグイン監視の対象外: enabledがtrueでない")
+            return None
+        if scope != "user" and _watch_path(entry.get("projectPath")) != cwd:
+            _LOG.debug("プラグイン監視の対象外: projectPathが対象と一致しない")
+            return None
+        path = _watch_path(entry.get("installPath"))
+        if path is None:
+            _LOG.debug("プラグイン監視の対象外: 有効なinstallPathがない")
+            return None
+        return _WatchPlugin(path)
+
+    def _select_source(self, installed: list[_InstalledPlugin | _WatchPlugin]) -> Path | None:
         if not self._versioned:
             return self._source
-        candidates = {Path(item.install_path).resolve() for item in installed if item.id.startswith("agent-toolkit@")}
+        candidates = {Path(item.install_path).resolve() for item in installed if isinstance(item, _InstalledPlugin)}
         if len(candidates) != 1:
             raise PluginReloadError("有効toolkitの導入先が一意でない。同じcwdと設定でclaude plugin list --jsonを確認する")
         source = candidates.pop()
@@ -499,7 +541,7 @@ class ClaudePluginReloader:
             if rejected.exists():
                 shutil.rmtree(rejected)
 
-    def _set_watch_paths(self, installed: list[_InstalledPlugin], source: Path | None) -> None:
+    def _set_watch_paths(self, installed: list[_InstalledPlugin | _WatchPlugin], source: Path | None) -> None:
         self._roots = {Path(item.install_path).resolve() for item in installed}
         if source is not None:
             self._roots.add(source)
@@ -539,10 +581,10 @@ class ClaudePluginReloader:
             if self._mirror is not None:
                 staged = await run_file_operation(self._stage, source)
                 await run_file_operation(self._switch, staged)
-            expected, required = await run_file_operation(self._expected_plugins, installed)
+            expected = await run_file_operation(self._expected_plugins)
             # SDK 0.2.177は専用public methodを持たない。private APIへの依存をここへ限定する。
             response = await client._query._send_control_request({"subtype": "reload_plugins"})  # pylint: disable=protected-access
-            self._validate_response(response, expected, required)
+            self._validate_response(response, expected)
         except BaseException:
             if self._mirror is not None:
                 await run_file_operation(self._restore)
@@ -567,26 +609,11 @@ class ClaudePluginReloader:
             self._changed.clear()
         return response
 
-    def _expected_plugins(
-        self, installed: list[_InstalledPlugin]
-    ) -> tuple[dict[Path, tuple[str, str | None] | None], set[Path]]:
-        explicit = {Path(item["path"]).resolve() for item in self.options.get("plugins", [])}
-        # 明示toolkitは固定入力で検証する。導入版との同名重複を残すかはCLIが判断する。
-        required = set(explicit) | {
-            Path(item.install_path).resolve()
-            for item in installed
-            if self._toolkit_index is None or not item.id.startswith("agent-toolkit@")
-        }
-        expected: dict[Path, tuple[str, str | None] | None] = {}
-        for root in explicit | {Path(item.install_path).resolve() for item in installed}:
+    def _expected_plugins(self) -> dict[Path, tuple[str, str | None]]:
+        expected: dict[Path, tuple[str, str | None]] = {}
+        for item in self.options.get("plugins", []):
+            root = Path(item["path"]).resolve()
             manifest_path = root / ".claude-plugin/plugin.json"
-            if root not in explicit and not manifest_path.exists():
-                # 一覧由来のプラグインはmanifestを省略でき（例: typescript-lsp@claude-plugins-officialの導入先は
-                # LICENSEとREADME.mdだけを持つ）、CLIの応答の名前・版の出所を観測していない。
-                # 推定した名前・版と比べると再読み込み全体が失敗し続けるため、pathだけを確かめ、必須にもしない。
-                expected[root] = None
-                required.discard(root)
-                continue
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             except FileNotFoundError as error:
@@ -595,11 +622,9 @@ class ClaudePluginReloader:
             if not isinstance(name, str) or not name or version is not None and not isinstance(version, str):
                 raise PluginReloadError(f"プラグインのmanifestが不正: {root}。nameとversionを確認する")
             expected[root] = name, version
-        return expected, required
+        return expected
 
-    def _validate_response(
-        self, response: Any, expected: dict[Path, tuple[str, str | None] | None], required: set[Path]
-    ) -> None:
+    def _validate_response(self, response: Any, expected: dict[Path, tuple[str, str | None]]) -> None:
         # CLI 2.1.318 / SDK 0.2.177の実応答ではerrors配列の代わりにerror_countを返す。
         try:
             result = _ReloadResponse.model_validate(response)
@@ -611,22 +636,20 @@ class ClaudePluginReloader:
             )
         loaded: set[Path] = set()
         for entry in result.plugins:
-            if entry.get("path") == "builtin":
+            path = _watch_path(entry.get("path")) if isinstance(entry, dict) else None
+            if path is None or path not in expected:
+                _LOG.debug("reload_pluginsの明示入力以外の結果を検証しない")
                 continue
             try:
                 item = _LoadedPlugin.model_validate(entry)
             except ValidationError as error:
                 raise PluginReloadError("reload_pluginsの利用対象が不正。CLIの診断ログを確認する") from error
-            path = Path(item.path)
-            if not path.is_absolute():
-                raise PluginReloadError("reload_pluginsが相対pathを返した。CLIの診断ログを確認する")
-            path = path.resolve()
-            if path not in expected or expected[path] not in (None, (item.name, item.version)):
+            if expected[path] != (item.name, item.version):
                 raise PluginReloadError(
                     f"reload_pluginsのプラグイン名・版・pathが入力と一致しない: {item.name}。導入状態を確認する"
                 )
             loaded.add(path)
-        if missing := required - loaded:
+        if missing := expected.keys() - loaded:
             raise PluginReloadError(
                 f"reload_pluginsの応答に必要なプラグインがない: {sorted(map(str, missing))}。導入状態を確認する"
             )

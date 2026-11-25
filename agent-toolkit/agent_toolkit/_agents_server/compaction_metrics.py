@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,8 @@ from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import file_lock
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.json_lines import split_lines
+
+_LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 
 def record_directory(state_root: Path | None = None) -> Path:
@@ -43,14 +46,11 @@ async def observe_compaction_item(session: SessionState, method: str, params: di
             and isinstance(completed_at_ms, int)
             and not isinstance(completed_at_ms, bool)
         ):
-            await run_file_operation(
-                append_compaction_record,
-                session.session_id,
-                item_id,
-                session.compaction_started_at_ms[item_id],
-                completed_at_ms,
-            )
-            del session.compaction_started_at_ms[item_id]
+            started_at_ms = session.compaction_started_at_ms.pop(item_id)
+            try:
+                await run_file_operation(append_compaction_record, session.session_id, item_id, started_at_ms, completed_at_ms)
+            except (OSError, ValueError, OverflowError) as error:
+                _LOG.warning("Codexのコンパクションの計測を省略する: %s", error)
 
 
 def append_compaction_record(
