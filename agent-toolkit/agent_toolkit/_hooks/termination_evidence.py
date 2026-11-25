@@ -169,6 +169,8 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
                 if main_context:
                     data[CONTEXT_KEY] = playbook_digest()
             elif record["kind"] == "deliverable":
+                if main_context and (entry_work := record.get("entry_work")):
+                    data["entry_work"] = entry_work
                 known_labels = work.setdefault("deliverables", [])
                 known_labels.extend(label for label in record["labels"] if label not in known_labels)
                 if "repository" in record:

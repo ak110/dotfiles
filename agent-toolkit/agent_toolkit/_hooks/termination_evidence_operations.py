@@ -160,7 +160,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
         if skill == COMPLETION_REPORT:
             return [{"kind": "completion"}]
         if skill is not None:
-            record: dict[str, Any] = {"kind": "deliverable", "labels": [_start_label(skill)]}
+            record: dict[str, Any] = {"kind": "deliverable", "labels": [_start_label(skill)], "entry_work": skill}
             if isinstance(payload.get("cwd"), str) and (repository := _git_root(payload["cwd"])) is not None:
                 record["repository"] = str(repository)
             return [record]

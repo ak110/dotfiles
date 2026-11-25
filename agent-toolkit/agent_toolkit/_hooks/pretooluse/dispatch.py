@@ -103,9 +103,9 @@ lazy from agent_toolkit._hooks import (
 )
 lazy from agent_toolkit._hooks.agents_server_observations import start_observation_input
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
-lazy from agent_toolkit._hooks.pretooluse import commit_identity, publication_gate, user_facing_checks
+lazy from agent_toolkit._hooks.pretooluse import commit_identity, intake_edit, publication_gate, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
@@ -217,6 +217,12 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
             pending_notices.append(warning)
         if decision.block is None:
             pending_notices.extend(_operation_skills.notices(payload, tool_name, tool_input, session_id))
+            if (
+                not is_codex
+                and not is_antigravity_payload(payload)
+                and (boundary := intake_edit.notice(payload, tool_name, tool_input, session_id))
+            ):
+                pending_notices.append(boundary)
         contract_update = work_contract.delegated_notice(session_id, agent=_agent_id.resolve_hook_agent_id(payload))
         if contract_update:
             pending_notices.append(
