@@ -575,6 +575,17 @@ def test_pathless_non_toolkit_is_not_loadable(
         loop.close()
 
 
+def test_watch_targets_skip_paths_with_no_existing_ancestor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    loop = asyncio.new_event_loop()
+    try:
+        reloader = claude_plugins.ClaudePluginReloader(_options(tmp_path, tmp_path), loop)
+        reloader._roots = {tmp_path / "unavailable"}
+        monkeypatch.setattr(Path, "is_dir", lambda _path: False)
+        assert not reloader._watch_targets()
+    finally:
+        loop.close()
+
+
 @given(
     field=st.sampled_from(["scope", "enabled", "projectPath", "installPath", "id", "futureField"]),
     present=st.booleans(),

@@ -542,7 +542,9 @@ class ClaudePluginReloader:
                 shutil.rmtree(rejected)
 
     def _set_watch_paths(self, installed: list[_InstalledPlugin | _WatchPlugin], source: Path | None) -> None:
-        self._roots = {Path(item.install_path).resolve() for item in installed}
+        self._roots = {
+            item.install_path if isinstance(item, _WatchPlugin) else Path(item.install_path).resolve() for item in installed
+        }
         if source is not None:
             self._roots.add(source)
         env = {**os.environ, **self.options.get("env", {})}
@@ -566,10 +568,8 @@ class ClaudePluginReloader:
             if root.is_dir():
                 watches[root] = True
         for target in self._roots | self._files:
-            parent = target.parent
-            while not parent.is_dir():
-                parent = parent.parent
-            watches.setdefault(parent, False)
+            if (parent := next((candidate for candidate in target.parents if candidate.is_dir()), None)) is not None:
+                watches.setdefault(parent, False)
         return set(watches.items())
 
     async def reload(self, client: Any) -> dict[str, Any]:
