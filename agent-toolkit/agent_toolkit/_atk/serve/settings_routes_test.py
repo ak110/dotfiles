@@ -4,8 +4,11 @@ import re
 import subprocess
 
 import pytest
+import quart
 
-from agent_toolkit._atk.serve import settings_routes
+from agent_toolkit._atk import git_sync
+from agent_toolkit._atk.serve import settings_routes, shell_routes
+from agent_toolkit._atk.serve.config import ServeConfig
 
 
 @pytest.mark.parametrize("legacy", [False, True])
@@ -87,6 +90,34 @@ def test_unrecognized_host_runs_legacy_operations_only_on_the_unelevated_route(m
     ]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("windows", [False, True])
+async def test_remote_save_timeout_only_instructs_to_read_the_current_value(monkeypatch, windows):
+    def run(command, **kwargs):
+        if command[-1] == "uname -s":
+            return subprocess.CompletedProcess(command, 1 if windows else 0, b"Linux\n", b"")
+        if command[-1] == "atk config snapshot" or windows and b"'snapshot'" in kwargs["input"]:
+            return subprocess.CompletedProcess(command, 0, b'{"settings":{"execute_model":{}}}', b"")
+        if windows:
+            return subprocess.CompletedProcess(command, 124, b"", b"")
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(settings_routes, "run_with_timeout", run)
+    monkeypatch.setattr(settings_routes, "_remote_hosts", lambda: ("host",))
+    app = quart.Quart(__name__)
+    shell_routes.register_error_handlers(app)
+    settings_routes.register_settings_routes(app, ServeConfig("127.0.0.1", 8080))
+
+    response = await app.test_client().post(
+        "/api/settings?host=host", json={"action": "set", "key": "execute_model", "value": "claude:opus"}
+    )
+    assert response.status_code == 400
+    assert await response.get_json() == {
+        "error": "保存処理の結果を確認できません",
+        "next_action": "設定画面を再読み込みし、SSH先の現在の値を確認する",
+    }
+
+
 @pytest.mark.parametrize("save", [False, True])
 def test_ssh_probe_connection_failure_does_not_try_unelevated(monkeypatch, save):
     def run(command, **_kwargs):
@@ -101,3 +132,35 @@ def test_ssh_probe_connection_failure_does_not_try_unelevated(monkeypatch, save)
         else:
             settings_routes._remote_snapshot("host")  # noqa: SLF001  # pylint: disable=protected-access
     assert result.value.next_action == "接続先とSSHの接続を確認する"
+
+
+@pytest.mark.parametrize("windows", [False, True])
+@pytest.mark.parametrize(
+    ("payload", "shared"),
+    [
+        ({"action": "preset", "preset": "codex-near-primary"}, True),
+        ({"action": "set", "key": "execute_model", "value": "claude:opus"}, True),
+        ({"action": "set", "key": "serve_port", "value": "25000"}, False),
+        ({"action": "temporary-clear"}, False),
+    ],
+)
+def test_remote_settings_limit_covers_shared_git_update_without_extending_reads(monkeypatch, windows, payload, shared):
+    calls = []
+
+    def run(command, **kwargs):
+        if command[-1] == "uname -s":
+            return subprocess.CompletedProcess(command, 1 if windows else 0, b"Linux\n", b"")
+        duration = int(command[2]) if windows else kwargs["timeout"]
+        calls.append(duration)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(command, 0, b'{"settings":{"execute_model":{},"serve_port":{}}}', b"")
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(settings_routes, "run_with_timeout", run)
+    settings_routes._remote_update("host", payload)  # noqa: SLF001  # pylint: disable=protected-access
+    assert len(calls) == 2
+    assert calls[0] == 20
+    if shared:
+        assert calls[1] > git_sync.LOCK_WAIT_TIMEOUT_SECONDS + git_sync.LOCK_HOLD_TIMEOUT_SECONDS
+    else:
+        assert calls[1] == calls[0]

@@ -4,18 +4,30 @@ import { type Engine, expect, mock, test } from "claude-code/testing";
 // 入力はClaude Codeの型宣言SessionRateLimit、TurnCompleteInput、StopFailureHookInputに従う。
 const TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" as const };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
 async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }, server?: { value: string }, prompt = { value: "first-prompt" }, owner = "") {
   mock.env(on, env);
-  let release: (() => void) | undefined;
-  let cleared: (() => void) | undefined;
-  const completed = new Promise<void>((resolve) => { cleared = resolve; });
+  on("clock.every", { ms: 100 }, () => ({ deny: "UI要求の定期読込は再開予約の試験対象外" }));
+  const scheduled = deferred<() => void>();
+  const completed = deferred<void>();
   const clock = now === undefined ? mock.clock(on) : {
-    advance: async (_ms: number) => { release?.(); await completed; },
+    advance: async (_ms: number) => {
+      const release = await scheduled.promise;
+      release();
+      await completed.promise;
+    },
   };
   if (now !== undefined) {
     on("clock.now", () => ({ value: now.value }));
     on("clock.after", async () => {
-      await new Promise<void>((resolve) => { release = resolve; });
+      const timer = deferred<void>();
+      scheduled.resolve(timer.resolve);
+      await timer.promise;
       return { value: undefined };
     });
   }
@@ -37,7 +49,7 @@ async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Recor
   on("tool.register", (_$, e) => ({ value: { tool: e.name } }));
   on("turn.complete", () => ({ text: "" }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
-  on("ui.status", (_$, e) => { statuses.push(e.text); if (e.text === undefined) cleared?.(); return { value: undefined }; });
+  on("ui.status", (_$, e) => { statuses.push(e.text); if (e.text === undefined) completed.resolve(); return { value: undefined }; });
   on("prompt.submit", (_$, e) => { prompts.push(e.text); return { text: "" }; });
   await $.session.start({ cwd: "/work", surface: null, isInteractive: true });
   await $.turn.start({ text: "試験", turnId: TURN.turnId });

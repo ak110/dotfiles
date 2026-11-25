@@ -22,7 +22,7 @@
 3. ソースの初回編集でコメント検査を有効にしている場合は、代表ファイル1件だけに既存の `comment-check` を実行する。
    検査が対象へ到達したかと診断の有無を別々に確かめ、違反を直してから同じ書き方を他へ展開する。
    `uv run --frozen pyfltr run --no-fix --commands=comment-check <代表ファイルの絶対パス>`。
-   絞り込み失敗時に全体へ広げず、未実行と診断なしを区別する。
+   対象の限定に失敗しても全体へ広げず、未実行と診断なしを区別する。
    通常の静的チェックをpytestより先に通す。
    `uv run --frozen pyfltr run --disable pytest <対象ファイルの絶対パス>`を失敗が無くなるまで直し、修正後の再実行は失敗したチェックへ限定する。
    pyfltrは1回の実行の間ずっと枠を持つため、静的チェックで失敗する実行にpytestを含めると枠を数分ずつ無駄に占める（2026年11月12日の同時数12では、失敗した`pyfltr run`18件のうち12件が静的チェックだけの失敗で、その12件でもpytestが流れていた）。
@@ -42,6 +42,10 @@
      `-o`・`-p`はpytest固有で、`pyfltr run`へ渡すと終了2になる。
      `-o addopts=''`で設定全体を外す場合は`-p no:cacheprovider`も付ける。
      並列化だけを止める場合は`-n 0`を使い、`-p no:xdist`は既存の`-n 4 --dist=worksteal`が認識されずに収集前に終了4となる。
+   - 回収予定のレーンで出力を残す場合は、対象ディレクトリが無い状態で `uv run --frozen python scripts/capture_lane_generated.py <hypothesis|statusline|claude-types>` を使う。
+     順にpytest、固定のCargo試験、Claude Codeの同梱型の複製を隔離領域で行い、生成した内容を確かめられる記録を作業ツリーへ一緒に置く。
+     `hypothesis` は後続の引数をpytestへ渡す。
+     既存の出力へ記録を後付けせず、直接起動の出力や生成後に編集したものは保持する。
 6. commitする。
    commitのhookは`pyfltr fast`を実行し、`develop`・`master`・`main`以外のブランチではpytestを外す。
    統合先のブランチでも、同じ内容でpytestが成功した`pyfltr run`があればpytestを外す（判定の条件は`scripts/pyfltr_precommit.py`の冒頭）。
@@ -54,6 +58,12 @@
      変更箇所・直接の利用側・競合解消に関わるテストと、develop CIが実行しないチェックを含める。
    - 起動の前に`uv run --frozen python scripts/pyfltr_precommit.py --check-argv '<予定argvのJSON配列>' --consumer-review <判定JSONの絶対パス>`で引数と必須の範囲を確かめる。
      argvは`["run", "--no-fix", "--no-always-targets", "--commands=...", "<対象パス>"]`の形とし、曖昧な候補が無ければ`--consumer-review`を省く。
+   - 合成版の検証では、最新の統合先をmergeした後、同じ統合先の完全OIDを候補列挙、`--check-argv`、`--verify-run`の`--against`へ渡す。
+     候補の`cross_contracts`にある必須試験を実行し、規範の容量は合成後のファイルで判定する。
+     統合先が進んだ場合は新しい組で対象を確かめ、入力が変わった証拠だけを取り直す。
+     `atk lane integrate`は`pyproject.toml`の`[tool.agent-toolkit.lane-integration]`から必須の横断試験の検証を呼ぶ。
+     合成候補で必要な試験の成功を再利用できなければ該当試験を実行し、失敗ならfast-forwardしない。
+     この自動検証はmanifestの変更範囲検証と最終runの受理を置き換えない。
    - indexと作業ツリーを最終の統合入力のHEADへ一致させる。
      fast-forwardの直前に`uv run --frozen python scripts/pyfltr_precommit.py --verify-run <run_id> --consumer-review <判定JSON>`の終了0を確かめる。
      `--check-argv`の終了0は実際の実行の成功、版、cwd、HEADとindex、実行後の不変を確かめないため、verify-runは省かない。
@@ -66,7 +76,7 @@
      次のスクリプトを自分のmanaged-tempへ保存し、manifestのverificationに次の配列を1項目として渡す。
 
      ```json
-     ["bash", "<スクリプト>", "<ログprefix>", "<判定JSON>", "--no-fix", "--no-always-targets", "--commands=<全チェック>", "<対象パス>"]
+     ["bash", "<スクリプト>", "<ログprefix>", "<判定JSON>", "refs/heads/<統合先branch>", "--no-fix", "--no-always-targets", "--commands=<全チェック>", "<対象パス>"]
      ```
 
      山括弧は実在の絶対パスと値へ置き換え、複数の対象パスは別々の要素にする。
@@ -79,12 +89,13 @@
      set -euo pipefail
      log_prefix=$1
      consumer_review=$2
-     shift 2
+     integration_base=$(git rev-parse --verify "$3^{commit}")
+     shift 3
      make sync
      # mise管理ツールが必要なら、ここで照会・起動確認する。
      uv run --frozen pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err"
      run_id=$(jq -er 'select(.kind == "header") | .run_id' "$log_prefix.out")
-     uv run --frozen python scripts/pyfltr_precommit.py --verify-run "$run_id" --consumer-review "$consumer_review"
+     uv run --frozen python scripts/pyfltr_precommit.py --verify-run "$run_id" --consumer-review "$consumer_review" --against "$integration_base"
      ```
 
      verificationを空にする場合は、受理まで終えた同じ入力の両出力と終了状態を既存の記録へ対応付ける。

@@ -34,7 +34,7 @@ from agent_toolkit._agents_server.launch_requests import task_document_label, ta
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
 from agent_toolkit._agents_server.manager_start import model_override_warnings
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
-from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response, resolve_display_label
+from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response
 from agent_toolkit._agents_server.tool_descriptions import (
     COMMAND_DESCRIPTION,
     CWD_DESCRIPTION,
@@ -71,6 +71,7 @@ from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.send_to_user import CLAUDE_TOOL_NAME
 lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
+lazy from agent_toolkit._common import sent_warnings
 lazy from agent_toolkit._common.operation_approvals import request_display
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -369,6 +370,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     mode = mode or agents_server_tools.default_start_mode(
         subagent_md_path=subagent_md_path, prompt=prompt, whole_contract_path=whole_contract_path
     )
+    launch_requests.validate_start_label(label)
     if cwd is None:
         launch_requests.require_start_cwd()
     assert cwd is not None
@@ -412,7 +414,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 task_prompt,
                 cwd,
                 launch_kind=launch_kind,
-                label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
+                label=label if label is not None else task_document_label(subagent_md_path, params),
                 startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
                 explicit_role_model=model_type is not None,
                 startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
@@ -828,8 +830,19 @@ async def send_to_user(
     if tool_use_id:
         inputs["tool_use_id"] = tool_use_id
     result = await _ui_request("send_to_user", inputs)
-    if guidance:
-        result["guidance"] = guidance
+    relayed = result.pop("warnings", None)
+    warnings = [text for text in [*(relayed if isinstance(relayed, list) else []), guidance] if isinstance(text, str) and text]
+    if (
+        warnings
+        and tool_use_id
+        and (session_id := _manager().launcher_session_id())
+        and sent_warnings.stash(session_id, tool_use_id, warnings)
+    ):
+        # pyfltr: allow-comment -- 警告は送信結果の本文（データとして読まれる）に入れない。
+        # pyfltr: allow-comment -- PostToolUseのhookが同じ呼出しの添付として届ける。預けられなければ結果に残す。
+        pass
+    elif warnings:
+        result["guidance"] = "\n".join(warnings)
     return result
 
 

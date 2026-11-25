@@ -1,6 +1,6 @@
 import {BASE_PATH} from "./common.js";
 import {registerScreen} from "./shell.js";
-import {DAY, dateJst, forecast, quotaName} from "./usage_display.js";
+import {DAY, claudeResetScopeName, dateJst, forecast, quotaName} from "./usage_display.js";
 
 const view = document.getElementById("usage-content");
 const status = document.getElementById("usage-status");
@@ -32,6 +32,37 @@ function values(parent, pairs) {
     list.append(row);
   }
   parent.append(list);
+}
+
+function booleanStatus(value, yes, no) {
+  return value === true ? yes : value === false ? no : "未取得";
+}
+
+function namedStatus(value, names) {
+  return value == null ? "未取得" : Object.hasOwn(names, value) ? names[value] : "不明";
+}
+
+function claudeWindowStatus(window) {
+  const group = window.group;
+  const groupIsPeriod = (group === "weekly" && (window.duration_seconds === 7 * DAY ||
+    window.window_id === "seven_day_overage_included")) || (group === "session" && window.duration_seconds === 5 * 3600);
+  return [
+    ["利用枠の区分", group == null || groupIsPeriod ? null : namedStatus(group, {weekly: "週", session: "セッション"})],
+    ["警告状態", namedStatus(window.severity, {normal: "通常", warning: "警告"})],
+    ["利用枠の状態", booleanStatus(window.is_active, "有効", "無効")],
+  ];
+}
+
+function codexUsageStatus(metadata) {
+  const credits = metadata.credits;
+  return [
+    ["通常利用", booleanStatus(metadata.ordinaryUsageAllowed, "利用可能", "利用不可")],
+    ["支出上限", booleanStatus(metadata.spendControlReached, "到達", "未到達")],
+    ["上限に達した枠", namedStatus(metadata.rateLimitReachedType, {weekly: "週", primary: "第1枠", secondary: "第2枠"})],
+    ["クレジット", booleanStatus(credits?.hasCredits, "あり", "なし")],
+    ["クレジットの上限", booleanStatus(credits?.unlimited, "なし", "あり")],
+    ["クレジット残高", credits?.balance ?? "未取得"],
+  ];
 }
 
 function remaining(seconds) {
@@ -93,7 +124,8 @@ function quota(window, now) {
     ["次回リセット", window.resets_at > now ? `${recovery}（${remaining(window.resets_at - now)}）` : recovery],
     ["観測", dateJst(window.observed_at) + (now - window.observed_at >= 3600 ? "（1時間以上前）" : "")],
     ["使用率の観測", observed !== window.observed_at ? dateJst(observed) : null],
-    ["group", window.group], ["severity", window.severity], ["is_active", window.is_active],
+    ["枠の識別子", window.window_id],
+    ...(window.engine === "claude" ? claudeWindowStatus(window) : []),
   ]);
   const message = element("p", forecastText(prediction, window.resets_at));
   if (["reached", "exhausted"].includes(prediction.kind)) {
@@ -142,16 +174,21 @@ function render(payload) {
       extra(section, metadata);
       section.append(element("p", "在庫は手入力の値です。リセット権は公式の利用状況画面で使います。"));
       if (!payload.claude_inventory.length) section.append(element("p", "登録した在庫はありません。"));
-      for (const right of payload.claude_inventory) section.append(element("p", `${right.scope} · ${right.count}回 · ${dateJst(Date.parse(right.until) / 1000)}まで`));
+      for (const right of payload.claude_inventory) {
+        const name = claudeResetScopeName(right.scope, payload.windows);
+        section.append(element("p", `${name} · ${right.count}回 · ${dateJst(Date.parse(right.until) / 1000)}まで`));
+      }
     } else {
       values(section, [
         ["在庫", metadata.reset_available_count == null ? "未取得" : `${metadata.reset_available_count}回`],
         ["期限", "取得できない"],
-        ["ordinaryUsageAllowed", metadata.ordinaryUsageAllowed], ["spendControlReached", metadata.spendControlReached],
-        ["rateLimitReachedType", metadata.rateLimitReachedType], ["hasCredits", metadata.credits?.hasCredits],
-        ["unlimited", metadata.credits?.unlimited], ["balance", metadata.credits?.balance],
+        ...codexUsageStatus(metadata),
       ]);
-      for (const right of metadata.reset_credit_details ?? []) section.append(element("p", [right.resetType, right.status].filter(Boolean).join(" · ")));
+      for (const right of metadata.reset_credit_details ?? []) {
+        const kind = namedStatus(right.resetType, {codexRateLimits: "Codexの利用枠"});
+        const state = namedStatus(right.status, {used: "使用済み", available: "利用可能"});
+        section.append(element("p", `${kind} · ${state}`));
+      }
     }
     const permissions = payload.permissions.filter(entry => entry.engine === engine);
     section.append(element("h3", "リセットの許可"));

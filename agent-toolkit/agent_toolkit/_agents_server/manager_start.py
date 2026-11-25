@@ -41,7 +41,7 @@ from agent_toolkit._agents_server.launch_requests import (
     wrap_delivery_body,
 )
 from agent_toolkit._agents_server.plugin_root import SERVER_PLUGIN_ROOT
-from agent_toolkit._agents_server.responses import excluded_candidate_payload, resolve_display_label
+from agent_toolkit._agents_server.responses import excluded_candidate_payload
 from agent_toolkit._agents_server.session_errors import ActionableRuntimeError, SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, SessionResumeState, SessionState
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
@@ -168,10 +168,32 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         startup_inputs: Mapping[str, str] | None = None,
         explicit_role_model: bool = False,
     ) -> dict[str, Any]:
-        """マシン全体の同時稼働数の上限に空きが出るまで待ってから起動する。
+        launch_requests.validate_start_label(label)
+        return await self._start_with_admission(
+            model_type,
+            prompt,
+            cwd,
+            launch_kind=launch_kind,
+            label=label,
+            excluded_candidates=excluded_candidates,
+            startup_document=startup_document,
+            startup_inputs=startup_inputs,
+            explicit_role_model=explicit_role_model,
+        )
 
-        待った場合は待機秒数と上限の由来を応答へ加え、依頼側が既存の起動結果から待ちを知れるようにする。
-        """
+    async def _start_with_admission(
+        self,
+        model_type: str,
+        prompt: str,
+        cwd: str,
+        *,
+        launch_kind: LaunchKind,
+        label: str | None,
+        excluded_candidates: Mapping[ModelCandidate, str] | None = None,
+        startup_document: pathlib.Path | None = None,
+        startup_inputs: Mapping[str, str] | None = None,
+        explicit_role_model: bool = False,
+    ) -> dict[str, Any]:
         validate_prompt(prompt)
         validate_cwd(cwd)
         ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
@@ -259,7 +281,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
         excluded_session_ids: dict[ModelCandidate, str] = {}
-        display_label = resolve_display_label(label, prompt)
+        display_label = label if label is not None else launch_kind
         parent_model = await run_file_operation(self.launcher_model) if launch_kind == "delegate" else None
         for candidate_index, candidate in enumerate(candidates):
             if candidate in excluded:
@@ -481,12 +503,12 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             startup_features.selection(predecessor.startup_profile),
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
         ):
-            response = await self.start(
+            response = await self._start_with_admission(
                 inherited_type if model_type is None else model_type,
                 prompt,
                 predecessor.cwd,
                 launch_kind=predecessor.launch_kind,
-                label=predecessor.label,
+                label=predecessor.label or None,
                 excluded_candidates=excluded,
                 explicit_role_model=model_type is not None or launch_requests.role_model_was_explicit(predecessor),
             )
@@ -670,7 +692,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             prompt,
             cwd,
             launch_kind="explore",
-            label=resolve_display_label(label, "explore"),
+            label=label,
         )
 
     async def start_shell(
@@ -689,7 +711,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             shell_prompt(command, summary_policy),
             cwd,
             launch_kind="shell",
-            label=resolve_display_label(label, shell_default_label(command)),
+            label=label if label is not None else shell_default_label(command),
         )
 
     async def start_write(
@@ -706,5 +728,5 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             prompt,
             cwd,
             launch_kind="write",
-            label=resolve_display_label(label, "write"),
+            label=label,
         )

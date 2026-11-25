@@ -52,7 +52,10 @@ def test_plain_command_hook_stays_within_module_budget(tmp_path: pathlib.Path, e
     if event == "PostToolUse":
         payload["tool_response"] = {"stdout": "a", "stderr": "", "interrupted": False}
     modules = _loaded_modules(tmp_path, [event.lower()], payload)
-    if event == "PostToolUse":
+    if event == "PreToolUse":
+        assert "agent_toolkit._hooks.stop_session" not in modules
+        assert "agent_toolkit._hooks.message_format" not in modules
+    else:
         assert "agent_toolkit._common.task_documents" not in modules
         assert "agent_toolkit._common.effort" not in modules
     _assert_within_budget(event, modules)

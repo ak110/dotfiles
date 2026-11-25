@@ -10,6 +10,8 @@ hookの通知、process-loopが渡す追加指示、agent間配送、機械が�
 """
 
 import contextlib
+import functools
+import pathlib
 import re
 from collections.abc import Generator, Mapping
 from typing import NamedTuple
@@ -28,6 +30,68 @@ FORWARDED_USER_INPUT_ELEMENT = "forwarded-user-input"
 受信側はこの要素の内側だけをユーザーの発話として扱う。配送する手段ごとに別の綴りを持つと、
 受信側の判定が配送する手段によって分かれるため、要素名を本モジュールで1つに保つ。
 """
+
+
+DELEGATE_NOTICE_HEADING = "委譲を受けた担当であることの通知"
+_CLOSING_AUTO = f"</{AUTO_INSERTED_ELEMENT}>"
+_AUTO_OPENING = re.compile(rf"<{AUTO_INSERTED_ELEMENT}\b[^>]*>")
+
+
+def _auto_header(text: str) -> tuple[dict[str, str], str] | None:
+    if opening := _AUTO_OPENING.match(text):
+        attributes = dict(re.findall(r'([\w-]+)="([^"]*)"', opening[0]))
+        return attributes, text[opening.end() :]
+    return None
+
+
+def _auto_kind(attributes: Mapping[str, str]) -> tuple[str | None, str | None]:
+    return attributes.get("source"), attributes.get("kind")
+
+
+def _startup_message(text: str, source: str, kind: str) -> str | None:
+    parsed = _auto_header(text)
+    if parsed is None or _auto_kind(parsed[0]) != (source, kind) or not parsed[1].endswith(_CLOSING_AUTO):
+        return None
+    return parsed[1].removesuffix(_CLOSING_AUTO).strip() or None
+
+
+def delegation_delivery_body(text: str) -> str | None:
+    text = text.strip()
+    parsed = _auto_header(text)
+    if parsed is not None and _auto_kind(parsed[0]) == ("agent-toolkit", "plugin-resources"):
+        _, closing, rest = parsed[1].partition(_CLOSING_AUTO)
+        if not closing:
+            return None
+        text = rest.lstrip()
+    delivery, boundary, suffix = text.rpartition(f"{_CLOSING_AUTO}\n\n")
+    if boundary and (advice := _startup_message(suffix, "agent-toolkit", "advice-request")) and _CLOSING_AUTO not in advice:
+        text = delivery + _CLOSING_AUTO
+    return _startup_message(text, "agents-server", "delivery")
+
+
+def has_startup_goal(text: str) -> bool:
+    return _startup_message(text.strip(), "process-loop", "goal") is not None
+
+
+def has_delegation_launch_prompt(text: str) -> bool:
+    parsed = _auto_header(text.lstrip())
+    return parsed is not None and _auto_kind(parsed[0]) in {
+        ("agent-toolkit", "delegate"),
+        ("agent-toolkit", "explore"),
+        ("agent-toolkit", "shell"),
+        ("agent-toolkit", "write"),
+    }
+
+
+@functools.cache
+def delegation_notice_text() -> str | None:
+    playbook = pathlib.Path(__file__).resolve().parents[2] / "skills" / "atk-mode" / "playbooks" / "subagent.md"
+    try:
+        text = playbook.read_text(encoding="utf-8")
+    except OSError, UnicodeError:
+        return None
+    _, heading, rest = text.partition(f"\n## {DELEGATE_NOTICE_HEADING}\n")
+    return rest.partition("\n## ")[0].strip() if heading else None
 
 
 def opening_tag(element: str, attributes: Mapping[str, str]) -> str:

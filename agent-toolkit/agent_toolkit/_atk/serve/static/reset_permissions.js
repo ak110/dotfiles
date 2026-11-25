@@ -1,4 +1,4 @@
-import {DAY, dateJst, forecast, quotaName} from "./usage_display.js";
+import {DAY, claudeResetScopeName, dateJst, forecast, quotaName} from "./usage_display.js";
 
 const ENGINES = {codex: "Codex", claude: "Claude"};
 const INVENTORY_HELP = "このアカウントに在庫がありません。公式画面でリセット権を確認し、atk config usage --set-claude-reset-inventory で登録してください。";
@@ -106,7 +106,7 @@ function permissionSummary(entry, model) {
 
 export function renderResetPermissions(parent, entries, model, save, ui) {
   model ??= {accounts: {}, claude_inventory: [], windows: []};
-  const {element, field, form, button, submit} = ui;
+  const {element, field, form, button, submit, setWriteUnavailable} = ui;
   parent.append(element("p", "Codexは指定した期間と回数の範囲で、エージェントが自動でresetを使えます。Claudeは自動で使わず、在庫と利用枠に応じて公式画面で使うよう案内します。許可が空なら自動のresetは行いません。"));
   for (const [index, entry] of [...entries, null].entries()) {
     const box = element("details");
@@ -220,7 +220,8 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
       ];
       const matching = offered.length > 0;
       if (original && !offered.includes(original.scope)) offered.unshift(original.scope);
-      scope.replaceChildren(...offered.map(value => new Option(value, value)));
+      scope.replaceChildren(...offered.map(value =>
+        new Option(name === "claude" ? claudeResetScopeName(value, model.windows) : value, value)));
       if (offered.includes(previous)) scope.value = previous;
       scope.parentElement.hidden = name === "codex" || !offered.length;
       direct.parentElement.hidden = account.value !== "" && !account.parentElement.hidden;
@@ -245,7 +246,7 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
       advice.textContent = proposal.reason;
       apply.hidden = !proposal.until;
       codexScope.hidden = engine.value !== "codex" || selectedScope() === "codex";
-      if (saveButton && !saveButton.hasAttribute("data-write-blocked")) saveButton.disabled = !selectedScope();
+      setWriteUnavailable(saveButton, !selectedScope());
     }
 
     engine.dataset.draftTrigger = "";

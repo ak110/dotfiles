@@ -54,6 +54,32 @@ def test_blocks_until_report_is_saved(tmp_path: pathlib.Path, calls: list[dict[s
     assert [(call["run_id"], call["scope"]) for call in calls] == [(_RUN_ID, _SKILL)]
 
 
+@pytest.mark.parametrize(
+    ("mode", "message", "decision"),
+    [
+        ("ui-sweep", "画面の証拠を引き渡せなかった: コピーが読み取り専用で失敗", "approve"),
+        ("ui-sweep", "画面の証拠を引き渡せなかった:", "block"),
+        ("ui-sweep", "> 画面の証拠を引き渡せなかった: 引用例", "block"),
+        ("ui-sweep", "結果の保存をしていない", "block"),
+        ("architecture", "画面の証拠を引き渡せなかった: コピーが読み取り専用で失敗", "block"),
+    ],
+)
+def test_only_ui_sweep_declared_delivery_failure_can_end_without_report(
+    tmp_path: pathlib.Path,
+    calls: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    message: str,
+    decision: str,
+) -> None:
+    monkeypatch.setenv(
+        mcp_environment.SESSION_START_INPUT_ENV,
+        json.dumps({"source": "run-skill", "skill": "agent-toolkit:review-session", "arguments": mode}),
+    )
+    assert run_skill_report_gate.evaluate(_payload(tmp_path, last_assistant_message=message))[0] == decision
+    assert [(call["run_id"], call["scope"]) for call in calls] == [(_RUN_ID, f"agent-toolkit:review-session {mode}")]
+
+
 def test_approves_after_report_is_saved(
     tmp_path: pathlib.Path, calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:

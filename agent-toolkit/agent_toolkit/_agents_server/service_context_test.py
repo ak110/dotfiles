@@ -13,6 +13,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
+from mcp.types import CallToolRequestParams
 
 from agent_toolkit._agents_server import service_context, service_io, service_transport, service_turns
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
@@ -24,8 +25,8 @@ from agent_toolkit._common import effort_requests, process_identity, runtime_env
 async def test_short_lived_host_exit_does_not_close_running_conversation(tmp_path):
     from agent_toolkit._testing.agents_server_support import _manager_with_fake  # pylint: disable=import-outside-toplevel
 
-    async with _manager_with_fake("codex") as (manager, _backend):
-        session = SessionState("child", str(tmp_path), status="running", engine="codex")
+    async with _manager_with_fake("codex") as (manager, backend):
+        session = SessionState("child", str(tmp_path), status="running", engine="codex", turn_id="turn-1")
         manager.sessions[session.session_id] = session
         caller = runtime_environment.CallerContext({"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}, tmp_path)
         pool = service_context.ServiceManagers(state_root=tmp_path)
@@ -38,8 +39,23 @@ async def test_short_lived_host_exit_does_not_close_running_conversation(tmp_pat
         assert pool.conversations["parent"] is conversation
         assert session.status == "running"
 
+        resumed = runtime_environment.CallerContext(
+            {**caller.environment, "CODEX_THREAD_ID": "parent"}, tmp_path, connection_id="replacement-mcp"
+        )
+        with runtime_environment.bind(resumed):
+            async with pool.scope(CallToolRequestParams(name="show")) as same_manager:
+                assert same_manager is manager
+                shown = await same_manager.show_session(session.session_id)
+                assert shown["status"] == "running"
+                sent = await same_manager.send_message(session.session_id, "続行")
+                assert sent["delivery"] == "steered"
+                [prompt] = backend.prompts
+                assert "\n続行\n" in prompt
+                killed = await same_manager.kill(session.session_id, timeout=0)
+                assert killed["kill_requested"] is True
+                assert backend.interrupt_calls == 1
+
         session.status = "completed"
-        conversation.connections.add("replacement-mcp")
         await pool._collect_disconnected_conversations()
         assert pool.conversations["parent"] is conversation
         pool.disconnect("replacement-mcp")

@@ -67,6 +67,9 @@ cleanなcommitどうしは`git diff <取得時のHEAD> <レビューHEAD> -- <�
 ## レビュー指摘管理表への登録
 
 - 指摘本文には`類似見直し完了件数:`の行（`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」の同じラベル）を置く。
+  実行レビューでは `検収:` に、全発生条件を覆う確認の入力・操作と合格基準を書く。
+  差戻しの `--issue-file` にも置く。
+  `担当の記録:` は対象外。
   2以上のroundでは`区分:`の行（`agent-basics:review-standards/references/reviewer.md`「再レビューの場合」手順5の区分）も置く。
 - 指摘1件は`atk review-table add <表の絶対パス> --round <round> --track exec-review --location-file <指摘箇所PATH> --issue-file <指摘内容PATH>`で登録する。
   `--level`は旧利用側との互換入力であり、通常の登録では省く。

@@ -10,7 +10,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import codex_providers, codex_resume_state, session_identity, shared_roots
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._agents_server.codex_instructions import _current_service_tier, _developer_instructions
+from agent_toolkit._agents_server.codex_instructions import _current_service_tier, codex_instruction_fields
 from agent_toolkit._agents_server.codex_protocol import (
     AppServerError,
     JsonRpcResponseError,
@@ -20,7 +20,6 @@ from agent_toolkit._agents_server.codex_protocol import (
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
-from agent_toolkit._agents_server.launch_prompts import base_instructions
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, initialize_turn
 from agent_toolkit._atk import codex_connection
@@ -122,7 +121,6 @@ class CodexStartMixin:
                 selection = None
         params: dict[str, Any] = {
             "cwd": cwd,
-            "baseInstructions": await run_file_operation(base_instructions),
             # Codexが承認を要すると判定するコマンドは拒否され、PermissionRequest hookは呼ばれない。
             # 委譲先の標準手順は承認を要しない操作で構成し、ホストの権限制約を維持する。
             "approvalPolicy": "never",
@@ -137,7 +135,7 @@ class CodexStartMixin:
         params["config"] = config
         if profile != "full":
             params = startup_features.codex_thread_config(params)
-        params["developerInstructions"] = await run_file_operation(_developer_instructions, launch_kind)
+        params.update(await run_file_operation(codex_instruction_fields, launch_kind))
         attempted: set[str] = set()
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):

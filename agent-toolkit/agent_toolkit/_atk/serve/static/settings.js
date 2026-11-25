@@ -100,47 +100,98 @@ function rememberEditors(savedSlot) {
 
 function settingResult() {
   const output = element("p");
-  output.setAttribute("role", "alert");
   output.dataset.settingsResult = "";
+  output.setAttribute("role", "alert");
   return output;
+}
+
+function revealSettingResult(output, message, stayedAtOrigin) {
+  if (!stayedAtOrigin || !output?.isConnected || output.closest("[hidden], details:not([open])")) {
+    const active = document.activeElement;
+    const scroller = content.closest("main");
+    const field = content.contains(active) && active.matches("input, select");
+    const before = field ? active.getBoundingClientRect() : null;
+    const bounds = scroller.getBoundingClientRect();
+    status.textContent = message;
+    if (before && before.top < bounds.bottom && before.bottom > bounds.top) {
+      active.scrollIntoView({block: "nearest", inline: "nearest"});
+    }
+    return;
+  }
+  status.textContent = "";
+  output.textContent = message;
+  output.tabIndex = -1;
+  output.focus({preventScroll: true});
+  output.scrollIntoView({block: "nearest"});
+}
+
+function rememberSettingFocus(active) {
+  if (navigation.contains(active)) return {group: active.dataset.group};
+  const editor = active.closest("[data-editor]");
+  const label = active.labels?.[0]?.textContent;
+  if (!editor || !label) return null;
+  return {
+    editor: editor.dataset.editor,
+    label,
+    start: active.selectionStart,
+    end: active.selectionEnd,
+    direction: active.selectionDirection,
+  };
+}
+
+function restoreSettingFocus(focus) {
+  if (!focus) return;
+  if (focus.group) {
+    navigation.querySelector(`[data-group="${CSS.escape(focus.group)}"]`)?.focus({preventScroll: true});
+    return;
+  }
+  const editor = content.querySelector(`[data-editor="${CSS.escape(focus.editor)}"]`);
+  if (!editor) return;
+  const fields = editorFields(editor).filter(field => field.labels[0]?.textContent === focus.label);
+  const [target] = fields;
+  if (fields.length !== 1 || target.closest("[hidden]")) return;
+  for (let details = target.closest("details:not([open])"); details; details = details.closest("details:not([open])")) {
+    details.open = true;
+  }
+  target.focus({preventScroll: true});
+  if (focus.start != null && target.selectionStart != null) target.setSelectionRange(focus.start, focus.end, focus.direction);
 }
 
 async function operate(payload, output, submittedEditor = null) {
   if (busy || loading || conflicts.has(output.closest("[data-editor]")?.dataset.editor)) return;
+  const trigger = document.activeElement;
+  const stayedAtOrigin = () => document.activeElement === trigger || document.activeElement === document.body;
   busy = true;
   hostPicker.disabled = true;
   const oldEditor = output.closest("[data-editor]");
   const editorKey = oldEditor?.dataset.editor;
-  const scroll = content.closest("main");
-  const scrollTop = scroll.scrollTop;
+  status.textContent = "設定を保存中…";
+  output.textContent = "";
+  updateWriteControls();
   try {
     await request(payload);
+    const data = await request();
+    const stayed = stayedAtOrigin();
+    const focus = stayed ? null : rememberSettingFocus(document.activeElement);
+    const scroll = content.closest("main");
+    const scrollTop = scroll.scrollTop;
     const submittedKey = submittedEditor?.dataset.editor ?? editorKey;
     const drafts = rememberEditors(submittedKey);
     if (submittedKey === "usage_reset_permissions:") drafts.delete(submittedKey);
-    await refresh();
+    for (const {key, old} of conflicts.values()) data.settings[key] = old;
+    render(data);
     const savedEditor = restoreEditors(drafts, editorKey);
     renderConflicts();
-    const message = "設定を保存しました。";
     const notice = savedEditor?.querySelector("[data-settings-result]");
     scroll.scrollTop = scrollTop;
-    if (notice && !notice.closest("[hidden], details:not([open])")) {
-      status.textContent = "";
-      notice.textContent = message;
-      notice.tabIndex = -1;
-      notice.focus({preventScroll: true});
-      notice.scrollIntoView({block: "nearest"});
-    } else {
-      status.textContent = message;
-      status.tabIndex = -1;
-      status.focus({preventScroll: true});
-      status.scrollIntoView({block: "nearest"});
-    }
+    restoreSettingFocus(focus);
+    revealSettingResult(notice, "設定を保存しました。", stayed);
   } catch (error) {
-    (output.isConnected ? output : status).textContent = error.message;
+    revealSettingResult(output, error.message, stayedAtOrigin());
   } finally {
     busy = false;
     hostPicker.disabled = false;
+    updateWriteControls();
   }
 }
 
@@ -229,7 +280,7 @@ function keyEditor(parent, key, item, data) {
   if (key === "usage_reset_permissions") {
     renderResetPermissions(controls, JSON.parse(item.saved), data.reset_editor,
       (entries, editor) => operate({action: "set", key, value: JSON.stringify(entries)}, output, editor),
-      {element, field, form, button, submit});
+      {element, field, form, button, submit, setWriteUnavailable});
   } else if (item.array) {
     const list = element("ul");
     for (const value of JSON.parse(item.saved)) {
@@ -413,11 +464,13 @@ function renderTemporary(temporary, data) {
   temporary.append(output);
 }
 
-async function refresh() {
-  const data = await request();
-  for (const {key, old} of conflicts.values()) data.settings[key] = old;
-  render(data);
-  return data;
+function syncWriteControl(control) {
+  control.disabled = control.hasAttribute("data-write-blocked") || control.hasAttribute("data-write-unavailable");
+}
+
+function setWriteUnavailable(control, unavailable) {
+  control.toggleAttribute("data-write-unavailable", unavailable);
+  syncWriteControl(control);
 }
 
 function updateWriteControls() {
@@ -425,16 +478,17 @@ function updateWriteControls() {
     const editor = control.closest("[data-editor]");
     if (!editor) continue;
     const setting = control.closest("[data-setting]") || editor;
-    const blocked = loading || conflicts.has(setting.dataset.editor);
-    if (blocked && !control.disabled) {
-      control.disabled = true;
+    const blocked = busy || loading || conflicts.has(setting.dataset.editor);
+    if (blocked) {
       control.dataset.writeBlocked = "";
-      control.setAttribute("aria-describedby", loading ? "settings-status" : setting.querySelector("[data-conflict]")?.id || "");
-    } else if (!blocked && control.hasAttribute("data-write-blocked")) {
-      control.disabled = false;
+      const reason = busy || loading ? "settings-status" : setting.querySelector("[data-conflict]")?.id;
+      if (reason) control.setAttribute("aria-describedby", reason);
+      else control.removeAttribute("aria-describedby");
+    } else if (control.hasAttribute("data-write-blocked")) {
       control.removeAttribute("data-write-blocked");
       control.removeAttribute("aria-describedby");
     }
+    syncWriteControl(control);
   }
 }
 

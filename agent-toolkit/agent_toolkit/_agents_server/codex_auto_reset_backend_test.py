@@ -706,6 +706,7 @@ async def test_service_transfer_during_permission_check_expires_to_weekly_failur
         install_backend(owner, "claude", fallback)
         started = await owner.start_handoff(transferred.session_id)
         assert started["engine"] == "claude"
+        assert started["label"] == "delegate"
         assert fallback.start_calls == [("opus", "low", "delegate")]
 
 

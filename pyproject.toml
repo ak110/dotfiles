@@ -108,6 +108,10 @@ dev = [
 ]
 pytest-impact = ["testscope==0.4.2"]
 
+[tool.agent-toolkit.lane-integration]
+# atk lane integrateがこのargvの末尾に実際の統合先OIDを渡す。
+verification = ["uv", "run", "--frozen", "python", "scripts/pyfltr_precommit.py", "--integration-cross-contracts"]
+
 [tool.agent-toolkit.pick-wi-check]
 # `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
 # 記載の手順と理由は`.claude/skills/edit-dotfiles-norms/references/project-norm-designation.md`が定め、
@@ -156,8 +160,8 @@ ty-args = [
 # 書き換えないよう、`ruff-format`のlint自動修正を無効にする。
 # lintの自動修正は`make format`（`uv run --frozen pyfltr fast`）のfix段が引き続き担う。
 ruff-format-by-check = false
-# dillがPython 3.15のcodeオブジェクトに対応するまで、pylintの直列実行を使う。
-# 対応版の公開後に並列実行へ戻す。
+# 固定依存のdillではPython 3.15のcodeオブジェクトを直列化できないため、Pylintは各プロセス内で直列実行する。
+# CIでは別ジョブに入力を分け、循環importだけは全対象で判定する。
 # リポジトリ直下、agent-toolkit/およびagent-toolkit/agent_toolkit/の`conftest.py`は、いずれもトップレベルの
 # モジュール`conftest`へ解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。
 # 除外指定はファイル名で一致するため、3件の`conftest.py`をまとめてmypyの対象から外す。

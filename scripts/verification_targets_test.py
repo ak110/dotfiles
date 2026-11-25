@@ -1,9 +1,15 @@
+import json
 import pathlib
+import shutil
 import subprocess
+import sys
 
 import pytest
 import verification_targets
 from agent_toolkit._testing.git_repository import commit_all, init_repository
+from agent_toolkit._testing.lane_integration_support import _integration_args, _integration_selection
+from agent_toolkit._testing.lane_support import _create, _invoke
+from pyfltr_precommit import main as precommit_main
 from verification_targets import consumer_tests, required_tests, uncovered_tests
 
 
@@ -66,6 +72,102 @@ def test_empty_result_and_failed_listing_are_distinct(tmp_path: pathlib.Path, mo
     )
     with pytest.raises(ValueError, match="追跡ファイルを取得できない"):
         consumer_tests(tmp_path, [])
+
+
+@pytest.mark.parametrize(
+    ("path", "original", "changed", "expected"),
+    [
+        (
+            "agent-toolkit/skills/atk-mode/SKILL.md",
+            "# 前\n",
+            "# 次\n",
+            ["markdown_link_anchor_invariant_test.py", "norm_size_budget_invariant_test.py", "retired_terms_invariant_test.py"],
+        ),
+        (
+            "agent-toolkit/agent_toolkit/_atk/run_skill.py",
+            "",
+            'commands.add_parser("sample")\n',
+            ["agent-toolkit/agent_toolkit/atk_help_test.py", "markdown_link_anchor_invariant_test.py"],
+        ),
+        ("pytools/process_example.py", "", "child.terminate()\n", ["subprocess_stop_invariant_test.py"]),
+        ("scripts/message.py", "", 'MESSAGE = "変更"\n', ["retired_terms_invariant_test.py"]),
+        ("scripts/unrelated.py", "", "VALUE = 2\n", []),
+    ],
+)
+def test_integration_argv_covers_cross_contracts_even_if_sources_are_omitted(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    path: str,
+    original: str,
+    changed: str,
+    expected: list[str],
+) -> None:
+    root = init_repository(tmp_path / "repo", files={path: original, "one_test.py": ""}, commit_message="init")
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    (root / path).write_text(changed, encoding="utf-8")
+    assert required_tests(consumer_tests(root, [], base=base)) == expected
+    monkeypatch.chdir(root)
+    planned = ["run", "--no-always-targets", "--commands=pytest", "one_test.py"]
+    assert precommit_main(["--check-argv", json.dumps(planned), "--against", base]) == bool(expected)
+    err = capsys.readouterr().err
+    assert all(test in err for test in expected)
+
+
+@pytest.mark.parametrize("remove_policy", [False, True])
+def test_individually_valid_norm_changes_fail_on_combined_tree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], remove_policy: bool
+) -> None:
+    source = pathlib.Path(__file__).resolve().parents[1] / "norm_size_budget_invariant_test.py"
+    root, selection, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selection, monkeypatch, root)
+    worktree = pathlib.Path(record["worktree"])
+    documents = pathlib.Path("agent-toolkit/skills/atk-mode")
+    (worktree / documents).mkdir(parents=True)
+    (worktree / documents / "base.md").write_text("A" * (3_150_000 - 16), encoding="ascii")
+    shutil.copyfile(source, worktree / source.name)
+    verification = [
+        sys.executable,
+        "-c",
+        "import runpy,sys; runpy.run_path(sys.argv[1])['test_norm_markdown_within_budget']()",
+        source.name,
+    ]
+    policy = worktree / "pyproject.toml"
+    policy.write_text(
+        "[tool.agent-toolkit.lane-integration]\nverification = " + json.dumps(verification) + "\n", encoding="utf-8"
+    )
+    base = commit_all(worktree, "共通基点")
+    subprocess.run(["git", "merge", "--ff-only", base], cwd=root, check=True, capture_output=True)
+
+    def accepted_change(directory: pathlib.Path, name: str) -> str:
+        (directory / documents / name).write_text("A" * 10, encoding="ascii")
+        candidate = commit_all(directory, name)
+        assert subprocess.run(verification, cwd=directory, check=False, capture_output=True).returncode == 0
+        return candidate
+
+    first = accepted_change(root, "first.md")
+    if remove_policy:
+        policy.write_text("[tool]\n", encoding="utf-8")
+    second = accepted_change(worktree, "second.md")
+    manifest = tmp_path / "manifest.json"
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("受入試験", encoding="utf-8")
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [],
+                "wis": [{"name": "20261023-000000-001.md", "commands": []}],
+                "verification": [[sys.executable, "-c", "pass"]],
+                "handoff": str(handoff),
+            }
+        ),
+        encoding="utf-8",
+    )
+    code, _, error = _invoke(capsys, *_integration_args(record, root, manifest, second))
+    assert code == 2 and "verification-project-0が終了1" in error
+    current = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    assert current == first
+    assert not (root / documents / "second.md").exists()
 
 
 def test_documents_and_registered_stop_modules_reach_indirect_consumers(tmp_path: pathlib.Path) -> None:

@@ -200,13 +200,16 @@ def read_selection(record: dict[str, typing.Any]) -> dict[str, typing.Any] | Non
         text = pathlib.Path(record["selection_file"]).read_text(encoding="utf-8")
     except FileNotFoundError:
         return None
-    document = yaml.safe_load(text)
+    return selection_snapshot(yaml.safe_load(text), record["lane"])
+
+
+def selection_snapshot(document: object, lane: str) -> dict[str, typing.Any]:
     items = [
         row
         for row in selection.decisions(document) or []
-        if isinstance(row, dict) and row.get(selection.LANE_KEY) == record["lane"] and selection.WI_KEY in row
+        if isinstance(row, dict) and selection.lane_owns(row, lane) and selection.WI_KEY in row
     ]
-    integrated = record["lane"] in selection.integrated_lanes(document)
+    integrated = lane in selection.integrated_lanes(document)
     return {
         "lane_wis": sorted(str(row[selection.WI_KEY]) for row in items),
         "processed_wis": sorted(

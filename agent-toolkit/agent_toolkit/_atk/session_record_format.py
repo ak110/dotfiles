@@ -18,6 +18,7 @@ import pathlib
 import typing
 from collections.abc import Iterator
 
+from agent_toolkit._common import message_format
 from agent_toolkit._common import session_record_paths as _record_paths
 from agent_toolkit._common.agy_records import normalize_entries
 from agent_toolkit._common.json_lines import split_lines
@@ -86,11 +87,14 @@ class SessionEvent:
     detail: dict[str, typing.Any] | None = None
     call_id: str | None = None
     message_id: str | None = None
+    initial_work: bool = False
 
     def to_json(self) -> dict[str, typing.Any]:
         result = dataclasses.asdict(self)
         result.pop("call_id")
         result.pop("message_id")
+        if not self.initial_work:
+            result.pop("initial_work")
         return result
 
 
@@ -112,6 +116,7 @@ def as_text(value: typing.Any) -> str | None:
 def claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list[SessionEvent], dict[str, typing.Any]]:
     """Claude Codeの記録を表示モデルのイベント列とトークン集計へ変換する。"""
     events: list[SessionEvent] = []
+    startup = True
     totals: dict[str, typing.Any] = {"input_tokens": None, "output_tokens": None}
     for record in records:
         kind = record.get("type")
@@ -144,14 +149,18 @@ def claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list
             event_kind = (
                 "injected" if kind == "user" and (runtime_generated or text and is_runtime_inserted_text(text)) else kind
             )
-            events.append(SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage, message_id=message_id))
+            event = SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage, message_id=message_id)
+            event, startup = _record_initial_work(event, startup, from_user=kind == "user")
+            events.append(event)
             continue
         for block in content:
             if not isinstance(block, dict):
                 continue
-            events.append(
-                _claude_block_event(block, kind, timestamp, usage, runtime_generated=runtime_generated, message_id=message_id)
+            event = _claude_block_event(
+                block, kind, timestamp, usage, runtime_generated=runtime_generated, message_id=message_id
             )
+            event, startup = _record_initial_work(event, startup, from_user=kind == "user" and block.get("type") == "text")
+            events.append(event)
     return events, totals
 
 
@@ -246,6 +255,9 @@ def claude_subagent_records(record_path: pathlib.Path) -> list[tuple[str, pathli
 def codex_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list[SessionEvent], dict[str, typing.Any]]:
     """Codexのロールアウトを表示モデルのイベント列とトークン集計へ変換する。"""
     events: list[SessionEvent] = []
+    startup = True
+    delegation_launched = False
+    possible_notices: list[int] = []
     totals: dict[str, typing.Any] = {"input_tokens": None, "output_tokens": None}
     for record in records:
         timestamp = record.get("timestamp") if isinstance(record.get("timestamp"), str) else None
@@ -268,8 +280,31 @@ def codex_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list[
             continue
         if record_type != "response_item":
             continue
-        events.append(_codex_payload_event(payload, timestamp))
-    return [event for event in events if event is not None], totals
+        event = _codex_payload_event(payload, timestamp)
+        if event is None:
+            continue
+        if startup and event.text and payload.get("role") == "developer":
+            delegation_launched |= message_format.has_delegation_launch_prompt(event.text)
+            if event.kind == "developer" and event.text.strip() == message_format.delegation_notice_text():
+                possible_notices.append(len(events))
+        event, startup = _record_initial_work(event, startup, from_user=payload.get("role") == "user")
+        if event.initial_work and event.text:
+            delegation_launched |= message_format.delegation_delivery_body(event.text) is not None
+        events.append(event)
+    if delegation_launched:
+        for index in possible_notices:
+            events[index] = dataclasses.replace(events[index], kind="injected")
+    return events, totals
+
+
+def _record_initial_work(event: SessionEvent, startup: bool, *, from_user: bool) -> tuple[SessionEvent, bool]:
+    if not startup or not event.text or not event.text.strip():
+        return event, startup
+    if from_user and (
+        message_format.has_startup_goal(event.text) or message_format.delegation_delivery_body(event.text) is not None
+    ):
+        return dataclasses.replace(event, initial_work=True), False
+    return event, event.kind not in {"user", "assistant"}
 
 
 def _codex_apply_token_count(payload: dict[str, typing.Any], totals: dict[str, typing.Any]) -> None:
@@ -289,7 +324,7 @@ def _codex_apply_token_count(payload: dict[str, typing.Any], totals: dict[str, t
             totals[key] = value
 
 
-def _codex_payload_event(payload: dict[str, typing.Any], timestamp: str | None) -> SessionEvent:
+def _codex_payload_event(payload: dict[str, typing.Any], timestamp: str | None) -> SessionEvent | None:
     payload_type = payload.get("type")
     if payload_type == "reasoning":
         summary = payload.get("summary")
@@ -310,6 +345,8 @@ def _codex_payload_event(payload: dict[str, typing.Any], timestamp: str | None) 
             text=as_text(output) or _stringify(output),
             call_id=payload.get("call_id") if isinstance(payload.get("call_id"), str) else None,
         )
+    if payload_type not in (None, "message") or payload_type is None and "content" not in payload:
+        return None
     role = payload.get("role")
     kind = (
         {

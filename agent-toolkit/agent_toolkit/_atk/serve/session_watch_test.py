@@ -6,6 +6,8 @@ import time
 import typing
 
 import pytest
+from watchdog.events import DirCreatedEvent
+from watchdog.observers import api, polling
 
 from agent_toolkit._atk.serve import session_watch
 
@@ -375,6 +377,88 @@ def test_record_watch_keeps_shared_ancestor_while_another_root_is_missing(tmp_pa
         assert collector.wait(lambda: ("codex", str(path)) in collector.records)
     finally:
         watch.stop()
+
+
+@pytest.mark.parametrize("stop_first", [False, True])
+def test_record_watch_orders_delivery_and_stop(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, stop_first: bool
+) -> None:
+    root = tmp_path / "projects"
+    tracker = session_watch.RecordChangeTracker([(root, "claude")], _Collector())
+    observer = api.BaseObserver(polling.PollingEmitter, timeout=30)
+    watch = session_watch.RecordWatch(tracker)
+    monkeypatch.setattr("watchdog.observers.Observer", lambda: observer)
+    delivered = threading.Event()
+    release = threading.Event()
+    stopping = threading.Event()
+    stopped = threading.Event()
+    activity: list[str | BaseException] = []
+    handle, schedule, unschedule, stop = watch.handle, observer.schedule, observer.unschedule, observer.stop
+
+    def pause() -> None:
+        delivered.set()
+        assert release.wait(5)
+
+    def handle_event(event: DirCreatedEvent) -> None:
+        try:
+            if stop_first:
+                pause()
+            handle(event)
+        except (KeyError, AssertionError) as error:
+            activity.append(error)
+
+    def schedule_watch(*args: typing.Any, **kwargs: typing.Any) -> api.ObservedWatch:
+        target = schedule(*args, **kwargs)
+        if target.path == str(root):
+            activity.append("schedule")
+            if not stop_first:
+                pause()
+        return target
+
+    def unschedule_watch(target: api.ObservedWatch) -> None:
+        activity.append("unschedule")
+        unschedule(target)
+
+    def stop_observer() -> None:
+        activity.append("stop")
+        stop()
+        stopped.set()
+
+    def stop_watch() -> None:
+        stopping.set()
+        try:
+            watch.stop()
+        except (RuntimeError, OSError) as error:
+            activity.append(error)
+
+    monkeypatch.setattr(watch, "handle", handle_event)
+    monkeypatch.setattr(observer, "schedule", schedule_watch)
+    monkeypatch.setattr(observer, "unschedule", unschedule_watch)
+    monkeypatch.setattr(observer, "stop", stop_observer)
+    watch.start()
+    worker = threading.Thread(target=stop_watch, daemon=True)
+    try:
+        assert len(observer.emitters) == 1
+        ancestor = next(iter(observer.emitters)).watch
+        root.mkdir()
+        observer.event_queue.put((DirCreatedEvent(str(root)), ancestor))
+        assert delivered.wait(5)
+        worker.start()
+        assert stopping.wait(5)
+        if stop_first:
+            assert stopped.wait(5)
+    finally:
+        release.set()
+        if worker.ident is None:
+            watch.stop()
+        else:
+            worker.join(5)
+    assert not worker.is_alive()
+
+    assert activity == (["stop"] if stop_first else ["schedule", "unschedule", "stop"])
+    assert not observer.is_alive()
+    assert not observer.emitters
+    assert not watch._watches  # noqa: SLF001  # pylint: disable=protected-access
 
 
 def test_summary_index_reuses_saved_results_after_restart(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

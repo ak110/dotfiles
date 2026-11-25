@@ -97,7 +97,8 @@ def _literal_metadata_keys(path: pathlib.Path) -> set[str]:
 
 # test-copy-contract: 実装から抽出したWIキーに消費箇所と変更理由を求める。  # pyfltr: allow-comment
 @pytest.mark.cpu_limit(
-    0.53, reason="全WI実装のASTを調べる。判定CPU秒はLinux単独0.180〜0.198、4並列0.194〜0.217、CI失敗時0.73（上限の係数1.4）"
+    0.53,
+    reason="全WI実装のASTを調べる。判定CPU秒は走査改善前のCIで最大0.778、改善後のCIで0.458〜0.582。係数1.4適用後の上限0.742秒を保つ",
 )
 def test_each_wi_frontmatter_key_has_a_consumer_and_a_reason_to_change_it() -> None:
     root = pathlib.Path(__file__).resolve().parent

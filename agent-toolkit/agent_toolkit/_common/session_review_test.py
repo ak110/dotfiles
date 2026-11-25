@@ -15,6 +15,38 @@ import pytest
 from agent_toolkit._common import session_activity, session_family, session_review, session_state
 
 
+def test_stopped_lane_scope_moves_processed_prefix_without_reanalysis(tmp_path: pathlib.Path) -> None:
+    parent_path = tmp_path / "orchestrator.jsonl"
+    lane_path = tmp_path / "lane.jsonl"
+    lane = types.SimpleNamespace(
+        record_id="lane-in-parent",
+        path=lane_path,
+        records=[types.SimpleNamespace(line=1, text="一度だけ処理する")],
+        fork_context=(),
+    )
+    orchestrator = types.SimpleNamespace(record_id="main", path=parent_path, records=[], fork_context=())
+    original = session_review.scope_records([orchestrator, lane])
+    scope_path = session_review.directory() / "reviewed" / "claude-parent.json"
+    session_review.write(scope_path, original)
+    session_review.register_lane("lane", str(tmp_path), "parent", "claude", lane_path, None, "統合完了")
+    first = session_review.pending()
+    session_review.register_lane("lane", str(tmp_path), "parent", "claude", lane_path, None, "統合完了")
+    assert session_review.pending() == first and len(first) == 1
+    assert session_review.lane_review_targets("parent")[0] == {str(lane_path): ("lane", "統合完了")}
+    assert session_review.lane_review_targets("lane")[1] == scope_path
+    assert session_review.lane_review_targets("transcript_full", record_path=lane_path)[1] == scope_path
+
+    next_parent = session_review.scope_records([orchestrator], after=scope_path, detached={"lane-in-parent"})
+    assert set(next_parent["records"]) == {"main"}
+    assert next_parent["transferred"] == {"lane-in-parent": original["records"]["lane-in-parent"]}
+    session_review.write(scope_path, next_parent)
+    lane.record_id = "main"
+    lane.records.append(types.SimpleNamespace(line=2, text="停止後までの残り"))
+    next_lane = session_review.scope_records([lane], inherited=scope_path)
+    assert next_lane["records"]["main"]["after_line"] == 1
+    assert next_lane["records"]["main"]["through_line"] == 2
+
+
 def test_auto_start_waits_until_last_consultation_closes(monkeypatch):
     for session in ("first", "second", "closed"):
         session_state.update_state(session, lambda state: {**state, "add_awi_skill_invoked": True})

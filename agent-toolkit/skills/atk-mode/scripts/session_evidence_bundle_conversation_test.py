@@ -5,7 +5,7 @@ import pathlib
 
 import pytest
 import session_review_evidence as evidence
-from agent_toolkit._common import skill_modes
+from agent_toolkit._common import message_format, skill_modes
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import (
     claude_call,
@@ -52,6 +52,28 @@ def test_common_runtime_inserted_classifier(
     capsys.readouterr()
     conversation = [json.loads(line) for line in (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [item["text"] for item in conversation] == ["最初の依頼", f"${skill_modes.PROCESS_WI}", "後続のユーザー発話"]
+
+
+def test_bundle_extracts_startup_delivery_between_resources_and_advice(tmp_path: pathlib.Path) -> None:
+    resources = message_format.auto_message("リソース案内", source="agent-toolkit", kind="plugin-resources")
+    nested = message_format.auto_message("既読資料", source="agents-server", kind="startup-document")
+    delivery = message_format.auto_message(f"最初の依頼\n\n{nested}", source="agents-server", kind="delivery")
+    advice = message_format.auto_message("助言の案内", source="agent-toolkit", kind="advice-request")
+    followup = message_format.auto_message("続ける", source="agents-server", kind="delivery")
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": text}}
+            for text in (f"{resources}\n\n{delivery}\n\n{advice}", followup, f"境界の引用: {delivery}")
+        ],
+    )
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    conversation = [json.loads(line) for line in (bundle / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
+    requests = events_by_kind(conversation, "delegation-request")
+    assert [item["text"] for item in requests] == ["最初の依頼"]
 
 
 def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(

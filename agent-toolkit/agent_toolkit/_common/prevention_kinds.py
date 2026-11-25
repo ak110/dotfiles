@@ -34,3 +34,96 @@ KINDS_GUIDANCE = (
 
 def starts_with_kind(text: str) -> bool:
     return _KIND_HEAD.match(text.lstrip(_LEADING_DECORATION)) is not None
+
+
+TEXT_ONLY_KINDS = frozenset({"手順", "文書"})
+"""判断時に思い出して適用することに頼る種類。再発した事象へこれだけを重ねると、同じ未適用を繰り返す。 pyfltr: allow-comment"""
+
+STRUCTURE_EXCEPTION_LABEL = "構造化不可"
+"""再発への対策が文書・手順だけになる時に、構造・検査で防げない理由を書く欄の語。 pyfltr: allow-comment"""
+
+_STRUCTURE_EXCEPTION = re.compile(STRUCTURE_EXCEPTION_LABEL + r"[ \t　]*[:：][ \t　]*[^\s。．；;、，,.]")
+
+
+def has_structure_exception(text: str) -> bool:
+    """`構造化不可:`の後に理由が書かれているかを返す。語だけの行は理由の無い例外として扱わない。 pyfltr: allow-comment"""
+    return _STRUCTURE_EXCEPTION.search(text) is not None
+
+
+_ADOPTED_LABEL = re.compile(
+    r"(?:^|[。．;；、,\s])(?P<kind>"
+    + "|".join(re.escape(kind) for kind in sorted(ADOPTED_KINDS, key=len, reverse=True))
+    + r")[ \t]*[:：]"
+)
+
+
+def adopted_kinds(text: str) -> set[str]:
+    """`再発防止:`の行の本文から、採る策の種類の語を全て返す。
+
+    行頭の語と、`<語>:`の形で並べた語を数える。 pyfltr: allow-comment
+    """
+    body = text.lstrip(_LEADING_DECORATION)
+    found = {match["kind"] for match in _ADOPTED_LABEL.finditer(body)}
+    head = _KIND_HEAD.match(body)
+    if head is not None and head.group(0) in ADOPTED_KINDS:
+        found.add(head.group(0))
+    return found
+
+
+RECURRENCE_KINDS = ("未適用", "範囲不足", "効果不足", "読込喪失", "削除", "未配布", "誘発入力")
+"""`再発:`の行の先頭に置く、前回の対策が防げなかった理由の区分。
+
+定義元は`agent-basics:bugfix`の`references/recurrence.md`「`再発:`の行」。 pyfltr: allow-comment
+"""
+
+RECURRENCE_NOT_APPLICABLE = "該当なし"
+"""前回の対策が無かった時と、逐語引用が同じ問題の反復を述べていなかった時に`再発:`の行の先頭に置く語。 pyfltr: allow-comment"""
+
+_RECURRENCE_HEAD = re.compile(
+    "(?:"
+    + "|".join(re.escape(kind) for kind in (*RECURRENCE_KINDS, RECURRENCE_NOT_APPLICABLE))
+    + r")(?=$|[\s:：、。,（(*_`・])"
+)
+
+RECURRENCE_GUIDANCE = (
+    "前回の対策が防げなかった理由を"
+    + "・".join(f"`{kind}`" for kind in RECURRENCE_KINDS)
+    + "のどれかで始め、前回の対策が無い時と、引用が同じ問題の反復を述べていない時は"
+    + f"`{RECURRENCE_NOT_APPLICABLE}`で始めて根拠を書く"
+    "（定義元は`agent-basics:bugfix`の`references/recurrence.md`「`再発:`の行」）"
+)
+
+
+def recurrence_reason(text: str) -> str:
+    """`再発:`の行の本文から、区分の語と区切りを除いた理由を返す。区分が無ければ空文字列を返す。 pyfltr: allow-comment"""
+    body = text.lstrip(_LEADING_DECORATION)
+    match = _RECURRENCE_HEAD.match(body)
+    if match is None:
+        return ""
+    return body[match.end() :].strip(" \t　:：、。,・;；.").strip()
+
+
+def recurrence_kind(text: str) -> str | None:
+    """`再発:`の行の本文の先頭にある区分の語を返す。無ければNoneを返す。 pyfltr: allow-comment"""
+    match = _RECURRENCE_HEAD.match(text.lstrip(_LEADING_DECORATION))
+    return match.group(0) if match is not None else None
+
+
+_RECURRENCE_MENTION = re.compile(
+    r"(?:何度も|何回も|何度か|前にも|以前にも|以前も|過去にも|過去に|前に|以前|繰り返し|毎日|毎回)[^。！？\n]{0,12}?"
+    r"(?:指摘|言(?:って|った|って)|書(?:いて|いた)|伝え(?:て|た))"
+    r"|(?:指摘|言った|伝えた)[^。！？\n]{0,12}?(?:再発|また同じ)"
+)
+"""ユーザーが同じ問題を繰り返し指摘したと読める言及。
+
+語と距離による候補の検出であり、反復かどうかの確定ではない。
+確定は起草者が`再発:`の行で示し、反復でなければ`該当なし`と根拠の1行で保存できる。
+候補は、本人が過去に指摘・発言したことと、その反復か再発を同じ文で述べた時に限る。
+単語だけの判定は「何度も表示される」「以前も使った」「何度も入力を間違える研修」などの定常の挙動や、
+意図した反復まで止めたため（2026年11月25日の実行レビュー）、不具合の反復と確定できない文では止めない。 pyfltr: allow-comment
+"""
+
+
+def mentions_recurrence(text: str) -> bool:
+    """ユーザーの原文が、過去の指摘の反復か再発を述べているかを返す。 pyfltr: allow-comment"""
+    return _RECURRENCE_MENTION.search(text) is not None

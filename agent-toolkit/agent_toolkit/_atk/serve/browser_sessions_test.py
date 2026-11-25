@@ -12,6 +12,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _screen_harness_fixture,
     _ScreenHarness,
 )
+from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._testing.serve_browser_sessions_support import _remote_sessions_harness_fixture  # noqa: F401  # pylint: disable=unused-import
 
 pytestmark = [
@@ -76,6 +77,42 @@ async def test_session_previous_and_next_buttons_navigate_list(screen_harness: _
     assert await page.locator('#sessions .session-item[aria-current="true"]').inner_text() == names[1]
     await page.locator("#sessions-prev-btn").click()
     assert await page.locator('#sessions .session-item[aria-current="true"]').inner_text() == names[0]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_details_open_the_initial_work_but_not_empty_developer_or_followup(
+    screen_harness: _ScreenHarness,
+) -> None:
+    (codex_record,) = (screen_harness.root.parent / "codex").rglob("rollout-*.jsonl")
+    resources = auto_message("リソース案内", source="agent-toolkit", kind="plugin-resources")
+    delivery = auto_message("最初の作業依頼", source="agents-server", kind="delivery")
+    followup = auto_message("後からの追送", source="agents-server", kind="delivery")
+    entries = [
+        {"type": "session_meta", "payload": {"cwd": "/work"}},
+        {"type": "response_item", "payload": {"type": "additional_tools", "role": "developer", "tools": []}},
+        *[
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": role, "content": [{"type": "input_text", "text": text}]},
+            }
+            for role, text in (
+                ("developer", " "),
+                ("developer", "通常の開発者入力"),
+                ("user", f"{resources}\n\n{delivery}"),
+                ("user", followup),
+            )
+        ],
+    ]
+    codex_record.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator('#sessions .session-item[data-engine="codex"]').click()
+    expect = playwright.async_api.expect
+    await expect(page.locator("#detail .event")).to_have_count(4)
+    await expect(page.locator("#detail .kind-developer[open]")).to_contain_text("通常の開発者入力")
+    await expect(page.locator("#detail .kind-developer:not([open])")).to_have_count(1)
+    await expect(page.locator("#detail .kind-injected[open]")).to_contain_text("最初の作業依頼")
+    await expect(page.locator("#detail .kind-injected:not([open])")).to_have_count(1)
 
 
 @pytest.mark.asyncio(loop_scope="session")

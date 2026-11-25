@@ -59,6 +59,42 @@ _SECTIONS: dict[str, tuple[str, str | None]] = {
 }
 """`## 原因分析`の本文と、エージェントの投入を拒否する場合に診断へ含まれる文言。"""
 
+_TEXT_ONLY_PREVENTION = plan_fixture.cause_record_line("再発防止")
+_RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
+    "recurrence_without_kind": (
+        f"{_RECORD}\n- 再発: 前回は規範の追記で対処した。",
+        "`再発:`の行が区分の語で始まらない",
+    ),
+    "recurrence_text_only": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。")
+        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
+        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
+    ),
+    "recurrence_text_only_with_reason": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可: 判定に文脈の意味が要る。")
+        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
+        None,
+    ),
+    "recurrence_text_only_with_empty_reason": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可:")
+        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
+        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
+    ),
+    "recurrence_text_only_with_separator_only": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可：；")
+        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
+        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
+    ),
+    "recurrence_kind_without_reason": (f"{_RECORD}\n- 再発: 該当なし", "`再発:`の行が区分の語だけで根拠が無い"),
+    "recurrence_structural": (f"{_RECORD}\n- 再発: 範囲不足: 前回は1つの経路だけを検査した。", None),
+    "recurrence_not_applicable": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。") + "\n- 再発: 該当なし: 前回の対策が無い。",
+        None,
+    ),
+}
+"""再発した事象の記録の区分と、文書・手順だけの再発防止を保存時に止める場合（2026年11月25日の分析）。 pyfltr: allow-comment"""
+_SECTIONS.update(_RECURRENCE_CASES)
+
 
 @pytest.mark.parametrize("case", list(_SECTIONS))
 @pytest.mark.parametrize("agent", [False, True])
@@ -286,3 +322,134 @@ def test_public_edit_keeps_saved_prevention_line_without_kind(
         atk.main(argv, home=tmp_path)
 
     assert finished.value.code == 0, capsys.readouterr().err
+
+
+_REPEATED_QUOTE = "過去に何度もしているという指摘も過去に何度もしている。最近特に多い気もする。これ自体も何とかして。"
+"""2026年11月6日の反復の指摘への対策AWIの逐語引用。
+
+対策は規範の文章の改訂で終わり、その後も同じ指摘が続いた。 pyfltr: allow-comment
+"""
+
+
+@pytest.mark.parametrize(
+    ("findings", "rejected"),
+    [
+        ("過去対策の配置と読込契機を比べ、原因に作用する箇所を直す。", True),
+        ("- 再発: 未適用: 前回は規範の追記で対処した。今回は保存時の検査へ変える。", False),
+        ("- 再発: 該当なし: 同じ指摘への前回の対策は無い。", False),
+        ("- 再発: 未調査: 前回の対策を調べていない。", True),
+        ("- 再発: 未適用: 前回は規範の追記で対処した。\n- 再発防止: 文書: 実例を載せる。", True),
+        (
+            "- 再発: 未適用: 前回は規範の追記で対処した。\n"
+            "- 再発防止: 文書: 実例を載せる。構造化不可: 判定に文脈の意味が要る。",
+            False,
+        ),
+    ],
+)
+def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    findings: str,
+    *,
+    rejected: bool,
+) -> None:
+    """逐語引用が同じ問題の反復に触れるのに`再発:`の行が無い原稿は、エージェントの投入を止める。 pyfltr: allow-comment"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body = (
+        "# 同じ指摘の反復を減らす\n\n説明\n\n## 反映内容と反映先\n対象\n\n"
+        f"## 調査結果と判断根拠\n\n{findings}\n\n## ユーザー指摘の逐語引用\n\n```text\n{_REPEATED_QUOTE}\n```\n"
+    )
+    args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
+    if rejected:
+        with pytest.raises(SystemExit) as stopped:
+            _run_public_add(args, notes, _FIXED_DT, tmp_path)
+        assert stopped.value.code != 0
+        err = capsys.readouterr().err
+        assert any(
+            text in err
+            for text in (
+                "反復の候補に当たるのに`再発:`の行が無い",
+                "`再発:`の行が区分の語で始まらない",
+                "`文書`・`手順`だけである",
+            )
+        )
+    else:
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
+        assert "成功:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "毎回表示される確認画面に説明を足して。",
+        "繰り返し処理の進み具合を表示して。",
+        "確認画面が何度も表示されるフローに、各回の進捗を追加して。",
+        "以前も使った確認画面を今回の設定画面にも追加して。",
+        "研修では何度も入力を間違える操作を練習させたい。",
+        "故障試験では何度も壊して再発を確かめる。",
+        "前にも使った画面を再利用して。",
+    ],
+)
+def test_public_add_accepts_steady_behavior_wording_without_recurrence_line(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    quote: str,
+) -> None:
+    """定常の挙動を説明する「毎回」「繰り返し」だけの逐語引用では、`再発:`の行を求めない。 pyfltr: allow-comment"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body = (
+        f"# 確認画面に説明を足す\n\n説明\n\n## 反映内容と反映先\n対象\n\n## ユーザー指摘の逐語引用\n\n```text\n{quote}\n```\n"
+    )
+    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert "成功:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "過去に指摘した問題の再発が多すぎる。",
+        "この問題過去に何度も指摘してるんだけど。",
+        "前にも言ったけど、また同じ間違いをしている。",
+    ],
+)
+def test_public_add_requires_recurrence_line_for_repeated_complaints(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    quote: str,
+) -> None:
+    """本人が過去の指摘の反復を述べた逐語引用には、`再発:`の行を求める。 pyfltr: allow-comment"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body = (
+        f"# 同じ指摘の反復を減らす\n\n説明\n\n## 反映内容と反映先\n対象\n\n## ユーザー指摘の逐語引用\n\n```text\n{quote}\n```\n"
+    )
+    with pytest.raises(SystemExit) as stopped:
+        _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert stopped.value.code != 0
+    assert "反復の候補に当たるのに`再発:`の行が無い" in capsys.readouterr().err
+
+
+def test_public_add_accepts_not_applicable_line_for_non_recurring_quote(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """反復の候補に当たっても同じ問題の反復でない時は、`再発: 該当なし`と根拠の1行で保存できる。 pyfltr: allow-comment"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body = (
+        "# 文言を直す\n\n説明\n\n## 反映内容と反映先\n対象\n\n"
+        "## 調査結果と判断根拠\n\n- 再発: 該当なし: 前に1回指摘しただけで、同じ問題の反復ではない。\n\n"
+        "## ユーザー指摘の逐語引用\n\n```text\n前に文言を1回指摘しただけだけど、ここも直して。\n```\n"
+    )
+    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert "成功:" in capsys.readouterr().out

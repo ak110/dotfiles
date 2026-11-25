@@ -177,7 +177,7 @@ async def test_start_projects_shared_state_without_internal_fields(
             "model": "model",
             "effort": "high",
             "root_session_id": "root-session",
-            "label": "調査",
+            "label": "delegate",
         }
         _assert_no_forbidden_keys(response)
         assert f"session_transition event=start session_id={engine}-session writer=mcp-manager status=running" in caplog.text

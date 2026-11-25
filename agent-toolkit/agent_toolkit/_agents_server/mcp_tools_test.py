@@ -109,10 +109,10 @@ async def test_public_start_returns_label_of_started_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """全modeの公開`start`の応答が、起動したsessionの保持する担当名を`label`で返す。
+    """全modeの公開`start`の応答が、起動したsessionの保持する担当名を`label`で返す。  pyfltr: allow-comment
 
     応答に担当名が無いか別のsessionの値を返すと、複数の委譲先を起動した委譲元が`session_id`と担当を対応付けられず、
-    追送を別の担当へ送る。明示・省略・空白の指定、taskの引き継ぎ記録付き応答、候補の切替と起動直後の失敗を含める。
+    追送を別の担当へ送る。明示・省略の指定、taskの引き継ぎ記録付き応答、候補の切替と起動直後の失敗を含める。
     """
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
@@ -141,9 +141,7 @@ async def test_public_start_returns_label_of_started_session(
             "lane-02": await mcp_tools.start(
                 cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="chores", label="lane-02"
             ),
-            "別の調査": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="chores"),
-            "空の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空の調査", model_type="chores", label=""),
-            "空白の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空白の調査", model_type="chores", label="   "),
+            "delegate": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="chores"),
             "explore": await mcp_tools.start(cwd, mode="explore", prompt="探索"),
             "write-awi": await mcp_tools.start(cwd, mode="write", prompt="定型変更", label="write-awi"),
             "shell-git": await mcp_tools.start(
@@ -155,11 +153,6 @@ async def test_public_start_returns_label_of_started_session(
             "lane-07-exec": await mcp_tools.start(cwd, subagent_md_path="exec", extra_params=task_params),
         }
 
-        for label in ("", "   "):
-            shell = await mcp_tools.start(
-                cwd, mode="shell", command="git status --short", summary_policy="終了コードだけ", label=label
-            )
-            assert shell["label"] == (await manager.show_session(shell["session_id"]))["label"] == "shell-git"
         assert "handoff_record_path" in responses["lane-07-exec"]
         assert len({response["session_id"] for response in responses.values()}) == len(responses)
         for expected, response in responses.items():

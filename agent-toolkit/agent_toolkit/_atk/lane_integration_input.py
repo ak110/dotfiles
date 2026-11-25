@@ -8,6 +8,7 @@ import math
 import pathlib
 import re
 import sys
+import tomllib
 import typing
 
 from agent_toolkit._atk import help_text, run_command
@@ -90,7 +91,7 @@ def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -
         if not handoff.is_absolute() or not handoff.is_file():
             raise ValueError("計画なしでは既存の引き継ぎ記録をhandoffへ絶対パスで指定する")
     expected = set(_lane_records.selection_state(record)["lane_wis"])
-    if expected and expected != {row["name"] for row in manifest["wis"]}:
+    if expected != {row["name"] for row in manifest["wis"]}:
         raise ValueError("manifestのWI集合が選定の今回のレーン集合と一致しない")
     if "processed_wis" in manifest:
         processed = manifest["processed_wis"]
@@ -204,10 +205,37 @@ def integration_command(
         raise ValueError(f"統合の{key}が終了{code}: {failure or observed['record_path']}。同じlane integrateで再開する")
 
 
-def verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: list[list[str]], cwd: pathlib.Path) -> None:
+def project_verification(cwd: pathlib.Path, base: str, candidate: str) -> list[list[str]]:
+    commands: list[list[str]] = []
+    for commit in dict.fromkeys((base, candidate)):
+        if not _lane_records.git(cwd, "ls-tree", commit, "--", "pyproject.toml"):
+            continue
+        project = tomllib.loads(_lane_records.git(cwd, "show", f"{commit}:pyproject.toml"))
+        policy = project.get("tool", {}).get("agent-toolkit", {}).get("lane-integration", {})
+        if not isinstance(policy, dict) or set(policy) - {"verification"}:
+            raise ValueError("[tool.agent-toolkit.lane-integration]にはverificationのargvを指定する")
+        if "verification" not in policy:
+            continue
+        argv = policy["verification"]
+        if not isinstance(argv, list) or not argv or not all(isinstance(value, str) and value for value in argv):
+            raise ValueError("lane-integration.verificationは空でない文字列のargv配列で指定する")
+        invocation = [*argv, base]
+        if invocation not in commands:
+            commands.append(invocation)
+    return commands
+
+
+def verify(
+    record: dict[str, typing.Any],
+    state: dict[str, typing.Any],
+    argvs: list[list[str]],
+    cwd: pathlib.Path,
+    *,
+    prefix: str = "verification",
+) -> None:
 
     for index, argv in enumerate(argvs):
-        key = f"verification-{index}"
+        key = f"{prefix}-{index}"
         sources = [*state["input"]["manifest"].get("verification_records", [])]
         previous = state.get("results", {}).get(key, {}).get("record_path")
         if previous:

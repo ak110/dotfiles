@@ -113,6 +113,7 @@ class SavedReviewTable:
     timestamp: datetime.datetime
     rows: list[tuple[int, list[str]]]
     judgment_rows: list[tuple[int, list[str]]]
+    raw_rows: list[list[str]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -143,7 +144,8 @@ def saved_review_tables(
         try:
             rows: list[tuple[int, list[str]]] = []
             judgment_rows: list[tuple[int, list[str]]] = []
-            for number, row in enumerate(review_table.read_rows(path), 1):
+            raw_rows = review_table.read_rows(path)
+            for number, row in enumerate(raw_rows, 1):
                 if row[1] != "exec-review":
                     continue
                 int(row[0])
@@ -157,7 +159,7 @@ def saved_review_tables(
         except OSError, UnicodeError, ValueError:
             unreadable += 1
             continue
-        tables.append(SavedReviewTable(path, timestamp, rows, judgment_rows))
+        tables.append(SavedReviewTable(path, timestamp, rows, judgment_rows, raw_rows))
     return SavedReviewTables(tables, paths, unreadable, without_history)
 
 

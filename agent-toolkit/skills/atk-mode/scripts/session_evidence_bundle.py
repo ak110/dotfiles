@@ -77,6 +77,7 @@ def _bundle_events(
     *,
     after: Path | None = None,
     conversation_output: list[dict[str, Any]] | None = None,
+    review_session_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """4走査を1回の記録読み込みで行い、走査ごとの全量をファイルへ書いて要約だけを返す。
 
@@ -100,8 +101,22 @@ def _bundle_events(
             )
         ], 2
     resolved = directory.resolve()
+    detached: set[str] = set()
+    lanes: dict[str, tuple[str, str]] = {}
     try:
-        scope = session_review.scope_records(collected, after=after)
+        if review_session_id is not None and collected:
+            lanes, inherited = session_review.lane_review_targets(review_session_id, record_path=collected[0].path.resolve())
+        else:
+            inherited = None
+        if lanes:
+            detached = {item.record_id for item in collected if str(item.path) in lanes and item.role != "main"}
+            while descendants := {
+                item.record_id for item in collected if item.source_record in detached and item.record_id not in detached
+            }:
+                detached.update(descendants)
+            collected = [item for item in collected if item.record_id not in detached]
+            unresolved = [item for item in unresolved if item.record_id not in detached and item.source_record not in detached]
+        scope = session_review.scope_records(collected, after=after, inherited=inherited, detached=detached)
     except (OSError, ValueError, KeyError) as error:
         return [_error_event(str(error), next_action="処理済みscopeと元記録を確認し、範囲を復元して再実行する")], 2
     session_review.write(resolved / "scope.json", scope)
@@ -110,16 +125,21 @@ def _bundle_events(
             item._replace(records=[row for row in item.records if row.line > scope["records"][item.record_id]["after_line"]])
             for item in collected
         ]
-        if after is not None
+        if after is not None or inherited is not None
         else collected
     )
     timeline = _default_events(collected, [])
     post_delivery = post_delivery_events(timeline)
-    if after is not None:
+    if after is not None or inherited is not None:
         timeline = [event for event in timeline if _in_scope(event, scope)]
+    if detached:
+        timeline.extend(
+            {"kind": "lane-review-boundary", "session_id": session, "result_summary": summary}
+            for session, summary in sorted(set(lanes.values()))
+        )
     metadata = _collection_events(collected, [], recoveries=False)
     warnings = [*metadata, *_warning_collection_events(collected, [])]
-    if after is not None:
+    if after is not None or inherited is not None:
         warnings = [event for event in warnings if _in_scope(event, scope)]
     stats = [*metadata, *_stats_events(incremental, compaction_record_dir), *quality_metrics(collected)]
     hook_notices = [*metadata, *_hook_notice_events([record for item in incremental for record in item.records])]
@@ -169,7 +189,7 @@ def _bundle_events(
         events.append({"kind": "bundle-file", "path": str(path), "count": len(scan_events)})
     comparison_path = resolved / "comparison-materials.jsonl"
     comparison = comparison_material_events(collected)
-    if after is not None:
+    if after is not None or inherited is not None:
         comparison = [event for event in comparison if _in_scope(event, scope)]
     comparison_path.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n" for event in comparison), encoding="utf-8")
     events.append({"kind": "bundle-file", "path": str(comparison_path), "count": len(comparison)})

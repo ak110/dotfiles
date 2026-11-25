@@ -42,6 +42,15 @@ _PRIVATE_KEY = re.compile(
     re.DOTALL,
 )
 
+_GITHUB_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_])(?:"
+    r"ghs_[0-9]+_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
+    r"|gh[posu]_[A-Za-z0-9]{36}"
+    r"|ghr_[A-Za-z0-9]{76}"
+    r"|github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}"
+    r")(?![A-Za-z0-9_])"
+)
+
 
 def redact_secrets(text: str) -> str:
     text = _PRIVATE_KEY.sub(REDACTED, text)
@@ -49,7 +58,8 @@ def redact_secrets(text: str) -> str:
     text = _NAMED_SECRET.sub(rf'\1"{REDACTED}"', text)
     text = _SCHEME_CREDENTIAL.sub(rf"\1{REDACTED}", text)
     text = _URL_USERINFO.sub(rf"\1{REDACTED}@", text)
-    return _QUERY_CREDENTIAL.sub(rf"\1{REDACTED}", text)
+    text = _QUERY_CREDENTIAL.sub(rf"\1{REDACTED}", text)
+    return _GITHUB_TOKEN.sub(REDACTED, text)
 
 
 def redact_diagnostic_values(value: Any) -> Any:

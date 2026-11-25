@@ -4,12 +4,19 @@ from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
+import argparse
 import asyncio
 import json
 import logging
+import os
 import pathlib
+import signal
+import subprocess
+import sys
+from types import SimpleNamespace
 from typing import Any
 
+import psutil
 import pytest
 
 from agent_toolkit._agents_server import (
@@ -20,11 +27,17 @@ from agent_toolkit._agents_server import (
     shared_roots,
     state,
     status_file,
+    wait_targets,
 )
 from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._atk import agents_exit_session, lane
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk.wi import process_loop_control
+from agent_toolkit._atk.wi import process_loop_env as _pl_env
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import session_registry
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
     _assert_no_forbidden_keys,
@@ -817,3 +830,136 @@ async def test_inherited_wait_zero_does_not_repeat_scan_after_losing_result_clai
         monkeypatch.setattr(manager, "_collect_wait_result", collected_elsewhere)
         assert (await manager.wait(inherited_targets={child.session_id}))["status"] == "expired"
         assert scans == 1
+
+
+@pytest.mark.asyncio
+async def test_same_conversation_wait_after_restart_delivers_pending_output_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parent = "orchestrator-restart"
+    children = {
+        identifier: state.SessionState(identifier, str(tmp_path), engine="codex", announced=True)
+        for identifier in ("finished-lane", "running-lane")
+    }
+    writer = status_file.StatusFileWriter(
+        children, shared_roots.StatusFileIdentity(parent, "root.json", None), state_root=tmp_path
+    )
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
+    monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
+    monkeypatch.setattr(agents_wait, "is_agent_environment", lambda: False)
+
+    def wait() -> tuple[int, dict[str, dict[str, Any]]]:
+        code = agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": parent}, state_root=tmp_path)
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        by_session = {row["session_id"]: row for row in rows}
+        assert len(rows) == len(by_session)
+        return code, by_session
+
+    writer.activate()
+    try:
+        assert wait()[0] == 3
+        assert wait_targets.read_wait_targets(parent, "root.json", tmp_path) == (set(children), None)
+
+        finished = children["finished-lane"]
+        _complete(finished, message="再起動中に完了")
+        writer.flush()
+        notices = shared_layout.notices_directory(parent, tmp_path)
+        _write_notice(notices, finished.session_id, 1, "2026-11-26T00:00:01+00:00", "終了前の通知")
+        _write_notice(notices, "running-lane", 1, "2026-11-26T00:00:02+00:00", "進行中の通知")
+
+        code, first = wait()
+        assert code == 0
+        assert set(first) == set(children)
+        assert first["finished-lane"]["status"] == "completed"
+        assert first["finished-lane"]["agent_message"] == "再起動中に完了"
+        assert [notice["body"] for notice in first["finished-lane"]["notices"]] == ["終了前の通知"]
+        assert first["running-lane"]["status"] == "running"
+        assert [notice["body"] for notice in first["running-lane"]["notices"]] == ["進行中の通知"]
+        assert "agent_message" not in first["running-lane"]
+
+        writer.flush()
+        code, second = wait()
+        assert code == 3
+        assert set(second) == {"running-lane"}
+        assert second["running-lane"]["status"] == "running"
+        assert "agent_message" not in second["running-lane"]
+        assert "notices" not in second["running-lane"]
+    finally:
+        writer.deactivate()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linuxの対話CLIだけが対象")
+@pytest.mark.parametrize("engine", ["codex", "agy"])
+def test_linux_interactive_orchestrator_resume_restores_wait_target(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str
+) -> None:
+    identifier = "00000000-0000-0000-0000-000000000001"
+    child = "running-lane"
+    state_root = tmp_path / "agents-state"
+    shared_layout.status_directory(identifier, state_root).mkdir(parents=True)
+    wait_targets.retain_wait_targets(identifier, "root.json", [child], state_root)
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
+    monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
+    monkeypatch.setattr(agents_wait, "is_agent_environment", lambda: False)
+    process_loop_control.cmd_process_loop_resume(identifier)
+    request = process_loop_control.read_resume_request()
+    assert request is not None
+
+    with late_descendant.held_process(tmp_path) as running_lane, late_descendant.held_process(tmp_path) as previous:
+        owner = session_registry.ProcessIdentity.of(os.getpid())
+        executor = session_registry.ProcessIdentity.of(running_lane.pid)
+        assert owner is not None and executor is not None
+        session_registry.publish(
+            child,
+            state=session_registry.PublicationState.PENDING_RUNNING,
+            engine="codex",
+            cwd=str(tmp_path),
+            processes=(owner, executor),
+            state_root=state_root,
+        )
+        old_host = psutil.Process(previous.pid)
+        interactive_host = SimpleNamespace(
+            pid=old_host.pid,
+            exe=old_host.exe,
+            create_time=old_host.create_time,
+            is_running=old_host.is_running,
+            terminal=lambda: "/dev/pts/test",
+            cmdline=lambda: [engine],
+        )
+        monkeypatch.setattr(agents_exit_session.process_identity, "parents", lambda _process: iter([interactive_host]))
+        monkeypatch.setattr(lane, "current_session_id", lambda: identifier)
+        monkeypatch.setattr(lane, "cleanup_session", lambda _identifier, **_kwargs: {"retained": False})
+        capsys.readouterr()
+        assert agents_exit_session.main() == 0
+        exited = json.loads(capsys.readouterr().out)
+        assert (exited["status"], exited["host"], exited["pid"]) == ("terminating", engine, previous.pid)
+        assert previous.wait(timeout=10) == -signal.SIGTERM
+        assert running_lane.poll() is None
+
+        def launch(argv, env, _cwd, **_kwargs):
+            if engine == "codex":
+                assert argv[:2] == ["codex", "resume"] and identifier in argv
+                env = {**env, "CODEX_THREAD_ID": identifier}
+            else:
+                assert argv[0] == "agy" and argv[argv.index("--conversation") + 1] == identifier
+            assert env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] == identifier
+            identity = shared_roots.resolve_wait_identity(env, None, state_root)
+            assert identity == shared_roots.StatusFileIdentity(identifier, "root.json", None)
+            capsys.readouterr()
+            assert agents_wait.wait_for_result(environment=env, state_root=state_root) == 3
+            row = json.loads(capsys.readouterr().out)
+            assert row["session_id"] == child and row["status"] == "running"
+            assert "agent_message" not in row
+            return subprocess.CompletedProcess(argv, 0)
+
+        monkeypatch.setattr(_pl_session, "_run_cli_session", launch)
+        assert _pl_session.run_process_session(
+            argparse.Namespace(resume=identifier, resume_request_id=request.request_id),
+            tmp_path,
+            "再開",
+            {"PATH": os.environ["PATH"], _pl_env.PROCESS_LOOP_SESSION_ENV: "1"},
+            orchestrator=engine,
+            model="test",
+            effort="high",
+            resume_pending=True,
+        )

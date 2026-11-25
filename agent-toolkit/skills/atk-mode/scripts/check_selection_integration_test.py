@@ -9,6 +9,7 @@ import check_selection_loading
 import pytest
 import yaml
 from agent_toolkit import atk
+from agent_toolkit._atk import lane_records
 from agent_toolkit._plan import locations
 from agent_toolkit._testing import git_repository, plan_fixture, wi_entry_files
 from agent_toolkit._testing.lane_integration_support import (
@@ -29,6 +30,90 @@ from agent_toolkit._testing.selection_check_support import (
     additional_active_items,
 )
 from agent_toolkit._testing.selection_check_support import fixture_env as fixture_env
+
+
+def test_handoff_keeps_observation_out_of_lane_integration(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    repo, notes = env
+    _awi(notes, "implementation.md", "`README.md`を変更する。")
+    _awi(notes, "observation.md", "`README.md`を観測する。")
+    source = _write_selection(
+        tmp_path / "input.yaml",
+        [
+            {"WI": "implementation.md", "レーン": "lane-01", "書込対象": []},
+            {"WI": "observation.md", "レーン": "lane-01", "書込対象": []},
+        ],
+        [{"レーン": "lane-01"}],
+    )
+    before = source.read_bytes()
+    handed_off = tmp_path / "handoff.yaml"
+    assert (
+        _dispatch("--work-dir", str(repo), str(source), "--handoff-observation", "observation.md", "--output", str(handed_off))
+        == 0
+    )
+    assert source.read_bytes() == before
+    final = tmp_path / "final.yaml"
+    assert _dispatch("--work-dir", str(repo), str(handed_off), "--mark-integrated", "lane-01", "--output", str(final)) == 0
+    document = yaml.safe_load(final.read_text(encoding="utf-8"))
+    first, second = document["選定"]
+    assert first["統合状態"] == "統合済み"
+    assert second["公開後の観測担当"] == "統括" and "統合状態" not in second
+    assert document["レーンの所要時間"][0]["統合状態"] == "統合済み"
+
+
+@pytest.mark.parametrize("owner_mode", ["ambient", "automatic", "explicit"])
+def test_handoff_survives_unavailable_selection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], owner_mode: str
+) -> None:
+    repo, selection_file, created = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selection_file, monkeypatch, repo)
+    wi = "20261023-000000-001.md"
+    observation = "20261023-000000-002.md"
+    notes = tmp_path / "notes"
+    original = wi_entry_files.entry_path(notes, wi, state="processing")
+    wi_entry_files.entry_path(notes, observation, state="processing").write_bytes(original.read_bytes())
+    selection = yaml.safe_load(selection_file.read_text(encoding="utf-8"))
+    selection["追加WI"] = [observation]
+    selection["選定"].append(dict(selection["選定"][0], WI=observation))
+    selection_file.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
+    record_path = pathlib.Path(created["record_path"])
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    lane_records.require_selection(record)
+    lane_records.save(record_path, record)
+
+    handoff = ("--handoff-observation", observation, "--work-dir", str(repo))
+    other = tmp_path / "other.yaml"
+    _plan_operation(capsys, "pick-wi-check", str(selection_file), *handoff, "--output", str(other))
+    assert json.loads(record_path.read_text(encoding="utf-8"))["selection"]["lane_wis"] == [wi, observation]
+    if owner_mode != "ambient":
+        monkeypatch.delenv(lane_records.SESSION_ENV)
+        monkeypatch.setenv("CODEX_THREAD_ID", "orchestrator-conversation-id")
+    if owner_mode == "explicit":
+        before = selection_file.read_bytes(), record_path.read_bytes()
+        wrong_owner = ("--lane-session-id", "orchestrator-conversation-id")
+        assert _dispatch(str(selection_file), *handoff, *wrong_owner, "--output", str(selection_file)) == 2
+        assert "所有登録を特定できない" in capsys.readouterr().err
+        assert (selection_file.read_bytes(), record_path.read_bytes()) == before
+    owner = ("--lane-session-id", record["session_id"]) if owner_mode == "explicit" else ()
+    _plan_operation(capsys, "pick-wi-check", str(selection_file), *handoff, *owner, "--output", str(selection_file))
+    assert json.loads(record_path.read_text(encoding="utf-8"))["selection"]["lane_wis"] == [wi]
+    selection_file.rename(selection_file.with_suffix(".expired"))
+
+    lane = pathlib.Path(created["worktree"])
+    (lane / "feature.txt").write_text("new", encoding="utf-8")
+    head = git_repository.commit_all(lane, "実装")
+    manifest = tmp_path / "integration.json"
+    plan = tmp_path / "plan.md"
+    plan.write_text("検収済み", encoding="utf-8")
+    manifest.write_text(
+        json.dumps({"plans": [{"name": plan.name, "commands": [], "saved": str(plan)}], "wis": [{"name": wi, "commands": []}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(lane_records.SESSION_ENV, record["session_id"])
+    code, result, error = _invoke(capsys, *_integration_args(created, repo, manifest, head))
+    assert code == 0, error
+    assert result["phase"] == "finalized"
 
 
 def test_require_integrated_checks_all_stages_without_current_wi(

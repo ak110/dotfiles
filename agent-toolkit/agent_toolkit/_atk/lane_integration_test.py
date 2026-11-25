@@ -26,7 +26,9 @@ from agent_toolkit._testing.lane_integration_support import (
 from agent_toolkit._testing.lane_support import _create, _create_args, _invoke, _selection
 
 
-@pytest.mark.parametrize(("planned", "mixed"), [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize(
+    ("planned", "mixed", "handed_off"), [(False, False, False), (True, False, False), (False, True, False), (True, False, True)]
+)
 @pytest.mark.cpu_limit(
     5.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.572秒。"
 )
@@ -36,11 +38,12 @@ def test_integrate_public_lifecycle(
     capsys: pytest.CaptureFixture[str],
     planned: bool,
     mixed: bool,
+    handed_off: bool,
 ) -> None:
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     done = "20261023-000000-001.md"
-    pending = ["20261023-000000-002.md", "20261023-000000-003.md"] if mixed else []
+    pending = ["20261023-000000-002.md", "20261023-000000-003.md"] if mixed or handed_off else []
     if pending:
         document = yaml.safe_load(selected.read_text(encoding="utf-8"))
         document["追加WI"] = pending
@@ -50,6 +53,9 @@ def test_integrate_public_lifecycle(
             wi_entry_files.entry_path(notes, wi, state="processing").write_bytes(
                 wi_entry_files.entry_path(notes, done, state="processing").read_bytes()
             )
+        if handed_off:
+            document["選定"][1]["公開後の観測担当"] = "統括"
+            document["選定"][2]["再開位置"] = "反映後の観測だけが残る（再開記録: AWI本文、計画: 計画なし）"
         selected.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
     worktree = pathlib.Path(record["worktree"])
     (worktree / "feature.txt").write_text("成果", encoding="utf-8")
@@ -72,7 +78,7 @@ def test_integrate_public_lifecycle(
         json.dumps(
             {
                 "plans": [{"name": "plan.md", "commands": [argv]}] if planned else [],
-                "wis": [{"name": name, "commands": []} for name in [done, *pending]],
+                "wis": [{"name": name, "commands": []} for name in [done, *pending[int(handed_off) :]]],
                 **({"processed_wis": [done]} if mixed else {}),
                 "verification": [],
                 "handoff": str(handoff),
@@ -81,6 +87,14 @@ def test_integrate_public_lifecycle(
         encoding="utf-8",
     )
     args = _integration_args(record, repo, manifest, head)
+    if handed_off:
+        correct = manifest.read_text(encoding="utf-8")
+        missing = json.loads(correct)
+        missing["wis"].pop()
+        manifest.write_text(json.dumps(missing), encoding="utf-8")
+        code, _, stderr = _invoke(capsys, *args)
+        assert code != 0 and "WI集合" in stderr
+        manifest.write_text(correct, encoding="utf-8")
     code, result, stderr = _invoke(capsys, *args)
     assert code == 0, stderr
     assert result["phase"] == "finalized" and result["integrated_head"] == head
@@ -103,8 +117,15 @@ def test_integrate_public_lifecycle(
     stored = json.loads(record_path.read_text(encoding="utf-8"))
     assert stored.get("previous_integration") == previous
     rows = yaml.safe_load(selected.read_text(encoding="utf-8"))["選定"]
-    assert [row["WI"] for row in rows if row.get("統合状態") == "統合済み"] == [done]
+    assert [row["WI"] for row in rows if row.get("統合状態") == "統合済み"] == ([done, pending[1]] if handed_off else [done])
     assert result["selection_integrated"] is not mixed
+    if handed_off:
+        assert rows[1]["公開後の観測担当"] == "統括"
+        assert "統合状態" not in rows[1]
+        assert stored["selection"]["lane_wis"] == [done, pending[1]]
+        selected.unlink()
+        code, after_loss, stderr = _invoke(capsys, *args)
+        assert code == 0 and after_loss["phase"] == "finalized", stderr
     if mixed:
         assert stored["selection"]["integrated"] is False
         assert stored["selection"]["processed_wis"] == [done]

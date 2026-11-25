@@ -1,3 +1,5 @@
+import datetime
+import json
 import pathlib
 import threading
 import time
@@ -82,7 +84,19 @@ async def test_reset_inventory_distinguishes_zero_and_missing(
     screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     usage_refresh.record_codex(
-        {"rateLimitResetCredits": {"availableCount": 0, "credits": [{"status": "used", "resetType": "codexRateLimits"}]}},
+        {
+            "ordinaryUsageAllowed": False,
+            "spendControlReached": True,
+            "rateLimitReachedType": "weekly",
+            "credits": {"hasCredits": False, "unlimited": False, "balance": "0"},
+            "rateLimitResetCredits": {
+                "availableCount": 0,
+                "credits": [
+                    {"status": "used", "resetType": "codexRateLimits"},
+                    {"status": "available", "resetType": "codexRateLimits"},
+                ],
+            },
+        },
         account="fixture",
         contract="pro",
     )
@@ -96,11 +110,102 @@ async def test_reset_inventory_distinguishes_zero_and_missing(
     await page.goto(screen_harness.base_url + "/usage")
     expect = playwright.async_api.expect
     inventory = page.locator("dl > div").filter(has=page.get_by_text("在庫", exact=True))
+    balance = page.locator("dl > div").filter(has=page.get_by_text("クレジット残高", exact=True))
     await expect(inventory.locator("dd")).to_have_text("0回")
-    await expect(page.get_by_text("codexRateLimits · used", exact=True)).to_be_visible()
+    await expect(balance.locator("dd")).to_have_text("0")
+    await expect(page.get_by_text("Codexの利用枠 · 使用済み", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Codexの利用枠 · 利用可能", exact=True)).to_be_visible()
+    for label, value in (("通常利用", "利用不可"), ("支出上限", "到達"), ("上限に達した枠", "週")):
+        field = page.locator("dl > div").filter(has=page.get_by_text(label, exact=True))
+        await expect(field.locator("dd")).to_have_text(value)
     monkeypatch.setattr(usage_refresh, "refresh", refresh)
     await page.get_by_role("button", name="再取得").click()
     await expect(inventory.locator("dd")).to_have_text("未取得")
+    await expect(balance.locator("dd")).to_have_text("未取得")
+
+
+async def test_model_quota_displays_names_and_claude_states_after_refresh(
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = int(time.time())
+    reset = now + 3 * 86400
+    scope = {"model": {"display_name": "Fable"}, "surface": "CLI"}
+    usage_settings.record_metadata("claude", {"account": "local-claude", "contract": "max"})
+    usage_refresh.record_claude_report(
+        {
+            "rate_limits": {
+                "limits": [
+                    {"kind": "weekly_all", "percent": 5, "resets_at": reset, "group": "weekly", "severity": "normal"},
+                    {
+                        "kind": "weekly_scoped",
+                        "percent": 22,
+                        "resets_at": reset,
+                        "scope": scope,
+                        "group": "weekly",
+                        "severity": "warning",
+                        "is_active": False,
+                    },
+                    {"kind": "weekly_scoped", "percent": 40, "scope": "broken", "resets_at": reset},
+                    {"kind": "weekly_scoped", "percent": 35, "scope": {"surface": "CLI"}, "resets_at": reset},
+                    {"kind": "seven_day_overage_included", "percent": 30, "resets_at": reset, "is_active": True},
+                ]
+            }
+        },
+        contract="max",
+    )
+    monkeypatch.setattr(usage_refresh, "refresh", lambda **_kwargs: [])
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/usage")
+    expect = playwright.async_api.expect
+    rows = page.locator("article.metric-row")
+    name = "週 · Fable（CLI）"
+    model = rows.filter(has=page.get_by_role("heading", name=name, exact=True))
+    for refresh in (False, True):
+        if refresh:
+            await page.get_by_role("button", name="再取得").click()
+        await expect(model.get_by_role("progressbar", name=f"{name}の使用率")).to_be_visible()
+        await expect(model.get_by_text("警告", exact=True)).to_be_visible()
+        await expect(model.get_by_text("無効", exact=True)).to_be_visible()
+        await expect(model.get_by_text("利用枠の区分", exact=True)).to_have_count(0)
+        await expect(rows.get_by_text("display_name", exact=False)).to_have_count(0)
+        await expect(rows.get_by_role("heading", name="週 · 対象不明")).to_be_visible()
+        await expect(rows.get_by_role("heading", name="週 · 全体")).to_be_visible()
+        await expect(rows.get_by_role("heading", name="週の利用枠（追加利用分を含む）")).to_be_visible()
+
+    saved_scope = json.dumps(scope, sort_keys=True)
+    unknown_cli = json.dumps({"surface": "CLI"})
+    unknown_web = json.dumps({"surface": "Web"})
+    usage_settings.save_claude_reset_inventory(
+        json.dumps(
+            [
+                {
+                    "id": right,
+                    "engine": "claude",
+                    "account": "local-claude",
+                    "scope": value,
+                    "count": 1,
+                    "from": datetime.datetime.fromtimestamp(now - 86400, datetime.UTC).isoformat(),
+                    "until": datetime.datetime.fromtimestamp(reset, datetime.UTC).isoformat(),
+                }
+                for right, value in (("fable-right", saved_scope), ("cli-right", unknown_cli), ("web-right", unknown_web))
+            ]
+        )
+    )
+    await page.set_viewport_size({"width": 320, "height": 720})
+    await page.get_by_role("link", name="リセットの許可を設定").click()
+    section = page.locator('[data-setting="usage_reset_permissions"]')
+    await section.get_by_text("許可を追加", exact=True).click()
+    await section.get_by_label("エンジン").select_option("claude")
+    scope_choice = section.get_by_label("範囲")
+    await scope_choice.select_option(label=name)
+    await expect(scope_choice).to_have_value(saved_scope)
+    await expect(scope_choice.locator("option:checked")).to_have_text(name)
+    assert await scope_choice.evaluate("(select) => select.getBoundingClientRect().right <= innerWidth")
+    await expect(section.get_by_text(f"{name}: ", exact=False)).to_contain_text("にリセット予定")
+    for value, surface in ((unknown_cli, "CLI"), (unknown_web, "Web")):
+        await scope_choice.select_option(value=value)
+        await expect(scope_choice.locator("option:checked")).to_have_text(f"週 · モデル不明（{surface}）")
+        await expect(scope_choice).to_have_value(value)
 
 
 async def test_failed_refresh_displays_newer_independent_observation(
@@ -148,10 +253,11 @@ async def test_failed_refresh_displays_newer_independent_observation(
 
 @pytest.mark.cpu_limit(
     0.65,
-    reason="実Chromium・HTTPで設定と利用枠を往復し、ローカル設定の再取得と許可エディターの描画を確かめる（CI実測最大0.550秒）。",
+    reason="実Chromium・HTTPでのナビゲーションを測る。共有ブラウザーの準備と終了は全体上限だけに計上する",
+    call_limit=0.65,
 )
 async def test_usage_settings_link_selects_local_with_permission_editor(
-    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:
     config_settings.save_config({"remote_hosts": '["fixture-remote"]'})
     snapshot = {
@@ -171,7 +277,9 @@ async def test_usage_settings_link_selects_local_with_permission_editor(
     settings = page.locator("#screen-settings")
     await expect(settings).not_to_contain_text("fixture-remote-window")
     await settings.get_by_role("link", name="利用枠の使用率とリセット権を見る").click()
+    navigation_started = time.monotonic()
     await page.get_by_role("link", name="リセットの許可を設定").click()
     await expect(picker).to_have_value("")
     editor = settings.locator('[data-setting="usage_reset_permissions"]')
     await expect(editor.get_by_text("許可を追加", exact=True)).to_be_visible()
+    request.node.user_properties.append(("usage_settings_navigation_seconds", time.monotonic() - navigation_started))

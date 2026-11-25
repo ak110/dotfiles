@@ -204,6 +204,7 @@ def _record_conversation_events(main_record: _CollectedRecord, *, compact: bool 
         _TEXT_LIMIT.reset(token)
     # 同じ記録行の中では発話を先に、ツール呼び出しを内容の順に、失敗の標識を最後に並べる。
     ordered: list[tuple[int, int, dict[str, Any]]] = []
+    startup = True
     for event in events:
         kind = event.get("kind")
         text = event.get("text")
@@ -229,8 +230,8 @@ def _record_conversation_events(main_record: _CollectedRecord, *, compact: bool 
             continue
         if kind == "user":
             if _generated_user_event(event):
-                task = _delegation_request(text)
-                if task and not any(item[2].get("kind") == "delegation-request" for item in ordered):
+                task = _delegation_request(text) if startup else None
+                if task:
                     ordered.append(
                         (
                             line,
@@ -244,12 +245,14 @@ def _record_conversation_events(main_record: _CollectedRecord, *, compact: bool 
                             },
                         )
                     )
+                    startup = False
                 continue
             role = "user"
         elif kind in {"assistant", "final-result"}:
             role = "assistant"
         else:
             continue
+        startup = False
         ordered.append(
             (
                 line,
@@ -279,15 +282,9 @@ def _delegation_request(text: str) -> str | None:
     配送本文はXMLエスケープされない自由記述なので、本文全体をXMLとして解釈しない。
     message_formatの生成契約に従い、先頭の開始タグと最後の終了タグを配送境界とする。
     """
-    element = message_format.AUTO_INSERTED_ELEMENT
-    stripped = text.strip()
-    opening = re.match(rf"<{element}\b[^>]*>", stripped)
-    if opening is None or not stripped.endswith(f"</{element}>"):
+    body = message_format.delegation_delivery_body(text)
+    if body is None:
         return None
-    attributes = dict(re.findall(r'([\w-]+)="([^"]*)"', opening[0]))
-    if attributes.get("source") != "agents-server" or attributes.get("kind") != "delivery":
-        return None
-    body = stripped[opening.end() : -len(f"</{element}>")]
     parts: list[str] = []
     depth = 0
     start = 0

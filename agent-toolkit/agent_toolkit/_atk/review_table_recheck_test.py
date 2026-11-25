@@ -52,7 +52,7 @@ def _cli_add(tmp_path: pathlib.Path, path: pathlib.Path, round_value: str, locat
         ("2", "module.py:10", review_bodies.issue_body("指摘", "新しい変更"), True),
         ("2", "module.py:10", review_bodies.issue_body("指摘", "前回から残存"), False),
         ("1", "module.py:10", review_bodies.issue_body("指摘", "前回から残存"), False),
-        ("1", "module.py:10", "類似見直し完了件数: 3", False),
+        ("1", "module.py:10", "類似見直し完了件数: 3\n検収: 確認", False),
         ("2", "担当の記録: 統合時の競合解消", "競合を解消した", True),
     ],
     ids=[
@@ -144,6 +144,7 @@ def test_recheck_registers_carried_finding_and_summary_counts_verdicts(
     assert review_table_format.classification(carried[3]) == "前回から残存"
     assert review_table_format.carried_origin(carried[3]) == 2
     assert "指摘Bの残り" in carried[3]
+    assert review_table_format.requires_acceptance_result(carried)
     after = table.summary(path, 2)
     assert after.get("recheck_pending_count") == 0
     assert after.get("recheck_counts") == {"完了": 1, "対応不十分": 1, "未対応": 0}
@@ -182,7 +183,7 @@ def test_recheck_correction_appends_and_reuses_or_withdraws_carried_row(tmp_path
     assert review_table_format.response_state(rows[2]) == "unanswered"
     assert table.summary(path, 2).get("recheck_counts") == {"完了": 0, "対応不十分": 0, "未対応": 1}
 
-    table.respond(path, "", "", "", "", review_bodies.response_body("残りも直した"), "", row_id=3)
+    table.respond(path, "", "", "", "", review_bodies.response_body("残りも直した", acceptance="abc1234で確認"), "", row_id=3)
     saved = path.read_bytes()
     assert _cli_recheck(tmp_path, path, 1, "2", "完了") != 0
     assert path.read_bytes() == saved
@@ -196,7 +197,7 @@ def test_recheck_correction_appends_and_reuses_or_withdraws_carried_row(tmp_path
         ("対応不十分", review_bodies.issue_body("指摘Bの残り", "前回から残存")),
         ("対応不十分", review_bodies.issue_body("指摘Bの残り") + "\n元の指摘: 行1"),
         ("完了", review_bodies.issue_body("指摘Bの残り")),
-        ("未対応", "類似見直し完了件数: 1\n"),
+        ("未対応", "類似見直し完了件数: 1\n検収: 確認"),
     ],
     ids=["missing-issue", "missing-count", "classification-line", "origin-line", "issue-on-done", "labels-only"],
 )
@@ -417,3 +418,25 @@ def test_add_help_items_example_is_accepted_as_displayed(
         )
     assert returned.value.code == 0
     assert len(table.read_rows(path)) == 1
+
+
+@pytest.mark.parametrize("acceptance", ["", "\n検収:   "])
+@pytest.mark.parametrize("verdict", [None, "対応不十分", "未対応"])
+def test_exec_issue_without_acceptance_keeps_table(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], acceptance: str, verdict: str | None
+) -> None:
+    path = tmp_path / "plan.exec-review.tsv"
+    _answered_round_one(path)
+    before = path.read_bytes()
+    issue = "残る問題\n類似見直し完了件数: 1" + acceptance
+    capsys.readouterr()
+    code = (
+        _cli_add(tmp_path, path, "1", "module.py:30", issue)
+        if verdict is None
+        else _cli_recheck(tmp_path, path, 1, "2", verdict, issue)
+    )
+    assert code != 0
+    assert path.read_bytes() == before
+    error = capsys.readouterr().err
+    assert "検収:" in error
+    assert "review-record.md" in error

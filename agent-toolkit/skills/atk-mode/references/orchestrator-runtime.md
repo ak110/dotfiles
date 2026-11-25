@@ -17,7 +17,7 @@ process-loop・run-skillの統括の挙動（起動、turn終了、再開、外�
 | run-skill・claude | 非対話の`claude -p --model … --effort …`。初回入力は目的文 | 報告用UWIの保存を確かめられない終了はStop hookが遮断する。バックグラウンドタスクの完了待ちのturn終了は許し、完了通知で再開する。最終応答でCLIが終わり、起動元が報告の保存を検収する | 利用上限の解除後は`claude -p --resume`で自動再開。明示再開は`atk run-skill --resume <RUN_ID>` |
 | run-skill・codex | 非対話の`codex exec --model … -c model_reasoning_effort=… --json <目的文>` | 同上 | 利用上限の解除後は`codex exec resume`で自動再開。明示再開はRUN_ID |
 | run-skill・agy | 非対話の`agy -p <目的文> --model … --effort … --output-format stream-json` | 同上（変換層経由） | 明示再開は`--conversation`。利用上限の自動再開はCLI出力から上限を検出できた場合だけ |
-| agents_server通常委譲 | claudeはClaude Agent SDK、codexはApp Serverの`turn/start`、agyは`agy -p`へ、prompt・`model`・`effort`を渡す | turnの結果を管理して公開する。対話端末の入力待ちとは別の管理 | `send_message`は実行中turnへ配送し、終了済みなら同じ会話を再開する（agyは実行中turnへの配送を拒否する）。`kill`はturnへの中断要求 |
+| agents_server通常委譲 | claudeはClaude Agent SDK、codexはApp Serverの`turn/start`、agyは`agy -p`へ、prompt・`model`・`effort`を渡す | turnの結果を管理して公開する。対話端末の入力待ちとは別の管理 | `send_message`は実行中turnへ配送し、終了済みなら同じ会話を再開する（AntigravityとOpenCodeは実行中turnへの配送を拒否する）。`kill`はturnへの中断要求 |
 | ユーザーが直接操作する対話中のメイン | ユーザーが起動引数と入力を選ぶ。統括用ランチャーは適用されない | turn終了後は入力を待つ。統括とrun-skill向けのStop hookの続行判定は働かない | ユーザーの入力とホストの再開操作。Claude Codeの`/restart`・`/update`は同じPID・会話IDで再起動し、modが自身のバックグラウンドwaitを停止した場合だけ自動で続行する |
 
 process-loopとrun-skillは、最初の入力で作業を名指しする。
@@ -38,7 +38,8 @@ Codexの上限を検出した単回実行の終了0はCLIの停止を示す。
 ## 常駐・単発・明示再開の違い
 
 - `atk wi process-loop`は統括CLIの終了後に次の会話を起動する。
-  対象ごとの結果・残件・writerの終了は統括がセッション内で検収する。
+  予約なしの終了後の起動は新しい会話であり、残件だけを理由に同じ会話を自動再開しない。
+  通常終了（`--once`、abort・中断、会話を替える交代を含む）では、対象ごとの結果とwriterの終了を検収し、所有を解放する。
 - process-loopの`resume [ID]`は次の実起動への予約である。
   予約は起動の成功で1回消費し、起動前の失敗とabortでは保持する。
   再開は未完了の元会話・候補・計画・`lane_session_id`と、保持したモデル・effortを再利用する。
@@ -55,7 +56,12 @@ Codexの上限を検出した単回実行の終了0はCLIの停止を示す。
 新着の受け入れや同じ会話での継続を理由に、既存のリリース頻度を下げない。
 
 規範・配布版の更新は、同じ会話で更新を取り込めるホストの公開手段を優先し、使えない場合は`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「更新のための本人再開」で同じ会話の未完了作業を保持する。
-稼働開始から20時間の点検で新しい作業の開始を保留し、保存、公開、writerの終了観測、更新、同じ会話の再開、稼働版の確認へ進む。
+稼働開始から20時間の点検で新しい作業の開始を保留する。
+同じ会話IDを予約して本人再開する時は、統合済みの公開・CI検収と引き継ぎ記録の保存後、配下writerを止めずに更新と再開へ進む。
+最初の待機で同じ待機対象を復元し、通知と未受領の結果を回収して、稼働版を確認する。
+この再開手順はClaudeの統括とLinuxの対話端末のCodex・Antigravityの統括に限る。
+`atk agents-exit-session` が `unsupported` を返す環境では、配下writerの終了を観測してからユーザーの操作か既存の手段で終了する。
+利用上限・予約なしの異常終了の復旧や、通常終了の所有解放は変更しない。
 各段階の上限（`update-dotfiles`の60分、起動時の実ID確定の120秒など）を点検の最大30分と合成し、24時間までの残りに収まるかを確かめ、超える場合はその差だけ早く保守へ入る。
 実際の停止・再開を観測できない場合は、最長稼働時間や版の取り込みを保証済みと扱わず、阻害と未完了の工程を上流へ返す。
 同じ会話への規範・プラグインの反映だけではホストの実行バイナリは更新されないので、ホストの版を確かめて本人再開の要否を判定する。

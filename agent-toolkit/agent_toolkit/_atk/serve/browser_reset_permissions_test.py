@@ -1,10 +1,11 @@
+import asyncio
 import datetime
 import json
 import time
 from pathlib import Path
 
 import pytest
-from playwright.async_api import Locator, expect
+from playwright.async_api import Locator, Route, expect
 
 from agent_toolkit._atk import config, config_settings
 from agent_toolkit._atk.serve import settings_routes
@@ -39,6 +40,48 @@ async def _open_add(screen_harness: _ScreenHarness) -> Locator:
     section = page.locator('[data-setting="usage_reset_permissions"]')
     await section.get_by_text("許可を追加", exact=True).click()
     return section
+
+
+@pytest.mark.usefixtures("isolated_permissions")
+@pytest.mark.asyncio(loop_scope="session")
+async def test_reset_permission_can_only_submit_when_scope_is_available_and_settings_are_idle(
+    screen_harness: _ScreenHarness,
+) -> None:
+    page = screen_harness.page
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def delay_save(route: Route) -> None:
+        if route.request.method == "POST":
+            started.set()
+            await asyncio.wait_for(release.wait(), 10)
+        await route.continue_()
+
+    await page.route("**/api/settings", delay_save)
+    try:
+        permission = await _open_add(screen_harness)
+        engine = permission.get_by_label("エンジン")
+        add_permission = permission.get_by_role("button", name="追加", exact=True)
+        await engine.select_option("claude")
+        await expect(add_permission).to_be_disabled()
+        navigation = page.get_by_role("navigation", name="設定の分類")
+        await navigation.get_by_text("工程別モデル", exact=True).click()
+        preset = page.locator('[data-editor="preset:claude-primary"]')
+        await preset.locator("summary").click()
+        await preset.get_by_role("button", name="適用", exact=True).click()
+        await asyncio.wait_for(started.wait(), 5)
+        await navigation.get_by_text("利用枠", exact=True).click()
+        await engine.select_option("codex")
+        await expect(add_permission).to_be_disabled()
+        await engine.select_option("claude")
+        release.set()
+        await expect(page.get_by_label("設定対象ホスト")).to_be_enabled()
+        await expect(add_permission).to_be_disabled()
+        await engine.select_option("codex")
+        await expect(add_permission).to_be_enabled()
+    finally:
+        release.set()
+        await page.unroute("**/api/settings", delay_save)
 
 
 @pytest.mark.usefixtures("isolated_permissions")
@@ -98,7 +141,9 @@ async def test_claude_permission_uses_matching_inventory_and_weekly_observation(
         await expect(section.get_by_role("button", name="追加", exact=True)).to_be_disabled()
         return
     await expect(section.get_by_label("アカウント", exact=True)).to_have_value(_ACCOUNT)
-    await expect(section.get_by_label("範囲").locator("option")).to_have_text(["all"])
+    scope = section.get_by_label("範囲")
+    await expect(scope.locator("option")).to_have_text(["全体"])
+    await expect(scope).to_have_value("all")
     if case == "rejected":
         await expect(section).to_contain_text("既に上限に到達")
         await apply.click()

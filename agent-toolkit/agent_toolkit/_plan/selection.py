@@ -44,6 +44,8 @@ DERIVED_NEW_PATHS_KEY = "導出した新設先"
 INTEGRATION_STATE_KEY = "統合状態"
 NOT_INTEGRATED = "未統合"
 INTEGRATED = "統合済み"
+OBSERVATION_OWNER_KEY = "公開後の観測担当"
+OBSERVATION_OWNER_MAIN = "統括"
 INITIAL_ALLOCATION_KEY = "初回配分"
 ADDED_WIS_KEY = "追加WI"
 ADDITION_ALLOCATIONS_KEY = "追加時の配分"
@@ -68,6 +70,10 @@ def integrated_lanes(selection: object) -> set[str]:
     }
 
 
+def lane_owns(item: dict[str, object], lane: object) -> bool:
+    return item.get(LANE_KEY, item.get("lane")) == lane and item.get(OBSERVATION_OWNER_KEY) != OBSERVATION_OWNER_MAIN
+
+
 def pending_lanes(selection: dict[str, object]) -> list[dict[str, object]]:
     items = typing.cast(list[dict[str, object]], decisions(selection))
     costs = typing.cast(list[dict[str, object]], lane_costs(selection))
@@ -78,7 +84,7 @@ def pending_lanes(selection: dict[str, object]) -> list[dict[str, object]]:
         raise ValueError("選定のWI・レーンが重複しているか、レーンの所要時間との対応が一致しない")
     pending = []
     for row in costs:
-        members = [item for item in items if item[LANE_KEY] == row[LANE_KEY]]
+        members = [item for item in items if lane_owns(item, row[LANE_KEY])]
         if any(
             prior not in assigned or prior == row[LANE_KEY] for prior in typing.cast(list[str], row.get(PRIOR_LANES_KEY, []))
         ):

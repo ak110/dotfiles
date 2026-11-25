@@ -167,15 +167,15 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
             "named": await mcp_tools.start(
                 str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="投稿前の確認"
             ),
-            "blank": await mcp_tools.start(
-                str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="   "
-            ),
             "shell": await mcp_tools.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態"),
             "shell_path": await mcp_tools.start(
                 str(tmp_path), mode="shell", command="/usr/bin/git status", summary_policy="終了状態"
             ),
+            "shell_fallback": await mcp_tools.start(
+                str(tmp_path), mode="shell", command="Get-Item file", summary_policy="終了状態"
+            ),
             "explore": await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査\n詳細"),
-            "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草\n詳細"),
+            "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草\n詳細", label="あ" * 32),
         }
 
         shown = {key: (await manager.show_session(response["session_id"]))["label"] for key, response in labels.items()}
@@ -183,12 +183,33 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
             "lane": "lane-01-exec",
             "explain": "external-write-review",
             "named": "投稿前の確認",
-            "blank": "external-write-review",
             "shell": "shell-make",
             "shell_path": "shell-git",
+            "shell_fallback": "shell",
             "explore": "explore",
-            "write": "write",
+            "write": "あ" * 32,
         }
+
+
+@pytest.mark.parametrize("mode", ["task", "delegate", "explore", "write", "shell"])
+@pytest.mark.parametrize("label", ["あ" * 33, "依頼" * 48 + "する", "", "   ", "設計\nレビュー", "a--b", "a\u200bb"])
+@pytest.mark.asyncio
+async def test_start_rejects_invalid_label_before_preparing_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: str, label: str
+) -> None:
+    def unexpected_manager() -> None:
+        pytest.fail("形式外の担当名で起動処理に到達してはいけない")
+
+    monkeypatch.setattr(mcp_tools, "_manager", unexpected_manager)
+    inputs = {
+        "task": {"subagent_md_path": "exec"},
+        "delegate": {"prompt": "監査", "model_type": "chores"},
+        "explore": {"prompt": "調査"},
+        "write": {"prompt": "起草"},
+        "shell": {"command": "make test", "summary_policy": "終了状態"},
+    }
+    with pytest.raises(ToolError, match="(?s)32文字.*省略"):
+        await mcp_tools.mcp.call_tool("start", {"cwd": str(tmp_path), "mode": mode, "label": label, **inputs[mode]})
 
 
 @pytest.mark.parametrize(("mode", "inputs", "named"), _MODE_INPUT_CASES)
@@ -341,7 +362,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
         assert [call[2] for call in backend.start_calls] == ["delegate", "delegate", "explore", "write", "shell"]
         assert {mode: item["label"] for mode, item in shown.items()} == {
             "task": "lane-01-exec",
-            "delegate": "監査",
+            "delegate": "delegate",
             "explore": "explore-対象",
             "write": "write",
             "shell": "shell-make",

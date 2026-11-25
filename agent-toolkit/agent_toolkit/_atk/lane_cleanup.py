@@ -107,6 +107,7 @@ def _cache_file(root: pathlib.Path, relative: pathlib.Path) -> bool:
 
 
 PROJECTION_MANIFEST = pathlib.Path(".agent-toolkit-generated-files.json")
+_HASH_ONLY_ROOTS = frozenset({".hypothesis", "rust/claude-statusline/target", "agent-toolkit/.claude-plugin/types"})
 
 
 def projection_manifest(root_name: str, outputs: Mapping[pathlib.Path, tuple[bytes, int]]) -> tuple[bytes, int]:
@@ -137,6 +138,39 @@ def _matches_projection_file(path: pathlib.Path, expected: str | None) -> bool:
         return False
     with path.open("rb") as handle:
         return hashlib.file_digest(handle, "sha256").hexdigest() == expected
+
+
+def _hashed_output_blocker(worktree: pathlib.Path, relative: pathlib.Path) -> pathlib.Path | None:
+    path = worktree
+    for part in relative.parts:
+        path /= part
+        if path.is_symlink() or path.is_junction() or not path.is_dir():
+            return path.relative_to(worktree)
+    fingerprints = _projection_fingerprints(path)
+    if fingerprints is None:
+        return relative
+
+    def on_error(error: OSError) -> typing.Never:
+        raise error
+
+    pending = set(fingerprints)
+    projected_dirs = {parent.as_posix() for name in pending for parent in pathlib.PurePosixPath(name).parents}
+    for directory, folders, files in path.walk(on_error=on_error):
+        for name in (*folders, *files):
+            child = directory / name
+            key = child.relative_to(path).as_posix()
+            if (
+                name.casefold() == ".git"
+                or child.is_symlink()
+                or child.is_junction()
+                or (name in folders and key not in projected_dirs)
+            ):
+                return child.relative_to(worktree)
+            if name in files and key != PROJECTION_MANIFEST.as_posix():
+                if not _matches_projection_file(child, fingerprints.get(key)):
+                    return child.relative_to(worktree)
+                pending.remove(key)
+    return relative if pending else None
 
 
 def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
@@ -217,12 +251,21 @@ def _unowned_data_reason(
     if any(pathlib.Path(other) != path and pathlib.Path(other).is_relative_to(path) for other in protected_paths):
         return "別のworktreeを内包するため回収しない"
     status = _lane_records.git(worktree, "status", "--porcelain=v1", "--ignored=matching", "--untracked-files=normal", "-z")
-    if any(
-        not (allow_generated and entry.startswith("!! ") and _registered_generated_directory(worktree, entry[3:]))
-        for entry in status.split("\0")
-        if entry
-    ):
-        return "Gitの無視対象または新たな変更がある"
+    for entry in status.split("\0"):
+        if not entry:
+            continue
+        raw = entry[3:]
+        blocked = raw
+        if allow_generated and entry.startswith("!! "):
+            root = raw.removesuffix("/")
+            if raw.endswith("/") and root in _HASH_ONLY_ROOTS:
+                blocker = _hashed_output_blocker(worktree, pathlib.Path(root))
+                if blocker is None:
+                    continue
+                blocked = blocker.as_posix()
+            elif _registered_generated_directory(worktree, raw):
+                continue
+        return f"Gitの無視対象または新たな変更がある: {blocked}"
     gitdir = pathlib.Path(_lane_records.git(worktree, "rev-parse", "--absolute-git-dir"))
     if any((gitdir / name).exists() for name in ("rebase-apply", "rebase-merge", "BISECT_START", "sequencer")):
         return "worktreeでGit操作が中断中"

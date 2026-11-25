@@ -41,6 +41,7 @@ mergeの任意入力`--lane-cost-updates`は最終割当先の補正前後の実
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import pathlib
 import sys
@@ -49,6 +50,7 @@ import typing
 import selection_contract
 import yaml
 from agent_toolkit._agents_server import admission as _admission
+from agent_toolkit._atk import lane_records
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
@@ -378,8 +380,11 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
 def _mark_integrated(selection: dict[str, object], lanes: set[str], processed_wis: set[str] | None) -> None:
     items = typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions")))
     for item in items:
-        if item.get(_selection.LANE_KEY, item.get("lane")) in lanes and (
-            processed_wis is None or str(item.get(_selection.WI_KEY, item.get("awi"))) in processed_wis
+        lane = item.get(_selection.LANE_KEY, item.get("lane"))
+        if (
+            lane in lanes
+            and _selection.lane_owns(item, lane)
+            and (processed_wis is None or str(item.get(_selection.WI_KEY, item.get("awi"))) in processed_wis)
         ):
             item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
     rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
@@ -387,10 +392,32 @@ def _mark_integrated(selection: dict[str, object], lanes: set[str], processed_wi
         if row[_selection.LANE_KEY] in lanes and all(
             item.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
             for item in items
-            if item.get(_selection.LANE_KEY, item.get("lane")) == row[_selection.LANE_KEY]
+            if _selection.lane_owns(item, row[_selection.LANE_KEY])
         ):
             row[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
     selection[_selection.LANE_COSTS_KEY] = rows
+
+
+def _handoff_observations(selection: dict[str, object], names: set[str]) -> set[str]:
+    items = typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions")))
+    found = {str(item.get(_selection.WI_KEY, item.get("awi"))): item for item in items}
+    if names - found.keys():
+        raise InputError(f"観測を引き継ぐWIが選定に無い: {sorted(names - found.keys())}", next_action=_FIX_CONTENT)
+    lanes: set[str] = set()
+    integrated = _selection.integrated_lanes(selection)
+    for name in sorted(names):
+        item = found[name]
+        lane = item.get(_selection.LANE_KEY, item.get("lane"))
+        if (
+            not isinstance(lane, str)
+            or not lane_records.LANE.fullmatch(lane)
+            or lane in integrated
+            or item.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
+        ):
+            raise InputError(f"{name}: レーン所属の未統合WIを指定する", next_action=_FIX_CONTENT)
+        item[_selection.OBSERVATION_OWNER_KEY] = _selection.OBSERVATION_OWNER_MAIN
+        lanes.add(lane)
+    return lanes
 
 
 def _output_contents(path: pathlib.Path) -> bytes | None:
@@ -400,16 +427,68 @@ def _output_contents(path: pathlib.Path) -> bytes | None:
         return None
 
 
-def _save_selection(path: pathlib.Path, original: bytes | None, content: str) -> None:
+def _observation_record_paths(path: pathlib.Path, lanes: set[str], owner: str | None) -> list[pathlib.Path]:
+    if not lanes:
+        return []
+    selected = str(path.resolve())
+    matches: dict[str, list[pathlib.Path]] = {}
+    for entry in lane_records.list_resources(owner)["records"]:
+        record = entry["record"]
+        lane = record.get("lane")
+        if (
+            isinstance(lane, str)
+            and lane in lanes
+            and record.get("selection_file") == selected
+            and not lane_records.recovered(record)
+        ):
+            matches.setdefault(lane, []).append(pathlib.Path(entry["record_path"]))
+    results = []
+    for lane in sorted(lanes):
+        choices = matches.get(lane, [])
+        if len(choices) > 1 or (owner is not None and not choices):
+            raise ValueError(f"{lane}: 選定原本と一致する所有登録を特定できない。--lane-session-idで対象別の所有IDを指定する")
+        results.extend(choices)
+    return results
+
+
+def _save_selection(
+    path: pathlib.Path,
+    original: bytes | None,
+    selection: dict[str, object],
+    *,
+    observation_lanes: set[str],
+    lane_session_id: str | None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(path.name + ".lock")
+    record_paths = _observation_record_paths(path, observation_lanes, lane_session_id)
     # 本体の原子的な置換後も、並行する書込主体は同じロックファイルを使う。
-    with lock_path.open("a+", encoding="utf-8") as lock:
+    with contextlib.ExitStack() as stack, lock_path.open("a+", encoding="utf-8") as lock:
+        snapshots = []
+        for record_path in record_paths:
+            stack.enter_context(lane_records.lane_locked(record_path, blocking=False))
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            if (
+                record.get("session_id") != record_path.parent.name
+                or record.get("record_path") != str(record_path)
+                or record.get("lane") != record_path.stem
+                or record.get("selection_file") != str(path.resolve())
+                or lane_records.recovered(record)
+            ):
+                raise ValueError(f"観測を引き継ぐレーンの所有登録が変わった: {record_path}")
+            phase = (record.get("integration") or {}).get("phase")
+            if phase is not None and phase != "finalized":
+                raise ValueError(f"統合途中には観測を引き継げない: {record_path.stem} ({phase})")
+            record["selection"] = lane_records.selection_snapshot(selection, record["lane"])
+            snapshots.append((record_path, record))
         acquire_lock(lock)
         try:
             if _output_contents(path) != original:
                 raise OSError(f"読取後に別の実行が保存先を更新した: {path}")
-            atomic_write(path, content)
+            # 選定原本の失効時はこの控えを使うため、原本より先に保存する。pyfltr: allow-comment
+            for record_path, record in snapshots:
+                lane_records.save(record_path, record)
+            atomic_write(path, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
         finally:
             release_lock(lock)
 
@@ -440,6 +519,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--to-lane", metavar="LANE", help="--transfer-wiの移管先の既存レーン")
     parser.add_argument("--new-plan", action="store_true", help="要求変更による再開。--reopen-wiの対象だけ再開位置をなしへ戻す")
+    parser.add_argument(
+        "--handoff-observation",
+        action="append",
+        metavar="WI",
+        help="公開後の観測を統括が引き取るレーン所属WIを記録する。--outputと組で反復指定可",
+    )
+    parser.add_argument("--lane-session-id", metavar="ID", help="--handoff-observationの選定原本を持つ対象別のレーン所有ID")
     parser.add_argument(
         "--candidate-file",
         type=pathlib.Path,
@@ -492,6 +578,14 @@ def main(argv: list[str] | None = None) -> int:
         args.transfer_wi,
         args.to_lane,
     )
+    if args.handoff_observation is not None and (
+        args.output is None or args.reopen_wi is not None or any(value is not None for value in other_updates)
+    ):
+        parser.error("--handoff-observationは--outputと組で指定し、他の更新操作・--body-wiと併用しない")
+    if args.lane_session_id is not None and args.handoff_observation is None:
+        parser.error("--lane-session-idは--handoff-observationと組で指定する")
+    if args.lane_session_id is not None and not lane_records.ID.fullmatch(args.lane_session_id):
+        parser.error("--lane-session-idは英数字・ハイフン・アンダースコアで指定する")
     if args.publication_lane is not None and not args.require_integrated:
         parser.error("--publication-laneは--require-integratedと組で指定する")
     if args.new_plan and args.reopen_wi is None:
@@ -609,12 +703,16 @@ def main(argv: list[str] | None = None) -> int:
                 args.reopen_wi,
                 args.extend_write_targets,
                 args.transfer_wi,
+                args.handoff_observation,
             )
         )
         selection = load_selection(
             args.selection_file,
             candidate_file=args.candidate_file if args.merge is None else None,
             reorder=reorder,
+        )
+        observation_lanes = (
+            _handoff_observations(selection, set(args.handoff_observation)) if args.handoff_observation is not None else set()
         )
         if args.reopen_wi is not None:
             try:
@@ -663,7 +761,7 @@ def main(argv: list[str] | None = None) -> int:
                 names = {
                     str(item[_selection.WI_KEY])
                     for item in typing.cast(list[dict[str, object]], _selection.decisions(selection) or [])
-                    if item.get(_selection.LANE_KEY, item.get("lane")) in args.mark_integrated
+                    if any(_selection.lane_owns(item, lane) for lane in args.mark_integrated)
                 }
                 unknown = set(processed_wis) - names
                 if unknown:
@@ -732,6 +830,7 @@ def main(argv: list[str] | None = None) -> int:
             and args.mark_integrated is None
             and args.extend_write_targets is None
             and args.transfer_wi is None
+            and args.handoff_observation is None
         ):
             complete_plan_requirements(selection, private_notes)
         errors = check(
@@ -740,7 +839,7 @@ def main(argv: list[str] | None = None) -> int:
             private_notes,
             body_wis,
             selection=selection,
-            validate_execution=not args.history and args.mark_integrated is None,
+            validate_execution=not args.history and args.mark_integrated is None and args.handoff_observation is None,
             merged_wis=merged_wis,
         )
     except InputError as error:
@@ -764,8 +863,14 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 raise OSError("書込対象の追加入力YAMLを保存先に指定できない")
             freeze_overlap_pairs(selection)
-            _save_selection(args.output, original_output, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
-        except OSError as error:
+            _save_selection(
+                args.output,
+                original_output,
+                selection,
+                observation_lanes=observation_lanes,
+                lane_session_id=args.lane_session_id,
+            )
+        except (OSError, ValueError) as error:
             _next_action.report(str(error), next_action="保存先を確認して同じ統合操作を再実行する")
             return 2
         print(f"統合結果: {args.output.resolve()}")

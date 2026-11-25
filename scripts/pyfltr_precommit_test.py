@@ -238,6 +238,44 @@ def test_reuses_successful_pytest_on_unchanged_tree(tmp_path: pathlib.Path, monk
     assert pyfltr_precommit.find_reusable_run(repository, "pyfltr") == pyfltr_precommit.Reuse("01RUN", "")
 
 
+@pytest.mark.parametrize("scope", ["none", "incomplete", "covering"])
+def test_integration_cross_contracts_runs_only_uncovered_scope(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, scope: str
+) -> None:
+    repository = _repository(tmp_path)
+    base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
+    (repository / "src" / "a.py").write_text("child.terminate()\n" if scope != "none" else "x = 2\n", encoding="utf-8")
+    required = "subprocess_stop_invariant_test.py"
+    if scope != "none":
+        (repository / required).touch()
+    commit_all(repository, "合成候補")
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: name)
+    calls = _install_pyfltr(
+        monkeypatch,
+        repository,
+        pytest_started_at=_iso(60),
+        argv=["run", "--no-always-targets", required if scope == "covering" else "src/a.py"],
+    )
+    native = subprocess.run
+
+    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if argv[0] == "pyfltr":
+            calls.append(argv[1:])
+            return subprocess.CompletedProcess(argv, 7)
+        return native(argv, check=kwargs.pop("check", False), **kwargs)
+
+    monkeypatch.setattr(pyfltr_precommit.subprocess, "run", run)
+    assert pyfltr_precommit.main(["--integration-cross-contracts", base]) == (7 if scope == "incomplete" else 0)
+    if scope == "none":
+        assert not calls
+    else:
+        assert any(call[0] == "show-run" for call in calls)
+        assert [call for call in calls if call[0] == "run"] == (
+            [["run", "--no-fix", "--commands=pytest", "--no-always-targets", required]] if scope == "incomplete" else []
+        )
+
+
 @pytest.mark.parametrize(
     "argv",
     [

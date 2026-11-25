@@ -526,6 +526,7 @@ def main(
                 compaction_record_dir,
                 after=Path(args.after) if args.after else None,
                 conversation_output=conversation_output,
+                review_session_id=args.codex_thread_id or args.opencode_session_id or Path(transcript_path).stem,
             )
         provenance = _referenced_provenance_events(collected, events)
         _print_events(

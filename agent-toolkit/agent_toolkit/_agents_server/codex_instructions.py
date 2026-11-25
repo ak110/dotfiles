@@ -16,6 +16,7 @@ from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_prompts import (
     LIGHTWEIGHT_LAUNCH_KINDS,
     auto_resume_notice,
+    base_instructions,
     cli_runtime_instructions,
     launch_prompt,
     python_runtime_instructions,
@@ -114,7 +115,8 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
         else ""
     )
     return (
-        f"{launch_prompt(launch_kind)}\n{auto_resume_notice()}{runtime}{web_tools}\n{cli_runtime_instructions(plugin_root)}\n\n"
+        f"{launch_prompt(launch_kind, notice_in_base=True)}\n{auto_resume_notice()}{runtime}{web_tools}\n"
+        f"{cli_runtime_instructions(plugin_root)}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
         "担当自身が使うagent-toolkitのskillと実行基盤のplugin内部資源は、この実在する絶対パスを起点に読む。"
         "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"
@@ -123,6 +125,13 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
         "保持版での不在を対象版の不在の根拠にしない。"
         f"{_user_rules_instructions()}"
     )
+
+
+def codex_instruction_fields(launch_kind: LaunchKind | None = None) -> dict[str, str]:
+    fields = {"baseInstructions": base_instructions()}
+    if launch_kind is not None:
+        fields["developerInstructions"] = _developer_instructions(launch_kind)
+    return fields
 
 
 class CodexInstructionsMixin:

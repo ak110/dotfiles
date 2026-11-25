@@ -15,6 +15,8 @@ _CPU_LIMIT = pytest.StashKey[tuple[float, str]]()
 _CPU_EXCLUSIONS = pytest.StashKey[dict[str, dict[str, float]]]()
 _CPU_GROSS_LIMIT = pytest.StashKey[float]()
 _CPU_BUDGET = pytest.StashKey[cpu_accounting.CpuBudget]()
+_CALL_CPU_BUDGET = pytest.StashKey[cpu_accounting.CpuBudget]()
+_CALL_ONLY = pytest.StashKey[bool]()
 _CPU_PROCESS_STARTED = pytest.StashKey[float]()
 _CPU_RETRY_CI = pytest.StashKey[bool]()
 _CPU_RECORD_ONLY = pytest.StashKey[bool]()
@@ -35,6 +37,7 @@ def retry(item: pytest.Item, nextitem: pytest.Item | None, browser_reports: pyte
             _CPU_TIMES,
             _CPU_EXCLUSIONS,
             _CPU_BUDGET,
+            _CALL_CPU_BUDGET,
             _CPU_PROCESS_STARTED,
             browser_reports,
         ]
@@ -52,7 +55,8 @@ def retry(item: pytest.Item, nextitem: pytest.Item | None, browser_reports: pyte
 
 
 def measure(item: pytest.Item, phase: str) -> Generator[None, object, object]:
-    budget = item.stash.setdefault(_CPU_BUDGET, cpu_accounting.CpuBudget())
+    budget_key = _CALL_CPU_BUDGET if phase == "call" and item.stash.get(_CALL_ONLY, False) else _CPU_BUDGET
+    budget = item.stash.setdefault(budget_key, cpu_accounting.CpuBudget())
     with cpu_accounting.activate(budget):
         excluded = cpu_accounting.main_snapshot()
         if _CPU_PROCESS_STARTED not in item.stash:
@@ -67,27 +71,39 @@ def measure(item: pytest.Item, phase: str) -> Generator[None, object, object]:
             item.stash.setdefault(_CPU_EXCLUSIONS, {})[phase] = {key: after[key] - excluded[key] for key in ("gc", "import")}
 
 
+def _worker_times(owner: cpu_accounting.CpuBudget | None) -> dict[str, float]:
+    return cpu_accounting.snapshot(owner) if owner is not None else {"worker": 0.0, "gc": 0.0, "import": 0.0}
+
+
 def apply_report(item: pytest.Item, report: pytest.TestReport) -> None:
     if report.when == "teardown":
         item.stash[_CPU_ONLY_FAILURE] = False
         recorded = item.stash.get(_CPU_TIMES, {})
         times = {phase: recorded.get(phase, 0.0) for phase in ("setup", "call", "teardown")}
         limit, reason = item.stash.get(_CPU_LIMIT, (0.5, "通常上限"))
-        owner = item.stash.get(_CPU_BUDGET, None)
-
-        workers = cpu_accounting.snapshot(owner) if owner is not None else {"worker": 0.0, "gc": 0.0, "import": 0.0}
-        total = sum(times.values()) + workers["worker"]
+        call_only = item.stash.get(_CALL_ONLY, False)
+        shared_workers = _worker_times(item.stash.get(_CPU_BUDGET, None))
+        call_workers = _worker_times(item.stash.get(_CALL_CPU_BUDGET, None))
+        worker_total = shared_workers["worker"] + call_workers["worker"]
+        total = sum(times.values()) + worker_total
+        scope_total = times["call"] + call_workers["worker"] if call_only else total
         process_start = item.stash.get(_CPU_PROCESS_STARTED, None)
         process_total = time.process_time() - process_start if process_start is not None else 0.0
         excluded = item.stash.get(_CPU_EXCLUSIONS, {})
-        deductions = {kind: sum(row.get(kind, 0.0) for row in excluded.values()) + workers[kind] for kind in ("gc", "import")}
-        budget = max(0.0, total - sum(deductions.values()))
+        workers = call_workers if call_only else shared_workers
+        deductions = {
+            kind: sum(excluded.get(phase, {}).get(kind, 0.0) for phase in (("call",) if call_only else times)) + workers[kind]
+            for kind in ("gc", "import")
+        }
+        budget = max(0.0, scope_total - sum(deductions.values()))
         gross_limit = item.stash.get(_CPU_GROSS_LIMIT, max(2.0, limit))
         report.user_properties.extend(
             [(f"cpu_{phase}_seconds", times.get(phase, 0.0)) for phase in ("setup", "call", "teardown")]
             + [
                 ("cpu_total_seconds", total),
-                ("cpu_worker_seconds", workers["worker"]),
+                ("cpu_worker_seconds", worker_total),
+                ("cpu_non_target_seconds", max(0.0, total - scope_total)),
+                ("cpu_limit_scope", "call" if call_only else "test"),
                 ("cpu_process_seconds", process_total),
                 ("cpu_unattributed_seconds", max(0.0, process_total - total)),
                 ("cpu_excluded_gc_seconds", deductions["gc"]),
@@ -100,9 +116,10 @@ def apply_report(item: pytest.Item, report: pytest.TestReport) -> None:
         )
         if budget >= limit or total >= gross_limit:
             diagnostic = (
-                f"CPU上限: {item.nodeid}: {times}, worker={workers['worker']:.6f}s, total={total:.6f}s, "
+                f"CPU上限: {item.nodeid}: {times}, worker={worker_total:.6f}s, total={total:.6f}s, "
                 f"process={process_total:.6f}s, excluded={deductions}, "
-                f"budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, reason={reason}。"
+                f"measured={scope_total:.6f}s, budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, "
+                f"reason={reason}。"
                 "不要な処理を削減し、必要な実境界には理由付きcpu_limitを指定してください"
             )
             report.sections.append(("CPU上限", diagnostic))
@@ -116,7 +133,11 @@ def apply_report(item: pytest.Item, report: pytest.TestReport) -> None:
 
 def configure(config: pytest.Config) -> None:
     config.stash[_CPU_RETRY_CI] = bool(os.environ.get("CI"))
-    config.addinivalue_line("markers", "cpu_limit(seconds, reason): 理由付き所有CPU上限")
+    config.addinivalue_line(
+        "markers",
+        "cpu_limit(seconds, reason, call_limit=None): 理由付き所有CPU上限。"
+        "call_limitを指定すると判定CPUを試験本体だけで測り、全体上限はsecondsから決める",
+    )
 
 
 def add_options(parser: pytest.Parser) -> None:
@@ -132,6 +153,10 @@ def add_options(parser: pytest.Parser) -> None:
         action="store_true",
         help="CPU上限の超過を警告とJUnitへ記録するだけにし、試験の失敗と再試行にしない",
     )
+
+
+def _valid_seconds(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and 0 < value <= sys.float_info.max
 
 
 def set_limits(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -153,20 +178,16 @@ def set_limits(config: pytest.Config, items: list[pytest.Item]) -> None:
         marker = item.get_closest_marker("cpu_limit")
         seconds: Any = default_limit
         reason = "通常上限"
+        call_limit = None
         if marker is not None:
-            if len(marker.args) != 1 or set(marker.kwargs) != {"reason"}:
-                raise pytest.UsageError(f"{item.nodeid}: cpu_limit(seconds, reason=...) が必要")
+            if len(marker.args) != 1 or "reason" not in marker.kwargs or marker.kwargs.keys() - {"reason", "call_limit"}:
+                raise pytest.UsageError(f"{item.nodeid}: cpu_limit(seconds, reason=..., call_limit=None) が必要")
             seconds, reason = marker.args[0], marker.kwargs["reason"]
-        if (
-            isinstance(seconds, bool)
-            or not isinstance(seconds, (int, float))
-            or abs(seconds) > sys.float_info.max
-            or not math.isfinite(seconds)
-            or seconds <= 0
-            or not isinstance(reason, str)
-            or not reason.strip()
-        ):
+            call_limit = marker.kwargs.get("call_limit")
+        if not (_valid_seconds(seconds) and isinstance(reason, str) and reason.strip()):
             raise pytest.UsageError(f"{item.nodeid}: cpu_limitには正有限値と非空のreasonを指定してください")
+        if call_limit is not None and (not _valid_seconds(call_limit) or call_limit > seconds):
+            raise pytest.UsageError(f"{item.nodeid}: cpu_limitのcall_limitにはseconds以下の正有限値を指定してください")
 
         gross = float(seconds) + 1.5 if marker is not None else max(2.0, default_limit)
         if not math.isfinite(gross * scale):
@@ -174,5 +195,6 @@ def set_limits(config: pytest.Config, items: list[pytest.Item]) -> None:
                 f"{item.nodeid}: 係数適用後のCPU上限が有限値ではありません。"
                 "--cpu-limit-scaleまたはcpu_limitを下げて再実行してください"
             )
-        item.stash[_CPU_LIMIT] = (float(seconds) * scale, reason)
+        item.stash[_CALL_ONLY] = call_limit is not None
+        item.stash[_CPU_LIMIT] = (float(seconds if call_limit is None else call_limit) * scale, reason)
         item.stash[_CPU_GROSS_LIMIT] = gross * scale

@@ -5,7 +5,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 import yaml
@@ -117,7 +117,7 @@ def test_plugin_version_job_compares_previous_published_commit(workflow_data: di
 
 def test_python_jobs_separate_responsibilities(workflow_data: dict[str, object]) -> None:
     jobs = workflow_jobs(workflow_data)
-    for name in ("python-lint", "pylint", "pytest-root"):
+    for name in ("python-lint", "pytest-root"):
         assert "strategy" not in workflow_mapping(jobs[name])
     toolkit = workflow_mapping(jobs["pytest-toolkit"])
     assert workflow_mapping(toolkit["strategy"]) == {"fail-fast": "false", "matrix": {"shard": ["1/3", "2/3", "3/3"]}}
@@ -141,6 +141,53 @@ def test_python_jobs_separate_responsibilities(workflow_data: dict[str, object])
         if workflow_mapping(prepare["with"]).get("cache-mise") == "true":
             cached.append(name)
     assert cached == ["python-lint"]
+
+
+def test_pylint_partitions_file_checks_and_propagates_failures(workflow_data: dict[str, object], tmp_path: Path) -> None:
+    job = workflow_mapping(workflow_jobs(workflow_data)["pylint"])
+    assert workflow_mapping(job["strategy"]) == {
+        "fail-fast": "false",
+        "matrix": {
+            "scope": "${{ fromJSON(needs.common-ci-owner.outputs.owns == 'true' && "
+            '\'["runtime","remaining","cross-module"]\' || \'["skip"]\') }}'
+        },
+    }
+    step = next(step for step in workflow_steps(job) if step.get("name") == "Python 3.15 Pylint")
+    stub = tmp_path / "pyfltr"
+    stub.write_text('#!/bin/bash\nprintf "%s\\0" "$@"\nexit 71\n', encoding="utf-8")
+    stub.chmod(0o755)
+
+    def run(scope: str) -> list[str]:
+        result = subprocess.run(
+            ["bash"],
+            cwd=tmp_path,
+            env={**os.environ, "PATH": os.pathsep.join((str(tmp_path), os.environ["PATH"])), "PYLINT_SCOPE": scope},
+            input=str(step["run"]).encode(),
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
+        assert result.returncode == 71, result.stderr
+        return result.stdout.decode().rstrip("\0").split("\0")
+
+    omitted = []
+    for scope in ("runtime", "remaining"):
+        runner, command, flags = run(scope)
+        assert (runner, command) == ("ci", "--commands=pylint")
+        path_filter, cyclic = flags.removeprefix("--pylint-args=").split()
+        assert cyclic == "--disable=cyclic-import"
+        pattern = PureWindowsPath(path_filter.removeprefix("--ignore-paths="))
+        omitted.append(re.compile(str(pattern).replace("\\", "\\\\") + "|" + pattern.as_posix()))
+    for path, runtime in (
+        ("scripts/ci_copy_diagnostic.py", False),
+        ("agent-toolkit/agent_toolkit/_atk/wi/cli.py", True),
+        ("agent-toolkit/agent_toolkit/_agents_server/service.py", True),
+        ("agent-toolkit/agent_toolkit/_hooks/stop.py", True),
+        ("agent-toolkit/agent_toolkit/_common/session_state.py", False),
+    ):
+        for location in (path, f"/__w/dotfiles/dotfiles/{path}"):
+            assert [pattern.match(location) is None for pattern in omitted] == [runtime, not runtime], location
+    assert run("cross-module") == ["ci", "--commands=pylint", "--pylint-args=--disable=all --enable=cyclic-import"]
 
 
 @pytest.mark.parametrize(

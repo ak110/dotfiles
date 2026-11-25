@@ -96,6 +96,8 @@ process-loopの統括は巡回の手順に従い、作業中のターンを終�
 - `atk run-skill`の最上位: `agent-toolkit/agent_toolkit/_hooks/run_skill_report_gate.py`が、その実行の報告用UWIの保存を確認するまで終了を遮断する。
   保存の基準は起動元の検収（`agent-toolkit/agent_toolkit/_atk/wi/add_reports.py`の`has_synced_run_report`）と同じにし、hookを通過した終了が起動元の検収で失敗しないようにする。
   前提不足で未完了のまま終える実行も報告を保存するので、同じ判定で終了できる。
+  週次の画面巡回で証拠を引き渡せない回は報告を保存しない。
+  最終応答でその失敗を明示した場合だけ保存要求を出さずに終了させ、結果UWIが無い回の失敗判定と再試行は起動元に任せる。
 
 対象は環境印（`AGENT_TOOLKIT_RUN_SKILL_ID`）で識別した最上位に限り、委譲先と人が使う対話セッションには働かない。
 機械判定が見るのは終了工程の実行と報告の保存であり、作業内容の未達は見ない。

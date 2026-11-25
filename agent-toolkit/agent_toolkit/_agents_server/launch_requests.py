@@ -7,6 +7,7 @@ import logging
 import os
 import pathlib
 import re
+import unicodedata
 import uuid
 from collections.abc import Mapping
 from typing import Any
@@ -192,15 +193,44 @@ def validate_start_inputs(mode: str, **inputs: Any) -> None:
     )
 
 
+_LABEL_KANA = re.compile(r"[ぁ-ゖゝ-ゟァ-ヺー-ヿ々〻〇]")
+
+
+def _valid_label(label: str) -> bool:
+    if not 1 <= len(label) <= 32:
+        return False
+    return all(
+        word
+        and all(
+            ("a" <= char <= "z" or "0" <= char <= "9")
+            or _LABEL_KANA.fullmatch(char)
+            or unicodedata.name(char, "").startswith(("CJK UNIFIED IDEOGRAPH-", "CJK COMPATIBILITY IDEOGRAPH-"))
+            for char in word
+        )
+        for word in label.split("-")
+    )
+
+
+def validate_start_label(label: str | None) -> None:
+    if label is not None and not _valid_label(label):
+        raise ActionableError(
+            "labelは32文字以内の英小文字・数字・ひらがな・カタカナ・漢字で指定し、語をASCIIハイフンで区切ります。"
+            "空白・改行・不可視文字や空の語は使えません。",
+            next_action="例のようにlabelを直す（`lane-01-exec`、`設計レビュー`）か、省略して`start`を再実行する",
+        )
+
+
 def task_document_label(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:
     name = pathlib.PurePath(subagent_md_path).name.removesuffix(_TASK_DOCUMENT_SUFFIX)
     lane = extra_params.get("レーン識別子", "").strip()
-    return f"{lane}-{name}" if lane else name
+    label = f"{lane}-{name}" if lane else name
+    return label if _valid_label(label) else "task"
 
 
 def shell_default_label(command: str) -> str:
     words = command.split()
-    return f"shell-{pathlib.PurePath(words[0]).name}" if words else "shell"
+    label = f"shell-{pathlib.PurePath(words[0]).name}" if words else "shell"
+    return label if _valid_label(label) else "shell"
 
 
 _ADD_WI_DESTINATION = re.compile(

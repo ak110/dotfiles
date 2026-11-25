@@ -74,7 +74,12 @@ def _run_install_sh(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.cpu_limit(
-    4.73, reason="隔離した実配布と資源の回収を含む。判定CPU秒はLinux単独1.063〜1.082、4並列1.181〜1.243、CI失敗時最大4.722373"
+    4.73,
+    reason=(
+        "CI 45649246608の初回・再試行は本体と全ワーカーが最大1.581秒未満、後始末が3.255〜3.599秒。"
+        "後始末は従来の全体上限6.23秒だけで判定する"
+    ),
+    call_limit=1.59,
 )
 @pytest.mark.skipif(shutil.which("chezmoi") is None, reason="chezmoi未インストール")
 @pytest.mark.timeout(300)

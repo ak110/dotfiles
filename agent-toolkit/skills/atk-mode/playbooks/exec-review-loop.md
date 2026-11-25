@@ -134,7 +134,10 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 
 ## 応答済みの判定
 
-起動側は、`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`の`unanswered_count`が0の時だけ再レビューへ進む。
+起動側は、`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`の`unanswered_count`が0であり、各 `検収結果:` の短縮OIDが修正後のHEADと一致し、結果が合格の時だけ再レビューへ進む。
+履歴を書き換えたら応答にある書き換え後のOIDと比べる。
+別の版、不合格、代替手段の理由のない未実施は修正担当へ戻す。
+再レビューを省く場合も同じ条件を使う。
 
 ## 反復原因の判定
 
