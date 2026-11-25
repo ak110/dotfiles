@@ -24,6 +24,7 @@ from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATE_PROCESSING, WI_STATES, WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import (
+    NewWorkItem,
     body_summary,
     display_width,
     parse_source,
@@ -548,7 +549,9 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     print_entries(selected, readiness, branch_settings)
 
 
-def progress_new_wis(session_id: str, *, targets: frozenset[tuple[str, str | None]] | None = None) -> tuple[str, ...] | None:
+def progress_new_wis(
+    session_id: str, *, targets: frozenset[tuple[str, str | None]] | None = None
+) -> tuple[NewWorkItem, ...] | None:
     if not (saved := _wi_snapshot.progress_sources(session_id)):
         return None
     by_key = {(repo.repo_id, repo.branch): repo for repo in _config.resolve_configured_repositories()}
@@ -576,7 +579,7 @@ def progress_new_wis(session_id: str, *, targets: frozenset[tuple[str, str | Non
         - {tuple(identifier) for identifier in row.get("unanswered", ())}
         for scope, row in scopes.items()
     }
-    labels = []
+    rows: dict[str, NewWorkItem] = {}
     with _wi_sync.repo_lock(private_notes, timeout=0):
         _wi_sync.ensure_mutation_allowed(private_notes)
         # 点検は操作を止めないよう待機を制限し、分岐時のrebaseと旧形式移行は通常の一覧へ任せる。  # pyfltr: allow-comment
@@ -598,6 +601,5 @@ def progress_new_wis(session_id: str, *, targets: frozenset[tuple[str, str | Non
                 if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
                     source = "その他"
                 branch = (parse_frontmatter(body) or ({}, ""))[0].get("merge_branch")
-                name = path.name if re.fullmatch(r"[A-Za-z0-9._-]+", path.name) else json.dumps(path.name)
-                labels.append(f"{name} (source: {source}、merge_branch: {'あり' if branch else 'なし'})")
-    return tuple(sorted(set(labels)))
+                rows[path.name] = NewWorkItem(path.name, source, bool(branch))
+    return tuple(rows[name] for name in sorted(rows))

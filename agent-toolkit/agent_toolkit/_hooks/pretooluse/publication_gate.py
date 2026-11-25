@@ -10,6 +10,7 @@ from agent_toolkit._git import command as git_command
 from agent_toolkit._git.remote import resolve_repo_identifier
 from agent_toolkit._hooks import agent_id, notice, work_contract
 from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
+lazy from agent_toolkit._atk.wi.formatters import NewWorkItem
 lazy from agent_toolkit._atk.wi.listing import progress_new_wis
 lazy from agent_toolkit._hooks.user_response_advisor import resend_scope
 
@@ -65,7 +66,7 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
     reason, fix, rows = found
     if rows is not None:
         recipient = actor
-        reason, snapshot = notice.new_wi_preview(session_id, recipient, rows)
+        reason, snapshot = notice.new_wi_preview(session_id, recipient, rows, scoped=True)
         reason = reason.replace("処理可能な新着WI:", "公開前に判定を要する新着WI:", 1)
         notice.stage_new_wi_preview(reason, session_id, recipient, snapshot)
     return reason, f"{fix}判定を記録できない場合は、同じ操作を再発行すれば実行する。"
@@ -183,7 +184,9 @@ def _publication_targets(payload: dict, tool_name: str, tool_input: dict) -> fro
     return frozenset({(target, ref.removeprefix("refs/heads/"))}) if target else None
 
 
-def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str, list[str] | None] | None:
+def _check(
+    payload: dict, session_id: str, tool_name: str, tool_input: dict
+) -> tuple[str, str, list[NewWorkItem] | None] | None:
     owner = _owner(payload, session_id)
     try:
         targets = _publication_targets(payload, tool_name, tool_input)
@@ -209,11 +212,11 @@ def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> 
     if not rows:
         return None
     decided = work_contract.recorded_new_wi_decisions(owner)
-    pending = [row for row in rows if row.rsplit(" (source:", 1)[0] not in decided]
+    pending = [row for row in rows if row.filename not in decided]
     if not pending:
         return None
     return (
-        "公開前に判定を要する新着WI: " + "、".join(pending),
+        "公開前に判定を要する新着WI: " + "、".join(row.filename for row in pending),
         "巡回の統括がatk wi showで本文を読み、今回扱うものは公開前に処理する。処理可能な状態で残る項目は"
         "統括の作業契約に「- 新着WIの判定: <ファイル名> | <判定と根拠>」を各1行記録して再試行する。",
         pending,

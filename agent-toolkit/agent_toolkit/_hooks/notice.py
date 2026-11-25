@@ -7,6 +7,7 @@ lazy import json
 lazy import time
 lazy from collections.abc import Callable, Generator, Sequence
 
+lazy from agent_toolkit._atk.wi.formatters import NewWorkItem
 lazy from agent_toolkit._common import message_format as _common_message_format
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import message_format as _message_format
@@ -106,8 +107,8 @@ def record_delivery(text: str) -> None:
 _WI_SNAPSHOT_FIELD = "new_wi_notice_snapshot"
 
 
-def new_wi_preview(session_id: str, recipient: str, rows: Sequence[str]) -> tuple[str, str]:
-    identifiers = {row.partition(" (source:")[0]: row for row in rows}
+def new_wi_preview(session_id: str, recipient: str, rows: Sequence[NewWorkItem], *, scoped: bool = False) -> tuple[str, str]:
+    identifiers = {row.filename: row for row in rows}
     saved = read_state(session_id).get(_WI_SNAPSHOT_FIELD)
     previous = saved.get(recipient) if isinstance(saved, dict) else None
     known: set[str] = set()
@@ -118,11 +119,12 @@ def new_wi_preview(session_id: str, recipient: str, rows: Sequence[str]) -> tupl
             identities = None
         if isinstance(identities, list):
             known.update(item for item in identities if isinstance(item, str))
-    added = [row.replace("、merge_branch: なし", "") for key, row in identifiers.items() if key not in known]
+    added = [row.label() for key, row in identifiers.items() if key not in known]
     text = f"処理可能な新着WI: 計{len(identifiers)}件"
     if added:
         text += "。今回: " + "、".join(added)
-    return text + "。", json.dumps(sorted(identifiers), ensure_ascii=False)
+    snapshot = known.union(identifiers) if scoped else identifiers.keys()
+    return text + "。", json.dumps(sorted(snapshot), ensure_ascii=False)
 
 
 def stage_new_wi_preview(text: str, session_id: str, recipient: str, snapshot: str) -> None:

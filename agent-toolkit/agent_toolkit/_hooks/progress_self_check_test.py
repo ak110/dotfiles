@@ -14,6 +14,7 @@ from collections.abc import Mapping
 
 import pytest
 
+from agent_toolkit._atk.wi.formatters import NewWorkItem
 from agent_toolkit._common import session_state
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_MARKER
 from agent_toolkit._hooks import notice as notice_module
@@ -487,7 +488,7 @@ def test_process_loop_point_lists_merge_candidate(monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", sid)
     name = "20261123-145959-001.md"
-    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid: (f"{name} (source: implement、merge_branch: あり)",))
+    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid: (NewWorkItem(name, "implement", True),))
 
     payload = {"session_id": sid}
     assert progress_self_check.claim_notice(payload, now=1.0) is None
@@ -501,14 +502,14 @@ def test_new_wi_preview_counts_all_but_repeats_only_undelivered_ids() -> None:
     sid = _session_id()
     old = "20261123-145959-001.md"
     new = "20261123-150000-001.md"
-    before = (f"{old} (source: implement、merge_branch: なし)",)
+    before = (NewWorkItem(old, "implement", False),)
     text, snapshot = notice_module.new_wi_preview(sid, "main", before)
     notice_module.stage_new_wi_preview(text, sid, "main", snapshot)
     assert old in text and "merge_branch" not in text
     assert old in notice_module.new_wi_preview(sid, "main", before)[0]
     notice_module.record_delivery(text)
 
-    after = (*before, f"{new} (source: implement、merge_branch: あり)")
+    after = (*before, NewWorkItem(new, "implement", True))
     text, _ = notice_module.new_wi_preview(sid, "main", after)
     assert old not in text and new in text and "計2件" in text and "merge_branch: あり" in text
     assert old in notice_module.new_wi_preview(sid, "other", after)[0]

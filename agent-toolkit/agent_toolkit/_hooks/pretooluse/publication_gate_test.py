@@ -6,6 +6,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import config, config_repositories
 from agent_toolkit._atk.wi import listing, snapshot
+from agent_toolkit._atk.wi.formatters import NewWorkItem
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import progress_self_check, work_contract
 from agent_toolkit._hooks.pretooluse import publication_gate
@@ -435,14 +436,14 @@ def test_publication_keeps_gate_but_does_not_repeat_delivered_progress_wis(tmp_p
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     old = "20261124-061940-004.md"
     new = "20261124-061940-005.md"
-    rows = [f"{old} (source: implement、merge_branch: なし)"]
+    rows = [NewWorkItem(old, "implement", False)]
     monkeypatch.setattr(listing, "progress_new_wis", lambda *_args, **_kwargs: tuple(rows))
     monkeypatch.setattr(publication_gate, "progress_new_wis", listing.progress_new_wis)
     text, snapshot_id = notice.new_wi_preview(sid, "main", rows)
     assert old in text
     notice.stage_new_wi_preview(text, sid, "main", snapshot_id)
     notice.record_delivery(text)
-    rows.append(f"{new} (source: implement、merge_branch: なし)")
+    rows.append(NewWorkItem(new, "implement", False))
     payload = {"session_id": sid, "cwd": str(tmp_path)}
     command = {"command": "git push origin develop"}
     denied = publication_gate.check(payload, sid, "Bash", command)
