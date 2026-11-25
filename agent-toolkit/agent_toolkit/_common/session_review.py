@@ -603,8 +603,74 @@ def previous_scope(target: Mapping[str, Any]) -> pathlib.Path | None:
     return path if path.exists() else None
 
 
-def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) -> dict[str, Any]:
-    previous = read(after).get("records", {}) if after is not None else {}
+def register_lane(
+    session_id: str, cwd: str, parent: str, parent_host: str, record_path: pathlib.Path, started_at: str | None, summary: str
+) -> None:
+    if parent_host not in {"claude", "codex"} or session_id == parent:
+        return
+    with locked():
+        state = TargetGeneration(parent_host, session_id)
+        if state.status != TargetStatus.ABSENT:
+            return
+        state.register(
+            {
+                "key": key(parent_host, session_id),
+                "host": parent_host,
+                "session_id": session_id,
+                "lane_parent_session_id": parent,
+                "lane_record_path": str(record_path),
+                "lane_result_summary": summary,
+                "cwd": cwd,
+                "started_at": started_at or timestamp(),
+                "updated_at": timestamp(),
+                "generation": uuid.uuid4().hex,
+            }
+        )
+
+
+def lane_review_targets(
+    session_id: str, *, record_path: pathlib.Path | None = None
+) -> tuple[dict[str, tuple[str, str]], pathlib.Path | None]:
+    children: dict[str, dict[str, tuple[str, str]]] = {}
+    parent = None
+    for kind in ("pending", "reviewed"):
+        for path in (directory() / kind).glob("*.json"):
+            try:
+                item = read(path)
+            except OSError, ValueError:
+                continue
+            if not isinstance(owner := item.get("lane_parent_session_id"), str):
+                continue
+            source = item.get("lane_record_path")
+            if (item.get("session_id") == session_id or record_path is not None and source == str(record_path)) and isinstance(
+                host := item.get("host"), str
+            ):
+                parent = previous_scope({"host": host, "session_id": owner})
+                session_id = str(item["session_id"])
+            if isinstance(source, str):
+                children.setdefault(owner, {})[source] = str(item["session_id"]), str(item.get("lane_result_summary", ""))
+    return children.get(session_id, {}), parent
+
+
+def scope_records(
+    collected: list[Any],
+    *,
+    after: pathlib.Path | None = None,
+    inherited: pathlib.Path | None = None,
+    detached: set[str] | None = None,
+) -> dict[str, Any]:
+    saved = read(after) if after is not None else {}
+    previous = saved.get("records", {})
+    transferred = dict(saved.get("transferred", {}))
+    if inherited is not None and after is None:
+        owner = read(inherited)
+        owner_entries = {
+            entry["path"]: entry for entry in (*owner.get("transferred", {}).values(), *owner.get("records", {}).values())
+        }
+        previous = {item.record_id: owner_entries[str(item.path)] for item in collected if str(item.path) in owner_entries}
+    for record_id in detached or ():
+        if record_id in previous:
+            transferred[record_id] = previous.pop(record_id)
     records: dict[str, Any] = {}
     for item in collected:
         physical_rows = (
@@ -626,7 +692,7 @@ def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) ->
     if missing:
         raise ValueError(f"前回の子孫記録を再収集できない: {', '.join(sorted(missing))}")
 
-    return {"version": 1, "records": records}
+    return {"version": 1, "records": records, **({"transferred": transferred} if transferred else {})}
 
 
 def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = False) -> dict[str, Any]:
@@ -667,7 +733,11 @@ def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = Fals
                 "observed_through_line", entry["through_line"]
             ):
                 scope["records"][record_id] = previous
-        scope["records"] = {**old["records"], **scope["records"]}
+        scope["records"] = {
+            record_id: entry
+            for record_id, entry in {**old["records"], **scope["records"]}.items()
+            if record_id not in scope.get("transferred", {})
+        }
         if old.get("partial_analysis") or scope.get("partial_analysis"):
             scope["partial_analysis"] = True
             for field in ("unconfirmed_scope", "recovered_record_lines"):
@@ -675,6 +745,9 @@ def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = Fals
                     {json.dumps(item, sort_keys=True): item for item in [*old.get(field, []), *scope.get(field, [])]}.values()
                 )
         scope.update(host=host, session_id=session_id, review_batch=bool((target or old).get("review_batch")))
+        for field in ("lane_parent_session_id", "lane_record_path", "lane_result_summary"):
+            if field in (target or old):
+                scope[field] = (target or old)[field]
 
         appended = any(
             any(

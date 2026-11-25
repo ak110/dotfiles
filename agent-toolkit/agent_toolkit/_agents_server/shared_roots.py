@@ -121,8 +121,10 @@ def resolve_conversation_root(
     ownerを持たないCodex最上位の会話では`CODEX_THREAD_ID`をキーにし、PostToolUseが保存した索引から
     MCPのプロセス専用ルートへ到達する。
     """
-    current_session_id = _delegated_session.owner_session_id(environment) or _delegated_session.current_conversation_session_id(
-        environment
+    current_session_id = (
+        _delegated_session.owner_session_id(environment)
+        or _delegated_session.current_conversation_session_id(environment)
+        or _process_loop_session_id(environment)
     )
     if current_session_id is None or not valid_session_id(current_session_id):
         return None
@@ -164,6 +166,12 @@ def resolve_conversation_root(
         alias_valid=alias_valid,
         mapping_confirmed=mapping_confirmed,
     )
+
+
+def _process_loop_session_id(environment: Mapping[str, str]) -> str | None:
+    if environment.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1":
+        return None
+    return environment.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID")
 
 
 def resolve_conversation_root_session_id(environment: Mapping[str, str], state_root: pathlib.Path | None = None) -> str | None:
@@ -307,7 +315,7 @@ def resolve_wait_identity(
             identity is None
             and _delegated_session.owner_session_id(environment) is None
             and inferred is not None
-            and inferred.alias_valid
+            and (inferred.alias_valid or inferred.current_session_id == _process_loop_session_id(environment))
             and inferred.mapping_confirmed
         ):
             return StatusFileIdentity(inferred.root_session_id, "root.json", None)

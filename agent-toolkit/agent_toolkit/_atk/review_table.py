@@ -27,8 +27,10 @@ from agent_toolkit._atk.review_table_format import (
     _ROUND_RE,
     _TRACK_READ_VALUES,
     _TRANSFER_TARGET_RE,
+    ACCEPTANCE_RESULT_LABEL,
     COLUMNS,
     DECISION_MAKER_VALUES,
+    LEGACY_RESPONSE_LABELS,
     NO_RESPONSE_REASON_LABELS,
     RECHECK_DONE,
     RECHECK_LABEL,
@@ -51,8 +53,11 @@ from agent_toolkit._atk.review_table_format import (
     bind_recheck,
     carried_issue,
     display_row,
+    issue_content,
+    mark_issue,
     reject_recheck_label,
     require_carried_issue,
+    requires_acceptance_result,
     response_content,
     response_with_history,
     uses_versioned_response,
@@ -264,7 +269,9 @@ def _add_rows(target: Path, additions: list[list[str]]) -> int:
                 )
             for column in ("location", "issue"):
                 index = COLUMNS.index(column)
-                expected, saved = row[index], matches[0][index]
+                expected, saved = (
+                    (issue_content(row), issue_content(matches[0])) if column == "issue" else (row[index], matches[0][index])
+                )
                 if _body_match.verdict(expected, saved) == "一致":
                     continue
                 position = _body_match.first_difference(expected, saved)
@@ -300,8 +307,7 @@ def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], 
     requested = ", ".join(f"{COLUMNS[index]}={value}" for index, value in given) or "なし"
     candidate_rows = [rows[index] for index in matches] if matches else rows
     candidate_lines = [
-        "  - "
-        + ", ".join(f"{column}={_normalized(value)}" for column, value in zip(COLUMNS[:_KEY_COLUMN_COUNT], row, strict=False))
+        "  - " + ", ".join(f"{column}={value}" for column, value in zip(COLUMNS[:_KEY_COLUMN_COUNT], _key(row), strict=True))
         for row in candidate_rows
     ]
     candidates = "\n".join(candidate_lines) or "  - 候補行なし"
@@ -339,7 +345,7 @@ def respond(
     needed = "yes" if replacement else "no"
     reject_recheck_label(replacement or reason, "--response-file" if replacement else "--no-response-reason-file")
     if replacement:
-        _require_labels(replacement, RESPONSE_LABELS, "--response-file")
+        _require_labels(replacement, LEGACY_RESPONSE_LABELS, "--response-file")
     else:
         _require_labels(reason, NO_RESPONSE_REASON_LABELS, "--no-response-reason-file")
         makers = _label_values(reason, "判断主体:")
@@ -366,15 +372,19 @@ def respond(
             next_action="--row-idか、--round・--track・--location-file・--issue-fileのどちらか一方で行を指定する",
         )
 
+    def matches_key(row: list[str]) -> bool:
+        key = _key(row)
+        return all(
+            key[column_index] == value
+            or (column_index == 3 and requires_acceptance_result(row) and _normalized(row[3]) == value)
+            for column_index, value in given
+        )
+
     def updater(rows: list[list[str]]) -> list[list[str]]:
         if row_id is not None:
             matches = [_row_index(row_id, len(rows))]
         else:
-            matches = [
-                row_index
-                for row_index, row in enumerate(rows)
-                if all(_normalized(row[column_index]) == value for column_index, value in given)
-            ]
+            matches = [row_index for row_index, row in enumerate(rows) if matches_key(row)]
         if len(matches) != 1:
             diagnostic = _format_key_diagnostic(rows, given, matches)
             raise _ActionableError(
@@ -382,6 +392,8 @@ def respond(
                 next_action="`atk review-table show <PATH>`でrow-idを確認し、--row-idで指定し直す",
             )
         row = rows[matches[0]]
+        if replacement and requires_acceptance_result(row):
+            _require_labels(replacement, RESPONSE_LABELS, "--response-file")
         column = 5 if replacement else 6
         if _valid_verdicts(rows, matches[0] + 1):
             # レビュー担当が判定した応答は変えない。変えると、古い判定のまま完了として数えられるため。
@@ -411,7 +423,7 @@ def respond(
     saved_rows = (
         [current_rows[row_id - 1]]
         if row_id is not None and 1 <= row_id <= len(current_rows)
-        else [row for row in current_rows if all(_normalized(row[column_index]) == value for column_index, value in given)]
+        else [row for row in current_rows if matches_key(row)]
     )
     if len(saved_rows) != 1:
         raise _ActionableError(
@@ -451,16 +463,14 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
         )
     if verdict == RECHECK_DONE and remaining_issue:
         raise _ActionableError(f"判定{RECHECK_DONE}には残る問題を書かない", next_action="--issue-fileを外して再実行する")
-    if verdict != RECHECK_DONE:
-        if not remaining_issue:
-            raise _ActionableError(
-                f"判定{verdict}には残る問題の本文が必要である",
-                next_action=(
-                    f"--issue-fileへ`{SIMILAR_REVIEW_LABEL}`の行と残る問題を書いて再実行する。"
-                    f"今回のroundへ`{REREGISTERED_CLASSIFICATION}`の指摘行をこのコマンドが登録する"
-                ),
-            )
-        require_carried_issue(remaining_issue, "--issue-file")
+    if verdict != RECHECK_DONE and not remaining_issue:
+        raise _ActionableError(
+            f"判定{verdict}には残る問題の本文が必要である",
+            next_action=(
+                f"--issue-fileへ`{SIMILAR_REVIEW_LABEL}`の行と残る問題を書いて再実行する。"
+                f"今回のroundへ`{REREGISTERED_CLASSIFICATION}`の指摘行をこのコマンドが登録する"
+            ),
+        )
     round_number = int(normalized_round)
     recorded: list[tuple[int, str, str]] = []
 
@@ -499,7 +509,8 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
             if carried_id is not None:
                 updated[carried_id - 1][6] = withdrawn
         else:
-            issue = carried_issue(remaining_issue, row_id)
+            require_carried_issue(remaining_issue, "--issue-file", track=row[1])
+            issue = mark_issue(carried_issue(remaining_issue, row_id), row[1], row[2])
             if carried_id is None:
                 updated.append([normalized_round, row[1], row[2], issue, row[4], "", ""])
                 carried_id = len(updated)
@@ -559,7 +570,15 @@ def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -
     rows = _read(_path(str(path)))
     _validate_rows(rows, require_responses=False)
     selected = [row for row in rows if _normalized(row[0]) == str(round_value) and row[1] == _normalize_track(track)]
-    unanswered = sum(not row[5].strip() and not row[6].strip() for row in selected)
+    unanswered = sum(
+        (not row[5].strip() and not row[6].strip())
+        or (
+            bool(row[5].strip())
+            and requires_acceptance_result(row)
+            and not any(_label_values(response_content(row[5]), ACCEPTANCE_RESULT_LABEL))
+        )
+        for row in selected
+    )
     result: _Summary = {
         "round": round_value,
         "track": _normalize_track(track),
@@ -648,7 +667,7 @@ def show(
     parsed_rows = [row for _, row in rows]
     if output_format == "tsv":
         for saved_row_id, raw_line, row in selected:
-            if uses_versioned_response(row):
+            if issue_content(row) != row[3] or uses_versioned_response(row):
                 shown = display_row(parsed_rows, saved_row_id)
                 print(f"{saved_row_id}\t" + "\t".join(json.dumps(value, ensure_ascii=False) for value in shown))
             else:

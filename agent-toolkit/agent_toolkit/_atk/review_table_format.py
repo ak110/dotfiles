@@ -59,14 +59,17 @@ _FIX_ROW_NEXT_ACTION = "`atk review-table show <PATH>`で該当行を確認し�
 # 類似見直しを終えた件数と不採用の根拠を記録時点で書かせるため、列を増やさず本文の行頭ラベルで表す。
 # 書く欄は増えるほど記録が遅くなるため、類似見直しは文章でなく件数だけを書かせる。
 SIMILAR_REVIEW_LABEL = "類似見直し完了件数:"
-RESPONSE_LABELS = ("違反を確認した規定:", SIMILAR_REVIEW_LABEL, "採用する修正範囲:", "採用しない修正方針:")
+ACCEPTANCE_RESULT_LABEL = "検収結果:"
+LEGACY_RESPONSE_LABELS = ("違反を確認した規定:", SIMILAR_REVIEW_LABEL, "採用する修正範囲:", "採用しない修正方針:")
+RESPONSE_LABELS = (*LEGACY_RESPONSE_LABELS, ACCEPTANCE_RESULT_LABEL)
 NO_RESPONSE_REASON_LABELS = ("根拠の所在:", "判断主体:")
 DECISION_MAKER_VALUES = ("メイン", "レーン担当", "統括", "ユーザー", "レビュー担当")
 _TRANSFER_TARGET_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
 _LABEL_DEFINITION = "`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」"
 
 
-ISSUE_LABELS = (SIMILAR_REVIEW_LABEL,)
+ACCEPTANCE_LABEL = "検収:"
+ISSUE_LABELS = (SIMILAR_REVIEW_LABEL, ACCEPTANCE_LABEL)
 _COUNT_RE = re.compile(r"[0-9]+")
 CLASSIFICATION_LABEL = "区分:"
 CLASSIFICATION_VALUES = ("前回から残存", "修正に起因", "前回の見落とし", "新しい変更", "要求追加")
@@ -208,7 +211,7 @@ def _key(row: list[str]) -> tuple[str, str, str, str]:
         _normalized(row[0]),
         _normalized(row[1]),
         _normalized(row[2]),
-        _normalized(row[3]),
+        _normalized(issue_content(row)),
     )
 
 
@@ -267,8 +270,14 @@ def _require_labels(body: str, labels: tuple[str, ...], option: str, definition:
             )
 
 
-def _require_issue_description(issue: str, option: str) -> None:
-    labels = (*ISSUE_LABELS, CLASSIFICATION_LABEL, ORIGIN_LABEL)
+def _issue_labels(track: str) -> tuple[str, ...]:
+    return ISSUE_LABELS if track == "exec-review" else (SIMILAR_REVIEW_LABEL,)
+
+
+def _require_issue_description(issue: str, option: str, *, track: str) -> None:
+    labels = (*_issue_labels(track), CLASSIFICATION_LABEL, ORIGIN_LABEL)
+    if track == "exec-review":
+        issue = issue.removesuffix(_ISSUE_MARKER)
     if not any(line.strip() and not line.strip().startswith(labels) for line in issue.splitlines()):
         raise _ActionableError(
             f"{option}の本文にラベルの行のほかの記述が無い",
@@ -276,11 +285,11 @@ def _require_issue_description(issue: str, option: str) -> None:
         )
 
 
-def _require_issue_labels(location: str, issue: str, round_value: str, option: str) -> None:
+def _require_issue_labels(location: str, issue: str, round_value: str, option: str, *, track: str) -> None:
     if location.strip().startswith(_OWN_RECORD_PREFIX):
         return
-    _require_labels(issue, ISSUE_LABELS, option, _ISSUE_LABEL_DEFINITION)
-    _require_issue_description(issue, option)
+    _require_labels(issue, _issue_labels(track), option, _ISSUE_LABEL_DEFINITION)
+    _require_issue_description(issue, option, track=track)
     values = _label_values(issue, CLASSIFICATION_LABEL)
     if REREGISTERED_CLASSIFICATION in values:
         raise _ActionableError(
@@ -307,6 +316,27 @@ def _require_issue_labels(location: str, issue: str, round_value: str, option: s
 def classification(issue: str) -> str | None:
     values = _label_values(issue, CLASSIFICATION_LABEL)
     return values[0] if len(values) == 1 else None
+
+
+_ISSUE_MARKER = "\n<!-- review-issue-v2:acceptance -->"
+
+
+def _uses_acceptance_contract(track: str, location: str) -> bool:
+    return track == "exec-review" and not location.strip().startswith(_OWN_RECORD_PREFIX)
+
+
+def mark_issue(issue: str, track: str, location: str) -> str:
+    if _uses_acceptance_contract(track, location):
+        return issue.removesuffix(_ISSUE_MARKER) + _ISSUE_MARKER
+    return issue
+
+
+def requires_acceptance_result(row: list[str]) -> bool:
+    return _uses_acceptance_contract(_normalize_track(row[1]), row[2]) and row[3].endswith(_ISSUE_MARKER)
+
+
+def issue_content(row: list[str]) -> str:
+    return row[3].removesuffix(_ISSUE_MARKER) if requires_acceptance_result(row) else row[3]
 
 
 _RESPONSE_MARKER = re.compile(r"<!-- review-response-v2:([0-9a-f]{32}) -->")
@@ -393,6 +423,7 @@ def _valid_verdicts(rows: list[list[str]], row_id: int) -> list[tuple[int, str, 
 
 def display_row(rows: list[list[str]], row_id: int) -> list[str]:
     row = rows[row_id - 1].copy()
+    row[3] = issue_content(row)
     valid = set(_valid_verdicts(rows, row_id))
     for column in (5, 6):
         lines = [response_content(row[column])]
@@ -412,14 +443,14 @@ def uses_versioned_response(row: list[str]) -> bool:
     )
 
 
-def require_carried_issue(issue: str, option: str) -> None:
-    _require_labels(issue, ISSUE_LABELS, option, _ISSUE_LABEL_DEFINITION)
+def require_carried_issue(issue: str, option: str, *, track: str) -> None:
+    _require_labels(issue, _issue_labels(track), option, _ISSUE_LABEL_DEFINITION)
     if any(line.strip().startswith((CLASSIFICATION_LABEL, ORIGIN_LABEL)) for line in issue.splitlines()):
         raise _ActionableError(
             f"{option}の本文に{CLASSIFICATION_LABEL}か{ORIGIN_LABEL}で始まる行がある",
             next_action="区分と元の指摘の行はrecheckが書くため、その行を除いて同じコマンドを再実行する",
         )
-    _require_issue_description(issue, option)
+    _require_issue_description(issue, option, track=track)
 
 
 def carried_issue(issue: str, origin_row_id: int) -> str:

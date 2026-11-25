@@ -105,6 +105,9 @@
 
 ## 実行レビュー反復での記録
 
+採用した指摘の `検収:` を修正後のHEADで実行し、管理表の応答に `検収結果:` を記録する（`agent-toolkit:atk-mode/references/review-record-response.md`）。
+履歴統合でHEADを変えた時は、結果が適用できることを確かめ、履歴統合後の短縮OIDを応答へ反映する。
+
 レビューイーは指摘管理表に登録された全ての指摘に、採否、根拠、対応、検証の証拠を応答として記録する。
 委譲元は`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`の`unanswered_count`が0件であることを確かめる。
 再レビューの要否は指摘の応答とは別に扱う。
