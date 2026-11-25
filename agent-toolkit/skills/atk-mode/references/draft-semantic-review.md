@@ -34,7 +34,10 @@ WIの原稿を保存する前に、その意味を確かめる観点である。
    作成主体から受け取った抽出を再利用し、要求の識別子、入力原稿、抽出の保存先、比較資料の対応を保つ。
    基準は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」とし、直接起草するメインの自己判定にも同じ基準を使う。
    AWIは`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」が定めるH1直下を、UWIは`agent-toolkit:atk-mode/references/uwi-format.md`「構成」の内容を判定する。
-   原稿の全体を確かめる時に、現行の原稿と抽出の一致を、dry-runへ`--compare-opening-file <受領済みの抽出の絶対パス>`を付けて確かめる。
+   原稿全体の検収では、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runに`--compare-opening-file <受領済みの抽出の絶対パス>`を加えて一致を確かめる。
+   新規原稿に`source`があればその値を使う。
+   無い場合、専念型のレビュー担当は`--source agent`を指定する。
+   直接起草するメインは`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決めた値を`--source`へ渡す。
    原稿が変わっていればdry-runをやり直して抽出を更新し、使うのは検証と抽出の保存に成功した結果に限る。
    作業用の抽出は`--opening-output`で同じパスへ更新できるが、原稿や受領済みの比較入力とは別のパスにする。
    受領済みの比較入力は更新せず、修正した原稿は新しい抽出で再検収する。
@@ -132,7 +135,7 @@ WIの原稿を保存する前に、その意味を確かめる観点である。
    - `判断の変更`は、確定要件の対象、範囲、外部から観測できる結果と矛盾せず、足す手段や条件が必要性を満たす。
    - `condition_not_met`は、投入が不要であるとした結論と根拠を示す。
      人間由来の要求を投入の対象から外す場合は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「承認」で確定してから保存の対象から除く。
-   - 先行項目の正式なファイル名が未確定でも、要求と証拠から参照先と参照箇所を一意に特定できれば、意味の検収を進めてよい。
+   - 宛先リポジトリが異なる組では、先行項目の正式なファイル名が未確定でも、要求と証拠から参照先と参照箇所を一意に特定できれば、意味の検収を進めてよい。
      正式名への置換と保存後の一致確認は、作成主体が`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入」で行う。
 
 ## 初回と再判定・差戻し

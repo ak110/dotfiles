@@ -20,6 +20,8 @@ class RepositoryAttributes(pydantic.BaseModel):
     edit: Literal["allow", "awi", "deny"]
     path: str = ""
     process_loop: bool = False
+    github_issues: bool = False
+    github_issue_trusted_authors: list[str] | None = None
     platforms: Annotated[list[Literal["linux", "windows"]], pydantic.Field(min_length=1)] = ["linux", "windows"]
     branches: list[str] = []
     default_branch: str = ""
@@ -160,6 +162,13 @@ def parse(value: str, *, check_paths: bool = True) -> dict[str, dict[str, Any]]:
             "platforms": platforms,
             **_validate_branches(key, attributes),
         }
+        if attributes.github_issues:
+            item["github_issues"] = True
+        authors = attributes.github_issue_trusted_authors
+        if authors is not None:
+            if any(re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", author) is None for author in authors):
+                raise ValueError(f"{key}のgithub_issue_trusted_authorsにはGitHubのアカウント名を指定する")
+            item["github_issue_trusted_authors"] = list(dict.fromkeys(author.lower() for author in authors))
         if path is not None:
             item["path"] = normalize_path(path)
         if enabled and not item.get("path"):
