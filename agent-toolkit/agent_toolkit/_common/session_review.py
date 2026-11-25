@@ -345,17 +345,17 @@ class BatchWriter:
                 }
             )
 
-    def complete(self, *, report_synced: bool) -> dict[str, Any]:
-        """分析と報告同期が揃った保存済み範囲だけを成功確定する。"""
+    def complete(self, *, report_synced: bool = False, report_committed: bool = False) -> dict[str, Any]:
+        """分析と報告のローカル保存が揃った範囲だけを成功確定する。  pyfltr: allow-comment"""
         with locked():
             value = self._active()
-            if not report_synced:
+            if not (report_synced or report_committed):
                 raise ValueError("report-unsynced: 報告の同期を確認できない")
             if not value.get("analysis_succeeded"):
                 raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
             for prepared in value["prepared"]:
                 complete(prepared, allow_partial_analysis=True)
-            saved = self._save({**value, "status": BatchStatus.COMPLETED})
+            saved = self._save({**value, "status": BatchStatus.COMPLETED, "report_committed": True})
             for prepared in saved["prepared"]:
                 cleanup_prepared(prepared, allow_partial_analysis=True)
             return saved

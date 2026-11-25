@@ -83,7 +83,7 @@
    all-reposのリポジトリ担当は、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う（`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「取得済み候補の受領」）。
 
    ```text
-   atk wi list --jsonl --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>
+   atk wi list --jsonl --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>
    ```
 
    追跡するブランチが登録外でコマンドが失敗した場合は、処理を始めず、示された系統と起動方法をユーザーへ報告して終了する（`agent-toolkit:atk-mode/playbooks/process-wi.md`「系統を登録したリポジトリ」）。

@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.git_sync import has_remote
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
@@ -417,14 +418,12 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if filenames:
         _validate_named_staleness_options(args)
     baseline = _wi_snapshot.read(args.new_since) if getattr(args, "new_since", None) is not None else None
-    if not args.skip_pull:
-        with _wi_sync.repo_lock(private_notes):
-            _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+    background_sync.prepare_read(private_notes, skip=args.skip_pull, force=getattr(args, "pull", False))
     if filenames:
         _print_named_staleness(args, private_notes, filenames)
         return
     texts = EntryTexts()
-    all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
+    all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts, indexed=True))
     configured = getattr(args, "configured_repos", False)
     repositories = _config.resolve_configured_repositories() if configured else None
 
@@ -549,11 +548,23 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     print_entries(selected, readiness, branch_settings)
 
 
-def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
+def progress_new_wis(session_id: str, *, targets: frozenset[tuple[str, str | None]] | None = None) -> tuple[str, ...] | None:
     if not (saved := _wi_snapshot.progress_sources(session_id)):
         return None
     by_key = {(repo.repo_id, repo.branch): repo for repo in _config.resolve_configured_repositories()}
     scopes = {(row["repo"], row["branch"]): row for row in saved.values()}
+    if targets is not None:
+        selected = {}
+        for repo, branch in targets:
+            matched = {
+                scope: row
+                for scope, row in scopes.items()
+                if scope[0] == repo and (branch is None or scope[1] in (None, branch))
+            }
+            if not matched:
+                return None
+            selected.update(matched)
+        scopes = selected
     notes = {row["notes"] for row in scopes.values()}
     if len(notes) != 1 or any(scope not in by_key for scope in scopes):
         raise ValueError("開始時の対象と現在の登録が一致しない")

@@ -1,6 +1,7 @@
 import pathlib
 import re
 import subprocess
+import time
 from collections.abc import Callable
 
 import pytest
@@ -68,7 +69,10 @@ def test_edit_dry_run_validates_without_changing_notes_or_remote(
         atk.main(args, home=tmp_path)
     assert saved.value.code == 0, capsys.readouterr().err
     assert "補足の段落。" in path.read_text(encoding="utf-8")
-    assert _git_output(origin, "rev-parse", "main") != before[1]
+    deadline = time.monotonic() + 5
+    while _git_output(origin, "rev-parse", "main") == before[1]:
+        assert time.monotonic() < deadline
+        time.sleep(0.02)
 
 
 @pytest.mark.parametrize("newline", ["\r\n", "\r", "\n"])

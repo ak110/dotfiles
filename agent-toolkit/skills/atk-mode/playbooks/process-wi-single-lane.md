@@ -63,7 +63,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    - 処理可能なWI（processable）の一覧と各WIの本文を取得する。
      初回の一覧に`--snapshot-output <開始時集合JSONの絶対パス>`を付け、all-reposから受け取った場合は既存の`snapshot_file`を使う。
      30分ごとの点検と公開前の新着の確認は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従い、同じ開始時の集合と判定済みの記録を保つ。
-   - `atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto`で回答済みのUWIの本文も取得する。
+   - `atk wi show --pull --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto`で回答済みのUWIの本文も取得する。
      `source: run-skill`のUWIも対象にし、扱いは`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」に従う。
      回答済みのUWIは実装前に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従って終えるか処理対象へ加える。
    - 依存が未解決の項目は、依存元のWIがprocessableで同じ`target_repo`を対象とする場合だけ今回の実行に含めて報告する。
@@ -76,7 +76,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    - 同書「集合確定直後の処理開始」に従い、`atk wi show`で保存された`target_repo`と対応worktreeのoriginの一致を確かめる。
      不一致は同書「処理対象の決定」の移転の判定と編集の規則に従い、移転の根拠が得られなければ両方の識別子と足りない根拠を報告し、移転が確定したら処理開始前に保存値と本文中の操作先をそろえる。
    - 初回の`atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`には、対応表のうち開始前に`inbox`だった全件をworktreeごとに渡し、処理開始済みの項目は重ねて遷移させない。
-     中断した実行を再開する場合と、回答済みUWIや依存の解消・`unhold`で`inbox`へ戻った元の項目を加える場合も、作業の再開前に`atk wi show`で対応表の全件の状態を照会し、`inbox`の項目を同じ操作で`processing`へ移す。
+     中断した実行を再開する場合と、回答済みUWIや依存の解消・`unhold`で`inbox`へ戻った元の項目を加える場合も、作業の再開前に`atk wi show --pull`で対応表の全件の状態を照会し、`inbox`の項目を同じ操作で`processing`へ移す。
      途中で失敗した場合は、CLIの診断と残った状態を同じ対応表に記録し、未完了の工程から再開する。
    - ユーザーの明示の追加と、本書「見つけた既存不良の扱い」で今回追加とした正式改善AWIは対応表へ反映して比較の基準を更新し、集合の固定後の追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の基準で扱う。
 2. `atk wi`の`adopt`や`reject`に`--commit`を渡す場合は`--target-repo`に対象worktreeの絶対パスを、それ以外の操作では保存された`target_repo`を使う。

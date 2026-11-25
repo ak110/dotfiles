@@ -136,12 +136,15 @@ class CodexConnectionsMixin:
             raise codex_resume_state.IncompatibleResumeError(
                 "Codexの再開条件を取得できず、再開先との状態互換性を確認できない"
             ) from error
+        subscription: bool | None = await run_file_operation(codex_connection.subscription_provider_for, target) is not None
+        if not codex_providers.has_provider_configuration() and target in (None, "openai"):
+            subscription = None
         resume_params: dict[str, Any] = {
             "threadId": session.session_id,
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
-            "serviceTier": await run_file_operation(_current_service_tier),
+            "serviceTier": await _current_service_tier(client.request, session.cwd, subscription=subscription),
         }
         if session.model is not None:
             resume_params["model"] = session.model

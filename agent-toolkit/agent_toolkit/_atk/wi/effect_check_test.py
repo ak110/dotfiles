@@ -4,6 +4,7 @@ import datetime
 import json
 import pathlib
 import subprocess
+import time
 
 import pytest
 
@@ -12,6 +13,14 @@ from agent_toolkit._atk.wi import effect_check, frontmatter, readiness, sync
 from agent_toolkit._atk.wi.mutations import targets
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_entry_files import entry_path, write_awi, write_uwi
+
+
+def _wait_for_push(notes: pathlib.Path) -> None:
+    head = git_repository.git_output(notes, "rev-parse", "HEAD")
+    deadline = time.monotonic() + 5
+    while git_repository.git_output(notes, "rev-parse", "origin/main") != head and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert git_repository.git_output(notes, "rev-parse", "origin/main") == head
 
 
 def test_legacy_confirmation_does_not_defer_processing(tmp_path: pathlib.Path) -> None:
@@ -103,7 +112,7 @@ def test_public_effect_check_partial_then_complete_preserves_original(
         line for line in saved.split("\n") if not line.startswith(("effect_check:", effect_check.RECORD_PREFIX))
     )
     assert restored == original
-    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")
+    _wait_for_push(notes)
     capsys.readouterr()
     with pytest.raises(SystemExit) as show:
         atk.main(["wi", "show", path.name, "--skip-pull"], home=notes.parent)
@@ -298,7 +307,7 @@ def test_public_effect_retry_after_commit_failure_is_idempotent(
     assert _invoke(notes, worktree, path.name, "app.py", "confirmed") == 0
     assert path.read_text(encoding="utf-8") == partial
     assert len(effect_check.result_values(partial, "効果確認")) == 1
-    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")
+    _wait_for_push(notes)
 
 
 @pytest.mark.cpu_limit(
@@ -410,7 +419,8 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
     assert result[0].startswith("成功: ")
     assert result[1:] == [str(path), str(legacy)]
     assert sum(args[0] == "commit" for args in calls) == 1
-    assert sum(args[0] == "push" for args in calls) == 1
+    assert sum(args[0] == "push" for args in calls) == 0
+    _wait_for_push(notes)
     assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "1"
     saved = {item: item.read_bytes() for item in (path, legacy)}
     for item, before in originals.items():
@@ -446,7 +456,7 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
         assert "effect_check: not_required" in text
         assert len(effect_check.result_values(text, "効果確認全体")) == 2
     assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "2"
-    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")
+    _wait_for_push(notes)
 
 
 @pytest.mark.cpu_limit(

@@ -62,7 +62,9 @@
   effortを省くと`medium`になる。
 - 現在の値は`atk config show`か`atk config get <キー>...`、プリセットは`atk config apply-preset show`で表示する（初期値は`codex-near-primary`と同じ）。
   `atk config apply-preset <名前>`は`write_model`を残して他の6つのキーを更新する。
-- 設定はユーザー単位の1つの値を全セッションが共有するため、`atk config set`と`apply-preset`はユーザーが変更を指示した時だけ実行する。
+- モデル・接続順を変更する`atk config set`、`apply-preset <名前>`、一時指定の保存・解除、および同じ書き込みを行う`atk config update`は、ユーザーが変更を指示した時だけ実行する。
+  Claude Codeでは操作の直前に確認し、確認を出せないホストではユーザー本人に端末か設定画面での操作を依頼する。
+  エージェントによる`atk config update`で事前に入力を判別できない場合も、保護対象の書き込みを見逃さないよう同じ扱いとする。
 - 環境変数`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`が空でない間は、保存値よりその値を使う。
 - Codexの`astra`・`sol`・`terra`・`luna`は、起動時にApp Serverの`model/list`で同じ系列の最新の完全IDへ解決する。
   解決できない時は理由を示して止まる。

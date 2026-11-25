@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 
 import pytest
 
@@ -22,6 +23,47 @@ from agent_toolkit._testing.config_support import (
 __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
 
 
+@pytest.mark.parametrize("losing_migration", [False, True])
+def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_path, monkeypatch, capsys, losing_migration):
+    remote = tmp_path / "remote.git"
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    subprocess.run(["git", "init", "--bare", str(remote)], cwd=tmp_path, check=True)
+    subprocess.run(["git", "clone", str(remote), str(first)], cwd=tmp_path, check=True)
+    for key, value in (("user.name", "Config Test"), ("user.email", "config@example.invalid")):
+        subprocess.run(["git", "config", key, value], cwd=first, check=True)
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "initialize"], cwd=first, check=True)
+    subprocess.run(["git", "push", "-u", "origin", "HEAD"], cwd=first, check=True)
+    subprocess.run(["git", "clone", str(remote), str(second)], cwd=tmp_path, check=True)
+    if losing_migration:
+        for key, value in (("user.name", "Config Test"), ("user.email", "config@example.invalid")):
+            subprocess.run(["git", "config", key, value], cwd=second, check=True)
+        (second / "atk-config.json").write_text('{"review_model": "claude:sonnet/medium"}\n', encoding="utf-8")
+        subprocess.run(["git", "add", "atk-config.json"], cwd=second, check=True)
+        subprocess.run(["git", "commit", "-m", "chore: migrate shared agent settings"], cwd=second, check=True)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(first))
+    model = "codex:sol/medium"
+    assert _main(tmp_path, "config", "set", "review_model", model) == 0
+    if not losing_migration:
+        subprocess.run(["git", "pull", "--ff-only"], cwd=second, check=True)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(second))
+    capsys.readouterr()
+    if not losing_migration:
+        assert _main(tmp_path, "config", "get", "review_model") == 0
+        assert capsys.readouterr().out == model + "\n"
+    _write_config(tmp_path, {"review_model": "claude:sonnet/medium", "codex_fast_mode": "true"})
+    assert _main(tmp_path, "config", "get", "review_model") == 0
+    assert capsys.readouterr().out == "claude:sonnet/medium\n"
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    monkeypatch.setattr(config_module, "_auto_fast_report", lambda: "Codex自動速度: 通常（テスト）")
+    assert _main(tmp_path, "config", "show") == 0
+    shown = capsys.readouterr()
+    assert f"review_model {model}\n" in shown.out
+    assert "codex_fast_mode auto\n" in shown.out
+    assert "ローカルの true を除去" in shown.err
+    assert not _saved(tmp_path).keys() & {"review_model", "codex_fast_mode"}
+
+
 def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     value = "claude:opus/high,codex:sol/medium"
     assert _main(tmp_path, "config", "set", "write_model", value) == 0
@@ -37,14 +79,61 @@ def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.C
         assert capsys.readouterr().out.rstrip("\n") == value
 
 
+def test_interactive_show_keeps_auto_setting_separate_from_decision(tmp_path, monkeypatch, capsys):
+    async def probe(operation, **_kwargs):
+        async def request(method, _params):
+            if method == "config/read":
+                return {"config": {"model_provider": "external-api"}}
+            raise AssertionError(method)
+
+        return await operation(request)
+
+    monkeypatch.setattr(config_module.codex_models, "with_app_server", probe)
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    assert _main(tmp_path, "config", "show") == 0
+    shown = capsys.readouterr()
+    assert "codex_fast_mode auto\n" in shown.out
+    assert "Codex自動速度: 通常" in shown.err
+
+
+def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeypatch, capsys):
+    from agent_toolkit._atk.wi import sync  # noqa: PLC0415
+    from agent_toolkit._testing import git_repository  # noqa: PLC0415
+
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="main", origin=str(remote), files={".gitkeep": ""}
+    )
+    git_repository.commit_all(notes, "initialize")
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    original = {"review_model": "codex:sol/medium", "codex_fast_mode": "false"}
+    _write_config(tmp_path, original)
+    git = sync.run_git
+
+    def fail_push(args, cwd, **kwargs):
+        if args == ["push"]:
+            raise subprocess.CalledProcessError(1, ["git", "push"])
+        return git(args, cwd, **kwargs)
+
+    monkeypatch.setattr(sync, "run_git", fail_push)
+    for _ in range(2):
+        assert _main(tmp_path, "config", "show") != 0
+        assert _saved(tmp_path) == original
+        assert "共有先へ移行できない" in capsys.readouterr().err
+    assert git_repository.git_output(notes, "rev-list", "--count", "@{u}..HEAD") == "1"
+    assert json.loads((notes / "atk-config.json").read_text(encoding="utf-8")) == {"review_model": original["review_model"]}
+
+
 class TestCodexFastMode:
-    @pytest.mark.parametrize("value", ["true", "false"])
+    @pytest.mark.parametrize("value", ["auto", "true", "false"])
     def test_public_round_trip_and_preset_preservation(
         self, value: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         with pytest.raises(SystemExit, match="0"):
             atk.main(["config", "get", "codex_fast_mode"], home=tmp_path)
-        assert capsys.readouterr().out == "false\n"
+        assert capsys.readouterr().out == "auto\n"
         with pytest.raises(SystemExit, match="0"):
             atk.main(["config", "set", "codex_fast_mode", value], home=tmp_path)
         assert not capsys.readouterr().err

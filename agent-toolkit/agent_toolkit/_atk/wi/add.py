@@ -27,6 +27,9 @@ from agent_toolkit._atk.wi.add_reports import (
     print_deferral_candidates,
     print_draft_openings,
 )
+from agent_toolkit._atk.wi.add_reports import (
+    has_committed_run_report as has_committed_run_report,
+)
 from agent_toolkit._atk.wi.add_validation import (
     _EMPTY_AWI_ERROR,
     _EMPTY_AWI_NEXT_ACTION,

@@ -117,6 +117,12 @@ def remember_processing_started(private_notes: pathlib.Path, filenames: Iterable
 _LEGACY_START = "process_loop_progress_snapshots"
 _START_DIRECTORY = "wi-circuit-start"
 _START_UNAVAILABLE = "process_loop_start_directory_unavailable"
+_START_LOCATION = "process_loop_start_directory"
+
+
+def _registered_directory(state: dict) -> pathlib.Path | None:
+    value = state.get(_START_LOCATION)
+    return pathlib.Path(value) if isinstance(value, str) and pathlib.Path(value).is_absolute() else None
 
 
 def _read_start(directory: pathlib.Path) -> dict | None:
@@ -147,8 +153,9 @@ def record_list_start(
             _export_legacy(state[_LEGACY_START], private_notes, scope, output)
         return True
     try:
-        directory = managed_temp.resolve_session_temp(session_id) / _START_DIRECTORY
-        created = _claim_start(directory)
+        registered = _registered_directory(state)
+        directory = registered or managed_temp.resolve_session_temp(session_id) / _START_DIRECTORY
+        created = registered is None and _claim_start(directory)
     except (OSError, managed_temp.ManagedTempError) as error:
         saved = session_state.update_state(session_id, lambda state: {**state, _START_UNAVAILABLE: True})
         if not saved:
@@ -175,6 +182,7 @@ def record_list_start(
                 "unanswered": sorted(unanswered),
             }
             atomic_write(directory / "source.json", json.dumps(new_source, ensure_ascii=False).encode())
+            session_state.update_state(session_id, lambda current: {**current, _START_LOCATION: str(directory.resolve())})
         except (OSError, ActionableError) as error:
             _unavailable(f"巡回の開始時集合を保存できない: {error}", output)
             return True
@@ -249,10 +257,12 @@ def progress_sources(session_id: str) -> dict:
     if _LEGACY_START in state:
         legacy = state[_LEGACY_START]
         return legacy if isinstance(legacy, dict) else {}
-    root = managed_temp.find_session_temp(session_id)
-    if root is None:
-        return {}
-    directory = root / _START_DIRECTORY
+    directory = _registered_directory(state)
+    if directory is None:
+        root = managed_temp.find_session_temp(session_id)
+        if root is None:
+            return {}
+        directory = root / _START_DIRECTORY
     source = _read_start(directory)
     if source is None:
         return {}

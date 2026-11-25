@@ -200,7 +200,9 @@ def test_local_only_commit_reports_skipped_remote_operations(
     assert "pushした" not in clean + edited
 
 
-@pytest.mark.parametrize("argv", [["pull"], ["list", "--target-repo=all"], ["show", "--all", "--target-repo=all"]])
+@pytest.mark.parametrize(
+    "argv", [["pull"], ["list", "--pull", "--target-repo=all"], ["show", "--pull", "--all", "--target-repo=all"]]
+)
 def test_read_commands_fast_forward_remote_entry(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -460,7 +462,7 @@ class TestListAwiStatusRejected:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--status=rejected"], home=tmp_path)
+            atk.main(["wi", "list", "--status=rejected", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -468,7 +470,7 @@ class TestListAwiStatusRejected:
         assert not captured.err
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=uwi", "--status=inbox"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--status=inbox", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()

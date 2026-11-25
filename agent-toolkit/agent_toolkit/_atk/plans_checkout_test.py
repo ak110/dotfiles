@@ -239,7 +239,7 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
     tmp_path: pathlib.Path,
     remote_change: str,
 ) -> None:
-    """取得後にremoteで更新された同一ファイルと付属ファイルの追加を同期してから拒否する。"""
+    """最後の取得で判明した同一ファイルの更新と付属ファイルの追加をローカルで拒否する。  pyfltr: allow-comment"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
@@ -263,6 +263,7 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
     git_repository.run_git(other, "add", "plans")
     git_repository.run_git(other, "commit", "-m", "concurrent plan update")
     git_repository.run_git(other, "push")
+    git_repository.run_git(notes, "fetch")
     saved_before = _atk_plans._bundle_contents(  # pylint: disable=protected-access
         _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
     )

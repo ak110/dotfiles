@@ -121,7 +121,7 @@
 1. 選定メインは初回の取得で、一覧の表示条件とは独立した開始時の集合（全状態・全種別のWI識別子）を同じ実行で保存し、再開時も同じ保存集合を使う。
 
    ```text
-   atk wi list --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --target-branch=auto --snapshot-output <開始時集合JSONの絶対パス>
+   atk wi list --pull --summary-only --state=processable --target-repo <対象リポジトリの絶対パス> --target-branch=auto --snapshot-output <開始時集合JSONの絶対パス>
    ```
 
    all-reposの初回保存と担当への引き継ぎは`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「開始と振り分け」に従い、各対象の`snapshot_file`を使う。

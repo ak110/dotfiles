@@ -470,16 +470,16 @@ def _wait_session(
             if scope == session_review.BATCH_SCOPE:
                 return 0
             try:
-                saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, scope=scope)
+                saved = _wi_add.has_committed_run_report(_private_notes.default_private_notes(), run_id=run_id, scope=scope)
             except (OSError, subprocess.SubprocessError) as error:
                 saved = False
                 _log_line(log, f"報告の保存確認に失敗した: {error}")
             if not saved:
                 _outcome.report_failure(
-                    f"報告用UWIの保存が同期契約へ到達していない（ログ: {log_path}）",
+                    f"報告用UWIのローカル保存を確認できない（ログ: {log_path}）",
                     next_action=(
                         "ログの実行識別子に対応する報告用UWIを確認し、同じ会話を再開してreport-completionで保存する。"
-                        "保存済みの場合はWI保存先のcommit・pushを完了してから次回の実行を待つ"
+                        "保存済みの場合はWI保存先でcommitを確認して次回の実行を待つ"
                     ),
                 )
                 return 1
@@ -597,7 +597,7 @@ def _remove_expired_logs(log_dir: pathlib.Path, *, now: float) -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if (
             manifest.get("status") != "completed"
-            or not manifest.get("report_synced")
+            or not (manifest.get("report_committed") or manifest.get("report_synced"))
             or manifest["updated_at"] >= now - LOG_RETENTION_SECONDS
         ):
             protected.update(pathlib.Path(path) for path in manifest.get("run_skill_logs", []))

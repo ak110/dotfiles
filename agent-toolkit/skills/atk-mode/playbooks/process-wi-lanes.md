@@ -146,7 +146,7 @@
    - 計画に含まれない項目は、引き継ぎ記録のAWIの集合、レビュー指摘管理表、`git merge-base <専用branch> <ベースbranch>`と`git log <その結果>..<専用branch>`のcommit履歴から再開する工程を決め、`再開位置: 計画なし`として渡す。
    - 計画ファイルか引き継ぎ記録の実在、AWIの集合の一致、専用worktreeの元の所有主体の終了を事前に確かめる。
    - 反映後の観測だけが残る項目は、AWI本文へ追記された再開記録に基づき、選定結果の観測のみの再開位置をそのまま渡し、レーン担当は`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「再開」に従って観測だけを行う。
-   - 再開するレーンへ回答済みのUWIや、依存の解消・`unhold`で`inbox`へ戻った元の項目を渡す場合は、渡す前に`atk wi show`で状態を照会する。
+   - 再開するレーンへ回答済みのUWIや、依存の解消・`unhold`で`inbox`へ戻った元の項目を渡す場合は、渡す前に`atk wi show --pull`で状態を照会する。
      `inbox`の項目は`atk wi start-processing`で`processing`へ移す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」）。
 2. 残った専用worktreeとbranchを安全に再利用できる場合は、同じ絶対パス、branch、最新のHEAD、再開位置を新しいレーン担当へ渡す。
    安全に再利用できなければ、既存の成果を損なわないよう最新のHEADから新しい専用worktreeを作り、移した内容を`atk run-script plan-progress -- <引き継ぎ記録> --handoff`で引き継ぎ記録へ記録する。

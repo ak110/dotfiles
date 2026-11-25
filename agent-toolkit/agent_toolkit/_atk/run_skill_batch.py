@@ -731,16 +731,18 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
 
 
 def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
-    """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
+    """保存済み範囲の分析と報告のローカルcommitを確認して、同じbatchだけを確定する。  pyfltr: allow-comment"""
     diagnostics: dict[str, Any] | None = None
     try:
         notes = private_notes.default_private_notes()
-        gap = add.check_run_report_sync(notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True)
+        gap = add.check_run_report_sync(
+            notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True, local_only=True
+        )
         if gap is not None:
             # ファイル名やOIDを失敗キーに含めると同じ原因のAWIが重複する。  # pyfltr: allow-comment
             diagnostics = {"report_sync": {"reason": gap.reason, **gap.detail}}
             raise ValueError(f"report-unsynced: 報告の同期を確認できない（{gap.reason}）")
-        session_review.BatchWriter(path).complete(report_synced=True)
+        session_review.BatchWriter(path).complete(report_committed=True)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, filelock.Timeout) as error:
         reason = f"finish: {error}"
         _failure(manifest, path, reason, diagnostics=diagnostics)
@@ -854,12 +856,12 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         if old["status"] == "running" and _live(old):
             session_review.launch_result()
             return 1
-        if old.get("analysis_succeeded") and add.has_synced_run_report(
+        if old.get("analysis_succeeded") and add.has_committed_run_report(
             private_notes.default_private_notes(),
             run_id=old["run_id"],
             scope=old.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
         ):
-            session_review.BatchWriter(path).complete(report_synced=True)
+            session_review.BatchWriter(path).complete(report_committed=True)
             run_skill_state.mark_completed(old["run_id"])
         elif old["status"] == "running" and not old.get("error") and not _interrupted_before(runs, old):
             # 端末の停止などで実行プロセスだけが終了した回は、原因を示す診断を持たない。

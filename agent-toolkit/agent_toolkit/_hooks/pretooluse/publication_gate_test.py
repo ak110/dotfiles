@@ -81,6 +81,51 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
     assert gate("git push") is None
 
 
+def _register_circuit(tmp_path, monkeypatch, owner):
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", owner)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", owner)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    with pytest.raises(SystemExit) as result:
+        atk.main(
+            [
+                "wi",
+                "list",
+                "--skip-pull",
+                "--count",
+                "--configured-repos",
+                "--snapshot-output",
+                str(tmp_path / "baseline.json"),
+            ],
+            home=tmp_path,
+        )
+    assert result.value.code == 0
+
+
+def test_publication_uses_registered_baseline_after_session_temp_changes(tmp_path, monkeypatch):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    repository = config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    owner = "registered-publication"
+    _register_circuit(tmp_path, monkeypatch, owner)
+    registered = snapshot.progress_sources(owner)
+    assert registered
+    with monkeypatch.context() as moved:
+        moved.setattr(snapshot.managed_temp, "find_session_temp", lambda _session_id: tmp_path / "new")
+        assert snapshot.progress_sources(owner) == registered
+        assert not snapshot.progress_sources("different-circuit")
+        late = _write_awi_file(notes, "20261124-085011-004.md")
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner)
+        for session, payload in (
+            (owner, {"session_id": owner}),
+            ("codex-delegate", {"session_id": "codex-delegate", "agent_id": "codex-delegate"}),
+        ):
+            denied = publication_gate.check(payload, session, "Bash", {"command": "git push"})
+            assert denied is not None and late.name in denied[0]
+
+
 def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path, monkeypatch):
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -134,6 +179,29 @@ def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path,
         assert all(name not in notice for name in names[:2])
     finally:
         progress_self_check.release_reservations()
+
+
+def test_explicit_publication_scope_requires_its_own_baseline(tmp_path, monkeypatch):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repos = ("github.com/example/foo", "github.com/example/bar")
+    configured = tuple(config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git") for repo in repos)
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: configured)
+    session = "publication-scope"
+    _register_circuit(tmp_path, monkeypatch, session)
+    late = _write_awi_file(notes, "20261124-085011-004.md", target_repo=repos[1])
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+
+    def check(repo):
+        return publication_gate.check(
+            payload, session, "mcp__github__create_pull_request", {"owner": "example", "repo": repo, "base": "main"}
+        )
+
+    assert check("foo") is None
+    denied = check("bar")
+    assert denied is not None and late.name in denied[0]
+    denied = check("unknown")
+    assert denied is not None and "開始時集合がない" in denied[0]
 
 
 @pytest.mark.parametrize("first_configured", [False, True])

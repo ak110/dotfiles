@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit._testing.wi_uwi_support import _clear_agent_environment as _clear_agent_environment
 from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _GitCall, _make_subprocess_fake, _setup_notes, _write_uwi_file
@@ -152,7 +153,7 @@ class TestUwiAdopt:
         assert len(commit_calls) == 1
         assert "chore: process 3 entries (adopted)" in commit_calls[0]
 
-    def test_pushes_after_commit(
+    def test_schedules_push_after_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -162,11 +163,14 @@ class TestUwiAdopt:
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
+        scheduled = []
+        monkeypatch.setattr(background_sync, "schedule", scheduled.append)
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert any(c["cmd"] == ["git", "push"] for c in git_calls)
+        assert not any(c["cmd"] == ["git", "push"] for c in git_calls)
+        assert scheduled == [notes]
 
     def test_rejects_traversal(
         self,

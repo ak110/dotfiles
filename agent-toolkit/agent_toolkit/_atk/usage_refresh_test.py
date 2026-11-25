@@ -131,12 +131,13 @@ def test_cli_activity_excludes_post_exit_refresh_and_idle(monkeypatch: pytest.Mo
         report(20)
 
     monkeypatch.setattr(usage_refresh, "ensure_fresh", refreshed)
-    with usage_refresh.cli_activity("codex", "chosen", "low", "openai"):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
+    with usage_refresh.cli_activity("codex", "chosen", "low", "openai", service_tier="priority"):
         report(10)
         clock[0] = 20
     observed = usage_observation.snapshot()
     assert list(observed["rates"].values()) == [0.5]
-    assert any('"chosen", "low"' in signature for signature in observed["setting_rates"])
+    assert any('"chosen", "low", true' in signature for signature in observed["setting_rates"])
     clock[0] = 1000
     report(20)
     assert not usage_observation.snapshot()["rates"]

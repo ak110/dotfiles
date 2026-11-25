@@ -70,13 +70,18 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 lazy import dataclasses
 
+lazy from agent_toolkit._atk.config_settings import APPLY_PRESET_SHOW, CONNECTION_ORDER_KEYS, MODEL_DEFAULTS
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import delegated_session
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
+lazy from agent_toolkit._common.heredocs import heredoc_bodies
 lazy from agent_toolkit._common.session_state import read_state
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
@@ -400,8 +405,20 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         if generic_block:
             return dataclasses.replace(launch, block=generic_block)
         return dataclasses.replace(launch, notices=(*launch.notices, generic_notice)) if generic_notice else launch
-    if tool_name == "Bash":
-        return _decide_bash_tool(payload, tool_input, session_id, is_codex=is_codex)
+    if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
+        shell = _decide_bash_tool(payload, tool_input, session_id, is_codex=is_codex) if tool_name == "Bash" else Decision()
+        if shell.block is not None:
+            return shell
+        command = tool_input.get("command")
+        if isinstance(command, str) and _writes_model_settings(command):
+            if is_codex:
+                return Decision(
+                    block="モデル・接続設定または一時指定を書き換えるには、変更内容と理由を伝え、"
+                    "ユーザー本人に atk config または atk serve の設定画面での操作を依頼してください。"
+                )
+            return dataclasses.replace(shell, ask="モデル・接続設定または一時指定の変更を許可しますか。")
+        if tool_name == "Bash":
+            return shell
     if tool_name == "TaskStop":
         return Decision(block=_check_task_stop(session_id, tool_input))
     cwd_raw = payload.get("cwd", "")
@@ -430,6 +447,9 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
     if decision.block is not None:
         hook_output["permissionDecision"] = "deny"
         hook_output["permissionDecisionReason"] = decision.block
+    elif decision.ask is not None and not is_codex:
+        hook_output["permissionDecision"] = "ask"
+        hook_output["permissionDecisionReason"] = decision.ask
     elif force_allow or decision.updated_input is not None:
         hook_output["permissionDecision"] = "allow"
         if decision.updated_input is not None:
@@ -439,7 +459,7 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
     pending_notices.clear()
     if contexts:
         hook_output["additionalContext"] = format_warning_context(contexts)
-    if decision.block is not None or force_allow or decision.updated_input is not None or contexts:
+    if len(hook_output) > 1:
         emit_response({"hookSpecificOutput": hook_output})
     return 0
 
@@ -457,6 +477,59 @@ def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, 
         updated = start_observation_input(session_id, tool_input, _agent_id.resolve_hook_agent_id(payload))
         return dataclasses.replace(launch, allow=True, updated_input=updated)
     return dataclasses.replace(launch, allow=True)
+
+
+def _writes_model_settings(command: str) -> bool:
+    segments = extract_execution_segments(command)
+    for segment in segments:
+        tokens = segment.tokens
+        if not segment.resolved or not tokens or not is_atk_command(tokens) or tokens[1:2] != ("config",):
+            continue
+        arguments = tokens[2:]
+        if "--help" in arguments or "-h" in arguments:
+            continue
+        if arguments[:2] in {("temporary", "set"), ("temporary", "clear")}:
+            return True
+        if (
+            arguments[:1] == ("apply-preset",)
+            and len(arguments) > 1
+            and arguments[1] != APPLY_PRESET_SHOW
+            and not arguments[1].startswith("-")
+        ):
+            return True
+        if (
+            arguments[:1] == ("set",)
+            and len(arguments) > 1
+            and (arguments[1] in MODEL_DEFAULTS or arguments[1] in CONNECTION_ORDER_KEYS)
+        ):
+            return True
+        if arguments[:1] == ("update",) and (len(segments) != 1 or _protect_config_update(command)):
+            return True
+    return False
+
+
+def _protect_config_update(command: str) -> bool:
+    bodies = heredoc_bodies(command)
+    if len(bodies) != 1 or bodies[0].expands:
+        return True
+    body = bodies[0]
+    # 別のリダイレクトが入力を置き換える形式は、heredocの本文から判定しない。  # pyfltr: allow-comment
+    header = command[: body.start]
+    if not re.fullmatch(r"""\s*atk\s+config\s+update\s+<<\s*(['"])[A-Za-z0-9_]+\1\s*""", header):
+        return True
+    if body.end == len(command):
+        return True
+    try:
+        operation = json.loads(command[body.start : body.end])
+    except ValueError:
+        return True
+    if not isinstance(operation, dict):
+        return True
+    action = operation.get("action")
+    if action in ("repo", "array-add", "array-remove"):
+        return False
+    key = operation.get("key")
+    return action != "set" or not isinstance(key, str) or key in MODEL_DEFAULTS or key in CONNECTION_ORDER_KEYS
 
 
 def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:

@@ -467,6 +467,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
     tmp_path: pathlib.Path,
 ) -> None:
     """Codex再開のtimeout後に旧promptを配送せず、後続入力で再開を重複させない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
     async with (
         server_manager.AgentsServerManager() as manager,
         subject.AppServerManager(manager.sessions, manager._condition) as backend,
@@ -537,6 +538,7 @@ async def test_codex_kill_interrupts_turn_with_pending_start_response(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
     async with _pending_codex_manager(monkeypatch, HoldingTurnStartClient) as (manager, backend, client):
         manager.expired_sessions[session_id] = state.SessionResumeState(
             session_id=session_id,
@@ -578,6 +580,7 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
     async with _pending_codex_manager(monkeypatch, NaturallyCompletingTurnStartClient) as (manager, backend, client):
         manager.expired_sessions[session_id] = state.SessionResumeState(
             session_id=session_id,

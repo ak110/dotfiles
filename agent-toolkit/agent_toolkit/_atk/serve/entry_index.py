@@ -1,5 +1,6 @@
 import dataclasses
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -22,7 +23,7 @@ _TRUSTED_AGE_NS = 2_000_000_000
 """解析結果を信用するために必要な、走査開始時刻と更新時刻の差。更新時刻の精度が1秒または2秒（FAT）のファイルシステムでも書き換えを区別できる値とする。"""
 
 
-_CACHE_VERSION = 1
+_CACHE_VERSION = 2
 
 _SAVE_INTERVAL_SEC = 60.0
 """保存した解析結果を書き直す最短の間隔。最初の保存は間隔を待たない。"""
@@ -143,6 +144,8 @@ class _CacheEntry:
     trusted: bool
     """更新から2秒以上後に解析しており、無効化キーの一致だけで再利用できるか。"""
     updated_at: str
+    digest: str
+    ctime_ns: int
     """更新時刻のISO 8601表記。無効化キーが一致する間は同じ値になるため、解析結果とともに保持する。"""
 
 
@@ -169,7 +172,10 @@ def _json_round_trips(metadata: dict[str, typing.Any]) -> bool:
 
 
 class EntryIndex:
-    def __init__(self, private_notes: pathlib.Path, *, cache_path: pathlib.Path | None = None) -> None:
+    def __init__(
+        self, private_notes: pathlib.Path, *, cache_path: pathlib.Path | None = None, verify_content: bool = False
+    ) -> None:
+        self._verify_content = verify_content
         self._private_notes = private_notes
         self._cache_path = cache_path
         self._saved: dict[str, list[typing.Any]] = self._load_saved(cache_path) if cache_path is not None else {}
@@ -194,6 +200,28 @@ class EntryIndex:
 
     def mark_changed(self) -> None:
         self._changed = True
+
+    def verified_texts(self) -> list[tuple[pathlib.Path, str, dict[str, typing.Any], int, bool]] | None:
+        """再起動後に同じ本文の解析結果だけを返す。差があれば通常の索引走査に任せる。  pyfltr: allow-comment"""
+        if not self._saved:
+            return None
+        rows = []
+        directories: dict[pathlib.Path, pathlib.Path] = {}
+        for path in iter_entry_paths(self._private_notes):
+            directory = path.parent
+            if directory not in directories:
+                directories[directory] = directory.resolve()
+            saved = self._saved.get(str(directories[directory] / path.name))
+            if saved is None:
+                return None
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError, UnicodeError:
+                return None
+            if hashlib.sha256(text.encode()).hexdigest() != saved[6]:
+                return None
+            rows.append((path, text, saved[2], saved[3], saved[5]))
+        return rows
 
     def scan(
         self, states: typing.Iterable[str], *, stop: threading.Event | None = None
@@ -297,13 +325,15 @@ class EntryIndex:
             key: value
             for key, value in entries.items()
             if isinstance(value, list)
-            and len(value) == 6
+            and len(value) == 8
             and isinstance(value[0], int)
             and isinstance(value[1], int)
             and isinstance(value[2], dict)
             and isinstance(value[3], int)
             and (value[4] is None or isinstance(value[4], str))
             and isinstance(value[5], bool)
+            and isinstance(value[6], str)
+            and isinstance(value[7], int)
         }
 
     def _save_if_due(self) -> None:
@@ -348,28 +378,14 @@ class EntryIndex:
             warnings.append(_warning(path, state, "ファイル情報を読み取れません", _unreadable_next_action(path)))
             return None
         cached = previous_cache.get(real_path)
-        reused = (
-            cached is not None
-            and cached.trusted
-            and (cached.mtime_ns, cached.size) == (file_stat.st_mtime_ns, file_stat.st_size)
-        )
-        saved = None if reused else self._saved.get(real_path)
-        if saved is not None and (saved[0], saved[1]) == (file_stat.st_mtime_ns, file_stat.st_size):
-            cached = _CacheEntry(
-                mtime_ns=file_stat.st_mtime_ns,
-                size=file_stat.st_size,
-                parsed=_ParsedFile(
-                    os.fspath(path),
-                    (file_stat.st_mtime_ns, file_stat.st_size),
-                    metadata=saved[2],
-                    body_offset=saved[3],
-                    kind=saved[4],
-                    frontmatter_broken=saved[5],
-                ),
-                trusted=True,
-                updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
-            )
-        elif not reused:
+        stamp = file_stat.st_mtime_ns, file_stat.st_size, file_stat.st_ctime_ns
+        reusable = cached is not None and cached.trusted and (cached.mtime_ns, cached.size, cached.ctime_ns) == stamp
+        saved = self._saved.get(real_path)
+        if saved is not None and (saved[0], saved[1], saved[7]) != stamp:
+            saved = None
+        text = None
+        digest = None
+        if self._verify_content or not reusable and saved is None:
             try:
                 text = path.read_text(encoding="utf-8")
             except FileNotFoundError:
@@ -387,6 +403,28 @@ class EntryIndex:
             except OSError:
                 warnings.append(_warning(path, state, "ファイルを読み取れません", _unreadable_next_action(path)))
                 return None
+            digest = hashlib.sha256(text.encode()).hexdigest()
+        reused = reusable and (digest is None or cached is not None and cached.digest == digest)
+        if not reused and saved is not None and (digest is None or saved[6] == digest):
+            cached = _CacheEntry(
+                mtime_ns=file_stat.st_mtime_ns,
+                size=file_stat.st_size,
+                parsed=_ParsedFile(
+                    os.fspath(path),
+                    (file_stat.st_mtime_ns, file_stat.st_size),
+                    metadata=saved[2],
+                    body_offset=saved[3],
+                    kind=saved[4],
+                    frontmatter_broken=saved[5],
+                    text=text,
+                ),
+                trusted=True,
+                updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
+                digest=saved[6],
+                ctime_ns=file_stat.st_ctime_ns,
+            )
+        elif not reused:
+            assert text is not None and digest is not None
             parsed_frontmatter = frontmatter.parse_frontmatter(text)
             metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
             body = parsed_frontmatter[1] if parsed_frontmatter is not None else text.removeprefix("\ufeff")
@@ -406,6 +444,8 @@ class EntryIndex:
                 parsed=parsed,
                 trusted=scan_started_ns - file_stat.st_mtime_ns >= _TRUSTED_AGE_NS,
                 updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
+                digest=digest,
+                ctime_ns=file_stat.st_ctime_ns,
             )
 
             try:
@@ -425,6 +465,8 @@ class EntryIndex:
                     parsed.body_offset,
                     kind,
                     parsed.frontmatter_broken,
+                    digest,
+                    file_stat.st_ctime_ns,
                 ]
                 self._saved_dirty = True
         assert cached is not None

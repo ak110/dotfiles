@@ -1,12 +1,13 @@
 import contextlib
 import pathlib
 import subprocess
+import time
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as wi_add
-from agent_toolkit._atk.wi import repo, user_comment
+from agent_toolkit._atk.wi import background_sync, repo, user_comment
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import targets as mutation_targets
@@ -224,7 +225,7 @@ class TestSkipPush:
         assert f"成功: 1件を{expected_state}へ移した" in captured.out
         assert not captured.err
 
-    def test_default_adopt_pushes_without_skip_note(
+    def test_default_adopt_schedules_push_without_skip_note(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -234,16 +235,19 @@ class TestSkipPush:
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        scheduled = []
+        monkeypatch.setattr(background_sync, "schedule", scheduled.append)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commands = [call["cmd"] for call in git_calls]
-        assert ["git", "push"] in commands
+        assert ["git", "push"] not in commands
+        assert scheduled == [notes]
         assert "--skip-push" not in capsys.readouterr().err
 
-    def test_pending_commits_are_pushed_by_following_normal_transition(
+    def test_pending_commits_are_scheduled_by_following_normal_transition(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -254,6 +258,8 @@ class TestSkipPush:
         _write_awi_file(notes, "fb-002.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        scheduled = []
+        monkeypatch.setattr(background_sync, "schedule", scheduled.append)
 
         with pytest.raises(SystemExit) as first_exc_info:
             atk.main(["wi", "adopt", "fb-001.md", "--skip-push"], home=tmp_path)
@@ -266,7 +272,8 @@ class TestSkipPush:
         commands = [call["cmd"] for call in git_calls]
         assert sum(command[:4] == ["git", "commit", "-m", "chore: process 1 entry (adopted)"] for command in commands) == 1
         assert sum(command[:4] == ["git", "commit", "-m", "chore: process 1 entry (rejected)"] for command in commands) == 1
-        assert commands.count(["git", "push"]) == 2
+        assert commands.count(["git", "push"]) == 0
+        assert scheduled == [notes]
         assert "--skip-push" not in capsys.readouterr().err
 
     def test_commit_pushes_clean_ahead_repository(
@@ -330,15 +337,21 @@ class TestSkipPush:
         def remote_head() -> str:
             return git_repository.run_git(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main").stdout.strip()
 
+        def wait_for_push():
+            deadline = time.monotonic() + 5
+            while local_head() != remote_head() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert local_head() == remote_head(), background_sync.read_status(notes)
+
         with pytest.raises(SystemExit) as adopt_exit:
             atk.main(["wi", "adopt", "default-adopt.md"], home=first_home, now=_FIXED_DT)
         assert adopt_exit.value.code == 0
-        assert local_head() == remote_head()
+        wait_for_push()
 
         with pytest.raises(SystemExit) as reject_exit:
             atk.main(["wi", "reject", "default-reject.md"], home=first_home, now=_FIXED_DT)
         assert reject_exit.value.code == 0
-        assert local_head() == remote_head()
+        wait_for_push()
 
         git_repository.run_git(second_notes, "pull", "--ff-only")
         (notes / "pending.txt").write_text("pending\n", encoding="utf-8")
@@ -366,7 +379,7 @@ class TestSkipPush:
         with pytest.raises(SystemExit) as following_exit:
             atk.main(["wi", "reject", "following.md"], home=first_home, now=_FIXED_DT)
         assert following_exit.value.code == 0
-        assert local_head() == remote_head()
+        wait_for_push()
         assert "state: adopted" in (notes / "2026/10/skip.md").read_text(encoding="utf-8")
         assert "state: rejected" in (notes / "2026/10/following.md").read_text(encoding="utf-8")
 
@@ -512,7 +525,7 @@ class TestStartProcessingFailureBoundaries:
             calls.append("push")
             raise subprocess.CalledProcessError(1, ["git", "push"])
 
-        monkeypatch.setattr(_wi_sync, "push_pending_commits", fail_push)
+        monkeypatch.setattr(_wi_sync, "_push_claim", fail_push)
         with pytest.raises(subprocess.CalledProcessError) as exc_info:
             mutation_transitions.transition_entries(
                 notes,

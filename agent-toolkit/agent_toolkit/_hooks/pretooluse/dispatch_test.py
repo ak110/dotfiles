@@ -19,6 +19,36 @@ from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _wri
 from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 
+@pytest.mark.parametrize(
+    ("command", "protected"),
+    [
+        ("atk config temporary set orchestrate_model codex:sol/medium", True),
+        ("atk config temporary set codex_fast_mode auto", True),
+        ("atk config temporary clear", True),
+        ("atk config set review_model codex:sol", True),
+        ("atk config set codex_worker_connections subscription", True),
+        ("atk config apply-preset codex-primary", True),
+        ("atk config apply-preset --list", False),
+        ("atk config apply-preset show", False),
+        ("atk config show", False),
+        ("atk config set codex_fast_mode auto", False),
+        ('atk config update <<\'JSON\'\n{"action":"temporary-clear"}\nJSON', True),
+        ('atk config update <<\'JSON\'\n{"action":"set","key":"codex_fast_mode","value":"auto"}\nJSON', False),
+        ("atk config update < request.json", True),
+        ("cat request.json | atk config update", True),
+        ('atk config update <<JSON\n{"action":"set","key":"$KEY","value":"auto"}\nJSON', True),
+    ],
+)
+@pytest.mark.parametrize("is_codex", [False, True])
+def test_model_setting_command_uses_host_permission(command, protected, is_codex, capsys):
+    payload = {"session_id": "permission-test", "tool_input": {"command": command}}
+    decision = pretooluse._decide(payload, "Bash", payload["tool_input"], "permission-test", is_codex=is_codex)
+    assert pretooluse._emit(decision, [], is_codex=is_codex) == 0
+    output = capsys.readouterr().out
+    actual = json.loads(output)["hookSpecificOutput"].get("permissionDecision") if output else None
+    assert actual == (("deny" if is_codex else "ask") if protected else None)
+
+
 @pytest.mark.parametrize("host", ["claude-code", "codex"])
 @pytest.mark.parametrize("tool_name", sorted(agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES))
 def test_agents_server_pass_uses_host_output_contract(tmp_path: pathlib.Path, host: str, tool_name: str) -> None:

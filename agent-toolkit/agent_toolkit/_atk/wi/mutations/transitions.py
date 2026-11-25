@@ -7,6 +7,7 @@ import re
 import shlex
 import sys
 import typing
+import uuid
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
@@ -338,8 +339,10 @@ def _warn_skipped_processing(filenames: list[str]) -> None:
 def _transition_commit_message(action: str, count: int, note: str | None) -> str:
     item_word = "entry" if count == 1 else "entries"
     note_suffix = f" (理由: {note})" if action == "remove" and note else ""
+    if action == "start-processing":
+        # 同じ親・内容・時刻でcommitしても、別ホストの着手を同じcommitとして受け付けない。  # pyfltr: allow-comment
+        return f"chore: start processing {count} {item_word}\n\nWI-Claim: {uuid.uuid4().hex}"
     return {
-        "start-processing": f"chore: start processing {count} {item_word}",
         "return-to-inbox": f"chore: return {count} {item_word} to inbox",
         "hold": f"chore: hold {count} {item_word}",
         "unhold": f"chore: unhold {count} {item_word}",
@@ -417,10 +420,12 @@ def transition_entries(
             effect_check=effect_check,
             effect_check_reason=effect_check_reason,
         )
-        mutation.commit(
-            _transition_commit_message(action, len(paths), note),
-            [str(path.relative_to(private_notes)) for path in paths],
-        )
+        message = _transition_commit_message(action, len(paths), note)
+        changed = [str(path.relative_to(private_notes)) for path in paths]
+        if action == "start-processing":
+            mutation.commit(message, changed, exclusive_claim=True)
+        else:
+            mutation.commit(message, changed)
     return [path.name for path in paths]
 
 
@@ -475,6 +480,7 @@ def _bulk_transition(
             _transition_commit_message(action, len(paths), note),
             [str(path.relative_to(notes)) for path in paths],
             skip_push=skip_push,
+            **({"exclusive_claim": True} if action == "start-processing" else {}),
         )
         return [path.name for path in paths]
 

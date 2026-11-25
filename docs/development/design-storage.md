@@ -113,6 +113,14 @@ venv・node_modules・targetは再生成入力と形式を、専用キャッシ�
 
 private-notesのGit操作と分岐回復に実行時に適用する規範は、[`agent-toolkit:atk-mode/references/states-and-dependencies.md`「対象リポジトリとprivate-notesの区別」](../../agent-toolkit/skills/atk-mode/references/states-and-dependencies.md)が定める。
 
+通常のWI保存はローカルcommitまでで結果を返し、裏の同期が受信し、統合して送信する。
+受信中は追跡refではなく同期専用refへ取り込み、実際に作業ツリーや履歴を変える区間でprivate-notesのロックを保持する。
+送信対象はロック下で確定したcommitとし、通信を待つ間に次のローカルcommitを作れる。
+
+同期状態はGit追跡の外に置く。
+通常の未送信は送信待ちとし、通信失敗は同期失敗、分岐を回復できないかrebaseが止まった場合は要手動回復、送信が済んだ場合は同期済みとする。
+同期失敗・要手動回復の時だけ以前の診断を通知し、読み取りの終了コードは変えない。
+
 `atk wi`の更新は管理リポジトリの同じGit common directoryに属するプロセス間だけを
 共通ロックで直列化する。
 別cloneは同じロックを共有しないため、複数主体が同じ項目を近接して終了した場合、

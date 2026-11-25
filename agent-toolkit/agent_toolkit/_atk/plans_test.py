@@ -11,6 +11,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import plans as _atk_plans
 from agent_toolkit._atk import plans_storage as _plans_storage
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._plan import locations as _plan_file
@@ -83,11 +84,11 @@ def test_commit_uses_recorded_relative_main_instead_of_birth_month(
     1.0,
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.468秒。"),
 )
-def test_commit_resumes_checked_out_plan_after_push_failure(
+def test_commit_resumes_checked_out_plan_after_local_save_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保存更新後のpush失敗では作業側と記録を保持し、再実行で完了する。"""
+    """保存更新後のローカル処理失敗では作業側と記録を保持し、再実行で完了する。  pyfltr: allow-comment"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
@@ -102,17 +103,19 @@ def test_commit_resumes_checked_out_plan_after_push_failure(
 
     def fail_after_commit(private_notes, message, paths, *, skip_push: bool = False):  # pylint: disable=unused-argument
         original(private_notes, message, paths, skip_push=True)
-        raise RuntimeError("push failure")
+        raise RuntimeError("local failure")
 
     monkeypatch.setattr(_atk_git_sync, "commit_and_push", fail_after_commit)
-    with pytest.raises(RuntimeError, match="push failure"):
+    with pytest.raises(RuntimeError, match="local failure"):
         _atk_plans.commit_plan(notes, saved_main.name, home=home)
     assert working_main.is_file()
     assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is not None  # pylint: disable=protected-access
 
     monkeypatch.setattr(_atk_git_sync, "commit_and_push", original)
+    monkeypatch.setattr(background_sync, "schedule", lambda _notes: None)
     _atk_plans.commit_plan(notes, saved_main.name, home=home)
 
+    assert background_sync.run(notes) is True
     assert not working_main.exists()
     assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is None  # pylint: disable=protected-access
     assert (
@@ -125,7 +128,7 @@ def test_commit_resumes_checked_out_plan_after_push_failure(
     1.0,
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.431秒。"),
 )
-def test_commit_keeps_checkout_when_diverged_push_is_deferred(
+def test_commit_keeps_local_saved_bundle_when_sync_needs_recovery(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -155,13 +158,14 @@ def test_commit_keeps_checkout_when_diverged_push_is_deferred(
 
     monkeypatch.setattr(_atk_git_sync, "commit_and_push", diverge_then_commit)
 
-    with pytest.raises(_wi_web_input.WebInputError, match="remote branch") as error_info:
-        _atk_plans.commit_plan(notes, saved_main.name, home=home)
-
-    assert "atk wi commit" in error_info.value.next_action
-
-    assert working_main.read_text(encoding="utf-8") == "# working\n"
-    assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is not None  # pylint: disable=protected-access
+    requested = []
+    monkeypatch.setattr(background_sync, "schedule", requested.append)
+    _atk_plans.commit_plan(notes, saved_main.name, home=home)
+    assert requested == [notes]
+    assert not working_main.exists()
+    assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is None  # pylint: disable=protected-access
+    assert background_sync.run(notes) is False
+    assert background_sync.read_status(notes)["state"] == "recovery-required"
     assert saved_main.read_text(encoding="utf-8") == "# working\n"
     assert unrelated.read_text(encoding="utf-8") == "dirty\n"
     assert (
@@ -386,7 +390,7 @@ def test_dispatch_reports_saved_relative_path_for_direct_working_plan(
 
     assert result == 0
     assert capsys.readouterr().out == (
-        f"成功: 計画bundleを`private-notes/plans/`へ移動してcommitした: {year}/{month}/{relative.name}\n"
+        f"成功: 計画bundleを`private-notes/plans/`へ移動してローカルにcommitした: {year}/{month}/{relative.name}\n"
     )
 
 
