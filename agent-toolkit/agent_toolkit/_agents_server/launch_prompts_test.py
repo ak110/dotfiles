@@ -170,16 +170,24 @@ def test_every_backend_delivers_the_same_launch_body(
     captured = _capture_options(monkeypatch)
     claude_options._build_options(str(tmp_path), "model", "medium", launch_kind=kind)  # pylint: disable=protected-access
     body = launch_prompts.launch_prompt(kind)
+    codex = codex_instructions.codex_instruction_fields(kind)
     delivered = {
         "claude": captured["system_prompt"],
-        "codex": codex_instructions._developer_instructions(kind),  # pylint: disable=protected-access
         "opencode": opencode.system_prompt(kind),
         "agy": antigravity._system_prompt(kind),  # pylint: disable=protected-access
     }
     for engine, prompt in delivered.items():
         assert isinstance(prompt, str)
         assert prompt.count(body) == 1, engine
-        assert ("WebFetch・WebSearch" in prompt) is (engine == "codex" and kind == "explore")
+        assert "WebFetch・WebSearch" not in prompt
+    assert codex["baseInstructions"] == _MARKERS["notice"]
+    developer = codex["developerInstructions"]
+    assert _MARKERS["notice"] not in developer
+    assert launch_prompts.NOTICE_HEADING not in developer
+    assert developer.count(_MARKERS["constraints"]) == 1
+    assert developer.count(_MARKERS[kind]) == 1
+    assert developer.count(_MARKERS["result"]) == 1
+    assert ("WebFetch・WebSearch" in developer) is (kind == "explore")
     assert launch_prompts.base_instructions() == _MARKERS["notice"]
 
 

@@ -43,7 +43,7 @@ SUBAGENT_PLAYBOOK = PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks" / "subagen
 """全modeと全backendの起動の本文の原本。見出しと標識で節を切り出す。"""
 
 
-NOTICE_HEADING = "委譲を受けた担当であることの通知"
+NOTICE_HEADING = message_format.DELEGATE_NOTICE_HEADING
 CONSTRAINTS_HEADING = "硬い制約"
 ROLES_HEADING = "起動の種類ごとの役割"
 AUTO_RESUME_HEADING = "自動再開"
@@ -169,20 +169,25 @@ def _hard_constraints() -> str:
     return f"## {CONSTRAINTS_HEADING}\n\n{_body(2, CONSTRAINTS_HEADING)}"
 
 
-def launch_prompt(kind: LaunchKind) -> str:
+def launch_prompt(kind: LaunchKind, *, notice_in_base: bool = False) -> str:
     """起動の種類の本文を原本から組み立てる。全backendが最初の起動と再開・継続の両方で使う。
 
     通常の委譲は役割ごとの節を除いた原本の全文と「通常の委譲」を、軽量の委譲は通知・硬い制約・役割・返却の決まりだけを渡す。
     """
     if kind == "delegate":
-        begin, end = _section(2, ROLES_HEADING)
-        lines = _playbook_lines()
-        whole = "\n".join((*lines[:begin], *lines[end:])).strip()
+        excluded = [_section(2, ROLES_HEADING)]
+        if notice_in_base:
+            excluded.append(_section(2, NOTICE_HEADING))
+        lines = (line for index, line in enumerate(_playbook_lines()) if not any(a <= index < b for a, b in excluded))
+        whole = "\n".join(lines).strip()
         return _normative(f"{whole}\n\n{_role_body(ROLE_HEADINGS[kind])}", kind=kind)
     role = _role_body(ROLE_HEADINGS[kind])
     if kind == "explore":
         role += f"\n\n{EXPLORE_CAPABILITIES}"
-    return _normative(f"{base_instructions()}\n\n{_hard_constraints()}\n\n{role}\n\n{result_contract()}", kind=kind)
+    sections = [_hard_constraints(), role, result_contract()]
+    if not notice_in_base:
+        sections.insert(0, base_instructions())
+    return _normative("\n\n".join(sections), kind=kind)
 
 
 def auto_resume_notice() -> str:

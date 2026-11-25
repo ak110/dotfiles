@@ -17,7 +17,6 @@ from agent_toolkit._agents_server import (
     result_projection,
     retained_results,
     state,
-    status_file,
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.manager_base import PendingResume
@@ -82,11 +81,6 @@ REPLY_NEXT_ACTIONS = {
 
 
 EXPIRED_KILL_NEXT_ACTION = "中断対象は無い。未回収の結果は`atk agents wait`で受領する"
-
-
-def resolve_display_label(label: str | None, fallback: str) -> str:
-    normalized = status_file.normalize_label(label) if label else ""
-    return normalized or status_file.normalize_label(fallback)
 
 
 def listed_public_session(session: dict[str, Any]) -> dict[str, Any]:

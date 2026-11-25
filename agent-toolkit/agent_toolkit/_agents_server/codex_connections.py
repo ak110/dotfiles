@@ -19,7 +19,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.codex_instructions import (
     _current_service_tier,
-    _developer_instructions,
+    codex_instruction_fields,
 )
 from agent_toolkit._agents_server.codex_protocol import (
     DEFAULT_WAIT_TIMEOUT,
@@ -28,7 +28,6 @@ from agent_toolkit._agents_server.codex_protocol import (
     redact_diagnostic,
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._agents_server.launch_prompts import base_instructions
 from agent_toolkit._agents_server.state import SessionState, begin_reply
 from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk.usage_limit_policy import should_wait
@@ -160,7 +159,7 @@ class CodexConnectionsMixin:
         resume_params["config"] = config
         if profile != "full":
             resume_params = startup_features.codex_thread_config(resume_params)
-        resume_params["developerInstructions"] = await run_file_operation(_developer_instructions, session.launch_kind)
+        resume_params.update(await run_file_operation(codex_instruction_fields, session.launch_kind))
         if owner_session_id is not None and writer_session_id is not None:
             await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
         resume_response = await self._request_thread_resume(client, resume_params)
@@ -222,7 +221,8 @@ class CodexConnectionsMixin:
 
     async def _request_thread_resume(self: CodexManager, client: Any, params: dict[str, Any]) -> dict[str, Any]:
         """unsubscribe後の閉鎖と再開が競合した場合だけ、閉鎖通知を待って再送する。"""
-        params = {**params, "baseInstructions": await run_file_operation(base_instructions)}
+        if "baseInstructions" not in params:
+            params = {**params, **await run_file_operation(codex_instruction_fields)}
         thread_id = params["threadId"]
         closed = asyncio.Event()
         self._resume_close_events[thread_id] = closed

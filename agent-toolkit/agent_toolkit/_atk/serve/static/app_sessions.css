@@ -385,6 +385,7 @@
 }
 .settings-field:not([hidden]) {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   gap: var(--space-1);
   margin-block: var(--space-2);
@@ -399,6 +400,9 @@
 #settings-host {
   field-sizing: content;
   min-inline-size: min(12ch, 100%);
+}
+#settings-app :is(input, select) {
+  scroll-margin-block: var(--space-1);
 }
 .settings-field input:not([type="datetime-local"]) {
   inline-size: min(100%, 38rem);

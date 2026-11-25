@@ -615,6 +615,7 @@ class RecordWatch:
         self._lock = threading.Lock()
         self._watches: dict[str, typing.Any] = {}
         self._recursive: set[str] = set()
+        self._stopping = False
 
     def start(self) -> None:
         import watchdog.events  # pylint: disable=import-outside-toplevel
@@ -638,6 +639,10 @@ class RecordWatch:
             raise
 
     def stop(self) -> None:
+        with self._lock:
+            self._stopping = True
+            self._watches.clear()
+            self._recursive.clear()
         errors: list[BaseException] = []
         try:
             self.tracker.stop()
@@ -665,6 +670,8 @@ class RecordWatch:
 
     def _schedule_roots(self) -> None:
         with self._lock:
+            if self._stopping:
+                return
             ancestors: set[str] = set()
             for root, _engine in self.tracker.roots:
                 key = str(root)

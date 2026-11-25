@@ -137,17 +137,20 @@ SUMMARY_POLICY_DESCRIPTION = parameter_description(
 
 LABEL_DESCRIPTION = parameter_description(
     "そのsessionを人が識別する短い名前。`show`・`atk agents list`・statuslineへ現れる。"
+    "32文字以内のASCII小文字・数字・ひらがな・カタカナ・漢字・長音符・繰返し記号を使い、語はASCIIハイフンで区切る。"
+    "空白・改行・不可視文字・空の語・句読点は受理しない。"
     "`<…1〜2語>`は英小文字・数字・日本語の語をハイフンで連結した1〜2語とし、依頼本文や文章をそのまま使わない。"
     "modeごとの形式と省略時の値は次のとおり。"
     "taskは省略してよく、`extra_params`に`レーン識別子`があれば`<レーン識別子>-<役割名>`、"
     "無ければ`<役割名>`を生成する"
-    "（役割名はファイル名から`.subagent.md`を除いた名前。例: `lane-01-exec`、`pick-wi`）。"
-    "delegateは役割を表す短い語（例: `audit`）とし、省略時は依頼本文の先頭にある空でない1行を正規化した値を使う。"
+    "（役割名はファイル名から`.subagent.md`を除いた名前。例: `lane-01-exec`、`pick-wi`）。形式外なら`task`とする。"
+    "delegateは役割を表す短い語（例: `audit`）とし、省略時は`delegate`を使う。"
     "exploreは`explore-<調査対象を示す1〜2語>`（例: `explore-pyfltr`）、"
     "writeは`write-<起草対象を示す1〜2語>`（例: `write-awi`）、"
     "shellは`shell-<コマンド名など1〜2語>`（例: `shell-make-test`）とする。"
     "レビューを目的とするdelegateとexploreは`<レビュー対象を表す語>-review`（例: `pr-body-review`）とする。"
     "explore・write・shellの省略時はそれぞれ`explore`、`write`、`shell-<コマンドの最初の語のbasename>`を使う。"
+    "shellの生成値が形式外なら`shell`とする。"
     "labelが`-review`で終わるsessionの完了結果には、指摘の採否を確定する手順を示す`next_action`が付く。"
     "`start`と`send_message`の応答は、そのsessionが保持する担当名（省略時は生成した値）を`label`で返す。"
 )

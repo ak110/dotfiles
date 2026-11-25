@@ -187,6 +187,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     config_settings.save_config({"remote_hosts": '["old-host", "new-host"]', "serve_host": "local"})
     remote_value = "remote"
     operations = []
+    release_update = threading.Event()
 
     run = subprocess.run
 
@@ -208,7 +209,11 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
             )
         assert host == "new-host"
         if command == "atk config update":
-            assert json.loads(kwargs["input"]) == {"action": "set", "key": "serve_host", "value": "updated"}
+            payload = json.loads(kwargs["input"])
+            if payload == {"action": "set", "key": "serve_host", "value": "result-unknown"}:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            assert payload == {"action": "set", "key": "serve_host", "value": "updated"}
+            assert release_update.wait(10)
             remote_value = "updated"
             return subprocess.CompletedProcess(args, 0, b"", b"")
         assert command == "atk config snapshot"
@@ -220,6 +225,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/settings")
     expect = playwright.async_api.expect
+    status = page.locator("#settings-status")
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     picker = page.get_by_label("設定対象ホスト")
     await picker.select_option("old-host")
@@ -241,12 +247,108 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     port = page.locator('[data-setting="serve_host"]')
     await expect(port).to_contain_text("実効値: remote")
     await port.get_by_label("保存値").fill("updated")
-    await port.get_by_role("button", name="保存").click()
+    save = port.get_by_role("button", name="保存")
+    await page.set_viewport_size({"width": 320, "height": 720})
+    await save.evaluate("(button) => button.scrollIntoView({block: 'end'})")
+    await save.click()
+    try:
+        await expect(save).to_be_disabled()
+        await expect(status).to_have_text("設定を保存中…")
+        await expect(status).to_be_in_viewport()
+    finally:
+        release_update.set()
+    await expect(save).to_be_enabled()
+    await expect(status).to_be_empty()
     await expect(port).to_contain_text("実効値: updated")
     assert ("new-host", "atk config update") in operations
     assert config_settings.load_config()["serve_host"] == "local"
+    await port.get_by_label("保存値").fill("result-unknown")
+    await save.evaluate("(button) => button.scrollIntoView({block: 'end'})")
+    await save.click()
+    notice = port.get_by_role("alert")
+    await expect(notice).to_contain_text("設定画面を再読み込みし、SSH先の現在の値を確認する")
+    await expect(notice).to_be_in_viewport()
     await picker.select_option("")
     await expect(port).to_contain_text("実効値: local")
+
+
+@pytest.mark.parametrize("fails", [False, True])
+@pytest.mark.parametrize("editing", ["model", "permission", "hosts"])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_remote_save_remains_visible_while_editing_elsewhere(
+    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fails: bool, editing: str
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
+    config_settings.save_config({"remote_hosts": '["demo-host"]'})
+    snapshot = config.settings_snapshot(tmp_path)
+    hosts = snapshot["settings"]["remote_hosts"]
+    hosts.update(saved='["first","second"]', effective='["first","second"]')
+    release = threading.Event()
+
+    def remote_update(_host: str, _payload: dict[str, object]) -> None:
+        assert release.wait(10)
+        if fails:
+            raise ValueError(
+                "接続先の保存結果を確認できません。リモートホストでは設定の保存が続いている可能性があります。"
+                "再度保存する前に、設定画面を再読み込みして接続先の現在の値を確認してください。"
+            )
+        hosts.update(saved='["second"]', effective='["second"]')
+
+    monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host: (copy.deepcopy(snapshot), None))
+    monkeypatch.setattr(settings_routes, "_remote_update", remote_update)
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 320, "height": 720})
+    await page.goto(screen_harness.base_url + "/settings")
+    await page.get_by_label("設定対象ホスト").select_option("demo-host")
+    nav = page.get_by_role("navigation", name="設定の分類")
+    await nav.get_by_text("工程別モデル", exact=True).click()
+    preset = page.locator('details[data-editor="preset:claude-primary"]')
+    await preset.get_by_text("claude-primary", exact=True).click()
+    await preset.get_by_role("button", name="適用").click()
+    expect = playwright.async_api.expect
+    status = page.locator("#settings-status")
+    hosts_editor = page.locator('[data-setting="remote_hosts"]')
+    try:
+        if editing == "permission":
+            await nav.get_by_text("利用枠", exact=True).click()
+            add = page.locator('details[data-editor="usage_reset_permissions:"]')
+            await add.get_by_text("許可を追加", exact=True).click()
+            await add.get_by_text("詳細: アカウントの直接入力").click()
+            draft = add.get_by_label("アカウントを直接入力")
+            save = add.get_by_role("button", name="追加", exact=True)
+        elif editing == "hosts":
+            await nav.get_by_text("atk serve", exact=True).click()
+            await expect(hosts_editor.get_by_role("button", name="firstを削除")).to_be_visible()
+            draft = hosts_editor.get_by_label("追加するホスト")
+            save = hosts_editor.get_by_role("button", name="追加", exact=True)
+        else:
+            await preset.get_by_text("claude-primary", exact=True).click()
+            editor = page.locator('[data-setting="execute_model"]')
+            draft = editor.get_by_label("保存値")
+            save = editor.get_by_role("button", name="保存", exact=True)
+        await expect(status).to_have_text("設定を保存中…")
+        await expect(status).to_be_in_viewport(ratio=1)
+        await draft.fill("demo")
+        await draft.evaluate(
+            """field => {
+                const main = field.closest("main");
+                main.scrollTop += field.getBoundingClientRect().bottom - main.getBoundingClientRect().bottom + 3;
+            }"""
+        )
+        await expect(draft).to_be_in_viewport(ratio=1)
+        await expect(save).to_be_disabled()
+    finally:
+        release.set()
+    await expect(status).to_contain_text("接続先の保存結果を確認できません" if fails else "設定を保存しました。")
+    await expect(status).to_be_in_viewport(ratio=1)
+    await expect(draft).to_be_in_viewport(ratio=1)
+    if editing == "hosts" and not fails:
+        await expect(hosts_editor.get_by_role("button", name="firstを削除")).to_have_count(0)
+    await expect(draft).to_be_focused()
+    await page.keyboard.type("-continued")
+    await expect(draft).to_have_value("demo-continued")
+    await expect(save).to_be_enabled()
 
 
 @pytest.mark.asyncio(loop_scope="session")

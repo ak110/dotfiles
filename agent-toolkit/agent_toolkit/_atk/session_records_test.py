@@ -14,7 +14,7 @@ import pytest
 from agent_toolkit._atk import run_skill_execution, session_record_format, session_records
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY
-from agent_toolkit._common import skill_modes
+from agent_toolkit._common import message_format, skill_modes
 
 
 def _write_record(path: pathlib.Path, records: list[object], modified_at: int = 10) -> None:
@@ -64,6 +64,42 @@ def test_display_distinguishes_plugin_origin_from_human() -> None:
     ]
     events, _totals = session_record_format.claude_events(records)
     assert [event.kind for event in events] == ["injected", "user", "user"]
+
+
+def test_codex_display_distinguishes_startup_notice_from_other_developer_messages() -> None:
+    notice = message_format.delegation_notice_text()
+    assert notice
+    resources = message_format.auto_message("リソース案内", source="agent-toolkit", kind="plugin-resources")
+    request = message_format.auto_message("調査を担当する", source="agents-server", kind="delivery")
+    records: list[dict[str, object]] = [
+        {"type": "response_item", "payload": {"type": "additional_tools", "role": "developer", "tools": []}},
+        {"type": "response_item", "payload": {"type": "runtime_metadata", "role": "developer"}},
+        _codex_message_record(role="developer", item_type="input_text", text=notice),
+        _codex_message_record(role="developer", item_type="input_text", text=" "),
+        _codex_message_record(role="developer", item_type="input_text", text=f"通知を引用: {notice}"),
+        _codex_message_record(role="user", item_type="input_text", text=f"{resources}\n\n{request}"),
+        _codex_message_record(role="user", item_type="input_text", text=request),
+    ]
+    events, _totals = session_record_format.codex_events(records)
+    assert [(item.kind, item.initial_work) for item in events] == [
+        ("injected", False),
+        ("developer", False),
+        ("developer", False),
+        ("injected", True),
+        ("injected", False),
+    ]
+    assert events[0].text == notice
+    unrelated, _totals = session_record_format.codex_events(records[2:3])
+    assert unrelated[0].kind == "developer"
+
+
+def test_claude_display_marks_initial_goal_but_not_a_later_delivery() -> None:
+    goal = message_format.auto_message("巡回する", source="process-loop", kind="goal")
+    delivery = message_format.auto_message("追送した依頼", source="agents-server", kind="delivery")
+    records = [_claude_user_text_record(text) for text in ("<system-reminder>規範</system-reminder>", goal, delivery)]
+    events, _totals = session_record_format.claude_events(records)
+    assert [item.initial_work for item in events] == [False, True, False]
+    assert all(item.kind == "injected" for item in events)
 
 
 class TestCandidatePaths:

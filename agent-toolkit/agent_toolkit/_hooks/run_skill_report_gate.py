@@ -1,4 +1,4 @@
-"""`atk run-skill`が起動したセッションの報告保存Stopフック。
+"""`atk run-skill`が起動したセッションの報告保存Stopフック。  pyfltr: allow-comment
 
 環境変数`AGENT_TOOLKIT_RUN_SKILL_ID`と起動入力（`AGENT_TOOLKIT_SESSION_START_INPUT`のskill）を持つ最上位のセッションを対象とする。
 対象セッションで、起動入力のskillとargumentsから求めた起動単位の報告用UWIが、
@@ -13,7 +13,8 @@
 3. `is_pending_async_work`が真: 非同期処理または未回収の結果が残るためapprove
    （再開後のStopで改めて判定する。Codexでは判定せず偽とする）
 4. 報告用UWIの保存を確認できる: approve
-5. 上記いずれでもない（保存確認の失敗を含む）: blockし、報告の保存を促す
+5. 週次の画面巡回が証拠の引き渡し失敗を明示した: approve（完了にはせず、起動元の失敗判定へ戻す）
+6. 上記いずれでもない（保存確認の失敗を含む）: blockし、報告の保存を促す
 
 連続blockの上限は`stop.py`が管理する。上限に達した場合はCLIが終了し、起動元が既存の「報告用UWI未保存」の失敗を報告する。
 
@@ -30,6 +31,8 @@ lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import mcp_environment as _mcp_environment
 lazy from agent_toolkit._common import private_notes as _private_notes
 lazy from agent_toolkit._common import skill_modes as _skill_modes
+lazy from agent_toolkit._common import weekly_work as _weekly_work
+lazy from agent_toolkit._common.runtime_inserted import report_lines
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work_from_payload
@@ -47,6 +50,7 @@ _REASON_BODY = """\
 作業の完了・未完了は判定していない。"""
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
+_EVIDENCE_DELIVERY_FAILED = "画面の証拠を引き渡せなかった:"
 
 
 def _run_target(environ: dict[str, str] | os._Environ[str]) -> tuple[str, str] | None:
@@ -91,6 +95,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if saved:
         append_stop_log(session_id, "approve_run_skill_report_saved", {})
         return "approve", ""
+
+    if scope == _weekly_work.DEFINITIONS["ui-sweep"].scope:
+        last_message = payload.get("last_assistant_message")
+        if isinstance(last_message, str) and any(
+            line.startswith(_EVIDENCE_DELIVERY_FAILED) and line.removeprefix(_EVIDENCE_DELIVERY_FAILED).strip()
+            for line in report_lines(last_message)
+        ):
+            append_stop_log(session_id, "approve_run_skill_evidence_delivery_failed", {"run_id": run_id, "scope": scope})
+            return "approve", ""
 
     append_stop_log(session_id, "block_run_skill_report_unsaved", {"run_id": run_id, "scope": scope})
     reason = _block_notice(

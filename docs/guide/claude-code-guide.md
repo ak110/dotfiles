@@ -54,6 +54,15 @@ dotfilesユーザーは`chezmoi apply`で同じプラグインを設定する。
 - [WIの登録と回答](claude-code-wi.md)
 - [atk serveの画面と選定設定](claude-code-serve.md)
 
+### 委譲先の名前を付ける
+
+`atk agents list`などで委譲先を見分けるには、起動時の`agents_server`の`start`に`label`を指定する。
+`lane-01-exec`や`設計-review`のように、32文字以内で英小文字、ASCII数字、ひらがな、カタカナ、漢字、長音符、繰返し記号を使い、語の間はASCIIハイフンで区切る。
+空白や改行を含む依頼文など、形式に合わない値を指定すると委譲先は起動しない。
+短い名前に直すか、`label`を省略して起動し直す。
+省略時は役割名や起動の種類に応じた名前が付き、依頼本文は使われない。
+既に起動した委譲先の名前は変わらない。
+
 ## atkコマンドのPATH設定
 
 インストーラーで導入するユーザーは[READMEの導入](../../agent-toolkit/README.md#導入)を参照。

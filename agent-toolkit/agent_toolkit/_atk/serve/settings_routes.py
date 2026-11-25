@@ -9,7 +9,7 @@ import typing
 
 import quart
 
-from agent_toolkit._atk import config, config_migration, config_settings
+from agent_toolkit._atk import config, config_migration, config_settings, git_sync
 from agent_toolkit._atk.serve.config import ServeConfig
 from agent_toolkit._atk.serve.shell_routes import json_no_store, no_store, render_index, safe_base_path
 from agent_toolkit._atk.wi.web_input import WebInputError, web_input_error_from
@@ -21,13 +21,26 @@ def _remote_hosts() -> tuple[str, ...]:
     return config.parse_remote_hosts(config.resolve_mutable_setting("remote_hosts"))
 
 
+def _setting_timeout(operation: str, payload: dict[str, typing.Any] | None) -> int:
+    if operation == "atk config update" and payload is not None:
+        action, key = payload.get("action"), payload.get("key")
+        writes_shared = (
+            action in ("set", "array-add", "array-remove")
+            and isinstance(key, str)
+            and key in config_settings.SHARED_SETTING_KEYS
+        )
+        if action == "preset" or writes_shared:
+            return int(git_sync.LOCK_WAIT_TIMEOUT_SECONDS + git_sync.LOCK_HOLD_TIMEOUT_SECONDS) + 20
+    return 20
+
+
 def _ssh(host: str, operation: str, payload: dict[str, typing.Any] | None = None) -> subprocess.CompletedProcess[bytes]:
     # pyfltr: allow-comment Windowsのcmd.exeとPOSIXシェルで同じコマンドを使えるように、自由入力は標準入力で渡す。
     return run_with_timeout(
         ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "--", host, operation],
         input=json.dumps(payload).encode("ascii") if payload is not None else b"",
         capture_output=True,
-        timeout=20,
+        timeout=_setting_timeout(operation, payload),
         check=False,
     )
 
@@ -46,7 +59,7 @@ def _ssh_unelevated(
     script += "& atk @atkArgs 2>$null\nexit $global:LASTEXITCODE\n"
     try:
         return run_with_timeout(
-            ["ssh-unelevated", "--timeout", "20", "--", host, "-"],
+            ["ssh-unelevated", "--timeout", str(_setting_timeout(operation, payload)), "--", host, "-"],
             input=script.encode("utf-8"),
             capture_output=True,
             check=False,
@@ -121,19 +134,32 @@ def _remote_update(host: str, payload: dict[str, typing.Any]) -> None:
         key = config.operation_text(payload, "key")
         if key is None or snapshot["settings"].get(key, {"read_only": True}).get("read_only"):
             raise ValueError("このホストで変更できる設定を選んでください")
+    update_payload: dict[str, typing.Any] | None = payload
     if not snapshot.get("legacy"):
-        result = runner(host, "atk config update", payload)
+        operation = "atk config update"
     else:
         key, value = config.operation_text(payload, "key"), config.operation_text(payload, "value")
         # pyfltr: allow-comment 旧版は標準入力に非対応のため、cmd.exe・POSIXシェルの両方で引用が不要な1引数に限る。
         if action != "set" or key is None or value is None or not _LEGACY_TOKEN.fullmatch(value):
             raise ValueError("この値を設定画面から保存するにはSSH先のatkを更新してください")
         config_settings.validate_mutable_setting(key, value)
-        result = runner(host, f"atk config set {key} {value}", None)
+        operation = f"atk config set {key} {value}"
+        update_payload = None
+    try:
+        result = runner(host, operation, update_payload)
+    except subprocess.TimeoutExpired as error:
+        raise _unconfirmed_remote_save() from error
     if runner is _ssh_unelevated and result.returncode == 124:
-        raise ValueError("保存処理の結果を確認できません。SSH先の設定を読み直してから再試行してください")
+        raise _unconfirmed_remote_save()
     if result.returncode != 0:
         raise ValueError("SSH先のatkが設定を保存できませんでした。SSH先で設定と値の書式を確認してください")
+
+
+def _unconfirmed_remote_save() -> WebInputError:
+    return WebInputError(
+        "保存処理の結果を確認できません",
+        next_action="設定画面を再読み込みし、SSH先の現在の値を確認する",
+    )
 
 
 def _request_host() -> str:

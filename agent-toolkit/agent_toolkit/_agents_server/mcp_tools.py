@@ -34,7 +34,7 @@ from agent_toolkit._agents_server.launch_requests import task_document_label, ta
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
 from agent_toolkit._agents_server.manager_start import model_override_warnings
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
-from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response, resolve_display_label
+from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response
 from agent_toolkit._agents_server.tool_descriptions import (
     COMMAND_DESCRIPTION,
     CWD_DESCRIPTION,
@@ -369,6 +369,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     mode = mode or agents_server_tools.default_start_mode(
         subagent_md_path=subagent_md_path, prompt=prompt, whole_contract_path=whole_contract_path
     )
+    launch_requests.validate_start_label(label)
     if cwd is None:
         launch_requests.require_start_cwd()
     assert cwd is not None
@@ -412,7 +413,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 task_prompt,
                 cwd,
                 launch_kind=launch_kind,
-                label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
+                label=label if label is not None else task_document_label(subagent_md_path, params),
                 startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
                 explicit_role_model=model_type is not None,
                 startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},

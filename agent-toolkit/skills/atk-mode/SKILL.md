@@ -9,8 +9,7 @@ description: >
 
 # atk-mode
 
-該当手順を全文読む。
-相対パスは本書基点。
+手順は全文、相対パスは本書基点。
 Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 
 ## プロダクトへの責任
@@ -75,8 +74,7 @@ Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 
 ## 作業と手順書
 
-`/atk-mode <作業> [入力]`で起動。
-指定なしは対話。
+起動は`/atk-mode <作業> [入力]`、指定なしは対話。
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
@@ -85,15 +83,15 @@ Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 | `process-user-comments [入力]` | 名指しのみ | `playbooks/process-user-comments.md` |
 | `process-wi [single-lane\|all-repos]` | 名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
 | `process-loop` | 名指しのみ | `playbooks/process-loop.md` |
-| `review-session` | 振り返りの依頼 | `playbooks/review-session.md` |
+| `review-session` | 振り返り／週次`architecture`・`ui-sweep` | `playbooks/review-session.md` |
 | `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
-起動時に作業・役割が確定済みなら上表の初動へ。
-一般作業・別の操作や判断は下表の該当資料のみ。
-起動時受領の同版は再取得しない。
+起動時の確定作業・役割は上表へ。
+他の操作・判断は下表該当資料のみ。
+起動時の同版は再取得不要。
 取込済み発話は原本か現行契約で確認。
-判断が変わる時のみ応答手順を再読。
+判断変更時のみ応答手順を再読。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |

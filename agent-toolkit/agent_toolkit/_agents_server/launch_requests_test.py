@@ -29,6 +29,10 @@ from agent_toolkit._testing.launch_requests_support import TaskManager, _prepare
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+def test_task_document_label_uses_mode_when_default_is_too_long() -> None:
+    assert launch_requests.task_document_label("exec.subagent.md", {"レーン識別子": "あ" * 32}) == "task"
+
+
 @pytest.mark.parametrize("stage", ["declaration", "startup", "input", "valid"])
 @pytest.mark.parametrize("updated", [False, True])
 @pytest.mark.parametrize("form", ["role-name", "absolute"])
