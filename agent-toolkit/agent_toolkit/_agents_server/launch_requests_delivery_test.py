@@ -35,6 +35,21 @@ def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path
     assert launch_requests._validate_required_prompt_inputs(task_document, {"対象": "value"}) is None
 
 
+def test_usability_start_requires_existing_screen_comparison(tmp_path: pathlib.Path) -> None:
+    document = launch_requests.resolve_task_document_path("usability-review")
+    inputs = {
+        "対象worktree": str(tmp_path),
+        "変更画面": "/settings",
+        "主要シナリオ": "通知設定を保存する",
+        "検証環境": "http://127.0.0.1:8000",
+        "引き継ぎ記録先": str(tmp_path / "handoff.md"),
+        "round": "1",
+    }
+    with pytest.raises(ValueError, match="同種の既存画面"):
+        launch_requests._validate_required_prompt_inputs(document, inputs)
+    assert launch_requests._validate_required_prompt_inputs(document, {**inputs, "同種の既存画面": "/profileを開く"}) is None
+
+
 @pytest.mark.asyncio
 async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))

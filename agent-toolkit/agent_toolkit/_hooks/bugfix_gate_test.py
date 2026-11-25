@@ -129,7 +129,20 @@ def test_stop_accepts_successfully_delivered_typed_report_only_for_current_turn(
 def test_understanding_requires_classification(tmp_path: pathlib.Path) -> None:
     payload = _payload([_human("この説明は冗長です。")], tmp_path)
     assert _pretooluse_denied(payload, "## 発話の理解\n短くする。")
-    assert not _pretooluse_denied(payload, "## 発話の理解\n分類: 是正\n短くする。")
+    assert not _pretooluse_denied(payload, "## 発話の理解\n分類: 是正\n目標の状態: 説明が短い。")
+
+
+@pytest.mark.parametrize(
+    "goal", ["", "目標の状態:  ", "> 目標の状態: 通知だけを出す", "```text\n目標の状態: 通知だけを出す\n```"]
+)
+def test_correction_requires_a_goal_before_delivery(tmp_path: pathlib.Path, goal: str) -> None:
+    payload = _payload([_human("余計な形式の取り込みは消してください。")], tmp_path)
+    understanding = "## 発話の理解\n分類: 是正\n"
+    assert _pretooluse_denied(payload, understanding + goal)
+    assert not _pretooluse_denied(payload, understanding + "目標の状態: Excelだけ取り込める。")
+    assert not _pretooluse_denied(payload, "## 発話の理解\n分類: 非是正\n状況を答える。")
+    assert bugfix_gate.send_block({**payload, "agent_id": "child"}, understanding) is None
+    assert bugfix_gate.send_block({**payload, "turn_id": "codex-turn"}, understanding) is None
 
 
 @pytest.mark.parametrize(

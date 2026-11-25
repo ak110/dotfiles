@@ -52,6 +52,7 @@ BUGFIX_SKILL = "agent-basics:bugfix"
 _BUGFIX_SKILLS = frozenset({BUGFIX_SKILL, "bugfix"})
 _UNDERSTANDING = re.compile(r"^(?:#{1,6}\s+)?[*_]*発話の理解(?:[*_]*[:：]|[*_]*$)")
 _CLASSIFICATION = re.compile(r"\s*(?:[-*+]\s+)?分類[:：]\s*(是正|非是正)\s*")
+_GOAL_STATE = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?目標の状態[:：][ \t]*\S", re.MULTILINE)
 
 
 def is_classification_line(text: str) -> bool:
@@ -403,6 +404,16 @@ def _turn_block(
     warnings: list[str] | None = None,
 ) -> str | None:
     _, entries, human_id = turn
+    if (
+        can_classify
+        and isinstance(message, str)
+        and _understanding_kind(message) == "是正"
+        and not _GOAL_STATE.search(QUOTED_MATERIAL_RE.sub("", message))
+    ):
+        return _block_notice(
+            f"是正の発話の理解に目標の状態がないため、{delivery}を止めた。",
+            fix="本文に `目標の状態:` の行を加え、変更後に必要な成果物か振る舞いを書いて送り直してください。",
+        )
     kind = _turn_classification(entries)
     if kind is None:
         if can_classify and _understanding_kind(message):

@@ -110,3 +110,13 @@
   `mcp__plugin_agent-toolkit_agents_server__send_to_user`から送った原文の画面表示と`ok:true`を対応付ける。
   transcriptの実ツール呼び出しが`<synthetic>`を持つ場合も、API失敗の代替本文と区別してStopの応答有無判定を確認する。
   送達した会話を`/exit`で終えて`claude --resume`で開き、各本文が元の呼び出し位置に1回ずつ読めることを確認する。
+
+## Code Modeのセッション記録への反映時点
+
+2026年11月25日、Claude Code 2.1.332でCode Modeを有効にしたセッション `bc0c32cb` の観測（20261125-112019-003.md）では、REPL内の読み取りとBashの呼び出し・結果は、REPL終了時の同じ時刻印でセッション記録に追加された。
+同じREPL内の待機後にはまだ現れなかった。
+同セッションでは `send_to_user` と `AskUserQuestion` もREPL終了時に記録され、送信成功の戻り値はJSON文字列だった。
+
+再検証ではCode Modeを有効にした新規セッションで、REPL内で無害な読み取りを行い、待機後に同セッションの記録の行数とツール名を取得する。
+REPL終了後に同じ記録を取り直し、呼び出しと結果の有無・時刻印を比べる。
+版とREPL内外の取得時点を記録する。
