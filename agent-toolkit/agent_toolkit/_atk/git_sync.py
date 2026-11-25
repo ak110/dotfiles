@@ -44,20 +44,27 @@ from agent_toolkit._git import command as _git_command
 
 
 def keep_remote_initial_file(notes: pathlib.Path, filename: str, migration_message: str) -> bool:
-    """排他中に、競合した移行専用の1コミットだけをremoteの初回作成に揃える。  pyfltr: allow-comment"""
-    if len(_git_command.output(["rev-list", "@{u}..HEAD"], notes).splitlines()) != 1:
+    """排他中に競合した初回移行だけを除き、後続のローカルcommitを共有先に対して適用する。  pyfltr: allow-comment"""
+    commits = _git_command.output(["rev-list", "--reverse", "--parents", "@{u}..HEAD"], notes).splitlines()
+    parents = [line.split() for line in commits]
+    if not parents or any(len(parts) != 2 for parts in parents):
         return False
-    if _git_command.output(["log", "-1", "--format=%s"], notes) != migration_message:
+    migration, base = parents[0]
+    if _git_command.output(["log", "-1", "--format=%s", migration], notes) != migration_message:
         return False
-    if _git_command.output(["diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD"], notes) != f"A\t{filename}":
-        return False
-    if _git_command.output(["status", "--porcelain"], notes):
+    delta = _git_command.output(["diff-tree", "--no-commit-id", "--name-status", "-r", migration], notes)
+    if delta != f"A\t{filename}" or _git_command.output(["status", "--porcelain"], notes):
         return False
     if _git_command.run(["cat-file", "-e", f"@{{u}}:{filename}"], cwd=notes, check=False, capture_output=True).returncode:
         return False
-    if _git_command.run(["merge-base", "--is-ancestor", "HEAD^", "@{u}"], cwd=notes, check=False).returncode:
+    if _git_command.run(["merge-base", "--is-ancestor", base, "@{u}"], cwd=notes, check=False).returncode:
         return False
-    _git_command.run(["reset", "--merge", "@{u}"], cwd=notes, check=True, capture_output=True)
+    args = (
+        ["reset", "--merge", "@{u}"]
+        if len(commits) == 1
+        else ["-c", "submodule.recurse=false", "rebase", "--onto", "@{u}", migration]
+    )
+    _git_command.run(args, cwd=notes, check=True, capture_output=True)
     return True
 
 

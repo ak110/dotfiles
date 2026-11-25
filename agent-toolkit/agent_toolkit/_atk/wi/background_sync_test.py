@@ -127,7 +127,8 @@ def test_same_start_claim_returns_success_to_only_one_clone(tmp_path, monkeypatc
     assert sorted(results) == [False, True]
 
 
-def test_worker_preserves_first_shared_settings_migration_on_remote(tmp_path, monkeypatch):
+@pytest.mark.parametrize("pending_wi", [False, True])
+def test_worker_preserves_first_shared_settings_migration_on_remote(tmp_path, monkeypatch, pending_wi):
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     notes = git_repository.init_repository(
         tmp_path / "notes", initial_branch="main", origin=str(remote), files={".gitkeep": ""}
@@ -144,10 +145,17 @@ def test_worker_preserves_first_shared_settings_migration_on_remote(tmp_path, mo
         (repo / "atk-config.json").write_text(f'{{"review_model":"{model}"}}\n', encoding="utf-8")
         git_repository.commit_all(repo, "chore: migrate shared agent settings")
     git_repository.run_git(peer, "push")
+    filename = "20261125-122101-001.md"
+    if pending_wi:
+        write_awi(notes, filename)
+        git_repository.commit_all(notes, "separate WI after the pending migration")
 
     assert background_sync.run(notes) is True
     assert (notes / "atk-config.json").read_bytes() == (peer / "atk-config.json").read_bytes()
+    git_repository.run_git(peer, "pull", "--ff-only")
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(peer, "rev-parse", "HEAD")
+    if pending_wi:
+        assert (peer / "2026" / "11" / filename).is_file()
     assert git_repository.git_output(notes, "status", "--porcelain") == ""
 
 
