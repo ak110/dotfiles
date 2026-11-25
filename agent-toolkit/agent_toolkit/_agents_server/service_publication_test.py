@@ -949,3 +949,45 @@ def test_publication_interrupted_by_candidate_exit_restores_live_generation(
         service_forward.publish_service(caller, tmp_path / "new", timeout=5)
     current = GenerationRegistry(directory).current()
     assert current is not None and current["generation"] == "old"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの管理サービスにSIGTERMを送る")
+@pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")
+@pytest.mark.asyncio
+async def test_same_version_successor_keeps_conversation_after_shutdown_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _isolated_directory(tmp_path, monkeypatch)
+    registry = GenerationRegistry(directory)
+    processes: list[subprocess.Popen] = []
+    try:
+        old = await _launch_previous_generation(tmp_path, directory, "IN_PROGRESS", processes)
+        registry.reserve("new", tmp_path / "new", "1.0.0")
+        command = [sys.executable, "-m", service.__name__, str(directory), "new"]
+        with subprocess.Popen(command, stdin=subprocess.PIPE) as successor:
+            try:
+                new = await _wait_for_discovery(directory, "new", successor)
+                accepted = await service_rpc.request(new, "publish", {})
+                assert accepted["generation"] == "new"
+                assert await service_rpc.request(old, "owns", _OWNED)
+                (tmp_path / "finish-turn").touch()
+                assert await asyncio.to_thread(processes[0].wait, 30) == 0
+                assert await service_rpc.request(new, "owns", _OWNED)
+
+                assert successor.stdin is not None
+                successor.stdin.close()
+                successor.terminate()
+                await asyncio.sleep(1)
+                assert successor.poll() is None
+                sessions = await service_rpc.request(new, "parent_sessions", {"parent": _PARENT, "include_terminated": False})
+                assert [session["session_id"] for session in sessions] == [_SESSION]
+                owner = session_registry.resolve(_SESSION, state_root=directory.parent.parent)
+                assert owner.server_instance == new["server_instance"]
+            finally:
+                if successor.poll() is None:
+                    successor.kill()
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait()

@@ -476,3 +476,32 @@ def test_service_diagnostic_distinguishes_empty_log_from_empty_excerpt(
     assert note.startswith(f"管理サービスの診断: {tmp_path / 'G1.stderr.log'}")
     if content:
         assert "診断本文は空です。" not in note
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのプロセス群終了を代用する")
+@pytest.mark.parametrize("accepted", [False, True])
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, ConnectionResetError])
+def test_ensure_service_does_not_kill_candidate_when_publication_is_uncertain(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    accepted: bool,
+    failure: type[BaseException],
+) -> None:
+    directory = _service_directory(tmp_path, monkeypatch)
+    _launched_service(directory, monkeypatch, slow_first_ping=False)
+    registry = GenerationRegistry(directory)
+    killed: list[int] = []
+    monkeypatch.setattr(service_forward.os, "killpg", lambda pid, _signal: killed.append(pid))
+
+    def publish(target: dict[str, Any], operation: str, _arguments: dict, **_kwargs: Any) -> Any:
+        assert operation == "publish"
+        if accepted:
+            registry.publish("G1", endpoint=target["endpoint"], process=target["process"])
+        raise failure("公開応答を取得できない")
+
+    monkeypatch.setattr(service_rpc, "request_sync", publish)
+    caller = runtime_environment.CallerContext({}, tmp_path)
+    with pytest.raises(failure, match="公開応答を取得できない"):
+        service_forward.ensure_service(caller, tmp_path)
+    assert not killed
+    assert (registry.current() is not None) == accepted

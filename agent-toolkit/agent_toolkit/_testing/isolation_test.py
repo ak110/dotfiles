@@ -12,6 +12,7 @@ import venv
 import pytest
 from platformdirs import windows
 
+from agent_toolkit._common import runtime_environment, state_paths
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._testing import isolation
 from agent_toolkit._testing.loop_isolation_support import assert_loop_scope_isolation
@@ -524,3 +525,20 @@ def test_child_uv_uses_test_project_after_fixture_and_host_restoration(
     )
     assert result.returncode == 0, result.stdout + result.stderr
     _assert_sentinel_preserved(sentinel_python, marker)
+
+
+@pytest.mark.parametrize("os_name", ["posix", "nt"])
+def test_live_agents_restore_preserves_isolated_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, os_name: str
+) -> None:
+    host_home = tmp_path / "host"
+    host_state = host_home / "state"
+    for name, value in {"HOME": host_home, "XDG_STATE_HOME": host_state, "LOCALAPPDATA": host_state}.items():
+        monkeypatch.setitem(isolation._HOST_ENVIRON, name, str(value))  # pylint: disable=protected-access
+
+    state_base = tmp_path / "agents-state"
+    isolation.restore_live_agents_environment(monkeypatch, state_base)
+
+    assert os.environ["HOME"] == str(host_home)
+    with runtime_environment.bind(runtime_environment.CallerContext(dict(os.environ), tmp_path)):
+        assert state_paths.state_dir(os_name=os_name) == state_base / "agent-toolkit"

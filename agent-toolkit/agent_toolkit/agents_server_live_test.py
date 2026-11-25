@@ -173,7 +173,7 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
     source = repository / "input/読取 資料.txt"
     before = _investigation_snapshot(repository)
     # 認証情報はホストの通常の解決を使い、サーバー状態はテストfixtureの隔離先を保つ。
-    isolation.restore_host_environment(monkeypatch)
+    isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
     models = {"claude": "claude:sonnet[1m]/medium", "codex": "codex:sol/medium", "agy": "agy:gemini-3.8-flash/medium"}
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", models[engine])
     python_code = f"import pathlib; s=pathlib.Path({str(source)!r}).read_text(encoding='utf-8'); print(s[:7]+s[7:], end='')"
@@ -301,7 +301,7 @@ async def test_live_launch_waits_for_automatic_resume(
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         cwd = str(pathlib.Path(__file__).parents[2])
         # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_host_environment(monkeypatch)
+        isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
         monkeypatch.setattr(
             _atk_config,
             "parse_unresolved_model_candidates",
@@ -345,7 +345,7 @@ async def test_live_explore_reads_file_and_continues_same_session(
         second = tmp_path / "second.txt"
         second.write_text("EXPLORE_CONTINUED_CONTENT\n", encoding="utf-8")
         # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_host_environment(monkeypatch)
+        isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
         monkeypatch.setattr(
             _atk_config,
             "parse_unresolved_model_candidates",
@@ -395,7 +395,7 @@ async def test_live_grandchild_wait_resumes_same_session(
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         cwd = str(pathlib.Path(__file__).parents[2])
         # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_host_environment(monkeypatch)
+        isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
         monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
         release = tmp_path / "grandchild.release"
         script = tmp_path / "grandchild.py"
@@ -598,7 +598,7 @@ stream_max_retries = 0
         )
         (codex_home / "config.toml").write_text(providers, encoding="utf-8")
 
-        isolation.restore_host_environment(monkeypatch)
+        isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
         monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_CREDITS_PROVIDER", _PRIMARY_PROVIDER)

@@ -404,6 +404,12 @@ def restore_host_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", without_parent_venv_path(os.environ.get("PATH", "")))
 
 
+def restore_live_agents_environment(monkeypatch: pytest.MonkeyPatch, state_base: pathlib.Path) -> None:
+    restore_host_environment(monkeypatch)
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_base))
+    monkeypatch.setenv("LOCALAPPDATA", str(state_base))
+
+
 def assert_development_state_isolated(tmp_path: pathlib.Path) -> None:
     """テストが何も設定していない状態で、6つの次元が`tmp_path`配下へ向くか除かれていることを確かめる。
 
