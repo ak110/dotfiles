@@ -99,10 +99,7 @@ def _synchronize(notes: pathlib.Path, status: pathlib.Path) -> bool:
                 if behind.returncode == 0:
                     git.run(["merge", "--ff-only", upstream], cwd=notes, check=True, capture_output=True)
                 elif behind.returncode == 1:
-                    migrated = git_sync.keep_remote_initial_file(
-                        notes, SHARED_SETTINGS_FILENAME, SHARED_SETTINGS_MIGRATION_MESSAGE
-                    )
-                    if not migrated and not _rebase(notes, status, upstream, last_fetch):
+                    if not _rebase(notes, status, upstream, last_fetch):
                         return False
                 else:
                     raise RuntimeError("private-notesの先行commitを判定できない")
@@ -136,8 +133,11 @@ def _rebase(notes: pathlib.Path, status: pathlib.Path, upstream: str, last_fetch
         _report(status, "recovery-required", last_fetch=last_fetch, reason="未保存の変更があるため履歴の分岐を解消できない")
         return False
     try:
-        git.run(["-c", "submodule.recurse=false", "rebase", upstream], cwd=notes, check=True, capture_output=True)
+        if not git_sync.keep_remote_initial_file(notes, SHARED_SETTINGS_FILENAME, SHARED_SETTINGS_MIGRATION_MESSAGE):
+            git.run(["-c", "submodule.recurse=false", "rebase", upstream], cwd=notes, check=True, capture_output=True)
     except subprocess.CalledProcessError:
+        if not git_sync.is_rebase_in_progress(notes):
+            raise
         _report(status, "recovery-required", last_fetch=last_fetch, reason="private-notesのrebaseを完了できない")
         return False
     return True

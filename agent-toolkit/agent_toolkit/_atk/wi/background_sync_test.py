@@ -127,11 +127,11 @@ def test_same_start_claim_returns_success_to_only_one_clone(tmp_path, monkeypatc
     assert sorted(results) == [False, True]
 
 
-@pytest.mark.parametrize("pending_wi", [False, True])
-def test_worker_preserves_first_shared_settings_migration_on_remote(tmp_path, monkeypatch, pending_wi):
+@pytest.mark.parametrize("pending_wi", ["none", "new", "conflict"])
+def test_worker_preserves_first_shared_settings_migration_on_remote(tmp_path, monkeypatch, capsys, pending_wi):
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     notes = git_repository.init_repository(
-        tmp_path / "notes", initial_branch="main", origin=str(remote), files={".gitkeep": ""}
+        tmp_path / "notes", initial_branch="main", origin=str(remote), files={"item.md": "base\n"}
     )
     git_repository.commit_all(notes, "initialize")
     git_repository.run_git(notes, "push", "-u", "origin", "main")
@@ -144,9 +144,21 @@ def test_worker_preserves_first_shared_settings_migration_on_remote(tmp_path, mo
     for repo, model in ((notes, "codex:sol/medium"), (peer, "claude:sonnet/medium")):
         (repo / "atk-config.json").write_text(f'{{"review_model":"{model}"}}\n', encoding="utf-8")
         git_repository.commit_all(repo, "chore: migrate shared agent settings")
+    if pending_wi == "conflict":
+        for repo, body in ((notes, "local edit"), (peer, "peer edit")):
+            (repo / "item.md").write_text(f"{body}\n", encoding="utf-8")
+            git_repository.commit_all(repo, "edit existing WI")
     git_repository.run_git(peer, "push")
+    if pending_wi == "conflict":
+        assert background_sync.run(notes) is False
+        assert background_sync.read_status(notes)["state"] == "recovery-required"
+        background_sync.prepare_read(notes, skip=True, force=False)
+        assert "手動回復が必要" in capsys.readouterr().err
+        assert git_repository.git_output(notes, "diff", "--name-only", "--diff-filter=U") == "item.md"
+        return
+
     filename = "20261125-122101-001.md"
-    if pending_wi:
+    if pending_wi == "new":
         write_awi(notes, filename)
         git_repository.commit_all(notes, "separate WI after the pending migration")
 
@@ -154,7 +166,7 @@ def test_worker_preserves_first_shared_settings_migration_on_remote(tmp_path, mo
     assert (notes / "atk-config.json").read_bytes() == (peer / "atk-config.json").read_bytes()
     git_repository.run_git(peer, "pull", "--ff-only")
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(peer, "rev-parse", "HEAD")
-    if pending_wi:
+    if pending_wi == "new":
         assert (peer / "2026" / "11" / filename).is_file()
     assert git_repository.git_output(notes, "status", "--porcelain") == ""
 
