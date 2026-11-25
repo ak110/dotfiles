@@ -18,14 +18,21 @@ def test_process_loop_abort_commands_report_and_transition_state(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     state_file = tmp_path / "state" / "agent-toolkit" / "process-wi-abort"
+    status_suffix = (
+        "再開予約: 未予約\n"
+        "最近の統括の会話ID（終了時刻）:\n"
+        "  記録なし\n"
+        "一覧にない会話IDは atk serve のセッション一覧で探せます。\n"
+        "保持中の追加指示: 0件\n"
+    )
 
     for command, expected in (
-        ("status", "process-loopへの中断要求: なし\n再開予約: 未予約\n保持中の追加指示: 0件\n"),
+        ("status", f"process-loopへの中断要求: なし\n{status_suffix}"),
         ("abort-cancel", "成功: process-loopへの中断要求は設定されていないため、解除の変更は無い\n"),
         ("abort", "成功: process-loopへ中断を要求した\n"),
-        ("status", "process-loopへの中断要求: あり\n再開予約: 未予約\n保持中の追加指示: 0件\n"),
+        ("status", f"process-loopへの中断要求: あり\n{status_suffix}"),
         ("abort-cancel", "成功: process-loopへの中断要求を解除した\n"),
-        ("status", "process-loopへの中断要求: なし\n再開予約: 未予約\n保持中の追加指示: 0件\n"),
+        ("status", f"process-loopへの中断要求: なし\n{status_suffix}"),
     ):
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "process-loop", command], home=tmp_path)

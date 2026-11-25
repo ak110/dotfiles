@@ -1,5 +1,6 @@
 import argparse
 import contextlib
+import functools
 import json
 import os
 import pathlib
@@ -17,6 +18,7 @@ from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import managed_temp, usage_limit_policy, usage_refresh
 from agent_toolkit._atk import orchestrator as _orchestrator
+from agent_toolkit._atk.wi import process_loop_compaction as _compaction
 from agent_toolkit._atk.wi import process_loop_control as _control
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_identity as startup_identity
@@ -62,6 +64,7 @@ def resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
 
 def build_resume_prompt() -> str:
     return _automated_prompt.wrap(
+        "圧縮後の復元通知がある場合は、それに従って作業契約と要約から状態を戻してください。"
         "保存済みの要求・認可・元の目的と成果を確認し、最初の未完了工程から続行してください。"
         "未達の目的を達成扱いに変えず、成功済みの操作は繰り返さないでください。",
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
@@ -141,6 +144,11 @@ def _codex_orchestrator_providers(
     return tuple(provider for _, provider in entries)
 
 
+def _clear_rate_limit_request(env: dict[str, str], identifier: str) -> None:
+    request = _host_homes.claude_config_dir(env) / "agent-toolkit-function-hooks" / f"rate-limit-{identifier}.txt"
+    request.unlink(missing_ok=True)
+
+
 def _build_session_argv(
     args: argparse.Namespace,
     prompt: str,
@@ -153,11 +161,17 @@ def _build_session_argv(
     cwd: pathlib.Path,
     codex_provider: str | None = None,
     claude_connection: _connection.Connection | None = None,
-) -> tuple[list[str], pathlib.Path | None]:
+) -> tuple[list[str], pathlib.Path | None, Callable[[_registry.PublicationState], None] | None]:
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
 
     env[_coordinator_identity.CLAIM_ENV] = uuid.uuid4().hex
     if orchestrator == "claude":
+        if resume_pending and not args.resume:
+            raise _next_action.ActionableError(
+                "Claude Codeの巡回を再開するには会話IDが必要です。再開予約は保持します。\n"
+                + _control.recent_session_diagnostic(),
+                next_action="`atk wi process-loop resume <ID>` で予約し直して巡回を起動する",
+            )
         info = _registry.resolve(args.resume).resume_info if resume_pending and args.resume else None
         if claude_connection is not None:
             connection = claude_connection
@@ -190,7 +204,7 @@ def _build_session_argv(
         ]
         if resume_pending:
             argv.extend(("--model", model, "--effort", effort))
-            argv.append("--resume" if not args.resume else f"--resume={args.resume}")
+            argv.append(f"--resume={args.resume}")
             if args.resume:
                 env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
             argv.append("--permission-mode=auto")
@@ -201,9 +215,8 @@ def _build_session_argv(
             env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = session_id
             argv.extend(("--session-id", session_id))
             argv.extend(("--permission-mode=auto", "--model", model, "--effort", effort, prompt))
-        if identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
-            request = _host_homes.claude_config_dir(env) / "agent-toolkit-function-hooks" / f"rate-limit-{identifier}.txt"
-            request.unlink(missing_ok=True)
+        if not resume_pending and (identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV)):
+            _clear_rate_limit_request(env, identifier)
         settings = _claude_settings.merge_settings(
             _pl_env.dialog_timeout_settings(),
             overrides,
@@ -217,10 +230,11 @@ def _build_session_argv(
         with contextlib.ExitStack() as settings_owner:
             if isinstance(settings, _claude_settings.SettingsFile):
                 settings_owner.enter_context(settings)
+            publish: Callable[[_registry.PublicationState], None] | None = None
             if identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
-                _registry.publish(
+                publish_record = functools.partial(
+                    _registry.publish,
                     identifier,
-                    state=_registry.PublicationState.PENDING_RUNNING,
                     engine="claude",
                     cwd=str(cwd),
                     model=model,
@@ -232,8 +246,16 @@ def _build_session_argv(
                     claude_role="orchestrator",
                     processes=tuple(value for value in (_registry.owner_process(),) if value is not None),
                 )
+
+                def publish_state(state: _registry.PublicationState) -> None:
+                    publish_record(state=state)
+
+                if resume_pending:
+                    publish = publish_state
+                else:
+                    publish_state(_registry.PublicationState.PENDING_RUNNING)
             argv[4:4] = ["--settings", settings]
-            result = argv, hook_debug_log
+            result = argv, hook_debug_log, publish
             settings_owner.pop_all()
             return result
 
@@ -245,7 +267,7 @@ def _build_session_argv(
         elif resume_pending:
             raise ValueError("このengineには会話pickerがないため、再開IDを指定する")
         argv.extend(("-i", prompt))
-        return argv, None
+        return argv, None, None
 
     argv = ["codex"]
     if resume_pending:
@@ -260,7 +282,7 @@ def _build_session_argv(
         env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
     if prompt:
         argv.append(prompt)
-    return argv, None
+    return argv, None, None
 
 
 _is_normal_session_exit = _orchestrator.is_normal_session_exit
@@ -347,7 +369,9 @@ def _run_process_session(
             env.clear()
             env.update(original_env)
             session_prompt = _automated_prompt.wrap(
-                "利用上限で中断した同じ会話の未完了作業を続行してください。保存済みの要求と成果を確認し、完了済みの操作は繰り返さないでください。",
+                "圧縮後の復元通知に従って作業契約と要約から状態を戻し、"
+                "利用上限で中断した同じ会話の未完了作業を続行してください。"
+                "未達の目的を達成扱いにせず、完了済みの操作は繰り返さないでください。",
                 source=_automated_prompt.SOURCE_PROCESS_LOOP,
                 kind="usage-limit-resume",
             )
@@ -376,7 +400,7 @@ def _run_selected_process_session(
             orchestrator, model, effort, claude_connection.kind if claude_connection is not None else codex_provider
         ),
     ):
-        session_argv, hook_debug_log = _build_session_argv(
+        session_argv, hook_debug_log, publish_resume = _build_session_argv(
             args,
             session_prompt,
             env,
@@ -405,6 +429,7 @@ def _run_selected_process_session(
             on_residual=on_residual,
             codex_provider=codex_provider,
             resume_request_id=getattr(args, "resume_request_id", None),
+            publish_resume=publish_resume,
             claude_connection=claude_connection,
         )
 
@@ -424,6 +449,7 @@ def _run_started_process_session(
     on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None = None,
     resume_request_id: str | None = None,
+    publish_resume: Callable[[_registry.PublicationState], None] | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> bool:
     if hook_debug_log is not None:
@@ -433,10 +459,18 @@ def _run_started_process_session(
     launch_env = _pl_env.session_env(env, orchestrator)
     if (
         on_session_started is not None
+        and publish_resume is None
         and startup_identity.read(env) is None
         and (identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV))
     ):
         on_session_started(identifier)
+    prepare_resume = None
+    if publish_resume is not None and hook_debug_log is not None:
+        identifier = env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV]
+        resume_index = session_argv.index(f"--resume={identifier}")
+        prepare_resume = functools.partial(
+            _compaction.compact_before_resume, identifier, session_argv[:resume_index], launch_env, session_path, hook_debug_log
+        )
     try:
         result = _run_cli_session(
             session_argv,
@@ -450,6 +484,8 @@ def _run_started_process_session(
             on_residual=on_residual,
             codex_provider=codex_provider,
             resume_request_id=resume_request_id,
+            prepare_resume=prepare_resume,
+            publish_resume=publish_resume,
             claude_connection=claude_connection,
         )
         if identifier := launch_env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
@@ -457,30 +493,17 @@ def _run_started_process_session(
     except OSError as error:
         _process_loop_log.append("session_launch_failed", error=type(error).__name__, detail=str(error))
         raise
-    if identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
-        info = _registry.resolve(identifier).resume_info
-        if info is not None:
-            _registry.publish(
-                identifier,
-                state=_registry.PublicationState.RESULT_COMPLETED
-                if result.returncode == 0
-                else _registry.PublicationState.RESULT_INTERRUPTED,
-                engine=orchestrator,
-                cwd=str(session_path),
-                model=model,
-                effort=effort,
-                model_type="orchestrate",
-                turn_seq=info.turn_seq,
-                claude_api_env_file=info.claude_api_env_file,
-                claude_connection=info.claude_connection,
-                claude_role="orchestrator",
-                codex_model_provider=info.codex_model_provider,
-                codex_subscription_provider=info.codex_subscription_provider,
-            )
+    except ClaudeUsageLimit as limited:
+        _publish_session_result(limited.session_id, session_path, orchestrator, model, effort, completed=False)
+        raise
+    identifier = env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV)
+    if identifier:
+        _publish_session_result(identifier, session_path, orchestrator, model, effort, completed=result.returncode == 0)
     _pl_env.reset_console()
     _console_title.set_console_title("atk wi process-loop")
     _process_loop_log.append(
         "session_end",
+        session_id=identifier,
         elapsed_sec=round(time.monotonic() - session_started_at, 3),
         returncode=result.returncode,
     )
@@ -488,6 +511,28 @@ def _run_started_process_session(
     _process_loop_log.append("session_classified", normal=normal_exit, returncode=result.returncode)
     on_session_finished(normal_exit)
     return normal_exit
+
+
+def _publish_session_result(
+    identifier: str, session_path: pathlib.Path, orchestrator: str, model: str, effort: str, *, completed: bool
+) -> None:
+    info = _registry.resolve(identifier).resume_info
+    if info is not None:
+        _registry.publish(
+            identifier,
+            state=_registry.PublicationState.RESULT_COMPLETED if completed else _registry.PublicationState.RESULT_INTERRUPTED,
+            engine=orchestrator,
+            cwd=str(session_path),
+            model=model,
+            effort=effort,
+            model_type="orchestrate",
+            turn_seq=info.turn_seq,
+            claude_api_env_file=info.claude_api_env_file,
+            claude_connection=info.claude_connection,
+            claude_role="orchestrator",
+            codex_model_provider=info.codex_model_provider,
+            codex_subscription_provider=info.codex_subscription_provider,
+        )
 
 
 def _attach_orchestrator_child(identifier: str, child: _registry.ProcessIdentity) -> None:
@@ -641,6 +686,8 @@ def _run_cli_session(
     on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None = None,
     resume_request_id: str | None = None,
+    prepare_resume: Callable[[], None] | None = None,
+    publish_resume: Callable[[_registry.PublicationState], None] | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """既存のCLI待機で実行主体を保持し、上限停止と無出力停止を監視する。
@@ -695,14 +742,29 @@ def _run_cli_session(
         process: subprocess.Popen[bytes] | None = None
         known: list[psutil.Process] = []
         try:
-            with _control.resume_launch(resume_request_id), _process_loop_log.launch_instructions() as instructions:
-                if instructions:
-                    argv = [*argv[:-1], f"{argv[-1]}\n\n追加指示:\n{instructions}"]
-                process = resources.enter_context(
-                    subprocess.Popen(
-                        argv, env=env, cwd=cwd, stdout=stdout, creationflags=_pl_env.session_creation_flags(orchestrator)
-                    )
-                )
+            with _control.resume_launch(resume_request_id):
+                if prepare_resume is not None:
+                    prepare_resume()
+                    _clear_rate_limit_request(env, env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV])
+                with _process_loop_log.launch_instructions() as instructions:
+                    if instructions:
+                        argv = [*argv[:-1], f"{argv[-1]}\n\n追加指示:\n{instructions}"]
+                    if publish_resume is not None:
+                        publish_resume(_registry.PublicationState.PENDING_RUNNING)
+                    try:
+                        process = resources.enter_context(
+                            subprocess.Popen(
+                                argv,
+                                env=env,
+                                cwd=cwd,
+                                stdout=stdout,
+                                creationflags=_pl_env.session_creation_flags(orchestrator),
+                            )
+                        )
+                    except OSError:
+                        if publish_resume is not None:
+                            publish_resume(_registry.PublicationState.RESULT_INTERRUPTED)
+                        raise
             known = process_tree.collect_descendants(process.pid, pins=pins, include_root=True)
             identity = _registry.ProcessIdentity.of(process.pid)
             if identity is None:

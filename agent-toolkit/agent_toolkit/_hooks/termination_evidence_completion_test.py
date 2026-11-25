@@ -167,8 +167,6 @@ def test_claude_read_of_whole_playbook_is_evidence(
     """
     supply_commit(tmp_path)
     playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
-    _tool(tmp_path, "shell", "Bash", {"command": f'cat "{playbook}"'}, playbook.read_text(encoding="utf-8"), codex=False)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))[0] == "notify"
     response = claude_read_response(playbook, **read_range)
     _tool(tmp_path, "read", "Read", {"file_path": str(playbook), **read_range}, response, codex=False)
     assert _missing_completion(tmp_path) == ([] if accepted else ["commit"])
@@ -176,6 +174,54 @@ def test_claude_read_of_whole_playbook_is_evidence(
     assert decision == ("approve" if accepted else "notify")
     if not accepted:
         assert str(playbook) in reason and "受理する証拠" in reason
+
+
+@pytest.mark.parametrize(
+    "case", ("cat", "sed", "truncate", "spill", "interrupt", "partial-sed", "redirect", "delegate", "copy", "other")
+)
+def test_claude_bash_completion_evidence(tmp_path: pathlib.Path, case: str) -> None:
+    supply_commit(tmp_path)
+    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
+    body = playbook.read_text(encoding="utf-8")
+    command = (
+        f'cd "{playbook.parent.parent}"; cat playbooks/report-completion.md; echo ======; grep example reference | head -120'
+    )
+    response: dict[str, Any] = {"stdout": body + "\n======\n検索結果", "stderr": "", "interrupted": False}
+    if case == "sed":
+        command = f"sed -n '1,{len(body.splitlines())}p' \"{playbook}\""
+    elif case == "truncate":
+        response["stdout"] = body.splitlines()[0]
+    elif case == "spill":
+        response["stdout"] = "全文は別ファイルに保存されました。"
+    elif case == "interrupt":
+        response.update(stdout=body[:20], interrupted=True)
+    elif case == "partial-sed":
+        command = f"sed -n '10,40p' \"{playbook}\""
+    elif case == "redirect":
+        command = f'cat "{playbook}" > "{tmp_path / "redirect.md"}"'
+    elif case == "copy":
+        copy = tmp_path / playbook.name
+        copy.write_text(body, encoding="utf-8")
+        command = f'cat "{copy}"'
+    elif case == "other":
+        other = playbook.with_name("process-wi.md")
+        other.write_text(body, encoding="utf-8")
+        command = f'cat "{other}"'
+    if case == "delegate":
+        payload = {
+            **json.loads(stop_payload(tmp_path, WORK_COMPLETE)),
+            "agent_id": "delegate",
+            "tool_name": "Bash",
+            "tool_use_id": "delegate-read",
+            "tool_input": {"command": command},
+            "tool_response": response,
+        }
+        termination_evidence.observe_tool(json.dumps(payload), after=True)
+    else:
+        _tool(tmp_path, "claude-bash-read", "Bash", {"command": command}, response, codex=False)
+    accepted = case in {"cat", "sed"}
+    assert _missing_completion(tmp_path) == ([] if accepted else ["commit"])
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))[0] == ("approve" if accepted else "notify")
 
 
 def test_claude_read_truncated_or_other_document_is_not_evidence(tmp_path: pathlib.Path) -> None:

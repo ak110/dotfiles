@@ -17,6 +17,7 @@ import time
 
 from agent_toolkit._atk import outcome
 from agent_toolkit._atk.managed_temp import paths as managed_temp_paths
+from agent_toolkit._common import weekly_work
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.process_tree import run_with_timeout
 
@@ -26,10 +27,11 @@ CALENDAR = "Sun *-*-* 14:00:00"
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
+    titles = "、".join(work.title for work in weekly_work.DEFINITIONS.values())
     parser.add_argument(
         "weekly_action",
         choices=("run", "install", "uninstall"),
-        help="run: 未完了の週次の作業を実行する。install・uninstall: OSのスケジューラへの登録と解除。",
+        help=(f"run: 有効な週次の作業（{titles}）の未完了分を実行する。install・uninstall: OSのスケジューラへの登録と解除。"),
     )
     parser.add_argument(
         "--atk-command",
@@ -99,7 +101,7 @@ def systemd_units(atk: pathlib.Path, path_value: str) -> dict[str, str]:
     return {
         f"{UNIT_NAME}.service": (
             "[Unit]\n"
-            "Description=agent-toolkit weekly meta analysis and research\n\n"
+            "Description=agent-toolkit weekly works\n\n"
             "[Service]\n"
             "Type=oneshot\n"
             f'Environment="PATH={_systemd_escape(path_value)}"\n'

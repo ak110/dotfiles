@@ -47,7 +47,7 @@ from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id_o
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
-from agent_toolkit._common import diagnostic_process, recorded_process, session_review, skill_modes
+from agent_toolkit._common import diagnostic_process, recorded_process, session_review, skill_modes, weekly_work
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import session_registry as _registry
@@ -105,7 +105,8 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         metavar="TEXT",
         default=None,
         help=(
-            "スキルへ渡す任意の文字列。先頭語がprocess-wiのsingle-lane/all-reposかreview-sessionのbatch/meta/researchに"
+            "スキルへ渡す任意の文字列。先頭語がprocess-wiのsingle-lane/all-reposかreview-sessionのbatch/"
+            f"{'/'.join(weekly_work.DEFINITIONS)}に"
             "完全一致する時はモードに使い、残りを自由記述として保持する。"
         ),
     )
@@ -149,7 +150,12 @@ def dispatch(args: argparse.Namespace) -> int:
                 str(error), next_action="ログの実行識別子と保存した入力を確認し、--resume <RUN_ID>で再実行する"
             )
             return 2
-        if record.status == "completed" and record.input.batch_manifest is None:
+        scope = skill_modes.invocation_scope(saved_skill, record.input.arguments)
+        if (
+            record.status == "completed"
+            and record.input.batch_manifest is None
+            and scope not in weekly_work.REQUIRED_RESULT_SCOPES
+        ):
             _outcome.report_success(f"既に完了した実行: {record.input.run_id}（ログ: {record.log_path}）")
             return 0
         args.skill, args.args = saved_skill, record.input.arguments
@@ -157,10 +163,7 @@ def dispatch(args: argparse.Namespace) -> int:
         args.work_dir = str(record.work_dir) if record.input.target_repo is not None else None
         args.timeout, args.run_id = record.remaining, record.input.run_id
         args.batch_manifest, args.resume_record = record.input.batch_manifest, record
-        if (
-            args.batch_manifest is not None
-            or skill_modes.invocation_scope(args.skill, args.args) in session_review.WEEKLY_SCOPES
-        ):
+        if args.batch_manifest is not None or scope in session_review.WEEKLY_SCOPES:
             from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
             return run_skill_batch.dispatch(args, _dispatch_once)
@@ -467,19 +470,19 @@ def _wait_session(
             if output.usage_limit is not None:
                 return returncode
         if _orchestrator.is_normal_session_exit(orchestrator, returncode):
-            if scope == session_review.BATCH_SCOPE:
+            if scope == session_review.BATCH_SCOPE or scope in weekly_work.REQUIRED_RESULT_SCOPES:
                 return 0
             try:
-                saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, scope=scope)
+                saved = _wi_add.has_committed_run_report(_private_notes.default_private_notes(), run_id=run_id, scope=scope)
             except (OSError, subprocess.SubprocessError) as error:
                 saved = False
                 _log_line(log, f"報告の保存確認に失敗した: {error}")
             if not saved:
                 _outcome.report_failure(
-                    f"報告用UWIの保存が同期契約へ到達していない（ログ: {log_path}）",
+                    f"報告用UWIのローカル保存を確認できない（ログ: {log_path}）",
                     next_action=(
                         "ログの実行識別子に対応する報告用UWIを確認し、同じ会話を再開してreport-completionで保存する。"
-                        "保存済みの場合はWI保存先のcommit・pushを完了してから次回の実行を待つ"
+                        "保存済みの場合はWI保存先でcommitを確認して次回の実行を待つ"
                     ),
                 )
                 return 1
@@ -597,7 +600,7 @@ def _remove_expired_logs(log_dir: pathlib.Path, *, now: float) -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if (
             manifest.get("status") != "completed"
-            or not manifest.get("report_synced")
+            or not (manifest.get("report_committed") or manifest.get("report_synced"))
             or manifest["updated_at"] >= now - LOG_RETENTION_SECONDS
         ):
             protected.update(pathlib.Path(path) for path in manifest.get("run_skill_logs", []))

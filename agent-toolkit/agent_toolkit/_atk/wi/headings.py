@@ -8,12 +8,11 @@
 呼び出し側が行を切り出す場合も、同じ正規化を経た本文へ`token.map`を適用する。
 """
 
-from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._common import markdown_headings
-from agent_toolkit._common.markdown_headings import parse_headings
+from agent_toolkit._common.markdown_headings import last_h2_section_items, last_h2_section_lines, parse_headings
 
 
 def parse_h2_headings(text: str) -> list[tuple[Token, str]]:
@@ -24,26 +23,8 @@ def contains_h2(text: str) -> bool:
     return bool(parse_h2_headings(text))
 
 
-def _h2_section_bodies(text: str) -> list[tuple[str, list[str]]]:
-    return markdown_headings.h2_section_bodies(text)
-
-
 def h2_sections(text: str) -> list[tuple[str, bool]]:
     return markdown_headings.h2_sections(text)
-
-
-def last_h2_section_lines(text: str, name: str) -> list[str] | None:
-    bodies = [body for heading, body in _h2_section_bodies(text) if heading == name]
-    return bodies[-1] if bodies else None
-
-
-def last_h2_section_items(text: str, name: str) -> list[str]:
-    lines = last_h2_section_lines(text, name) or []
-    tokens = MarkdownIt().parse("\n".join(lines))
-    items = [token for token in tokens if token.type == "list_item_open" and token.level == 1]
-    if not items:
-        items = [token for token in tokens if token.type == "paragraph_open" and token.level == 0]
-    return ["\n".join(lines[token.map[0] : token.map[1]]).strip() for token in items if token.map is not None]
 
 
 __all__ = ["contains_h2", "h2_sections", "last_h2_section_items", "last_h2_section_lines", "parse_h2_headings"]

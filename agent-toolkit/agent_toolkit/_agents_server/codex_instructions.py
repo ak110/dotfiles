@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import re
 import typing
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from agent_toolkit._agents_server import plugin_root as plugin_roots
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_prompts import (
     LIGHTWEIGHT_LAUNCH_KINDS,
     auto_resume_notice,
@@ -19,9 +22,9 @@ from agent_toolkit._agents_server.launch_prompts import (
 )
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import codex_fast_mode, inherited_venv, mcp_environment, plugin_environment, runtime_environment
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import inherited_venv, mcp_environment, plugin_environment, runtime_environment
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 
 if typing.TYPE_CHECKING:
@@ -34,9 +37,18 @@ _BOUNDARY_PATH_PATTERN = re.compile(rf'<{AUTO_INSERTED_ELEMENT}\b[^>]*\spath="([
 """`atk-auto`要素の開始タグから`path`属性の値を取り出す。"""
 
 
-def _current_service_tier() -> str:
-    """turnの開始時の実効設定を読み、Codex側の設定を継承せず速度を明示する。"""
-    return "priority" if _atk_config.resolve_mutable_setting("codex_fast_mode") == "true" else "default"
+async def _current_service_tier(
+    request: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]],
+    cwd: str,
+    *,
+    subscription: bool | None,
+    now: datetime.datetime | None = None,
+) -> str:
+    """現在の接続とアカウントから、Codexに明示する速度を決める。  pyfltr: allow-comment"""
+    mode = await run_file_operation(_atk_config.resolve_mutable_setting, "codex_fast_mode")
+    if mode != "auto":
+        return "priority" if mode == "true" else "default"
+    return (await codex_fast_mode.auto_service_tier(request, cwd, subscription=subscription, now=now)).tier
 
 
 def _embedded_rule_paths() -> set[str]:

@@ -1,6 +1,6 @@
 // WI一覧の行・状態・条件の描画と検索パラメーター。
 import {
-  KIND_LABELS, STATE_LABELS, TARGET_REPO_DISPLAY_LENGTH, byId, entryKey, isPlainPrimaryClick, wiState
+  KIND_LABELS, STATE_LABELS, byId, entryKey, isPlainPrimaryClick, wiState
 } from "./wi_state.js";
 import {
   BASE_PATH, SERVE_HOST, WI_ROOT, diagnostic, renderList, renderWarnings
@@ -78,7 +78,7 @@ export function refreshCooldownDisplays() {
 
 function appendCell(row, className) {
   const cell = document.createElement('span');
-  cell.className = `entry-cell ${className}`;
+  cell.className = className;
   row.append(cell);
   return cell;
 }
@@ -90,10 +90,7 @@ function appendTextCell(row, className, value) {
 }
 
 function targetRepoDisplay(value) {
-  if (!value || value.length <= TARGET_REPO_DISPLAY_LENGTH) return value || '—';
-  const prefixLength = Math.floor((TARGET_REPO_DISPLAY_LENGTH - 1) / 2);
-  const suffixLength = TARGET_REPO_DISPLAY_LENGTH - prefixLength - 1;
-  return `${value.slice(0, prefixLength)}…${value.slice(-suffixLength)}`;
+  return value?.split('/').slice(-2).join('/') || '—';
 }
 
 export function entryPageUrl(entry) {
@@ -115,7 +112,7 @@ const copiedLabelDeadlines = new Map();
 
 function renderEntry(entry) {
   const item = document.createElement('li');
-  item.className = 'entry-row';
+  item.className = 'entry-row list-row';
   const button = document.createElement('a');
   button.href = entryPageUrl(entry);
   button.className = 'entry-select';
@@ -125,8 +122,11 @@ function renderEntry(entry) {
   button.dataset.unansweredUwi = String(unanswered);
   button.setAttribute('aria-current', String(entryKey(wiState.currentEntry) === entryKey(entry)));
 
-  appendTextCell(button, 'filename-cell', entry.filename);
-  const targetRepo = appendTextCell(button, 'target-repo-cell', targetRepoDisplay(entry.target_repo));
+  const summary = entry.summary?.replace(/^#{1,6}\s+/, '') || entry.filename;
+  appendTextCell(button, 'summary-cell text-clip', summary).title = summary;
+  const meta = appendCell(button, 'entry-meta');
+  appendTextCell(meta, 'filename-cell text-clip', entry.filename).title = entry.filename;
+  const targetRepo = appendTextCell(meta, 'target-repo-cell text-clip', targetRepoDisplay(entry.target_repo));
   if (entry.target_repo) {
     targetRepo.title = entry.target_repo;
     targetRepo.setAttribute('aria-label', `target-repo: ${entry.target_repo}`);
@@ -137,46 +137,48 @@ function renderEntry(entry) {
   kind.textContent = KIND_LABELS[entry.kind] || KIND_LABELS.unknown;
   status.append(kind);
   const badge = document.createElement('span');
-  badge.className = 'state-badge';
+  badge.className = 'status-chip state-badge';
   badge.dataset.state = entry.state;
   badge.dataset.needsVerify = String(entry.needs_verify === true);
   badge.textContent = displayStateLabel(entry);
   status.append(badge);
   if (entry.important === true) {
     const important = document.createElement('span');
-    important.className = 'attention-badge important-badge';
+    important.className = 'status-chip attention-badge important-badge';
     important.textContent = '重要';
+    important.dataset.state = 'warning';
     status.append(important);
   }
 
   if (entry.blocked === true) {
     // 未回答UWIの回答待ちは保存状態ではなく依存先から導いた値であり、編集中のholdと区別して示す。
     const blocked = document.createElement('span');
-    blocked.className = 'blocked-badge';
+    blocked.className = 'status-chip blocked-badge';
+    blocked.dataset.state = 'warning';
     blocked.textContent = 'blocked';
     blocked.title = '未回答のUWIの回答待ち';
     status.append(blocked);
   }
   if (entry.target_branch) {
     const branch = document.createElement('span');
-    branch.className = 'branch-badge';
+    branch.className = 'status-chip branch-badge';
     branch.textContent = entry.target_branch;
     branch.title = `系統: ${entry.target_branch}`;
     status.append(branch);
   }
   if (entry.plan) {
     const plan = document.createElement('span');
-    plan.className = 'plan-badge';
+    plan.className = 'status-chip plan-badge';
     plan.textContent = 'plan';
     status.append(plan);
   }
   if (unanswered) {
     const attention = document.createElement('span');
-    attention.className = 'attention-badge';
+    attention.className = 'status-chip attention-badge unanswered-badge';
+    attention.dataset.state = 'warning';
     attention.textContent = '未回答';
     status.append(attention);
   }
-  appendTextCell(button, 'summary-cell', entry.summary || entry.filename);
   updateEntryStateDisplay(entry, button, badge);
   wiState.entryStateDisplays.set(entryKey(entry), {entry, button, badge});
   button.addEventListener('click', event => {
@@ -187,24 +189,38 @@ function renderEntry(entry) {
   });
   const copy = document.createElement('button');
   copy.type = 'button';
-  copy.className = 'entry-copy button-secondary';
+  copy.className = 'entry-copy button-icon button-secondary';
   const key = entryKey(entry);
   copy.dataset.key = key;
-  copy.textContent = (copiedLabelDeadlines.get(key) ?? 0) > Date.now() ? 'コピーしました' : 'コピー';
+  copy.dataset.copied = String((copiedLabelDeadlines.get(key) ?? 0) > Date.now());
+  copy.title = '要約をコピー';
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.setAttribute('fill', 'none');
+  icon.setAttribute('stroke', 'currentColor');
+  icon.setAttribute('stroke-width', '2');
+  for (const [name, path] of [['ready', 'M9 9h11v11H9z M5 16H4V4h12v1'], ['done', 'm5 12 4 4L19 6']]) {
+    const shape = document.createElementNS(icon.namespaceURI, 'path');
+    shape.setAttribute(`data-copy-${name}`, '');
+    shape.setAttribute('d', path);
+    icon.append(shape);
+  }
+  copy.append(icon);
   copy.setAttribute('aria-label', `${entry.filename}の要約をコピー`);
   copy.addEventListener('click', async () => {
     try {
       await (navigator.clipboard.writeText(`${entry.filename} ${entry.summary || ''}`));
       const deadline = Date.now() + COPIED_LABEL_MS;
       copiedLabelDeadlines.set(key, deadline);
-      copy.textContent = 'コピーしました';
+      copy.dataset.copied = 'true';
       byId('result-status').textContent = `${entry.filename}をコピーしました。`;
       setTimeout(() => {
         // 同じ項目を再度コピーした場合は、後のクリックの期限で戻す。
         if (copiedLabelDeadlines.get(key) !== deadline) return;
         copiedLabelDeadlines.delete(key);
         const current = document.querySelector(`#entry-list .entry-copy[data-key="${CSS.escape(key)}"]`);
-        if (current) current.textContent = 'コピー';
+        if (current) current.dataset.copied = 'false';
       }, COPIED_LABEL_MS);
     } catch (error) {
       setGlobalError(diagnostic('WI', 'ブラウザー', `${WI_ROOT} / ${entryKey(entry)}`, `コピーに失敗しました。 ${error.message}`));

@@ -12,6 +12,7 @@ import pytest
 from agent_toolkit._common import plugin_environment, task_documents
 
 from pytools._internal import antigravity_plugin as subject
+from pytools._internal.common import find_dotfiles_root
 
 _CHECK_SKILL = Path("skills") / "check" / "SKILL.md"
 _GUIDE = Path("skills") / "atk-mode" / "references" / "guide.md"
@@ -244,3 +245,11 @@ def test_standalone_registration_does_not_require_toolkit(source: Path, tmp_path
     assert subject.run(("agent-basics",)).changed
     value = json.loads((home / ".gemini/config/plugins.json").read_text())
     assert value["entries"] == [{"path": str(source), "include_only": ["agent-basics-agy"]}]
+
+
+def test_agent_toolkit_projection_keeps_the_runtime_output_policy() -> None:
+    root = find_dotfiles_root()
+    assert root is not None
+    relative = Path("agent_toolkit/_common/output-policy.ts")
+    projected = subject.outputs(root)
+    assert projected[relative][0] == (root / "agent-toolkit" / relative).read_bytes()

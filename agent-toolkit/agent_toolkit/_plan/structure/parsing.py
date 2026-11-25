@@ -4,6 +4,7 @@ import pathlib
 import re
 from dataclasses import dataclass
 
+from agent_toolkit._common.frontmatter import normalize_newlines, parse_frontmatter
 from agent_toolkit._plan.structure.constants import (
     _PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS,
     _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS,
@@ -67,7 +68,7 @@ class PlanImplementationUnit:
 @dataclass(frozen=True)
 class PlanMetadata:
     parent: str
-    """メタ情報を収めていた親H2の見出し文。現行の計画ではH1直下を表す空文字列、8節形式までの計画では`概要`となる。"""
+    """親H2の見出し。frontmatterとH1直下では空文字列、8節形式では`概要`。 pyfltr: allow-comment"""
 
     entries: tuple[tuple[str, str], ...]
     """記載順の(項目名, 生の値)。項目の順序と記法が基準を満たすかの判定に使う。"""
@@ -107,14 +108,46 @@ def metadata_parent_label(parent: str) -> str:
     return "H1直下" if parent == PLAN_METADATA_TOP_PARENT else f"`## {parent}`直下"
 
 
-def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
-    """計画メタ情報を正規配置優先で解析し、(解析結果, 曖昧性エラー)を返す。
+def is_awi_plan(content: str) -> bool:
+    parsed = parse_frontmatter(normalize_newlines(content.lstrip("\ufeff")))
+    return parsed is not None and any(key in parsed[0] for key in ("launch_route", "related_wis", "work_kind"))
 
-    8節形式までの計画は`## 概要`直下、現行の計画はH1直下（最初のH2より前）の`### 計画メタ情報`を読む。
+
+def _awi_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
+    parsed = parse_frontmatter(normalize_newlines(content.lstrip("\ufeff")))
+    assert parsed is not None
+    header = parsed[0]
+    route, repo, wis, kind = (header.get(key) for key in ("launch_route", "target_repo", "related_wis", "work_kind"))
+    errors = []
+    if not isinstance(route, str) or not route.strip():
+        errors.append("launch_routeは空でない文字列にする")
+    if not isinstance(repo, str) or not pathlib.Path(repo).is_absolute():
+        errors.append("target_repoは対象リポジトリの絶対パスにする")
+    if kind not in ("通常変更", "バグ対応"):
+        errors.append("work_kindは通常変更またはバグ対応にする")
+    if (
+        not isinstance(wis, list)
+        or not all(isinstance(name, str) and re.fullmatch(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md", name) for name in wis)
+        or len(set(wis)) != len(wis)
+    ):
+        errors.append("related_wisは重複のないWIファイル名のリストにする")
+    if errors:
+        return None, errors
+    assert isinstance(route, str) and isinstance(repo, str) and isinstance(kind, str) and isinstance(wis, list)
+    values = {"起動経路": route, "対象リポジトリ": repo, "作業種別": kind}
+    return PlanMetadata("", tuple(values.items()), values, tuple((name, "") for name in wis), ()), []
+
+
+def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
+    """計画メタ情報を正規配置優先で解析し、(解析結果, 曖昧性エラー)を返す。 pyfltr: allow-comment
+
+    AWI書式の計画はfrontmatterを読む。旧形式の計画は`## 概要`直下かH1直下の`### 計画メタ情報`を読む。
     どちらも無い既存計画に限り`PLAN_METADATA_FALLBACK_H2`の旧配置を読み取り互換として使う。
     同一親に複数の`### 計画メタ情報`がある場合と、旧配置の候補が複数の親に散在する場合は
     曖昧として解析結果を返さない。
     """
+    if is_awi_plan(content):
+        return _awi_plan_metadata(content)
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     sections: dict[str, list[int]] = {}

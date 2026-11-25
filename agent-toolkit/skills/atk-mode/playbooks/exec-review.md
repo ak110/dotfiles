@@ -6,7 +6,10 @@
 
 ## 着手時の確認
 
-1. `agent-basics:review-standards`と`agent-basics:writing-standards`を起動し、前者は索引のレビュー担当と実行レビューの行、後者は変更ファイルの成果物の種類に合う資料を読む。
+1. `agent-basics:review-standards`「役割ごとの着手」の独立した検収から始める。
+   差分の前に要求から期待結果を定めるため、`agent-basics:review-standards/references/reviewer.md`と`agent-basics:review-standards/references/reviewer-execution.md`をこの時点で読む。
+   変更成果物にだけ当てる作成規範は`agent-basics:writing-standards`で選ぶ。
+   取得済みの同じ版は再利用する。
 2. 起動入力に`全体作業契約`があれば、`agent-toolkit:atk-mode/references/work-contract.md`「工程境界での要求と成果の確認」で読み、判定を自分の記録に残す。
 3. 対象worktreeは`cwd`、リポジトリはGitの共通ディレクトリ、対象HEADは起動入力の`対象HEAD`（省略時は着手時のHEAD）、変更ファイルはその固定版から解決する。
    プロジェクト規範と適用するスキルは対象worktreeと現在のplugin rootから解決する。
@@ -21,10 +24,10 @@
 1. 開始時点は、`開始時のHEAD`があればその値、無ければ`計画`を含む時は実装着手前の作業ツリー、`CI記録`だけの時は`原因commitOID`の親commitとする。
    差分を取る直前に、開始時点とレビュー対象HEADを具体的なcommitへ解決する。
 2. 基準ごとの要求を読む。
-   - `計画`: `agent-toolkit:atk-mode/references/plan-format.md`（旧形式は`agent-toolkit:atk-mode/references/plan-legacy-formats.md`の対応）のH1直下の要約、`## 実施内容`、要求を書く節。
+   - `計画`: `agent-toolkit:atk-mode/references/plan-format.md`（旧形式は`agent-toolkit:atk-mode/references/plan-legacy-formats.md`の対応）のH1直下の要約と要求を書く節。
    - `CI記録`: 7項目の各項目。
    - `WI`: 要求、完成条件、由来、採否。
-3. 対象WIは、受け取ったWI記録と、計画の`## 実施内容`で`由来`が`人間由来のWI`か`エージェント由来のWI`の行のWIとし、状態（`processing`、`adopted`、`rejected`など）によらず全て含める。
+3. 対象WIには受け取ったWI記録と、計画の`related_wis`のWIを含める（`processing`、`adopted`、`rejected`などの状態によらない）。
    計画の由来と採否は再利用し、原文との具体的な反証がある単位だけ根拠を示して訂正する。
 4. 対象WIの本文は、`評価用WI原本`があればその一覧から、無ければ対象worktreeで`atk wi show`で取得する（複数件は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「複数件の`atk wi show`の取得」）。
    対象WIが全状態の一覧に無い時と指定された保存版を取得できない時は、不足する原本と再開の条件を返す。
@@ -108,11 +111,11 @@
 
 | 定義元の語 | agent-toolkitで指すもの |
 | --- | --- |
-| 計画の検証欄 | 計画の`## 検証`の`変更範囲の検証`行（計画が無ければ引き継ぎ記録の検証コマンド） |
+| 変更範囲の検証 | 引き継ぎ記録の検証コマンド |
 | 受入シナリオ | 計画かWIの要求が求める入口からの操作と期待結果（8節形式の計画では`### 受入シナリオ`の行） |
 | リファクタリングの検討の結論 | 計画の`## 調査結果と判断根拠`にある既存箇所の見直しの結論（8節形式では`### リファクタリング`） |
 | CI失敗の調査記録 | CI記録の各項目（「原因分析結果」「公開契約」を含む） |
-| 進捗の記録 | 計画の`## 進捗ログ` |
+| 進捗の記録 | 引き継ぎ記録 |
 | 提出された探索記録 | 実装担当が保存して`検証結果`から参照する、直接影響範囲の探索成果物 |
 
 ## 読者別探索

@@ -135,6 +135,24 @@ def test_missing_key_does_not_call_x_api(monkeypatch):
     assert "X_BEARER_TOKEN" in _by_source(result)["x:account:poteto"]["reason"]
 
 
+def test_weekly_comparison_targets_exclude_versions_without_content():
+    releases = [
+        {"tag_name": "v2.4.2", "published_at": "2026-11-22T00:00:00Z", "body": "## v2.4.2"},
+        {"tag_name": "v2.4.1", "published_at": "2026-11-21T00:00:00Z", "body": ""},
+        {"tag_name": "v2.4.0", "published_at": "2026-11-20T00:00:00Z", "body": "New flags"},
+        {"tag_name": "v2.3.0", "published_at": "2026-11-01T00:00:00Z", "body": "Old flags"},
+    ]
+    fetch = _Recorded(
+        {**_base_responses(), "https://api.github.com/repos/openai/codex/releases": (200, json.dumps(releases).encode())}
+    )
+    result = _by_source(research_sources.collect(_SLOT, fetch=fetch, now=_NOW))
+    items = result["changelog:codex"]["items"]
+    assert [item["comparison_required"] for item in items] == [False, False, True]
+    urls = research_sources.collected_source_urls(_SLOT)
+    assert urls is not None
+    assert urls.intersection(item["url"] for item in items) == {items[2]["url"]}
+
+
 def test_reads_only_after_previous_position_and_commits_after_save(x_settings, monkeypatch):
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")

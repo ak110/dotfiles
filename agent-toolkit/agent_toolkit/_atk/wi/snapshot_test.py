@@ -202,7 +202,7 @@ def test_process_loop_baseline_finds_new_merge_work_item(tmp_path, monkeypatch, 
         atk.main(["wi", "list", "--skip-pull", "--count", target, "--snapshot-output", str(later_baseline)], home=tmp_path)
     assert invocation.value.code == 0
     capsys.readouterr()
-    assert listing.progress_new_wis("snapshot-loop") == (f"{new} (source: implement、merge_branch: あり)",)
+    assert listing.progress_new_wis("snapshot-loop") == (listing.NewWorkItem(new, "implement", True),)
     assert baseline.read_bytes() == original
     assert later_baseline.read_bytes() == original
     (row,) = snapshot.progress_sources("snapshot-loop").values()
@@ -249,7 +249,7 @@ def test_process_loop_progress_reads_new_merge_work_item_from_upstream(tmp_path,
     git_repository.commit_all(other, "publish")
     git_repository.run_git(other, "push")
     assert not tuple(notes.rglob(new))
-    assert listing.progress_new_wis("snapshot-remote") == (f"{new} (source: implement、merge_branch: あり)",)
+    assert listing.progress_new_wis("snapshot-remote") == (listing.NewWorkItem(new, "implement", True),)
 
 
 @pytest.mark.parametrize("configured", [False, True])

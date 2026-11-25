@@ -6,14 +6,16 @@ import sys
 from collections.abc import Iterable, Iterator, Mapping
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import filters as _wi_filters
 from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPES, normalized_wi_type, unrepairable_entry_next_action
-from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
+from agent_toolkit._atk.wi.entry_text import EntryText, EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import parse_source, parse_target_repo
 from agent_toolkit._atk.wi.frontmatter import write_entry_text
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths, unique_dated_entry_path
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
 
@@ -47,6 +49,31 @@ def subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
     return path
 
 
+def append_result_lines(body: str, additions: list[str]) -> str:
+    headings = top_level_atx_headings(body, 2)
+    for index in range(len(headings) - 1, -1, -1):
+        if headings[index][1] == "処理結果":
+            lines = body.split("\n")
+            following = headings[index + 1][0].map if index + 1 < len(headings) else None
+            boundary = following[0] if following else len(lines)
+            first = "\n".join(lines[:boundary]).rstrip("\n")
+            rest = "\n".join(lines[boundary:])
+            return first + "\n" + "\n".join(additions) + "\n" + ("\n" + rest if rest else "")
+    return body.rstrip("\n") + "\n\n## 処理結果\n\n" + "\n".join(additions) + "\n"
+
+
+def without_last_result_section(body: str) -> str:
+    headings = top_level_atx_headings(body, 2)
+    for index in range(len(headings) - 1, -1, -1):
+        token, title = headings[index]
+        if title == "処理結果" and token.map:
+            lines = body.split("\n")
+            following = headings[index + 1][0].map if index + 1 < len(headings) else None
+            first = "\n".join(lines[: token.map[0]]).rstrip("\n")
+            return first + "\n\n" + "\n".join(lines[following[0] :]) if following else first + "\n"
+    return body
+
+
 def stamp_result(
     path: pathlib.Path,
     *,
@@ -58,12 +85,7 @@ def stamp_result(
     effect_check_reason: str | None = None,
 ) -> None:
     body = path.read_text(encoding="utf-8")
-    if not body.endswith("\n"):
-        body += "\n"
     lines = [
-        "",
-        "## 処理結果",
-        "",
         f"- 採否: {outcome}",
         f"- 処理日時: {now.astimezone().isoformat(timespec='seconds')}",
     ]
@@ -86,8 +108,7 @@ def stamp_result(
             lines.extend(("- メモ:", "", f" {fence}", *(f" {line}" for line in note.splitlines()), f" {fence}"))
         else:
             lines.append(f"- メモ: {note}")
-    body += "\n".join(lines) + "\n"
-    write_entry_text(path, body)
+    write_entry_text(path, append_result_lines(body, lines))
 
 
 def canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
@@ -123,13 +144,38 @@ def iter_entries(
     entry_type: str | Iterable[str] = "all",
     *,
     texts: EntryTexts | None = None,
+    indexed: bool = False,
 ) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
     matcher = _wi_filters.TargetRepoMatcher(filter_repo)
     entry_types = {entry_type} if isinstance(entry_type, str) else set(entry_type)
     texts = texts if texts is not None else EntryTexts()
     selected_states = set(states)
-    for path in iter_entry_paths(private_notes):
-        text = texts.read(path)
+    if indexed:
+        index = entry_index.EntryIndex(private_notes, cache_path=entry_index.default_cache_path(), verify_content=True)
+        verified = index.verified_texts()
+        if verified is not None:
+            rows = (
+                (path, EntryText.from_parsed(text, None if broken else (metadata, text[offset:])))
+                for path, text, metadata, offset, broken in verified
+            )
+        else:
+            cached, warnings = index.scan(selected_states)
+            rows = (
+                (
+                    (
+                        entry.path,
+                        EntryText.from_parsed(
+                            entry.text, None if entry.parsed.frontmatter_broken else (entry.metadata, entry.body)
+                        ),
+                    )
+                    for entry in cached
+                )
+                if not warnings
+                else ((path, texts.read(path)) for path in iter_entry_paths(private_notes))
+            )
+    else:
+        rows = ((path, texts.read(path)) for path in iter_entry_paths(private_notes))
+    for path, text in rows:
         state = "inbox" if parse_frontmatter(text) is None else entry_state_of(path, text)
         if state not in selected_states:
             continue
@@ -221,21 +267,30 @@ def select_entries(
     target_branch: str | None = None,
     branch_settings: _wi_branches.Registry | None = None,
     user_comment: str = "all",
+    indexed: bool = False,
 ) -> list[EntryRecord]:
     selected: list[EntryRecord] = []
     states = _wi_filters.resolve_states(status)
     kinds = {entry_type} if isinstance(entry_type, str) else set(entry_type)
     matcher = _wi_filters.TargetRepoMatcher(target_repo)
-    entries = snapshot if snapshot is not None else iter_entries(private_notes, states, target_repo, entry_type, texts=texts)
+    entries = (
+        snapshot
+        if snapshot is not None
+        else iter_entries(private_notes, states, target_repo, entry_type, texts=texts, indexed=indexed)
+    )
     for entry in entries:
         _, _, text, _, actual_type = entry
-        if entry[3] not in states or ("all" not in kinds and actual_type not in kinds):
-            continue
-        if actual_type is not None and not matcher.matches(entry[1]):
-            continue
-        if not _wi_filters.answered_matches(actual_type, text, answered):
-            continue
-        if not _wi_filters.source_matches_any(parse_source(text), source):
+        if entry[3] not in states or not _wi_filters.selection_matches(
+            kind=actual_type,
+            kinds=kinds,
+            text=text,
+            target_repo=entry[1],
+            repository=matcher,
+            answered=answered,
+            source=parse_source(text),
+            sources=source,
+            allow_missing_repo_for_unknown_kind=True,
+        ):
             continue
         if not _wi_filters.important_matches(text, important):
             continue

@@ -383,10 +383,10 @@ def merge_selection(
     existing, added = copy.deepcopy(existing), copy.deepcopy(added)
     derive = derive_order and derives_lane_order(added)
     correction_key = _selection.ESTIMATE_CORRECTION_KEY
-    if correction_key not in existing or correction_key not in added:
-        raise ValueError("既存と追加の両YAMLへ`見込みの補正`を記録する")
+    if correction_key not in existing:
+        raise ValueError("既存の選定YAMLに`見込みの補正`がない")
     correction = typing.cast(dict[str, object], existing[correction_key])
-    additional_correction = typing.cast(dict[str, object], added[correction_key])
+    additional_correction = typing.cast(dict[str, object], added.get(correction_key, correction))
     coefficients = _selection.correction_coefficients(correction)
     if ("係数" in correction) != ("係数" in additional_correction):
         raise ValueError("既存と追加の`見込みの補正`の形式が異なる。既存と同じ形式で追加分を記録する")
@@ -482,30 +482,31 @@ def merge_selection(
         _selection.LANE_COSTS_KEY: list(costs.values()),
         _selection.LANE_OVERLAPS_KEY: overlaps,
         "続行できない理由": ["なし"],
-        correction_key: {
-            **correction,
-            "参照した記録": list(
-                dict.fromkeys(
-                    typing.cast(list[str], correction["参照した記録"])
-                    + typing.cast(list[str], additional_correction["参照した記録"])
-                )
-            ),
-            "除外した記録": list(typing.cast(list[object], correction["除外した記録"])),
-        },
+        correction_key: correction,
     }
-    if _selection.SHARED_WAIT_SECONDS_KEY in correction:
-        typing.cast(dict[str, object], result[correction_key])[_selection.SHARED_WAIT_SECONDS_KEY] = additional_correction[
-            _selection.SHARED_WAIT_SECONDS_KEY
-        ]
-    if _selection.SHARED_WAIT_BASIS_KEY in additional_correction:
-        typing.cast(dict[str, object], result[correction_key])[_selection.SHARED_WAIT_BASIS_KEY] = additional_correction[
-            _selection.SHARED_WAIT_BASIS_KEY
-        ]
+    if correction_key in added:
+        correction["参照した記録"] = list(
+            dict.fromkeys(
+                typing.cast(list[str], correction["参照した記録"])
+                + typing.cast(list[str], additional_correction["参照した記録"])
+            )
+        )
+        excluded = typing.cast(list[object], correction["除外した記録"])
+        excluded.extend(
+            record for record in typing.cast(list[object], additional_correction["除外した記録"]) if record not in excluded
+        )
+        for key in (_selection.SHARED_WAIT_SECONDS_KEY, _selection.SHARED_WAIT_BASIS_KEY):
+            if key in additional_correction:
+                correction[key] = additional_correction[key]
     if _selection.INITIAL_ALLOCATION_KEY in existing:
         result[_selection.INITIAL_ALLOCATION_KEY] = existing[_selection.INITIAL_ALLOCATION_KEY]
     result[_selection.ADDED_WIS_KEY] = [
         *typing.cast(list[str], existing.get(_selection.ADDED_WIS_KEY, [])),
         *(str(item[_selection.WI_KEY]) for item in second),
+    ]
+    result[_selection.ADDITION_ALLOCATIONS_KEY] = [
+        *typing.cast(list[dict[str, str]], existing.get(_selection.ADDITION_ALLOCATIONS_KEY, [])),
+        selection_contract.unfinished_assignment(result),
     ]
 
     if _selection.SINGLE_STAGE_ESTIMATE_KEY in added:
@@ -517,11 +518,6 @@ def merge_selection(
     if _selection.PROCESS_ESTIMATE_KEY in added:
         result[_selection.PROCESS_ESTIMATE_KEY] = added[_selection.PROCESS_ESTIMATE_KEY]
 
-    excluded = typing.cast(dict[str, object], result[correction_key])["除外した記録"]
-    assert isinstance(excluded, list)
-    excluded.extend(
-        record for record in typing.cast(list[object], additional_correction["除外した記録"]) if record not in excluded
-    )
     if derive:
         derive_lane_order(result)
     return result

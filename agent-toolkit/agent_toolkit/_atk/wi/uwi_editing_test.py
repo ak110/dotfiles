@@ -123,7 +123,8 @@ def test_uwi_list_filters_answers_and_honors_sync_option(
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
     with pytest.raises(SystemExit) as result:
         atk.main(
-            ["wi", "list", "--type=uwi", "--answered=no", "--no-jsonl", *(["--skip-pull"] if skip_pull else [])], home=tmp_path
+            ["wi", "list", "--type=uwi", "--answered=no", "--no-jsonl", *(["--skip-pull"] if skip_pull else ["--pull"])],
+            home=tmp_path,
         )
     assert result.value.code == 0
     assert capsys.readouterr().out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"

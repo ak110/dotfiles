@@ -61,8 +61,10 @@ lazy from agent_toolkit._hooks import (
     codex_truncation,
     command_timing,
     full_reads,
+    process_wi_notifications,
     review_receipt,
     session_title,
+    source_review_receipt,
     termination_evidence,
     work_contract,
 )
@@ -105,7 +107,7 @@ importするため、循環importを避けて本モジュールに置く。
 規則で分類を誤ると、現物との比較を最も要する発話で注記が返らず、欠落にも気付けないためである。
 """
 
-_EXAMPLE_WORDS = ("例えば", "たとえば", "例として", "その手の")
+_EXAMPLE_WORDS = ("例えば", "たとえば", "例として", "その手の", "に限らず", "だけじゃない")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
 
 
@@ -115,10 +117,10 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     if not (any(word in text for word in _EXAMPLE_WORDS) or text.count("とか") >= 2):
         return None
     body = (
-        "発話に例示の語がある。応答・具体化の前に、"
+        "「発話の理解」では、対象の全体と例示を分けて示してください。"
         "`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
         "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断してください。"
-        "例示が上位の対象の一部なら、上位の対象を言葉で定め、例示以外の候補を探してから範囲を確定してください。"
+        "明示された限定は保ち、例示以外の候補を探してから範囲を確定してください。"
     )
     if any(word in text for word in _INVESTIGATION_WORDS):
         body += (
@@ -152,6 +154,7 @@ def _reset_process_wi_invoked(state: dict) -> dict | None:
     if not state.get("process_wi_skill_invoked", False):
         return None
     state["process_wi_skill_invoked"] = False
+    process_wi_notifications.clear(state)
     return state
 
 
@@ -448,6 +451,8 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         uwi_notice = _uwi_completion.build_notice(session_id)
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
+        if queue_notice := process_wi_notifications.build_notice(session_id):
+            notices.append(_llm_notice(queue_notice, tag="notice"))
 
     if tool_name == _ASK_USER_QUESTION_TOOL:
         if answers := _free_text_answers(payload.get("tool_response")):
@@ -565,16 +570,17 @@ def main(payload_text: str) -> int:
         notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
         if event_name == "PostToolUse" and (tool_name in ATK_SHELL_TOOLS or tool_name in {"Read", "Skill"}):
             review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
+            if not is_codex_payload(payload):
+                source_review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
         if event_name == "PostToolUse" and tool_name != "Skill":
             _observe_skill_reads(payload, session_id, tool_name, tool_input, cwd)
             if tool_name == "Read" or tool_name in ATK_SHELL_TOOLS:
                 _persisted_output.observe(payload, session_id, tool_name, tool_input, cwd)
-        if (
-            event_name == "PostToolUse"
-            and is_main_agent_context(payload)
-            and (quote_warning := work_contract.quote_update_warning(session_id, payload.get("transcript_path")))
-        ):
-            notices.append(_llm_notice(quote_warning))
+        if event_name == "PostToolUse" and is_main_agent_context(payload):
+            if (progress_warning := work_contract.progress_update_warning(session_id)) is not None:
+                notices.append(_llm_notice(progress_warning))
+            if (quote_warning := work_contract.quote_update_warning(session_id, payload.get("transcript_path"))) is not None:
+                notices.append(_llm_notice(quote_warning))
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:

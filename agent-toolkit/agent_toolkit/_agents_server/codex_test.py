@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import pathlib
 import sys
@@ -13,7 +14,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
-from agent_toolkit._agents_server import shared_roots, state
+from agent_toolkit._agents_server import codex_instructions, shared_roots, state
 from agent_toolkit._atk import config_settings
 from agent_toolkit._common import process_identity, session_registry, state_paths
 from agent_toolkit._common.next_action import ActionableError
@@ -26,6 +27,36 @@ from agent_toolkit._testing.codex_plugin_support import _owned_async_child
 # pylint: disable=protected-access
 
 pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("subscription", "provider", "account_type", "plan", "at_deadline", "tier"),
+    [
+        (True, "openai", "chatgpt", "business", False, "priority"),
+        (None, "openai", "chatgpt", "team", False, "priority"),
+        (True, "openai", "chatgpt", "team", True, "default"),
+        (True, "openai", "chatgpt", "promax", False, "default"),
+        (True, "openai", "chatgpt", "self_serve_business_usage_based", False, "default"),
+        (False, "openai", "chatgpt", "business", False, "default"),
+        (None, "payg", "chatgpt", "business", False, "default"),
+        (True, "openai", "apiKey", "business", False, "default"),
+        (True, "openai", "chatgpt", None, False, "default"),
+    ],
+)
+async def test_auto_tier_requires_an_eligible_subscription(
+    monkeypatch, subscription, provider, account_type, plan, at_deadline, tier
+):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "auto")
+    end = datetime.datetime.fromisoformat("2027-01-01T00:00:00+09:00")
+    now = end if at_deadline else end - datetime.timedelta(seconds=1)
+
+    async def request(method, _params):
+        if method == "config/read":
+            return {"config": {"model_provider": provider}}
+        return {"account": {"type": account_type, "planType": plan}}
+
+    assert await codex_instructions._current_service_tier(request, ".", subscription=subscription, now=now) == tier
 
 
 @pytest.mark.parametrize("failure", ["body", "graceful-close"])

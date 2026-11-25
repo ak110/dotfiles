@@ -12,7 +12,8 @@ lazy from agent_toolkit._atk import git_sync as _atk_git_sync
 lazy from agent_toolkit._atk import help_text as _atk_help
 lazy from agent_toolkit._atk import outcome as _outcome
 lazy from agent_toolkit._atk.wi import add as _add
-lazy from agent_toolkit._atk.wi import alerts as _alerts
+lazy from agent_toolkit._atk.wi import attachments as _attachments
+lazy from agent_toolkit._atk.wi import background_sync as _background_sync
 lazy from agent_toolkit._atk.wi import batch as _batch
 lazy from agent_toolkit._atk.wi import constants as _wi_constants
 lazy from agent_toolkit._atk.wi import effect_check as _effect_check
@@ -20,17 +21,20 @@ lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
 lazy from agent_toolkit._atk.wi import merge_verification as _merge_verification
 lazy from agent_toolkit._atk.wi import process_loop as _process_loop
+lazy from agent_toolkit._atk.wi import process_loop_alerts as _process_loop_alerts
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
 lazy from agent_toolkit._atk.wi import submit as _submit
 lazy from agent_toolkit._atk.wi import sync as _wi_sync
 lazy from agent_toolkit._atk.wi import uwi as _uwi
+lazy from agent_toolkit._atk.wi import wait as _wait
 lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
 lazy from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies
 lazy from agent_toolkit._atk.wi.mutations import priority as _mutation_priority
 lazy from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 lazy from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
+lazy from agent_toolkit._common import next_action as _next_action
 lazy from agent_toolkit._common import private_notes as _private_notes
 
 
@@ -51,6 +55,13 @@ def build_parser(mq: argparse.ArgumentParser) -> None:
         _add_mq_submit_parser,
     ):
         register(sub)
+    for name in ("attach", "attachments", "detach"):
+        parser = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk wi {name}"])
+        parser.add_argument("filename", help="保存済みWIのファイル名")
+        if name == "attach":
+            parser.add_argument("paths", type=pathlib.Path, nargs="+", help="添付するファイルのパス")
+        elif name == "detach":
+            parser.add_argument("name", help="削除する添付名")
     merge = _atk_help.add_command(sub, "verify-merge", **_atk_help.HELP["atk wi verify-merge"])
     merge.add_argument("filename", metavar="FILENAME", help="確認するマージ用WIのファイル名")
     merge.add_argument("--head", required=True, metavar="OID", help="取込み候補の取得済み完全OID")
@@ -200,6 +211,9 @@ def _pull_command(private_notes: pathlib.Path) -> None:
 
 
 def prepare_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if args.command == "wi" and args.wi_subcommand == "wait":
+        _wait.prepare_args(args)
+        return
     if args.command == "wi" and args.wi_subcommand == "list" and args.snapshot_output and args.new_since:
         args.subparser.error("--snapshot-outputと--new-sinceは併用できません。開始時集合は初回だけ保存する。")
     if args.command == "wi" and args.wi_subcommand == "grep":
@@ -282,11 +296,16 @@ def dispatch(
     if sub == "process-loop":
         try:
             return _process_loop.cmd_process_loop(args)
+        except _next_action.ActionableError as error:
+            _outcome.report_failure(error.reason, next_action=error.next_action)
+            return 1
         except (OSError, ValueError) as error:
             _outcome.report_failure(str(error), next_action="process-loop statusで状態を確認し、原因を解消して再実行する")
             return 1
     if sub == "submit":
         return _submit.dispatch(args)
+    if sub == "wait":
+        return _wait.cmd_wait(args, _private_notes.default_private_notes(home))
     private_notes = (
         _private_notes.default_private_notes(home)
         if sub in ("add", "edit") and args.dry_run
@@ -296,9 +315,11 @@ def dispatch(
         "add": lambda: (
             _batch.cmd_add_batch(args, private_notes, now, home) if args.batch else _add.cmd_add(args, private_notes, now, home)
         ),
+        **{key: lambda: _attachments.cmd_attachments(args, private_notes) for key in ("attach", "attachments", "detach")},
         "list": lambda: _listing.cmd_list(args, private_notes),
         "show": lambda: _show.cmd_show(args, private_notes),
         "start-processing": lambda: _mutation_transitions.cmd_start_processing(args, private_notes, now),
+        "take-over": lambda: _mutation_transitions.cmd_take_over(args, private_notes),
         "hold": lambda: _mutation_transitions.cmd_hold(args, private_notes, now),
         "unhold": lambda: _mutation_transitions.cmd_unhold(args, private_notes, now),
         "return-to-inbox": lambda: _mutation_transitions.cmd_return_to_inbox(args, private_notes, now),
@@ -315,19 +336,43 @@ def dispatch(
         "answer": lambda: _uwi.cmd_answer(args, private_notes),
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),
         "pull": lambda: _pull_command(private_notes),
-        "check-alerts": lambda: _alerts.cmd_check_alerts(args, private_notes, now),
+        "check-alerts": lambda: _process_loop_alerts.cmd_check_alerts(args, private_notes, now),
     }
+    local_save = (
+        sub
+        in {
+            "add",
+            "hold",
+            "unhold",
+            "return-to-inbox",
+            "adopt",
+            "reject",
+            "rm",
+            "record-observation",
+            "effect-check",
+            "set-dependencies",
+            "set-priority",
+        }
+        or sub in {"edit", "answer"}
+        and bool(getattr(args, "filenames", None) or getattr(args, "filename", None))
+    ) and not getattr(args, "dry_run", False)
     _atk_git_sync.reset_sync_attempt()
     try:
-        exit_code = commands[sub]() or 0
+        with _wi_sync.local_save(local_save):
+            exit_code = commands[sub]() or 0
     except (ValueError, _atk_git_sync.RebaseInProgressError) as error:
         _cli_support.report_rejected(args, error)
+        _background_sync.warn_if_unhealthy(private_notes)
         return 1
     except subprocess.CalledProcessError as error:
         _cli_support.report_git_failure(error, private_notes)
+        _background_sync.warn_if_unhealthy(private_notes)
         return 1
-    return _wi_sync.sync_exit_code(
-        exit_code,
-        private_notes,
-        should_check=_atk_git_sync.sync_attempted() and not getattr(args, "skip_push", False),
-    )
+    if local_save:
+        return _background_sync.finish_local_save(private_notes, exit_code, skip=getattr(args, "skip_push", False))
+    if exit_code == 0 and sub in {"pull", "commit"}:
+        _background_sync.explicit_sync_finished(private_notes)
+    if sub in {"list", "show", "grep"}:
+        return exit_code
+    unhealthy = _background_sync.warn_if_unhealthy(private_notes)
+    return 3 if not exit_code and unhealthy else exit_code

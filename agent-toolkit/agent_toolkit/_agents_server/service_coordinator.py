@@ -215,8 +215,11 @@ class ServiceCoordinator(ServiceSessionControl):
             or self._pending_adoptions
         )
 
+    def can_shutdown(self) -> bool:
+        return not self._updates and not self.holds_handover() and not any(not task.done() for task in self._moving.values())
+
     def can_retire(self) -> bool:
-        return self._superseded() and not self._updates and not self.holds_handover()
+        return self._superseded() and self.can_shutdown()
 
     def _conversation(self, identifier: str) -> tuple[str, Conversation] | None:
         return next(

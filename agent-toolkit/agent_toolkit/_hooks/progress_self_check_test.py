@@ -14,12 +14,14 @@ from collections.abc import Mapping
 
 import pytest
 
+from agent_toolkit._atk.wi.formatters import NewWorkItem
 from agent_toolkit._common import session_state
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_MARKER
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import posttooluse, progress_self_check
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing.output_policy_support import assert_output_policy
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -437,7 +439,6 @@ def test_notice_distinguishes_partial_failed_and_absent_observations(
     }[case]
     assert expected in notice
     if case == "partial":
-        # 一覧コマンドでは見えない失敗対象の所在と診断を、通知から直接たどれる。
         assert "root/w.json: ValueError" in notice and "agents-server" in notice
     if case == "observe-error":
         assert "denied" in notice and "`atk config get state_dir`" in notice
@@ -488,7 +489,7 @@ def test_process_loop_point_lists_merge_candidate(monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", sid)
     name = "20261123-145959-001.md"
-    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid: (f"{name} (source: implement、merge_branch: あり)",))
+    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid: (NewWorkItem(name, "implement", True),))
 
     payload = {"session_id": sid}
     assert progress_self_check.claim_notice(payload, now=1.0) is None
@@ -496,6 +497,25 @@ def test_process_loop_point_lists_merge_candidate(monkeypatch):
     notice = progress_self_check.claim_notice(payload, now=1801.0)
     assert notice and f"{name} (source: implement、merge_branch: あり)" in notice
     progress_self_check.release_reservations()
+
+
+def test_new_wi_preview_counts_all_but_repeats_only_undelivered_ids() -> None:
+    sid = _session_id()
+    old = "20261123-145959-001.md"
+    new = "20261123-150000-001.md"
+    before = (NewWorkItem(old, "implement", False),)
+    text, snapshot = notice_module.new_wi_preview(sid, "main", before)
+    notice_module.stage_new_wi_preview(text, sid, "main", snapshot)
+    assert old in text and "merge_branch" not in text
+    assert old in notice_module.new_wi_preview(sid, "main", before)[0]
+    assert_output_policy("wi_progress_first", text)
+    notice_module.record_delivery(text)
+    assert_output_policy("wi_progress_repeat", notice_module.new_wi_preview(sid, "main", before)[0])
+
+    after = (*before, NewWorkItem(new, "implement", True))
+    text, _ = notice_module.new_wi_preview(sid, "main", after)
+    assert old not in text and new in text and "計2件" in text and "merge_branch: あり" in text
+    assert old in notice_module.new_wi_preview(sid, "other", after)[0]
 
 
 def test_self_check_lists_skipped_notices_once() -> None:
@@ -525,3 +545,28 @@ def test_self_check_lists_skipped_notices_once() -> None:
     fourth = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + 5 * _INTERVAL)
     assert fourth is not None
     assert "資料を取得せずに報告した" in fourth and "agent-basics:search" not in fourth
+
+
+def test_scoped_notices_merge_at_delivery_even_if_built_before_either_was_sent() -> None:
+    sid = _session_id()
+    left = NewWorkItem("20261123-152201-001.md", "implement", False)
+    right = NewWorkItem("20261123-152201-002.md", "implement", False)
+    extra = NewWorkItem("20261123-152201-003.md", "implement", False)
+
+    def stage(row: NewWorkItem) -> str:
+        text, snapshot = notice_module.new_wi_preview(sid, "main", [row])
+        assert row.filename in text
+        notice_module.stage_new_wi_preview(text, sid, "main", snapshot, scoped=True)
+        return text
+
+    left_text = stage(left)
+    right_text = stage(right)
+    stage(extra)
+    notice_module.record_delivery(left_text)
+    notice_module.record_delivery(right_text)
+    text, _ = notice_module.new_wi_preview(sid, "main", [left, right, extra])
+    assert left.filename not in text and right.filename not in text and extra.filename in text
+    text, snapshot = notice_module.new_wi_preview(sid, "main", [right])
+    notice_module.stage_new_wi_preview(text, sid, "main", snapshot)
+    notice_module.record_delivery(text)
+    assert left.filename in notice_module.new_wi_preview(sid, "main", [left])[0]

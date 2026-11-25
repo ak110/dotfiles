@@ -2,6 +2,7 @@ import pathlib
 from typing import Any
 
 lazy from agent_toolkit._atk import help_text as _atk_help
+lazy from agent_toolkit._atk.wi import process_loop_env as _process_loop_env
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
@@ -19,12 +20,27 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         default="auto",
         help="CI取得先。autoはgithub.comならGitHub、それ以外はGitLabを使う。",
     )
+    check_alerts.add_argument(
+        "--periodic",
+        action="store_true",
+        help="取込を有効にしたGitHubリポジトリでCIとIssue・PRを定期確認する。",
+    )
     loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
     loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
     loop.add_argument("--once", action="store_true", help="1セッションを起動して、終了後に再起動せず終了する。")
+    loop.add_argument("--no-alerts", action="store_true", help="巡回中のCIおよびIssue・PRの定期確認を停止する。")
+    loop.add_argument(
+        "--alert-interval",
+        metavar="SECONDS",
+        type=_process_loop_env.positive_alert_interval,
+        default=_process_loop_env.DEFAULT_ALERT_INTERVAL,
+        help="定期確認の間隔を正の整数秒で指定する。既定は1800秒。",
+    )
     loop_sub = _atk_help.add_subcommands(loop, dest="process_loop_subcommand", required=False)
     resume = _atk_help.add_command(loop_sub, "resume", **_atk_help.HELP["atk wi process-loop resume"])
-    resume.add_argument("value", nargs="?", metavar="ID", help="指定会話ID。省略時はCLIのpicker。")
+    resume.add_argument(
+        "value", nargs="?", metavar="ID", help="再開する会話ID。Claude Codeでは必須。省略できる実行系では会話選択画面を開く。"
+    )
     _atk_help.add_command(loop_sub, "resume-cancel", **_atk_help.HELP["atk wi process-loop resume-cancel"])
     _atk_help.add_command(loop_sub, "abort", **_atk_help.HELP["atk wi process-loop abort"])
     _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])

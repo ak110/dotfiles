@@ -37,6 +37,8 @@ def _check_lane_selection(
         raise ValueError(f"選定結果の`{_selection.DECISIONS_KEY}`がYAMLの配列ではない")
     lane_awis: list[str] = []
     expected: list[str] = []
+    planless: list[str] = []
+    missing_requirement: list[str] = []
     for decision in items:
         if (
             not isinstance(decision, dict)
@@ -47,12 +49,30 @@ def _check_lane_selection(
         if decision[_selection.LANE_KEY] != lane:
             continue
         lane_awis.append(decision[_selection.WI_KEY])
-        if decision.get(_RESUME_POSITION_KEY, _RESUME_POSITION_NONE) == _RESUME_POSITION_NONE:
+        if decision.get(_RESUME_POSITION_KEY, _RESUME_POSITION_NONE) != _RESUME_POSITION_NONE:
+            continue
+        requirement = decision.get(_selection.PLAN_REQUIREMENT_KEY)
+        if requirement == "計画なし":
+            planless.append(decision[_selection.WI_KEY])
+        elif requirement == "計画あり":
             expected.append(decision[_selection.WI_KEY])
+        else:
+            missing_requirement.append(decision[_selection.WI_KEY])
     if not lane_awis:
         raise ValueError(f"選定結果にレーンがない: {lane}")
     if len(lane_awis) != len(set(lane_awis)):
         raise ValueError(f"選定結果のレーンにWIが重複する: {lane}")
+    if missing_requirement:
+        return [
+            f"レーン{lane}のWIで`計画要否`を確認できない: {', '.join(missing_requirement)}。"
+            f"`atk run-script pick-wi-check -- {selection_file} --output <再検証結果>`で補い、"
+            "保存した選定を--selection-fileへ指定して計画検査をやり直す"
+        ]
+    if not expected and planless:
+        return [
+            f"レーン{lane}の新しいWIは全て計画なしで、計画の対象となるWIが無い: {', '.join(planless)}。"
+            "計画なしで進めるか、例外で計画へ含める時は--selection-file・--laneの代わりに--expected-wiで全件を指定する"
+        ]
     if not expected:
         return [f"レーン{lane}の全WIが再開位置を持ち、新しい計画の対象となるWIが無い。再開位置が指す既存計画で続ける"]
 

@@ -24,6 +24,8 @@ _SETTING_USES = {
     "repositories": ("config_settings.resolve_configured_repositories", "巡回と選定の対象を構成する"),
     "session_review_auto_start": ("run_skill_batchのセッションレビュー起動", "個別の振り返りを自動起動するか決める"),
     "weekly_meta_auto_start": ("weekly_scheduleのmeta起動判定", "週次のメタレビューに資源を使うか決める"),
+    "weekly_architecture_auto_start": ("weekly_scheduleの起動判定", "週次の設計の点検に資源を使うか決める"),
+    "weekly_ui_sweep_auto_start": ("weekly_scheduleの起動判定", "週次の画面の巡回に資源を使うか決める"),
     "weekly_research_auto_start": ("weekly_scheduleのresearch起動判定", "週次の外部調査に資源を使うか決める"),
     "weekly_research_x_api": ("research_sourcesのX取得判定", "料金の掛かるX APIの利用を明示する"),
     "agents_concurrency": ("_agents_server.admission.configured_limit", "ホストの利用可能な資源に同時稼働数を合わせる"),
@@ -32,6 +34,11 @@ _SETTING_USES = {
     "serve_port": ("serve.configとserve.commandの待受設定", "同じホストの起動済みサービスとポートを分ける"),
     "serve_plans_root": ("serve.configのローカル計画一覧", "設定ディレクトリ以外に保存した計画を表示する"),
     "remote_hosts": ("serveのリモート計画・セッション・設定", "この端末から扱うSSH接続先を指定する"),
+    "serve_web_push": ("serve.appのWeb Push初期化", "WI画面を閉じていても通知を受け取る"),
+    "serve_web_push_details": ("serve.appのWeb Push初期化", "通知にWIのタイトルと対象リポジトリを含める"),
+    "wi_attachment_file_mib": ("wi.attachmentsのファイルサイズ検査", "1ファイルの上限を変える"),
+    "wi_attachment_item_mib": ("wi.attachmentsのWI別サイズ検査", "1件のWIの添付の合計上限を変える"),
+    "wi_attachment_total_mib": ("wi.attachmentsの累計サイズ検査", "履歴へ追加する添付の累計上限を変える"),
 }
 
 

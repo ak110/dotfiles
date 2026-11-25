@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import math
@@ -7,15 +8,16 @@ import os
 import pathlib
 import re
 import sys
+from collections.abc import Generator
 from typing import Any
 
 lazy import platformdirs
 
-from agent_toolkit._atk import config_repositories
-from agent_toolkit._common import codex_models, runtime_environment
+from agent_toolkit._common import codex_models, file_lock, private_notes, runtime_environment, weekly_work
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.usage_settings import validate_permissions
+lazy from agent_toolkit._atk import config_repositories
 
 CONFIG_FILENAME = "config.json"
 
@@ -24,7 +26,7 @@ MODEL_TYPES = ("execute", "review", "review_fast", "chores", "chores_fast", "orc
 """工程ごとに直接解決するモデル候補列の種別。"""
 
 MODEL_DEFAULTS = {
-    "execute_model": "codex:sol/low,claude:opus[1m]/low",
+    "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
     "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
     "chores_model": "codex:sol/low,claude:sonnet[1m]/low",
@@ -37,26 +39,26 @@ MODEL_DEFAULTS = {
 PRESET_MODELS = {
     "codex-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "claude:opus[1m]/low,codex:sol/low",
+        "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
     },
     "codex-near-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "codex:sol/low,claude:opus[1m]/low",
+        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
     },
     "codex-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "codex:sol/low,claude:opus[1m]/low",
+        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
         "orchestrate_model": "codex:sol/medium,claude:opus[1m]/medium",
     },
     "claude-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "claude:opus[1m]/low,codex:sol/low",
+        "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
         "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
         "chores_fast_model": "claude:haiku/low,codex:luna/low",
     },
     "claude-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "claude:opus[1m]/low,codex:sol/low",
+        "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
         "review_model": "claude:sonnet[1m]/medium,codex:sol/medium",
         "review_fast_model": "claude:haiku/medium,codex:luna/medium",
         "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
@@ -84,6 +86,8 @@ SERVE_KEY_DEFAULTS = {
     "serve_port": str(serve_default_port()),
     "serve_plans_root": "",
     "remote_hosts": "[]",
+    "serve_web_push": "false",
+    "serve_web_push_details": "false",
 }
 
 SERVE_PATH_KEYS = frozenset({"serve_plans_root"})
@@ -125,19 +129,30 @@ ARRAY_KEYS = SERVE_HOSTS_KEYS
 PROVIDER_KEYS = frozenset({"codex_credits_provider", "codex_payg_provider"})
 
 CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.endswith("_connections"))
+SHARED_SETTING_KEYS = (
+    frozenset(MODEL_DEFAULTS) | CONNECTION_ORDER_KEYS | {"codex_fast_mode", "claude_usage_limit_wait", "codex_usage_limit_wait"}
+)
+SHARED_SETTINGS_FILENAME = "atk-config.json"
+SHARED_SETTINGS_MIGRATION_MESSAGE = "chore: migrate shared agent settings"
 
 WEEKLY_KEY_DEFAULTS = {
-    "weekly_meta_auto_start": "true",
-    "weekly_research_auto_start": "false",
+    **{work.setting: str(work.default_enabled).lower() for work in weekly_work.DEFINITIONS.values()},
     "weekly_research_x_api": "false",
 }
 
-WEEKLY_FLAG_KEYS = frozenset({"weekly_meta_auto_start", "weekly_research_auto_start", "weekly_research_x_api"})
+WEEKLY_FLAG_KEYS = frozenset({*(work.setting for work in weekly_work.DEFINITIONS.values()), "weekly_research_x_api"})
+
+
+WI_ATTACHMENT_LIMIT_DEFAULTS = {
+    "wi_attachment_file_mib": "5",
+    "wi_attachment_item_mib": "20",
+    "wi_attachment_total_mib": "500",
+}
 
 
 MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
-    "codex_fast_mode": "false",
+    "codex_fast_mode": "auto",
     "usage_reset_permissions": "[]",
     **CONNECTION_DEFAULTS,
     "claude_usage_limit_wait": "five-hour",
@@ -149,6 +164,7 @@ MUTABLE_KEY_DEFAULTS = {
     "agents_concurrency": "2.5x",
     "dotfiles_mode": "full",
     **SERVE_KEY_DEFAULTS,
+    **WI_ATTACHMENT_LIMIT_DEFAULTS,
 }
 
 # 旧接続設定キーと移行先。保存値は読込時に移行先へ移し、環境変数とget・setでは移行先を示して拒否する。
@@ -318,10 +334,64 @@ def load_config_strict() -> dict[str, Any]:
     return data
 
 
+def shared_settings_path() -> pathlib.Path | None:
+    root = private_notes.default_private_notes(runtime_environment.home())
+    return root.resolve() / SHARED_SETTINGS_FILENAME if root.is_dir() else None
+
+
+def load_shared_settings(path: pathlib.Path) -> dict[str, str]:
+    try:
+        if path.is_symlink():
+            raise ValueError("シンボリックリンクは使えません")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or data.keys() - SHARED_SETTING_KEYS:
+            raise ValueError("共有する設定キーだけをJSON objectで指定してください")
+        for key, value in data.items():
+            if not isinstance(value, str):
+                raise ValueError(f"{key}は文字列で指定してください")
+            validate_mutable_setting(key, value)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as error:
+        raise _next_action.ActionableError(
+            f"共有設定ファイル{path}を読めない: {error}",
+            next_action=f"{path}の書式を確認し、正しい設定値に直して再実行する",
+        ) from error
+    return data
+
+
+@contextlib.contextmanager
+def _local_config_lock(path: pathlib.Path) -> Generator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix(".lock").open("a+b") as lock:
+        file_lock.acquire_lock(lock)
+        try:
+            yield
+        finally:
+            file_lock.release_lock(lock)
+
+
+def _write_config_locked(path: pathlib.Path, config: dict[str, Any]) -> None:
+    atomic_write(path, json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+
 def save_config(config: dict[str, Any]) -> None:
     path = config_file_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    with _local_config_lock(path):
+        _write_config_locked(path, config)
+
+
+def drop_migrated_local_settings(expected: dict[str, Any]) -> None:
+    path = config_file_path()
+    with _local_config_lock(path):
+        current = load_config_strict()
+        pending = {key: current[key] for key in SHARED_SETTING_KEYS if key in current}
+        if pending != expected:
+            raise _next_action.ActionableError(
+                "移行中にローカル設定が変わった",
+                next_action="atk config migrate-sharedで現在の差を確認し直す",
+            )
+        _write_config_locked(path, {key: value for key, value in current.items() if key not in expected})
 
 
 def config_env_name(key: str) -> str:
@@ -377,10 +447,12 @@ def parse_agents_concurrency(value: str) -> tuple[str, float] | None:
 
 
 SETTING_CHOICES = {
+    "serve_web_push": ("true", "false"),
+    "serve_web_push_details": ("true", "false"),
     "dotfiles_mode": ("full", "minimal"),
     "claude_usage_limit_wait": ("never", "five-hour", "always"),
     "codex_usage_limit_wait": ("never", "five-hour", "always"),
-    "codex_fast_mode": ("true", "false"),
+    "codex_fast_mode": ("auto", "true", "false"),
     "session_review_auto_start": ("true", "false"),
     **dict.fromkeys(sorted(WEEKLY_FLAG_KEYS), ("true", "false")),
 }
@@ -393,7 +465,7 @@ _SETTING_DESCRIPTIONS = {
     "chores_fast_model": "軽量な補助作業を担当するモデル候補",
     "orchestrate_model": "統括を担当するモデル候補",
     "write_model": "文書執筆を担当するモデル候補",
-    "codex_fast_mode": "Codexの高速モードを使うか",
+    "codex_fast_mode": "Codexの高速モード（autoは契約と提供期間で判定）",
     "usage_reset_permissions": "利用枠のresetを許可する対象と期間",
     "codex_credits_provider": "Codexの有限クレジット用provider ID",
     "codex_payg_provider": "Codexの従量課金用provider ID",
@@ -405,19 +477,22 @@ _SETTING_DESCRIPTIONS = {
     "codex_usage_limit_wait": "Codexの利用上限に達した場合に回復を待つ範囲",
     "repositories": "処理対象リポジトリと編集可否・検証OS・系統の登録",
     "session_review_auto_start": "会話の終わりに振り返りの候補を自動で処理するか",
-    "weekly_meta_auto_start": "日曜14時の週枠でメタ分析を自動で起動するか",
-    "weekly_research_auto_start": "日曜14時の週枠で外部情報の調査を自動で起動するか",
+    **{work.setting: f"日曜14時の週枠で{work.title}を自動で起動するか" for work in weekly_work.DEFINITIONS.values()},
     "weekly_research_x_api": "外部情報の調査でX APIの有償取得を使うか",
     "agents_concurrency": "委譲先の同時実行数の上限",
     "dotfiles_mode": "dotfilesの配布範囲",
     "serve_host": "ブラウザーから接続するサーバーの待受アドレス",
     "serve_port": "ブラウザーから接続するサーバーの待受ポート",
+    "serve_web_push": "WI画面を閉じていてもWeb Push通知を送る",
+    "serve_web_push_details": "Web Push通知にWIのタイトルと対象リポジトリを含める",
     "remote_hosts": "設定・計画・エージェント・セッションのSSH接続先",
     "serve_plans_root": "計画ファイルのローカル保存先の上書き。空ならprivate-notesのplansと~/.claude/plansの両方",
 }
 
 
 def setting_format(key: str) -> str:
+    if key in WI_ATTACHMENT_LIMIT_DEFAULTS:
+        return "正の整数（MiB）"
     if key in SETTING_CHOICES:
         return ", ".join(SETTING_CHOICES[key])
     if key in MODEL_DEFAULTS:
@@ -449,6 +524,9 @@ def validate_mutable_setting(key: str, value: str) -> None:
     if key in SETTING_CHOICES:
         if value not in SETTING_CHOICES[key]:
             raise ValueError(f"受理可能値: {setting_format(key)}")
+    elif key in WI_ATTACHMENT_LIMIT_DEFAULTS:
+        if not value.isdecimal() or len(value) > 9 or int(value) < 1:
+            raise ValueError("1から999999999までの整数（MiB）で指定する")
     elif key in PROVIDER_KEYS:
         if any(char.isspace() or char == "," for char in value):
             raise ValueError("config.tomlのprovider ID 1つ（空白とカンマを含まない）、または空文字列で指定する")
@@ -614,7 +692,12 @@ def raw_mutable_setting(key: str, *, fallback: str | None = None) -> str:
     explicit = runtime_environment.environment().get(config_env_name(key), "")
     if explicit:
         return explicit
-    return load_config().get(key, default if fallback is None else fallback)
+    local = load_config()
+    if key in local:
+        return local[key]
+    if key in SHARED_SETTING_KEYS and (path := shared_settings_path()) is not None:
+        return load_shared_settings(path).get(key, default if fallback is None else fallback)
+    return default if fallback is None else fallback
 
 
 def normalize_setting(key: str, value: str) -> str:

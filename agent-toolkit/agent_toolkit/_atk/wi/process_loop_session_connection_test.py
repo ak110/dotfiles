@@ -170,7 +170,7 @@ def test_codex_orchestrator_probe_start_and_resume_use_selected_provider(
     assert _provider_option(probes[0]) == "my-credits"
     assert any(item.startswith("model_providers.my-credits={") and "credits.example.test" in item for item in probes[0])
     for resume_pending, resume in ((False, None), (True, "orchestrator-thread")):
-        argv, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
+        argv, _, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
             argparse.Namespace(resume=resume),
             "作業",
             dict(env),

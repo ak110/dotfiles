@@ -577,6 +577,90 @@
       "origin": {
         "source": "投入前レビューで観測した判断漏れを、原文を含めず合成した。"
       }
+    },
+    {
+      "id": "external-source-defect",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "description": "外部資料の主張の網羅と既存参照の意味を確かめる",
+      "material": {
+        "name": "draft-decisions",
+        "change": "external-source-defect.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求原本": "{worktree}/requirements.md",
+        "調査原本": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "collapsed-source-claims",
+            "description": "独立した主張をまとめた行",
+            "patterns": [
+              "主張|スナップショット",
+              "分け|まとめ|1行|一行|上限"
+            ]
+          },
+          {
+            "id": "unrelated-existing-reference",
+            "description": "異なる行動しか示さない参照",
+            "patterns": [
+              "README|参照|対応箇所",
+              "無関係|根拠|同じ|不一致|該当"
+            ]
+          }
+        ],
+        "absent": []
+      },
+      "origin": {
+        "source": "主張をまとめた対応表が既存の無関係な規定を指した事象を合成した。"
+      }
+    },
+    {
+      "id": "external-source-control",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "description": "外部資料の主張の網羅と既存参照の意味を確かめる",
+      "material": {
+        "name": "draft-decisions",
+        "change": "external-source-control.diff",
+        "plan": "context.md"
+      },
+      "extra_params": {
+        "確認段階": "本文",
+        "原稿": "{worktree}/draft.md",
+        "要求原本": "{worktree}/requirements.md",
+        "調査原本": "{worktree}/observations.md",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "collapsed-source-claims",
+            "description": "独立した主張をまとめた行",
+            "patterns": [
+              "主張|スナップショット",
+              "分け|まとめ|1行|一行|上限"
+            ]
+          },
+          {
+            "id": "unrelated-existing-reference",
+            "description": "異なる行動しか示さない参照",
+            "patterns": [
+              "README|参照|対応箇所",
+              "無関係|根拠|同じ|不一致|該当"
+            ]
+          }
+        ]
+      },
+      "origin": {
+        "source": "主張をまとめた対応表が既存の無関係な規定を指した事象を合成した。"
+      }
     }
   ]
 }

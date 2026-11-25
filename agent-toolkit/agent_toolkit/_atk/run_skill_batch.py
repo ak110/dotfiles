@@ -33,6 +33,7 @@ from agent_toolkit._atk import (
     research_sources,
     run_script,
     run_skill_batch_evidence,
+    run_skill_batch_finalize,
     weekly_schedule,
 )
 from agent_toolkit._atk.managed_temp import paths as managed_temp_paths
@@ -59,11 +60,12 @@ from agent_toolkit._common import (
     session_registry,
     session_review,
     skill_modes,
+    weekly_work,
 )
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.wi_layout import DATED_NAME
 from agent_toolkit._git import command as git_command
-lazy from agent_toolkit._atk import run_skill_state
+lazy from agent_toolkit._atk import run_skill_state, run_skill_weekly_result
 lazy from agent_toolkit._common import windows_job
 
 _LOG = logging.getLogger(__name__)
@@ -223,7 +225,7 @@ def weekly_auto_start_due(work: str, *, now: float) -> bool:
             research_sources.commit_positions(identifier)
         return False
     record = weekly_schedule.read_record(work)
-    if work == "research":
+    if weekly_work.DEFINITIONS[work].failure_policy == "count-failures":
         # 失敗した回は次の判定で再実行する。連続失敗の報告の有無は再実行の判定に使わない。  # pyfltr: allow-comment
         return True
     key = record.get("failure_key")
@@ -466,7 +468,8 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
         return 0
     previous = weekly_schedule.read_record(work)
     start = weekly_schedule.record_path(work)
-    if work == "meta" and previous.get("report_synced") is False:
+    definition = weekly_work.DEFINITIONS[work]
+    if definition.failure_policy == "sync-before-start" and previous.get("report_synced") is False:
         session_review.launch_result()
         if not _save_meta_failure(start, previous):
             outcome.report_failure(
@@ -477,6 +480,8 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
         if not manual:
             return 0
     if getattr(args, "resume_record", None) is not None:
+        if definition.require_saved_result:
+            return run_skill_weekly_result.resume(definition, args, execute, _weekly_failed)
         if isinstance(slot := previous.get("slot"), str):
             args.weekly_slot = slot
         return execute(args)
@@ -488,7 +493,7 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
                 research_sources.commit_positions(weekly_schedule.slot_id(work, latest))
             session_review.launch_result()
             outcome.report_success(
-                f"{_WEEKLY_TITLES[work]}の最新の週枠（{weekly_schedule.slot_id(work, latest)}）は"
+                f"{definition.title}の最新の週枠（{weekly_schedule.slot_id(work, latest)}）は"
                 "結果のUWIが保存済みのため実行しなかった。次の週枠は日曜14時以降に実行できる"
             )
             return 0
@@ -499,14 +504,14 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
         )
         if not work_dir.is_absolute() or not work_dir.is_dir():
             outcome.report_failure(
-                f"{_WEEKLY_TITLES[work]}の実行cwdには実在する絶対ディレクトリが必要",
+                f"{definition.title}の実行cwdには実在する絶対ディレクトリが必要",
                 next_action="--work-dirに実在する絶対ディレクトリを指定するか、Git作業ツリー内から起動する",
             )
             return 2
     now = datetime.datetime.fromtimestamp(time.time(), datetime.UTC)
     identifier = weekly_schedule.slot_id(work, weekly_schedule.latest_slot(now))
     record: dict[str, Any] = {"slot": identifier, "started_at": now.isoformat()}
-    if work == "research" and previous.get("slot") == identifier:
+    if definition.failure_policy == "count-failures" and previous.get("slot") == identifier:
         record.update(
             {key: previous[key] for key in ("failures", "failure_reported", "failed_at", "failure_stage") if key in previous}
         )
@@ -534,7 +539,9 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
             source = repo.resolve_repo_id_or_raise(research_repo or _plugin_repository())
             registered = config_settings.repository_settings(check_paths=False).get(source)
             if registered is None or not (work_dir := pathlib.Path(registered["path"])).is_dir():
-                raise ValueError(f"{_WEEKLY_TITLES[work]}のGit作業ツリーを `atk config repos` で登録する: {source}")
+                if definition.failure_policy == "sync-before-start":
+                    raise ValueError(f"{definition.title}のGit作業ツリーを `atk config repos` で登録する: {source}")
+                work_dir = PLUGIN_ROOT
         stage = "queue"
         args.target_repo = (
             _meta_report_target(now=now) if research_repo is None else repo.resolve_repo_id_or_raise(research_repo)
@@ -543,18 +550,22 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
         stage = "execution"
         code = execute(args)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-        _LOG.error("%sを完了できなかった: %s", _WEEKLY_TITLES[work], redact_secrets(str(error)))
+        _LOG.error("%sを完了できなかった: %s", definition.title, redact_secrets(str(error)))
         code = 1
     stage = (getattr(args, "batch_failure", None) or "").partition(":")[0] or f"{stage}-{code}"
+    if not code and definition.require_saved_result and not run_skill_weekly_result.result_saved(definition, identifier, args):
+        stage, code = "result-uwi", 1
     if not code:
         if work == "research":
             research_sources.commit_positions(identifier)
         weekly_schedule.write_record(
             work, {"slot": identifier, "started_at": record["started_at"], "completed_slot": identifier}
         )
+        if definition.require_saved_result:
+            run_skill_weekly_result.finish(args, identifier)
         return code
-    if work == "research":
-        _research_failed(record, stage, code)
+    if definition.failure_policy == "count-failures":
+        _weekly_failed(definition, record, stage, code)
         return code
     failure_key = hashlib.sha256(f"meta:{stage}".encode()).hexdigest()
     log_path = getattr(args, "log_path", None)
@@ -571,10 +582,7 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
     return code
 
 
-_WEEKLY_TITLES = {"meta": "メタ分析", "research": "外部情報の調査"}
-
-
-def _research_failed(record: dict[str, Any], stage: str, code: int) -> None:
+def _weekly_failed(definition: weekly_work.WeeklyWork, record: dict[str, Any], stage: str, code: int) -> None:
     failures = int(record.get("failures", 0)) + 1
     record.update(
         failures=failures,
@@ -587,23 +595,23 @@ def _research_failed(record: dict[str, Any], stage: str, code: int) -> None:
                 private_notes.default_private_notes(),
                 messages=[
                     "---\nrun_skill_report: true\n---\n\n"
-                    f"# 外部情報の調査（{record['slot']}）が{failures}回続けて失敗した\n\n"
+                    f"# {definition.title}（{record['slot']}）が{failures}回続けて失敗した\n\n"
                     f"最後の失敗は段階 `{stage}`、終了{code}である。"
                     "提案はまだ届いておらず、次の判定で同じ回を再実行する。この報告は同じ回で1回だけ届く。"
                     "起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログで原因を確かめる。"
-                    "手動での確認には `atk run-skill --args research review-session` を使う。\n"
+                    f"手動での確認には `atk run-skill --args {definition.mode} review-session` を使う。\n"
                 ],
                 target_repo=_plugin_repository(),
                 source="run-skill",
-                scope=session_review.RESEARCH_SCOPE,
+                scope=definition.scope,
                 entry_type=WI_TYPE_UWI,
                 question_type="post-approval",
                 now=datetime.datetime.now(datetime.UTC),
             )
             record["failure_reported"] = True
         except (OSError, ValueError, subprocess.SubprocessError) as error:
-            _LOG.error("外部情報の調査の失敗を報告できない。次の失敗で再試行する: %s", redact_secrets(str(error)))
-    weekly_schedule.write_record("research", record)
+            _LOG.error("%sの失敗を報告できない。次の失敗で再試行する: %s", definition.title, redact_secrets(str(error)))
+    weekly_schedule.write_record(definition.mode, record)
 
 
 def _save_meta_failure(start: pathlib.Path, record: dict[str, Any]) -> bool:
@@ -731,17 +739,21 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
 
 
 def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
-    """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
+    """保存済み範囲の分析と報告のローカルcommitを確認して、同じbatchだけを確定する。  pyfltr: allow-comment"""
     diagnostics: dict[str, Any] | None = None
     try:
         notes = private_notes.default_private_notes()
-        gap = add.check_run_report_sync(notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True)
+        gap = add.check_run_report_sync(
+            notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True, local_only=True
+        )
         if gap is not None:
             # ファイル名やOIDを失敗キーに含めると同じ原因のAWIが重複する。  # pyfltr: allow-comment
             diagnostics = {"report_sync": {"reason": gap.reason, **gap.detail}}
             raise ValueError(f"report-unsynced: 報告の同期を確認できない（{gap.reason}）")
-        session_review.BatchWriter(path).complete(report_synced=True)
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, filelock.Timeout) as error:
+        return run_skill_batch_finalize.complete_batch(manifest, path)
+    except filelock.Timeout as error:
+        return run_skill_batch_finalize.finish_deferred(manifest, path, error)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         reason = f"finish: {error}"
         _failure(manifest, path, reason, diagnostics=diagnostics)
         outcome.report_failure(
@@ -749,10 +761,6 @@ def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
             next_action=f"分析完了と報告用UWIの同期を確認し、必要なら atk run-skill --resume {manifest['run_id']} で再開する",
         )
         return 1
-    run_skill_state.mark_completed(manifest["run_id"])
-    if log_path := manifest.get("log_path"):
-        outcome.report_success(f"スキルを実行した（ログ: {log_path}）")
-    return 0
 
 
 def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int]) -> int:
@@ -767,6 +775,8 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
         outcome.report_success(f"既に完了したbatch: {path}")
         return 0
     try:
+        if (finished := run_skill_batch_finalize.resume_finished_analysis(manifest, path)) is not None:
+            return finished
         if any(prepared.get("work_dir") for prepared in manifest["prepared"]):
             # 掃引の使用中判定から削除までの間に、期限超過の準備資料を再び使い始めない。  # pyfltr: allow-comment
             with sweep_access(managed_temp_paths.temp_root(), managed_temp_paths.state_root(create=False)) as locked:
@@ -854,14 +864,11 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         if old["status"] == "running" and _live(old):
             session_review.launch_result()
             return 1
-        if old.get("analysis_succeeded") and add.has_synced_run_report(
-            private_notes.default_private_notes(),
-            run_id=old["run_id"],
-            scope=old.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
-        ):
-            session_review.BatchWriter(path).complete(report_synced=True)
-            run_skill_state.mark_completed(old["run_id"])
-        elif old["status"] == "running" and not old.get("error") and not _interrupted_before(runs, old):
+        if (finished := run_skill_batch_finalize.resume_finished_analysis(old, path)) is not None:
+            if finished:
+                return finished
+            continue
+        if old["status"] == "running" and not old.get("error") and not _interrupted_before(runs, old):
             # 端末の停止などで実行プロセスだけが終了した回は、原因を示す診断を持たない。
             # 1回目は報告と抑止にせず対象を待ちに残し、同じ対象が続けて中断した場合に失敗として報告する。
             session_review.BatchWriter(path).retry_interrupted(_INTERRUPTED_REASON)

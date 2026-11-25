@@ -464,7 +464,7 @@ class TestStartProcessingSingle:
         assert exc_info.value.code == 0
         assert "state: processing\n" in (notes / "2026/10/fb-001.md").read_text(encoding="utf-8")
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
-        assert "chore: start processing 1 entry" in commit_cmd
+        assert any(arg.startswith("chore: start processing 1 entry\n\nWI-Claim: ") for arg in commit_cmd)
 
 
 class TestStartProcessingMissing:

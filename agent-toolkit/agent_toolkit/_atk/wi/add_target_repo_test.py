@@ -4,12 +4,14 @@
 
 import pathlib
 import subprocess
+import time
 from typing import Any
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as add_module
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import uwi as uwi_module
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
@@ -31,20 +33,21 @@ class TestAddOrderEditorFirst:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """remote同期失敗時、エディターで確定済みの本文がstderrへ再表示されたうえで終了コード1になる。"""
-        _setup_notes(tmp_path)
+        """エディターで確定した本文はremote同期前のローカル保存で成功する。  pyfltr: allow-comment"""
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         _patch_add_git(monkeypatch, myrepo, failing_prefix=["git", "merge"])
+        scheduled: list[pathlib.Path] = []
+        monkeypatch.setattr(background_sync, "schedule", scheduled.append)
         _patch_add_editor(monkeypatch, "消失させたくない本文")
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add"], home=tmp_path, now=_FIXED_DT)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "remote同期に失敗" in captured.err
-        assert "消失させたくない本文" in captured.err
+        assert exc_info.value.code == 0
+        assert scheduled == [notes]
+        assert "成功:" in capsys.readouterr().out
 
 
 class TestAddRepoPathOverrideCli:
@@ -518,6 +521,11 @@ def test_add_preserves_remote_entry_and_draft(
     assert published
     saved = notes / "2024/01" / f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"
     assert draft in saved.read_text(encoding="utf-8")
+    deadline = time.monotonic() + 5
+    branch = "refs/heads/main"
+    while git_repository.git_output(notes, "rev-parse", branch) != git_repository.git_output(origin, "rev-parse", branch):
+        assert time.monotonic() < deadline, background_sync.read_status(notes)
+        time.sleep(0.02)
     assert (notes / "2026/10/remote.md").read_bytes() == (peer / "2026/10/remote.md").read_bytes()
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "@{u}")
     assert draft in git_repository.git_output(origin, "show", f"main:{saved.relative_to(notes).as_posix()}")

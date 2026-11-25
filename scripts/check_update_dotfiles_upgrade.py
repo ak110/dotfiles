@@ -25,6 +25,9 @@ from collections.abc import Callable, Mapping, Sequence
 
 import psutil
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit"))
+from agent_toolkit._common.diagnostic_redaction import redact_secrets  # noqa: E402  # pylint: disable=wrong-import-position
+
 _BRANCH = "upgrade-check"
 _AGE_HOURS = 72
 
@@ -125,15 +128,15 @@ def run_command(
         ) from error
     finally:
         print(
-            f"工程計測: 所要={time.perf_counter() - started:.3f}秒 終了状態={status} コマンド={command!r}",
+            redact_secrets(f"工程計測: 所要={time.perf_counter() - started:.3f}秒 終了状態={status} コマンド={command!r}"),
             file=sys.stderr,
         )
     if result.returncode == 0:
         return result
     if result.stdout:
-        sys.stdout.write(result.stdout)
+        sys.stdout.write(redact_secrets(result.stdout))
     if result.stderr:
-        sys.stderr.write(result.stderr)
+        sys.stderr.write(redact_secrets(result.stderr))
     raise UpgradeCheckError(
         f"子プロセスが終了コード{result.returncode}で失敗した: {command!r}。"
         "直前の標準出力・標準エラーにあるGit・依存導入・chezmoi適用の問題を解消して検証を再実行する。"
@@ -706,7 +709,7 @@ def _perform_isolated_upgrade(
         # 旧版のcommitは固定で現行版の変更では直らないため、同じ旧版で1回だけ再試行する。
         # 再試行でも失敗した場合は旧版の状態があることを確かめられないため、更新を検証せずに失敗とする。
         print(
-            f"旧版{old_oid}の初期適用に失敗したため、同じ旧版で1回だけ再試行する。元の診断: {first_error}",
+            redact_secrets(f"旧版{old_oid}の初期適用に失敗したため、同じ旧版で1回だけ再試行する。元の診断: {first_error}"),
             file=sys.stderr,
         )
         try:
@@ -848,7 +851,10 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
             if match["level"] == "WARNING" and _installed_mcp_job_warning(
                 match["message"], continuation, home, successful.get(match["run"], set())
             ):
-                print(f"同じMCPの起動確認が完了しているため、Job制約を更新自体の失敗と区別する: {diagnostic}", file=sys.stderr)
+                print(
+                    redact_secrets(f"同じMCPの起動確認が完了しているため、Job制約を更新自体の失敗と区別する: {diagnostic}"),
+                    file=sys.stderr,
+                )
                 continue
             diagnostics.append(diagnostic)
     # severityを明示するCLIの診断だけを拾い、進捗や説明中の単語を誤検出しない。
@@ -884,7 +890,7 @@ def main() -> int:
     except (OSError, ValueError, UpgradeCheckError) as error:
         old_argument = f' --old-ref "{args.old_ref}"' if args.old_ref is not None else ""
         print(
-            f"update-dotfiles旧版更新検証に失敗した: {error}。上記の対処を行い、"
+            f"update-dotfiles旧版更新検証に失敗した: {redact_secrets(str(error))}。上記の対処を行い、"
             "uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py "
             f'--platform {args.platform} --repo "{args.repo}"{old_argument}'
             "を再実行してください。解消しない場合はこの失敗ログをdotfilesの作者へ報告してください。",

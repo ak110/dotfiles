@@ -205,7 +205,7 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
 
     `_parse_alert_keys`はモジュール非公開のため、フロントマターを持つAWIファイルを
     実際に配置して`existing_alert_keys`経由で検証する
-    （`agent-basics:writing-standards`の`references/testing.md`「private関数の直接テスト禁止」節に従う）。
+    （`agent-basics:writing-standards`の`references/testing-design.md`「private関数の直接テスト禁止」節に従う）。
     """
     notes = tmp_path / "private-notes"
     inbox = notes / "inbox"
@@ -431,7 +431,12 @@ def test_collect_new_alerts_keeps_non_utf8_stderr_as_bytes_notation(
 
 
 def _prepare_alert_cli(
-    monkeypatch: pytest.MonkeyPatch, root: pathlib.Path, *, forge: str = "github", branch: bool = True
+    monkeypatch: pytest.MonkeyPatch,
+    root: pathlib.Path,
+    *,
+    forge: str = "github",
+    branch: bool = True,
+    mock_notes: bool = True,
 ) -> tuple[pathlib.Path, pathlib.Path]:
     """実Git対象と保存領域を作成し、private-notesの外部同期だけを隔離する。"""
     host = "github.com" if forge == "github" else "gitlab.example.com"
@@ -439,7 +444,8 @@ def _prepare_alert_cli(
     if branch:
         git_repository.run_git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     notes = root / "private-notes"
-    _prepare_alert_submission(monkeypatch, notes)
+    if mock_notes:
+        _prepare_alert_submission(monkeypatch, notes)
     monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     monkeypatch.setattr(alerts, "_now_iso", lambda: "2026-01-01T00:00:00+00:00")
     return repo, notes

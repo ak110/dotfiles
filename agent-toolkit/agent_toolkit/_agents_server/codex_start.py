@@ -127,7 +127,6 @@ class CodexStartMixin:
             # 委譲先の標準手順は承認を要しない操作で構成し、ホストの権限制約を維持する。
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
-            "serviceTier": await run_file_operation(_current_service_tier),
         }
         if model is not None:
             params["model"] = model
@@ -177,7 +176,16 @@ class CodexStartMixin:
                     for candidate in order:
                         attempted.add(candidate)
                         try:
-                            thread_response = await client.request("thread/start", {**params, "modelProvider": candidate})
+                            tier = await _current_service_tier(
+                                client.request,
+                                cwd,
+                                subscription=(
+                                    await run_file_operation(codex_connection.subscription_provider_for, candidate) is not None
+                                ),
+                            )
+                            thread_response = await client.request(
+                                "thread/start", {**params, "modelProvider": candidate, "serviceTier": tier}
+                            )
                         except JsonRpcResponseError as exc:
                             detail, logged = exc.diagnostic()
                             _LOG.info("Codex接続先の開始が拒否されました: provider=%s %s", candidate, logged)
@@ -192,7 +200,8 @@ class CodexStartMixin:
                     if thread_response is None:
                         raise AppServerError("Codex connection candidates were rejected: " + "; ".join(failures))
                 else:
-                    thread_response = await client.request("thread/start", params)
+                    tier = await _current_service_tier(client.request, cwd, subscription=None)
+                    thread_response = await client.request("thread/start", {**params, "serviceTier": tier})
         except TimeoutError as exc:
             diagnostic_method = getattr(client, "initialization_diagnostic", None)
             diagnostic = (

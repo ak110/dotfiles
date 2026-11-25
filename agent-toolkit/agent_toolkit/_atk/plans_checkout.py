@@ -7,6 +7,7 @@ import pathlib
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import plans_bundle as _plans_bundle
+from agent_toolkit._atk import plans_wi_review
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
@@ -144,6 +145,9 @@ def checkout_plan(
 ) -> tuple[pathlib.Path, ...]:
     """保存済み計画バンドルを`~/.claude/plans`へ取得し、取得時点と所有セッションを記録する。"""
     if _bundle_kinds.EXEC_REVIEW.matches(plan_file):
+        relative = _plan_file.resolve_plan_input(plan_file, private_notes=private_notes, home=home, saved_only=True)
+        if plans_wi_review.saved_wi_review(relative):
+            return plans_wi_review.checkout_wi_review(private_notes, relative, home)
         return checkout_ci_review(private_notes, plan_file, home=home)
     relative_main = validate_saved_plan_relative_path(
         _plan_file.resolve_plan_input(plan_file, private_notes=private_notes, home=home, saved_only=True).as_posix()

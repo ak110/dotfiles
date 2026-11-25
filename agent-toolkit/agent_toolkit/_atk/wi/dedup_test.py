@@ -53,4 +53,4 @@ def test_duplicate_filenames_deduplicated_without_warning(
     assert "重複がある" not in capsys.readouterr().err
     commit_cmds = [call["cmd"] for call in git_calls if "commit" in call["cmd"]]
     assert len(commit_cmds) == 1
-    assert commit_message in commit_cmds[0]
+    assert any(arg.split("\n", 1)[0] == commit_message for arg in commit_cmds[0])

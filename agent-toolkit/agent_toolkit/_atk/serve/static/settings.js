@@ -1,5 +1,6 @@
 import {BASE_PATH} from "./common.js";
 import {registerScreen} from "./shell.js";
+import {formatLocalMinute, renderResetPermissions} from "./reset_permissions.js";
 
 const status = document.getElementById("settings-status");
 const content = document.getElementById("settings-content");
@@ -8,7 +9,11 @@ const navigation = document.getElementById("settings-nav");
 let host = "";
 let activeGroup = "models";
 let busy = false;
+let loading = false;
+let loadGeneration = 0;
+let displayedData;
 const hostDrafts = new Map();
+const conflicts = new Map();
 let fieldCount = 0;
 const guide = "https://github.com/ak110/dotfiles/blob/master/docs/guide/";
 
@@ -21,6 +26,7 @@ function element(tag, text = "") {
 function section(parent, title, url) {
   const target = element("section");
   const heading = element("h2", title);
+  heading.className = "page-heading";
   target.append(heading);
   if (url) {
     const link = element("a", "ガイドを読む");
@@ -38,11 +44,18 @@ function button(text, action) {
   return result;
 }
 
-function field(parent, label, value = "", choices, type = "text") {
+const FAST_MODE_LABELS = {auto: "自動判定（auto）", true: "高速（true）", false: "通常（false）"};
+function sharedScope(syncs) {
+  return syncs
+    ? "保存先: 同じprivate-notesを使うホストで共有されます。このホストだけ変えるには一時指定を使ってください。"
+    : "保存先: このホストのprivate-notes。同期先が未設定のため、他のホストには反映されません。";
+}
+
+function field(parent, label, value = "", choices, type = "text", labels = {}) {
   const wrapper = element("div");
   wrapper.className = "settings-field";
   const input = element(choices ? "select" : "input");
-  for (const choice of choices ?? []) input.append(new Option(choice, choice));
+  for (const choice of choices ?? []) input.append(new Option(labels[choice] ?? choice, choice));
   if (!choices) input.type = type;
   input.id = `settings-field-${++fieldCount}`;
   const caption = element("label", label);
@@ -54,8 +67,11 @@ function field(parent, label, value = "", choices, type = "text") {
   return input;
 }
 
-async function request(payload) {
-  const query = host ? "?" + new URLSearchParams({host}) : "";
+async function request(payload, cached = false) {
+  const parameters = new URLSearchParams();
+  if (host) parameters.set("host", host);
+  if (cached) parameters.set("cached", "1");
+  const query = parameters.size ? "?" + parameters : "";
   const response = await fetch(BASE_PATH + "/api/settings" + query, payload ? {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
   } : undefined);
@@ -64,19 +80,33 @@ async function request(payload) {
   return data;
 }
 
+function editorFields(editor) {
+  return Array.from(editor.querySelectorAll("input, select")).filter(input => input.closest("[data-editor]") === editor);
+}
+
 function rememberEditors(savedSlot) {
   return new Map(Array.from(content.querySelectorAll("[data-editor]"), editor => [
     editor.dataset.editor,
     {
       open: editor.open,
-      values: editor.dataset.editor === savedSlot ? [] : Array.from(editor.querySelectorAll("input, select"), input =>
-        input.value === input.dataset.initialValue ? null : input.value),
+      values: editor.dataset.editor === savedSlot ? [] : editorFields(editor).map(input => {
+        const instant = input.dataset.instantDisplay === input.value ? input.dataset.instant : "";
+        if (input.value === input.dataset.initialValue && (!instant || instant === input.dataset.initialInstant)) return null;
+        return {value: input.value, instant};
+      }),
     },
   ]));
 }
 
-async function operate(payload, output) {
-  if (busy) return;
+function settingResult() {
+  const output = element("p");
+  output.setAttribute("role", "alert");
+  output.dataset.settingsResult = "";
+  return output;
+}
+
+async function operate(payload, output, submittedEditor = null) {
+  if (busy || loading || conflicts.has(output.closest("[data-editor]")?.dataset.editor)) return;
   busy = true;
   hostPicker.disabled = true;
   const oldEditor = output.closest("[data-editor]");
@@ -85,13 +115,16 @@ async function operate(payload, output) {
   const scrollTop = scroll.scrollTop;
   try {
     await request(payload);
-    const drafts = rememberEditors(editorKey);
+    const submittedKey = submittedEditor?.dataset.editor ?? editorKey;
+    const drafts = rememberEditors(submittedKey);
+    if (submittedKey === "usage_reset_permissions:") drafts.delete(submittedKey);
     await refresh();
     const savedEditor = restoreEditors(drafts, editorKey);
+    renderConflicts();
     const message = "設定を保存しました。";
-    const notice = savedEditor?.querySelector("[role=alert]");
+    const notice = savedEditor?.querySelector("[data-settings-result]");
     scroll.scrollTop = scrollTop;
-    if (notice && !notice.closest("[hidden]")) {
+    if (notice && !notice.closest("[hidden], details:not([open])")) {
       status.textContent = "";
       notice.textContent = message;
       notice.tabIndex = -1;
@@ -99,6 +132,9 @@ async function operate(payload, output) {
       notice.scrollIntoView({block: "nearest"});
     } else {
       status.textContent = message;
+      status.tabIndex = -1;
+      status.focus({preventScroll: true});
+      status.scrollIntoView({block: "nearest"});
     }
   } catch (error) {
     (output.isConnected ? output : status).textContent = error.message;
@@ -113,9 +149,20 @@ function restoreEditors(drafts, editorKey) {
   for (const editor of content.querySelectorAll("[data-editor]")) {
     const previous = drafts.get(editor.dataset.editor);
     if (previous?.open) editor.open = true;
-    editor.querySelectorAll("input, select").forEach((input, index) => {
+    if (editor.dataset.editor === "temporary" && previous?.values[0] != null) {
+      const key = editor.querySelector("select");
+      key.value = previous.values[0].value;
+      key.dispatchEvent(new Event("change"));
+    }
+    editorFields(editor).forEach((input, index) => {
       const draft = previous?.values[index];
-      if (draft != null) input.value = draft;
+      if (!draft) return;
+      input.value = draft.value;
+      if (draft.instant) {
+        input.dataset.instant = draft.instant;
+        input.dataset.instantDisplay = draft.value;
+      }
+      if (input.hasAttribute("data-draft-trigger")) input.dispatchEvent(new Event("change"));
     });
     if (editor.dataset.editor === editorKey) savedEditor = editor;
   }
@@ -136,37 +183,53 @@ function submit(form, label) {
   const control = element("button", label);
   control.type = "submit";
   form.append(control);
+  return control;
 }
 
-function keyEditor(parent, key, item, listen) {
+function keyEditor(parent, key, item, data) {
+  const listen = data.listen ?? {};
   const block = element("div");
   block.dataset.setting = key;
   block.dataset.editor = `setting:${key}`;
-  block.append(element("h3", key));
+  block.className = "settings-row";
+  const description = element("div");
+  description.append(element("h3", key));
+  block.append(description);
   const timing = key.startsWith("serve_") || key === "remote_hosts" ? "次回のatk serve起動" :
     key === "dotfiles_mode" ? "次のdotfiles更新" : "";
-  if (item.description) block.append(element("p", item.description));
+  if (item.description) description.append(element("p", item.description));
   const source = item.source ? `（出所: ${item.source}）` : "";
-  block.append(element("p", `実効値: ${item.effective || "未指定"}${source}`));
-  if (item.read_only) {
-    block.append(element("p", "読み取り専用"));
+  const effective = key === "usage_reset_permissions" ? `${JSON.parse(item.effective || "[]").length}件の許可` :
+    item.effective || "未指定";
+  description.append(element("p", `実効値: ${effective}${source}`));
+  if (item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && host)) {
+    description.append(element("p", key === "usage_reset_permissions" && host
+      ? "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"
+      : "読み取り専用"));
     parent.append(block);
     return;
   }
-  if (timing) block.append(element("p", key === "remote_hosts" ?
+  if (item.shared) description.append(element("p", sharedScope(item.shared_sync)));
+  if (key === "codex_fast_mode") {
+    description.append(element("p", "実効値は採用中の設定です。自動判定で実際に使う速度は接続先と提供期間で決まります。"));
+  }
+  if (timing) description.append(element("p", key === "remote_hosts" ?
     "反映: 設定のホスト切替は保存後、計画とセッションは次回のatk serve起動" : `反映: ${timing}`));
   if (item.source === "一時指定" || item.source?.startsWith("AGENT_TOOLKIT_CONFIG_")) {
-    block.append(element("p", "保存値を変更しても、この上書きが解除されるまで実効値は変わりません。"));
+    description.append(element("p", "保存値を変更しても、この上書きが解除されるまで実効値は変わりません。"));
   }
   if (listen[key] && (String(listen[key][0]) !== item.effective || listen[key][1] !== "atk config")) {
     const [value, source] = listen[key];
-    block.append(element("p", `実行中の待受: ${value}（出所: ${source}）、保存値: ${item.saved}。`));
-    if (source !== "atk config") block.append(element("p", "同じ指定で再起動する場合、保存値は使われません。"));
+    description.append(element("p", `実行中の待受: ${value}（出所: ${source}）、保存値: ${item.saved}。`));
+    if (source !== "atk config") description.append(element("p", "同じ指定で再起動する場合、保存値は使われません。"));
   }
-  const output = element("p");
-  output.setAttribute("role", "alert");
-  if (key === "usage_reset_permissions" || key === "claude_reset_inventory") {
-    resetPermissionsEditor(block, key, item, output);
+  const controls = element("div");
+  block.append(controls);
+  const output = settingResult();
+  if (key === "usage_reset_permissions") {
+    renderResetPermissions(controls, JSON.parse(item.saved), data.reset_editor,
+      (entries, editor) => operate({action: "set", key, value: JSON.stringify(entries)}, output, editor),
+      {element, field, form, button, submit});
   } else if (item.array) {
     const list = element("ul");
     for (const value of JSON.parse(item.saved)) {
@@ -174,72 +237,27 @@ function keyEditor(parent, key, item, listen) {
       row.append(button(`${value}を削除`, () => operate({action: "array-remove", key, value}, output)));
       list.append(row);
     }
-    block.append(list);
-    const editor = form(block, () => operate({action: "array-add", key, value: input.value}, output));
+    controls.append(list);
+    const editor = form(controls, () => operate({action: "array-add", key, value: input.value}, output));
     const input = field(editor, "追加するホスト");
     input.required = true;
     submit(editor, "追加");
   } else if (key !== "repositories") {
-    const editor = form(block, () => operate({action: "set", key, value: input.value}, output));
-    const input = field(editor, "保存値", item.saved, item.choices);
+    const editor = form(controls, () => operate({action: "set", key, value: input.value}, output));
+    const input = field(editor, "保存値", item.saved, item.choices, "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
     if (key === "serve_port") input.inputMode = "numeric";
     if (!item.choices && item.format) {
       const hint = element("small", `形式: ${item.format}。${item.default === undefined ? "" : ` 初期値: ${item.default || "未指定"}`}`);
       hint.id = `${input.id}-format`;
-      editor.prepend(hint);
+      hint.className = "settings-format";
+      input.parentElement.append(hint);
       input.setAttribute("aria-describedby", `${hint.id} ${input.id}-result`);
     }
     output.id = `${input.id}-result`;
     submit(editor, "保存");
   }
-  block.append(output);
+  controls.append(output);
   parent.append(block);
-}
-
-function dateTimeValue(instant) {
-  if (!instant) return "";
-  const date = new Date(instant);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
-
-function resetPermissionsEditor(parent, key, item, output) {
-  const entries = JSON.parse(item.saved);
-  const save = entries => operate({action: "set", key, value: JSON.stringify(entries)}, output);
-  const fields = [
-    ["id", "許可ID", "text"],
-    ["engine", "エンジン", "text", ["claude", "codex"]],
-    ["account", "アカウント", "text"],
-    ["scope", "範囲", "text"],
-    ["count", "回数", "number"],
-    ["from", "開始（このブラウザーの時刻）", "datetime-local"],
-    ["until", "終了（このブラウザーの時刻）", "datetime-local"],
-  ];
-  for (const [index, entry] of [...entries, {}].entries()) {
-    const box = element("details");
-    box.dataset.editor = `${key}:${entry.id ?? ""}`;
-    box.append(element("summary", entry.id ?? "許可を追加"));
-    const editor = form(box, () => {
-      const updated = {...entry};
-      for (const [name, input] of inputs) {
-        updated[name] = input.type === "datetime-local"
-          ? (entry[name] && input.value === input.dataset.initialValue ? entry[name] : new Date(input.value).toISOString())
-          : input.type === "number" ? input.valueAsNumber : input.value;
-      }
-      const result = entries.slice();
-      result[index] = updated;
-      void save(result);
-    });
-    const inputs = fields.map(([name, label, type, choices]) => {
-      const value = type === "datetime-local" ? dateTimeValue(entry[name]) : entry[name] ?? choices?.[0] ?? "";
-      const input = field(editor, label, value, choices, type);
-      input.required = true;
-      if (type === "number") input.min = "0";
-      return [name, input];
-    });
-    submit(editor, entry.id ? "保存" : "追加");
-    if (entry.id) box.append(button("許可を削除", () => save(entries.filter((_, i) => i !== index))));
-    parent.append(box);
-  }
 }
 
 function repositoryEditor(parent, repo = "", attributes = {}) {
@@ -255,8 +273,7 @@ function repositoryEditor(parent, repo = "", attributes = {}) {
   const defaultBranch = field(box, "省略時の系統", attributes.default_branch);
   const mergeFrom = field(box, "リリース前に取り込む系統（対象=取込元、カンマ区切り）",
     Object.entries(attributes.merge_from ?? {}).map(([target, source]) => `${target}=${source}`).join(","));
-  const output = element("p");
-  output.setAttribute("role", "alert");
+  const output = settingResult();
   box.append(button(repo ? "属性を保存" : "追加", () => {
     const data = {
       action: "repo", operation: repo ? "set" : "add", repo: repo || identifier.value,
@@ -276,6 +293,7 @@ function repositoryEditor(parent, repo = "", attributes = {}) {
 }
 
 function render(data) {
+  displayedData = data;
   const root = document.createDocumentFragment();
   const groups = {
     models: section(root, "工程別モデル", "claude-code-models.md#工程別モデル設定"),
@@ -298,17 +316,17 @@ function render(data) {
     const group = key.endsWith("_model") ? groups.models : (key.startsWith("serve_") || key === "remote_hosts") ? groups.serve :
       key === "repositories" ? groups.repos : /usage|reset/.test(key) ? groups.usage :
       /connections|provider|env_file/.test(key) ? groups.connections : groups.other;
-    if (key !== "repositories" || !data.repositories) keyEditor(group, key, item, data.listen ?? {});
+    if (key !== "repositories" || !data.repositories) keyEditor(group, key, item, data);
   }
   for (const [key, value] of Object.entries(data.paths)) groups.other.append(element("p", `${key}: ${value}`));
   for (const [repo, attributes] of Object.entries(data.repositories ?? {})) repositoryEditor(groups.repos, repo, attributes);
   if (data.repositories) repositoryEditor(groups.repos);
   if (data.model_order_policy) groups.usage.append(element("p", data.model_order_policy));
-  for (const quota of data.usage ?? []) {
-    const recovery = quota.resets_at == null ? "不明" : new Date(quota.resets_at * 1000).toLocaleString();
-    groups.usage.append(element("p", `${quota.engine} · ${quota.window_id}: 使用率 ${quota.used_percent ?? "不明"}、回復: ${recovery}`));
-  }
-  if (data.usage && !data.usage.length) groups.usage.append(element("p", "利用枠の観測値はありません。"));
+  const usageLink = element("a", "利用枠の使用率とリセット権を見る");
+  usageLink.href = BASE_PATH + "/usage";
+  const usageHelp = element("p");
+  usageHelp.append(usageLink);
+  groups.usage.append(usageHelp);
   if (data.temporary) renderTemporary(groups.temporary, data);
   else groups.temporary.remove();
   const presets = groups.models;
@@ -318,11 +336,12 @@ function render(data) {
     item.dataset.editor = `preset:${preset}`;
     item.append(element("summary", preset));
     if (Object.keys(values).some(name => !data.settings[name] || data.settings[name].read_only)) continue;
+    const sharedSetting = Object.keys(values).find(name => data.settings[name].shared);
+    if (sharedSetting) item.append(element("p", sharedScope(data.settings[sharedSetting].shared_sync)));
     for (const [name, presetValue] of Object.entries(values)) {
       item.append(element("p", `${name}: 現在 ${data.settings[name].effective} → 保存 ${presetValue}`));
     }
-    const output = element("p");
-    output.setAttribute("role", "alert");
+    const output = settingResult();
     item.append(button("適用", () => operate({action: "preset", preset}, output)), output);
     presets.append(item);
   }
@@ -346,6 +365,7 @@ function render(data) {
   const options = [new Option("ローカル", ""), ...(data.hosts ?? []).map(name => new Option(name, name))];
   hostPicker.replaceChildren(...options);
   hostPicker.value = host;
+  updateWriteControls();
 }
 
 function showGroup() {
@@ -369,15 +389,24 @@ function renderTemporary(temporary, data) {
   }
   const keys = Object.keys(data.settings).filter(key => data.settings[key].temporary && !data.settings[key].read_only);
   if (!keys.length) return;
-  const output = element("p");
-  output.setAttribute("role", "alert");
+  const output = settingResult();
   const editor = form(temporary, () => {
     void operate({action: "temporary", key: key.value, value: value.value,
       until: until.value ? new Date(until.value).toISOString() : null}, output);
   });
   const key = field(editor, "キー", keys[0], keys);
-  const value = field(editor, "値", data.settings[key.value].effective);
-  key.addEventListener("change", () => { value.value = data.settings[key.value].effective; });
+  function valueField(parent) {
+    const setting = data.settings[key.value];
+    return field(parent, "値", setting.effective, setting.choices, "text",
+      key.value === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
+  }
+  let value = valueField(editor);
+  key.addEventListener("change", () => {
+    const replacement = document.createDocumentFragment();
+    const next = valueField(replacement);
+    value.parentElement.replaceWith(replacement);
+    value = next;
+  });
   const until = field(editor, "期限（このブラウザーの時刻）", "", null, "datetime-local");
   submit(editor, "一時指定を保存");
   if (entries.length) temporary.append(button("一時指定を全解除", () => operate({action: "temporary-clear"}, output)));
@@ -386,41 +415,150 @@ function renderTemporary(temporary, data) {
 
 async function refresh() {
   const data = await request();
+  for (const {key, old} of conflicts.values()) data.settings[key] = old;
   render(data);
   return data;
 }
 
+function updateWriteControls() {
+  for (const control of content.querySelectorAll("button:not([data-conflict-action], [data-local-edit])")) {
+    const editor = control.closest("[data-editor]");
+    if (!editor) continue;
+    const setting = control.closest("[data-setting]") || editor;
+    const blocked = loading || conflicts.has(setting.dataset.editor);
+    if (blocked && !control.disabled) {
+      control.disabled = true;
+      control.dataset.writeBlocked = "";
+      control.setAttribute("aria-describedby", loading ? "settings-status" : setting.querySelector("[data-conflict]")?.id || "");
+    } else if (!blocked && control.hasAttribute("data-write-blocked")) {
+      control.disabled = false;
+      control.removeAttribute("data-write-blocked");
+      control.removeAttribute("aria-describedby");
+    }
+  }
+}
+
+function resolveConflict(slot, keepDraft) {
+  const conflict = conflicts.get(slot);
+  if (!conflict) return;
+  const drafts = rememberEditors();
+  conflicts.delete(slot);
+  if (!keepDraft) {
+    for (const key of drafts.keys()) if (key === slot || key.startsWith(conflict.key + ":")) drafts.delete(key);
+    displayedData.settings[conflict.key] = conflict.latest;
+    render(displayedData);
+    restoreEditors(drafts);
+    renderConflicts();
+  } else {
+    content.querySelector(`[data-editor="${CSS.escape(slot)}"] [data-conflict]`)?.remove();
+    updateWriteControls();
+  }
+}
+
+function renderConflicts() {
+  for (const [slot, {key, latest}] of conflicts) {
+    const editor = content.querySelector(`[data-editor="${CSS.escape(slot)}"]`);
+    if (!editor) continue;
+    const notice = element("div");
+    notice.dataset.conflict = "";
+    notice.id = `settings-conflict-${key}`;
+    const latestValue = key === "usage_reset_permissions" ?
+      JSON.parse(latest.saved).map(entry => `${entry.id} · ${entry.count}回 · ${entry.from}〜${entry.until}`).join(" / ") || "許可なし" :
+      latest.saved;
+    notice.append(
+      element("p", "取得中に保存値が変更されました。入力欄は編集中の値です。保存する前にどちらを使うか選んでください。"),
+      element("p", `最新の保存値: ${latestValue}`),
+    );
+    for (const [label, keepDraft] of [["最新の値を取り込む", false], ["自分の入力で上書き", true]]) {
+      const choice = button(label, () => resolveConflict(slot, keepDraft));
+      choice.dataset.conflictAction = "";
+      notice.append(choice);
+    }
+    editor.append(notice);
+  }
+  updateWriteControls();
+}
+
 async function loadHost() {
   if (busy) return;
-  busy = true;
-  hostPicker.disabled = true;
-  navigation.replaceChildren();
-  content.replaceChildren();
+  const generation = ++loadGeneration;
+  loading = true;
+  updateWriteControls();
   status.textContent = "読み込み中…";
   try {
-    const data = await refresh();
-    restoreEditors(hostDrafts.get(host) ?? new Map());
+    const displayedHost = host;
+    const savedDrafts = hostDrafts.get(displayedHost);
+    const editingSnapshot = displayedData ?? savedDrafts?.snapshot;
+    const initial = await request(undefined, Boolean(host) && !displayedData);
+    if (generation !== loadGeneration) return;
+    const prior = content.hasChildNodes() ? rememberEditors() : savedDrafts?.editors ?? new Map();
+    let data = initial;
+    if (initial.cached) {
+      render(initial);
+      restoreEditors(prior);
+      const fetched = new Date(initial.fetched_at).toLocaleString();
+      status.textContent = `取得: ${fetched} · 更新中。最新の値が届くまで保存できません。`;
+      data = await request();
+      if (generation !== loadGeneration) return;
+    }
+    const drafts = initial.cached ? rememberEditors() : prior;
+    const previous = editingSnapshot ?? (initial.cached ? initial : undefined);
+    const rendered = {...data, settings: {...data.settings}};
+    for (const [key, latest] of Object.entries(data.settings)) {
+      const slot = `setting:${key}`;
+      const old = previous?.settings[key];
+      const edited = Array.from(drafts).some(([name, draft]) =>
+        (name === slot || name.startsWith(key + ":")) && draft.values.some(Boolean));
+      if (!old || latest.read_only || old.saved === latest.saved || !edited) continue;
+      conflicts.set(slot, {key, old, latest});
+      rendered.settings[key] = old;
+    }
+    render(rendered);
+    restoreEditors(drafts);
+    renderConflicts();
+    loading = false;
+    updateWriteControls();
     status.textContent = data.legacy ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
   } catch (error) {
+    if (generation !== loadGeneration) return;
     status.textContent = error.message;
+    if (displayedData?.fetched_at) {
+      status.textContent += ` 取得: ${new Date(displayedData.fetched_at).toLocaleString()}。最新の値が届くまで保存できません。`;
+    }
     status.append(" ", button("再試行", loadHost));
   } finally {
-    busy = false;
-    hostPicker.disabled = false;
+    if (generation === loadGeneration) hostPicker.disabled = false;
   }
 }
 
 async function enter() {
-  if (document.body.dataset.screen !== "settings" || content.hasChildNodes()) return;
+  if (document.body.dataset.screen !== "settings") return;
+  const query = new URLSearchParams(location.search);
+  if (query.get("group") === "usage") activeGroup = "usage";
+  if (query.get("host") === "" && host) {
+    selectHost("");
+    return;
+  }
+  if (content.hasChildNodes()) {
+    showGroup();
+    return;
+  }
   await loadHost();
 }
 
-hostPicker.addEventListener("change", () => {
+function selectHost(selected) {
   if (busy) return;
-  if (content.hasChildNodes()) hostDrafts.set(host, rememberEditors());
-  host = hostPicker.value;
+  if (content.hasChildNodes()) hostDrafts.set(host, {snapshot: displayedData, editors: rememberEditors()});
+  host = selected;
+  hostPicker.value = host;
+  displayedData = undefined;
+  conflicts.clear();
+  navigation.replaceChildren();
+  content.replaceChildren();
   void loadHost();
-});
+}
+
+hostPicker.addEventListener("change", () => selectHost(hostPicker.value));
 
 registerScreen("settings", {init: () => {
   document.addEventListener("atk-screen-change", enter);

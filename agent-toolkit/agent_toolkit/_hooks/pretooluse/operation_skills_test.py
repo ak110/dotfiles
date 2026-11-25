@@ -23,6 +23,7 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import delegated_session, session_state
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.termination_evidence_state import STATE_KEY as TERMINATION_EVIDENCE_KEY
+from agent_toolkit._testing.output_policy_support import assert_output_policy
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
@@ -35,7 +36,7 @@ _SEARCH_SKILL = "agent-basics:search"
 _BUGFIX_SKILL = "agent-basics:bugfix"
 _WRITING_SKILL = "agent-basics:writing-standards"
 _CHECK_EXECUTION_SKILL = "agent-basics:check-execution"
-_NOTICE = re.compile(r"スキル`([^`]+)`をまだ起動していなければ")
+_NOTICE = re.compile(r"スキル`([^`]+)`を起動してください")
 """起動を求める案内から、案内したスキルの名前を取り出す。"""
 _ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n- 期待: 対象の全件を処理する。\n- 原因: 範囲の指定の誤り。\n"
 
@@ -113,8 +114,12 @@ def test_notice_is_given_once_per_subject(tmp_path: pathlib.Path) -> None:
     env = _plan_file_state_env(tmp_path)
     main = {"tool_name": "Grep", "tool_input": {"pattern": "needle"}, "session_id": "subjects"}
     child = {**main, "agent_id": "child"}
-    assert _notified(_run(main, env)) == {_SEARCH_SKILL}
-    assert not _notified(_run(main, env))
+    first = _run(main, env)
+    assert _notified(first) == {_SEARCH_SKILL}
+    assert_output_policy("search", _additional_context(first))
+    repeat = _run(main, env)
+    assert not _notified(repeat)
+    assert_output_policy("search_repeat", _additional_context(repeat))
     assert _notified(_run(child, env)) == {_SEARCH_SKILL}
     assert not _notified(_run(child, env))
 

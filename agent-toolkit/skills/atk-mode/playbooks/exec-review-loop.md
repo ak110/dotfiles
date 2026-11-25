@@ -5,11 +5,11 @@
 CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正系列」の手順4の担当が使う。
 複数レーンの実行でメインは実行レビューを起動せず、判断要請への処置、既存不良の処置の時機、統合の許可、最終結果の受領を担う。
 合否は実装していない実行レビュー担当の返却で決め、起動側は返却を現物と突き合わせて受理する（原則6、`agent-basics:writing-standards/references/quality-principles-verification.md`）。
-終了条件は、本書「収束と統合への引渡し」の条件を満たす返却を受理し、受理の記録を進捗ログ（計画なしでは引き継ぎ記録）へ残した時点である。
+終了条件は、本書「収束と統合への引渡し」の条件を満たす返却を受理し、受理の記録を引き継ぎ記録へ残した時点である。
 
 ## 起動
 
-1. 変更範囲の検証と受入シナリオの`検証結果`が、`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」の形で進捗ログ（計画なしでは引き継ぎ記録）にあることを確かめる（メイン自身の実装も同じ）。
+1. 変更範囲の検証と受入シナリオの`検証結果`が、`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」の形で引き継ぎ記録にあることを確かめる（メイン自身の実装も同じ）。
    委譲プロンプトへは記録を再掲せず、残工程の担当と再開先、検証済み・未実施・条件変更の別だけを渡す。
 2. 実装を認可した資料から、レビュー基準を`計画`、`WI`、`CI記録`（計画の無いCI失敗の対応）から選ぶ（組み合わせてよい）。
    1回の実行レビューは`cwd`から解決する1つのリポジトリだけを対象とし、リポジトリが異なる基準はレビューを分ける。
@@ -28,13 +28,13 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    | --- | --- |
    | `レビュー基準` | 手順2の基準名だけ。資料は基準ごとの入力へ渡す |
    | `計画` | 計画ファイルの絶対パス |
-   | `WI記録` | 計画の`## 実施内容`に無い対象WIのファイル名、要求、完成条件、由来、採否（計画が無ければ全ての対象） |
+   | `WI記録` | 全対象WIのファイル名、原文の要求、完成条件、由来、採否 |
    | `開始時のHEAD` | 専用branchなら起動の直前に`git merge-base <専用branch> <ベースbranch>`で解決した分岐元（計画の有無によらない）。それ以外で`計画`を含まずに`WI`を渡す時（`CI記録`との併用を含む）は作業開始時のHEAD |
    | `対象HEAD` | 起動の直前に対象worktreeで`git rev-parse HEAD`を実行して得た完全OID |
    | `引き継ぎ記録先` | `agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」で決める |
    | `review_contract` | 複数の計画、計画外の条項、新形式AWIのどれかがあれば`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」で作り、初回から渡す |
    | `レーン識別子` | 特定のレーンの作業なら渡し、セッション識別名を`<レーン識別子>-exec-review`とする |
-   | `受理済みの完成条件証拠` | 同じ計画の進捗ログにある受理済みの返却ファイルのうち後続の担当が読めるものの絶対パス。無ければ`なし` |
+   | `受理済みの完成条件証拠` | 引き継ぎ記録にある受理済みの返却ファイルのうち後続の担当が読めるものの絶対パス。無ければ`なし` |
    | `レビュー種別`、`round` | 初回は省く。再レビューは本書「ラウンド番号の保持先」の値を`round: <ラウンド番号>`で渡す |
    | `Git管理外の変更` | 引き継ぎ記録にある変更前後の複製の全ての対。無ければ省く |
 
@@ -48,7 +48,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 7. 画面表示の変更があれば、`agent-toolkit:atk-mode/roles/usability-review.parent.md`でユーザビリティレビュー担当も並行して起動する。
    文章成果物の読者別探索は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`の直接確認の条件、起動単位、入力に従う。
 8. 起動の後もレーンは同じ作業ツリーで別の修正を続けてよい（検証の場所はレビュー担当が決める）。
-   渡すWIと、計画の`## 実施内容`に「人間由来のWI」「エージェント由来のWI」として挙がった関連WIを合わせて対象WI集合と呼び、これが空でないか`ユーザー指示`由来の行がある時は返却に条件別判定行が出る。
+   渡すWIと、計画の`related_wis`を合わせて対象WI集合と呼び、これが空でないかユーザー指示由来の要求がある時は返却に条件別判定行が出る。
 
 ## 完成条件証拠の受領確認
 
@@ -68,7 +68,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    `達成`行は所在と観測内容の組に加え、指定の記録とcommitの差分（`git show <レビューHEAD>:<パス>`）を実際に読んで確かめる。
    組を欠く`達成`行と、条件文の文末だけを変えた定型句の`達成`行は、件数とHEADが一致していても同じ担当へ差し戻す。
    `失効`の行とレーン担当による条件の除外は、本書「技術判断で外せる完成条件」の境界と、要求の取り下げか不採用の根拠との対応を本文で確かめ（`review_contract`の記述だけをユーザーの判断の代わりにしない）、足りなければ本書「エスカレーションの事由別の扱い」で差し戻す。
-7. 受理した返却本文のパス（正式原本ならそのパス）を、計画名、対象WI集合、`レビューHEAD`、原要求と`review_contract`、指摘管理表の所在とroundに対応付け、`受理済みの完成条件証拠`として進捗ログ（計画なしでは引き継ぎ記録）へ記録する。
+7. 受理した返却本文のパス（正式原本ならそのパス）を、計画名、対象WI集合、`レビューHEAD`、原要求と`review_contract`、指摘管理表の所在とroundに対応付け、`受理済みの完成条件証拠`として引き継ぎ記録へ記録する。
 8. HEADが変わったら`agent-toolkit:atk-mode/references/exec-review-head-update.md`で影響を調べ、必要と明示された範囲だけを再レビューする。
 
 ## 返却に含まれる既存不良の受領
@@ -96,7 +96,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    そのthreadへ`send_message`の`instruction: レビュー指摘の対応をせよ`を送り、roundは表から解決させる。
    `extra_params`には全ての計画の`レビュー指摘管理表`と、あれば`レビュー参考意見`を`agent-toolkit:atk-mode/roles/exec.parent.md`「入力」の形で渡す。
 3. 同じthreadを続けられなければ、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従って`レビュー修正担当`を起動し、`再開位置`に`~/.claude/plans`の計画の絶対パスを、管理表と参考意見を手順2の形で渡す。
-4. 修正の返却（`対応完了`、`対応完了（再レビュー不要）`）に`検証結果`と`画面差分`の行が無ければ出し直させる。
+4. 修正の返却（`対応完了`、`対応完了（再レビュー不要）`）の`検証結果`・`画面差分`・`同種の既存画面`は[レーンの返却の受領](lane-receipt.md#実装完了の受領)で検収し、不足・不一致は出し直させる。
    全指摘について本書「応答済みの判定」で未応答0件と、採用した修正の検証を確かめる。
    返却の種類、指摘数、修正commitの有無で再レビューの要否を決めない。
 5. レビュー担当が「要」とした範囲だけ、同じthreadへ`send_message`の`instruction: 再レビューせよ`、`round: <ラウンド番号>`、送信直前に固定した`対象HEAD: <完全OID>`を送る。
@@ -105,13 +105,13 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    - 契約を更新する時は`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」に従い、初回の条項を保つ。
      初回が計画だけの時も契約を作り、更新をまとめた新版を`review_contract: <絶対パス>`で渡す。
    - 前回の後に履歴を書き換えたら、`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」が保存したJSONを`rewrite_map: <絶対パス>`で渡す（引き継ぎ再レビューでは`extra_params`）。
-   - `画面差分: あり`で未起動のレビューには初回を依頼する。
+   - `画面差分: あり`で未起動のレビューには、修正返却の`同種の既存画面`を渡して初回を依頼する。
      既に判定を受けた範囲は、その担当が必要と明示した時だけ再レビューする。
 6. レビュー担当が「不要」とした範囲は、`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」に従い、評価の前提を修正後も保つか確かめる。
    前提が保たれる場合は、修正後の検証が示す条件の証拠を受領側が検収する。
    不足があれば修正担当へ補完を求める。
 7. 再レビューを省くと確かめたら、統合入力HEADを判定行の`レビューHEAD`と別に確定する（amendかautosquashでOIDが変わるため）。
-   新しい画面資産が加わっていれば、ユーザビリティレビューは省かず同じHEADで依頼する。
+   新しい画面資産が加わっていれば、修正返却の`同種の既存画面`を渡し、同じHEADでユーザビリティレビューを依頼する。
    未応答0件と管理表の修正前後の短縮OIDの対応を確かめ、`git rev-parse --short=7`で解決した専用branchのHEADが修正後の短縮OIDと一致することを確かめる。
    その値を統合入力HEAD（`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の指示と受領」）とする。
    受領確認は最後に実際にレビューした`レビューHEAD`で行い、判定行の対象を修正後のHEADへ付け替えない。
@@ -177,7 +177,8 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 | 対象リポジトリや配布物のhook・CLI・規範などの既存不良による続行不能 | 担当の回復と欠陥の処置を分け、`agent-toolkit:atk-mode/references/conduct.md`「完遂と先送り」の条件の内側で判定する。process-wi中は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で時機を決める | 必要 |
 | 同じthreadを続けられない | 後続の担当へ同じ計画ファイル（`~/.claude/plans`配下）、指摘管理表、確定した判断を引き継ぐ。既存不良が原因なら前の行も判定する | 必要 |
 
-「再開位置の記録」が「必要」の事由では、計画ファイルを`~/.claude/plans`へ保存し、`atk run-script plan-progress --`で`## 進捗ログ`へ完了した工程、続行できない理由、再開位置を記録し、キューの項目は今の状態のまま保つ。
+「再開位置の記録」が「必要」の事由では、計画があれば`~/.claude/plans`に保ち、`atk run-script plan-progress -- <記録先> --handoff`で引き継ぎ記録へ完了した工程、続行できない理由、再開位置を記録する。
+別セッションで必要な再開情報は元AWI本文へ追記し、キューの項目は今の状態のまま保つ。
 完成条件の判断をUWIで待つ場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「未確定判断の保留と暫定判断」に従って元のAWI全体をそのUWIへの依存で待たせる。
 回答の前に失効を認めて統合へ進めず、この待機は全ての要求を不採用とする`reject`と別に扱う。
 回答を得たら、既存の指摘管理表とラウンド番号を引き継いで再開する。

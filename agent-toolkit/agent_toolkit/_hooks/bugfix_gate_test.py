@@ -38,10 +38,16 @@ def _payload(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> di
     return {"session_id": "bugfix-gate", "transcript_path": str(path), "cwd": str(tmp_path), **extra}
 
 
-def _pretooluse_denied(payload: dict, message: str = _TYPED_REPORT) -> bool:
-    result = _run_hook_in_process("pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": message}})
+def _pretooluse_output(payload: dict, message: str, **send_args: str) -> dict:
+    result = _run_hook_in_process(
+        "pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": message, **send_args}}
+    )
     assert result.returncode == 0 and not result.stderr
-    output = json.loads(result.stdout)["hookSpecificOutput"] if result.stdout.strip() else {}
+    return json.loads(result.stdout)["hookSpecificOutput"] if result.stdout.strip() else {}
+
+
+def _pretooluse_denied(payload: dict, message: str = _TYPED_REPORT, **send_args: str) -> bool:
+    output = _pretooluse_output(payload, message, **send_args)
     if output.get("permissionDecision") == "deny":
         assert output["permissionDecisionReason"]
         return True
@@ -123,7 +129,20 @@ def test_stop_accepts_successfully_delivered_typed_report_only_for_current_turn(
 def test_understanding_requires_classification(tmp_path: pathlib.Path) -> None:
     payload = _payload([_human("この説明は冗長です。")], tmp_path)
     assert _pretooluse_denied(payload, "## 発話の理解\n短くする。")
-    assert not _pretooluse_denied(payload, "## 発話の理解\n分類: 是正\n短くする。")
+    assert not _pretooluse_denied(payload, "## 発話の理解\n分類: 是正\n目標の状態: 説明が短い。")
+
+
+@pytest.mark.parametrize(
+    "goal", ["", "目標の状態:  ", "> 目標の状態: 通知だけを出す", "```text\n目標の状態: 通知だけを出す\n```"]
+)
+def test_correction_requires_a_goal_before_delivery(tmp_path: pathlib.Path, goal: str) -> None:
+    payload = _payload([_human("余計な形式の取り込みは消してください。")], tmp_path)
+    understanding = "## 発話の理解\n分類: 是正\n"
+    assert _pretooluse_denied(payload, understanding + goal)
+    assert not _pretooluse_denied(payload, understanding + "目標の状態: Excelだけ取り込める。")
+    assert not _pretooluse_denied(payload, "## 発話の理解\n分類: 非是正\n状況を答える。")
+    assert bugfix_gate.send_block({**payload, "agent_id": "child"}, understanding) is None
+    assert bugfix_gate.send_block({**payload, "turn_id": "codex-turn"}, understanding) is None
 
 
 @pytest.mark.parametrize(
@@ -139,9 +158,18 @@ def test_correction_requires_typed_report(tmp_path, monkeypatch, report):
     assert "起動していない" in _stop(entries, tmp_path, monkeypatch, last_assistant_message=report)["reason"]
     entries.append(_BUGFIX)
     for _ in range(2):
-        assert _pretooluse_denied(_payload(entries, tmp_path), report)
+        # 規範を理由にした見送りは別の検査が担当する。  pyfltr: allow-comment
+        assert bugfix_gate.send_block(_payload(entries, tmp_path), report) is None
+        assert not _pretooluse_denied(_payload(entries, tmp_path), "進捗: 原因の観測を終えた。")
         assert "種類付き" in _stop(entries, tmp_path, monkeypatch, last_assistant_message=report)["reason"]
-    assert not _pretooluse_denied(_payload(entries, tmp_path))
+    payload = _payload(entries, tmp_path)
+    body = "作業が完了した。"
+    assert _pretooluse_denied(payload, body, kind="completion")
+    assert not _pretooluse_denied(payload, body, kind="progress")
+    assert not _pretooluse_denied(payload, body)
+    assert _pretooluse_denied(payload, "## 作業完了報告\n" + body)
+    assert _pretooluse_denied(payload, "再発防止: 下の7（規範の改訂）。")
+    assert not _pretooluse_denied(payload)
     assert "decision" not in _stop(entries, tmp_path, monkeypatch)
 
 
@@ -151,15 +179,56 @@ def test_correction_requires_typed_report(tmp_path, monkeypatch, report):
         # 実例: 回帰テストを再発防止として報告し、ユーザーに是正された。  pyfltr: allow-comment
         ("再発防止: 自動検出: 今回の実際の冒頭を回帰テストに加えた。", True),
         ("再発防止: 原因の除去: 照合を外した。自動検出: 回帰テストを加えた。", True),
+        ("再発防止: 自動検出: 回帰テストを追加して再現条件を固定した。", True),
+        ("再発防止: 自動検出: 回帰テストを追加している。", True),
+        ("再発防止: 自動検出: 異常な入力を回帰テストに加えて保存した。", True),
+        ("再発防止: 自動検出: 異常な入力の回帰テストを書く。", True),
+        ("再発防止: 自動検出: 今回は、異常な入力の回帰テストを書く。", True),
+        ("再発防止: 自動検出: 回帰テスト（抽出結果に初回依頼が含まれること）を各AWIの完成条件に含める。", True),
+        ("再発防止: 自動検出: 以前に回帰テストを追加した記録へのリンクを報告に挙げる。", False),
+        ("再発防止: 設計: 回帰テストを追加していない処理も同じ検査へ集めた。", False),
+        ("再発防止: 自動検出: 回帰テストを追加していた箇所を洗い出し、共通の入力検査を導入した。", False),
+        ("再発防止: 自動検出: 回帰テストを追加していなかった経路にも、共通の入力検査を適用した。", False),
+        ("再発防止: 自動検出: 回帰テストを追加している箇所をもとに構造を統一した。", False),
         ("処置: 直した。回帰テストを加えた。\n再発防止: 設計: 監視を外部の照会から切り離した。", False),
+        (
+            "再発防止: 設計: 無出力監視を外部の照会から切り離した。"
+            "自動検出: 「再発防止:」の行に回帰テストを書いた送達を止めるようにした。",
+            False,
+        ),
     ],
 )
 def test_regression_test_is_not_accepted_as_prevention(tmp_path, report, denied):
     entries = [_human("直っていない。"), *_classified(), _BUGFIX]
     payload = _payload(entries, tmp_path)
     assert _pretooluse_denied(payload, report) is denied
+    stop_decision, stop_reason = bugfix_gate.evaluate(json.dumps({**payload, "last_assistant_message": report}))
+    assert (stop_decision == "block") is denied
     if denied:
         assert "回帰テスト" in (bugfix_gate.send_block(payload, report) or "")
+        assert "回帰テスト" in stop_reason
+
+
+@pytest.mark.parametrize(
+    "explanation",
+    [
+        "これまで回帰テストを追加してきた履歴をもとに、全経路に共通する入力検査を導入した。",
+        "回帰テストを追加しているだけでは再発を防げないため、共通の入力検査を導入した。",
+        "以前の修正では回帰テストを追加した。今回は共通の入力検査を導入した。",
+        "以前の修正では回帰テストを書いた。今回は共通の入力検査を導入した。",
+        "以前、異常な入力の回帰テストを書いた。今回は共通の入力検査を導入した。",
+        "以前の修正を調べた。回帰テストを追加した。今回は共通の入力検査を導入した。",
+    ],
+)
+def test_regression_test_explanation_warns_without_blocking(tmp_path, monkeypatch, explanation):
+    entries = [_human("直っていない。"), *_classified(), _BUGFIX]
+    report = f"再発防止: 自動検出: {explanation}"
+    send_output = _pretooluse_output(_payload(entries, tmp_path), report)
+    assert send_output.get("permissionDecision") != "deny"
+    assert "説明や履歴への言及ならそのまま続ける" in send_output["additionalContext"]
+    stop_output = _stop(entries, tmp_path, monkeypatch, last_assistant_message=report)
+    assert stop_output.get("decision") != "block"
+    assert "説明や履歴への言及ならそのまま続ける" in stop_output["hookSpecificOutput"]["additionalContext"]
 
 
 def test_send_to_user_without_defect_report_or_by_subagent_is_allowed(tmp_path: pathlib.Path) -> None:

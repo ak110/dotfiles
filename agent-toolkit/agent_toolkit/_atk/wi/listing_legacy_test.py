@@ -74,7 +74,7 @@ class TestLegacyReservationMigration:
             "broken",
         ],
     )
-    def test_normal_read_migrates_valid_expired_and_invalid_reservations_once(
+    def test_explicit_pull_migrates_valid_expired_and_invalid_reservations_once(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -89,7 +89,7 @@ class TestLegacyReservationMigration:
 
         for _ in range(2):
             with pytest.raises(SystemExit) as exc_info:
-                atk.main(["wi", "list"], home=tmp_path)
+                atk.main(["wi", "list", "--pull"], home=tmp_path)
             assert exc_info.value.code == 0
 
         migrated = entry_path(notes, "main.md")
@@ -167,7 +167,7 @@ class TestLegacyReservationMigration:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list"], home=tmp_path)
+            atk.main(["wi", "list", "--pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         parsed = frontmatter.parse_frontmatter(entry_path(notes, "main.md").read_text(encoding="utf-8"))
@@ -193,7 +193,7 @@ class TestLegacyReservationMigration:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list"], home=tmp_path)
+            atk.main(["wi", "list", "--pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         parsed = frontmatter.parse_frontmatter(dependent.read_text(encoding="utf-8"))
@@ -266,7 +266,7 @@ class TestLegacyReservationMigration:
         assert path.read_text(encoding="utf-8") == original
         assert not any(any("legacy queue reservations" in value for value in call["cmd"]) for call in git_calls)
 
-    def test_skip_pull_defers_migration_until_normal_read(
+    def test_skip_pull_defers_migration_until_explicit_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -286,7 +286,7 @@ class TestLegacyReservationMigration:
         assert not git_calls
 
         with pytest.raises(SystemExit) as normal_exit:
-            atk.main(["wi", "list", "--target-repo=all"], home=tmp_path)
+            atk.main(["wi", "list", "--pull", "--target-repo=all"], home=tmp_path)
 
         assert normal_exit.value.code == 0
         assert entry_path(notes, "main.md") == legacy

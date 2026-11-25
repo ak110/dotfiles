@@ -117,7 +117,7 @@ def test_created_date_survives_edit_save_checkout_and_resave(
     assert {path.name: path.read_bytes() for path in saved_main.parent.iterdir()} == contents
 
 
-@pytest.mark.parametrize("invalid", ["columns", "initial-progress"])
+@pytest.mark.parametrize("invalid", ["実施内容", "検証", "進捗ログ"])
 def test_document_template_rejects_invalid_initial_structure(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,
@@ -125,10 +125,7 @@ def test_document_template_rejects_invalid_initial_structure(
 ) -> None:
     source = _source(repo, tmp_path)
     content = source.read_text(encoding="utf-8")
-    if invalid == "columns":
-        content = content.replace("| 実施内容 | 由来 | 採否 | 根拠 |", "| 実施内容 | 由来 | 採否 |")
-    else:
-        content += "| 2026-10-09 00:00 | 実装 | 成功 |\n"
+    content += f"\n## {invalid}\n\n旧書式の内容\n"
     source.write_text(content, encoding="utf-8")
     assert (
         create_plan_files.main(
@@ -154,7 +151,7 @@ def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
 
 def _source(repo: pathlib.Path, directory: pathlib.Path) -> pathlib.Path:
     main_source = directory / "main.md"
-    main_source.write_text(_plan_fixture.request_plan(repo=repo.resolve()), encoding="utf-8")
+    main_source.write_text(_plan_fixture.awi_plan(repo=repo.resolve()), encoding="utf-8")
     return main_source
 
 
@@ -197,7 +194,7 @@ def test_prior_plan_repository_mismatch_names_values_and_recovery(
     other = tmp_path / "other"
     prior.write_text(source.read_text(encoding="utf-8").replace(str(repo.resolve()), str(other)), encoding="utf-8")
     source.write_text(
-        source.read_text(encoding="utf-8").replace("- 関連WI: なし", "- 関連WI:\n  - 20261020-000000-001.md: 対応"),
+        source.read_text(encoding="utf-8").replace("related_wis: []", "related_wis: [20261020-000000-001.md]"),
         encoding="utf-8",
     )
     before = source.read_bytes(), prior.read_bytes()
@@ -259,11 +256,11 @@ def test_prior_plan_repository_accepts_equivalent_path_notation(
     prior.write_text(
         source.read_text(encoding="utf-8")
         .replace(str(repo.resolve()), f"{repo.resolve().as_posix()}/")
-        .replace("- 関連WI: なし", "- 関連WI:\n  - 20261020-000000-002.md: 先行"),
+        .replace("related_wis: []", "related_wis: [20261020-000000-002.md]"),
         encoding="utf-8",
     )
     source.write_text(
-        source.read_text(encoding="utf-8").replace("- 関連WI: なし", "- 関連WI:\n  - 20261020-000000-001.md: 対応"),
+        source.read_text(encoding="utf-8").replace("related_wis: []", "related_wis: [20261020-000000-001.md]"),
         encoding="utf-8",
     )
     args = [
@@ -420,7 +417,7 @@ def test_cli_rejects_saved_plan_formats(
     )
 
     assert result == 1
-    assert "新しく作る計画ファイルは現行の構成" in capsys.readouterr().err
+    assert "新しく作る計画ファイルはAWI本文と同じ書式" in capsys.readouterr().err
     assert not list((tmp_path / "home").rglob("*.md"))
 
 
@@ -440,7 +437,7 @@ def test_cli_creates_bug_plan_as_single_file(
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
     source = tmp_path / "bug.md"
     source.write_text(
-        _plan_fixture.request_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related_wi, cause=cause),
+        _plan_fixture.awi_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related_wi, cause=cause),
         encoding="utf-8",
     )
 
@@ -458,7 +455,7 @@ def test_cli_rejects_bug_plan_without_cause_analysis_and_related_wi(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "no-wi.md"
-    source.write_text(_plan_fixture.request_plan(repo=repo.resolve(), work_type="バグ対応"), encoding="utf-8")
+    source.write_text(_plan_fixture.awi_plan(repo=repo.resolve(), work_type="バグ対応"), encoding="utf-8")
 
     result = create_plan_files.main(
         [
@@ -564,3 +561,24 @@ def test_public_plan_create_owner_reaches_listing_and_save_advisor(
             assert str(main) in result["hookSpecificOutput"]["additionalContext"]
         else:
             assert not result
+
+
+@pytest.mark.parametrize(
+    ("judgment", "accepted"),
+    [
+        ("形式検証の判定: 当てない（受け付ける値の表示だけを変える）", True),
+        ("例は形式検証の判定: 当てない（理由）を含む。", False),
+        ("```text\n形式検証の判定: 当てない（理由）\n```", False),
+    ],
+)
+def test_awi_plan_counts_only_judgment_lines_in_evidence(
+    repo: pathlib.Path, tmp_path: pathlib.Path, judgment: str, accepted: bool
+) -> None:
+    source = _source(repo, tmp_path)
+    content = source.read_text(encoding="utf-8")
+    content = content.replace("既存の判定処理を読み、更新が必要な箇所を確かめた。", f"構文解析を変更する。\n\n{judgment}")
+    source.write_text(content, encoding="utf-8")
+    errors, _warnings = check_plan_file.check(source, repo, reject_migration_warnings=True)
+    assert bool(errors) is not accepted, errors
+    if not accepted:
+        assert any("形式検証の判定" in error for error in errors)

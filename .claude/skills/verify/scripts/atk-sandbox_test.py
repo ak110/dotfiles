@@ -11,6 +11,55 @@ _SCRIPT = pathlib.Path(__file__).with_name("atk-sandbox.sh")
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="隔離ハーネスはLinuxのprocfsを使う")
 
 
+@pytest.mark.parametrize("escape", ("none", "home-env", "claude-config", "xdg-data", "update-link"))
+def test_claude_writes_stay_inside_sandbox(
+    tmp_path: pathlib.Path, escape: str, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    fixture = tmp_path / "sandbox"
+    home = fixture / "home"
+    executable = home / ".local/bin/claude"
+    executable.parent.mkdir(parents=True)
+    (fixture / "work").mkdir()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    foreign = tmp_path / "other-home"
+    foreign.mkdir()
+    (fixture / "evidence-dir").write_text(str(evidence), encoding="utf-8")
+    settings = {"home-env": "HOME", "claude-config": "CLAUDE_CONFIG_DIR", "xdg-data": "XDG_DATA_HOME"}
+    config = "PATH=/usr/bin:/bin\n"
+    if escape in settings:
+        config += f"{settings[escape]}={foreign}\n"
+    if escape == "update-link":
+        executable.symlink_to(foreign / "claude")
+    (fixture / "sandbox.env").write_text(config, encoding="utf-8")
+    command = (
+        'mkdir -p -- "$HOME/.local/bin" "$CLAUDE_CONFIG_DIR" "$XDG_DATA_HOME" && '
+        'touch -- "$HOME/.local/bin/claude" "$CLAUDE_CONFIG_DIR/history.jsonl" "$XDG_DATA_HOME/updated"'
+    )
+
+    result = subprocess.run(
+        ["bash", str(_SCRIPT), "run", str(fixture), "updater", "/bin/sh", "-c", command],
+        env=host_environ(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert not list(foreign.iterdir())
+    if escape == "none":
+        assert result.returncode == 0
+        assert executable.is_file()
+        assert (home / ".claude/history.jsonl").is_file()
+        assert (home / ".local/share/updated").is_file()
+    else:
+        assert result.returncode == 2
+        assert "失敗: 検証領域" in (evidence / "01-updater.err").read_text(encoding="utf-8")
+        assert (evidence / "01-updater.rc").read_text(encoding="utf-8").strip() == "2"
+        assert not (home / ".claude/history.jsonl").exists()
+        assert not (home / ".local/share/updated").exists()
+
+
 @pytest.mark.parametrize(("matching_home", "exit_code"), [(True, 0), (True, 7), (False, 0)])
 def test_run_reports_only_matching_home(
     tmp_path: pathlib.Path, matching_home: bool, exit_code: int, host_environ: Callable[[], dict[str, str]]

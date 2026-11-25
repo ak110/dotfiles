@@ -45,13 +45,19 @@
 4. そのUWIを`depends_on`に持つ元の項目は、UWIの終了で依存が解ける。
    元の項目が依存する未回答のUWIが他に無ければ、中断していた元の処理を再開する。
    旧運用で`hold`に置かれた元の項目は、回答を反映した後に`atk wi unhold <元項目ファイル名>`で`inbox`へ戻す。
-   再開する前に`atk wi show <元項目ファイル名>`で状態を照会し、`inbox`なら`atk wi start-processing <元項目ファイル名>`で`processing`へ移す（`unhold`で戻した項目を含む）。
+   再開する前に`atk wi show --pull <元項目ファイル名>`で状態を照会し、`inbox`なら`atk wi start-processing <元項目ファイル名>`で`processing`へ移す（`unhold`で戻した項目を含む）。
 5. 元の`agents_server`のセッションが残っていれば、そのセッションへ回答を届けて処理を再開する。
-   残っていなければ、計画ファイルの進捗ログで未完了の工程から再開する。
-   計画ファイルも無ければ、依存の保存時に`atk wi edit --append`で元のAWIの本文へ追記した再開手順を読んで進める。
+   残っていなければ、元AWI本文の再開記録で未完了の工程から再開する。
+   旧形式の計画で再開手順を進捗ログだけへ記録していた作業は、その計画の進捗ログから再開する。
 
 各遷移の完了は、状態を変えるコマンドの正常終了と、警告が出ていないことで判断する。
 途中で失敗したら、完了していない遷移からやり直す。
+
+## GitHubの外部報告を取り込む回答
+
+`source: github-submission`のUWIに「取り込む」と回答すると、atkは`github_source`が同じAWIを1件だけ残し、UWIを採用で終える。
+「取り込まない」ではAWIを登録せず、UWIを不採用で終える。
+どちらも回答の保存と同時に処理するため、手で同じ報告を起票しない。
 
 ## `atk run-skill`の過去の実行のUWI
 
@@ -72,7 +78,7 @@ agent-toolkit:session-review batch
 agent-toolkit:session-review-batch
 ```
 
-1. 作業を始める前に`atk wi show --all --type=uwi --state=active --source=run-skill --target-repo=<対象リポジトリの絶対パス>`を実行する。
+1. 作業を始める前に`atk wi show --pull --all --type=uwi --state=active --source=run-skill --target-repo=<対象リポジトリの絶対パス>`を実行する。
 2. frontmatterの`scope`が自分の起動単位（スキル名とモードの組。通常の起動はスキル名）か、起動入力の取込対象scopeと一致する項目を、同じ作業の過去の実行が投入したUWIとして扱う。
    `processing`の項目は別セッションの処理対象として残す。
    報告用か承認用かを問わず、回答後のprocess-wiが先に処理して終えていることもあるため、取得した未終了の項目だけを扱う。

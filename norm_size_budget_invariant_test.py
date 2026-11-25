@@ -141,9 +141,7 @@ def test_invariants_reject_reintroduced_records() -> None:
     execution = _read(_EXECUTION_DOC)
     old_step = "の1か所へ記録し"
     assert old_step in execution
-    dual = execution.replace(
-        "計画の進捗ログ（計画が無ければ引き継ぎ記録）の1か所へ記録し", "既存の引き継ぎ記録と進捗ログへ記録し", 1
-    )
+    dual = execution.replace("引き継ぎ記録の1か所へ記録し", "既存の引き継ぎ記録と進捗ログへ記録し", 1)
     assert _dual_verification_record_violations(dual)
     assert _dual_verification_record_violations(dual.replace("引き継ぎ記録と進捗ログ", "引き継ぎ記録と\n   進捗ログ"))
 

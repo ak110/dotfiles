@@ -25,6 +25,30 @@ from pytools._internal import (
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _LEGACY_AGY_NOTICE = upgrade._LEGACY_ANTIGRAVITY_UPDATE_WARNING  # pylint: disable=protected-access
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
+_SIGNED_DIAGNOSTIC = "stage=download exit=7 https://example.invalid/archive?jwt=fake-runner-jwt&sig=fake-runner-sig&download=1"
+
+
+def test_failed_child_diagnostics_are_redacted_before_ci_output(capsys: pytest.CaptureFixture[str]) -> None:
+    command = [sys.executable, "-c", f"import sys; print({_SIGNED_DIAGNOSTIC!r}, file=sys.stderr); raise SystemExit(7)"]
+    with pytest.raises(upgrade.UpgradeCheckError, match="終了コード7"):
+        upgrade.run_command(command)
+    output = capsys.readouterr()
+    assert "stage=download exit=7" in output.err
+    assert "example.invalid/archive?jwt=[REDACTED]&sig=[REDACTED]&download=1" in output.err
+    assert "fake-runner-jwt" not in output.err + output.out
+    assert "fake-runner-sig" not in output.err + output.out
+
+
+def test_ci_diagnostic_copy_redacts_legacy_update_log(tmp_path: pathlib.Path) -> None:
+    source = tmp_path / "update-dotfiles.log"
+    destination = tmp_path / "diagnostic.log"
+    source.write_text(_SIGNED_DIAGNOSTIC, encoding="utf-8")
+    script = _SCRIPT.with_name("ci_copy_diagnostic.py")
+    subprocess.run([sys.executable, str(script), str(source), str(destination)], check=True, timeout=10)
+    assert source.read_text(encoding="utf-8") == _SIGNED_DIAGNOSTIC
+    assert destination.read_text(encoding="utf-8") == (
+        "stage=download exit=7 https://example.invalid/archive?jwt=[REDACTED]&sig=[REDACTED]&download=1"
+    )
 
 
 def _write_old_script(checkout: pathlib.Path, requirement: str) -> None:

@@ -27,6 +27,7 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
     COMPLETION_REPORT,
     STATE_KEY,
     TARGET_ENTRY_WORKS,
+    completion_playbook_path,
 )
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
@@ -120,6 +121,13 @@ def _is_completion_playbook(path: pathlib.Path) -> bool:
     return _read_work(path) == COMPLETION_REPORT
 
 
+def _is_installed_completion_playbook(path: pathlib.Path) -> bool:
+    try:
+        return path.samefile(completion_playbook_path())
+    except OSError:
+        return False
+
+
 def _read_works(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.CwdResolution, response: str) -> list[str]:
     return [
         work
@@ -182,14 +190,27 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     command = tool_input.get("command")
     if tool_name in ATK_SHELL_TOOLS and isinstance(command, str):
         # Codex・Antigravityはスキルを読取で始めるため、手順書の全文を受け取った読取を起動証拠にする。
-        text = full_reads.response_text(payload.get("tool_response")) if codex or is_antigravity_payload(payload) else ""
+        response = payload.get("tool_response")
+        shared_read = codex or is_antigravity_payload(payload)
+        claude_read = (
+            not shared_read
+            and tool_name == "Bash"
+            and agent_id.is_main_agent_context(payload)
+            and isinstance(response, dict)
+            and response.get("interrupted") is not True
+            and isinstance(response.get("stdout"), str)
+        )
+        text = full_reads.response_text(response) if claude_read or shared_read else ""
         for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else "", effects=True):
             if not invocation.execution_known:
                 continue
             single = join_words(invocation.segment.tokens)
             item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
             repository = _invocation_repository(invocation, current) if item_labels else None
-            if text and current.resolved:
+            if text and current.resolved and claude_read:
+                if any(full_reads.invocation_full_reads(invocation, current, text, _is_installed_completion_playbook)):
+                    records.append({"kind": "completion"})
+            elif text and current.resolved:
                 for work in _read_works(invocation, current, text):
                     if work == COMPLETION_REPORT:
                         records.append({"kind": "completion"})

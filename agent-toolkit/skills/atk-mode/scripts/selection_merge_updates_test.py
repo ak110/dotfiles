@@ -4,6 +4,7 @@ import typing
 
 import pytest
 import yaml
+from agent_toolkit._testing.selection_check_support import additional_active_items
 from selection_merge_test import (
     _allocation,
     _cost,
@@ -11,6 +12,7 @@ from selection_merge_test import (
     _item,
     _merge_into_existing,
     _merge_with_costs,
+    _merge_with_restricted_body,
     _overlap,
     fixture_inputs,
 )
@@ -21,18 +23,8 @@ def test_public_merge_transforms_existing_predecessor(
     tmp_path: pathlib.Path,
 ) -> None:
     repo, existing, added = inputs
-    existing.write_text(
-        yaml.safe_dump(
-            {
-                "選定": [_item("a.md", "lane-01"), _item("b.md", "lane-02")],
-                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
-                "レーンの所要時間": [_cost("lane-01"), _cost("lane-02", **{"段階": 2, "先行レーン": ["lane-01"]})],
-                "初回配分": _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 11),
-            }
-        ),
-        encoding="utf-8",
-    )
     old = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    old["レーンの所要時間"][1].update({"段階": 2, "先行レーン": ["lane-01"]})
     record = _overlap("lane-01", "lane-02", "交わる")
     record["レーン1の定義"] = record["レーン2の定義"] = ["共通の契約"]
     old["レーン間の重なり"] = [record]
@@ -69,7 +61,7 @@ def test_public_merge_transforms_existing_predecessor(
     )
     result = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert result["レーンの所要時間"][1]["先行レーン"] == ["lane-01"]
-    assert result["選定"][3]["レーン"] == "lane-02"
+    assert result["選定"][-1]["レーン"] == "lane-02"
 
 
 def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
@@ -88,7 +80,7 @@ def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
     for path in (existing, added):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         for item in data["選定"]:
-            item.update(metadata)
+            item.update({**metadata, "計画要否": "計画あり"})
             item["公開工程の書込対象"] = []
         originals.extend(data["選定"])
         path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
@@ -103,8 +95,8 @@ def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
     output = tmp_path / "output.yaml"
     assert _merge_with_costs(repo, existing, added, mapping, costs, output) == 0
     result = yaml.safe_load(output.read_text(encoding="utf-8"))
-    assert result["選定"][:2] == originals[:2]
-    for item, original in zip(result["選定"][2:], originals[2:], strict=True):
+    assert result["選定"][:-2] == originals[:-2]
+    for item, original in zip(result["選定"][-2:], originals[-2:], strict=True):
         assert item == {**original, "レーン": {"lane-03": "lane-01", "lane-04": "lane-02"}[original["レーン"]]}
     assert result["レーンの所要時間"][0] == {"レーン": "lane-01", "先行レーン": [], "統合状態": "未統合", **updates["lane-01"]}
     assert result["レーンの所要時間"][1]["実装秒数"] == 20
@@ -133,9 +125,15 @@ def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
     second_costs.write_text(json.dumps({"lane-01": final_cost}, ensure_ascii=False), encoding="utf-8")
     assert _merge_with_costs(repo, output, additional, second_map, second_costs, output) == 0
     final = yaml.safe_load(output.read_text(encoding="utf-8"))
-    assert final["選定"][:4] == result["選定"]
-    assert [item["WI"] for item in final["選定"]] == ["a.md", "b.md", "c.md", "d.md", "e.md"]
-    assert final["選定"][4]["レーン"] == "lane-01"
+    assert final["選定"][:-1] == result["選定"]
+    assert [item["WI"] for item in final["選定"] if not item["WI"].startswith("active-")] == [
+        "a.md",
+        "b.md",
+        "c.md",
+        "d.md",
+        "e.md",
+    ]
+    assert final["選定"][-1]["レーン"] == "lane-01"
     assert final["レーンの所要時間"][1] == result["レーンの所要時間"][1]
     assert final["レーンの所要時間"][0] == {"レーン": "lane-01", "先行レーン": [], "統合状態": "未統合", **final_cost}
     assert final["レーン間の重なり"] == result["レーン間の重なり"]
@@ -173,19 +171,21 @@ def test_public_merge_rejects_invalid_cost_updates(
 
 
 @pytest.mark.parametrize("existing_comparison", [None, 99])
-def test_public_merge_requires_whole_selection_comparison(
+def test_public_merge_accepts_whole_selection_with_or_without_legacy_comparison(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     existing_comparison: int | None,
 ) -> None:
     repo, existing, added = inputs
+    selected = [_item("a.md", "lane-01"), _item("b.md", "lane-02")]
+    selected.extend(additional_active_items(repo, repo.parent / "notes", "lane-01", 9))
     original: dict[str, object] = {
-        "選定": [_item("a.md", "lane-01"), _item("b.md", "lane-02")],
+        "選定": selected,
         "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
         "レーンの所要時間": [_cost("lane-01"), _cost("lane-02", **{"段階": 2, "先行レーン": ["lane-01"]})],
+        "初回配分": _allocation({str(row["WI"]): str(row["レーン"]) for row in selected}, 11),
     }
-    original["初回配分"] = _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 11)
     if existing_comparison is not None:
         original["単一段階案の完了見込み秒数"] = existing_comparison
     existing.write_text(yaml.safe_dump(original), encoding="utf-8")
@@ -214,25 +214,10 @@ def test_public_merge_requires_whole_selection_comparison(
         if comparison is not None:
             data["単一段階案の完了見込み秒数"] = comparison
         added.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-        before = existing.read_bytes()
-        assert _dispatch(
-            str(existing),
-            "--merge",
-            str(added),
-            "--lane-map",
-            str(mapping),
-            "--output",
-            str(existing),
-            "--work-dir",
-            str(repo),
-            "--body-wi",
-            "c.md",
-        ) == (1 if comparison is None else 0)
-        if comparison is None:
-            assert existing.read_bytes() == before
-            assert "単一段階案の完了見込み秒数" in capsys.readouterr().err
-        else:
-            assert yaml.safe_load(existing.read_text(encoding="utf-8"))["単一段階案の完了見込み秒数"] == comparison
+        output = tmp_path / "result.yaml"
+        assert _merge_with_restricted_body(inputs, mapping, output, "c.md") == 0, capsys.readouterr().err
+        assert yaml.safe_load(output.read_text(encoding="utf-8")).get("単一段階案の完了見込み秒数") == comparison
+        assert _dispatch(str(output), "--history", "--work-dir", str(repo)) == 0
 
 
 @pytest.mark.parametrize("reassign", [False, True])
@@ -276,7 +261,7 @@ def test_public_merge_preserves_created_derived_paths(
     extra = ["--body-wi", "c.md", "--body-wi", "d.md"] if limited_body else []
     assert _merge_into_existing(repo, existing, added, mapping, *extra) == 0
     result = yaml.safe_load(existing.read_text(encoding="utf-8"))
-    for item, old in zip(result["選定"][:2], original["選定"], strict=True):
+    for item, old in zip(result["選定"][: len(original["選定"])], original["選定"], strict=True):
         assert item["導出した新設先"] == old["導出した新設先"]
         assert item["書込対象"] == old["書込対象"]
         assert item["公開工程の書込対象"] == old.get("公開工程の書込対象", [])
@@ -350,8 +335,13 @@ def test_public_merge_preserves_derived_new_paths(
         == 0
     )
     result = yaml.safe_load(output.read_text(encoding="utf-8"))
-    assert typing.cast(list[dict[str, object]], result["選定"])[2:] == [
-        {**item, "レーン": {"lane-03": "lane-01", "lane-04": "lane-02"}[item["レーン"]], "公開工程の書込対象": []}
+    assert typing.cast(list[dict[str, object]], result["選定"])[-2:] == [
+        {
+            **item,
+            "レーン": {"lane-03": "lane-01", "lane-04": "lane-02"}[item["レーン"]],
+            "公開工程の書込対象": [],
+            "計画要否": "計画あり",
+        }
         for item in data["選定"]
     ]
     assert _dispatch(str(output), "--work-dir", str(repo)) == 0
@@ -417,6 +407,7 @@ def test_merge_preserves_item_integration_state(
     existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
     addition = yaml.safe_load(added.read_text(encoding="utf-8"))
     addition["選定"][0]["統合状態"] = "統合済み"
+    addition["選定"].extend(additional_active_items(repo, repo.parent / "notes", "lane-03", 8))
     added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
     mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
@@ -429,8 +420,16 @@ def test_merge_preserves_item_integration_state(
     )
     result = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert {row["レーン"]: row["統合状態"] for row in result["レーンの所要時間"]} == {"lane-01": "未統合", "lane-02": "未統合"}
-    items = {item["WI"]: item.get("統合状態", "未統合") for item in result["選定"]}
-    assert items == {"a.md": "統合済み", "b.md": "未統合", "c.md": "未統合", "d.md": "未統合"}
+    items = {
+        item["WI"]: item.get("統合状態", "未統合") for item in result["選定"] if not item["WI"].startswith("active-lane-03-")
+    }
+    assert items == {
+        "a.md": "統合済み",
+        "b.md": "未統合",
+        "c.md": "未統合",
+        "d.md": "未統合",
+        **{f"active-lane-01-{index}.md": "統合済み" for index in range(9)},
+    }
 
 
 __all__ = ["fixture_inputs"]

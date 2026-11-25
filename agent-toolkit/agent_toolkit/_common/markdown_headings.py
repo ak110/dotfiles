@@ -54,3 +54,17 @@ def h2_section_bodies(text: str) -> list[tuple[str, list[str]]]:
 
 def h2_sections(text: str) -> list[tuple[str, bool]]:
     return [(name, any(line.strip() for line in body)) for name, body in h2_section_bodies(text)]
+
+
+def last_h2_section_lines(text: str, name: str) -> list[str] | None:
+    bodies = [body for heading, body in h2_section_bodies(text) if heading == name]
+    return bodies[-1] if bodies else None
+
+
+def last_h2_section_items(text: str, name: str) -> list[str]:
+    lines = last_h2_section_lines(text, name) or []
+    tokens = markdown_it.MarkdownIt().parse("\n".join(lines))
+    items = [token for token in tokens if token.type == "list_item_open" and token.level == 1]
+    if not items:
+        items = [token for token in tokens if token.type == "paragraph_open" and token.level == 0]
+    return ["\n".join(lines[token.map[0] : token.map[1]]).strip() for token in items if token.map is not None]

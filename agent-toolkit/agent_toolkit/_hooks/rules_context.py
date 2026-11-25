@@ -76,7 +76,7 @@ def delegated_compact_notice(launch: work_contract.DelegatedLaunch | None) -> st
     targets = [f"委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`", "起動の入力が示した役割文書"]
     if launch is not None and launch.whole_contract is not None:
         targets.append(f"全体作業契約`{launch.whole_contract}`")
-    if launch is not None and launch.handoff is not None:
+    if launch is not None and launch.handoff is not None and pathlib.Path(launch.handoff).is_file():
         targets.append(f"自身の引き継ぎ記録`{launch.handoff}`")
     return DELEGATED_COMPACT_NOTICE + "、".join(targets) + "。"
 
@@ -123,7 +123,8 @@ def compose_session_start(
             if resume_only:
                 parts.append(
                     message_format.auto_message(
-                        "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元の目的を確認し、"
+                        "再開予約から同じ会話を再開した。圧縮後の復元通知がある場合は、それに従って作業契約と要約から状態を戻し、"
+                        "保存済みの要求・認可・成果と元の目的を確認し、"
                         "最初の未完了工程から続行してください。未達の目的を達成扱いに変えず、成功済みの操作を繰り返さないでください。",
                         source="process-loop",
                         kind="resume",
@@ -157,7 +158,8 @@ def compose_session_start(
                 playbook = f"完了報告の手順書`{completion_playbook_path()}`"
                 if host == "claude":
                     guidance += (
-                        f"\n次の終了契約: `Read`で{playbook}を全文読むか、`/atk-mode report-completion`を起動してください。"
+                        f"\n次の終了契約: {playbook}の全文を`Read`または`Bash`で受け取るか、"
+                        "`/atk-mode report-completion`を起動してください。"
                     )
                 else:
                     guidance += f"\n次の終了契約を読んでください: {playbook}"

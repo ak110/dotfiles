@@ -24,13 +24,11 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 - プラグインの再読み込みと`agents_server`・`pyfltr`のMCP再接続は、メインが`apply_runtime_changes`で予約し、ターンを終えて反映の結果を確認する。
   常駐のprocess-loop統括では、巡回の途中で予約しない。
   途中のStopは巡回を終えていないターンの終了を止めるため、予約だけが残る。
-  今の巡回には現在の環境を使い、巡回の終了後に新しい通常の対話セッションで変更を反映する。
+  現在の環境のまま進めるか、必要な版を反映して残工程を早めるかは、[更新のための本人再開](process-wi-all-repos.md#更新のための本人再開)で決める。
   ユーザーに操作を頼まず、再接続の予約が失敗した時か接続を失った後に限り`/mcp`での復旧を依頼する。
 - Windows版のBashツールは引用符付きのheredocや単一引用符の中でも`\\`を`\`へ縮めるため、エスケープを含むコードはWriteでmanaged-tempへ保存して実行する。
-- `mcp__plugin_agent-toolkit_agents_server__send_to_user`を使える時は、進捗・確認の前置き・完了報告などの発話を常にその`message`で送る（地の文はAPIで要約されうる）。
-  REPLでは `await` で成否を確かめ、ツール名だけが表示された時はToolSearchかCode Modeの`describeTool`で説明を確かめる。
-- 送達済みとするのは、ユーザーの画面への描画を確かめた成功の応答だけであり、呼び出したことや受付の応答は送達の証明にならない。
-- 委譲の入力や記録に「回答済み」と書くのは、この手段で伝えた回答に限る。
+- `mcp__plugin_agent-toolkit_agents_server__send_to_user`を使える時は、`agent-toolkit:atk-mode/references/delivery.md`「Claude Codeの本文送信と再送」に従う（地の文はAPIで要約されうる）。
+  最終の完了報告には `kind: "completion"` を指定する。
 
 ## ユーザー確認（AskUserQuestion）
 
@@ -43,14 +41,15 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
    質問と選択肢の数はスキーマに従い、自由記述は各質問への回答、一般の返答は別の`response`で受け取る。
 4. 推奨する案を第1の選択肢にしてlabelの末尾に`(Recommended)`を付け、`共通前提:`、質問、選択肢は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認の選択肢を組む手順」で組む。
    方針の承認の質問は`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7の決まった形とし、`(Recommended)`を付けない。
+5. `askUserQuestionTimeout`が`never`でも、REPLの実行上限（Claude Code 2.1.331で2時間）は質問を打ち切る。
+   `REPL execution exceeded its wall-clock limit`はユーザーの回答でも拒否でもないため、同じ質問を出し直してチャットでも回答できると伝える。
 
 ## ターンの終え方
 
-- 作業完了報告は、`agent-toolkit:atk-mode/playbooks/report-completion.md`の書式と終了処理で確定してから送る。
+- 作業完了報告の確定と、通常本文で報告した後の固定文の扱いは`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」に従う。
 - 確認の前置きを送っただけでターンを閉じず、質問は本書「ユーザー確認（AskUserQuestion）」の手段で尋ねる。
-  最後の`send_to_user`で送達できた後の終了の応答は`…`だけにし、送った内容の言い換え、要約、抜粋も書き足さない。
+- `send_to_user`で送達済みなら、新しい結果・訂正だけを追加で送り、`…`だけで終える（送った内容の言い換え、翻訳、要約、抜粋は不要）。
   空の応答は再生成を求められるため、未送達でも伝える内容の無い待機は`…`を返し、ホストの無発話の注意を受けた時も同じ終え方を保つ。
-- 途中で送る内容は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の送る対象に限る。
 - process-loopの統括と`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`process-loop`か`run-skill`）では、担当の工程を終えた時だけ`…`を完了の1文に替え、報告の抜粋や補足は含めない。
 - 未配送の完了通知は、同じセッションの再開が保証され、他のStopの遮断要因が無ければ、ターンを終えて次のターンで受け取り、保存された出力と終了状態を回収する。
   再開が保証されない非対話の起動は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機区間の構成」のフォアグラウンドの回収を使う。

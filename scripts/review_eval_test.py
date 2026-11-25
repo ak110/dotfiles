@@ -219,7 +219,7 @@ def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, caps
 
 
 @pytest.mark.parametrize("form", ["list", "paragraph", "legacy"])
-@pytest.mark.parametrize("supplement_form", ["list", "paragraph"])
+@pytest.mark.parametrize("supplement_form", ["list", "paragraph", "ordered"])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
@@ -237,7 +237,12 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
         if form == "list"
         else "ファイルAを変更する。\n続きの行も保持する。\n\nファイルB | 文書を更新する。\n"
     )
-    supplements = "- 条件A\n- 条件B | 縦線\n" if supplement_form == "list" else "条件A\n\n条件B | 縦線\n"
+    supplements, marker, first_number = {
+        "list": ("- 条件A\n- 条件B | 縦線\n", "- ", 1),
+        "paragraph": ("条件A\n\n条件B | 縦線\n", "", 1),
+        "ordered": ("3. 条件A\n3. 条件B | 縦線\n", "3. ", 3),
+    }[supplement_form]
+    second_number = first_number + 1
     (entries / "20261001-000000-001.md").write_text(
         head
         + "# 新形式の要求\n\n目的の段落。\n続きの行。\n\n"
@@ -289,12 +294,14 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
     (prepared,) = _results(capsys)
     extra_params = prepared["start"]["extra_params"]
     contract = pathlib.Path(extra_params["review_contract"]).read_text(encoding="utf-8")
-    marker = "- " if supplement_form == "list" else ""
-    assert f"| 20261001-000000-001.md | 1 | 補足条件 | {marker}条件A | 完成条件 1 |" in contract
-    assert f"| 20261001-000000-001.md | 2 | 補足条件 | {marker}条件B \\| 縦線 | 完成条件 2 |" in contract
-    assert "| 20261001-000000-001.md | 3 | 主要完成状態 |" in contract
+    assert f"| 20261001-000000-001.md | {first_number} | 補足条件 | {marker}条件A | 完成条件 {first_number} |" in contract
+    assert (
+        f"| 20261001-000000-001.md | {second_number} | 補足条件 | {marker}条件B \\| 縦線 | 完成条件 {second_number} |"
+        in contract
+    )
+    assert f"| 20261001-000000-001.md | {first_number + 2} | 主要完成状態 |" in contract
     if form == "legacy":
-        assert "| 3 | 主要完成状態 | 新形式の要求 目的の段落。 続きの行。 | H1と冒頭 |" in contract
+        assert f"| {first_number + 2} | 主要完成状態 | 新形式の要求 目的の段落。 続きの行。 | H1と冒頭 |" in contract
         assert contract.count("| 主要完成状態 |") == 1
     else:
         assert "ファイルAを変更する。" in contract
@@ -303,7 +310,7 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
             assert "入れ子の具体成果。" in contract
             assert "背景の説明。" not in contract
         assert "| 20261001-000000-001.md 反映内容1 |" in contract
-        assert "| 20261001-000000-001.md | 4 | 主要完成状態 |" in contract
+        assert f"| 20261001-000000-001.md | {first_number + 3} | 主要完成状態 |" in contract
         assert "ファイルB \\| 文書を更新する。" in contract
         assert "| 20261001-000000-001.md 反映内容2 |" in contract
     assert "20261001-000000-002.md" not in contract
@@ -336,7 +343,7 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
         sender.assert_awaited_once()
         sender.reset_mock()
         pathlib.Path(extra_params["review_contract"]).write_text(
-            "\n".join(line for line in contract.splitlines() if "| 2 | 補足条件 |" not in line), encoding="utf-8"
+            "\n".join(line for line in contract.splitlines() if f"| {second_number} | 補足条件 |" not in line), encoding="utf-8"
         )
         with pytest.raises(ActionableError, match="補足条件 1/2件"):
             await mcp_tools.start(**prepared["start"], whole_contract_path=str(whole))

@@ -11,6 +11,7 @@ import playwright.async_api
 import pytest
 
 from agent_toolkit._atk.serve import plans as serve_plans
+from agent_toolkit._atk.serve import sessions as serve_sessions
 
 # pytestがテストの引数名で参照するfixtureを、このモジュールへ登録する。
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
@@ -226,16 +227,13 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
 
     for selector in ("#copy-btn", "#copy-path-btn"):
         button = page.locator(selector)
-        line_metrics = await button.evaluate(
+        assert await button.locator(".short-label").evaluate(
             """element => {
-              const style = getComputedStyle(element);
-              return {
-                contentHeight: element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
-                lineHeight: parseFloat(style.lineHeight),
-              };
+              const range = document.createRange();
+              range.selectNodeContents(element);
+              return range.getClientRects().length === 1;
             }"""
         )
-        assert line_metrics["contentHeight"] <= line_metrics["lineHeight"] + 1
         assert await button.locator(".short-label").evaluate("element => element.getClientRects().length") == 1
 
 
@@ -277,92 +275,100 @@ async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenH
     assert await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", current_blob_url)
 
 
-@pytest.mark.asyncio(loop_scope="session")
-async def test_plan_operations_record_open_and_notified_reload(screen_harness: _ScreenHarness) -> None:
-    """選択から図の描画まで、変更通知から一覧とプレビューの再描画までを、それぞれ1件の操作として取得と対応付けて記録する。
+class TestPlanOperationTimings:
+    @pytest.fixture(autouse=True)
+    def without_session_record_watch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        async def skip(_context: serve_sessions.SessionsContext) -> None:
+            pass
 
-    取得単位の記録は本文の受信直後で終わり、図の非同期描画や通知後の再取得全体の所要を追跡できない。
-    """
-    harness = screen_harness
-    page = harness.page
-    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
-    sent: list[dict] = []
-    timings_changed = asyncio.Event()
-    body_responses: list[playwright.async_api.Response] = []
+        monkeypatch.setattr(serve_sessions, "start_local_watch_async", skip)
 
-    def record_timings(request: playwright.async_api.Request) -> None:
-        if request.method == "POST" and request.url.endswith("/api/timings"):
-            sent.extend(json.loads(request.post_data or "{}").get("records", []))
-            timings_changed.set()
+    @pytest.mark.asyncio(loop_scope="session")
+    async def test_plan_operations_record_open_and_notified_reload(self, screen_harness: _ScreenHarness) -> None:
+        """選択から図の描画まで、変更通知から一覧とプレビューの再描画までを、それぞれ1件の操作として取得と対応付けて記録する。
 
-    def record_body_response(response: playwright.async_api.Response) -> None:
-        url = urllib.parse.urlsplit(response.url)
-        query = urllib.parse.parse_qs(url.query)
-        if (
-            response.ok
-            and url.path == "/api/plans/file"
-            and query.get("host") == ["browser-test"]
-            and query.get("path") == [harness.plan_path.name]
-        ):
-            body_responses.append(response)
+        取得単位の記録は本文の受信直後で終わり、図の非同期描画や通知後の再取得全体の所要を追跡できない。
+        """
+        harness = screen_harness
+        page = harness.page
+        harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
+        sent: list[dict] = []
+        timings_changed = asyncio.Event()
+        body_responses: list[playwright.async_api.Response] = []
 
-    async def wait_for_operation(operation: str, trigger: str, routes: set[str], request_ids: set[str]) -> None:
-        async with asyncio.timeout(30):
-            while True:
-                timings_changed.clear()
-                for record in sent:
-                    if (
-                        record.get("screen") != "plans"
-                        or record.get("kind") != "operation"
-                        or record.get("operation") != operation
-                        or record.get("trigger") != trigger
-                        or record.get("outcome") != "ok"
-                    ):
-                        continue
-                    linked = [
-                        item
-                        for item in sent
-                        if item.get("screen") == "plans"
-                        and item.get("operation_id") == record["operation_id"]
-                        and "route" in item
-                    ]
-                    if {item["route"] for item in linked} == routes and (
-                        not request_ids or any(item.get("request_id") in request_ids for item in linked)
-                    ):
-                        assert record["total_ms"] >= 0
-                        return
-                await timings_changed.wait()
+        def record_timings(request: playwright.async_api.Request) -> None:
+            if request.method == "POST" and request.url.endswith("/api/timings"):
+                sent.extend(json.loads(request.post_data or "{}").get("records", []))
+                timings_changed.set()
 
-    async def body_request_ids(heading: str) -> set[str]:
-        request_ids = set()
-        for response in list(body_responses):
-            if f">{heading}</h1>" in await response.text():
-                request_id = await response.request.header_value("X-Atk-Request-Id")
-                assert request_id
-                request_ids.add(request_id)
-        assert request_ids, heading
-        return request_ids
+        def record_body_response(response: playwright.async_api.Response) -> None:
+            url = urllib.parse.urlsplit(response.url)
+            query = urllib.parse.parse_qs(url.query)
+            if (
+                response.ok
+                and url.path == "/api/plans/file"
+                and query.get("host") == ["browser-test"]
+                and query.get("path") == [harness.plan_path.name]
+            ):
+                body_responses.append(response)
 
-    page.on("request", record_timings)
-    page.on("response", record_body_response)
-    await page.set_viewport_size({"width": 320, "height": 900})
-    await page.goto(harness.base_url + "/plans")
+        async def wait_for_operation(operation: str, trigger: str, routes: set[str], request_ids: set[str]) -> None:
+            async with asyncio.timeout(30):
+                while True:
+                    timings_changed.clear()
+                    for record in sent:
+                        if (
+                            record.get("screen") != "plans"
+                            or record.get("kind") != "operation"
+                            or record.get("operation") != operation
+                            or record.get("trigger") != trigger
+                            or record.get("outcome") != "ok"
+                        ):
+                            continue
+                        linked = [
+                            item
+                            for item in sent
+                            if item.get("screen") == "plans"
+                            and item.get("operation_id") == record["operation_id"]
+                            and "route" in item
+                        ]
+                        if {item["route"] for item in linked} == routes and (
+                            not request_ids or any(item.get("request_id") in request_ids for item in linked)
+                        ):
+                            assert record["total_ms"] >= 0
+                            return
+                    await timings_changed.wait()
 
-    # 未選択時の一覧更新を先に記録し、同名の操作があっても本文更新を取り違えないことを確かめる。 pyfltr: allow-comment
-    await harness.notify_file_update(_valid_diagram_markdown("選択前"))
-    await wait_for_operation("external-reload", "sse", {"/api/plans/files"}, set())
-    await page.locator("#plans-menu-btn").click()
-    await page.locator("#files .file", has_text=harness.plan_path.name).click()
-    await page.locator("#preview .diagram-mermaid svg", has_text="選択前").wait_for(state="visible")
-    opened_request_ids = await body_request_ids("選択前")
+        async def body_request_ids(heading: str) -> set[str]:
+            request_ids = set()
+            for response in list(body_responses):
+                if f">{heading}</h1>" in await response.text():
+                    request_id = await response.request.header_value("X-Atk-Request-Id")
+                    assert request_id
+                    request_ids.add(request_id)
+            assert request_ids, heading
+            return request_ids
 
-    await harness.notify_file_update(_valid_diagram_markdown("通知後"))
-    await page.locator("#preview h1", has_text="通知後").wait_for()
-    await page.locator("#preview .diagram-mermaid svg", has_text="通知後").wait_for(state="visible")
-    await wait_for_operation(
-        "external-reload", "sse", {"/api/plans/files", "/api/plans/file"}, await body_request_ids("通知後")
-    )
-    await wait_for_operation("open-file", "click", {"/api/plans/file"}, opened_request_ids)
+        page.on("request", record_timings)
+        page.on("response", record_body_response)
+        await page.set_viewport_size({"width": 320, "height": 900})
+        await page.goto(harness.base_url + "/plans")
+
+        # 未選択時の一覧更新を先に記録し、同名の操作があっても本文更新を取り違えないことを確かめる。 pyfltr: allow-comment
+        await harness.notify_file_update(_valid_diagram_markdown("選択前"))
+        await wait_for_operation("external-reload", "sse", {"/api/plans/files"}, set())
+        await page.locator("#plans-menu-btn").click()
+        await page.locator("#files .file", has_text=harness.plan_path.name).click()
+        await page.locator("#preview .diagram-mermaid svg", has_text="選択前").wait_for(state="visible")
+        opened_request_ids = await body_request_ids("選択前")
+
+        await harness.notify_file_update(_valid_diagram_markdown("通知後"))
+        await page.locator("#preview h1", has_text="通知後").wait_for()
+        await page.locator("#preview .diagram-mermaid svg", has_text="通知後").wait_for(state="visible")
+        await wait_for_operation(
+            "external-reload", "sse", {"/api/plans/files", "/api/plans/file"}, await body_request_ids("通知後")
+        )
+        await wait_for_operation("open-file", "click", {"/api/plans/file"}, opened_request_ids)
 
 
 @pytest.mark.asyncio(loop_scope="session")

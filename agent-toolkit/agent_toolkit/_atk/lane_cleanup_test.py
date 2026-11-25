@@ -260,17 +260,19 @@ def test_delete_runs_project_teardown_before_preparing_foreign_ignored_output(
     foreign = worktree / output / "mysql"
     foreign.mkdir(parents=True)
     (foreign / "payload").write_text("生成物", encoding="utf-8")
-    metadata = foreign.lstat()
     original_scandir = os.scandir
 
     @contextlib.contextmanager
     def foreign_owner_entries(path: Any, **kwargs: Any) -> Generator[Iterator[Any]]:
         with original_scandir(path, **kwargs) as entries:
+            if not isinstance(path, (str, os.PathLike)) or pathlib.Path(path) != foreign.parent:
+                yield entries
+                return
 
             def entry_with_owner(entry: os.DirEntry[str]) -> Any:
-                observed = entry.stat(follow_symlinks=False)
-                if (observed.st_dev, observed.st_ino) != (metadata.st_dev, metadata.st_ino):
+                if entry.name != foreign.name:
                     return entry
+                observed = entry.stat(follow_symlinks=False)
                 fields = list(observed)
                 fields[4] = observed.st_uid + 1
                 return types.SimpleNamespace(name=entry.name, stat=lambda **_kwargs: os.stat_result(fields))

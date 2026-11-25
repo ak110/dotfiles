@@ -348,7 +348,7 @@ def test_dispatch_keeps_worktree_inputs_independent(
 def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_path: pathlib.Path) -> None:
     repository = git_repository.init_repository(tmp_path / "repository", commit_message="base")
     source = tmp_path / "source.md"
-    source.write_text(plan_fixture.request_plan(repo=repository), encoding="utf-8")
+    source.write_text(plan_fixture.awi_plan(repo=repository), encoding="utf-8")
     outside = tmp_path / "outside"
     outside.mkdir()
     isolated_home = tmp_path / "home"

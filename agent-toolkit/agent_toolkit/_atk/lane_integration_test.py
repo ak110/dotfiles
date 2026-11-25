@@ -12,8 +12,9 @@ from typing import Any
 import pytest
 import yaml
 
-from agent_toolkit._atk import lane, lane_integration_input, run_script
+from agent_toolkit._atk import lane, lane_integration_input, plans_checkout, run_script
 from agent_toolkit._common import session_registry
+from agent_toolkit._plan import commit_mapping, locations
 from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.lane_integration_support import (
     _cleanup_integration_manifest,
@@ -56,6 +57,14 @@ def test_integrate_public_lifecycle(
     head = git_repository.git_output(worktree, "rev-parse", "HEAD")
     handoff = tmp_path / "handoff.md"
     handoff.write_text("検収済み採否と完成条件", encoding="utf-8")
+    notes = selected.parent / "notes"
+    tables = locations.working_plans_root()
+    review = tables / f"wi-{record['initial_head'][:8]}-{pathlib.Path(done).stem}.exec-review.tsv"
+    if not planned:
+        git_repository.init_repository(notes, commit_message="初期状態")
+        tables.mkdir(parents=True, exist_ok=True)
+        review.write_text("確認済み\n", encoding="utf-8")
+        commit_mapping.mapping_path(handoff).write_text("{}\n", encoding="utf-8")
     manifest = tmp_path / "integration.json"
     saved = tmp_path / "saved-plan"
     argv = [sys.executable, "-c", "import pathlib,sys;pathlib.Path(sys.argv[1]).touch()", str(saved)]
@@ -78,6 +87,15 @@ def test_integrate_public_lifecycle(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
     assert (repo / "feature.txt").read_text(encoding="utf-8") == "成果"
     assert saved.exists() is planned
+    if not planned:
+        [stored_review] = list((notes / "plans").glob("*/*/*.exec-review.tsv"))
+        assert stored_review.name == review.name
+        assert git_repository.git_output(notes, "show", f"HEAD:{stored_review.relative_to(notes).as_posix()}") == "確認済み"
+        assert not review.exists()
+        retrieved = plans_checkout.checkout_plan(notes, stored_review.relative_to(notes / "plans").as_posix())
+        assert [path.read_text(encoding="utf-8") for path in retrieved] == ["確認済み\n", "{}\n"]
+        for path in retrieved:
+            path.unlink()
     record_path = pathlib.Path(record["record_path"])
     previous = json.loads(record_path.read_text(encoding="utf-8")).get("previous_integration")
     code, repeated, stderr = _invoke(capsys, *args)

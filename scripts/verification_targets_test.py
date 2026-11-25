@@ -68,6 +68,35 @@ def test_empty_result_and_failed_listing_are_distinct(tmp_path: pathlib.Path, mo
         consumer_tests(tmp_path, [])
 
 
+def test_documents_and_registered_stop_modules_reach_indirect_consumers(tmp_path: pathlib.Path) -> None:
+    toolkit = "agent-toolkit/agent_toolkit"
+    hook = f"{toolkit}/_hooks/bugfix_gate.py"
+    document = "guide/process-wi-selection.md"
+    root = init_repository(
+        tmp_path / "repo",
+        files={
+            document: "",
+            f"{toolkit}/__init__.py": "",
+            f"{toolkit}/_testing/__init__.py": "",
+            f"{toolkit}/_testing/support.py": "SOURCE = 'process-wi-selection.md'",
+            f"{toolkit}/_hooks/__init__.py": "",
+            f"{toolkit}/_hooks/stop.py": 'CHECK_MODULE_NAMES = ("bugfix_gate",)',
+            hook: "",
+            "reader_test.py": "from agent_toolkit._testing import support",
+            "user_response_advisor_test.py": "from agent_toolkit._hooks import stop",
+            "delivered_repost_gate_test.py": "import agent_toolkit._hooks.stop",
+            "unrelated_test.py": "SOURCE = 'other-process-wi-selection.md'",
+        },
+        commit_message="init",
+    )
+    candidates = consumer_tests(root, [document, hook])["candidates"]
+    assert [(c["source"], c["test"], c["required"], c["reasons"]) for c in candidates] == [
+        (hook, "delivered_repost_gate_test.py", False, ["hook-entry-reference"]),
+        (document, "reader_test.py", False, ["test-support-reference"]),
+        (hook, "user_response_advisor_test.py", False, ["hook-entry-reference"]),
+    ]
+
+
 def test_invalid_source_and_unreadable_tracked_source(tmp_path: pathlib.Path) -> None:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "keep.txt").write_text("", encoding="utf-8")

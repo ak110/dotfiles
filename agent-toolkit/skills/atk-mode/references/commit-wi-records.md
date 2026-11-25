@@ -14,9 +14,12 @@ WIとの対応は記録から取得し、メッセージの件名や説明文か
 1. 記録する。
    実装commitを作る前に、対応するAWIの集合と今のHEADを取得する。
    `git commit`を単独で実行して正常に終わった時だけ、作成前のHEAD、新しいHEAD、worktree、対応する全てのAWIを`atk run-script plan-progress`へ渡す。
+   - 旧書式の計画と引き継ぎ記録では、`--completed-step`と`--result`も渡し、本文へ進捗の行を追記する。
+     新書式の計画は進捗ログを持たないため、両者を省いてよく、本文を変えずに対応だけを記録する（`--rewrite-map`も同じ）。
+     `atk run-script plan-rewrite`も、新書式の計画は本文を変えずに対応だけを更新する（同コマンドの`--completed-step`と`--result`は必須のまま）。
    - 1つのcommitが複数のAWIの変更を含む場合は、全件を同じ記録へ渡す。
    - 引き継ぎ記録へは、`--handoff`と対象AWI全件の`--allowed-awi`を指定する。
-   - 計画が必要なAWIと不要なAWIの変更を1つのcommitが含む場合は、同じ作成前HEADと新しいHEADで、計画の関連WIにあるAWIを計画へ、残りを引き継ぎ記録へ記録する。
+   - 計画が必要なAWIと不要なAWIの変更を1つのcommitが含む場合は、同じ作成前HEADと新しいHEADで、計画の`related_wis`にあるAWIを計画へ、残りを引き継ぎ記録へ記録する。
      手順2の取得と`commit_record`も、AWIごとに記録した側を使う。
    - レビュー修正とCI修正のcommitも全件記録する。
    - cherry-pickやfast-forwardで複数のcommitを取り込んだ場合は、操作前後のHEADで一括して記録する。
@@ -40,5 +43,5 @@ WIとの対応は記録から取得し、メッセージの件名や説明文か
    - `atk lane integrate`へ渡すadoptの`--commit`も今の取得結果から作り直し、manifestのWI行の`commit_record`へ元の計画か引き継ぎ記録のMarkdownの絶対パスを指定する。
    - 記録済みのcommitへAWIを足すには、旧OIDを同じOIDへ写す対応表`{"<旧OID>": [{"commit": "<同じOID>", "awi": [<記録後の全AWI>]}]}`を`atk run-script plan-progress`の`--rewrite-map`へ渡す。
 3. 記録の対象を分ける。
-   実装差分なしで満たした項目、WIと関係の無いcommit、回答だけのUWIは対応の記録の対象外とし、進捗ログか引き継ぎ記録を根拠にcommitの指定を省く。
+   実装差分なしで満たした項目、WIと関係の無いcommit、回答だけのUWIは対応の記録の対象外とし、引き継ぎ記録を根拠にcommitの指定を省く。
    計画と対応の記録は`atk plans commit`で保存する。

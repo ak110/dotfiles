@@ -95,3 +95,23 @@ class TargetRepoMatcher:
         if entry_target_repo in self._raw:
             return True
         return bool(self._canonical) and _git_remote.canonical_repo(entry_target_repo, self._cache) in self._canonical
+
+
+def selection_matches(
+    *,
+    kind: str | None,
+    kinds: set[str],
+    text: str,
+    target_repo: object,
+    repository: TargetRepoMatcher,
+    answered: str | Iterable[str],
+    source: str | None,
+    sources: str | Iterable[str] | None,
+    allow_missing_repo_for_unknown_kind: bool = False,
+) -> bool:
+    return (
+        ("all" in kinds or kind in kinds)
+        and ((allow_missing_repo_for_unknown_kind and kind is None) or repository.matches(target_repo))
+        and answered_matches(kind, text, answered)
+        and source_matches_any(source, sources)
+    )

@@ -1,8 +1,10 @@
 import { automatedMessage } from "./automated_message.ts";
+import outputPolicy from "../agent_toolkit/_common/output-policy.ts";
 
 export const questionRoute = "回答を求める質問・選択は、ツール一覧に`AskUserQuestion`があればそれで尋ね、なければmessageで送る。";
-export const deliverySucceeded = "このメッセージはユーザーに送信済みです。同じ内容を再送したり、通常の応答本文で再掲・送信確認・要約したりしてはいけません。";
-export const newReportRoute = "新しい報告はsend_to_userで送る。新しく伝えることがなく、Claude Codeが可視の本文を求める場合の最小の応答は「…」。";
+export function deliveryGuidance(alreadyDelivered: boolean): string {
+  return alreadyDelivered && outputPolicy.full_guidance_once ? outputPolicy.send_repeat : outputPolicy.send_guidance;
+}
 
 // `AWI化ステータス`の値ごとに、理由の先頭に置く区分名と、区分名で始まらない場合の警告を対応付ける。
 // 書式と区分の定義元は`skills/atk-mode/playbooks/main-reporting.md`「進捗報告」にある。警告は区分を本文に挙げ、定義元を読まずに直せるようにする。

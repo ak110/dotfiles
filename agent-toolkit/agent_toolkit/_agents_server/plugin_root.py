@@ -10,6 +10,7 @@ from pathlib import Path
 
 from agent_toolkit._agents_server import role_runtime
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk.managed_temp.removal import release_stable_plugin_root
 from agent_toolkit._common import inherited_venv, plugin_environment, plugin_root_leases
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.plugin-root")
@@ -18,7 +19,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.plugin-root")
 STABLE_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
 STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
 _stable_plugin_roots: dict[Path, Path] = {}
-_SHARED_MARKER = ".agent-toolkit-plugin-root.json"
+_SHARED_MARKER = plugin_root_leases.SHARED_PLUGIN_ROOT_MARKER
 
 
 def plugin_source_root(root: Path) -> Path:
@@ -141,22 +142,24 @@ def main(arguments: list[str]) -> int:
     if len(arguments) != 2 or arguments[0] not in {"--wi-submit-worker", "--process-loop-worker"}:
         return 2
     root = resolve_stable_plugin_root(independent=True)
-    executable = plugin_environment.prepared_python(root, os.environ)
-    if executable is None:
-        raise RuntimeError("独立投入の共有依存環境が未準備。公開launcherで依存環境を準備して再実行する")
-    environment = plugin_environment.cli_environment(root, os.environ)
-    environment["PYTHONPATH"] = str(root)
-
-    inherited_venv.record_launch_value(environment, "PYTHONPATH", os.environ.get("PYTHONPATH"))
-    command = (
-        [str(executable), str(root / "agent_toolkit" / "atk.py"), "wi", "process-loop", "--internal-target", arguments[1]]
-        if arguments[0] == "--process-loop-worker"
-        else [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
-    )
-    if os.name == "nt":
-        return subprocess.run(command, env=environment, check=False).returncode
-    os.execvpe(str(executable), command, environment)
-    return 0
+    try:
+        executable = plugin_environment.prepared_python(root, os.environ)
+        if executable is None:
+            raise RuntimeError("独立投入の共有依存環境が未準備。公開launcherで依存環境を準備して再実行する")
+        environment = plugin_environment.cli_environment(root, os.environ)
+        environment["PYTHONPATH"] = str(root)
+        inherited_venv.record_launch_value(environment, "PYTHONPATH", os.environ.get("PYTHONPATH"))
+        command = (
+            [str(executable), str(root / "agent_toolkit" / "atk.py"), "wi", "process-loop", "--internal-target", arguments[1]]
+            if arguments[0] == "--process-loop-worker"
+            else [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
+        )
+        if os.name == "nt":
+            return subprocess.run(command, env=environment, check=False).returncode
+        os.execvpe(str(executable), command, environment)
+        return 0
+    finally:
+        release_stable_plugin_root(root)
 
 
 if __name__ == "__main__":

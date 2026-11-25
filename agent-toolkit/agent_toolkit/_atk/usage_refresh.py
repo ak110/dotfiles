@@ -16,7 +16,15 @@ from typing import Any
 
 from agent_toolkit._atk import claude_connection, config
 from agent_toolkit._common import claude_connection as claude_settings
-from agent_toolkit._common import claude_usage_limit, codex_models, json_lines, process_tree, usage_observation, usage_settings
+from agent_toolkit._common import (
+    claude_usage_limit,
+    codex_models,
+    codex_weekly,
+    json_lines,
+    process_tree,
+    usage_observation,
+    usage_settings,
+)
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
@@ -92,12 +100,20 @@ def session_signature(session: Any) -> str:
 
 
 @contextlib.contextmanager
-def cli_activity(engine: str, model: str | None, effort: str | None, connection: str | None = None) -> Generator[None]:
+def cli_activity(
+    engine: str,
+    model: str | None,
+    effort: str | None,
+    connection: str | None = None,
+    *,
+    service_tier: str | None = None,
+) -> Generator[None]:
     if engine not in {"claude", "codex"} or not enabled():
         yield
         return
     identifier = f"cli:{os.getpid()}"
-    fast = engine == "codex" and config.resolve_mutable_setting("codex_fast_mode") == "true"
+    # CLIが速度を送っていない場合は、設定値から実効速度を推定しない。  # pyfltr: allow-comment
+    fast = (service_tier == "priority" if service_tier is not None else None) if engine == "codex" else False
     signature = json.dumps(
         [engine, model, effort, fast, connection if engine == "claude" else None, connection if engine == "codex" else None]
     )
@@ -153,17 +169,23 @@ def _store(windows: list[usage_observation.QuotaWindow], signature: str = "unatt
         _LOG.warning("利用枠の観測を保存できません。config usageで取得状態を確認してください: %s", error)
 
 
-def record_codex(raw: dict[str, Any], *, account: str = "unknown", contract: str = "") -> None:
+def record_codex(raw: dict[str, Any], *, account: str = "unknown", contract: str = "", permission_account: str = "") -> None:
     now = time.time()
     previous = usage_settings.read_metadata("codex")
-    if account == "unknown":
-        account = previous.get("account", "unknown")
-    account = str(raw.get("accountId") or account)
+    routing = raw.get("workspaceRouting")
+    routed = routing.get("chatgptAccountId") if isinstance(routing, dict) else None
+    supplied = raw.get("accountId") or routed or account
+    identified = supplied if isinstance(supplied, str) and supplied != "unknown" and not supplied.startswith("unknown:") else ""
+    account = str(supplied if supplied != "unknown" else previous.get("account", "unknown"))
+    by_id = raw.get("rateLimitsByLimitId")
+    buckets = by_id if isinstance(by_id, dict) else {"codex": raw.get("rateLimits")}
+    default_bucket = buckets.get("codex")
+    if not isinstance(default_bucket, dict):
+        default_bucket = {}
+    contract = contract or _text(default_bucket.get("planType")) or ""
     if not contract and previous.get("account") == account:
         contract = previous.get("contract", "")
     contract = contract if contract and not contract.startswith("unknown") else f"unknown:{now}"
-    by_id = raw.get("rateLimitsByLimitId")
-    buckets = by_id if isinstance(by_id, dict) else {"codex": raw.get("rateLimits")}
     windows = []
     for name, bucket in buckets.items():
         if not isinstance(bucket, dict):
@@ -174,13 +196,14 @@ def record_codex(raw: dict[str, Any], *, account: str = "unknown", contract: str
             windows.append(
                 usage_observation.QuotaWindow(
                     "codex",
-                    str(raw.get("accountId") or account),
+                    account,
                     f"{name}:{label}",
                     _number(window.get("usedPercent"), 100),
                     _timestamp(window.get("resetsAt")),
                     now,
                     scope="all" if name == "codex" else str(bucket.get("limitName") or name),
                     contract=contract,
+                    limit_name=_text(bucket.get("limitName")) or _text(bucket.get("limitId")) or str(name),
                     duration_seconds=minutes * 60
                     if (minutes := _number(window.get("windowDurationMins"))) is not None
                     else None,
@@ -188,14 +211,49 @@ def record_codex(raw: dict[str, Any], *, account: str = "unknown", contract: str
             )
     _store(windows)
     inventory = raw.get("rateLimitResetCredits")
+    additional_usage = default_bucket.get("credits", raw.get("credits"))
+    details = inventory.get("credits") if isinstance(inventory, dict) else None
+    weekly_window = None
+    with contextlib.suppress(ValueError):
+        weekly = codex_weekly.select_weekly(raw)
+        if weekly.window is not None:
+            weekly_window = {"window_id": weekly.window_id, "resets_at": weekly.window.resetsAt}
     usage_settings.record_metadata(
         "codex",
         {
-            "account": str(raw.get("accountId") or account),
+            "account": account,
             "contract": contract,
+            "permission_account": permission_account,
+            "weekly_window": weekly_window,
+            "ordinaryUsageAllowed": _boolean(raw.get("ordinaryUsageAllowed")),
+            "spendControlReached": _boolean(default_bucket.get("spendControlReached", raw.get("spendControlReached"))),
+            "rateLimitReachedType": _text(default_bucket.get("rateLimitReachedType", raw.get("rateLimitReachedType"))),
+            "credits": {
+                "hasCredits": _boolean(additional_usage.get("hasCredits")),
+                "unlimited": _boolean(additional_usage.get("unlimited")),
+                "balance": _text(additional_usage.get("balance")),
+            }
+            if isinstance(additional_usage, dict)
+            else None,
             "reset_available_count": _number(inventory.get("availableCount")) if isinstance(inventory, dict) else None,
+            "reset_credit_details": [
+                {"resetType": _text(item.get("resetType")), "status": _text(item.get("status"))}
+                for item in details
+                if isinstance(item, dict)
+            ]
+            if isinstance(details, list)
+            else None,
         },
+        identified_account=identified,
     )
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _boolean(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 def record_claude_report(
@@ -220,6 +278,9 @@ def record_claude_report(
             now,
             scope=json.dumps(row["scope"], sort_keys=True) if row.get("scope") else "all",
             contract=contract,
+            group=_text(row.get("group")),
+            severity=_text(row.get("severity")),
+            is_active=_boolean(row.get("is_active")),
         )
         for index, row in enumerate(rows)
         if isinstance(row, dict)
@@ -233,6 +294,7 @@ def record_claude_report(
             {
                 "extra_usage_enabled": extra.get("is_enabled") if isinstance(extra.get("is_enabled"), bool) else None,
                 "extra_usage_spend": _number(extra.get("used_credits")),
+                "extra_usage_utilization": _number(extra.get("utilization")),
                 "extra_usage_limit": _number(extra.get("monthly_limit")),
                 "currency": str(extra.get("currency", "unknown"))[:16],
                 "amount_unit": "通貨の最小単位。USDはセント",
@@ -283,11 +345,13 @@ def codex_account(auth: dict[str, Any]) -> str:
     routing = auth.get("workspaceRouting")
     if isinstance(routing, dict) and routing.get("chatgptAccountId"):
         return str(routing["chatgptAccountId"])
+    return codex_permission_account(auth) or f"unknown:{time.time()}"
+
+
+def codex_permission_account(auth: dict[str, Any]) -> str:
     account = auth.get("account")
     email = account.get("email") if isinstance(account, dict) else None
-    if isinstance(email, str) and email:
-        return hashlib.sha256(email.encode()).hexdigest()
-    return f"unknown:{time.time()}"
+    return hashlib.sha256(email.encode("utf-8")).hexdigest() if isinstance(email, str) and email.strip() else ""
 
 
 async def _codex_usage(request: Callable[..., Awaitable[dict[str, Any]]]) -> dict[str, Any]:
@@ -296,7 +360,12 @@ async def _codex_usage(request: Callable[..., Awaitable[dict[str, Any]]]) -> dic
     if not isinstance(account, dict) or account.get("type") != "chatgpt":
         raise ValueError("Codexのサブスクリプションアカウントを確認できない")
     raw = await request("account/rateLimits/read", {})
-    record_codex(raw, account=codex_account(auth), contract=str(account.get("planType", "")))
+    record_codex(
+        raw,
+        account=codex_account(auth),
+        contract=str(account.get("planType", "")),
+        permission_account=codex_permission_account(auth),
+    )
     return raw
 
 
@@ -401,23 +470,34 @@ def ensure_fresh(*, force: bool = False, environment: Mapping[str, str] | None =
     automatic = enabled(force=True)
     if not force and not automatic:
         return
+    _refresh_locked(force=force, environment=environment)
+
+
+def refresh_for_display(*, force: bool = False) -> dict[str, Any]:
+    return _refresh_locked(force=force, requested_at=time.time())
+
+
+def _refresh_locked(
+    *, force: bool, environment: Mapping[str, str] | None = None, requested_at: float | None = None
+) -> dict[str, Any]:
     path = usage_settings.settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.with_suffix(".refresh.lock").open("a+", encoding="utf-8") as lock:
         try:
-            acquire_lock(lock, blocking=False)
+            acquire_lock(lock, blocking=requested_at is not None)
         except OSError:
-            return
+            if requested_at is not None:
+                raise
+            return {}
         try:
             state = usage_settings.read_settings()
             previous = state.get("last_refresh_at")
             if (
-                not force
-                and state.get("refresh_context") == usage_settings.context_id()
+                state.get("refresh_context") == usage_settings.context_id()
                 and isinstance(previous, (int, float))
-                and time.time() - previous < 300
+                and ((not force and time.time() - previous < 300) or (requested_at is not None and previous >= requested_at))
             ):
-                return
+                return state
             errors = refresh(quiet=True, environment=environment)
             with path.with_suffix(".lock").open("a+", encoding="utf-8") as settings_lock:
                 acquire_lock(settings_lock)
@@ -431,5 +511,6 @@ def ensure_fresh(*, force: bool = False, environment: Mapping[str, str] | None =
                     atomic_write(path, json.dumps(state, ensure_ascii=False) + "\n")
                 finally:
                     release_lock(settings_lock)
+            return state
         finally:
             release_lock(lock)

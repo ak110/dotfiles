@@ -3,6 +3,7 @@
 # dependencies = [
 #     "argcomplete>=3.6.3",
 #     "claude-agent-sdk>=0.2.144,<0.3",
+#     "cryptography>=50.0.2",
 #     "filelock>=3.30",
 #     "markdown-it-py[linkify]>=4.0.0",
 #     "mcp>=2.0.0,<3",
@@ -13,8 +14,10 @@
 #     "pyfltr>=3.34.0",
 #     "pygments",
 #     "pytilpack[quart]>=1.54.1",
+#     "pywebpush>=2.5.0",
 #     "pyyaml",
 #     # 再帰inotify監視がKeyErrorで停止する版を除外する（PYTHONDEVMODE=1のbrowser-e2eで再現）。
+#     "requests>=2.32.5",
 #     "watchdog>=6.0.0,!=7.0.0",
 # ]
 #
@@ -181,7 +184,10 @@ def main() -> int:
                 environment["PYTHONPATH"] = str(stable)
 
                 inherited_venv.record_launch_value(environment, "PYTHONPATH", caller_environment.get("PYTHONPATH"))
-                return _run_agents_server(arguments, environment, independent=True)
+                try:
+                    return _run_agents_server(arguments, environment, independent=True)
+                finally:
+                    plugin_root.release_stable_plugin_root(stable)
             if target == root / _AGENTS_SERVER_TARGET:
                 return _run_agents_server(arguments, environment)
             if target == root / "agent_toolkit/_common/pyfltr_entry.py" and options.arguments[:1] == ["mcp"]:

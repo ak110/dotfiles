@@ -1,5 +1,11 @@
 # WIの登録と回答
 
+`atk wi add`などのローカル保存に対応した操作は、commitが済んだ時点で結果を返す。
+別ホストに届くまでは時間差がある。
+一覧・表示・検索は既定でローカルの状態を読み、古い可能性がある場合は最終取得時刻を標準エラーに出す。
+最新の受信を待つには`atk wi pull`または読み取りの`--pull`を使い、送信を待つには`atk wi commit`を使う。
+以前の同期エラーが表示された場合は、今回のローカル保存の結果とは分けて、案内された回復操作を行う。
+
 登録の確認・変更は、`atk serve`の「設定」の「リポジトリ」で行える。
 
 ## WI投入の独立実行
@@ -63,6 +69,21 @@ atk wi answer <UWIファイル名> '<回答本文>'
 - `atk wi list --status=processable`: 自動処理へ渡せる項目
 - `atk wi list --type=uwi --answered=no`: 未回答のUWI
 
+### エージェントが回答・新着AWIを待つ
+
+`atk wi wait --uwi FILENAME --timeout SECONDS`は指定したUWIの回答を待つ。
+`--uwi`は正式なファイル名で繰り返し指定できる。
+新着AWIを待つには、`atk wi list --target-repo ID --snapshot-output PATH`で開始時集合をJSONファイルへ保存する。
+`atk wi wait --new-since PATH --target-repo ID --timeout SECONDS`に同じファイルとリポジトリを指定すると、
+開始時集合に無い処理可能なAWIを待つ。
+両条件を指定した場合は、どちらか一方で終了する。
+開始時に条件を照会するため、すでに回答済みのUWIも検知する。
+別のホストでの変更は、待機中に60秒間隔で起動する同期で取り込まれた後に検知できる。
+
+検知時は `{"type":"uwi","filename":"20261125-123456-001.md"}` のようなJSONを標準出力へ出し、0で終了する。
+時間切れは3、入力エラーは2、内部失敗は1で終了する。
+ユーザーの回答方法は変わらない。
+
 ## 処理対象と検証OS
 
 `atk config repos`で登録済みリポジトリと属性を一覧表示する。
@@ -123,18 +144,40 @@ GitHub CopilotのレビューとDependabotアラートの確認は、既定の�
 `status`では中断要求、再開予約、保持している追加指示を確認できる。
 各リポジトリの処理結果と残作業は巡回会話の報告で確認する。
 
+公開GitHubリポジトリの開いているIssueとPRの取り込みは、登録ごとに有効にできる（初期値は無効）。
+
+```bash
+atk config repos set github.com/OWNER/REPO --github-issues
+```
+
+巡回は`atk wi check-alerts --periodic`でCI失敗と合わせて照会する。
+既定の確認間隔はリポジトリごとに1,800秒。
+起動時の`atk wi process-loop --alert-interval SECONDS`で間隔を変更し、`--no-alerts`で両方の定期確認を止める。
+`--periodic`を付けずに手動で`atk wi check-alerts`を実行すると、CI失敗だけを確認する。
+`gh`はGitHubでの認証が必要で、`gh auth status --hostname github.com`で確認できる。
+非公開のリポジトリや公開を確認できないリポジトリからは取り込まない。
+
+信頼する作成者のIssueはAWIにし、それ以外のIssueとPRは取り込みの可否を尋ねるUWIにする。
+信頼する作成者のPRは取り込まない。
+初期値として個人リポジトリは所有者だけを、組織リポジトリは誰も信頼しない。
+変更するには同じ登録に`--github-issue-trusted-authors OWNER,ACCOUNT`を指定する。
+空文字列は誰も信頼せず、`@default`は既定に戻す。
+`--no-github-issues`で取り込みを無効にする。
+
 次回に再開する会話は、常駐が停止中でも予約できる。
 
 ```bash
 atk wi process-loop resume SESSION_ID
-atk wi process-loop resume
 atk wi process-loop status
 atk wi process-loop resume-cancel
 ```
 
-値なしの `resume` は次の起動でホストCLIの会話選択画面を開く。
-会話選択画面には対話端末が必要で、非対応のホストでは会話IDを指定する。
 予約コマンド自体は会話を起動せず、後から受理した予約で置き換えられる。
+`resume`をIDなしで実行すると会話選択の予約を保存する。
+その予約で会話を選択できるのはCodexだけである。
+Claude Codeで巡回を起動するとIDなしの予約では会話を起動せず、予約を保持する。
+`status`に表示される直近の統括のIDか、`atk serve`のセッション一覧で探したIDを指定して予約し直す。
+Claude Codeでは起動元の`atk wi process-loop`が同じ会話を圧縮してから再開するため、手動で圧縮する必要はない。
 予約はCLIの実起動で1回消費され、準備・更新・起動の前に失敗した場合は残る。
 旧`--resume`・`--auto-resume`オプションは使わない。
 旧方式の`auto`予約が残ると起動は止まる。

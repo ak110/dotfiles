@@ -9,12 +9,13 @@ import dataclasses
 
 @dataclasses.dataclass(frozen=True)
 class Decision:
-    """PreToolUseの判定1件の結果。
+    """PreToolUseの判定1件の結果。  pyfltr: allow-comment
 
     `block`は遮断の本文で、エントリーポイントが標準エラーへ書き終了コード2で終える。
     `context`は`hookSpecificOutput.additionalContext`へ渡す本文（判定の警告など）である。
     `notices`はエントリーポイントが保留している通知の末尾へ加える本文で、保留の通知と1つの警告群として結合する。
     `allow`はClaude Codeで権限の確認を省いて実行を許可する（`permissionDecision: allow`）ことを示す。
+    `ask`はClaude Codeの権限確認へ渡す理由である。確認を出せないホストでは呼び出し側が遮断を選ぶ。
     Codexでは出力境界が通常の権限フローへ通過させ、`context`と`notices`を追加文脈へ保持する。
     """
 
@@ -22,4 +23,5 @@ class Decision:
     context: str | None = None
     notices: tuple[str, ...] = ()
     allow: bool = False
+    ask: str | None = None
     updated_input: dict | None = None

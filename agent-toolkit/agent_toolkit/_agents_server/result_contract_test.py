@@ -740,7 +740,13 @@ def test_invalid_freeform_fails_after_one_recovery(kind: state.LaunchKind, tmp_p
 
 @pytest.mark.parametrize(
     ("comparison", "valid"),
-    [("CLIの一覧と実画面を並べ、状態の列位置と表示項目を比較した", True), ("", False), ("外部類例との比較は未確認", False)],
+    [
+        ("同じ製品の一覧と設定画面を比較した | 外見: 共通部品と配色が一致した", True),
+        ("同じ製品の一覧と設定画面を比較した", False),
+        ("同じ製品の一覧と設定画面を比較した | 外見: なし", False),
+        ("", False),
+        ("外部類例との比較は未確認", False),
+    ],
 )
 def test_usability_pass_requires_each_whole_screen_observation(comparison: str, valid: bool) -> None:
     session = _role_session("usability-review.subagent.md")

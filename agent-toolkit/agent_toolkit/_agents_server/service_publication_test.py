@@ -30,6 +30,7 @@ from agent_toolkit._agents_server.service_context import ServiceManagers
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
+from agent_toolkit._agents_server.service_publication_test_child import PREVIOUS_GENERATION
 from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._common import registry_forwarding, runtime_environment, session_registry
@@ -438,93 +439,6 @@ def test_handover_record_does_not_survive_destination_process_replacement(tmp_pa
     assert not registry.handover_confirmed(replacement, old)
 
 
-_PREVIOUS_GENERATION = """
-import asyncio
-import contextlib
-import os
-import pathlib
-import signal
-import sys
-
-from mcp.types import CallToolRequestParams
-
-from agent_toolkit._agents_server import mcp_tools, service, service_io, service_transport, state, turn_state
-from agent_toolkit._agents_server.service_claude_io import SdkResource
-from agent_toolkit._common import runtime_environment
-
-directory, parent, session_id, turn, failure, finish, mode = sys.argv[1:]
-directory, failure, finish = pathlib.Path(directory), pathlib.Path(failure), pathlib.Path(finish)
-listen = service_transport.listen
-
-
-@contextlib.contextmanager
-def failing_listen(address):
-    with listen(address) as listener:
-        accept = listener.accept
-
-        def accept_or_fail():
-            if failure.exists():
-                raise OSError("試験で注入した受付の失敗")
-            return accept()
-
-        listener.accept = accept_or_fail
-        yield listener
-
-
-service_transport.listen = failing_listen
-
-
-async def main():
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    signal.signal(signal.SIGTERM, lambda *_args: loop.call_soon_threadsafe(stop.set))
-    serving = asyncio.create_task(service.run(directory, "old", stop=stop))
-    while (managers := mcp_tools._SERVICE_MANAGERS) is None or managers.before_controls is None:
-        if serving.done():
-            await serving
-        await asyncio.sleep(0.01)
-    coordinator = managers.before_controls.__self__
-    if mode == "delay_response":
-        commit = coordinator.commit_update
-
-        async def delay_response(token, current):
-            await commit(token, current)
-            pathlib.Path("commit-accepted").touch()
-            await asyncio.sleep(60)
-
-        coordinator.commit_update = delay_response
-    caller = runtime_environment.CallerContext(dict(os.environ, CODEX_THREAD_ID=parent), pathlib.Path.cwd())
-    with service_io.bind(coordinator._runtime), runtime_environment.bind(caller):
-        async with managers.scope(CallToolRequestParams(name="list", arguments={}), identifier_override=parent) as manager:
-            session = manager.sessions[session_id] = state.SessionState(
-                session_id,
-                str(pathlib.Path.cwd()),
-                engine="claude" if mode == "raw" else "codex",
-                turn_end=turn_state.TurnEnd[turn],
-                publish_registry=True,
-            )
-            if mode == "raw":
-                async def close():
-                    if not pathlib.Path("allow-close").exists():
-                        pathlib.Path("close-attempted").touch()
-                        raise OSError("試験で注入したcloseの失敗")
-                    pathlib.Path("raw-closed").touch()
-
-                runtime = coordinator._runtime
-                identifier = runtime.broker.register({"close": close})
-                await runtime.broker.emit(identifier, {"end": True})
-                client = SdkResource(service_io.Resource(runtime, identifier, runtime.target))
-                manager._backend("claude")._sdk_clients[session_id] = client
-            await manager.save_control_state()
-    while not finish.exists() and not serving.done():
-        await asyncio.sleep(0.05)
-    session.record_turn_completed()
-    await serving
-
-
-asyncio.run(main())
-"""
-
 # 保存またはClaudeの取り込み用設定の組み立てが、会話本体の解放をまたいで1回失敗する世代。
 _ADOPTING_GENERATION = """
 import asyncio
@@ -569,11 +483,13 @@ else:
 
     AgentsServerManager.save_control_state = save_across_deadline
 
+pathlib.Path(__file__).with_suffix(".ready").touch()
 asyncio.run(service.run(pathlib.Path(directory), generation))
 """
 
 _PARENT, _SESSION = "parent-conversation", "child-session"
 _OWNED = {"parent": _PARENT, "session_id": _SESSION}
+_GENERATION_READY_TIMEOUT = 35
 
 
 def _isolated_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
@@ -583,28 +499,80 @@ def _isolated_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch)
     return service_transport.namespace(runtime_environment.CallerContext(dict(os.environ), tmp_path))
 
 
+async def _wait_for_child_file(path: pathlib.Path, process: subprocess.Popen) -> None:
+    while not path.exists():
+        assert process.poll() is None, f"{path.name} を出す前に子が終了: {process.returncode}"
+        await asyncio.sleep(0.01)
+
+
 async def _wait_for_discovery(directory: pathlib.Path, generation: str, process: subprocess.Popen) -> dict[str, Any]:
+    discovery = directory / f"{generation}.json"
     async with asyncio.timeout(10):
-        while not (directory / f"{generation}.json").exists():
-            assert process.poll() is None
-            await asyncio.sleep(0.01)
-    return json.loads((directory / f"{generation}.json").read_text(encoding="utf-8"))
+        await _wait_for_child_file(discovery, process)
+    return json.loads(discovery.read_text(encoding="utf-8"))
+
+
+def _reap_generation_process(process: subprocess.Popen) -> None:
+    try:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+    finally:
+        if process.stdin is not None:
+            process.stdin.close()
+
+
+async def _launch_generation_process(
+    script: pathlib.Path,
+    arguments: list[str],
+    cwd: pathlib.Path,
+    processes: list[subprocess.Popen],
+    *,
+    startup_deadline: float | None = None,
+    stdin: int | None = None,
+) -> subprocess.Popen:
+    ready = script.with_suffix(".ready")
+    if startup_deadline is not None and asyncio.get_running_loop().time() >= startup_deadline:
+        raise TimeoutError(f"{ready.name}: 子を起動する前に準備期限を超えた")
+    # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、呼出元が終了を見届けた後で手放す。
+    process = subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, str(script), *arguments], cwd=cwd, stdin=stdin
+    )
+    processes.append(process)
+    if startup_deadline is None:
+        startup_deadline = asyncio.get_running_loop().time() + _GENERATION_READY_TIMEOUT
+    try:
+        async with asyncio.timeout_at(startup_deadline):
+            await _wait_for_child_file(ready, process)
+    except TimeoutError as error:
+        _reap_generation_process(process)
+        processes.pop()
+        raise TimeoutError(f"{ready.name}: 子の準備完了通知が届かなかった") from error
+    return process
 
 
 async def _launch_previous_generation(
-    tmp_path: pathlib.Path, directory: pathlib.Path, turn: str, processes: list[subprocess.Popen], *, mode: str = "normal"
+    tmp_path: pathlib.Path,
+    directory: pathlib.Path,
+    turn: str,
+    processes: list[subprocess.Popen],
+    *,
+    mode: str = "normal",
+    startup_deadline: float | None = None,
 ) -> dict[str, Any]:
     registry = GenerationRegistry(directory)
     registry.reserve("old", tmp_path / "old", "1.0.0")
     script = tmp_path / "previous" / "previous_generation.py"
     script.parent.mkdir()
-    script.write_text(_PREVIOUS_GENERATION, encoding="utf-8")
+    script.write_text(PREVIOUS_GENERATION, encoding="utf-8")
     arguments = [str(directory), _PARENT, _SESSION, turn, str(tmp_path / "inject-failure"), str(tmp_path / "finish-turn"), mode]
-    # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、呼出元が終了を見届けた後で手放す。
-    processes.append(subprocess.Popen([sys.executable, str(script), *arguments], cwd=tmp_path))  # pylint: disable=consider-using-with
-    old = await _wait_for_discovery(directory, "old", processes[-1])
+    process = await _launch_generation_process(script, arguments, tmp_path, processes, startup_deadline=startup_deadline)
+    old = await _wait_for_discovery(directory, "old", process)
     registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
-    async with asyncio.timeout(30):
+    owns_deadline = asyncio.get_running_loop().time() + 30
+    if startup_deadline is not None:
+        owns_deadline = min(owns_deadline, startup_deadline)
+    async with asyncio.timeout_at(owns_deadline):
         while not await service_rpc.request(old, "owns", _OWNED):
             await asyncio.sleep(0.05)
     return old
@@ -837,20 +805,30 @@ async def _publish_across_expiry(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     processes: list[subprocess.Popen] = []
     stop = asyncio.Event()
     serving = None
+    # pyfltr: allow-comment 2子で準備期限を共有し、発見の10秒と2子の回収の最大10秒をpytestの60秒より前に残す。
+    startup_deadline = asyncio.get_running_loop().time() + _GENERATION_READY_TIMEOUT
     try:
         old = await _launch_previous_generation(
-            tmp_path, directory, "COMPLETED", processes, mode="raw" if failure == "options" else "normal"
+            tmp_path,
+            directory,
+            "COMPLETED",
+            processes,
+            mode="raw" if failure == "options" else "normal",
+            startup_deadline=startup_deadline,
         )
         registry.reserve("second", tmp_path / "second", "1.0.1")
         script = tmp_path / "adopting" / "adopting_generation.py"
         script.parent.mkdir()
         script.write_text(_ADOPTING_GENERATION, encoding="utf-8")
-        processes.append(
-            subprocess.Popen(  # pylint: disable=consider-using-with
-                [sys.executable, str(script), str(directory), "second", _SESSION, _PARENT, failure], cwd=tmp_path
-            )
+        process = await _launch_generation_process(
+            script,
+            [str(directory), "second", _SESSION, _PARENT, failure],
+            tmp_path,
+            processes,
+            startup_deadline=startup_deadline,
         )
-        second = await _wait_for_discovery(directory, "second", processes[1])
+        second = await _wait_for_discovery(directory, "second", process)
+        del process
         async with asyncio.timeout(30):
             assert (await service_rpc.request(second, "publish", {}))["generation"] == "second"
         async with asyncio.timeout(30):
@@ -884,9 +862,9 @@ async def _publish_across_expiry(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
         stop.set()
         if serving is not None:
             await asyncio.gather(serving, return_exceptions=True)
-        for process in processes:
-            process.kill()
-            process.wait()
+        with contextlib.ExitStack() as children:
+            for process in processes:
+                children.callback(_reap_generation_process, process)
 
 
 def test_exited_candidate_is_not_published(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -949,3 +927,52 @@ def test_publication_interrupted_by_candidate_exit_restores_live_generation(
         service_forward.publish_service(caller, tmp_path / "new", timeout=5)
     current = GenerationRegistry(directory).current()
     assert current is not None and current["generation"] == "old"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの管理サービスにSIGTERMを送る")
+@pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")
+@pytest.mark.asyncio
+async def test_same_version_successor_keeps_conversation_after_shutdown_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _isolated_directory(tmp_path, monkeypatch)
+    registry = GenerationRegistry(directory)
+    processes: list[subprocess.Popen] = []
+    startup_deadline = asyncio.get_running_loop().time() + _GENERATION_READY_TIMEOUT
+    try:
+        old = await _launch_previous_generation(
+            tmp_path, directory, "IN_PROGRESS", processes, startup_deadline=startup_deadline
+        )
+        registry.reserve("new", tmp_path / "new", "1.0.0")
+        script = tmp_path / "successor_generation.py"
+        script.write_text(
+            "import pathlib\n"
+            "from agent_toolkit._agents_server import service\n"
+            "pathlib.Path(__file__).with_suffix('.ready').touch()\n"
+            "raise SystemExit(service.main())\n",
+            encoding="utf-8",
+        )
+        successor = await _launch_generation_process(
+            script, [str(directory), "new"], tmp_path, processes, startup_deadline=startup_deadline, stdin=subprocess.PIPE
+        )
+        new = await _wait_for_discovery(directory, "new", successor)
+        accepted = await service_rpc.request(new, "publish", {})
+        assert accepted["generation"] == "new"
+        assert await service_rpc.request(old, "owns", _OWNED)
+        (tmp_path / "finish-turn").touch()
+        assert await asyncio.to_thread(processes[0].wait, 30) == 0
+        assert await service_rpc.request(new, "owns", _OWNED)
+
+        assert successor.stdin is not None
+        successor.stdin.close()
+        successor.terminate()
+        await asyncio.sleep(1)
+        assert successor.poll() is None
+        sessions = await service_rpc.request(new, "parent_sessions", {"parent": _PARENT, "include_terminated": False})
+        assert [session["session_id"] for session in sessions] == [_SESSION]
+        owner = session_registry.resolve(_SESSION, state_root=directory.parent.parent)
+        assert owner.server_instance == new["server_instance"]
+    finally:
+        with contextlib.ExitStack() as children:
+            for process in processes:
+                children.callback(_reap_generation_process, process)

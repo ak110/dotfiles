@@ -553,6 +553,85 @@ async def test_unused_installation_fields_do_not_block_prepare_or_reload(
         client._query._send_control_request.assert_awaited_once()
 
 
+@pytest.mark.parametrize("plugin_id", ["cc-plugin-agents-md@builtin", "external@future"])
+@pytest.mark.parametrize("path_fields", [{}, {"installPath": None}, {"installPath": ""}])
+def test_pathless_non_toolkit_is_not_loadable(
+    tmp_path: Path, inventory: SimpleNamespace, plugin_id: str, path_fields: dict[str, Any]
+) -> None:
+    root = _plugin(tmp_path / "checkout")
+    toolkit = _installed(root)
+    inventory.items = [toolkit, {"id": plugin_id, "scope": "user", "enabled": True, **path_fields}]
+
+    loop = asyncio.new_event_loop()
+    try:
+        reloader = claude_plugins.ClaudePluginReloader(_options(tmp_path, root), loop)
+        assert reloader._inventory() == [claude_plugins._InstalledPlugin.model_validate(toolkit)]
+        del toolkit["installPath"]
+        with pytest.raises(ValidationError, match="installPath"):
+            reloader._inventory()
+    finally:
+        loop.close()
+
+
+def test_watch_targets_skip_paths_with_no_existing_ancestor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    loop = asyncio.new_event_loop()
+    try:
+        reloader = claude_plugins.ClaudePluginReloader(_options(tmp_path, tmp_path), loop)
+        reloader._roots = {tmp_path / "unavailable"}
+        monkeypatch.setattr(Path, "is_dir", lambda _path: False)
+        assert not reloader._watch_targets()
+    finally:
+        loop.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
+async def test_external_inventory_variants_do_not_block_prepare(tmp_path: Path, inventory: SimpleNamespace) -> None:
+    root = _plugin(tmp_path / "checkout")
+    toolkit = _installed(root)
+    expected = claude_plugins._InstalledPlugin.model_validate(toolkit)
+    options = _options(tmp_path, root)
+    options["setting_sources"] = ["user", "project"]
+    reloader = claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop())
+    fields = ("scope", "enabled", "projectPath", "installPath", "id", "futureField")
+    external = _installed(tmp_path / "external", id="other@mine", scope="project", projectPath=str(tmp_path))
+    samples: list[dict[str, Any]] = []
+
+    def add_sample(field: str, present: bool, value: Any) -> None:
+        extra = external.copy()
+        if present:
+            extra[field] = value
+        else:
+            extra.pop(field, None)
+        samples.append(extra)
+
+    variants: tuple[object, ...] = (
+        None,
+        "",
+        "future",
+        0,
+        [],
+        -1,
+        2**128,
+        [1],
+        [-1, 0],
+        [0, 2**128],
+        {},
+        {"future": True},
+        {"項目": False},
+    )
+    for field in fields:
+        add_sample(field, False, None)
+        for variant in variants:
+            add_sample(field, True, variant)
+
+    inventory.items = [toolkit, None, *samples]
+    assert reloader._inventory()[0] == expected
+    async with reloader:
+        assert reloader._source == root
+        assert reloader._watch_keys is not None
+
+
 @pytest.mark.parametrize("path", ["", "relative", None, {"shape": "changed"}])
 @pytest.mark.asyncio
 async def test_selected_installation_path_remains_required(tmp_path: Path, inventory: SimpleNamespace, path: Any) -> None:
@@ -564,7 +643,7 @@ async def test_selected_installation_path_remains_required(tmp_path: Path, inven
 
 
 @pytest.mark.parametrize("versioned", [False, True])
-@pytest.mark.parametrize("failure", ["bad-json", "bad-shape", "bad-item", "nonzero", "timeout", "oserror"])
+@pytest.mark.parametrize("failure", ["bad-json", "bad-shape", "nonzero", "timeout", "oserror"])
 @pytest.mark.asyncio
 async def test_inventory_unavailable_keeps_explicit_input_and_only_disables_watch(
     tmp_path: Path,
@@ -575,7 +654,7 @@ async def test_inventory_unavailable_keeps_explicit_input_and_only_disables_watc
     failure: str,
 ) -> None:
     root = _plugin(tmp_path / ("cache/mine/agent-toolkit/1.0.0" if versioned else "checkout"))
-    inventory.stdout = {"bad-json": "{", "bad-shape": "{}", "bad-item": "[1]"}.get(failure)
+    inventory.stdout = {"bad-json": "{", "bad-shape": "{}"}.get(failure)
     inventory.returncode = 1 if failure == "nonzero" else 0
     if failure in {"timeout", "oserror"}:
 
@@ -766,7 +845,7 @@ async def test_reload_accepts_listed_plugin_without_manifest(tmp_path: Path, inv
         for listed in (True, False):
             response = _response(root)
             if listed:
-                response["plugins"].append({"name": "typescript-lsp", "path": str(bare), "version": "1.0.0"})
+                response["plugins"].extend([{"name": 1, "path": str(bare)}, {"path": None}, None])
             reloader.mark_changed()
             client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock(return_value=response)))
             await reloader.reload(client)

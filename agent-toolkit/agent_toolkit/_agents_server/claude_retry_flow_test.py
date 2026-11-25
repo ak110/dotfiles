@@ -16,7 +16,7 @@ import pytest
 from claude_agent_sdk._internal.message_parser import parse_message
 
 from agent_toolkit._agents_server import claude, manager, state
-from agent_toolkit._atk import claude_connection
+from agent_toolkit._atk import claude_connection, usage_refresh
 from agent_toolkit._common import host_homes
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
@@ -176,6 +176,12 @@ async def test_weekly_retry_continues_same_session_on_api(
     launch_kind: state.LaunchKind, source: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
+    if source == "after-retry":
+
+        def fail_observation(_info: Any) -> None:
+            raise OSError("観測先へ保存できない")
+
+        monkeypatch.setattr(usage_refresh, "record_claude_event", fail_observation)
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
     configure_claude_payg(monkeypatch, str(api))

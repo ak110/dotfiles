@@ -17,6 +17,7 @@ import psutil
 from agent_toolkit._common import file_lock, private_directory, process_identity, state_paths
 
 SHARED_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root-shared"
+SHARED_PLUGIN_ROOT_MARKER = ".agent-toolkit-plugin-root.json"
 _process_snapshot: contextvars.ContextVar[dict[str, dict[int, psutil.Process]] | None] = contextvars.ContextVar(
     "plugin_root_processes", default=None
 )
@@ -39,6 +40,29 @@ def usage_details() -> str:
 
 def usage_basis() -> dict[str, typing.Any] | None:
     return _usage_basis.get()
+
+
+def completed_plugin_copy(area: Path) -> Path | None:
+    if not area.name.startswith(f"{SHARED_PLUGIN_ROOT_PREFIX}-"):
+        return None
+    marker = area / SHARED_PLUGIN_ROOT_MARKER
+    if marker.is_symlink() or not marker.is_file():
+        return None
+    try:
+        record = json.loads(marker.read_text(encoding="utf-8"))
+        if not isinstance(record, dict):
+            return None
+        source, version, name = (record.get(field) for field in ("source", "version", "root_name"))
+        if not isinstance(source, str) or not Path(source).is_absolute() or not isinstance(version, str) or not version:
+            return None
+        if not isinstance(name, str) or not name or name in {".", ".."} or Path(name).name != name:
+            return None
+        root = area / name
+        if root.is_symlink() or root.is_junction() or not root.is_dir():
+            return None
+        return root if {item.name for item in area.iterdir()} == {name, marker.name} else None
+    except OSError, ValueError:
+        return None
 
 
 def _metadata_signature(path: Path) -> list[int]:
@@ -133,6 +157,11 @@ def register_plugin_root_use(area: Path) -> None:
     temporary.replace(destination)
 
 
+def release_plugin_root_use(area: Path) -> None:
+    with plugin_root_lock(area):
+        (_directory() / f"{_key(area)}-{os.getpid()}.json").unlink(missing_ok=True)
+
+
 def _record_is_live(record: typing.Any) -> bool:
     if (
         not isinstance(record, dict)
@@ -216,7 +245,7 @@ def plugin_root_in_use(area: Path) -> bool:
         if (
             isinstance(root, str)
             and Path(root).parent == area
-            and (run.get("status") != "completed" or not run.get("report_synced"))
+            and (run.get("status") != "completed" or not (run.get("report_committed") or run.get("report_synced")))
         ):
             _usage_details.set(f"未完了または未報告の独立WI受付: {run_path}")
             return True

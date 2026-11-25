@@ -6,9 +6,9 @@ import re
 import sys
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
-from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.formatters import body_summary, uwi_body_summary
 from agent_toolkit._atk.wi.repo import resolve_repo_id
@@ -33,9 +33,7 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     パターンが不正な正規表現の場合は`args.subparser.error()`でexit 2とする（既存の`edit`・
     `show`と同じ引数検証エラー時の扱いであり、こちらは意図的に共通後処理をスキップする）。
     """
-    if not args.skip_pull:
-        with _wi_sync.repo_lock(private_notes):
-            _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+    background_sync.prepare_read(private_notes, skip=args.skip_pull, force=getattr(args, "pull", False))
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = resolve_repo_id(args.target_repo)
@@ -66,6 +64,7 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         important=getattr(args, "important", "all"),
         target_branch=target_branch,
         branch_settings=branch_settings,
+        indexed=True,
     ):
         since = getattr(args, "since", None)
         if since is not None:

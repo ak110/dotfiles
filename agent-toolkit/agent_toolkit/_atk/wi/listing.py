@@ -2,6 +2,7 @@ import argparse
 import dataclasses
 import datetime
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -11,6 +12,7 @@ from collections.abc import Mapping
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.git_sync import has_remote
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
@@ -23,6 +25,7 @@ from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATE_PROCESSING, WI_STATES, WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import (
+    NewWorkItem,
     body_summary,
     display_width,
     parse_source,
@@ -417,18 +420,21 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if filenames:
         _validate_named_staleness_options(args)
     baseline = _wi_snapshot.read(args.new_since) if getattr(args, "new_since", None) is not None else None
-    if not args.skip_pull:
-        with _wi_sync.repo_lock(private_notes):
-            _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+    background_sync.prepare_read(private_notes, skip=args.skip_pull, force=getattr(args, "pull", False))
     if filenames:
         _print_named_staleness(args, private_notes, filenames)
         return
     texts = EntryTexts()
-    all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
+    all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts, indexed=True))
     configured = getattr(args, "configured_repos", False)
     repositories = _config.resolve_configured_repositories() if configured else None
 
     def configured_start() -> tuple[list[tuple[str, str | None]], frozenset[_wi_snapshot.Identifier]]:
+        if not configured and os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1":
+            values = args.target_repo if isinstance(args.target_repo, list) else [args.target_repo] if args.target_repo else []
+            repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in values))
+            branch = _wi_branches.requested_filter(args, repos, _wi_branches.registry())
+            return [(repo, branch) for repo in repos], frozenset()
         selected = _config.resolve_configured_repositories() if repositories is None else repositories
         branches = _wi_branches.registry() if any(repo.branch is not None for repo in selected) else {}
         return (
@@ -549,11 +555,25 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     print_entries(selected, readiness, branch_settings)
 
 
-def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
+def progress_new_wis(
+    session_id: str, *, targets: frozenset[tuple[str, str | None]] | None = None
+) -> tuple[NewWorkItem, ...] | None:
     if not (saved := _wi_snapshot.progress_sources(session_id)):
         return None
     by_key = {(repo.repo_id, repo.branch): repo for repo in _config.resolve_configured_repositories()}
     scopes = {(row["repo"], row["branch"]): row for row in saved.values()}
+    if targets is not None:
+        selected = {}
+        for repo, branch in targets:
+            matched = {
+                scope: row
+                for scope, row in scopes.items()
+                if scope[0] == repo and (branch is None or scope[1] in (None, branch))
+            }
+            if not matched:
+                return None
+            selected.update(matched)
+        scopes = selected
     notes = {row["notes"] for row in scopes.values()}
     if len(notes) != 1 or any(scope not in by_key for scope in scopes):
         raise ValueError("開始時の対象と現在の登録が一致しない")
@@ -565,7 +585,7 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
         - {tuple(identifier) for identifier in row.get("unanswered", ())}
         for scope, row in scopes.items()
     }
-    labels = []
+    rows: dict[str, NewWorkItem] = {}
     with _wi_sync.repo_lock(private_notes, timeout=0):
         _wi_sync.ensure_mutation_allowed(private_notes)
         # 点検は操作を止めないよう待機を制限し、分岐時のrebaseと旧形式移行は通常の一覧へ任せる。  # pyfltr: allow-comment
@@ -587,6 +607,5 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
                 if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
                     source = "その他"
                 branch = (parse_frontmatter(body) or ({}, ""))[0].get("merge_branch")
-                name = path.name if re.fullmatch(r"[A-Za-z0-9._-]+", path.name) else json.dumps(path.name)
-                labels.append(f"{name} (source: {source}、merge_branch: {'あり' if branch else 'なし'})")
-    return tuple(sorted(set(labels)))
+                rows[path.name] = NewWorkItem(path.name, source, bool(branch))
+    return tuple(rows[name] for name in sorted(rows))

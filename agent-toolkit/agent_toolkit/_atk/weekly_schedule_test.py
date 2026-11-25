@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._atk import research_sources, run_skill, run_skill_batch, weekly_command, weekly_schedule
+from agent_toolkit._atk import research_sources, run_skill, run_skill_batch, run_skill_state, weekly_command, weekly_schedule
 from agent_toolkit._common import private_notes, session_activity, session_review
 
 _JST = zoneinfo.ZoneInfo("Asia/Tokyo")
@@ -40,7 +40,12 @@ def _weekly(monkeypatch, tmp_path, tokyo):
     monkeypatch.setattr(run_skill_batch, "_save_failure_report", lambda *_args: True)
     state: dict[str, Any] = {"calls": [], "save": True, "code": 0}
 
+    monkeypatch.setattr(
+        weekly_schedule, "committed_result", lambda _mode, slot, *, run_id=None: weekly_schedule.saved_slot(slot) is not None
+    )
+
     def execute(args):
+        args.run_id = getattr(args, "run_id", "run-1")
         state["calls"].append(args.weekly_slot)
         if state["save"]:
             _save_result(args.weekly_slot)
@@ -297,3 +302,138 @@ def test_interval_judgment_is_removed_from_launch_paths():
         assert "meta-start.json" not in text
     assert not hasattr(session_review, "meta_start_due")
     assert not hasattr(run_skill_batch, "meta_auto_start_due")
+
+
+@pytest.mark.parametrize("mode", ["architecture", "ui-sweep"])
+def test_new_weekly_work_retries_missing_uwi_and_finishes_with_saved_uwi(weekly, monkeypatch, mode):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_META_AUTO_START", "false")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_AUTO_START", "false")
+    now = _at(2026, 11, 22, 15)
+    _clock(monkeypatch, now)
+    assert not _due(now)
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_WEEKLY_{mode.upper().replace('-', '_')}_AUTO_START", "true")
+    reports = []
+    monkeypatch.setattr(run_skill_batch.add, "add_entries", lambda *_args, **kwargs: reports.append(kwargs))
+    weekly["save"] = False
+    for attempt in range(3):
+        _clock(monkeypatch, now + attempt * 60)
+        assert _due(now + attempt * 60) == [mode]
+        assert weekly_command.run_due() == 1
+    identifier = f"{mode}@2026-11-22"
+    assert weekly["calls"] == [identifier] * 3
+    assert len(reports) == 1
+    assert reports[0]["scope"] == f"agent-toolkit:review-session {mode}"
+    assert weekly_schedule.read_record(mode)["failure_stage"] == "result-uwi"
+
+    weekly["save"] = True
+    assert weekly_command.run_due() == 0
+    assert weekly["calls"] == [identifier] * 4
+    assert weekly_command.run_due() == 0
+    assert weekly["calls"] == [identifier] * 4
+
+
+@pytest.mark.parametrize("mode", ["architecture", "ui-sweep"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_new_weekly_work_manual_and_resume_use_weekly_slot(weekly, monkeypatch, tmp_path, mode, resume):
+    now = _at(2026, 11, 22, 15)
+    _clock(monkeypatch, now)
+    identifier = f"{mode}@2026-11-22"
+    parser = argparse.ArgumentParser()
+    run_skill.build_parser(parser)
+    if resume:
+        weekly_schedule.write_record(mode, {"slot": identifier})
+        record = types.SimpleNamespace(
+            input=types.SimpleNamespace(
+                skill="review-session", arguments=mode, batch_manifest=None, target_repo=_REPO, run_id="run-1"
+            ),
+            status="interrupted",
+            weekly_slot=identifier,
+            work_dir=tmp_path,
+            remaining=60,
+        )
+        monkeypatch.setattr(run_skill_state, "load", lambda _identifier: record)
+        argv = ["--resume", "run-1"]
+    else:
+        argv = ["--args", mode, "--work-dir", str(tmp_path), "review-session"]
+    assert run_skill.dispatch(parser.parse_args(argv)) == 0
+    assert weekly["calls"] == [identifier]
+    assert weekly_schedule.completed(mode, datetime.date(2026, 11, 22))
+
+
+@pytest.mark.parametrize("mode", ["architecture", "ui-sweep"])
+@pytest.mark.parametrize("new_week", [False, True])
+def test_resume_preserves_original_slot_and_tracks_only_current_slot_failures(
+    weekly, monkeypatch, tmp_path, mode, new_week, capsys
+):
+    original = f"{mode}@2026-11-22"
+    current = f"{mode}@2026-11-29" if new_week else original
+    _clock(monkeypatch, _at(2026, 11, 29 if new_week else 22, 15))
+    schedule = {"slot": current, "failures": 0}
+    weekly_schedule.write_record(mode, schedule)
+    record = types.SimpleNamespace(
+        input=types.SimpleNamespace(
+            skill="review-session", arguments=mode, batch_manifest=None, target_repo=_REPO, run_id="run-1"
+        ),
+        status="completed",
+        weekly_slot=original,
+        work_dir=tmp_path,
+        log_path=tmp_path / "run.log",
+        remaining=60,
+    )
+    monkeypatch.setattr(run_skill_state, "load", lambda _identifier: record)
+    reports = []
+    monkeypatch.setattr(run_skill_batch.add, "add_entries", lambda *_args, **kwargs: reports.append(kwargs))
+    parser = argparse.ArgumentParser()
+    run_skill.build_parser(parser)
+
+    weekly["save"] = False
+    for code in (0, 2):
+        weekly["code"] = code
+        assert run_skill.dispatch(parser.parse_args(["--resume", "run-1"])) == (code or 1)
+        assert not capsys.readouterr().out
+    assert weekly["calls"] == [original, original]
+    assert len(reports) == (0 if new_week else 1)
+
+    weekly["code"] = 0
+    weekly["save"] = True
+    completed: list[str] = []
+    monkeypatch.setattr(run_skill_state, "mark_completed", completed.append)
+    assert run_skill.dispatch(parser.parse_args(["--resume", "run-1"])) == 0
+    assert weekly["calls"] == [original] * 3
+    assert completed == ["run-1"]
+    if new_week:
+        assert weekly_schedule.read_record(mode) == schedule
+    else:
+        assert weekly_schedule.read_record(mode)["completed_slot"] == original
+    assert weekly_schedule.saved_slot(original) is not None
+    assert run_skill.dispatch(parser.parse_args(["--resume", "run-1"])) == 0
+    assert weekly["calls"] == [original] * 3
+
+
+@pytest.mark.parametrize("mode", ["architecture", "ui-sweep"])
+def test_resumed_failure_does_not_overwrite_week_started_during_execution(weekly, monkeypatch, tmp_path, mode):
+    del weekly
+    old = f"{mode}@2026-11-22"
+    current = {"slot": f"{mode}@2026-11-29", "failures": 1}
+    weekly_schedule.write_record(mode, {"slot": old})
+    record = types.SimpleNamespace(
+        input=types.SimpleNamespace(
+            skill="review-session", arguments=mode, batch_manifest=None, target_repo=_REPO, run_id="run-1"
+        ),
+        status="interrupted",
+        weekly_slot=old,
+        work_dir=tmp_path,
+        remaining=60,
+    )
+    monkeypatch.setattr(run_skill_state, "load", lambda _identifier: record)
+
+    def fail(args):
+        assert args.weekly_slot == old
+        weekly_schedule.write_record(mode, current)
+        return 5
+
+    monkeypatch.setattr(run_skill, "_dispatch_once", fail)
+    parser = argparse.ArgumentParser()
+    run_skill.build_parser(parser)
+    assert run_skill.dispatch(parser.parse_args(["--resume", "run-1"])) == 5
+    assert weekly_schedule.read_record(mode) == current

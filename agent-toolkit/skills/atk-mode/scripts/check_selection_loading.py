@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import pathlib
+import subprocess
+import sys
 import typing
 
 import selection_contract
 import yaml
+from agent_toolkit._atk.environment import AGENT_ENVIRONMENT_VARIABLES
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
-from agent_toolkit._atk.wi.constants import WI_STATE_ADOPTED, WI_STATE_REJECTED
+from agent_toolkit._atk.wi.constants import WI_STATE_ADOPTED, WI_STATE_REJECTED, normalized_wi_type
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
@@ -111,7 +115,13 @@ def _candidate_records(path: pathlib.Path) -> list[dict[str, typing.Any]]:
         ) from error
 
 
-def _generate_selection(judgments: object, candidates: pathlib.Path, *, additional: bool) -> dict[str, object]:
+def _generate_selection(
+    judgments: object,
+    candidates: pathlib.Path | list[dict[str, typing.Any]],
+    *,
+    additional: bool,
+    already_selected: frozenset[str] = frozenset(),
+) -> dict[str, object]:
     @functools.cache
     def metadata(name: str) -> dict[str, typing.Any]:
         source = _plan_file.find_wi_source(name, _plan_file.private_notes_root())
@@ -126,7 +136,12 @@ def _generate_selection(judgments: object, candidates: pathlib.Path, *, addition
 
     try:
         return selection_contract.generate_selection(
-            judgments, _candidate_records(candidates), metadata, _resume_plan_id, additional=additional
+            judgments,
+            _candidate_records(candidates) if isinstance(candidates, pathlib.Path) else candidates,
+            metadata,
+            _resume_plan_id,
+            additional=additional,
+            already_selected=already_selected,
         )
     except (OSError, UnicodeError, ValueError, KeyError, TypeError) as error:
         raise InputError(
@@ -138,12 +153,92 @@ def _generate_selection(judgments: object, candidates: pathlib.Path, *, addition
         ) from error
 
 
+def complete_plan_requirements(selection: dict[str, object], private_notes: pathlib.Path) -> None:
+    def metadata(name: str) -> dict[str, typing.Any]:
+        try:
+            source = _plan_file.find_wi_source(name, private_notes)
+            parsed = _wi_frontmatter.parse_frontmatter(source.read_text(encoding="utf-8")) if source else None
+        except (OSError, UnicodeError, ValueError) as error:
+            raise InputError(f"計画要否を補えない: {name}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
+        kind = normalized_wi_type(parsed[0].get("type")) if parsed else None
+        if parsed is None or kind is None:
+            raise InputError(
+                f"計画要否を補えない: {name}の本文またはfrontmatterのtypeを確認できない",
+                next_action="元WIを取得し、frontmatterのtypeを確認して同じpick-wi-checkを再実行する",
+            )
+        return {**parsed[0], "type": kind}
+
+    selection_contract.complete_plan_requirements(selection, metadata)
+
+
+def load_inline_addition(
+    text: str, existing: dict[str, object], work_dir: pathlib.Path, candidate_file: pathlib.Path | None
+) -> tuple[dict[str, object], object]:
+    decisions = yaml.safe_load(text)
+    if not isinstance(decisions, dict):
+        raise ValueError("標準入力へ追加の意味判断YAMLを渡してください")
+    rows = _selection.decisions(decisions)
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("標準入力の`選定`へ追加するWIを指定してください")
+    names = [row.get(_selection.WI_KEY) if isinstance(row, dict) else None for row in rows]
+    if any(not isinstance(name, str) for name in names):
+        raise ValueError("追加の判断にWIファイル名を指定してください")
+    mapping = decisions.pop("レーン対応", None)
+    if mapping is None:
+        mapping = {
+            row[_selection.LANE_KEY]: row[_selection.LANE_KEY]
+            for row in rows
+            if isinstance(row, dict) and isinstance(row.get(_selection.LANE_KEY), str) and row[_selection.LANE_KEY] != "なし"
+        }
+    if candidate_file is None:
+        environment = dict(os.environ)
+        for name in AGENT_ENVIRONMENT_VARIABLES:
+            environment.pop(name, None)
+        launcher = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "launch.py"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(launcher),
+                "agent_toolkit/atk.py",
+                "wi",
+                "list",
+                "--jsonl",
+                "--with-staleness",
+                "--skip-pull",
+                "--status=processable",
+                "--target-branch=auto",
+                "--target-repo",
+                str(work_dir),
+            ],
+            env=environment,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if result.returncode:
+            raise ValueError(f"追加WIの候補を取得できない（終了コード{result.returncode}）: {result.stderr.strip()}")
+        candidates = [json.loads(line) for line in split_lines(result.stdout) if line.strip()]
+        excluded = decisions.get("除外候補", [])
+        relevant = names + excluded if isinstance(excluded, list) else names
+        candidates = [candidate for candidate in candidates if candidate.get("filename") in relevant]
+    else:
+        candidates = _candidate_records(candidate_file)
+    return _generate_selection(decisions, candidates, additional=True, already_selected=_selected_wis(existing)), mapping
+
+
+def _selected_wis(selection: dict[str, object]) -> frozenset[str]:
+    items = typing.cast(list[dict[str, object]], _selection.decisions(selection))
+    return frozenset(str(item[_selection.WI_KEY]) for item in items)
+
+
 def load_selection(
     selection_file: pathlib.Path,
     *,
     additional: bool = False,
     candidate_file: pathlib.Path | None = None,
     reorder: bool = False,
+    existing: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """選定結果を読み、YAML構文、欄名、必須の欄および値の型を確かめて返す。
 
@@ -163,7 +258,12 @@ def load_selection(
     except yaml.YAMLError as error:
         raise InputError(f"選定結果のYAML構文が不正: {selection_file}: {error}", next_action=_FIX_YAML) from error
     if candidate_file is not None:
-        selection = _generate_selection(selection, candidate_file, additional=additional)
+        selection = _generate_selection(
+            selection,
+            candidate_file,
+            additional=additional,
+            already_selected=_selected_wis(existing) if existing else frozenset(),
+        )
     elif not additional:
         _drop_write_scope_reasons(selection)
     if reorder and isinstance(selection, dict):

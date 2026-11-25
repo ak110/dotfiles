@@ -165,6 +165,12 @@ def _conversation_entries(lines: list[str]) -> list[dict]:
     return entries
 
 
+def current_turn_delivery(entries_path: str) -> tuple[list[dict], bool | None]:
+    lines = transcript.read_transcript_lines(entries_path)
+    entries = _conversation_entries(lines) if lines is not None else []
+    return entries, _latest_delivery_error(_current_turn(entries))
+
+
 def _visible_response_id(entries: list[dict], tool_use_id: str) -> str | None:
     visible: set[str] = set()
     response_id = None
@@ -249,9 +255,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         or not path
     ):
         return "approve", ""
-    lines = transcript.read_transcript_lines(path)
-    entries = _conversation_entries(lines) if lines is not None else []
-    latest_error = _latest_delivery_error(_current_turn(entries))
+    entries, latest_error = current_turn_delivery(path)
     if (
         latest_error is None
         and isinstance(last := payload.get("last_assistant_message"), str)

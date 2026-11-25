@@ -74,6 +74,7 @@
 | 投入前レビューの根拠の十分性 | `draft-cache-effect-missing`、`draft-cache-effect-sufficient`、`draft-export-effect-missing`、`draft-export-effect-sufficient` |
 | 停止対象の確定と残す機能、設定の作用範囲 | `intent-open-defect`、`intent-open-control`、`intent-fixed-defect`、`intent-fixed-control`、`config-boundaries-defect`、`config-boundaries-control` |
 | 設計への問いと確定した仕様の区別 | `design-question-defect`、`design-question-control`、`design-fixed-defect`、`design-fixed-control` |
+| 外部資料の主張の網羅と既存との差分を支える参照の判定 | `external-source-defect`、`external-source-control` |
 | 工程の省略判定後に前提が変わる時の判断者と戻り先 | `review-shift-defect`、`review-shift-control` |
 | 大量の文章や複数の契約の組み合わせを探索する判断（走査の範囲、読者確認の分担など） | `correct-verification-table-scope`、`missed-known-consumer-tests` |
 

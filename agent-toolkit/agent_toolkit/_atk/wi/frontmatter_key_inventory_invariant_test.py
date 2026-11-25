@@ -1,7 +1,9 @@
 import ast
 import pathlib
 
-from agent_toolkit._atk.wi import add, branches, priority
+import pytest
+
+from agent_toolkit._atk.wi import add_drafts, branches, priority
 
 _FIELD_USES = {
     "alert_keys": ("alerts.existing_alert_keys", "同じ警告を重ねて起票しないために記録する"),
@@ -9,6 +11,7 @@ _FIELD_USES = {
     "cooldown_until": ("readiness", "その項目の着手を待つ期限を指定する"),
     "depends_on": ("readiness", "処理を前提項目の終了まで待たせる"),
     "effect_check": ("effect_checkとlisting", "必要な項目の効果確認の結果を追跡する"),
+    "github_source": ("alertsとgithub_submission_approval", "外部報告の再登録を防ぎ、承認したAWIの出所を記録する"),
     "important": ("filtersの重要度選択", "優先的に閲覧したい項目を区別する"),
     "legacy_operation_approval": ("operation_permissionsの旧承認処理", "旧形式の承認の消費を記録する。手入力しない"),
     "merge_branch": ("merge_verification", "取り込むブランチを識別する"),
@@ -22,6 +25,8 @@ _FIELD_USES = {
     "priority_evidence": ("priority.reason_of", "旧形式の緊急化の観測根拠を読む。手入力しない"),
     "priority_impact": ("priority.reason_of", "旧形式の緊急化の影響を読む。手入力しない"),
     "priority_release": ("priority.reason_of", "旧形式の緊急化の解除条件を読む。手入力しない"),
+    "proposal_fingerprint": ("add_draftsの重複検査", "登録済み原稿との内容の一致を照合する。手入力しない"),
+    "processing_owner": ("transitionsの担当照合", "処理中の担当を識別し、旧担当の終了操作を拒否する。手入力しない"),
     "proposal_id": ("addの重複検査", "同じ提案の再投入を防ぐ識別子を指定する"),
     "question_type": ("uwiの回答形式処理", "問いの回答方式を決める"),
     "queue_schedule": ("readinessの旧スケジュール読取", "旧形式の再開期限を維持する。手入力しない"),
@@ -52,44 +57,56 @@ _NON_ACTIVE_FIELDS = {
     "wi_submit_bindings",
 }
 _METADATA_NAMES = {"frontmatter_data", "data", "metadata", "updated_data", "updates", "stored_data", "frontmatter"}
-_RESERVED_FIELD_TABLES = {"_RESERVED_ADD_KEY_NEXT_ACTIONS", "_RESERVED_EDIT_KEY_NEXT_ACTIONS"}
+_METADATA_ASSIGNMENT_NAMES = _METADATA_NAMES | {"_RESERVED_ADD_KEY_NEXT_ACTIONS", "_RESERVED_EDIT_KEY_NEXT_ACTIONS"}
+_METADATA_KEY_METHODS = {"get", "pop", "setdefault"}
 
 
 def _metadata_name(node: ast.expr) -> bool:
     return isinstance(node, ast.Name) and node.id in _METADATA_NAMES
 
 
+def _add_literal_key(keys: set[str], node: ast.expr | None) -> None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        keys.add(node.value)
+
+
 def _literal_metadata_keys(path: pathlib.Path) -> set[str]:
     keys: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        literals: list[ast.expr | None] = []
-        if isinstance(node, ast.Subscript) and _metadata_name(node.value):
-            literals.append(node.slice)
-        elif isinstance(node, ast.Assign | ast.AnnAssign):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if isinstance(node.value, ast.Dict) and any(
-                isinstance(target, ast.Name) and target.id in _METADATA_NAMES | _RESERVED_FIELD_TABLES for target in targets
-            ):
-                literals.extend(node.value.keys)
-        elif isinstance(node, ast.Call) and isinstance(method := node.func, ast.Attribute) and _metadata_name(method.value):
-            if method.attr in {"get", "pop", "setdefault"} and node.args:
-                literals.append(node.args[0])
+        if isinstance(node, ast.Subscript):
+            if _metadata_name(node.value):
+                _add_literal_key(keys, node.slice)
+        elif isinstance(node, ast.Call):
+            method = node.func
+            if not isinstance(method, ast.Attribute) or not _metadata_name(method.value):
+                continue
+            if method.attr in _METADATA_KEY_METHODS and node.args:
+                _add_literal_key(keys, node.args[0])
             elif method.attr == "update":
                 keys.update(item.arg for item in node.keywords if item.arg is not None)
                 if node.args and isinstance(node.args[0], ast.Dict):
-                    literals.extend(node.args[0].keys)
-        keys.update(key.value for key in literals if isinstance(key, ast.Constant) and isinstance(key.value, str))
+                    for key in node.args[0].keys:
+                        _add_literal_key(keys, key)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Dict):
+            targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+            if any(isinstance(target, ast.Name) and target.id in _METADATA_ASSIGNMENT_NAMES for target in targets):
+                for key in node.value.keys:
+                    _add_literal_key(keys, key)
     return keys
 
 
 # test-copy-contract: 実装から抽出したWIキーに消費箇所と変更理由を求める。  # pyfltr: allow-comment
+@pytest.mark.cpu_limit(
+    0.53, reason="全WI実装のASTを調べる。判定CPU秒はLinux単独0.180〜0.198、4並列0.194〜0.217、CI失敗時0.73（上限の係数1.4）"
+)
 def test_each_wi_frontmatter_key_has_a_consumer_and_a_reason_to_change_it() -> None:
     root = pathlib.Path(__file__).resolve().parent
     keys = {
         branches.KEY,
         priority.PRIORITY_KEY,
         "alert_keys",
-        add.PROPOSAL_ID_KEY,
+        add_drafts.PROPOSAL_ID_KEY,
+        add_drafts.FINGERPRINT,
     }
     for path in root.rglob("*.py"):
         if not path.name.endswith("_test.py"):

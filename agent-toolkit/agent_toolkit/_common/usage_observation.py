@@ -27,6 +27,10 @@ class QuotaWindow:
     contract: str = ""
     duration_seconds: float | None = None
     rejected: bool = False
+    group: str | None = None
+    severity: str | None = None
+    is_active: bool | None = None
+    limit_name: str | None = None
 
 
 def rate_key(window: QuotaWindow) -> str:
@@ -159,7 +163,7 @@ def observe(windows: list[QuotaWindow], *, setting_signature: str, active_second
             file_lock.release_lock(handle)
 
 
-def snapshot(*, now: float | None = None) -> dict[str, Any]:
+def snapshot(*, now: float | None = None, include_history: bool = False) -> dict[str, Any]:
     if now is None:
         now = time.time()
     data = _read()
@@ -207,7 +211,7 @@ def snapshot(*, now: float | None = None) -> dict[str, Any]:
             and window["used_percent"] <= current_window["used_percent"]
         ):
             setting_rates.setdefault(row["setting"], {})[key] = row["rate"]
-    return {
+    result = {
         "windows": [row["window"] for row in rows],
         "current_windows": [
             row["window"]
@@ -221,6 +225,9 @@ def snapshot(*, now: float | None = None) -> dict[str, Any]:
         "activity_ratio": _codex_activity_ratio(data["observations"], now),
         "last_observed_at": max((row["window"]["observed_at"] for row in rows), default=None),
     }
+    if include_history:
+        result["history"] = [row["window"] for row in data["observations"]]
+    return result
 
 
 def _codex_activity_ratio(observations: list[dict[str, Any]], now: float) -> float | None:

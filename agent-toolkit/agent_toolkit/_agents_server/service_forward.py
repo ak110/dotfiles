@@ -204,6 +204,8 @@ def ensure_service(
                     "PLUGIN_DATA",
                 }
             }
+            if publish:
+                env[service_transport.AUTO_PUBLISH_ENV] = "1"
             command = [
                 str(python or sys.executable),
                 str(root / "scripts" / "launch.py"),
@@ -257,10 +259,7 @@ def ensure_service(
                                 # 受付を始めた直後のサービスは最初の応答が遅れることがある。readyの期限まで確かめ直す。
                                 pass
                             else:
-                                published = service_rpc.request_sync(record, "publish", {}) if publish else record
-
-                                threading.Thread(target=process.wait, name="agents-service-reaper", daemon=True).start()
-                                return published
+                                break
                         if process.poll() is not None:
                             raise RuntimeError(f"管理サービスの起動に失敗: exit={process.returncode}")
                         if time.monotonic() >= deadline:
@@ -285,6 +284,8 @@ def ensure_service(
                                 os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
                     raise
+                threading.Thread(target=process.wait, name="agents-service-reaper", daemon=True).start()
+                return service_rpc.request_sync(record, "publish", {}) if publish else record
         except Exception as error:
             _add_service_diagnostic(error, directory, generation)
             raise

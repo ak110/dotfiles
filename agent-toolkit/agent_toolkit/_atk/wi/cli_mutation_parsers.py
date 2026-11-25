@@ -28,6 +28,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "引用符・改行を含む長文をシェルのエスケープを介さずに渡す場合に使う。"
         ),
     )
+    add.add_argument("--source-contract", metavar="PATH", help="原本のURLを記した作業契約の絶対パス。")
     placement = add.add_mutually_exclusive_group()
     placement.add_argument(
         "--batch",
@@ -176,6 +177,10 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         multiple=True,
     )
     start_processing.set_defaults(subparser=start_processing)
+
+    take_over = _atk_help.add_command(sub, "take-over", **_atk_help.HELP["atk wi take-over"])
+    take_over.add_argument("filenames", metavar="FILENAME", nargs="+", help="担当を引き継ぐprocessingのファイル名")
+    take_over.add_argument("--reason", help="別ホストの担当が停止したことを確認した方法（別ホストでは必須）")
 
     hold = _atk_help.add_command(sub, "hold", **_atk_help.HELP["atk wi hold"])
     hold.add_argument(

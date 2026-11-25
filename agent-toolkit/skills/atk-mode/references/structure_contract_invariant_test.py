@@ -1,10 +1,10 @@
 import argparse
+import importlib
 import pathlib
 import re
 
 import pytest
 from agent_toolkit._atk import run_script
-from agent_toolkit._plan.structure import sections as _sections
 from agent_toolkit._testing import git_repository
 
 _PLAN_FORMAT = pathlib.Path(__file__).resolve().with_name("plan-format.md")
@@ -21,29 +21,19 @@ def _layout() -> str:
 
 
 def _required_heading() -> str:
-    required = re.search(r"`(## [^`]+)`を必須とし", _layout())
+    required = re.search(r"`(## [^`]+)`（必須）", _layout())
     assert required is not None
     return required[1]
 
 
 def _documented_plan(repo: pathlib.Path) -> str:
-    layout = _layout()
-    # 雛形はコードブロックの中にH2を持つため、次のH2までを節とみなさず、見出しの後の最初のコードブロックを取り出す。
     template = _after_heading("初回起草の雛形").split("```md\n", 1)[1].split("\n```", 1)[0]
-    parts = re.split(r"(?m)^(## [^\n]+)\n", template)
-    sections = dict(zip(parts[1::2], parts[2::2], strict=True))
-    request = re.search(r"((?:`## [^`]+`、)+`## [^`]+`)の順で", layout)
-    assert request is not None
-    request_order = re.findall(r"`(## [^`]+)`", request[1])
-    order: list[str] = []
-    for item in re.findall(r"(?m)^\d+\. (.+)$", layout):
-        if item == "要求を書く節":
-            order.extend(heading for heading in request_order if heading in sections)
-        elif (fixed := re.fullmatch(r"`(## [^`]+)`", item)) is not None:
-            order.append(fixed[1])
-    assert sorted(order) == sorted(sections), "雛形のH2が規範の構成の一覧に無い"
-    content = parts[0] + "".join(heading + "\n" + sections[heading] for heading in order)
-    return re.sub(r"<[^>]+>", "契約の検査", content).replace("/absolute/repository/path", str(repo))
+    documented = re.search(r"(?m)^3\. (.+)$", _layout())
+    assert documented is not None
+    order = re.findall(r"`(## [^`]+)`", documented[1])
+    headings = re.findall(r"(?m)^## [^\n]+", template)
+    assert headings == [heading for heading in order if heading in headings]
+    return re.sub(r"<[^>]+>", "契約の検査", template).replace("/absolute/repository/path", str(repo))
 
 
 @pytest.mark.parametrize("case", ["documented", "explanation", "missing-heading", "receiver-change"])
@@ -55,15 +45,16 @@ def test_documented_plan_is_checked_by_public_command(
     content = _documented_plan(repo)
     diagnostic: str | None = None
     if case == "explanation":
-        content = content.replace("\n### 計画メタ情報\n", "\n起草者向けの補足説明。\n\n### 計画メタ情報\n", 1)
+        content = content.replace("\n## 反映内容と反映先\n", "\n起草者向けの補足説明。\n\n## 反映内容と反映先\n", 1)
     elif case == "missing-heading":
         required = _required_heading()
         assert required + "\n" in content
         content = content.replace(required + "\n", "", 1)
         diagnostic = required.removeprefix("## ")
     elif case == "receiver-change":
-        monkeypatch.setattr(_sections, "PLAN_H2_ORDER_TAIL", (*_sections.PLAN_H2_ORDER_TAIL, "未合意の節"))
-        diagnostic = "固定H2`## 未合意の節`"
+        request = importlib.import_module("agent_toolkit._plan.structure.request_sections")
+        monkeypatch.setattr(request, "REQUEST_H2_REQUIRED", (*request.REQUEST_H2_REQUIRED, "未合意の節"))
+        diagnostic = "非空の必須節がありません: 未合意の節"
     path.write_text(content, encoding="utf-8")
     before = path.read_bytes()
     result = run_script.dispatch(

@@ -93,6 +93,9 @@ def _state_directory(caller: runtime_environment.CallerContext) -> pathlib.Path:
         return state_paths.state_dir()
 
 
+AUTO_PUBLISH_ENV = "AGENT_TOOLKIT_SERVICE_AUTO_PUBLISH"
+
+
 def namespace(caller: runtime_environment.CallerContext) -> pathlib.Path:
     base = _state_directory(caller) / "services" / "agents-server"
     if os.name == "nt":

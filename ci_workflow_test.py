@@ -172,12 +172,8 @@ def test_diagnostic_logs_are_saved_when_job_times_out() -> None:
             if str(step.get("uses", "")).endswith("/upload-diagnostic-logs"):
                 saving.append(action.parent.name)
                 assert step.get("if") == "${{ failure() || cancelled() }}", action
-                inputs = workflow_mapping(step.get("with", {}))
-                if action.parent.name == "ci-update-dotfiles-upgrade-windows":
-                    assert inputs["collect-windows-upgrade-logs"] == "true"
-                else:
-                    assert "collect-windows-upgrade-logs" not in inputs
     assert "ci-update-dotfiles-upgrade-windows" in saving
+    assert "ci-test-linux" in saving
 
 
 def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
@@ -188,8 +184,7 @@ def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
     """
     action = REPO_ROOT / ".github" / "actions" / "upload-diagnostic-logs" / "action.yml"
     runs = workflow_mapping(workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))["runs"])
-    upgrade_patterns = []
-    staging_condition = "always() && inputs.collect-windows-upgrade-logs == 'true'"
+    staging_condition = "always()"
     steps = workflow_steps(runs)
     (collection_index,) = (index for index, step in enumerate(steps) if step.get("shell") == "pwsh")
     collection = steps[collection_index]
@@ -201,18 +196,13 @@ def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
         patterns = [line.strip() for line in str(workflow_mapping(step["with"])["path"]).splitlines() if line.strip()]
         roots = {pattern.split("/", 1)[0] for pattern in patterns}
         assert len(roots) == 1, patterns
-        legacy = [pattern for pattern in patterns if "update-dotfiles-upgrade-" in pattern]
-        if legacy:
-            assert step["if"] == "inputs.collect-windows-upgrade-logs != 'true'"
-            upgrade_patterns.extend(legacy)
+        assert not any("update-dotfiles-upgrade-" in pattern for pattern in patterns), patterns
         if step.get("if") == staging_condition:
             assert collection_index < index
             staged_paths.extend(patterns)
-    assert staged_paths == ["${{ runner.temp }}/windows-upgrade-diagnostics/"]
+    assert staged_paths == ["${{ runner.temp }}/upgrade-diagnostics/"]
     staging_dir = staged_paths[0].removeprefix("${{ runner.temp }}/").rstrip("/")
     assert f"$destination = Join-Path $env:RUNNER_TEMP '{staging_dir}'" in str(collection["run"])
-    assert upgrade_patterns
-    assert all(pattern.startswith("${{ runner.temp }}/") for pattern in upgrade_patterns), upgrade_patterns
 
 
 def test_required_check_display_names(workflow_data: dict[str, object]) -> None:

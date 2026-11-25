@@ -16,6 +16,7 @@ import yaml
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
 from agent_toolkit._testing import git_repository
+from selection_contract import _plan_requirement
 
 
 def _dispatch(*args: str) -> int:
@@ -133,6 +134,7 @@ def test_public_generation_uses_candidate_facts_and_typed_edges_once(
     assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
     saved = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert [item["鮮度"]["later_commit_count"] for item in saved["選定"]] == [0, 1]
+    assert all(item["計画要否"] == "計画あり" for item in saved["選定"])
     assert all("担当モデル" not in item for item in saved["選定"])
     initial = saved["初回配分"]
     assert initial["候補WI"] == names and initial["レーン割当"] == dict.fromkeys(names, "lane-01")
@@ -145,6 +147,14 @@ def test_public_generation_uses_candidate_facts_and_typed_edges_once(
         assert generated["depends_on"] == [names[0]] and generated["リポジトリ1"] == "github.com/test/repo"
     else:
         assert generated["計画1"] == generated["計画2"] == "shared.md"
+
+
+def test_generated_plan_requirement_uses_source_and_wi_type() -> None:
+    for source in ("add-awi-by-user", "process-user-comments", "implement"):
+        assert _plan_requirement({"type": "awi", "source": source}) == "計画なし"
+        assert _plan_requirement({"type": "uwi", "source": source}) == "計画あり"
+    assert _plan_requirement({"type": "awi", "source": "human"}) == "計画あり"
+    assert _plan_requirement({"type": "awi"}) == "計画あり"
 
 
 def test_public_generation_empty_candidates_and_failure_preserve_destination(
@@ -332,15 +342,15 @@ def test_minimal_selection_generation_merge_and_integration(
         'require-text = ["規範変更時の必須記載"]\n',
         encoding="utf-8",
     )
-    names = ["first.md", "second.md"]
+    names = ["first.md", "second.md", *(f"planned-{index}.md" for index in range(9))]
     for name in names:
         _wi(notes, name)
         source = entry_path(notes, name)
         source.write_text(source.read_text(encoding="utf-8") + "`AGENTS.md`を参照する。\n", encoding="utf-8")
-    facts, judgments = _inputs(tmp_path, names + [f"candidate-{index}.md" for index in range(9)])
+    facts, judgments = _inputs(tmp_path, names)
     data = yaml.safe_load(judgments.read_text(encoding="utf-8"))
-    data["選定"] = data["選定"][:2]
-    data["選定"][1]["レーン"] = "lane-02"
+    for row in data["選定"][1:]:
+        row["レーン"] = "lane-02"
     data["レーンの所要時間"].append({**data["レーンの所要時間"][0], "レーン": "lane-02"})
     if phase_correction:
         data["見込みの補正"] = {
@@ -355,7 +365,6 @@ def test_minimal_selection_generation_merge_and_integration(
             row.update({"実装秒数": 200, "統合秒数": 30})
     if staged:
         data["レーンの所要時間"][1].update({"段階": 2, "先行レーン": ["lane-01"]})
-        data["単一段階案の完了見込み秒数"] = 280 if phase_correction else 220
     else:
         data["レーン間の重なり"] = [
             {
@@ -390,9 +399,7 @@ def test_minimal_selection_generation_merge_and_integration(
     if phase_correction:
         added["見込みの補正"] = {**data["見込みの補正"], "共有待ち秒数": 25}
         added["レーンの所要時間"][0].update({"実装秒数": 200, "統合秒数": 30})
-    if staged:
-        added["単一段階案の完了見込み秒数"] = 515 if phase_correction else 330
-    else:
+    if not staged:
         # lane-01へ合流するadded.mdとlane-02のsecond.mdの組は、既存の記録が判定していないため追加側へ記録する。
         added["レーン間の重なり"] = [{**data["レーン間の重なり"][0], "レーン1の定義": ["追加の入力"]}]
     addition.write_text(yaml.safe_dump(added, allow_unicode=True), encoding="utf-8")
@@ -578,3 +585,17 @@ def test_public_phase_correction_merge_rejects_mismatch_and_preserves_destinatio
     added_before = addition.read_bytes()
     assert _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "second.md")) == 2
     assert output.read_bytes() == before and addition.read_bytes() == added_before
+
+
+def test_public_generation_saves_long_single_stage_without_legacy_comparison(environment, tmp_path, capsys):
+    repo, notes = environment
+    _wi(notes, "first.md")
+    facts, judgments = _inputs(tmp_path, ["first.md"])
+    data = yaml.safe_load(judgments.read_bytes())
+    data["レーンの所要時間"][0].update({"実装秒数": 6001, "補正前の実装秒数": 6001})
+    judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    selection = tmp_path / "selection.yaml"
+    assert (
+        _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(selection), "--work-dir", str(repo)) == 0
+    ), capsys.readouterr().err
+    assert "段階案の完了見込み秒数" not in yaml.safe_load(selection.read_bytes())

@@ -102,3 +102,29 @@ def test_updated_contract_checks_actual_user_utterance(tmp_path, monkeypatch):
     assert work_contract.quote_update_warning("session", str(transcript)) is None
     contract.write_text(f"## 追加要求（U5）\n\n- 原文: 「{original}」\n", encoding="utf-8")
     assert work_contract.quote_update_warning("session", str(transcript)) is None
+
+
+def test_progress_update_warning(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "work-contract.md"
+    monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
+    valid = (
+        "## 現在有効な要求・制約\n"
+        "- 2026-11-25T11:22:00Z までに確認する。\n"
+        "> 進捗: 実装済み\n"
+        "```md\n## 検収結果\n```\n"
+        "## 原本の所在\n"
+        "- 引き継ぎ記録: /example/handoff.md\n"
+    )
+    valid += "- 検収結果: `/example/results.md:19`\n- 2026-11-25T11:22:00Z まで公開を開始しない。\n"
+    valid += "- 完成条件: 変更内容の検証を完了。\n"
+    valid += "- 例文として「公開担当が検収を終えた。」を表示する。\n"
+    path.write_text(valid, encoding="utf-8")
+    assert work_contract.progress_update_warning("session") is None
+    path.write_text(
+        valid + "- 2026-11-25T11:22:00Z 検収完了。\n- 公開担当が検収を終えた。CI結果待ち。\n"
+        "- 検収結果: `/example/results.md:19` を確認し、CIは合格した。\n",
+        encoding="utf-8",
+    )
+    warning = work_contract.progress_update_warning("session")
+    assert warning is not None and "13、14、15行目" in warning and "引き継ぎ記録" in warning
+    assert work_contract.progress_update_warning("session") is None

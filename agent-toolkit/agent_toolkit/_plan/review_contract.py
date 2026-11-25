@@ -9,6 +9,8 @@ from collections.abc import Mapping, Set
 
 from markdown_it import MarkdownIt
 
+from agent_toolkit._common.markdown_headings import last_h2_section_items, last_h2_section_lines
+
 
 def required_counts(
     *, kind: str | None, source: object, sections: Set[str], supplements: int, reflections: int
@@ -18,7 +20,7 @@ def required_counts(
     return supplements, reflections
 
 
-def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, str]:
+def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, tuple[pathlib.Path, str]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -31,12 +33,86 @@ def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, str]:
         missing = sorted(names - data.keys())
         if missing:
             raise ValueError(f"保存本文の指定が無い: {', '.join(missing)}")
-        return {name: pathlib.Path(data[name]).read_text(encoding="utf-8") for name in sorted(names)}
+        paths = {name: pathlib.Path(data[name]) for name in sorted(names)}
+        return {name: (original, original.read_text(encoding="utf-8")) for name, original in paths.items()}
     except (OSError, ValueError) as error:
         raise ValueError(f"評価用WI原本を読み込めない: {path}: {error}。一覧と保存本文を直して再準備する") from error
 
 
-def validate(text: str, required: Mapping[str, tuple[int, int]]) -> None:
+def _labelled_conditions(original: str) -> list[tuple[int, str, bool]]:
+    lines = last_h2_section_lines(original, "完成条件") or []
+    items: list[tuple[int | None, str]] = []
+    number: int | None = None
+    for token in MarkdownIt().parse("\n".join(lines)):
+        if token.level == 0 and token.type in {"ordered_list_open", "bullet_list_open"}:
+            number = int(token.attrGet("start") or 1) if token.type == "ordered_list_open" else None
+        elif token.level == 1 and token.type == "list_item_open" and token.map is not None:
+            item = "\n".join(lines[token.map[0] : token.map[1]]).strip()
+            items.append((number, item))
+            if number is not None:
+                number += 1
+    if not items:
+        return [(number, item, False) for number, item in enumerate(last_h2_section_items(original, "完成条件"), 1)]
+
+    reserved = [number for number, _ in items if number is not None]
+    used = set(reserved)
+    if len(used) != len(reserved):
+        raise ValueError("完成条件に同じ表示番号がある。順序付きリストの開始番号が重ならないよう原本を見直す")
+    conditions = []
+    next_number = 1
+    for number, item in items:
+        if number is not None:
+            conditions.append((number, item, True))
+        else:
+            while next_number in used:
+                next_number += 1
+            conditions.append((next_number, item, False))
+            next_number += 1
+    return conditions
+
+
+def completion_conditions(original: str) -> list[tuple[int, str]]:
+    return [(number, item) for number, item, _ in _labelled_conditions(original)]
+
+
+def _numbered_conditions(original: str) -> dict[str, tuple[str, str]]:
+    conditions = {}
+    for number, item, ordered in _labelled_conditions(original):
+        if not ordered:
+            continue
+        match = re.fullmatch(r"[0-9]+[.)][ \t]+(.+)", item, re.DOTALL)
+        if match is not None:
+            conditions[str(number)] = (" ".join(match[1].split()), " ".join(item.split()))
+    return conditions
+
+
+def excluded_reflections(original: str) -> set[int]:
+    section = "\n".join(last_h2_section_lines(original, "反映内容と反映先") or [])
+    match = re.search(r"(?m)^採らないもの[:：]\s*$", section)
+    if match is None:
+        return set()
+    remaining = section[match.end() :]
+    return {index for index, item in enumerate(last_h2_section_items(original, "反映内容と反映先"), 1) if item in remaining}
+
+
+def _condition_reference(content: str, original_path: pathlib.Path | None, number: str) -> bool:
+    if original_path is None:
+        return False
+    text = re.sub(r"^参照[:：]\s*", "", content).replace("`", "")
+    return text == f"{original_path}「完成条件」項目{number}" or any(
+        text == f"{original_path}{separator}完成条件{space}{number}{closing}"
+        for separator, closing in (("#", ""), ("「", "」"))
+        for space in ("", " ")
+    )
+
+
+def validate(
+    text: str,
+    required: Mapping[str, tuple[int, int]],
+    *,
+    originals: Mapping[str, str] | None = None,
+    original_paths: Mapping[str, pathlib.Path] | None = None,
+) -> None:
     tokens = MarkdownIt("commonmark").enable("table").parse(text)
     rows: list[list[str]] = []
     row: list[str] | None = None
@@ -48,13 +124,14 @@ def validate(text: str, required: Mapping[str, tuple[int, int]]) -> None:
         elif token.type == "tr_open":
             row = []
         elif token.type == "inline" and row is not None:
-            row.append(token.content.strip().strip("`"))
+            row.append(token.content.strip())
         elif token.type == "tr_close" and row is not None:
             cells = list(row)
             if not header:
                 header = cells
             elif set(columns).issubset(header) and len(cells) == len(header):
-                rows.append([cells[header.index(column)] for column in columns])
+                fields = [cells[header.index(column)] for column in columns]
+                rows.append([*(field.strip("`") for field in fields[:3]), *fields[3:]])
             row = None
     errors: list[str] = []
     for name, (count, reflection_count) in required.items():
@@ -66,6 +143,41 @@ def validate(text: str, required: Mapping[str, tuple[int, int]]) -> None:
         numbers = [row[1] for row in own]
         if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
             errors.append(f"{name}: 条件番号が不正または重複")
+        original = (originals or {}).get(name, "")
+        numbered = _numbered_conditions(original)
+        excluded = excluded_reflections(original)
+        for row in own:
+            reflections = {int(number) for number in re.findall(r"反映内容([1-9][0-9]*)", row[4])}
+            if (
+                row[2] == "主要完成状態"
+                and (
+                    (reflections and reflections <= excluded)
+                    or (
+                        re.search(r"背景|比較候補|調査結果と判断根拠|不実施", row[4])
+                        and not re.search(r"反映内容[1-9][0-9]*|完成条件|目的|原因分析", row[4])
+                    )
+                )
+                and not re.search(r"除外|不採用|実施しない|対象外", row[3])
+            ):
+                errors.append(f"{name}: 条件 {row[1]} は背景・比較候補・不実施の説明だけを実装義務の出典にしている")
+            if row[2] != "補足条件" or not numbered:
+                continue
+            number = row[1]
+            if number not in numbered:
+                if len(numbered) == count:
+                    errors.append(f"{name}: 原本にない補足条件 {number}")
+                continue
+            content = " ".join(re.sub(r"<br\s*/?>", " ", row[3], flags=re.IGNORECASE).split())
+            expected, original_item = numbered[number]
+            if content not in {
+                expected,
+                original_item,
+                f"{number}. {expected}",
+                f"{number}) {expected}",
+            } and not _condition_reference(content, (original_paths or {}).get(name), number):
+                errors.append(f"{name}: 補足条件 {number} が原本の全文と一致しない")
+        for number in numbered.keys() - {row[1] for row in own if row[2] == "補足条件"}:
+            errors.append(f"{name}: 原本の補足条件 {number} が表にない")
         covered = {int(number) for row in own for number in re.findall(r"反映内容([1-9][0-9]*)(?![0-9])", row[4])}
         uncovered = [f"反映内容{number}" for number in range(1, reflection_count + 1) if number not in covered]
         if uncovered:

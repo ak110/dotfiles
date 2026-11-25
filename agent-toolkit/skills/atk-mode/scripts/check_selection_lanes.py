@@ -9,8 +9,11 @@ import typing
 
 import selection_contract
 from agent_toolkit._agents_server import admission as _admission
+from agent_toolkit._plan import locations
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import selection_estimate as _estimate
+from agent_toolkit._plan.structure import parse_plan_metadata
+from agent_toolkit._plan.structure.parsing import is_awi_plan
 from check_selection_common import (
     _IMPLEMENTATION_SECONDS_KEY,
     _INTEGRATION_SECONDS_KEY,
@@ -26,9 +29,6 @@ _OBSERVATION_PLAN_RE = re.compile(r"計画:\s*([^）]+)")
 
 
 _ABSOLUTE_PLAN_RE = re.compile(r"(?<!\S)(/\S+?\.md)(?=$|[\s、。）])")
-
-
-_NEXT_STAGED = "比較した段階案の秒数か`成立する段階案なし`を最上位の`段階案の完了見込み秒数`へ書く"
 
 
 _NEXT_CORRECTION = (
@@ -123,14 +123,6 @@ def _check_estimate_records(
         for legacy, current in _LEGACY_SECONDS_KEYS.items():
             if current not in row and legacy in row:
                 row[current] = row[legacy]
-    if (
-        _selection.PROCESS_ESTIMATE_KEY not in selection
-        and costs
-        and all(row.get(_selection.STAGE_KEY, 1) == 1 for row in costs)
-        and any(typing.cast(float, row[_IMPLEMENTATION_SECONDS_KEY]) > 6000 for row in costs)
-        and _selection.STAGED_ESTIMATE_KEY not in selection
-    ):
-        errors.append(Violation(f"6000秒超の単一段階案に`{_selection.STAGED_ESTIMATE_KEY}`がない", next_action=_NEXT_STAGED))
     correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
     if not isinstance(correction, dict):
         return [*errors, Violation(f"`{_selection.ESTIMATE_CORRECTION_KEY}`がない", next_action=_NEXT_CORRECTION)]
@@ -249,7 +241,7 @@ def _check_lane_models(items: list[dict[str, object]]) -> list[Violation]:
     return errors
 
 
-def _resume_plan_id(value: object) -> str | None:
+def _resume_plan_path(value: object) -> str | None:
     if not isinstance(value, str) or not value.strip() or value.strip() in {_LANE_NONE, "計画なし"}:
         return None
     observation = _OBSERVATION_PLAN_RE.search(value)
@@ -259,6 +251,13 @@ def _resume_plan_id(value: object) -> str | None:
     if candidate is None:
         matched = _ABSOLUTE_PLAN_RE.search(value)
         candidate = matched.group(1) if matched is not None else None
+    if candidate is None:
+        return None
+    return candidate
+
+
+def _resume_plan_id(value: object) -> str | None:
+    candidate = _resume_plan_path(value)
     if candidate is None:
         return None
     # 通常中断の`~/.claude/plans`と観測のみの`private-notes/plans/`は親ディレクトリが異なるため、
@@ -275,6 +274,25 @@ def _check_resume_plan_lanes(items: list[dict[str, object]]) -> list[Violation]:
         if not isinstance(lane, str) or lane == _LANE_NONE or plan is None:
             continue
         awi = str(item[_selection.WI_KEY])
+        path_value = _resume_plan_path(item.get("再開位置"))
+        if path_value is not None:
+            path = pathlib.Path(path_value).expanduser().resolve()
+            roots = (locations.working_plans_root().resolve(), locations.new_plans_root().resolve())
+            if any(path.is_relative_to(root) for root in roots):
+                if not path.is_file():
+                    errors.append(Violation(f"再開位置の計画が見つからない: {path}", next_action=_NEXT_RESUME_PLAN))
+                else:
+                    try:
+                        text = path.read_text(encoding="utf-8")
+                    except (OSError, UnicodeError) as error:
+                        errors.append(Violation(f"再開位置の計画を読めない: {path}: {error}", next_action=_NEXT_RESUME_PLAN))
+                    else:
+                        if is_awi_plan(text):
+                            metadata, _errors = parse_plan_metadata(text)
+                            if metadata is None or awi not in {name for name, _summary in metadata.related_wi}:
+                                errors.append(
+                                    Violation(f"再開位置の計画の関連WIにない: {path}: {awi}", next_action=_NEXT_RESUME_PLAN)
+                                )
         previous = assigned.setdefault(plan, (awi, lane))
         if previous[1] != lane:
             errors.append(

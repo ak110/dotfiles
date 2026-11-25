@@ -127,8 +127,9 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
 
     receipt = _h2_section(parent, "保存後の意味検収")
-    assert f"再開位置が設定されており、その値が`{prefix}`で始まらない項目については" in receipt
-    assert "前述の計画ファイルの確認に代えて" in receipt
+    assert f"再開位置が設定されており、その値が`計画なし`でも`{prefix}`で始まる値でもない項目については" in receipt
+    assert "`計画なし`の項目は、対象AWIの専用branchかレビュー指摘管理表が残っている" in receipt
+    assert f"`再開区分`が`{prefix}`である項目だけに認め、前述の計画ファイルの確認に代えて" in receipt
     progress_only = _h2_section(selection_text, "処理対象の決定")
     assert "計画ファイルの絶対パスと残る工程の書式を用いて`再開位置`に記録する" in progress_only
     assert "観測のみの書式は、AWI本文に記載された再開記録を読み取った項目に対してのみ使用する" in progress_only
@@ -163,9 +164,9 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     output = _selection_format(plugin_root)
     yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     top_fields = set(re.findall(r"^([^\s:]+):", yaml_block, flags=re.MULTILINE))
-    assert selection.SINGLE_STAGE_ESTIMATE_KEY in top_fields
+    assert selection.SINGLE_STAGE_ESTIMATE_KEY not in top_fields
     assert f"  {selection.START_DEPENDENCIES_KEY}:" in yaml_block
-    assert all(f"`{selection.SINGLE_STAGE_ESTIMATE_KEY}`" in content for content in (parent, explanation))
+    assert all("`レーンの所要時間`" in content and "`根拠`" in content for content in (parent, explanation))
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:

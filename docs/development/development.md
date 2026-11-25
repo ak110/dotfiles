@@ -43,7 +43,7 @@ PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyze
 CI固有の失敗（依存ライブラリ不足等）をローカルで調査する場合、CIワークフローが使用する
 コンテナーイメージを起動し、専用ボリュームへ複製したソースでパッケージインストール・依存関係同期を試行する。
 作業ツリーのルートから次を実行する。
-元の作業ツリーは読み取り専用で渡す。
+元の作業ツリーは読み取り専用で渡し、隔離したXDG領域はコンテナーの専用ボリューム内に作る。
 
 rootで書き込み可能なホストのbind mountを渡すと、生成物がroot所有で残り、実行中のOSアカウントで回収できなくなることがある。
 PreToolUseは`docker`・`podman`の`run`・`create`（`container`経由を含む）でこの形を警告する。
@@ -56,6 +56,10 @@ compose定義、名前付きボリューム、読み取り専用mountと非root�
 docker run --rm -it --user root \
   --mount "type=bind,src=$PWD,dst=/source,readonly" \
   --mount type=volume,dst=/work \
+  --env XDG_CONFIG_HOME=/work/.xdg/config \
+  --env XDG_STATE_HOME=/work/.xdg/state \
+  --env XDG_CACHE_HOME=/work/.xdg/cache \
+  --env XDG_DATA_HOME=/work/.xdg/data \
   -w /work --entrypoint bash ghcr.io/ak110/pyfltr:latest
 ```
 
@@ -64,12 +68,27 @@ docker run --rm -it --user root \
 Git履歴を必要とする調査では、この複製に代えて`/work`へ対象リポジトリをcloneする。
 
 ```bash
+set -o pipefail
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
 tar -C /source --exclude=.git --exclude=.venv --exclude=.claude/worktrees -cf - . | tar -C /work -xf -
 uv sync --frozen
 ```
 
-パッケージの導入に必要なroot権限の作用先はコンテナーと専用ボリューム内に限られる。
+パッケージの導入などのroot作業はコンテナーと専用ボリューム内に限る。
+診断ファイルを持ち帰る場合は、コンテナーを終了する前に、別のホスト端末で `docker ps` から対象のコンテナーIDを確認する。
+読み取るファイルだけを引数で指定し、`docker exec` の出力をホストのシェルで保存する。
+たとえば、更新コマンドの診断がコンテナーのXDG状態領域にある場合は、次のように保存する。
+`CONTAINER_ID` を確認したIDに、`diagnostic_dir` を実行者が管理する既存の一時ディレクトリに置き換える。
+
+```bash
+diagnostic_log=$(mktemp "${diagnostic_dir:?}/update-dotfiles.XXXXXXXX")
+docker exec CONTAINER_ID cat /work/.xdg/state/agent-toolkit/update-dotfiles.log > "$diagnostic_log"
+```
+
+リダイレクトはホスト側で行うため、保存先のファイルの所有者はホストの実行者になる。
+`docker exec` が失敗した場合は、空または不完全な保存結果を診断として扱わない。
 `exit`でコンテナーを終了すると、`--rm`によりコンテナーと匿名ボリュームを回収する。
+ホストへ持ち帰った診断は、確認が済んだら保存した実行者が回収する。
 
 ## サプライチェーン攻撃対策
 

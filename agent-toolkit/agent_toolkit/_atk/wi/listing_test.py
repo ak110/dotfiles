@@ -222,7 +222,7 @@ class TestListMalformedFrontmatter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list"], home=tmp_path)
+            atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == expected_exit
         captured = capsys.readouterr()

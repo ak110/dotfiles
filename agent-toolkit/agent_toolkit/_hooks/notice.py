@@ -7,7 +7,9 @@ lazy import json
 lazy import time
 lazy from collections.abc import Callable, Generator, Sequence
 
+lazy from agent_toolkit._atk.wi.formatters import NewWorkItem
 lazy from agent_toolkit._common import message_format as _common_message_format
+lazy from agent_toolkit._common.output_policy import rules
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import message_format as _message_format
 
@@ -47,9 +49,15 @@ def user_copy(response: dict, generated: Sequence[_common_message_format.Generat
     return "\n\n".join(dict.fromkeys(copies))
 
 
-def stage_delivery(text: str, session_id: str, field: str, key: str, value: str) -> None:
+def stage_delivery(
+    text: str, session_id: str, field: str, key: str, value: str, *, replace: bool = False, merge_snapshot: bool = False
+) -> None:
     if text and session_id:
         receipt = {"text": text, "session_id": session_id, "field": field, "key": key, "value": value}
+        if merge_snapshot:
+            receipt["merge_snapshot"] = "1"
+        elif replace:
+            receipt["replace"] = "1"
         if receipt not in _delivery_candidates:
             _delivery_candidates.append(receipt)
 
@@ -89,7 +97,12 @@ def record_delivery(text: str) -> None:
             mapping = dict(mapping) if isinstance(mapping, dict) else {}
             values = mapping.get(item["key"], [])
             values = list(values) if isinstance(values, list) else []
-            if item["value"] not in values:
+            if item.get("merge_snapshot") == "1":
+                updates = _snapshot_names(values) | _snapshot_names([item["value"]])
+                values = [json.dumps(sorted(updates), ensure_ascii=False)]
+            elif item.get("replace") == "1":
+                values = [item["value"]]
+            elif item["value"] not in values:
                 values.append(item["value"])
             mapping[item["key"]] = values
             state[item["field"]] = mapping
@@ -97,6 +110,41 @@ def record_delivery(text: str) -> None:
 
         update_state(receipt["session_id"], record)
         _delivery_candidates.remove(receipt)
+
+
+_WI_SNAPSHOT_FIELD = "new_wi_notice_snapshot"
+
+
+def _snapshot_names(previous: object) -> set[str]:
+    if not isinstance(previous, list) or not previous or not isinstance(previous[-1], str):
+        return set()
+    try:
+        identities = json.loads(previous[-1])
+    except json.JSONDecodeError:
+        return set()
+    return {item for item in identities if isinstance(item, str)} if isinstance(identities, list) else set()
+
+
+def new_wi_preview(session_id: str, recipient: str, rows: Sequence[NewWorkItem]) -> tuple[str, str]:
+    identifiers = {row.filename: row for row in rows}
+    saved = read_state(session_id).get(_WI_SNAPSHOT_FIELD)
+    known = _snapshot_names(saved.get(recipient)) if isinstance(saved, dict) else set()
+    policy = rules()
+    added = [
+        row.label(omit_defaults=policy["omit_defaults"])
+        for key, row in identifiers.items()
+        if not policy["suppress_repeats"] or key not in known
+    ]
+    text = "処理可能な新着WI:"
+    if policy["show_total_with_delta"]:
+        text += f" 計{len(identifiers)}件"
+    if added:
+        text += "。今回: " + "、".join(added)
+    return text + "。", json.dumps(sorted(identifiers), ensure_ascii=False)
+
+
+def stage_new_wi_preview(text: str, session_id: str, recipient: str, snapshot: str, *, scoped: bool = False) -> None:
+    stage_delivery(text, session_id, _WI_SNAPSHOT_FIELD, recipient, snapshot, replace=True, merge_snapshot=scoped)
 
 
 def output_text(response: dict) -> str:

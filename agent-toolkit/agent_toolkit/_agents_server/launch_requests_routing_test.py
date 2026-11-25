@@ -381,6 +381,7 @@ async def test_public_start_resolves_roles_to_required_engineering_stage(tmp_pat
         "usability-review": {
             "対象worktree": str(tmp_path),
             "変更画面": "screen.html",
+            "同種の既存画面": "なし",
             "主要シナリオ": "操作",
             "検証環境": "Linux",
             "引き継ぎ記録先": str(tmp_path / "handoff.md"),

@@ -30,7 +30,7 @@ def test_lane_planning_document_command_creates_plan_from_another_worktree(
     for placeholder, value in {
         "<計画本文の絶対パス>": str(source),
         "<レーン識別子>": "lane-01",
-        "<計画メタ情報の対象リポジトリ>": str(repo),
+        "<対象リポジトリ>": str(repo),
     }.items():
         assert placeholder in command
         command = command.replace(placeholder, shlex.quote(value))
@@ -43,7 +43,7 @@ def test_lane_planning_document_command_creates_plan_from_another_worktree(
     output = capsys.readouterr()
     assert not output.err
     created = pathlib.Path(output.out.strip())
-    assert created.is_file() and f"`{repo.resolve()}`" in created.read_text(encoding="utf-8")
+    assert created.is_file() and f"target_repo: {repo.resolve()}" in created.read_text(encoding="utf-8")
 
 
 @pytest.fixture(name="repo")
@@ -81,7 +81,7 @@ def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
     assert all(path.exists() for path in created)
 
 
-def test_document_template_supports_create_progress_and_commit_lookup(
+def test_document_template_keeps_progress_and_commit_lookup_in_handoff(
     repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     text = (pathlib.Path(__file__).resolve().parents[1] / "references" / "plan-format.md").read_text(encoding="utf-8")
@@ -119,26 +119,32 @@ def test_document_template_supports_create_progress_and_commit_lookup(
     git_repository.run_git(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "change"
     )
+    commit = git_repository.git_output(repo, "rev-parse", "--short", "HEAD")
+    progress = ["--completed-step", "実装", "--result", "成功"]
+    mapping = ["--commit", "HEAD", "--previous-head", previous, "--worktree", str(repo), "--awi", wi]
     args.script_name = "plan-progress"
-    args.script_args = [
-        str(plan),
-        "--completed-step",
-        "実装",
-        "--result",
-        "成功",
-        "--commit",
-        "HEAD",
-        "--previous-head",
-        previous,
-        "--worktree",
-        str(repo),
-        "--awi",
-        wi,
-    ]
+    args.script_args = [str(plan), *progress]
+    before = plan.read_bytes()
+    assert run_script.dispatch(args) == 1
+    assert "進捗は引き継ぎ記録へ書く" in capsys.readouterr().err
+    assert plan.read_bytes() == before
+    args.script_args = [str(plan), *mapping]
     assert run_script.dispatch(args) == 0
-    assert "実装 | 成功" in plan.read_text(encoding="utf-8")
+    assert plan.read_bytes() == before
     capsys.readouterr()
     args.script_name = "plan-commits"
     args.script_args = [str(plan), "--worktree", str(repo), "--awi", wi]
     assert run_script.dispatch(args) == 0
-    assert json.loads(capsys.readouterr().out)["awi"] == wi
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [commit]}
+
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("# 引き継ぎ記録\n", encoding="utf-8")
+    args.script_name = "plan-progress"
+    args.script_args = [str(handoff), *progress, *mapping, "--handoff", "--allowed-awi", wi]
+    assert run_script.dispatch(args) == 0
+    assert "実装: 成功" in handoff.read_text(encoding="utf-8")
+    capsys.readouterr()
+    args.script_name = "plan-commits"
+    args.script_args = [str(handoff), "--handoff", "--allowed-awi", wi, "--worktree", str(repo), "--awi", wi]
+    assert run_script.dispatch(args) == 0
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [commit]}

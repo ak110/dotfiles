@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agent_toolkit._agents_server import session_errors
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._atk import config
+from agent_toolkit._common import codex_weekly
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.usage_settings import deadline, validate_permissions
@@ -56,28 +57,6 @@ class _AccountIdentity(_Boundary):
     email: str | None = None
 
 
-class _LimitsEnvelope(_Boundary):
-    rateLimits: dict[str, Any] | None = None
-    rateLimitsByLimitId: dict[str, Any] | None = None
-    rateLimitResetCredits: dict[str, Any] | None = None
-
-
-class _BucketShape(_Boundary):
-    limitId: str | None = None
-    primary: dict[str, Any] | None = None
-    secondary: dict[str, Any] | None = None
-
-
-class _WindowDuration(_Boundary):
-    windowDurationMins: int = Field(gt=0)
-
-
-class _Window(_Boundary):
-    usedPercent: float = Field(ge=0, le=100)
-    windowDurationMins: int = Field(gt=0)
-    resetsAt: int = Field(gt=0)
-
-
 class _Credit(_Boundary):
     id: str = Field(min_length=1)
     resetType: str
@@ -87,31 +66,6 @@ class _Credit(_Boundary):
 class _Credits(_Boundary):
     availableCount: int = Field(ge=0)
     credits: list[Any] | None = None
-
-
-@dataclass(frozen=True)
-class _Weekly:
-    """選別したcodex枠の週次windowと、消費時にだけ検証するcredit在庫の生データ。"""
-
-    window: _Window | None
-    reset_credits: dict[str, Any] | None
-    diagnostic: str = ""
-
-
-def _select_weekly(raw: dict[str, Any]) -> _Weekly:
-    """codex枠の週次windowを選び、選別と消費判断に使う値だけを検証する。"""
-    limits = _LimitsEnvelope.model_validate(raw)
-    by_id = limits.rateLimitsByLimitId
-    candidate = by_id.get("codex") if by_id is not None else limits.rateLimits
-    if candidate is None:
-        return _Weekly(None, limits.rateLimitResetCredits, "codex利用枠を識別できない")
-    bucket = _BucketShape.model_validate(candidate)
-    if bucket.limitId not in (None, "codex") or (by_id is None and bucket.limitId != "codex"):
-        return _Weekly(None, limits.rateLimitResetCredits, "codex利用枠を識別できない")
-    for window in (bucket.primary, bucket.secondary):
-        if window is not None and _WindowDuration.model_validate(window).windowDurationMins == 10080:
-            return _Weekly(_Window.model_validate(window), limits.rateLimitResetCredits)
-    return _Weekly(None, limits.rateLimitResetCredits, "weekly利用枠がない")
 
 
 def _available_credit(reset_credits: dict[str, Any]) -> _Credit | None:
@@ -214,7 +168,7 @@ async def check_auto_reset(
             return AutoResetResult(diagnostic="ChatGPTアカウントではないため自動resetを見送った")
         email = _AccountIdentity.model_validate(account).email
         raw = await _rpc(request, "account/rateLimits/read", {}, rpc_timeout)
-        selected = _select_weekly(raw)
+        selected = codex_weekly.select_weekly(raw)
         weekly = selected.window
         if weekly is None:
             return AutoResetResult(rate_limits=raw, diagnostic=selected.diagnostic)
@@ -280,7 +234,7 @@ async def check_auto_reset(
         if confirmed:
             try:
                 raw = await _rpc(request, "account/rateLimits/read", {}, rpc_timeout)
-                _select_weekly(raw)
+                codex_weekly.select_weekly(raw)
             except (session_errors.DelegateBackendError, OSError, TimeoutError, ValueError) as error:
                 return AutoResetResult(
                     reset_confirmed=True,

@@ -541,6 +541,28 @@ def _first_sweep_done() -> None:
     sweep._save_sweep_time(paths.state_root(), sweep._now_ns(_NOW))  # pylint: disable=protected-access
 
 
+def test_pressure_reclaims_finished_plugin_copy_before_expiry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _first_sweep_done()
+    marker = json.dumps({"source": str(tmp_path / "agent-toolkit"), "version": "1.0.0", "root_name": "agent-toolkit"})
+    prefix = plugin_root_leases.SHARED_PLUGIN_ROOT_PREFIX
+    files = {plugin_root_leases.SHARED_PLUGIN_ROOT_MARKER: marker, "agent-toolkit/data": "x" * 500}
+    finished = _area(f"{prefix}-finished", days=2, files=files)
+    live = _area(f"{prefix}-live", days=2, files=files)
+    incomplete = _area(f"{prefix}-partial", days=2, files={"agent-toolkit/partial": "x" * 50})
+    with plugin_root_leases.plugin_root_lock(live):
+        plugin_root_leases.register_plugin_root_use(live)
+    monkeypatch.setattr(plugin_root_leases.psutil, "process_iter", lambda: [])
+    used = sum(file.stat().st_size for file in paths.temp_root().rglob("*") if file.is_file())
+    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, used + 50, paths.temp_root()))
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert result.deleted == [finished] and not result.failed
+    assert result.pressure is not None and result.pressure.free_before == 50
+    assert not finished.exists()
+    assert (live / "agent-toolkit/data").is_file() and incomplete.is_dir()
+
+
 def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
     _first_sweep_done()
     tag = "Signature: 8a477f597d28d172789f06886806bc55"

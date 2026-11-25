@@ -150,7 +150,12 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     assert "全体作業契約が起動後に更新された" not in run_hook("pretooluse", operation).stdout
     compact = run_hook("rules_context", {"session_id": sid, "hook_event_name": "SessionStart", "source": "compact", **extra})
     assert compact.returncode == 0
+    assert f"全体作業契約`{path}`" in compact.stdout and str(handoff) not in compact.stdout
+    handoff.write_text("引き継ぎの本文。\n", encoding="utf-8")
+    compact = run_hook("rules_context", {"session_id": sid, "hook_event_name": "SessionStart", "source": "compact", **extra})
+    assert compact.returncode == 0
     assert f"全体作業契約`{path}`" in compact.stdout and f"自身の引き継ぎ記録`{handoff}`" in compact.stdout
+    assert "引き継ぎの本文" not in compact.stdout
     assert "契約専用の新規則" not in compact.stdout
     path.write_text("# 目的\n## 即時対応で確定した暫定規則\n次の訂正を適用する\n", encoding="utf-8")
     reupdated = run_hook("pretooluse", operation)

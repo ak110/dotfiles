@@ -26,6 +26,29 @@ from agent_toolkit._testing.lane_support import _create, _create_args, _create_i
 from agent_toolkit._testing.session_release_support import held_registry_lock, retained_executor
 
 
+def test_agent_lane_create_returns_handoff_without_copying_large_history(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, selected, first = _create(tmp_path, monkeypatch, capsys)
+    record = pathlib.Path(first["record_path"])
+    stored = json.loads(record.read_text(encoding="utf-8"))
+    stored["previous_integration"] = {"phase": "finalized", "verification_output": "計測記録" * 8000}
+    stored["procedure_results"] = {"prepare": {"record_path": "prepare.json", "stdout_path": "stdout", "stderr_path": "stderr"}}
+    record.write_text(json.dumps(stored), encoding="utf-8")
+    monkeypatch.setattr(lane, "is_agent_environment", lambda: True)
+
+    code, result, stderr = _invoke(capsys, *_create_args(repo, selected))
+    assert code == 0, stderr
+    assert result["record_path"] == str(record)
+    assert result["worktree"] == first["worktree"]
+    assert result["initial_head"] == first["initial_head"]
+    assert result["base_branch"] == first["base_branch"]
+    assert result["prepare"] == stored["procedure_results"]["prepare"]
+    assert result["ready"] and result["reused"]
+    assert len(json.dumps(result).encode()) < 4096
+    assert json.loads(record.read_text(encoding="utf-8"))["previous_integration"] == stored["previous_integration"]
+
+
 @pytest.mark.parametrize("condition", ["unintegrated", "dirty", "unmerged", "active-session", "identity-less-session"])
 @pytest.mark.cpu_limit(
     4.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.114秒。"
@@ -346,9 +369,9 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
         encoding="utf-8",
     )
 
-    def child_argv(*_args: Any, **_kwargs: Any) -> tuple[list[str], None]:
+    def child_argv(*_args: Any, **_kwargs: Any) -> tuple[list[str], None, None]:
         # 外部ホストの起動だけを有限の実プロセスへ差し替え、CLI・登録・Git・回収は実物を使う。
-        return [sys.executable, str(script), str(repo), str(selected), str(snapshot), str(exit_code)], None
+        return [sys.executable, str(script), str(repo), str(selected), str(snapshot), str(exit_code)], None, None
 
     monkeypatch.setattr(process_loop_session, "_build_session_argv", child_argv)
     args = argparse.Namespace()

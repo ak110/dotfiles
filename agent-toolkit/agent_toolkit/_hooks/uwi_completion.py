@@ -47,6 +47,14 @@ _ADOPT_RETRY_SECONDS = 60.0
 """引き継ぎを終えられなかった後、次に走査するまで空ける秒数。"""
 
 
+_DELIVERED_KEY = "uwi_answers_delivered"
+
+
+def delivered(state: dict, filename: str) -> bool:
+    recorded = state.get(_DELIVERED_KEY)
+    return isinstance(recorded, list) and filename in recorded
+
+
 def _baseline(state: dict) -> dict | None:
     for key in _SCAN_ANSWERED_KEYS:
         by_agent = state.get(key)
@@ -105,6 +113,10 @@ def _discard(session_id: str, finished: list[str], answered: dict[str, list[str]
 
     def _update(current: dict) -> dict:
         current[_uwi_watch.STATE_KEY] = [name for name in _uwi_watch.awaiting(current) if name not in removed]
+        if answered:
+            current[_DELIVERED_KEY] = sorted(
+                set(current.get(_DELIVERED_KEY, ())) | {name for names in answered.values() for name in names}
+            )
         baseline = _baseline(current)
         if baseline is not None:
             for target_repo, filenames in answered.items():

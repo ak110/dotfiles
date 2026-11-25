@@ -67,8 +67,12 @@ atk wi process-loop instruct '次の処理へ適用する指示'
 前回の会話は、`resume`で予約した場合だけ再開する。
 `instruct`は次に実起動する1会話へ指示を渡す。
 中断した処理は `atk wi process-loop resume ID` で次回の再開を予約する。
-値なしの`atk wi process-loop resume`はCLI本来の会話選択画面を予約し、`resume-cancel`で未消費の予約を取り消せる。
 予約コマンド自体は会話を起動しない。
+`resume`をIDなしで実行した予約はCodexの会話選択に使える。
+Claude Codeで巡回を起動するとIDなしの予約では会話を起動せず、予約を保持する。
+`atk wi process-loop status`で直近の会話IDを確認し、IDを指定して予約し直す。
+Claude Codeでは起動元の`atk wi process-loop`が同じ会話を圧縮してから再開するため、手動で圧縮する必要はない。
+`resume-cancel`で未消費の予約を取り消せる。
 旧方式の再開予約の確認と取消、検証OSの意味は[WIの登録と回答](claude-code-wi.md)を参照する。
 
 登録全体を1回だけ処理する場合は、会話で `/agent-toolkit:atk-mode process-wi all-repos` を実行する。

@@ -1,12 +1,15 @@
-"""計画ファイルの進捗ログへ実行時刻を含む1行を追記する。
+"""計画ファイルの進捗ログへ実行時刻を含む1行を追記する。  pyfltr: allow-comment
 
 保存済み計画の領域（private-notesの`plans`配下）の計画は変更せずに失敗する。
 保存済み計画へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから追記し、`atk plans commit`で保存する。
 `--commit`と`--rewrite-map`の対応は、計画（`--handoff`では引き継ぎ記録）と同じディレクトリで同じstemの
-`<stem>.wi-commits.jsonl`へ短縮OIDで記録し、本文には進捗の行だけを追記する。
+`<stem>.wi-commits.jsonl`へ短縮OIDで記録する。
+旧書式の計画と引き継ぎ記録には、同時に進捗の行を本文へ追記する。
+新書式の計画（frontmatterを持つ計画）は進捗ログを持たないため、本文を変えずに対応だけを記録する。
 
-進捗だけの追記は計画Markdownと`--completed-step`・`--result`を渡す。
-commit対応の記録は、これらに`--commit`・`--previous-head`・`--awi`・絶対パスの`--worktree`を加える。
+進捗だけの追記は旧書式の計画Markdownと`--completed-step`・`--result`を渡す。
+commit対応の記録は、`--commit`・`--previous-head`・`--awi`・絶対パスの`--worktree`を渡す。
+旧書式の計画と`--handoff`では`--completed-step`・`--result`も必須とし、新書式の計画では渡しても本文へ書かない。
 `--handoff`は引き継ぎ記録への追記に使う。commit対応の記録・履歴更新では対象集合を`--allowed-awi`で渡す。
 対応の取得は`plan-commits`が行う。
 記録済みcommitへAWIを追加するには、旧OIDを同じOIDへ写す分割指定
@@ -34,6 +37,7 @@ from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._plan import locations as _plan_locations
 from agent_toolkit._plan import structure as _plan_format
+from agent_toolkit._plan.structure.parsing import is_awi_plan
 
 Clock = Callable[[], datetime.datetime]
 
@@ -77,6 +81,11 @@ def _heading_names() -> frozenset[str]:
     )
 
 
+def _reject_awi_plan(content: str) -> None:
+    if is_awi_plan(content):
+        raise ProgressLogError("新書式の計画は進捗ログを持ちません。", next_action="進捗は引き継ぎ記録へ書く")
+
+
 def append_progress_log(
     plan_file: pathlib.Path | str,
     completed_step: str,
@@ -95,6 +104,7 @@ def append_progress_log(
             "計画ファイルをUTF-8として読めません", next_action="計画ファイルをUTF-8で保存し直してから再実行する"
         ) from error
 
+    _reject_awi_plan(content)
     lines = content.splitlines(keepends=True)
     headings = top_level_atx_headings(content, 2)
     matches = [index for index, (_, title) in enumerate(headings) if title in _heading_names()]
@@ -198,6 +208,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
             )
         read_path = candidates[0]
     content = read_path.read_text(encoding="utf-8")
+    progress = _records_progress(args, content)
     if args.handoff:
         allowed = commit_mapping.validate_wis(args.allowed_awi or [])
     else:
@@ -241,18 +252,35 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
             "対応の取得は`atk run-script plan-commits`で行う"
         )
         return False
+    # 本文を書かない対応の記録にも、保存済み計画の保護を適用する。  # pyfltr: allow-comment
+    _plan_locations.reject_saved_plans_root_write(args.plan_file)
     # 進捗の行を先に追記し、構造の不正で失敗した場合は対応記録ファイルも変えない。
     if args.handoff:
         append_handoff_log(args.plan_file, args.completed_step, args.result)
-    else:
+    elif progress:
         append_progress_log(args.plan_file, args.completed_step, args.result)
     commit_mapping.append_event(args.plan_file, event)
     return True
 
 
+def _records_progress(args: argparse.Namespace, content: str | None = None) -> bool:
+    if args.get_commits:
+        return False
+    if args.handoff or not (args.commit or args.rewrite_map):
+        return True
+    if content is None:
+        try:
+            return not is_awi_plan(pathlib.Path(args.plan_file).read_text(encoding="utf-8"))
+        except OSError, UnicodeDecodeError:
+            # 読み込みの失敗は記録の処理で報告する。  # pyfltr: allow-comment
+            return True
+    return not is_awi_plan(content)
+
+
 def _validate_required_inputs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     required: list[str] = []
-    if not args.get_commits:
+    progress = _records_progress(args)
+    if progress:
         required.extend(("completed_step", "result"))
     mapping = bool(args.get_commits or args.commit or args.rewrite_map)
     if mapping:
@@ -267,7 +295,7 @@ def _validate_required_inputs(args: argparse.Namespace, parser: argparse.Argumen
     if missing:
         command = "plan-commits" if args.get_commits else "plan-progress"
         example = f"atk run-script {command} -- <Markdownの絶対パス> --worktree <対象worktreeの絶対パス>"
-        if not args.get_commits:
+        if progress:
             example += " --completed-step <工程> --result <結果>"
         if args.commit:
             example += " --commit <新HEAD> --previous-head <作成前HEAD> --awi <対応AWI>"
@@ -316,7 +344,7 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
     parser.add_argument(
         "--handoff",
         action="store_true",
-        help="計画なしの引き継ぎ記録へ記録時刻（UTC）付きの進捗を追記する。"
+        help="引き継ぎ記録へ記録時刻（UTC）付きの進捗を追記する。"
         "--commit、--rewrite-mapまたは取得の操作と組で使う時は、commit対応を記録・履歴更新・取得する",
     )
     parser.add_argument(
@@ -350,8 +378,13 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
 
 
 def _add_record_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
-    parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
+    parser.add_argument(
+        "--completed-step",
+        help="完了した工程。旧書式の計画と--handoffでは必須。新書式の計画のcommit対応では本文へ書かない",
+    )
+    parser.add_argument(
+        "--result", help="結果・特記事項。旧書式の計画と--handoffでは必須。新書式の計画のcommit対応では本文へ書かない"
+    )
     operation = parser.add_mutually_exclusive_group()
     operation.add_argument(
         "--commit",

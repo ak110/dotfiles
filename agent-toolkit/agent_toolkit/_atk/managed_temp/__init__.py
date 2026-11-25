@@ -4,7 +4,8 @@
 パッケージ外の呼び出し元が使う名前だけを定義元から再exportする。
 """
 
-from agent_toolkit._atk.managed_temp.creation import (
+# pyfltr: allow-comment 旧update-dotfilesは更新後のelevationを旧プロセスで読み込む。再exportの実装は参照時まで読み込まない。
+lazy from agent_toolkit._atk.managed_temp.creation import (
     SESSION_TEMP_PREFIX,
     create_managed_temp,
     create_output_temp,
@@ -13,15 +14,15 @@ from agent_toolkit._atk.managed_temp.creation import (
     resolve_session_temp,
     session_temp_path,
 )
-from agent_toolkit._atk.managed_temp.errors import (
+lazy from agent_toolkit._atk.managed_temp.errors import (
     ManagedTempError,
 )
-from agent_toolkit._atk.managed_temp.paths import (
+lazy from agent_toolkit._atk.managed_temp.paths import (
     MAX_AGE_DAYS,
     contained_target,
     temp_root_path,
 )
-from agent_toolkit._atk.managed_temp.removal import (
+lazy from agent_toolkit._atk.managed_temp.removal import (
     PLUGIN_ROOT_PREFIX,
     cleanup_managed_temp,
     list_managed_temp,
@@ -29,8 +30,6 @@ from agent_toolkit._atk.managed_temp.removal import (
     top_level_area,
     validate_managed_temp,
 )
-
-# 期限掃引は登録簿の読込を伴い、通常のhookは使わないため、名前を使う時まで読み込まない。
 lazy from agent_toolkit._atk.managed_temp.sweep import (
     OWNER_FILE,
     SpacePressure,

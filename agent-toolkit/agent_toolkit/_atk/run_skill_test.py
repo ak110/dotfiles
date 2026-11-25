@@ -102,7 +102,7 @@ def test_codex_session_receives_goal_without_slash_command(
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("mode", ["missing", "question", "other", "unsynced"])
-def test_normal_exit_requires_same_run_synced_report(
+def test_normal_exit_requires_same_run_committed_report(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str, mode: str
 ) -> None:
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
@@ -110,13 +110,13 @@ def test_normal_exit_requires_same_run_synced_report(
     code, out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
     assert code == 1
     assert not out
-    assert "報告用UWI" in err and "同期契約" in err and "次の操作:" in err
+    assert "報告用UWI" in err and "ローカル保存" in err and "次の操作:" in err
     assert str(_log_files(engine_env)[0]) in err
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("push_fails,answered", [(False, False), (True, False), (False, True)])
-def test_report_requires_remote_push(
+def test_report_success_does_not_require_remote_push(
     engine_env: _Env,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -125,7 +125,7 @@ def test_report_requires_remote_push(
     push_fails: bool,
     answered: bool,
 ) -> None:
-    """実bare remoteへ報告が到達した場合に成功し、commit後のpush失敗は保存未達になる。"""
+    """報告用UWIのローカルcommitがあれば、bare remoteが送信を拒否しても成功する。  pyfltr: allow-comment"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
     origin = git_repository.init_bare_repository(tmp_path / "origin.git")
@@ -141,8 +141,8 @@ def test_report_requires_remote_push(
         pre_receive.chmod(0o755)
         monkeypatch.setenv("FAKE_REPORT_PUSH_FAIL", "1")
     code, out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
-    assert code == (1 if push_fails else 0), err
-    assert bool(out) is not push_fails
+    assert code == 0, err
+    assert out
 
 
 @pytest.mark.usefixtures("leaf_git_commands")

@@ -33,12 +33,13 @@ from agent_toolkit._common import (
     session_state,
     skill_modes,
     state_paths,
+    weekly_work,
 )
 
-REVIEW_SESSION_SCOPE = "agent-toolkit:review-session"
+REVIEW_SESSION_SCOPE = weekly_work.REVIEW_SESSION_SCOPE
 META_SCOPE = f"{REVIEW_SESSION_SCOPE} meta"
 RESEARCH_SCOPE = f"{REVIEW_SESSION_SCOPE} research"
-WEEKLY_SCOPES = frozenset({META_SCOPE, RESEARCH_SCOPE})
+WEEKLY_SCOPES = frozenset(work.scope for work in weekly_work.DEFINITIONS.values())
 WEEKLY_SLOT_ENV = "AGENT_TOOLKIT_WEEKLY_SLOT"
 BATCH_SCOPE = "agent-toolkit:review-session batch"
 LEGACY_BATCH_SCOPE = "agent-toolkit:session-review-batch"
@@ -345,17 +346,17 @@ class BatchWriter:
                 }
             )
 
-    def complete(self, *, report_synced: bool) -> dict[str, Any]:
-        """分析と報告同期が揃った保存済み範囲だけを成功確定する。"""
+    def complete(self, *, report_synced: bool = False, report_committed: bool = False) -> dict[str, Any]:
+        """分析と報告のローカル保存が揃った範囲だけを成功確定する。  pyfltr: allow-comment"""
         with locked():
             value = self._active()
-            if not report_synced:
+            if not (report_synced or report_committed):
                 raise ValueError("report-unsynced: 報告の同期を確認できない")
             if not value.get("analysis_succeeded"):
                 raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
             for prepared in value["prepared"]:
                 complete(prepared, allow_partial_analysis=True)
-            saved = self._save({**value, "status": BatchStatus.COMPLETED})
+            saved = self._save({**value, "status": BatchStatus.COMPLETED, "report_committed": True})
             for prepared in saved["prepared"]:
                 cleanup_prepared(prepared, allow_partial_analysis=True)
             return saved
@@ -539,8 +540,8 @@ def launch_notice(host: str) -> str | None:
                 else "cat -- " + shlex.quote(log_path)
             )
             code = f" 終了コード{attempt.exit_code}" if attempt.exit_code is not None else ""
-            if value.get("mode") in {"meta", "research"}:
-                retry = f"配布元の作業ツリーで`atk run-skill --args {value['mode']} review-session`"
+            if isinstance(mode := value.get("mode"), str) and mode in weekly_work.DEFINITIONS:
+                retry = f"配布元の作業ツリーで`atk run-skill --args {mode} review-session`"
             else:
                 retry = f"`{skill_modes.entry_command(host, 'review-session batch')}`"
             failures.append(

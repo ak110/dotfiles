@@ -113,7 +113,7 @@ def test_run_skill_agy_noninteractive(tmp_path: pathlib.Path, monkeypatch: pytes
     monkeypatch.setattr(orchestrator, "resolve_specs", lambda **_kwargs: [("agy", "gemini-4-argon", "medium")])
     monkeypatch.setattr(run_skill, "resolve_local_worktree", lambda _target: tmp_path)
     monkeypatch.setattr(run_skill, "_resolve_repo_root", lambda path: path)
-    monkeypatch.setattr(wi_add, "has_synced_run_report", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(wi_add, "has_committed_run_report", lambda *_args, **_kwargs: True)
     assert run_skill.dispatch(argparse.Namespace(timeout=30, target_repo=str(tmp_path), skill="test:skill", args=None)) == 0
     argv = json.loads(captured.read_text())
     assert argv[argv.index("-p") + 1] == (

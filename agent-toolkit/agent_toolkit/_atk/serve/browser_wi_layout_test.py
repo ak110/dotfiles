@@ -59,11 +59,10 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await _open_filters(page)
 
-    for width, height, columns_visible in [(390, 844, False), (768, 1024, False), (1280, 800, False), (1920, 800, True)]:
+    for width, height in [(390, 844), (768, 1024), (1280, 800), (1920, 800)]:
         await page.set_viewport_size({"width": width, "height": height})
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         assert await page.locator(".entry-copy").first.evaluate("element => element.scrollWidth <= element.clientWidth")
-        assert await page.locator(".entry-metadata-label").first.is_visible() is columns_visible
         row = await _open_question(page)
         dialog = page.get_by_role("dialog", name="詳細")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text("priority")
@@ -122,11 +121,6 @@ async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: 
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
 
     assert not await page.locator(".filters details").evaluate("element => element.open")
-    cells = row.locator(".entry-cell")
-    pseudo_display = await cells.evaluate_all(
-        "elements => elements.map(element => getComputedStyle(element, '::before').display)"
-    )
-    assert pseudo_display == ["none"] * await cells.count()
     summary_box = await row.locator(".summary-cell").bounding_box()
     status_box = await row.locator(".status-cell").bounding_box()
     filename_box = await row.locator(".filename-cell").bounding_box()
@@ -137,7 +131,10 @@ async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: 
     assert filename_box is not None
     assert target_box is not None
     assert row_box is not None
-    assert summary_box["y"] < status_box["y"] < filename_box["y"] < target_box["y"]
+    assert summary_box["y"] == status_box["y"] < filename_box["y"]
+    assert summary_box["x"] + summary_box["width"] <= status_box["x"]
+    assert filename_box["y"] == target_box["y"]
+    assert filename_box["x"] + filename_box["width"] <= target_box["x"]
     assert row_box["y"] >= 0
     assert row_box["y"] + row_box["height"] <= 844
 
@@ -311,3 +308,113 @@ async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harnes
     assert len({round(metric["height"], 1) for metric in metrics}) == 1
     assert all(metric["filenameScrollWidth"] <= metric["filenameClientWidth"] for metric in metrics)
     assert all(metric["statusHeight"] <= metric["tallestStatusChild"] + 1 for metric in metrics)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_wi_rows_fit_desktop_and_keep_geometry_on_text_only_update(browser_harness: _BrowserHarness) -> None:
+    harness = browser_harness
+    page = harness.page
+    await page.set_viewport_size({"width": 1440, "height": 900})
+    prefix = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
+    heading = "# 確認する項目"
+    for index in range(1, 34):
+        name = f"{prefix}-120000-{index:03d}.md"
+        _entry_path(harness.root, name).write_text(
+            f"---\ntype: awi\nstate: inbox\ntarget_repo: github.com/owner/project\n---\n\n{heading} {index}\n",
+            encoding="utf-8",
+        )
+    await page.goto(harness.base_url + "/")
+    rows = page.locator("#entry-list .entry-row")
+    await playwright.async_api.expect(rows.filter(has_text="確認する項目")).to_have_count(33)
+    assert await rows.evaluate_all("rows => rows.filter(row => row.getBoundingClientRect().bottom <= innerHeight).length") >= 15
+    entry = rows.filter(has=page.locator(f'.entry-select[data-key="{prefix}-120000-033.md"]'))
+    await playwright.async_api.expect(entry.locator(".summary-cell")).to_have_text("確認する項目 33")
+    await playwright.async_api.expect(entry.locator(".target-repo-cell")).to_have_text("owner/project")
+    await playwright.async_api.expect(entry.locator(".target-repo-cell")).to_have_attribute("title", "github.com/owner/project")
+    geometry = "rows => rows.map(row => [row.offsetTop, row.offsetHeight])"
+    before = await rows.evaluate_all(geometry)
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    path = _entry_path(harness.root, f"{prefix}-120000-033.md")
+    original = path.read_text(encoding="utf-8")
+    for title in ("長い要約" * 80, "短い要約", "さらに長い要約" * 60, "さらに短い要約"):
+        path.write_text(original.replace(heading, "# " + title), encoding="utf-8")
+        harness.current_state.publish()
+        await playwright.async_api.expect(entry.locator(".summary-cell")).to_contain_text(title[:30])
+        assert await rows.evaluate_all(geometry) == before
+    additional = _entry_path(harness.root, f"{prefix}-120000-034.md")
+    additional.write_text(original.replace(heading, "# 新規行"), encoding="utf-8")
+    harness.current_state.publish()
+    await playwright.async_api.expect(rows.filter(has_text="新規行")).to_have_count(1)
+    additional.unlink()
+    harness.current_state.publish()
+    await playwright.async_api.expect(rows.filter(has_text="新規行")).to_have_count(0)
+    assert await rows.evaluate_all(geometry) == before
+
+
+@pytest.mark.parametrize("width", [320, 390])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_processing_state_remains_readable_with_long_repository_on_narrow_screen(
+    browser_harness: _BrowserHarness, browser: playwright.async_api.Browser, width: int
+) -> None:
+    prefix = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
+    name = f"{prefix}-120500-001.md"
+    _entry_path(browser_harness.root, name).write_text(
+        "---\ntype: awi\nstate: processing\nimportant: true\ntarget_repo: github.com/example/a-very-long-repository-name\n"
+        "---\n\n# 現在の状態を確認する\n",
+        encoding="utf-8",
+    )
+    context = await browser.new_context(
+        viewport={"width": width, "height": 844}, is_mobile=True, has_touch=True, color_scheme="dark"
+    )
+    try:
+        page = await context.new_page()
+        await page.goto(browser_harness.base_url + "/")
+        row = page.locator("#entry-list .entry-row").filter(has_text=name)
+        badge = row.locator(".state-badge")
+        await playwright.async_api.expect(badge).to_have_text("processing")
+        assert await page.evaluate("matchMedia('(any-pointer: coarse)').matches")
+        limits = await row.evaluate(
+            """row => {
+              const badge = row.querySelector('.state-badge');
+              const filename = row.querySelector('.filename-cell');
+              const copy = row.querySelector('.entry-copy').getBoundingClientRect();
+              return {
+                afterBadge: Math.min(copy.left, row.getBoundingClientRect().right, innerWidth)
+                  - badge.getBoundingClientRect().right,
+                overflowBadge: badge.scrollWidth - badge.clientWidth,
+                overflowFilename: filename.scrollWidth - filename.clientWidth,
+              };
+            }"""
+        )
+        assert limits["afterBadge"] >= 0, limits
+        assert limits["overflowBadge"] <= 0 and limits["overflowFilename"] <= 0, limits
+
+        question = page.locator("#entry-list .entry-row").filter(has=page.locator('.entry-select[data-key="question.md"]'))
+        unanswered = question.locator(".unanswered-badge")
+        await playwright.async_api.expect(unanswered).to_have_text("未回答")
+        assert await unanswered.evaluate(
+            """badge => {
+              const box = badge.getBoundingClientRect();
+              const status = badge.parentElement.getBoundingClientRect();
+              const copy = badge.closest('.entry-row').querySelector('.entry-copy').getBoundingClientRect();
+              return badge.scrollWidth <= badge.clientWidth &&
+                box.right <= Math.min(status.right, copy.left, innerWidth);
+            }"""
+        )
+    finally:
+        await context.close()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_active_awi_detail_highlights_adoption_without_highlighting_edit(browser_harness: _BrowserHarness) -> None:
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator('.entry-select[data-key="awi.md"]').click()
+    dialog = page.get_by_role("dialog", name="詳細")
+    expected = playwright.async_api.expect
+    adopt = dialog.get_by_role("button", name="採用", exact=True)
+    edit = dialog.get_by_role("button", name="編集", exact=True)
+    await expected(adopt).to_have_class("button-primary")
+    await expected(edit).to_have_class("button-secondary")
+    await edit.click()
+    await expected(dialog.get_by_role("button", name="保存", exact=True)).to_have_class("button-primary")

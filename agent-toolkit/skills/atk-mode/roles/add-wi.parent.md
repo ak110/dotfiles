@@ -65,6 +65,9 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 | `subagent_md_path` | `add-wi` |
 | `extra_params` | `投入する要求`には要求ファイルの絶対パス、`引き継ぎ記録先`には記録先のパスを渡す |
 
+外部資料を原本に持つ案件では、委譲元の作業契約の絶対パスを依頼本文で渡し、保存担当は `atk wi add --source-contract <絶対パス>` で同じ案件の対応表を検査する。
+パスを渡さなかった委譲では保存側の機械検査が届かない場合があるため、投入前レビューで表を確かめる。
+
 ```json
 {"投入する要求":"/absolute/managed-temp/requirements.md","引き継ぎ記録先":"/absolute/managed-temp/handoff.md（新規）"}
 ```
@@ -152,7 +155,9 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 
 1. 原稿と成立性の証拠は、既存の原稿、作業記録、CLIの保存出力を直接読む。
    出所、採否、検証、冒頭抽出の対応がそろっていればそこから検収し、不足する情報だけを既存記録へ補わせる。
-2. 受領済みの抽出と現行原稿の一致は、新規・編集のdry-runに`--compare-opening-file <抽出の絶対パス>`を加えて確かめる（本保存へ同じ指定を付けると、一致した場合だけ保存される）。
+2. `agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runに`--compare-opening-file <抽出の絶対パス>`を加え、受領済みの抽出と現行原稿の一致を確かめる。
+   本保存に同じ指定を付けると、一致した場合だけ保存される。
+   新規では原稿のfrontmatterに`source`があればその値を使い、無ければ`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決めた値を`--source`へ渡す。
    その際は原稿ごとに、成立性の証拠にあるdry-runの入力原稿と抽出保存先の対応を使う。
    複数原稿の対応順と不一致時の更新は`agent-toolkit:atk-mode/references/draft-semantic-review.md`「ユーザーが読む部分」に従い、原稿が変わったら同じ作成主体へdry-runの再実行と新しい抽出の返却を求める。
 3. 起草者から独立に、同書で抽出されたユーザー向け部分を判定してから原稿全体を検収する。

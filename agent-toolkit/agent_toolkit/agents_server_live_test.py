@@ -25,21 +25,25 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import session_record_format
-from agent_toolkit._testing import isolation, late_descendant
+from agent_toolkit._testing import isolation, late_descendant, service_lifetime
 from agent_toolkit._testing.git_repository import init_repository, run_git
 
-pytestmark = pytest.mark.live_agents
+pytestmark = [pytest.mark.live_agents, pytest.mark.usefixtures("live_agents_environment")]
 
 
-@pytest.fixture(autouse=True)
-def _detach_caller_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture
+def live_agents_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> collections.abc.Iterator[None]:
     """エージェントの会話から実行しても、その会話の全体作業契約や記録先へ起動結果を結び付けない。
 
     通常委譲の起動は所有会話のmanaged-tempに全体作業契約が無いと拒否するため、呼出元の会話を継承すると
     試験の成否が呼出元の状態で変わる。端末から実行した場合と同じく所有会話を持たない状態にそろえる。
     """
+    state_base = tmp_path / "agents-state"
+    isolation.restore_live_agents_environment(monkeypatch, state_base)
     for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.delenv(name, raising=False)
+    with service_lifetime.guard(state_base):
+        yield
 
 
 @dataclasses.dataclass(frozen=True)
@@ -55,13 +59,21 @@ class LiveInput:
     required_tools: frozenset[str]
 
 
+def _has_completed_resume(mode: str, status: str, message: str) -> bool:
+    if status != "completed":
+        return False
+    expected = "状態: completed\n結果: AUTO_RESUME_COMPLETED" if mode == "delegate" else "AUTO_RESUME_COMPLETED"
+    return message.strip().splitlines() == expected.splitlines()
+
+
 # Bash背景実行の完了通知による自動再開を確かめる入力。Bashを公開する起動区分だけへ渡す。
 BACKGROUND_RESUME_INPUTS: dict[str, LiveInput] = {
     "delegate": LiveInput(
         "delegate",
         (
             """Bashツールで`{command}`を背景実行し、待たずにturnを終えよ。
-バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。""",
+バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答は次の2行にせよ。
+1行目を`状態: completed`、2行目を`結果: AUTO_RESUME_COMPLETED`とし、他の行を加えないこと。""",
         ),
         frozenset({"Bash"}),
     ),
@@ -172,8 +184,6 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
     )
     source = repository / "input/読取 資料.txt"
     before = _investigation_snapshot(repository)
-    # 認証情報はホストの通常の解決を使い、サーバー状態はテストfixtureの隔離先を保つ。
-    isolation.restore_host_environment(monkeypatch)
     models = {"claude": "claude:sonnet[1m]/medium", "codex": "codex:sol/medium", "agy": "agy:gemini-3.8-flash/medium"}
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", models[engine])
     python_code = f"import pathlib; s=pathlib.Path({str(source)!r}).read_text(encoding='utf-8'); print(s[:7]+s[7:], end='')"
@@ -300,8 +310,6 @@ async def test_live_launch_waits_for_automatic_resume(
     async with server_manager.AgentsServerManager() as manager:
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         cwd = str(pathlib.Path(__file__).parents[2])
-        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_host_environment(monkeypatch)
         monkeypatch.setattr(
             _atk_config,
             "parse_unresolved_model_candidates",
@@ -328,8 +336,7 @@ async def test_live_launch_waits_for_automatic_resume(
         finally:
             release.touch()
 
-        assert result["status"] == "completed", result
-        assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED"
+        assert _has_completed_resume(mode, result["status"], result["agent_message"]), result
 
 
 @pytest.mark.asyncio
@@ -344,8 +351,6 @@ async def test_live_explore_reads_file_and_continues_same_session(
         first.write_text("EXPLORE_FIRST_CONTENT\n", encoding="utf-8")
         second = tmp_path / "second.txt"
         second.write_text("EXPLORE_CONTINUED_CONTENT\n", encoding="utf-8")
-        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_host_environment(monkeypatch)
         monkeypatch.setattr(
             _atk_config,
             "parse_unresolved_model_candidates",
@@ -374,12 +379,16 @@ GRANDCHILD_INPUT = LiveInput(
         """`agents_server`の起動ツールで、コマンド`{command}`を実行して終了状態を要約させる委譲を1件起動せよ。
 起動ツールが`mode`を受け取る場合は`start`へ`mode`の`shell`を渡し、受け取らない場合は`start_shell`を使う。
 起動の直後は`atk agents wait`を実行せず、`待機中: <起動したsession_id>`の1行だけを出力してターンを終えよ。
-自動的に再開したターンでは`atk agents wait`でその委譲の結果を回収し、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。""",
+自動的に再開したターンでは`atk agents wait`でその委譲の結果を回収せよ。
+最終応答は次の2行にせよ。
+1行目を`状態: completed`、2行目を`結果: AUTO_RESUME_COMPLETED`とし、他の行を加えないこと。""",
     ),
     frozenset({"Bash"}),
 )
 
 
+@pytest.mark.cpu_limit(1.2, reason="実CLIの2世代の起動・結果配送を含み、実測で通常上限0.5秒を超える")
+@pytest.mark.timeout(240)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("candidate", [("codex", "sol", "medium"), ("claude", "sonnet[1m]", "medium")])
 async def test_live_grandchild_wait_resumes_same_session(
@@ -394,8 +403,6 @@ async def test_live_grandchild_wait_resumes_same_session(
     async with server_manager.AgentsServerManager() as manager:
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         cwd = str(pathlib.Path(__file__).parents[2])
-        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_host_environment(monkeypatch)
         monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
         release = tmp_path / "grandchild.release"
         script = tmp_path / "grandchild.py"
@@ -408,14 +415,13 @@ async def test_live_grandchild_wait_resumes_same_session(
             session = manager.sessions[started["session_id"]]
             async with asyncio.timeout(120):
                 while not (release.with_suffix(".ready").exists() and session.awaiting_auto_resume):
-                    await asyncio.sleep(0.01)
+                    await asyncio.sleep(0.1)
             release.touch()
             result = await _wait_terminal(manager)
         finally:
             release.touch()
 
-        assert result["status"] == "completed", result
-        assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED", result
+        assert _has_completed_resume("delegate", result["status"], result["agent_message"]), result
         assert "unobservedSessions" not in (result.get("error") or {}), result
         assert session.turn_seq == 2
 
@@ -598,7 +604,6 @@ stream_max_retries = 0
         )
         (codex_home / "config.toml").write_text(providers, encoding="utf-8")
 
-        isolation.restore_host_environment(monkeypatch)
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
         monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_CREDITS_PROVIDER", _PRIMARY_PROVIDER)

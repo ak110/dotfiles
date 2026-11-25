@@ -31,6 +31,7 @@ _DECISION_KEYS = frozenset(
         _selection.PUBLIC_WRITE_FILES_KEY,
         _selection.PUBLIC_WRITE_RATIONALES_KEY,
         _selection.MODEL_TYPES_KEY,
+        _selection.PLAN_REQUIREMENT_KEY,
         _selection.EXCLUDED_PATHS_KEY,
         _selection.DERIVED_NEW_PATHS_KEY,
         _selection.INTEGRATION_STATE_KEY,
@@ -74,6 +75,7 @@ _TOP_LEVEL_KEYS = frozenset(
         _selection.PROCESS_ESTIMATE_KEY,
         _selection.INITIAL_ALLOCATION_KEY,
         _selection.ADDED_WIS_KEY,
+        _selection.ADDITION_ALLOCATIONS_KEY,
     }
 )
 _WRITE_OVERLAP_KEYS = frozenset({"定義1", "定義2", "段階比較"})
@@ -93,7 +95,7 @@ _NEXT_COMPONENT_LINK = "不可分成分の構成WIを有効な結合条件で連
 _NEXT_COMPONENT_LANE = "不可分成分の全WIを同じ初回レーンへ割り当てる"
 _NEXT_LANE_BOUND = (
     "メインの直接作業・別のサブエージェント・既存レーンへの合流を品質・費用・時間で比較し、"
-    "統合済み・後段を含めて上限内のレーンへまとめ、複数成分は同じレーンで順に扱う。"
+    "診断が示す時点の上限内のレーンへまとめ、複数成分は同じレーンで順に扱う。"
     "担当者の選択とレーンという資源の数を区別し、"
     "`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」手順5に従う"
 )
@@ -155,6 +157,24 @@ def _check_ready_selection(facts: Mapping[str, Mapping[str, typing.Any]], select
         raise ValueError(f"処理可能な候補が選定にない: {', '.join(missing)}。処理可否の判定を確かめて全件を扱う")
 
 
+def _plan_requirement(metadata: dict[str, typing.Any]) -> str:
+    if metadata.get("type") == "awi" and metadata.get("source") in ("add-awi-by-user", "process-user-comments", "implement"):
+        return "計画なし"
+    return "計画あり"
+
+
+def complete_plan_requirements(selection: dict[str, object], read_metadata: Callable[[str], dict[str, typing.Any]]) -> None:
+    """元WIの取得が要るのは計画要否を持たない行だけ。明示値を保持する。  pyfltr: allow-comment"""
+    items = typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
+    if all(_selection.PLAN_REQUIREMENT_KEY in item for item in items):
+        return
+    for item in items:
+        if _selection.PLAN_REQUIREMENT_KEY not in item:
+            item[_selection.PLAN_REQUIREMENT_KEY] = _plan_requirement(read_metadata(item[_selection.WI_KEY]))
+    selection.pop("decisions", None)
+    selection[_selection.DECISIONS_KEY] = items
+
+
 def generate_selection(
     judgments: object,
     candidates: list[dict[str, typing.Any]],
@@ -162,6 +182,7 @@ def generate_selection(
     resume_plan: Callable[[object], str | None],
     *,
     additional: bool = False,
+    already_selected: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
     """意味判断を保持し、候補情報と確定入力から定型欄を生成する。分類とモデルは推測しない。"""
     if not isinstance(judgments, dict):
@@ -172,6 +193,8 @@ def generate_selection(
         )
     if _selection.INITIAL_ALLOCATION_KEY in judgments:
         raise ValueError("初回配分は生成側が候補と判断から作成するため、判断入力から除く")
+    if _selection.ADDITION_ALLOCATIONS_KEY in judgments:
+        raise ValueError("追加時の配分は追加操作で記録するため、判断入力から除く")
     require_shared_wait_basis(judgments.get(_selection.ESTIMATE_CORRECTION_KEY))
     facts: dict[str, dict[str, typing.Any]] = {}
     for candidate in candidates:
@@ -195,7 +218,16 @@ def generate_selection(
         if name not in facts or name in seen or _STALENESS_KEY in item:
             raise ValueError(f"{name}: 候補にないWI、重複判断、または手で転記した鮮度がある")
         seen.add(name)
-        decisions.append(dict(copy.deepcopy(item), **{_STALENESS_KEY: copy.deepcopy(facts[name]["staleness"])}))
+        candidate = facts[name]
+        decisions.append(
+            dict(
+                copy.deepcopy(item),
+                **{
+                    _STALENESS_KEY: copy.deepcopy(candidate["staleness"]),
+                    _selection.PLAN_REQUIREMENT_KEY: _plan_requirement(candidate),
+                },
+            )
+        )
     generated[_selection.DECISIONS_KEY] = decisions
     generated[_selection.LANE_COSTS_KEY] = copy.deepcopy(costs)
     excluded = judgments.get("除外候補", [])
@@ -206,7 +238,8 @@ def generate_selection(
         or set(excluded) & seen
     ):
         raise ValueError("除外候補は候補にある未選定WIだけを重複なく指定する")
-    _check_ready_selection(facts, seen, set(excluded))
+    already_processing = {name for name in already_selected if facts.get(name, {}).get("state") == "processing"}
+    _check_ready_selection(facts, seen | already_processing, set(excluded))
     if additional:
         if judgments.get("結合条件"):
             raise ValueError("追加入力へ初回の結合条件を加えない。元の初回履歴を保持する")
@@ -339,6 +372,8 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
             for key in (_selection.WI_KEY, _selection.LANE_KEY, *_DECISION_STRING_KEYS)
             if key in item and not isinstance(item[key], str)
         )
+        if _selection.PLAN_REQUIREMENT_KEY in item and item[_selection.PLAN_REQUIREMENT_KEY] not in ("計画なし", "計画あり"):
+            errors.append(f"{label}: 計画要否は計画なしまたは計画ありを指定する")
         state = item.get(_selection.INTEGRATION_STATE_KEY, _selection.NOT_INTEGRATED)
         if state not in (_selection.NOT_INTEGRATED, _selection.INTEGRATED):
             errors.append(f"{label}: 統合状態は未統合か統合済みを指定する: {state!r}")
@@ -411,6 +446,13 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
     added = selection.get(_selection.ADDED_WIS_KEY, [])
     if not is_string_list(added) or len(added) != len(set(added)):
         errors.append("追加WIは重複のないWIファイル名の列にする")
+    allocations = selection.get(_selection.ADDITION_ALLOCATIONS_KEY, [])
+    if not isinstance(allocations, list) or any(
+        not isinstance(row, dict)
+        or any(not isinstance(name, str) or not name or not isinstance(lane, str) or not lane for name, lane in row.items())
+        for row in allocations
+    ):
+        errors.append("追加時の配分は、追加時点ごとの未終了WIファイル名からレーン名への写像の列にする")
     return errors, model_errors
 
 
@@ -453,8 +495,21 @@ def _allocation_structure_errors(value: object) -> list[str]:
     return errors
 
 
+def unfinished_assignment(selection: dict[str, object]) -> dict[str, str]:
+    integrated = _selection.integrated_lanes(selection)
+    return {
+        item[_selection.WI_KEY]: item[_selection.LANE_KEY]
+        for item in typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
+        if item.get(_selection.INTEGRATION_STATE_KEY) != _selection.INTEGRATED and item[_selection.LANE_KEY] not in integrated
+    }
+
+
+def lane_bound(count: int) -> int:
+    return (count + 9) // 10
+
+
 def allocation_errors(selection: dict[str, object]) -> list[_next_action.ActionableError]:
-    """初回候補から決まる上限を、初回割当と現在の全レーンへ適用する。"""
+    """初回・各追加時点を別々に検査し、再配分で過去の上限違反を隠さない。  pyfltr: allow-comment"""
     data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
     assignments: dict[str, str] = data["レーン割当"]
     candidates = set(data["候補WI"])
@@ -510,15 +565,21 @@ def allocation_errors(selection: dict[str, object]) -> list[_next_action.Actiona
             errors.append(
                 violation(f"不可分成分を複数の初回レーンへ分けている: {sorted(names)}", next_action=_NEXT_COMPONENT_LANE)
             )
-    count = len(candidates)
-    bound = (count + 9) // 10
-    # 移管で空になったレーンは行が無くなるため、移したWIの`移管元レーン`も累計のレーン名として数える。
-    cumulative_lanes = (
-        set(current.values())
-        | {row[_selection.LANE_KEY] for row in typing.cast(list[dict[str, typing.Any]], _selection.lane_costs(selection))}
-        | {lane for item in items for lane in item.get(_selection.TRANSFERRED_FROM_KEY, [])}
-    )
-    for scope, lanes in (("初回配分", set(assignments.values())), ("累計の全体配分", cumulative_lanes)):
+    checks = [("初回配分", len(candidates), set(assignments.values()))]
+    if _selection.ADDITION_ALLOCATIONS_KEY in selection:
+        allocations = typing.cast(list[dict[str, str]], selection[_selection.ADDITION_ALLOCATIONS_KEY])
+        for index, assignment in enumerate(allocations, start=1):
+            if assignment.keys() - selected:
+                errors.append(violation(f"追加時の配分{index}: 選定にないWIがある", next_action=_NEXT_SELECTED_SET))
+            checks.append((f"追加時の配分{index}", len(assignment), set(assignment.values())))
+    else:
+        # 旧形式で復元できる累計だけを検査する。新契約で必要な各時点の集合は推測で作らない。  # pyfltr: allow-comment
+        cumulative_lanes = set(current.values()) | {
+            lane for item in items for lane in item.get(_selection.TRANSFERRED_FROM_KEY, [])
+        }
+        checks.append(("累計の全体配分", len(candidates), cumulative_lanes))
+    for scope, count, lanes in checks:
+        bound = lane_bound(count)
         total = len(lanes - {_LANE_NONE})
         if total > bound:
             errors.append(

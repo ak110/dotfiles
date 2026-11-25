@@ -163,18 +163,19 @@ def _saturation_text(session_id: str) -> str:
     return working + hooks
 
 
-def _new_wi_text(session_id: str) -> str:
+def _new_wi_text(session_id: str, recipient: str) -> tuple[str, str | None]:
     from agent_toolkit._atk.wi.listing import progress_new_wis  # pylint: disable=import-outside-toplevel
 
     try:
         rows = progress_new_wis(session_id)
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
-        return f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で診断と処理可能な新着を確かめてください。"
+        return (
+            f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で確かめてください。",
+            None,
+        )
     if rows is None:
-        return "新着WIは未確認（開始時集合なし）。"
-    if not rows:
-        return "新着WIは0件。"
-    return f"処理可能な新着WI: {'、'.join(rows)}。"
+        return "新着WIは未確認（開始時集合なし）。", None
+    return _notice.new_wi_preview(session_id, recipient, rows)
 
 
 def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:
@@ -236,16 +237,18 @@ def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: b
     instruction = _SELF_CHECK_NOTICE_BODY if main_agent else _DELEGATED_NOTICE_BODY
     skipped_text, skipped_receipts = _skipped_notices(session_id, agent_id)
     previous = f"前回の通知から{_format_elapsed(since_notice)}たった。" if since_notice is not None else ""
-    new_wis = (
-        _new_wi_text(session_id)
+    new_wis, wi_snapshot = (
+        _new_wi_text(session_id, agent_id)
         if main_agent and process_loop_session.is_identified_process_loop_session(session_id, os.environ)
-        else ""
+        else ("", None)
     )
     body = elapsed_text + previous + _saturation_text(session_id) + new_wis + skipped_text + instruction
     text = _llm_notice(body, tag="notice")
     if not text:
         return None
     _notice.stage_delivery(text, session_id, DELIVERED_KEY, agent_id, repr(current_time))
+    if wi_snapshot is not None:
+        _notice.stage_new_wi_preview(text, session_id, agent_id, wi_snapshot)
     for field, value in skipped_receipts:
         _notice.stage_delivery(text, session_id, field, agent_id, value)
     return text

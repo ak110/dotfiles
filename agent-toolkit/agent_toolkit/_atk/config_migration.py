@@ -208,6 +208,18 @@ def _move_auth_file(source: pathlib.Path, target: pathlib.Path, *, defer_missing
         ) from None
 
 
+def compare_shared_values(local: dict[str, Any], shared: dict[str, str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for key in sorted((local.keys() | shared.keys()) & _config_settings.SHARED_SETTING_KEYS):
+        if key not in shared:
+            result[key] = "local_only"
+        elif key not in local:
+            result[key] = "shared_only"
+        else:
+            result[key] = "equal" if local[key] == shared[key] else "different"
+    return result
+
+
 def merge_remote_hosts(*values: str) -> str:
     hosts = dict.fromkeys(host for value in values for host in _config_settings.parse_remote_hosts(value))
     return json.dumps(list(hosts), ensure_ascii=False)

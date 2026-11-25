@@ -585,7 +585,11 @@ def _reclaim_space(
                 return None
             if not caches_only and latest < cutoff_ns:
                 scope = _ReclaimScope.EXPIRED
-            elif directory and not session and resources.is_tagged_cache(child):
+            elif (
+                directory
+                and not session
+                and (resources.is_tagged_cache(child) or plugin_root_leases.completed_plugin_copy(child) is not None)
+            ):
                 if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
                     return None
                 scope = _ReclaimScope.TAGGED_CACHE
@@ -713,8 +717,7 @@ def _sweep_locked(
     if not daily and not pressure_due:
         return SweepResult([], ())
     times = CleanupTimes(state_root, cutoff_ns)
-    # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
-    if daily:
+    if daily or (pressure_due and not caches_only and _below_floor(temp_root)):
         with contextlib.suppress(OSError):
             plugin_root_leases.sweep_plugin_root_records()
     protected_sessions = {

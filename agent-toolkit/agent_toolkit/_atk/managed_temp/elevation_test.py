@@ -54,7 +54,7 @@ def test_sweep_requests_at_most_one_elevation(monkeypatch, tmp_path, caplog, con
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1" if condition == "process-loop" else "0")
     monkeypatch.setattr(subject.subprocess, "run", run)
     monkeypatch.setattr(subject, "_command", lambda names: ["elevate", *names])
-    subject.sweep_for_update(no_sudo=condition == "no-sudo", logger=logging.getLogger(__name__))
+    subject.sweep_interactively(no_sudo=condition == "no-sudo", logger=logging.getLogger(__name__))
     assert sweeps == ([] if condition in {"noninteractive", "process-loop"} else [True])
     elevated = condition in {"interactive", "recovered-parent"}
     expected = [(["elevate", "first", "second"], tmp_path)] if elevated else []

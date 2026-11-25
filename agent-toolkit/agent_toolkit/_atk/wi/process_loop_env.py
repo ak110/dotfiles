@@ -8,8 +8,8 @@ import typing
 
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import mcp_environment, private_directory, process_loop_session
 from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import private_directory
 from agent_toolkit._common import wait_schedule as _wait_schedule
 
 # ランチャーが作成する再起動要求の受け渡しファイルのパスを保持する環境変数。
@@ -27,6 +27,17 @@ PROCESS_LOOP_SESSION_ID_ENV = _orchestrator.PROCESS_LOOP_SESSION_ID_ENV
 
 
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
+
+NO_ALERTS_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_NO_ALERTS"
+ALERT_INTERVAL_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_ALERT_INTERVAL"
+DEFAULT_ALERT_INTERVAL = 1800
+
+
+def positive_alert_interval(value: str) -> int:
+    interval = int(value)
+    if interval <= 0:
+        raise ValueError("確認間隔は正の整数秒で指定する")
+    return interval
 
 
 # Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数が契約どおりに動作するかを確かめられるよう値を固定する。
@@ -54,6 +65,19 @@ def child_env() -> dict[str, str]:
 
 
 session_env = _orchestrator.session_env
+
+
+def compaction_env(env: dict[str, str]) -> dict[str, str]:
+    result = env.copy()
+    for key in (
+        PROCESS_LOOP_SESSION_ENV,
+        PROCESS_LOOP_SESSION_ID_ENV,
+        PROCESS_LOOP_INSTRUCTION_ENV,
+        mcp_environment.SESSION_START_INPUT_ENV,
+        process_loop_session.CLAIM_ENV,
+    ):
+        result.pop(key, None)
+    return result
 
 
 def session_creation_flags(orchestrator: str, *, platform: str = os.name) -> int:

@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import time
 from asyncio.subprocess import Process
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
-from types import SimpleNamespace
+from types import FunctionType, SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -33,6 +34,7 @@ from agent_toolkit._agents_server import (
     session_handoff,
     shared_roots,
     state,
+    turn_state,
 )
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
@@ -153,6 +155,8 @@ class _MemoryAppServer(codex.JsonRpcProcess):
 async def _environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, permitted: bool = True, policy: str | None = None
 ) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
+    # リセット由来のaccount/readだけを観測し、速度判定のaccount/readは対象にしない。  # pyfltr: allow-comment
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([_PERMISSION] if permitted else []))
     if policy is None:
         monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", raising=False)
@@ -160,6 +164,13 @@ async def _environment(
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", policy)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     clients: list[_MemoryAppServer] = []
+
+    async def isolated_file_operation[T](operation: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+        return operation(*args, **kwargs)
+
+    # 隔離済みの読取をexecutor経由にせず、実readerとRPCの状態遷移を確かめる。  # pyfltr: allow-comment
+    monkeypatch.setattr(codex_reset, "run_file_operation", isolated_file_operation)
+    monkeypatch.setattr(codex_auto_reset, "run_file_operation", isolated_file_operation)
 
     def client_factory(*args: Any, **kwargs: Any) -> _MemoryAppServer:
         client = _MemoryAppServer(*args, **kwargs)
@@ -173,8 +184,36 @@ async def _environment(
 
 
 async def _until(backend: codex.AppServerManager, predicate: Callable[[], bool]) -> None:
-    async with backend._condition:
-        await asyncio.wait_for(backend._condition.wait_for(predicate), timeout=5)
+    try:
+        async with backend._condition:
+            await asyncio.wait_for(backend._condition.wait_for(predicate), timeout=5)
+    except TimeoutError as error:
+        observed = []
+        for session in backend.sessions.values():
+            client = backend._owned_client(session)
+            task = backend._auto_reset_checks.get(session.session_id)
+            observed.append(
+                {
+                    "status": session.status,
+                    "pending": session.codex_auto_reset_pending,
+                    "awaiting_auto_resume": session.awaiting_auto_resume,
+                    "turn_completed": session.turn_completed,
+                    "result_available": session.result_available,
+                    "requests": [name for name, _ in client.requests] if isinstance(client, _MemoryAppServer) else [],
+                    "check_stack": (
+                        [(frame.f_code.co_name, frame.f_lineno) for frame in task.get_stack()] if task is not None else []
+                    ),
+                }
+            )
+        expected = predicate.__code__.co_names if isinstance(predicate, FunctionType) else type(predicate).__name__
+        raise AssertionError(f"待機条件 {expected} に未到達。観測: {observed}") from error
+
+
+async def _await_reset_check(task: asyncio.Task[None], session: state.SessionState) -> None:
+    done, _ = await asyncio.wait({task}, timeout=5)
+    assert task in done, f"reset確認が未終了: pending={session.codex_auto_reset_pending}"
+    task.result()
+    assert not session.codex_auto_reset_pending
 
 
 def _fail(
@@ -212,8 +251,9 @@ async def test_weekly_reset_uses_reader_and_resumes_same_session(
         if explicit_subscription:
             session.codex_model_provider = session.codex_subscription_provider = "openai"
         _fail(client, session, tmp_path)
-        await _until(backend, lambda: session.awaiting_auto_resume and not session.codex_auto_reset_pending)
-        assert not session.result_available
+        await asyncio.wait_for(client.consume_started.wait(), timeout=5)
+        await _await_reset_check(backend._auto_reset_checks[session.session_id], session)
+        assert session.awaiting_auto_resume and not session.result_available
         assert session.usage_limit_resume_at is not None and session.usage_limit_resume_at <= asyncio.get_running_loop().time()
         assert [method for method, _ in client.requests].count("account/rateLimitResetCredit/consume") == 1
         assert client.reader_failure is None
@@ -573,13 +613,22 @@ async def _service_environment(
 async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, permitted: bool
 ) -> None:
-    monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
+    monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 8.0)
     async with _service_environment(tmp_path, monkeypatch, _no_save) as (_, backend, clients):
         if not permitted:
             permission = {**_PERMISSION, "account": "other@example.invalid"}
             monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([permission]))
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
+        loop = asyncio.get_running_loop()
+        start_check = backend._start_auto_reset_check
+
+        def start_with_resume_deadline(pending: state.SessionState) -> None:
+            assert isinstance(pending.hold, turn_state.UsageLimitWait)
+            pending.hold_result(dataclasses.replace(pending.hold, resume_at=loop.time() + 1))
+            start_check(pending)
+
+        monkeypatch.setattr(backend, "_start_auto_reset_check", start_with_resume_deadline)
         account_release = asyncio.Event()
         consume_release = asyncio.Event()
         client.account_release = account_release
@@ -589,22 +638,22 @@ async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
         try:
             _fail(client, session, tmp_path)
             await asyncio.wait_for(client.account_read.wait(), timeout=5)
+            reset_check = backend._auto_reset_checks[session.session_id]
             deadline = session.usage_limit_resume_at
             assert deadline is not None
-            loop = asyncio.get_running_loop()
-            await asyncio.sleep(max(0, deadline - loop.time() - 0.25))
             account_release.set()
             if permitted:
                 await asyncio.wait_for(client.consume_started.wait(), timeout=5)
                 await asyncio.sleep(max(0, deadline - loop.time() + 0.05))
                 assert not client.consume_cancelled.is_set() and session.codex_auto_reset_pending
             else:
-                async with asyncio.timeout_at(deadline + 0.15):
-                    await _until(backend, lambda: session.result_available)
+                await _until(backend, lambda: session.result_available)
+                assert loop.time() >= deadline
         finally:
             account_release.set()
             consume_release.set()
-        await _until(backend, lambda: not session.codex_auto_reset_pending)
+        # 消費の確定後は、状態更新と通知を行う確認タスク自体を待つ。  # pyfltr: allow-comment
+        await _await_reset_check(reset_check, session)
         if permitted:
             assert client.weekly_usage == 0 and session.awaiting_auto_resume
         else:

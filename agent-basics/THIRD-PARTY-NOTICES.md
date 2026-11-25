@@ -244,7 +244,7 @@ agent-basicsへ取り込んだ第三者素材の原典、改変内容と許諾�
   - `skills/principle-make-operations-idempotent/SKILL.md`「crashed at every possible point」。
     取り込み先は`skills/writing-standards/references/testing.md`。
   - `skills/tdd/SKILL.md`。
-    取り込み先は`skills/writing-standards/references/testing.md`。
+    取り込み先は`skills/writing-standards/references/testing.md`と`skills/writing-standards/references/testing-design.md`。
 - 改変: 各語句を日本語へ翻訳し、取り込み先の節の判断基準へ組み込んだ。
 - 許諾: [MIT License](https://github.com/cursor/plugins/blob/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack/LICENSE)。
 

@@ -13,6 +13,7 @@ from collections.abc import Iterator
 
 from agent_toolkit._common import automated_prompt, delegated_session, runtime_inserted
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.external_source_review import EXTERNAL_SOURCE_ENTRY_KEY, source_urls
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
@@ -54,40 +55,6 @@ _SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
 
 
 EXTERNAL_SOURCE_WORKS = frozenset({"add-awi-by-user", "process-user-comments", "implement"})
-EXTERNAL_SOURCE_ENTRY_KEY = "external_source_entry"
-_SOURCE_URL = re.compile(r"https?://(?:[A-Za-z0-9._~*/:?#\[\]@!$&'()+,;=\-]|%[0-9A-Fa-f]{2})+")
-_SOURCE_URL_EMPHASIS = re.compile(r"(?<!\*)\*{1,3}$|(?<!_)_{1,3}$|(?<!~)~~$")
-_SOURCE_URL_TRAILING_PUNCTUATION = ".,;:!?"
-_SOURCE_URL_BRACKETS = {")": "(", "]": "["}
-
-
-def _source_url_end(candidate: str) -> int:
-    opening: list[str] = []
-    for match in re.finditer(r"[()\[\]]", candidate):
-        char = match[0]
-        if char in _SOURCE_URL_BRACKETS.values():
-            opening.append(char)
-        elif not opening or opening.pop() != _SOURCE_URL_BRACKETS[char]:
-            return match.start()
-    return len(candidate)
-
-
-def source_urls(line: str) -> Iterator[str]:
-    offset = 0
-    while match := _SOURCE_URL.search(line, offset):
-        start = match.start()
-        url = match[0][: _source_url_end(match[0])]
-        offset = start + len(url)
-        if line[start - 1 : start] == "[" and line.startswith("](", offset):
-            continue
-        before = line[start - 1 : start]
-        after = line[offset : offset + 1]
-        if (before, after) in {("<", ">"), ("`", "`")} or (line[:start].endswith("](") and after == ")"):
-            yield url
-        elif marker := _SOURCE_URL_EMPHASIS.search(line, 0, start):
-            yield url.removesuffix(marker[0])
-        else:
-            yield url.rstrip(_SOURCE_URL_TRAILING_PUNCTUATION)
 
 
 def observe_external_source_entry(session_id: str, work: str, arguments: str) -> None:
@@ -221,19 +188,67 @@ def _original_user_text(raw: str, *, include_answers: bool = False) -> str | Non
     return None
 
 
-def recorded_new_wi_decisions(session_id: str) -> frozenset[str]:
+def progress_update_warning(session_id: str) -> str | None:
     path = record_path(session_id)
     if path is None:
-        return frozenset()
+        return None
+    key = "work_contract_progress_checked"
     try:
-        body = path.read_text(encoding="utf-8")
+        stat = path.stat()
+        stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
+        if read_state(session_id).get(key) == stamp:
+            return None
+        found = _progress_record_lines(path.read_text(encoding="utf-8"))
     except OSError, UnicodeError:
-        return frozenset()
-    return frozenset(
-        match[1]
-        for _, line in _visible_contract_lines(body)
-        if (match := re.fullmatch(r"- 新着WIの判定: ([A-Za-z0-9._-]+[.]md) [|] [^\s].*", line))
+        return None
+    update_state(session_id, lambda state: {**state, key: stamp})
+    if not found:
+        return None
+    numbers = "、".join(str(number) for number in found)
+    return (
+        f"`{path}`の{numbers}行目に進捗・検収の記録がある。"
+        "担当の引き継ぎ記録、対応する計画かWI、または公開担当の引き継ぎ記録へ移し、"
+        "全体作業契約には原本の所在だけを残してください。"
     )
+
+
+def _progress_record_lines(body: str) -> list[int]:
+    found = []
+    conditions = False
+    for number, line in _visible_contract_lines(body):
+        heading = re.match(r"^ {0,3}#{1,6} +(.+)$", line)
+        if heading:
+            conditions = heading[1].rstrip(" #") in {"完成条件", "検収条件", "受入条件"}
+        item = re.sub(r"^ {0,3}(?:#{1,6} +|[-*] +)", "", line)
+        reference_only = re.fullmatch(r"[^:：]+[:：]\s*(?:`(?:/|[A-Za-z]:[/\\])[^`]+`|(?:/|[A-Za-z]:[/\\])\S+)\s*", item)
+        if item.lstrip().startswith(">") or reference_only:
+            continue
+        timestamp = re.match(r"^\d{4}-\d{2}-\d{2}(?:T[\d:+Z-]+)? +", item)
+        text = item[timestamp.end() :] if timestamp else item
+        if re.match(
+            r"(?:現在の進捗|進捗(?:状況|ログ)?|現在の担当状況|担当の現在状態|"
+            r"検収結果|実装結果|検証結果|経緯|新着WIの判定)(?:[:： ]|$)",
+            text,
+        ):
+            found.append(number)
+            continue
+        if conditions or re.match(r"(?:完成条件|検収条件|受入条件|期限|制約) *[:：]", text):
+            continue
+        if _has_progress_assertion(text, timed=timestamp is not None):
+            found.append(number)
+    return found
+
+
+def _has_progress_assertion(text: str, *, timed: bool) -> bool:
+    # 達成すべき条件にも「検証を完了」と書くため、時刻のない体言止めでは判定しない。  pyfltr: allow-comment
+    text = re.sub(r'「[^」]*」|『[^』]*』|“[^”]*”|"[^"]*"|`[^`]*`', " ", text)
+    phase = r"(?:検収|実装|検証|統合|レビュー|公開)(?:が|を|は)?"
+    for sentence in re.split(r"[。！!]", text):
+        if re.search(phase + r"(?:開始した|終了した|完了した|済み|終えた)\s*$", sentence):
+            return True
+        if timed and re.search(phase + r"完了\s*$", sentence):
+            return True
+    return False
 
 
 def _visible_contract_lines(body: str) -> Iterator[tuple[int, str]]:

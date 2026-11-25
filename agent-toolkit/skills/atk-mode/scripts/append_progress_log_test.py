@@ -774,3 +774,82 @@ def test_public_cli_rejects_time_arguments(tmp_path: pathlib.Path, capsys: pytes
     assert raised.value.code == 2
     assert option in capsys.readouterr().err
     assert path.read_text(encoding="utf-8") == "# 引き継ぎ\n"
+
+
+def _awi_plan(target_repo: pathlib.Path, *wis: str) -> str:
+    related = "".join(f"  - {wi}\n" for wi in wis)
+    return (
+        f"---\nlaunch_route: process-wi lane-01\ntarget_repo: {target_repo}\n"
+        f"related_wis:\n{related}work_kind: 通常変更\n---\n\n"
+        "# 計画\n\n本文\n"
+    )
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+def test_awi_plan_records_mapping_without_changing_body(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    notes = tmp_path / "private-notes"
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo)
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "base")
+    base = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "implemented")
+    implemented = git_repository.git_output(repo, "rev-parse", "HEAD")
+    wi, outside = "20261004-044311-001.md", "20261004-044200-001.md"
+    path = tmp_path / "plan.md"
+    path.write_text(_awi_plan(repo, wi), encoding="utf-8")
+    body = path.read_bytes()
+    attachment = path.with_name(path.stem + ".wi-commits.jsonl")
+
+    def dispatch(script: str, target: pathlib.Path, *extra: str) -> int:
+        args = [str(target), "--worktree", str(repo), *extra]
+        return run_script.dispatch(argparse.Namespace(script_name=script, script_args=args))
+
+    record = ("--commit", implemented, "--previous-head", base)
+    assert dispatch("plan-progress", path, *record, "--awi", outside) == 1
+    assert dispatch("plan-progress", path, "--commit", base, "--previous-head", implemented, "--awi", wi) == 1
+    assert path.read_bytes() == body
+    assert not attachment.exists()
+    assert dispatch("plan-progress", path, *record, "--awi", wi) == 0
+    assert path.read_bytes() == body
+    assert attachment.is_file()
+    capsys.readouterr()
+    assert dispatch("plan-commits", path) == 0
+    short = git_repository.git_output(repo, "rev-parse", "--short", implemented)
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [{"awi": wi, "commits": [short]}]
+    git_repository.git_output(repo, "switch", "-c", "rewritten", base)
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "rewritten")
+    rewritten = git_repository.git_output(repo, "rev-parse", "HEAD")
+    replacement = tmp_path / "rewrite.json"
+    replacement.write_text(json.dumps({implemented: [{"commit": rewritten, "awi": [wi]}]}), encoding="utf-8")
+    assert dispatch("plan-progress", path, "--rewrite-map", str(replacement)) == 0
+    assert path.read_bytes() == body
+    capsys.readouterr()
+    assert dispatch("plan-commits", path) == 0
+    short = git_repository.git_output(repo, "rev-parse", "--short", rewritten)
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [{"awi": wi, "commits": [short]}]
+    saved = notes / "plans" / "2026" / "10" / "04-example-1a2b.md"
+    saved.parent.mkdir(parents=True)
+    saved.write_bytes(body)
+    capsys.readouterr()
+    assert dispatch("plan-progress", saved, "--commit", rewritten, "--previous-head", base, "--awi", wi) == 1
+    assert "`atk plans checkout" in capsys.readouterr().err
+    assert saved.read_bytes() == body
+    assert not saved.with_name(saved.stem + ".wi-commits.jsonl").exists()
+    assert dispatch("plan-progress", path, "--completed-step", "工程", "--result", "結果") == 1
+    assert path.read_bytes() == body
+    legacy = tmp_path / "legacy.md"
+    legacy.write_text(_related_plan(wi), encoding="utf-8")
+    with pytest.raises(SystemExit) as error_exit:
+        append_progress_log.main([str(legacy), "--worktree", str(repo), *record, "--awi", wi])
+    assert error_exit.value.code == 2
+    assert "--completed-step" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as error_exit:
+        append_progress_log.main(
+            [str(tmp_path / "handoff.md"), "--worktree", str(repo), *record, "--awi", wi, "--handoff", "--allowed-awi", wi]
+        )
+    assert error_exit.value.code == 2
+    assert "--completed-step" in capsys.readouterr().err

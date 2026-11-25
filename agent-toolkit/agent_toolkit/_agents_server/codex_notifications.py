@@ -71,7 +71,11 @@ class CodexNotificationsMixin:
             return
         if method == "account/rateLimits/updated":
             if usage_refresh.enabled():
-                await run_file_operation(usage_refresh.record_codex, params)
+                try:
+                    # 通知には認証メールがなく、前回の表示用補完は許可の同一性に使わない。 pyfltr: allow-comment
+                    await run_file_operation(usage_refresh.record_codex, params, permission_account="")
+                except (OSError, ValueError, OverflowError) as error:
+                    _LOG.warning("Codexの利用枠の観測を省略する: %s", error)
             return
         thread_id = _thread_id_from(params)
         if method == "thread/tokenUsage/updated":

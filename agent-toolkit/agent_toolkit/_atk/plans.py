@@ -178,10 +178,11 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
         return 0
     if args.plans_subcommand == "commit":
         result = _plans_commit.commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
-        action = "commitした" if args.skip_push else "commit・pushした"
+        action = "ローカルにcommitした"
         subject = "CI対応レビュー指摘管理表" if result.get("kind") == "ci-review" else "計画bundle"
         _outcome.report_success(f"{subject}を`private-notes/plans/`へ移動して{action}: {result['plan_file']}")
-        return 0
+        sync_code = result.get("sync_code")
+        return sync_code if isinstance(sync_code, int) else 0
     if args.plans_subcommand == "list":
         for entry in list_working_plans(home):
             owner = entry["owner_session"] or "なし"
@@ -209,6 +210,8 @@ def dispatch_command(args: argparse.Namespace, *, home: pathlib.Path) -> int:
     private_notes = _wi_sync.ensure_environment(home)
     try:
         exit_code = dispatch(args, private_notes, home)
+        if args.plans_subcommand == "commit":
+            return exit_code
         return _wi_sync.sync_exit_code(
             exit_code,
             private_notes,

@@ -10,6 +10,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import logging_config, turn_state
 from agent_toolkit._common import runtime_inserted, session_registry
+from agent_toolkit._common.output_policy import rules
 
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終了を観測してから`send_message`を再送する"
 """turnが中断中または未終了のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
@@ -42,15 +43,8 @@ _LANE_RECEIPT_ACTION = (
 )
 
 
-IMPROVEMENT_RESULT_NEXT_ACTION = (
-    "`agent_message`の`気付いた改善点:`で始まる全行（箇条書きの項目記号の後に標識がある行を含む）を既存の送達成功記録と比べる。"
-    "メインエージェントは未送達または新しい観測だけを次のユーザーへの発話へ転記する。"
-    "委譲先は成功記録を確認して未送達と新しい観測を上流へ逐語で中継し、完了返却には原文を各1回残す。"
-    "転記する各行は字下げを除く行頭に`気付いた改善点:`を原文のまま置き、標識の前と、標識とコロンの間へ報告元などの語を入れない。"
-    "報告元と確かめた範囲は標識行の原文の後ろか別の行に添える。"
-    "同じ送達先へ成功確認済みで原文・対象・観測が同じ行は再通知しない。送信失敗・成否不明・記録欠落を既報として抑制しない。"
-    "委譲先が観測していない主張は、委譲先の主張として出所を添えて転記する"
-)
+def improvement_result_next_action() -> str:
+    return rules()["wait_improvement_guidance"]
 
 
 def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[str, Any]:
@@ -146,7 +140,7 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
         )
     if isinstance(message, str) and runtime_inserted.reported_improvement_lines(message):
         guidance.append(
-            (IMPROVEMENT_RESULT_NEXT_ACTION, ("agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」",))
+            (improvement_result_next_action(), ("agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」",))
         )
     return guidance
 

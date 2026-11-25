@@ -71,7 +71,10 @@ async def _consume_rate_limit(message: Any, session: SessionState | None) -> cla
     limit = claude_usage_limit.from_event(message)
     from agent_toolkit._atk import usage_refresh
 
-    await run_file_operation(usage_refresh.record_claude_event, getattr(message, "rate_limit_info", None))
+    try:
+        await run_file_operation(usage_refresh.record_claude_event, getattr(message, "rate_limit_info", None))
+    except (OSError, ValueError, OverflowError) as error:
+        _LOG.warning("Claudeの利用枠の観測を省略する: %s", error)
     if limit is not None and session is not None:
         session.usage_limit = limit
         if (

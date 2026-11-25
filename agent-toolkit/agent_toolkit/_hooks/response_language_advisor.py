@@ -17,6 +17,7 @@ from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
+lazy from agent_toolkit._hooks.delivered_repost_gate import current_turn_delivery
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 
 _block_notice = block_formatter("response-language")
@@ -48,6 +49,12 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             session_state=read_state(session_id) if session_id else None,
         ):
             return "", ""
+        if isinstance(transcript, str) and transcript and current_turn_delivery(transcript)[1] is False:
+            return "block", _block_notice(
+                "報告は送達済みです。追加の結果がなければ `…` だけで終えてください。",
+                fix="新しい結果があれば、それだけを `send_to_user` で送ってから `…` で終えてください。"
+                "送った内容の翻訳や要約は不要です。",
+            )
     return "block", _block_notice(
         "今回の完了本文を日本語の説明として判定できないため、終了を止めた。"
         + f"判定対象の冒頭: {response_language_check._plain_text(text)[:80]}\n",  # pylint: disable=protected-access
