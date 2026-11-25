@@ -27,7 +27,7 @@
 
 ## 継続する工程
 
-計画と実装の品質基準は`agent-basics:writing-standards`、検証単位の選定は`agent-basics:writing-standards/references/testing.md`にある。
+計画と実装の品質基準は`agent-basics:writing-standards`、検証単位の選定は`agent-basics:writing-standards/references/testing-design.md`にある。
 同じ担当の中でも、実装の成果に依存する工程と独立した準備の順を分け、本書「計画の起草」の準備の判断を適用する。
 全ての残工程と後続の未確定事項を点検し、独立した準備は、元の担当、検証・レビュー待ちの活用、読み取り専用の分担を総費用で比べて進める。
 同じ計画の一体性と書き込みの所有権、先行成果を使う受入確認は保つ。

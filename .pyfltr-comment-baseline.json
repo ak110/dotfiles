@@ -4369,7 +4369,7 @@
   "agent-toolkit/agent_toolkit/_atk/wi/alerts_test.py": {
     "CI状態の取得失敗は待機を止めずに警告を出力する。": 1,
     "GitLab Pipelines API / GitHub branches APIの公開フィールドを使い、古い失敗実行だけが残る応答を検証する。": 1,
-    "`alert_keys`未指定・カンマ区切り複数・空文字列の各書式を公開関数経由で検証する。 `_parse_alert_keys`はモジュール非公開のため、フロントマターを持つAWIファイルを 実際に配置して`existing_alert_keys`経由で検証する （`agent-basics:writing-standards`の`references/testing.md`「private関数の直接テスト禁止」節に従う）。": 1,
+    "`alert_keys`未指定・カンマ区切り複数・空文字列の各書式を公開関数経由で検証する。 `_parse_alert_keys`はモジュール非公開のため、フロントマターを持つAWIファイルを 実際に配置して`existing_alert_keys`経由で検証する （`agent-basics:writing-standards`の`references/testing-design.md`「private関数の直接テスト禁止」節に従う）。": 1,
     "glab 1.122.0のconfig --helpにあるホスト別api_host/api_protocol/tokenと": 1,
     "https://docs.gitlab.com/api/pipelines/ 、jobs/ の応答を使う。": 1,
     "ワークフローごとに直近の完了runだけを確認し、失敗している場合だけアラート候補を返す。": 1,
@@ -4528,7 +4528,7 @@
   "agent-toolkit/agent_toolkit/_atk/wi/formatters_test.py": {
     "`formatters`モジュールの本文要約におけるBOMと本文文字の保持のテスト。": 1,
     "`parse_alert_keys`のテストは`alerts_test.py`側で公開関数`existing_alert_keys`": 1,
-    "`references/testing.md`「private関数の直接テスト禁止」節参照）。": 1,
+    "`references/testing-design.md`「private関数の直接テスト禁止」節参照）。": 1,
     "先頭BOMの有無で要約が一致し、本文内のU+FEFFを保持する。": 1,
     "経由で行う（private関数直接テストを避けるため。`agent-basics:writing-standards`の": 1
   },

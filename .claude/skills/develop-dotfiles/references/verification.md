@@ -8,7 +8,8 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 
 ## テスト配置
 
-テストの要否、期待値の出所、検証単位の選び方は`agent-basics:writing-standards/references/testing.md`に従い、本節は配置と隔離の決まりを持つ。
+テストの要否は`agent-basics:writing-standards/references/testing.md`、期待値の出所と検証単位は`agent-basics:writing-standards/references/testing-design.md`に従う。
+本節は配置と隔離の決まりを持つ。
 
 - テストは対象の近くに置く。
   Pythonモジュールの単体テストは同じディレクトリの`<name>_test.py`とし、文書・設定・スクリプトの実物を読むテストは、そのファイルと同じディレクトリか、対象群を包含する最も近い上位ディレクトリに置く。

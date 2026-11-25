@@ -178,7 +178,7 @@ Web性能を改善・設計・レビューする時は、本番相当のbuildか
 
 ## 完了前の実描画確認
 
-機能の正しさ（受入シナリオの期待結果、データの反映、操作の成否）は、`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選んだ層の自動テストで確かめる。
+機能の正しさ（受入シナリオの期待結果、データの反映、操作の成否）は、`agent-basics:writing-standards/references/testing-design.md`「検証単位の選定」で選んだ層の自動テストで確かめる。
 実描画では、自動テストで判定しにくい使いやすさと見た目の違和感を確かめる。
 実装担当の自己点検と、独立したユーザビリティレビュー（`agent-basics:review-standards/references/reviewer-usability.md`「ユーザビリティレビューの判定」）の両方で、次の順に行う。
 

@@ -50,7 +50,8 @@
 
 コードの実行・OS分岐・テストの層を検収する時に使い、文書の変更が公開契約や実行経路を変える時も影響に応じて含める。
 
-- テストの有効性・内部変更への耐性・観測の手段と環境は、`agent-basics:writing-standards/references/testing.md`の「試験を書く前の確認」「検証単位の選定」「期待値の出所」「分岐条件の効果の裏付け」で評価する。
+- テストの有効性・内部変更への耐性・観測の手段と環境は、`agent-basics:writing-standards/references/testing.md`の「試験を書く前の確認」「分岐条件の効果の裏付け」で評価する。
+  検証単位と期待値は、`agent-basics:writing-standards/references/testing-design.md`の「検証単位の選定」「期待値の出所」で評価する。
 - 入力の生成から最終の利用まで実行した範囲と、fixtureを対象版の標本へ対応付けた根拠を読み、差し替えた境界までの成功と全体の保証を分ける。
 - 競合の順序を確かめるテストは、途中の前提の状態を通った証拠も確かめる（`agent-basics:writing-standards/references/testing.md`「安定性: flakyテスト防止」）。
 - OS分岐と保存済みの成功は`agent-basics:writing-standards/references/testing.md`「プラットフォーム分岐の検証」で判定し、共有モジュールの変更範囲と開発環境・配布環境の初期状態を対応付ける。

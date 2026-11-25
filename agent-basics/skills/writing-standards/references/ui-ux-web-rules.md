@@ -2,7 +2,7 @@
 
 HTML、CSS、JavaScriptでエンドユーザー向けの画面と単体HTML成果物を実装・レビューする時に、ソースコードから判定できる規則を置く。
 技術の選択は原則9（足す前に引く）、性能の改善は原則3（観測したことだけを事実として言う）の適用である。
-操作の結果の正しさは`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選んだ層の自動テストで、分かりやすさは実描画で確かめる。
+操作の結果の正しさは`agent-basics:writing-standards/references/testing-design.md`「検証単位の選定」で選んだ層の自動テストで、分かりやすさは実描画で確かめる。
 参考資料（[Vercel Web Interface Guidelinesの取得時点の原文](https://github.com/vercel-labs/web-interface-guidelines/blob/e3d624baaf29dc1fc645aff3e38f03e564d2d6b1/command.md)、Impeccableの操作とコンポーネントの基準）を日本語へ再構成し、英語の表記に固有の規則を除いた。
 原典と著作権・許諾表示（MIT License、Apache License 2.0）は[第三者表示](../../../THIRD-PARTY-NOTICES.md)にある。
 

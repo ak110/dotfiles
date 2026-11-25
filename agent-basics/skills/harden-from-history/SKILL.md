@@ -46,7 +46,7 @@ description: >
    - 構造か検査が防ぐようになった型について、同じ注意を述べる文書、コメント、レビューの確認項目。
    - コードを言い換えるだけのコメント。
      意味のあるコメントが述べる制約は、型、検査、名前へ移せる時に移す（`agent-basics:writing-standards/references/implementation-time.md`「コメントの記述粒度」）。
-   - 実装の内部を固定する単体テストは、同じ契約をモデル、実際のデータベースなどを使うテスト、E2Eで保証できる時に置き換える（保護対象の判定を先に行う。`agent-basics:writing-standards/references/testing.md`「削除・統合の類型」）。
+   - 実装の内部を固定する単体テストは、同じ契約をモデル、実際のデータベースなどを使うテスト、E2Eで保証できる時に置き換える（保護対象の判定を先に行う。`agent-basics:writing-standards/references/testing-design.md`「削除・統合の類型」）。
 
 ## 失敗例
 
