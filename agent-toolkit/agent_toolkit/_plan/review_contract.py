@@ -81,6 +81,13 @@ def validate(text: str, required: Mapping[str, tuple[int, int]], *, originals: M
         original = (originals or {}).get(name, "")
         numbered = _numbered_conditions(original)
         for row in own:
+            if (
+                row[2] == "主要完成状態"
+                and re.search(r"背景|比較候補|調査結果と判断根拠|不実施", row[4])
+                and not re.search(r"反映内容[1-9][0-9]*|完成条件|目的|原因分析", row[4])
+                and not re.search(r"除外|不採用|実施しない|対象外", row[3])
+            ):
+                errors.append(f"{name}: 条件 {row[1]} は背景・比較候補・不実施の説明だけを実装義務の出典にしている")
             if row[2] != "補足条件" or not numbered:
                 continue
             number = row[1]

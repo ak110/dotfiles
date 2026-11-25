@@ -32,3 +32,9 @@ def test_numbered_conditions_reject_extra_requirement() -> None:
     table = _TABLE + f"| {_SECOND} | 3 | 補足条件 | 比較候補を実装する。 | 背景 |\n"
     with pytest.raises(ValueError, match="原本にない補足条件 3"):
         review_contract.validate(table, _REQUIRED, originals=_ORIGINALS)
+
+
+def test_background_cannot_create_an_implementation_obligation() -> None:
+    table = _TABLE + f"| {_SECOND} | 3 | 主要完成状態 | 比較候補を実装する。 | 調査結果と判断根拠の比較候補 |\n"
+    with pytest.raises(ValueError, match="実装義務の出典"):
+        review_contract.validate(table, _REQUIRED, originals=_ORIGINALS)
