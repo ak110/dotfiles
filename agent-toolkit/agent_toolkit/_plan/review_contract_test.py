@@ -69,3 +69,16 @@ def test_numbered_reference_must_name_the_registered_original_and_item(tmp_path:
         review_contract.validate(
             table.replace("#完成条件1", "#完成条件2"), _REQUIRED, originals=_ORIGINALS, original_paths=paths
         )
+
+
+def test_automatically_numbered_conditions_follow_item_order() -> None:
+    originals = {**_ORIGINALS, _FIRST: _ORIGINALS[_FIRST] + "1. 後続の文。\n   最後まで保つ。\n"}
+    table = _TABLE.replace(
+        f"| {_FIRST} | 2 | 主要完成状態 |",
+        f"| {_FIRST} | 2 | 補足条件 | 1. 後続の文。<br>最後まで保つ。 | 完成条件 2 |\n| {_FIRST} | 3 | 主要完成状態 |",
+    )
+    required = {**_REQUIRED, _FIRST: (2, 1)}
+    review_contract.validate(table, required, originals=originals)
+
+    with pytest.raises(ValueError, match="補足条件 2 が原本の全文と一致しない"):
+        review_contract.validate(table.replace("<br>最後まで保つ。", ""), required, originals=originals)

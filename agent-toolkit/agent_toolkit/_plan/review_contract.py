@@ -39,12 +39,12 @@ def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, tuple[pa
         raise ValueError(f"評価用WI原本を読み込めない: {path}: {error}。一覧と保存本文を直して再準備する") from error
 
 
-def _numbered_conditions(original: str) -> dict[str, str]:
-    conditions: dict[str, str] = {}
-    for item in last_h2_section_items(original, "完成条件"):
+def _numbered_conditions(original: str) -> dict[str, tuple[str, str]]:
+    conditions: dict[str, tuple[str, str]] = {}
+    for number, item in enumerate(last_h2_section_items(original, "完成条件"), 1):
         match = re.fullmatch(r"([0-9]+)[.)][ \t]+(.+)", item, re.DOTALL)
         if match:
-            conditions[match[1]] = " ".join(match[2].split())
+            conditions[str(number)] = (" ".join(match[2].split()), " ".join(item.split()))
     return conditions
 
 
@@ -130,10 +130,13 @@ def validate(
                     errors.append(f"{name}: 原本にない補足条件 {number}")
                 continue
             content = " ".join(re.sub(r"<br\s*/?>", " ", row[3], flags=re.IGNORECASE).split())
-            expected = numbered[number]
-            if content not in {expected, f"{number}. {expected}", f"{number}) {expected}"} and not _condition_reference(
-                content, (original_paths or {}).get(name), number
-            ):
+            expected, original_item = numbered[number]
+            if content not in {
+                expected,
+                original_item,
+                f"{number}. {expected}",
+                f"{number}) {expected}",
+            } and not _condition_reference(content, (original_paths or {}).get(name), number):
                 errors.append(f"{name}: 補足条件 {number} が原本の全文と一致しない")
         for number in numbered.keys() - {row[1] for row in own if row[2] == "補足条件"}:
             errors.append(f"{name}: 原本の補足条件 {number} が表にない")
