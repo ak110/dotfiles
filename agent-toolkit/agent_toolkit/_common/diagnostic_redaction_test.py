@@ -154,3 +154,34 @@ def test_overflow_notice_respects_excerpt_limit(monkeypatch: pytest.MonkeyPatch,
     assert len(result.text.encode() if unit == "bytes" else result.text) <= 40
     with io.BytesIO(f"{_SECRET}\n".encode() * 10) as stream:
         assert len(diagnostic_redaction.read_diagnostic_tail(stream, limit=40).text.encode()) <= 40
+
+
+@pytest.mark.parametrize(
+    ("prefix", "suffix"),
+    [
+        ("ghp_", "A" * 36),
+        ("gho_", "A" * 36),
+        ("ghu_", "A" * 36),
+        ("ghs_", "A" * 36),
+        ("ghr_", "A" * 76),
+        ("github_pat_", "A" * 22 + "_" + "B" * 59),
+        ("ghs_", "123_TkVWRVJfVkFMSUQ." + "A" * 400 + ".T1JfVVNBQkxF-x_y"),
+    ],
+)
+def test_standalone_github_tokens_are_redacted_before_clipping(prefix: str, suffix: str) -> None:
+    token = prefix + suffix
+    oid = "f" * 40
+    text = f"拒否: ({token}). {oid} /checkout/src.py"
+    safe = f"拒否: ({diagnostic_redaction.REDACTED}). {oid} /checkout/src.py"
+    assert diagnostic_redaction.redact_secrets(text) == safe
+    assert diagnostic_redaction.redact_diagnostic_values({"text": [text]}) == {"text": [safe]}
+    assert diagnostic_redaction.diagnostic_excerpt(text, prefix_chars=24) == safe[:24]
+    tail = diagnostic_redaction.DiagnosticTail(70, unit="chars")
+    tail.feed(text[:31])
+    tail.feed(text[31:])
+    assert tail.excerpt().text == safe[-70:]
+
+
+def test_names_and_paths_that_do_not_have_token_shapes_remain() -> None:
+    text = "ghp_ github_pat_input /tmp/ghs_example.py.txt br_ghp_" + "A" * 36
+    assert diagnostic_redaction.redact_secrets(text) == text
