@@ -380,8 +380,9 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
             "array": key in _config_settings.ARRAY_KEYS,
             "temporary": config_usage.allowed_temporary_key(key),
         }
-    usage = usage_observation.snapshot()
+    usage = usage_observation.snapshot(include_history=True)
     state = usage_settings.read_settings()
+    windows = config_usage.profile_windows(usage)
     return {
         "settings": settings,
         "paths": effective,
@@ -389,7 +390,8 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
         "temporary": {"values": temporary, "until": state.get("until")},
         "repositories": json.loads(config_repositories_cli.update_repositories(argparse.Namespace(repos_subcommand="list"))),
         "model_candidates": {engine: sorted(names) for engine, names in _config_settings.KNOWN_MODELS.items()},
-        "usage": config_usage.profile_windows(usage),
+        "usage": config_usage.cli_windows(windows),
+        "reset_editor": config_usage.reset_editor_snapshot(windows, usage["history"], state),
         "model_order_policy": config_usage.MODEL_ORDER_POLICY,
     }
 

@@ -3,6 +3,7 @@
 # dependencies = [
 #     "argcomplete>=3.6.3",
 #     "claude-agent-sdk>=0.2.144,<0.3",
+#     "cryptography>=50.0.2",
 #     "filelock>=3.30",
 #     "markdown-it-py[linkify]>=4.0.0",
 #     "mcp>=2.0.0,<3",
@@ -13,8 +14,10 @@
 #     "pyfltr>=3.34.0",
 #     "pygments",
 #     "pytilpack[quart]>=1.54.1",
+#     "pywebpush>=2.5.0",
 #     "pyyaml",
 #     # 再帰inotify監視がKeyErrorで停止する版を除外する（PYTHONDEVMODE=1のbrowser-e2eで再現）。
+#     "requests>=2.32.5",
 #     "watchdog>=6.0.0,!=7.0.0",
 # ]
 #

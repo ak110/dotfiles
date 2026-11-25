@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk import config_settings, help_text
-from agent_toolkit._common import registry_index, session_registry, usage_observation, usage_settings
+from agent_toolkit._common import claude_usage_limit, registry_index, session_registry, usage_observation, usage_settings
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.usage_settings import deadline, read_metadata, read_settings, settings_path, temporary_settings
@@ -75,6 +75,111 @@ def profile_windows(observed: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         result.append(window)
     return result
+
+
+def cli_windows(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    display_fields = {"group", "severity", "is_active", "limit_name"}
+    return [{key: value for key, value in window.items() if key not in display_fields} for window in windows]
+
+
+def _cli_metadata(metadata: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    display_fields = {
+        "claude": {"extra_usage_utilization"},
+        "codex": {
+            "weekly_window",
+            "ordinaryUsageAllowed",
+            "spendControlReached",
+            "rateLimitReachedType",
+            "credits",
+            "reset_credit_details",
+        },
+    }
+    return {
+        engine: {key: value for key, value in profile.items() if key not in display_fields[engine]}
+        for engine, profile in metadata.items()
+    }
+
+
+def _normalized_window(original: dict[str, Any]) -> dict[str, Any]:
+    window = original.copy()
+    kind, scope = window["window_id"], window["scope"]
+    if window["engine"] != "claude":
+        return window
+    if kind in claude_usage_limit.REPORT_WINDOWS:
+        kind, scope = claude_usage_limit.REPORT_WINDOWS[kind]
+    elif kind in {"session", "weekly_all"}:
+        scope = "all"
+    elif kind == "weekly_scoped" and scope.startswith("{"):
+        try:
+            parts = json.loads(scope)
+        except ValueError:
+            parts = {}
+        model = parts.get("model") if isinstance(parts, dict) else None
+        if isinstance(model, dict):
+            model = model.get("display_name")
+        if isinstance(model, str):
+            family = next((part for part in ("opus", "sonnet") if part in model.lower()), "")
+            if family:
+                scope = f"model:{family}"
+    window.update(
+        window_id=kind,
+        scope=scope,
+        aliases=sorted({original["window_id"], original["scope"], kind, scope}),
+        duration_seconds={"session": 18000, "weekly_all": 604800, "weekly_scoped": 604800}.get(kind),
+    )
+    return window
+
+
+def display_windows(windows: list[dict[str, Any]], history: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for original in windows:
+        window = _normalized_window(original)
+        grouped.setdefault((window["engine"], window["window_id"], window["scope"]), []).append(window)
+
+    visible = []
+    for observations in grouped.values():
+        ordered = sorted(observations, key=lambda window: window["observed_at"], reverse=True)
+        latest = ordered[0]
+        latest["usage_observed_at"] = latest["observed_at"]
+        if latest["engine"] == "claude" and latest["used_percent"] is None and latest["resets_at"] is not None:
+            candidates = [
+                _normalized_window(prior)
+                for prior in history or []
+                if prior["engine"] == "claude"
+                and prior["account"] == latest["account"]
+                and prior["resets_at"] == latest["resets_at"]
+                and prior["used_percent"] is not None
+                and prior["observed_at"] < latest["observed_at"]
+            ]
+            older = [
+                prior
+                for prior in (*ordered[1:], *candidates)
+                if prior["window_id"] == latest["window_id"]
+                and prior["scope"] == latest["scope"]
+                and prior["resets_at"] == latest["resets_at"]
+                and prior["used_percent"] is not None
+            ]
+            if older:
+                prior = max(older, key=lambda row: row["observed_at"])
+                latest.update(used_percent=prior["used_percent"], usage_observed_at=prior["observed_at"])
+        visible.append(latest)
+    return sorted(visible, key=lambda item: (item["engine"], item["duration_seconds"] or float("inf"), item["window_id"]))
+
+
+def reset_editor_snapshot(
+    windows: list[dict[str, Any]], history: list[dict[str, Any]], state: dict[str, Any]
+) -> dict[str, Any]:
+    claude = read_metadata("claude")
+    codex = read_metadata("codex")
+    return {
+        "accounts": {
+            "claude": {"account": claude.get("account"), "plan": claude.get("contract")},
+            "codex": {"account": codex.get("permission_account"), "plan": codex.get("contract")},
+        },
+        "claude_inventory": state.get("claude_reset_inventory", []),
+        "codex_weekly": codex.get("weekly_window"),
+        "windows": display_windows(windows, history),
+    }
 
 
 def build_parser(sub: Any) -> None:
@@ -255,11 +360,15 @@ def dispatch(
     print(
         json.dumps(
             {
-                "usage": {**observed, "windows": visible_windows},
+                "usage": {
+                    **observed,
+                    "windows": cli_windows(visible_windows),
+                    "current_windows": cli_windows(observed["current_windows"]),
+                },
                 "model_order_policy": MODEL_ORDER_POLICY,
                 "settings": model_settings,
                 "temporary": {key: settings.get(key) for key in ("values", "until")},
-                "metadata": metadata,
+                "metadata": _cli_metadata(metadata),
                 "refresh_failures": settings.get("refresh_failures", []),
                 "running_sessions": running,
                 "application_boundary": "稼働中のturnは終了させず、次の新規起動・継続境界で実効候補を適用",

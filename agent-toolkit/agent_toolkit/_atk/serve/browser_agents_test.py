@@ -56,7 +56,7 @@ async def test_agent_record_link_and_independent_remote_failure(
         record = panel.get_by_role("link", name=session_id, exact=True)
         await record.focus()
         exited.set()
-        await playwright.async_api.expect(panel.get_by_text("終了", exact=True)).to_be_visible()
+        await playwright.async_api.expect(panel.get_by_text("terminated", exact=True)).to_be_visible()
         await playwright.async_api.expect(record).to_be_focused()
         await record.press("Enter")
         await playwright.async_api.expect(page.locator("#screen-sessions")).to_be_visible()
@@ -83,7 +83,7 @@ async def test_agent_remote_record_lookup_failure_preserves_agent_rows(
     async with _serve(app, browser) as (_context, page, port):
         await page.goto(f"http://127.0.0.1:{port}/agents")
         row = page.locator('[data-agent-id="remote-agent"]')
-        await playwright.async_api.expect(row).to_contain_text("稼働中")
+        await playwright.async_api.expect(row).to_contain_text("running")
         await playwright.async_api.expect(row).to_contain_text("記録の所在を確認できません")
         await playwright.async_api.expect(row.get_by_role("link")).to_have_count(0)
 
@@ -154,11 +154,11 @@ async def test_agent_activity_records_drive_root_states(
         await playwright.async_api.expect(panel).not_to_contain_text("経過時間は不明")
         await playwright.async_api.expect(panel).not_to_contain_text("行動・文脈使用量は不明")
         for identifier, expected in (
-            ("live", "稼働中"),
-            ("alone", "稼働中"),
-            ("finished", "終了"),
-            ("missing", "不明"),
-            ("broken", "不明"),
+            ("live", "running"),
+            ("alone", "running"),
+            ("finished", "terminated"),
+            ("missing", "unknown"),
+            ("broken", "unknown"),
         ):
             root = page.locator(f'li[data-agent-id="{identifier}"]')
             await playwright.async_api.expect(root.locator(":scope > .agent-row > .agent-status .agent-value")).to_have_text(

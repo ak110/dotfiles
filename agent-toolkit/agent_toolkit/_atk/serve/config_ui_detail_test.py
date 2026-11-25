@@ -16,7 +16,7 @@ def test_assets_are_self_contained() -> None:
         + "".join(content for name, content in assets.SCRIPTS.items() if name == "wi.js" or name.startswith("wi_"))
     )
     assert "https://" not in combined
-    assert "http://" not in combined
+    assert "http://" not in combined.replace("http://www.w3.org/2000/svg", "")
 
 
 def test_assets_global_error_does_not_restore_refresh_after_user_focus_move() -> None:

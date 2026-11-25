@@ -13,20 +13,8 @@
   margin: 0;
   background: var(--color-background);
 }
-#screen-wi input,
-#screen-wi select,
-#screen-wi textarea {
+#screen-wi :is(input:not([type="checkbox"], [type="radio"]), select, textarea) {
   width: 100%;
-  max-width: 100%;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  color: var(--color-text);
-  background: var(--color-surface);
-  font: inherit;
-}
-#screen-wi textarea {
-  resize: vertical;
 }
 #screen-wi [hidden] {
   display: none !important;
@@ -102,10 +90,10 @@
 #screen-wi .list-warning,
 #screen-wi .dialog-message {
   padding: var(--space-3);
-  border: 1px solid #f2b8b5;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   color: var(--color-danger);
-  background: #fff1f0;
+  background: var(--color-danger-quiet);
   white-space: pre-wrap;
 }
 /* ダイアログ本文はスクロールするため、結果表示領域を上端へ留め、スクロール位置によらず可視にする。 */
@@ -168,14 +156,14 @@
 }
 #screen-wi .list-warning {
   margin-top: var(--space-3);
-  color: #7a4e00;
-  background: #fffaeb;
-  border-color: #fedf89;
+  color: var(--color-warning);
+  background: var(--color-warning-quiet);
+  border-color: var(--color-border);
 }
 #screen-wi .success-message {
   color: var(--color-success);
-  background: #ecfdf3;
-  border-color: #abefc6;
+  background: var(--color-success-quiet);
+  border-color: var(--color-border);
 }
 #screen-wi .app-layout {
   display: grid;
@@ -188,12 +176,10 @@
 }
 #screen-wi .card {
   min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-medium);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-surface);
-  box-shadow: var(--shadow-card);
 }
+#screen-wi .filters { border-inline-end: 1px solid var(--color-border); }
 #screen-wi .filters-body,
 #screen-wi .dialog-form-fields,
 #screen-wi .edit-panel,
@@ -225,10 +211,7 @@
   min-height: 2.75rem;
   cursor: pointer;
 }
-#screen-wi .wi-display-mode input {
-  width: auto;
-  accent-color: var(--color-primary);
-}
+#screen-wi .wi-display-mode input { flex: 0 0 auto; }
 #screen-wi #clear-filters-button {
   margin-block: var(--space-2);
 }
@@ -248,156 +231,95 @@
   margin: 0 0 var(--space-2);
   font-size: inherit;
 }
-#screen-wi .entry-pane {
-  container: wi-list / inline-size;
-  min-height: 34rem;
-}
-#screen-wi .entry-columns,
-#screen-wi .entry-row {
-  display: grid;
-  /* 識別子と状態の列幅を固定し、要約だけへ残りの幅を配分する。 */
-  grid-template-columns:
-    15rem
-    14rem
-    15rem
-    minmax(0, 1fr)
-    auto;
-  gap: var(--space-2);
-  align-items: center;
-}
 #screen-wi .entry-columns {
-  margin-top: var(--space-3);
-  padding: 0 0 0 var(--space-2);
-  color: var(--color-secondary-text);
-  font-size: var(--font-size-secondary);
-  font-weight: 700;
+  display: flex;
+  justify-content: flex-end;
+  padding-block: var(--space-1);
+  border-block-end: 1px solid var(--color-border);
 }
 #screen-wi .entry-list {
-  display: grid;
-  gap: var(--space-2);
-  margin: var(--space-2) 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-#screen-wi .entry-select {
+#screen-wi .entry-row {
   display: grid;
-  grid-column: 1 / 5;
-  grid-template-columns: subgrid;
-  width: 100%;
-  padding: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding-inline-end: var(--space-1);
+}
+#screen-wi .entry-row:hover {
+  background: var(--color-normal-hover);
+}
+#screen-wi .entry-row:has(> [aria-current="true"]) {
+  background: var(--color-primary-quiet);
+}
+#screen-wi .entry-select {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: fit-content(44%) fit-content(50%) minmax(0, 1fr);
+  grid-template-rows: 1.25em 1rem;
+  column-gap: var(--space-1);
+  min-inline-size: 0;
+  padding: 3px var(--space-2);
+  border-inline-start: 2px solid transparent;
   color: var(--color-text);
-  text-align: left;
   text-decoration: none;
-  background: var(--color-surface);
-  font: inherit;
-  cursor: pointer;
-}
-#screen-wi .entry-copy {
-  grid-column: 5;
-  /* 完了文言とボタンの余白を常に予約し、題名へ割り当てた幅を変えない。 */
-  inline-size: 8rem;
-  padding-inline: 0.35rem;
-  white-space: nowrap;
-}
-#screen-wi .entry-select:hover {
-  border-color: #aeb9cd;
-  background: #f7f9fd;
-}
-#screen-wi .entry-select[aria-current="true"] {
-  border-color: var(--color-primary);
-  background: #eef2ff;
-  box-shadow: 0 0 0 1px var(--color-primary);
 }
 #screen-wi .entry-select[data-unanswered-uwi="true"] {
-  border-left: 0.4rem solid var(--color-warning);
-  background: #fffdf5;
+  border-inline-start-color: var(--color-warning);
 }
-#screen-wi .entry-select[data-kind="unknown"] {
-  border-style: dashed;
-}
-#screen-wi .entry-cell {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-#screen-wi .entry-cell::before {
-  display: none;
-}
-#screen-wi .filename-cell,
-#screen-wi .target-repo-cell,
 #screen-wi .summary-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  grid-column: 1 / -1;
+  font-weight: 650;
 }
+#screen-wi .entry-meta { display: contents; }
+#screen-wi :is(.entry-meta, .status-cell) {
+  color: var(--color-secondary-text);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+#screen-wi .filename-cell { grid-area: 2 / 1; }
+#screen-wi .target-repo-cell { grid-area: 2 / 3; }
 #screen-wi .status-cell {
+  grid-area: 2 / 2;
   display: flex;
-  flex-wrap: nowrap;
-  gap: var(--space-1);
   align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  overflow: hidden;
   white-space: nowrap;
 }
-#screen-wi .time-cell {
-  font-size: var(--font-size-secondary);
+#screen-wi .status-cell > .status-chip { font-size: 0.75rem; }
+#screen-wi .status-cell > .state-badge {
+  flex-shrink: 0;
 }
-#screen-wi .entry-kind {
-  font-weight: 700;
+#screen-wi .entry-copy { margin-inline-start: var(--space-1); }
+
+@media (max-width: 500px) {
+  #screen-wi .entry-list { margin-inline: calc(-1 * var(--space-1)); }
+  #screen-wi .entry-row { padding-inline-end: 0; }
+  #screen-wi .entry-select {
+    grid-template-columns: minmax(0, 1fr) fit-content(75%);
+    padding-inline: var(--space-1);
+  }
+  #screen-wi .summary-cell { grid-area: 1 / 1; }
+  #screen-wi .status-cell { grid-area: 1 / 2; }
+  #screen-wi .entry-meta {
+    grid-area: 2 / 1 / 3 / -1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  #screen-wi .entry-meta > .filename-cell { flex-shrink: 0; max-inline-size: 100%; }
+  #screen-wi .status-cell > :is(.entry-kind, .unanswered-badge, .blocked-badge) { flex-shrink: 0; }
+  #screen-wi .status-cell > :is(.important-badge, .branch-badge, .plan-badge) { order: 1; }
+  #screen-wi .entry-copy { margin-inline-start: 0; }
 }
-#screen-wi .state-badge,
-#screen-wi .plan-badge,
-#screen-wi .branch-badge,
-#screen-wi .attention-badge,
-#screen-wi .blocked-badge {
-  display: inline-flex;
-  width: fit-content;
-  padding: 0.2rem 0.55rem;
-  border-radius: 999px;
-  color: #344054;
-  background: #e9edf4;
-  font-size: var(--font-size-secondary);
-  font-weight: 700;
-}
-#screen-wi .plan-badge {
-  color: #6941c6;
-  background: #f4f3ff;
-}
-#screen-wi .branch-badge {
-  color: #05603a;
-  background: #d1fadf;
-}
-#screen-wi .attention-badge {
-  color: #7a4e00;
-  background: #fef0c7;
-}
-/* 回答待ちのblockedは自動着手を止めている状態として注意色で示す。 */
-#screen-wi .blocked-badge {
-  color: #7a4e00;
-  background: #fef0c7;
-}
-#screen-wi .state-badge[data-state="inbox"] {
-  color: #175cd3;
-  background: #eff8ff;
-}
-/* 反映後の観測だけが残るinboxの項目は、処理が続いている項目としてprocessingと同じ色で示す。 */
-#screen-wi .state-badge[data-state="processing"],
-#screen-wi .state-badge[data-needs-verify="true"] {
-  color: var(--color-warning);
-  background: #fffaeb;
-}
-#screen-wi .state-badge[data-state="adopted"] {
-  color: var(--color-success);
-  background: #ecfdf3;
-}
-/* 冷却中はneeds-verifyより優先し、保存状態inboxと同じ色にする。 */
-#screen-wi .state-badge[data-cooldown="true"] {
-  color: #175cd3;
-  background: #eff8ff;
-}
-#screen-wi .state-badge[data-state="rejected"] {
-  color: var(--color-danger);
-  background: #fff1f0;
-}
+
+#screen-wi .entry-copy [data-copy-done],
+#screen-wi .entry-copy[data-copied="true"] [data-copy-ready] { display: none; }
+#screen-wi .entry-copy[data-copied="true"] [data-copy-done] { display: block; }
 #screen-wi .loading-state,
 #screen-plans .loading-state,
 #screen-wi .empty-state {

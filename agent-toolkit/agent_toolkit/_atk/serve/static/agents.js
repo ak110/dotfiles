@@ -23,28 +23,40 @@ function agentRow(agent, depth) {
   const item = document.createElement("li");
   item.dataset.agentId = agent.id;
   const row = document.createElement("div");
-  row.className = "agent-row";
+  row.className = "agent-row list-row";
   row.style.setProperty("--agent-depth", depth);
   const identity = document.createElement("div");
   identity.className = "agent-identity";
   const target = agent.record ? document.createElement("a") : document.createElement("span");
   if (agent.record) target.href = BASE_PATH + "/sessions?" + new URLSearchParams(agent.record);
   target.textContent = agent.id;
-  identity.append(target);
   const name = agent.name || agent.engine;
-  if (name) identity.append(agentText("agent-name", name));
+  const caption = agentText("text-clip", "");
+  caption.title = [agent.id, name].filter(Boolean).join(" · ");
+  caption.append(target);
+  if (name) caption.append(` · ${name}`);
+  const action = agent.action?.startsWith("commandExecution:")
+    ? agent.action.match(/(?:^|\s)command=([\s\S]*)$/)?.[1] || "コマンドを実行中"
+    : agent.action;
+  const subline = [action, agent.retry_detail, agent.retry_count, agent.record_error].filter(Boolean).join(" · ");
+  const actionText = agentText("agent-action text-clip", subline);
+  actionText.title = subline;
+  identity.append(caption, actionText);
   row.append(identity);
-  for (const [field, label] of [["status", "状態"], ["elapsed", "経過時間"], ["usage", "文脈使用量"]]) {
-    if (!agent[field]) continue;
+  const state = {"稼働中": "running", "終了": "terminated", "不明": "unknown"}[agent.status] || agent.status;
+  for (const [field, label, value] of [
+    ["status", "状態", state], ["elapsed", "経過時間", agent.elapsed], ["usage", "文脈使用量", agent.usage],
+  ]) {
     const cell = document.createElement("span");
-    cell.className = `agent-${field}`;
-    cell.append(agentText("visually-hidden", `${label}: `), agentText("agent-value", agent[field]));
+    cell.className = `agent-${field} text-clip`;
+    if (value) {
+      cell.title = value;
+      const valueNode = agentText(field === "status" ? "agent-value status-chip" : "agent-value", value);
+      if (field === "status") valueNode.dataset.state = state;
+      cell.append(agentText("visually-hidden", `${label}: `), valueNode);
+    }
     row.append(cell);
   }
-  const action = [agent.action, agent.retry_detail, agent.retry_count].filter(Boolean).join(" · ");
-  if (action) identity.append(agentText("agent-action", action));
-  if (agent.record_error) identity.append(agentText("agent-record-note", agent.record_error));
-  if (agent.running || agent.status === "稼働中") row.dataset.running = "true";
   item.append(row);
   return item;
 }
@@ -88,7 +100,7 @@ function renderRoots(content, roots) {
   if (focused) {
     const sameTarget = Array.from(list.querySelectorAll("[data-agent-id]"))
       .find(row => row.dataset.agentId === focused.dataset.agentId);
-    (sameTarget?.querySelector(":scope > .agent-row > .agent-identity > a") ?? checkbox).focus({preventScroll: true});
+    (sameTarget?.querySelector(":scope > .agent-row > .agent-identity a") ?? checkbox).focus({preventScroll: true});
   }
 }
 

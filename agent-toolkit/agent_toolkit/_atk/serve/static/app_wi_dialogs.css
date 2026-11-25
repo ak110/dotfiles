@@ -5,9 +5,10 @@
   max-height: calc(100svh - 2rem);
   overflow: hidden;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-medium);
-  box-shadow: 0 1.5rem 4rem rgb(20 30 50 / 0.25);
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 /* 新規追加は本文を長く書くため、幅が許す範囲で詳細（72rem）よりやや狭い幅まで広げる。 */
 #screen-wi dialog.create-dialog {
@@ -17,7 +18,7 @@
   width: min(72rem, calc(100% - 2rem));
 }
 #screen-wi dialog::backdrop {
-  background: rgb(15 23 42 / 0.55);
+  background: var(--color-backdrop);
 }
 #screen-wi .dialog-frame {
   display: grid;
@@ -123,8 +124,8 @@
   overflow-wrap: anywhere;
 }
 .markdown-body {
-  color: var(--color-body-text);
-  font-family: var(--font-family-body);
+  color: var(--color-text);
+  font-family: var(--font-family-base);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   letter-spacing: var(--letter-spacing-body);
@@ -154,7 +155,7 @@
 .markdown-body :not(pre) > code {
   padding: 0.12rem 0.35rem;
   border-radius: 0.3rem;
-  background: #e9eef5;
+  background: var(--color-background);
 }
 .markdown-body pre code {
   padding: 0;
@@ -238,7 +239,7 @@
   margin-top: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-small);
-  background: #fff7ed;
+  background: var(--color-warning-quiet);
 }
 #screen-wi .force-confirmation input {
   width: auto;
@@ -254,9 +255,9 @@
   max-width: min(28rem, calc(100% - 2rem));
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-small);
-  color: #fff;
-  background: #1f2937;
-  box-shadow: var(--shadow-card);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
 }
 #screen-wi .operation-notice[data-error="true"] {
   background: var(--color-danger);
@@ -287,58 +288,6 @@
     transform: rotate(360deg);
   }
 }
-/* 固定識別列・コピー完了文言・間隔を確保した後も、題名へ読み取れる幅を残す。
-   サイドバーとカードの余白を除いた一覧自身の幅で切り替える。 */
-@container wi-list (max-width: 73rem) {
-  #screen-wi .entry-columns {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  #screen-wi .entry-metadata-label {
-    display: none;
-  }
-  #screen-wi .entry-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  #screen-wi .entry-select {
-    grid-column: 1;
-    grid-template-columns: 1fr;
-    grid-template-rows: repeat(4, auto);
-    gap: var(--space-1);
-    padding: var(--space-3);
-  }
-  #screen-wi .entry-copy {
-    grid-column: 2;
-  }
-  #screen-wi .filename-cell,
-  #screen-wi .target-repo-cell {
-    overflow: visible;
-    white-space: normal;
-    font-size: var(--font-size-secondary);
-    color: var(--color-secondary-text);
-  }
-  #screen-wi .filename-cell {
-    grid-row: 3;
-  }
-  #screen-wi .target-repo-cell {
-    grid-row: 4;
-  }
-  #screen-wi .summary-cell {
-    grid-row: 1;
-  }
-  #screen-wi .status-cell {
-    grid-row: 2;
-    flex-wrap: wrap;
-  }
-}
-@container wi-list (max-width: 20rem) {
-  #screen-wi .entry-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  #screen-wi .entry-row .entry-copy {
-    grid-column: 1;
-    justify-self: end;
-  }
-}
 @media (max-width: 940px) {
   #screen-wi .app-header {
     padding-inline: var(--space-2);
@@ -355,7 +304,7 @@
     padding: var(--space-2);
   }
   #screen-wi .entry-pane {
-    min-height: 0;
+    padding-inline: 0;
   }
   #screen-wi .filters {
     padding: var(--space-3);

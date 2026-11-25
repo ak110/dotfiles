@@ -11,6 +11,7 @@ import uuid
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import attachments as _attachments
 from agent_toolkit._atk.wi import bulk as _bulk
 from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
@@ -446,6 +447,7 @@ def transition_entries(
             inbox_with_commit.extend(
                 _inbox_names_with_commit({path: _wi_entries.entry_state_of(path) for path in paths}, commit_values)
             )
+        attachment_paths = _attachments.paths_for_removal(private_notes, paths) if action == "remove" else []
         _apply_transition(
             private_notes,
             paths,
@@ -458,8 +460,10 @@ def transition_entries(
             effect_check_reason=effect_check_reason,
             processing_owner=_owner.current() if actor_is_agent and action == "start-processing" else None,
         )
+        for path in attachment_paths:
+            path.unlink()
         message = _transition_commit_message(action, len(paths), note)
-        changed = [str(path.relative_to(private_notes)) for path in paths]
+        changed = [str(path.relative_to(private_notes)) for path in (*paths, *attachment_paths)]
         if guarded:
             mutation.commit_guarded(message, changed, lambda: _owner.verify_upstream(private_notes, guarded))
         elif action == "start-processing":

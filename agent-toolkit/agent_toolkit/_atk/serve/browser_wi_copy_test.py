@@ -87,10 +87,7 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
         }""")
         assert metrics["width"] >= metrics["prefixWidth"], metrics
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-        columns_visible = await page.locator(".entry-metadata-label").first.is_visible()
-        assert columns_visible is (width == 1920 and list_width != 1168)
-        if not columns_visible:
-            assert metrics["summaryTop"] < metrics["statusTop"]
+        assert metrics["summaryTop"] < metrics["statusTop"]
 
     await assert_readable()
 
@@ -152,27 +149,21 @@ async def test_work_item_copy_failure_survives_screen_switch(screen_harness: _Sc
 
 @pytest.mark.parametrize("width", [320, 1920])
 @pytest.mark.asyncio(loop_scope="session")
-async def test_copy_all_is_summary_column_header(browser_harness: _BrowserHarness, width: int) -> None:
+async def test_copy_all_is_above_individual_copy(browser_harness: _BrowserHarness, width: int) -> None:
     page = browser_harness.page
     await page.set_viewport_size({"width": width, "height": 900})
     await _observe_screen_requests(page)
     await page.goto(browser_harness.base_url + "/")
     await _wait_screen_requests_consumed(page, ("/api/events",))
     button = page.get_by_role("button", name="全てコピー", exact=True)
-    label = page.locator(".summary-column-label")
     individual = page.locator("#entry-list .entry-copy").first
     await playwright.async_api.expect(button).to_be_visible()
-    await playwright.async_api.expect(label).to_be_visible()
     await playwright.async_api.expect(individual).to_be_visible()
     button_box = await button.bounding_box()
-    label_box = await label.bounding_box()
     individual_box = await individual.bounding_box()
-    assert button_box is not None and label_box is not None and individual_box is not None
-    assert label_box["x"] + label_box["width"] <= button_box["x"]
-    assert label_box["y"] < button_box["y"] + button_box["height"]
-    assert button_box["y"] < label_box["y"] + label_box["height"]
+    assert button_box is not None and individual_box is not None
     assert button_box["y"] + button_box["height"] <= individual_box["y"]
-    assert abs(button_box["x"] - individual_box["x"]) <= 1
+    assert abs(button_box["x"] + button_box["width"] - individual_box["x"] - individual_box["width"]) <= 4
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 

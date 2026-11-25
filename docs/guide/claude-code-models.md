@@ -39,6 +39,14 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 追加課金の使用額、サブスクリプションの使用率、トークンから推定したAPI料金は別の値である。
 
 resetの自動消費は`usage_reset_permissions`の許可だけを使う。
+`atk serve`の「利用枠」では、使用率とリセット権を確認できる。
+画面で許可を登録するには「リセットの許可を設定」でエンジン・アカウントを選び、回数と開始・終了を確認して追加する。
+終了は週次リセットの1〜3日前を選べる。
+日時はブラウザーの時刻で入力する。
+おすすめは入力を補うだけで、保存は自動で行わない。
+CLIで許可を書く場合、Codexの`account`は`atk config usage --json`の`metadata.codex.permission_account`を使う。
+空なら`atk config usage --refresh`で取り直すか、メールアドレスまたはそのSHA-256を使う。
+Claudeでは登録済みの在庫の`account`を使う。
 `account`は確認したアカウント、日時はタイムゾーン付き、`count`は期間内の上限回数とする。
 Codexの対象は`scope`を`codex`とし、旧`codex_auto_reset=true`だけを消費許可には読み替えない。
 自然回復が近い場合や作業がない場合は消費しない。

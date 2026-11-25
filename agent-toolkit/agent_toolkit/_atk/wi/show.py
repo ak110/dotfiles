@@ -4,7 +4,7 @@ import pathlib
 import sys
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi import background_sync
+from agent_toolkit._atk.wi import attachments, background_sync
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
@@ -59,6 +59,10 @@ class _ShowOutput:
             self.without_field += 1
             return
         self.user_fields.append(f"記入欄: {name} {heading} あり 開始行: {start + field[1] - 1}")
+
+    def attachment_list(self, private_notes: pathlib.Path, name: str) -> None:
+        for path in attachments.paths(private_notes, name):
+            self.write(f"添付: {path.name} ({path.relative_to(private_notes).as_posix()})")
 
     def finish(self) -> None:
         if self.user_fields is not None and self.without_field:
@@ -133,6 +137,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             output.write(f"## target_repo: {target_repo}")
             output.write(f"### {path.name}{label}{_branch_label(text, target_repo, branch_settings)}")
             output.body(path.name, text, kind, args)
+            output.attachment_list(private_notes, path.name)
             if len(selected_by_name) > 1:
                 output.write()
         output.finish()
@@ -167,6 +172,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                         label = f" [{state}/{'answered' if _wi_uwi_scan.is_uwi_answered(text) else 'unanswered'}]"
                     output.write(f"### {name}{label}{_branch_label(text, repo, branch_settings)}")
                     output.body(name, text, header_type, args)
+                    output.attachment_list(private_notes, name)
                     output.write()
     output.finish()
 
