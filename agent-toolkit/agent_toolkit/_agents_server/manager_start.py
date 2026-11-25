@@ -27,6 +27,7 @@ from agent_toolkit._agents_server import (
     unavailable_candidates,
     wait_targets,
 )
+from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import (
     validate_cwd,
@@ -115,11 +116,25 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             )
         except ValueError as error:
             raise ActionableError(str(error), next_action=MODEL_TYPE_NEXT_ACTION) from error
-        if codex_models.needs_catalog(candidates):
-            catalog = await backends.model_catalog(self._backend(backends.CODEX_ENGINE)).list_models()
-            candidates = codex_models.resolve_candidates(candidates, catalog)
         unsupported = dict(excluded_candidates or {})
         candidates = [candidate for candidate in candidates if candidate not in unsupported]
+        if codex_models.needs_catalog(candidates):
+            catalog_error = None
+            try:
+                catalog = await backends.model_catalog(self._backend(backends.CODEX_ENGINE)).list_models()
+            except (AppServerError, SessionInitializationTimeoutError, codex_models.CatalogResponseError) as error:
+                catalog_error = str(error)
+                catalog = []
+            resolved = []
+            for candidate in candidates:
+                if catalog_error is not None and codex_models.requires_catalog(candidate):
+                    unsupported[candidate] = catalog_error
+                    continue
+                try:
+                    resolved.append(codex_models.resolve_candidate(candidate, catalog))
+                except codex_models.CatalogResolutionError as error:
+                    unsupported[candidate] = str(error)
+            candidates = [candidate for candidate in resolved if candidate not in unsupported]
         if not candidates:
             raise ActionableError(
                 "no model candidates remain: " + "; ".join(unsupported.values()), next_action=MODEL_TYPE_NEXT_ACTION

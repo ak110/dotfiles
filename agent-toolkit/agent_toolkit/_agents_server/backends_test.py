@@ -8,7 +8,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agent_toolkit._agents_server import backends, engine_availability, manager, state
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._agents_server.codex_protocol import AppServerError, StartCandidateUnavailable
+from agent_toolkit._common import codex_models, session_registry, state_paths
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -130,3 +132,88 @@ async def test_orphan_takeover_only_publishes_confirmed_codex_turn(
         else:
             assert resolution.state is session_registry.Resolution.RUNNING
             read_turns.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["initialize", "response", "unknown-family"])
+@pytest.mark.parametrize("mixed", [False, True])
+async def test_start_localizes_codex_catalog_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str, mixed: bool
+) -> None:
+    async with manager.AgentsServerManager(None) as owner:
+        codex = FakeBackend(owner.sessions, "codex")
+        claude = FakeBackend(owner.sessions, "claude")
+        install_backend(owner, "codex", codex)
+        install_backend(owner, "claude", claude)
+        if failure == "initialize":
+            catalog = AsyncMock(side_effect=AppServerError("initialize refused"))
+            reason = "initialize refused"
+        elif failure == "response":
+
+            async def invalid_catalog() -> list[dict[str, Any]]:
+                return await codex_models.fetch_catalog(AsyncMock(return_value={"data": [None]}))
+
+            catalog = AsyncMock(side_effect=invalid_catalog)
+            reason = "モデル配列"
+        else:
+            catalog = AsyncMock(return_value=[])
+            reason = "利用可能なterra系列"
+        monkeypatch.setattr(codex, "list_models", catalog)
+        if mixed:
+            attempts = []
+            start_claude = claude.start
+
+            async def unavailable(*_args: Any, **_kwargs: Any) -> state.SessionState:
+                attempts.append("codex")
+                raise StartCandidateUnavailable("明示候補はこの試験では起動しない")
+
+            async def start(*args: Any, **kwargs: Any) -> state.SessionState:
+                attempts.append("claude")
+                return await start_claude(*args, **kwargs)
+
+            monkeypatch.setattr(codex, "start", unavailable)
+            monkeypatch.setattr(claude, "start", start)
+            result = await owner.start("codex:terra/medium,codex:gpt-6-sol/medium,claude:sonnet/medium", "調査", str(tmp_path))
+            assert attempts == ["codex", "claude"]
+            reasons = {item["model"]: item["reason"] for item in result["excluded_candidates"]}
+            assert reason in reasons["terra"]
+        else:
+            with pytest.raises(ActionableError, match=reason):
+                await owner.start("codex:terra/medium", "調査", str(tmp_path))
+            assert not codex.start_calls and not claude.start_calls
+        catalog.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("request_catalog", [False, True])
+async def test_start_keeps_usable_series_and_avoids_unneeded_catalog(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request_catalog: bool
+) -> None:
+    async with manager.AgentsServerManager(None) as owner:
+        codex = FakeBackend(owner.sessions, "codex")
+        install_backend(owner, "codex", codex)
+        catalog = AsyncMock(
+            return_value=[
+                {"id": "gpt-6-sol", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}]},
+            ]
+        )
+        monkeypatch.setattr(codex, "list_models", catalog)
+        model = "codex:sol/high,codex:terra/medium,codex:sol/medium" if request_catalog else "codex:gpt-6-sol/medium"
+        result = await owner.start(model, "調査", str(tmp_path))
+        assert codex.start_calls == [("gpt-6-sol", "medium", "delegate")]
+        assert catalog.await_count == int(request_catalog)
+        if request_catalog:
+            assert [item["model"] for item in result["excluded_candidates"]] == ["sol", "terra"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [RuntimeError, asyncio.CancelledError])
+async def test_start_does_not_hide_unrelated_catalog_exceptions(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, error: type[BaseException]
+) -> None:
+    async with manager.AgentsServerManager(None) as owner:
+        codex = FakeBackend(owner.sessions, "codex")
+        install_backend(owner, "codex", codex)
+        monkeypatch.setattr(codex, "list_models", AsyncMock(side_effect=error("一覧の別の例外")))
+        with pytest.raises(error, match="一覧の別の例外"):
+            await owner.start("codex:sol/medium,claude:sonnet/medium", "調査", str(tmp_path))
