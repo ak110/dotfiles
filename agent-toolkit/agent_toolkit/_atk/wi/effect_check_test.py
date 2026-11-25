@@ -4,23 +4,41 @@ import datetime
 import json
 import pathlib
 import subprocess
-import time
+import types
+from typing import Any
 
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk.wi import effect_check, frontmatter, readiness, sync
+from agent_toolkit._atk.wi import background_sync, effect_check, frontmatter, readiness, sync
 from agent_toolkit._atk.wi.mutations import targets
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_entry_files import entry_path, write_awi, write_uwi
 
 
-def _wait_for_push(notes: pathlib.Path) -> None:
-    head = git_repository.git_output(notes, "rev-parse", "HEAD")
-    deadline = time.monotonic() + 5
-    while git_repository.git_output(notes, "rev-parse", "origin/main") != head and time.monotonic() < deadline:
-        time.sleep(0.02)
-    assert git_repository.git_output(notes, "rev-parse", "origin/main") == head
+@pytest.fixture(name="sync_workers")
+def _sync_workers(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen]:
+    workers: list[subprocess.Popen] = []
+
+    def start(*args: Any, **kwargs: Any) -> subprocess.Popen:
+        worker = subprocess.Popen(*args, **kwargs)  # noqa: SIM115  # pylint: disable=consider-using-with
+        workers.append(worker)
+        return worker
+
+    worker_subprocess = types.SimpleNamespace(**vars(subprocess))
+    worker_subprocess.Popen = start
+    monkeypatch.setattr(background_sync, "subprocess", worker_subprocess)
+    return workers
+
+
+def _wait_for_push(notes: pathlib.Path, workers: list[subprocess.Popen]) -> None:
+    assert workers, "ローカル保存後に同期workerが起動していない"
+    for worker in workers:
+        assert worker.wait() == 0
+    workers.clear()
+    status = background_sync.read_status(notes).get("state")
+    assert status == "synced", f"同期worker終了後の状態: {status!r}"
+    assert git_repository.git_output(notes, "rev-parse", "origin/main") == git_repository.git_output(notes, "rev-parse", "HEAD")
 
 
 def test_legacy_confirmation_does_not_defer_processing(tmp_path: pathlib.Path) -> None:
@@ -90,7 +108,9 @@ def _invoke(
     2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.023秒。"
 )
 def test_public_effect_check_partial_then_complete_preserves_original(
-    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    sync_workers: list[subprocess.Popen],
 ) -> None:
     notes, worktree, path = effect_repository
     original = path.read_text(encoding="utf-8")
@@ -112,7 +132,7 @@ def test_public_effect_check_partial_then_complete_preserves_original(
         line for line in saved.split("\n") if not line.startswith(("effect_check:", effect_check.RECORD_PREFIX))
     )
     assert restored == original
-    _wait_for_push(notes)
+    _wait_for_push(notes, sync_workers)
     capsys.readouterr()
     with pytest.raises(SystemExit) as show:
         atk.main(["wi", "show", path.name, "--skip-pull"], home=notes.parent)
@@ -291,7 +311,9 @@ def test_public_effect_overall_reason_and_listing_without_commit(
     1.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.521秒。"
 )
 def test_public_effect_retry_after_commit_failure_is_idempotent(
-    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], monkeypatch: pytest.MonkeyPatch
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    monkeypatch: pytest.MonkeyPatch,
+    sync_workers: list[subprocess.Popen],
 ) -> None:
     """部分記録後のGit失敗でもpendingを保持し、同じ公開操作でcommitから再開する。"""
     notes, worktree, path = effect_repository
@@ -307,7 +329,7 @@ def test_public_effect_retry_after_commit_failure_is_idempotent(
     assert _invoke(notes, worktree, path.name, "app.py", "confirmed") == 0
     assert path.read_text(encoding="utf-8") == partial
     assert len(effect_check.result_values(partial, "効果確認")) == 1
-    _wait_for_push(notes)
+    _wait_for_push(notes, sync_workers)
 
 
 @pytest.mark.cpu_limit(
@@ -369,6 +391,7 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    sync_workers: list[subprocess.Popen],
 ) -> None:
     """公開複数指定で全件を検証し、旧本文を保持して部分保存・commit失敗から再開する。"""
     notes, worktree, path = effect_repository
@@ -420,7 +443,7 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
     assert result[1:] == [str(path), str(legacy)]
     assert sum(args[0] == "commit" for args in calls) == 1
     assert sum(args[0] == "push" for args in calls) == 0
-    _wait_for_push(notes)
+    _wait_for_push(notes, sync_workers)
     assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "1"
     saved = {item: item.read_bytes() for item in (path, legacy)}
     for item, before in originals.items():
@@ -456,7 +479,7 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
         assert "effect_check: not_required" in text
         assert len(effect_check.result_values(text, "効果確認全体")) == 2
     assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "2"
-    _wait_for_push(notes)
+    _wait_for_push(notes, sync_workers)
 
 
 @pytest.mark.cpu_limit(

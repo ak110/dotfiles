@@ -30,6 +30,7 @@ from agent_toolkit._agents_server.service_context import ServiceManagers
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
+from agent_toolkit._agents_server.service_publication_test_child import PREVIOUS_GENERATION
 from agent_toolkit._agents_server.service_registry import RegistryForwarder
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._common import registry_forwarding, runtime_environment, session_registry
@@ -438,93 +439,6 @@ def test_handover_record_does_not_survive_destination_process_replacement(tmp_pa
     assert not registry.handover_confirmed(replacement, old)
 
 
-_PREVIOUS_GENERATION = """
-import asyncio
-import contextlib
-import os
-import pathlib
-import signal
-import sys
-
-from mcp.types import CallToolRequestParams
-
-from agent_toolkit._agents_server import mcp_tools, service, service_io, service_transport, state, turn_state
-from agent_toolkit._agents_server.service_claude_io import SdkResource
-from agent_toolkit._common import runtime_environment
-
-directory, parent, session_id, turn, failure, finish, mode = sys.argv[1:]
-directory, failure, finish = pathlib.Path(directory), pathlib.Path(failure), pathlib.Path(finish)
-listen = service_transport.listen
-
-
-@contextlib.contextmanager
-def failing_listen(address):
-    with listen(address) as listener:
-        accept = listener.accept
-
-        def accept_or_fail():
-            if failure.exists():
-                raise OSError("試験で注入した受付の失敗")
-            return accept()
-
-        listener.accept = accept_or_fail
-        yield listener
-
-
-service_transport.listen = failing_listen
-
-
-async def main():
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    signal.signal(signal.SIGTERM, lambda *_args: loop.call_soon_threadsafe(stop.set))
-    serving = asyncio.create_task(service.run(directory, "old", stop=stop))
-    while (managers := mcp_tools._SERVICE_MANAGERS) is None or managers.before_controls is None:
-        if serving.done():
-            await serving
-        await asyncio.sleep(0.01)
-    coordinator = managers.before_controls.__self__
-    if mode == "delay_response":
-        commit = coordinator.commit_update
-
-        async def delay_response(token, current):
-            await commit(token, current)
-            pathlib.Path("commit-accepted").touch()
-            await asyncio.sleep(60)
-
-        coordinator.commit_update = delay_response
-    caller = runtime_environment.CallerContext(dict(os.environ, CODEX_THREAD_ID=parent), pathlib.Path.cwd())
-    with service_io.bind(coordinator._runtime), runtime_environment.bind(caller):
-        async with managers.scope(CallToolRequestParams(name="list", arguments={}), identifier_override=parent) as manager:
-            session = manager.sessions[session_id] = state.SessionState(
-                session_id,
-                str(pathlib.Path.cwd()),
-                engine="claude" if mode == "raw" else "codex",
-                turn_end=turn_state.TurnEnd[turn],
-                publish_registry=True,
-            )
-            if mode == "raw":
-                async def close():
-                    if not pathlib.Path("allow-close").exists():
-                        pathlib.Path("close-attempted").touch()
-                        raise OSError("試験で注入したcloseの失敗")
-                    pathlib.Path("raw-closed").touch()
-
-                runtime = coordinator._runtime
-                identifier = runtime.broker.register({"close": close})
-                await runtime.broker.emit(identifier, {"end": True})
-                client = SdkResource(service_io.Resource(runtime, identifier, runtime.target))
-                manager._backend("claude")._sdk_clients[session_id] = client
-            await manager.save_control_state()
-    while not finish.exists() and not serving.done():
-        await asyncio.sleep(0.05)
-    session.record_turn_completed()
-    await serving
-
-
-asyncio.run(main())
-"""
-
 # 保存またはClaudeの取り込み用設定の組み立てが、会話本体の解放をまたいで1回失敗する世代。
 _ADOPTING_GENERATION = """
 import asyncio
@@ -583,12 +497,17 @@ def _isolated_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch)
     return service_transport.namespace(runtime_environment.CallerContext(dict(os.environ), tmp_path))
 
 
+async def _wait_for_child_file(path: pathlib.Path, process: subprocess.Popen) -> None:
+    while not path.exists():
+        assert process.poll() is None, f"{path.name} を出す前に子が終了: {process.returncode}"
+        await asyncio.sleep(0.01)
+
+
 async def _wait_for_discovery(directory: pathlib.Path, generation: str, process: subprocess.Popen) -> dict[str, Any]:
+    discovery = directory / f"{generation}.json"
     async with asyncio.timeout(10):
-        while not (directory / f"{generation}.json").exists():
-            assert process.poll() is None
-            await asyncio.sleep(0.01)
-    return json.loads((directory / f"{generation}.json").read_text(encoding="utf-8"))
+        await _wait_for_child_file(discovery, process)
+    return json.loads(discovery.read_text(encoding="utf-8"))
 
 
 async def _launch_previous_generation(
@@ -598,10 +517,12 @@ async def _launch_previous_generation(
     registry.reserve("old", tmp_path / "old", "1.0.0")
     script = tmp_path / "previous" / "previous_generation.py"
     script.parent.mkdir()
-    script.write_text(_PREVIOUS_GENERATION, encoding="utf-8")
+    script.write_text(PREVIOUS_GENERATION, encoding="utf-8")
     arguments = [str(directory), _PARENT, _SESSION, turn, str(tmp_path / "inject-failure"), str(tmp_path / "finish-turn"), mode]
     # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、呼出元が終了を見届けた後で手放す。
     processes.append(subprocess.Popen([sys.executable, str(script), *arguments], cwd=tmp_path))  # pylint: disable=consider-using-with
+    # import完了までは試験全体の上限を使い、実サービスの公開準備はその後に10秒で観測する。  # pyfltr: allow-comment
+    await _wait_for_child_file(script.with_suffix(".ready"), processes[-1])
     old = await _wait_for_discovery(directory, "old", processes[-1])
     registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
     async with asyncio.timeout(30):
