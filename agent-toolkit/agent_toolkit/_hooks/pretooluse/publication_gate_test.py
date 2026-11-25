@@ -424,3 +424,29 @@ def test_circuit_resume_uses_legacy_start(tmp_path, monkeypatch, configured, exp
     denied = publication_gate.check(payload, session, "Bash", {"command": "git push"})
     assert denied is not None
     assert (late.name in denied[0]) == valid
+
+
+def test_publication_keeps_gate_but_does_not_repeat_delivered_progress_wis(tmp_path, monkeypatch):
+    from agent_toolkit._hooks import notice  # pylint: disable=import-outside-toplevel
+
+    sid = "progress-publication-shared"
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", sid)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    old = "20261124-061940-004.md"
+    new = "20261124-061940-005.md"
+    rows = [f"{old} (source: implement、merge_branch: なし)"]
+    monkeypatch.setattr(listing, "progress_new_wis", lambda *_args, **_kwargs: tuple(rows))
+    monkeypatch.setattr(publication_gate, "progress_new_wis", listing.progress_new_wis)
+    text, snapshot_id = notice.new_wi_preview(sid, "main", rows)
+    assert old in text
+    notice.stage_new_wi_preview(text, sid, "main", snapshot_id)
+    notice.record_delivery(text)
+    rows.append(f"{new} (source: implement、merge_branch: なし)")
+    payload = {"session_id": sid, "cwd": str(tmp_path)}
+    command = {"command": "git push origin develop"}
+    denied = publication_gate.check(payload, sid, "Bash", command)
+    assert denied is not None
+    reason, _ = denied
+    assert "計2件" in reason and new in reason and old not in reason
+    assert publication_gate.check(payload, sid, "Bash", command) is None
