@@ -416,6 +416,7 @@ def test_policy_question_requires_all_external_sources(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, work: str
 ) -> None:
     contract = tmp_path / "work-contract.md"
+    monkeypatch.setattr(user_facing_checks.source_review_receipt, "ready", lambda _: True)
     monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
     prompt = f"/atk-mode {work} https://example.com/a"
     assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
@@ -427,18 +428,23 @@ def test_policy_question_requires_all_external_sources(
     assert "external-source-review.md" in _question_decision(tmp_path, question)
     table = tmp_path / "external-source-review.md"
     comparison = "削る・まとめる・置き換える案"
-    header = f"| 採否と理由 | {comparison} | 資料URL | 配布規範での定義元または非該当の理由 |\n| --- | --- | --- | --- |\n"
+    header = (
+        f"| 採否と理由 | {comparison} | 資料URL | 既存の対応箇所 | 資料の主張（原文の抜粋） | 既存との差分 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+    )
     good = "なし。既存の設計手順を調べ、重複が無かった"
     for value in ("", " **なし。** ", "——"):
-        table.write_text(header + f"| 不採用 | {value} | https://example.com/a | 設計手順 |\n", encoding="utf-8")
+        table.write_text(
+            header + f"| 不採用 | {value} | https://example.com/a | 設計手順 | 原文 | 新しい手段 |\n", encoding="utf-8"
+        )
         reason = _question_decision(tmp_path, question)
         assert "3行目" in reason and comparison in reason
-    a = header + f"| 不採用 | {good} | https://example.com/a | 設計手順 |\n"
+    a = header + f"| 不採用 | {good} | https://example.com/a | 設計手順 | 原文 | 新しい手段 |\n"
     table.write_text(a, encoding="utf-8")
     assert not _question_decision(tmp_path, question)
     contract.write_text("# 作業契約\n## 原本\n- https://example.com/b\n", encoding="utf-8")
     assert "https://example.com/b" in _question_decision(tmp_path, question)
-    table.write_text(a + f"| 不採用 | {good} | https://example.com/b | 設計手順 |\n", encoding="utf-8")
+    table.write_text(a + f"| 不採用 | {good} | https://example.com/b | 設計手順 | 原文 | 新しい手段 |\n", encoding="utf-8")
     assert not _question_decision(tmp_path, question)
     assert not _question_decision(tmp_path, {"question": "どの系統を選びますか？"})
 
@@ -470,13 +476,14 @@ def test_external_source_markup_boundaries(
     comparison: str,
     blocked: bool,
 ) -> None:
+    monkeypatch.setattr(user_facing_checks.source_review_receipt, "ready", lambda _: True)
     monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: tmp_path / "work-contract.md")
     prompt = f"/atk-mode {work} {source.format(url=url)}"
     assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
     (tmp_path / "external-source-review.md").write_text(
-        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
-        "| --- | --- | --- | --- |\n"
-        f"| <{url}> | 設計手順 | {comparison} | 不採用 |\n",
+        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） | 既存との差分 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        f"| <{url}> | 設計手順 | {comparison} | 不採用 | 原文 | 新しい手段 |\n",
         encoding="utf-8",
     )
     reason = _question_decision(tmp_path, _APPROVAL)
@@ -506,6 +513,7 @@ def test_external_source_url_boundaries(
     markup: str,
 ) -> None:
     contract = tmp_path / "work-contract.md"
+    monkeypatch.setattr(user_facing_checks.source_review_receipt, "ready", lambda _: True)
     monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
     urls = ["https://example.com/a(b)?x=%2A&y=1#z"]
     if separator is not None:
@@ -517,8 +525,9 @@ def test_external_source_url_boundaries(
     assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
     table = tmp_path / "external-source-review.md"
     table.write_text(
-        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
-        "| --- | --- | --- | --- |\n" + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 |\n" for url in urls),
+        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） | 既存との差分 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 | 原文 | 新しい手段 |\n" for url in urls),
         encoding="utf-8",
     )
     assert not _question_decision(tmp_path, _APPROVAL)
@@ -539,6 +548,7 @@ def test_external_source_url_identity(
     rows: str,
 ) -> None:
     contract = tmp_path / "work-contract.md"
+    monkeypatch.setattr(user_facing_checks.source_review_receipt, "ready", lambda _: True)
     monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
     prefix = "https://example.com/a"
     urls = [f"{prefix}{infix}1", f"{prefix}{infix}2"]
@@ -549,8 +559,9 @@ def test_external_source_url_identity(
     assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
     entries = {"complete": urls, "prefix-only": [prefix], "one-missing": urls[:1]}[rows]
     (tmp_path / "external-source-review.md").write_text(
-        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
-        "| --- | --- | --- | --- |\n" + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 |\n" for url in entries),
+        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） | 既存との差分 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 | 原文 | 新しい手段 |\n" for url in entries),
         encoding="utf-8",
     )
     reason = _question_decision(tmp_path, _APPROVAL)
@@ -561,7 +572,7 @@ def test_external_source_url_identity(
 
 
 def test_external_source_url_preserves_ipv6_address() -> None:
-    urls = user_facing_checks._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
+    urls = user_facing_checks.external_source_review.contract_urls("## 原本\n- https://[2001:db8::1]/source")
     assert urls == {"https://[2001:db8::1]/source"}
 
 

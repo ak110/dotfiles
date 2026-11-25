@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import pathlib
 import re
-import unicodedata
 from collections.abc import Iterable
 
 lazy from markdown_it import MarkdownIt
 lazy from markdown_it.token import Token
 
+from agent_toolkit._common import external_source_review
 from agent_toolkit._common import response_language_check as _response_language_check
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import agent_id as _agent_id
-from agent_toolkit._hooks import bugfix_gate, norm_excuse_gate, work_contract
+from agent_toolkit._hooks import bugfix_gate, norm_excuse_gate, source_review_receipt, work_contract
 from agent_toolkit._hooks import notice as _notice
 from agent_toolkit._hooks.pretooluse.content_checks import _warn_mojibake
 from agent_toolkit._hooks.pretooluse.decision import Decision
@@ -32,13 +33,8 @@ _INLINE_ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*[*_]*別案[*_]*[^\S\n]*[:：]"
 _ALTERNATIVE_BOUNDARY = re.compile(r"[「」『』。\n]")
 _QUOTE_END = {"「": "」", "『": "』"}
 _POLICY_APPROVAL = re.compile(r"方針[^？?\n]{0,80}で(?:進めて|起草して|実施して)(?:よい|いい)")
-SOURCE_REVIEW_FILE = "external-source-review.md"
+SOURCE_REVIEW_FILE = external_source_review.TABLE_NAME
 _SOURCE_REVIEW_WORK = re.compile(r"^\s*-?\s*作業[:：]\s*`?([^\s`]+)`?\s*$")
-_SOURCE_URL_COLUMN = "資料URL"
-_SOURCE_DEFINITION_COLUMN = "配布規範での定義元または非該当の理由"
-_SOURCE_COMPARISON_COLUMN = "削る・まとめる・置き換える案"
-_SOURCE_DECISION_COLUMN = "採否と理由"
-_SOURCE_REVIEW_COLUMNS = (_SOURCE_URL_COLUMN, _SOURCE_DEFINITION_COLUMN, _SOURCE_COMPARISON_COLUMN, _SOURCE_DECISION_COLUMN)
 
 
 def _understanding_section_lines(message: str) -> Iterable[tuple[str, bool]]:
@@ -137,21 +133,7 @@ def missing_alternative(message: str) -> bool:
     return required and not _has_alternative(lines)
 
 
-def _external_source_urls(lines: Iterable[str]) -> set[str]:
-    urls: set[str] = set()
-    within_sources = False
-    for line in lines:
-        if heading := _MARKDOWN_HEADING.match(line):
-            if len(heading[1]) <= 2:
-                within_sources = heading[2].strip() in {"原本", "入力"}
-            continue
-        if not within_sources and not re.match(r"\s*-?\s*(?:外部資料|入力)[:：]", line):
-            continue
-        urls.update(work_contract.source_urls(line))
-    return urls
-
-
-def external_source_review_needed(session_id: str, tool_input: dict) -> str | None:
+def external_source_review_needed(session_id: str, tool_input: dict, *, cwd: str | None = None) -> str | None:
     fields = _user_facing_text_fields("AskUserQuestion", tool_input)
     if not any(
         field.endswith((".header", ".question")) and (value == "方針の承認" or _POLICY_APPROVAL.search(value))
@@ -168,63 +150,20 @@ def external_source_review_needed(session_id: str, tool_input: dict) -> str | No
     if isinstance(entry, dict):
         if entry.get("work") not in work_contract.EXTERNAL_SOURCE_WORKS:
             return None
-        recorded_urls = entry.get("urls")
-        urls = {url for url in recorded_urls if isinstance(url, str)} if isinstance(recorded_urls, list) else set()
+        recorded = entry.get("urls")
     elif any(
         (match := _SOURCE_REVIEW_WORK.fullmatch(line)) and match[1] in work_contract.EXTERNAL_SOURCE_WORKS for line in lines
     ):
-        urls = set()
+        recorded = None
     else:
         return None
-    urls.update(_external_source_urls(lines))
-    if not urls:
-        return None
-    if contract is not None:
-        try:
-            table = contract.with_name(SOURCE_REVIEW_FILE).read_text(encoding="utf-8")
-        except OSError, UnicodeError:
-            pass
-        else:
-            return _external_source_table_error(table, urls)
-    return f"`{SOURCE_REVIEW_FILE}`を読み取れません。"
-
-
-def _external_source_cell_content(cell: str) -> str:
-    inline = MarkdownIt("commonmark").parseInline(unicodedata.normalize("NFKC", cell))[0]
-    text = "".join(token.content for token in inline.children or () if token.type in {"text", "code_inline"})
-    return re.sub(r"[^\w]|_", "", text)
-
-
-def _external_source_table_error(table: str, urls: set[str]) -> str | None:
-    columns: dict[str, int] = {}
-    covered: set[str] = set()
-    for line_number, line in enumerate(without_literal_blocks(table).splitlines(), 1):
-        line = line.strip()
-        if not line.startswith("|") or not line.endswith("|"):
-            columns = {}
-            continue
-        cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", line[1:-1])]
-        if _SOURCE_URL_COLUMN in cells:
-            for column in _SOURCE_REVIEW_COLUMNS:
-                if cells.count(column) != 1:
-                    return f"{line_number}行目の見出しに`{column}`を1列書いてください。"
-            columns = {column: cells.index(column) for column in _SOURCE_REVIEW_COLUMNS}
-            continue
-        if not columns or columns[_SOURCE_URL_COLUMN] >= len(cells):
-            continue
-        url_cell = cells[columns[_SOURCE_URL_COLUMN]]
-        url = next(work_contract.source_urls(url_cell), "")
-        if url not in urls:
-            continue
-        for column in _SOURCE_REVIEW_COLUMNS[1:]:
-            index = columns[column]
-            cell = cells[index] if index < len(cells) else ""
-            meaningful = _external_source_cell_content(cell)
-            if not meaningful or (column == _SOURCE_COMPARISON_COLUMN and meaningful in {"なし", "無し"}):
-                return f"{line_number}行目の`{column}`に記入がありません。"
-        covered.add(url)
-    if missing := urls - covered:
-        return f"`{_SOURCE_URL_COLUMN}`に対応する行がありません: " + "、".join(sorted(missing))
+    directory = pathlib.Path(cwd).resolve() if cwd else pathlib.Path.cwd()
+    root = next((path for path in (directory, *directory.parents) if (path / ".git").exists()), directory)
+    urls = external_source_review.contract_urls(body, recorded)
+    if error := external_source_review.check_table(contract, urls, root):
+        return error
+    if urls and not source_review_receipt.ready(session_id):
+        return "`agent-basics:writing-standards/references/design-heuristics.md`を全文読んでください。"
     return None
 
 

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 
+from agent_toolkit._atk import managed_temp, research_sources
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import branches as _wi_branches
@@ -49,9 +50,10 @@ from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
+from agent_toolkit._common import delegated_session, external_source_review, session_review, skill_modes
 from agent_toolkit._common import process_loop_session as _process_loop_session
-from agent_toolkit._common import session_review, skill_modes
 from agent_toolkit._common import uwi_watch as _uwi_watch
+from agent_toolkit._common.session_state import read_state
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import owner_records as _owner_records
 
@@ -579,6 +581,41 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
     return timing == "this-run"
 
 
+def _check_external_source_review(
+    args: argparse.Namespace, messages: list[str], local_worktree: pathlib.Path | None
+) -> str | None:
+    explicit = getattr(args, "source_contract", None)
+    session = delegated_session.current_conversation_session_id(os.environ)
+    temp = managed_temp.find_session_temp(session) if session is not None and explicit is None else None
+    contract = pathlib.Path(explicit) if explicit is not None else temp / "work-contract.md" if temp else None
+    if explicit is not None and (contract is None or not contract.is_absolute()):
+        return "`--source-contract`には作業契約の絶対パスを指定してください。"
+    body = ""
+    if contract is not None:
+        try:
+            body = contract.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            if explicit is not None:
+                return f"`{contract}`を読み取れません。"
+        except OSError, UnicodeError:
+            return f"`{contract}`を読み取れません。"
+    recorded = None
+    if session is not None and explicit is None:
+        entry = read_state(session).get(external_source_review.EXTERNAL_SOURCE_ENTRY_KEY)
+        if isinstance(entry, dict):
+            recorded = entry.get("urls")
+    urls = external_source_review.contract_urls(body, recorded)
+    for message in messages:
+        frontmatter, _body = parse_entry_message(message, entry_type=args.type)
+        if args.source is not None:
+            frontmatter = {"source": args.source, **frontmatter}
+        metadata = run_report_metadata(frontmatter, question_type=args.question_type, scope=args.scope, new_report=True)
+        slot = metadata.get("weekly_slot")
+        if isinstance(slot, str) and slot.startswith("research@"):
+            urls.update(research_sources.collected_source_urls(slot))
+    return external_source_review.check_table(contract, urls, local_worktree or pathlib.Path.cwd())
+
+
 def cmd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
@@ -755,6 +792,11 @@ def cmd_add(
                 for message in messages:
                     parse_entry_message(message, entry_type=WI_TYPE_UWI)
             compare_draft_openings(messages, sources, compare_paths=args.compare_opening_file, is_uwi=args.type == WI_TYPE_UWI)
+        if source_error := _check_external_source_review(args, messages, local_worktree):
+            raise WebInputError(
+                source_error,
+                next_action="作業契約と隣の external-source-review.md を直し、必要なら --source-contract で指定して再実行する",
+            )
         generated = add_entries(
             private_notes,
             messages=messages,
