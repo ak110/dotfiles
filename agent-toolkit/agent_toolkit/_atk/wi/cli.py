@@ -55,17 +55,8 @@ def build_parser(mq: argparse.ArgumentParser) -> None:
         _add_mq_submit_parser,
     ):
         register(sub)
-    for name, summary in (
-        ("attach", "WIへファイルを添付する"),
-        ("attachments", "WIの添付一覧を表示する"),
-        ("detach", "WIの添付を削除する"),
-    ):
-        parser = _atk_help.add_command(
-            sub,
-            name,
-            summary=summary,
-            description=summary + "。添付はprivate-notesのGitで同期し、削除後も履歴に残るため累計使用量は減らない。",
-        )
+    for name in ("attach", "attachments", "detach"):
+        parser = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk wi {name}"])
         parser.add_argument("filename", help="保存済みWIのファイル名")
         if name == "attach":
             parser.add_argument("paths", type=pathlib.Path, nargs="+", help="添付するファイルのパス")
