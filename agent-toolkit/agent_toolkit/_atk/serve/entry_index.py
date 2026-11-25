@@ -206,19 +206,24 @@ class EntryIndex:
         if not self._saved:
             return None
         rows = []
-        directories: dict[pathlib.Path, pathlib.Path] = {}
+        directories: dict[str, str] = {}
         for path in iter_entry_paths(self._private_notes):
-            directory = path.parent
+            filename = os.fspath(path)
+            directory, name = os.path.split(filename)
             if directory not in directories:
-                directories[directory] = directory.resolve()
-            saved = self._saved.get(str(directories[directory] / path.name))
+                directories[directory] = os.path.realpath(directory)
+            saved = self._saved.get(os.path.join(directories[directory], name))
             if saved is None:
                 return None
             try:
-                text = path.read_text(encoding="utf-8")
+                with open(filename, "rb") as source:
+                    raw = source.read()
+                if b"\r" in raw:
+                    raw = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                if hashlib.sha256(raw).hexdigest() != saved[6]:
+                    return None
+                text = raw.decode("utf-8")
             except OSError, UnicodeError:
-                return None
-            if hashlib.sha256(text.encode()).hexdigest() != saved[6]:
                 return None
             rows.append((path, text, saved[2], saved[3], saved[5]))
         return rows
