@@ -202,13 +202,13 @@ def test_compaction_keeps_truncated_reports_and_whitespace_in_literal_values() -
 def test_compact_status_lines_keeps_changes_and_resets_for_user() -> None:
     events = [
         _utterance("assistant", "進捗: 検証を開始"),
-        _utterance("assistant", "進捗: 検証を開始\n検証結果: 12件"),
+        _utterance("assistant", "進捗: 検証を開始\n進捗: 検証を開始\n検証結果: 12件"),
         _utterance("assistant", "検証結果: 13件"),
         _utterance("user", "進捗: 検証を開始"),
         _utterance("assistant", "進捗: 検証を開始\n```text\n進捗: 検証を開始\n```"),
     ]
     rows, meta = session_conversation.compact_assistant_reports(events)
-    assert rows == [events[0], {**events[1], "text": "検証結果: 12件"}, *events[2:]]
+    assert rows == [events[0], {**events[1], "text": "進捗: 検証を開始\n検証結果: 12件"}, *events[2:]]
     assert meta["redundant_status_line_count"] == 1
 
 
@@ -217,3 +217,24 @@ def test_compact_reports_preserves_return_to_previous_decision() -> None:
     proceed = _utterance("assistant", "状態: 公開へ進む")
     rows = [wait, proceed, wait, proceed]
     assert session_conversation.compact_assistant_reports(rows)[0] == rows
+
+
+def test_compaction_keeps_cross_label_reversal_and_partial_delivery() -> None:
+    hold = _utterance("assistant", "状態: 統合を保留")
+    proceed = _utterance("assistant", "処置: テストが成功したので、統合へ進む。")
+    delivery = {**hold, "text": "状態: 統合を保留\n検証結果: 12件", "delivery": "send_to_user"}
+    events = [hold, proceed, hold, delivery]
+    assert session_conversation.compact_assistant_reports(events)[0] == events
+
+
+def test_compaction_compares_understanding_fields_not_their_layout() -> None:
+    compact = _utterance("assistant", "発話の理解: 確認する。補う前提: A\n別案: B\n分類: 非是正")
+    listed = {
+        **compact,
+        "text": "発話の理解\n分類: 非是正\n- 確認する。\n- 補う前提: A\n- 別案: B",
+        "delivery": "send_to_user",
+    }
+    changed = {**listed, "text": str(listed["text"]).replace("前提: A", "前提: C")}
+    kept, meta = session_conversation.compact_assistant_reports([compact, listed, changed])
+    assert kept == [listed, changed]
+    assert meta["redundant_assistant_count"] == 1
