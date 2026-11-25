@@ -25,12 +25,11 @@
 4. commitする内容を確定してから、pytestを含む実行を1回行う。
    MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`--commands`の指定なしで実行し、失敗したら直して同じ形で実行し直す。
    `develop`・`master`・`main`以外のブランチ（レーンと内部群の作業ブランチ）では`--no-always-targets`を付け、変更ファイルと、変更した契約を使うテストを実行する（pyfltr 3.31.0以降）。
-   変更が影響する不変条件テストも引数へ加える。
    全量は統合後のdevelop CIで実行する。
-   非テストモジュールのパスだけでは、そのモジュールを使う別名のテストが選ばれないため、`uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で根拠付きの候補のJSONを取得する。
+   `uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で、文書を読む横断試験やhookの入口を経由する試験を含む、根拠付きの候補のJSONを取得する。
    `required=true`の直接importのテストを引数へ加え、残る候補は実際の利用関係から採否を決める。
    元のJSONを保持し、曖昧な候補ごとに`source`・`test`・`include`（真偽値）・`reason`（空でない文字列）を持つ`decisions`配列を足して検証の証拠へ保存する（手順7の`--consumer-review`へ渡す判定JSON）。
-   動的な呼び出し、設定の移行、通知の旧期待値、CLI全体の一覧は候補の自動列挙で網羅できないため、[verification.md](verification.md#変更範囲の検証の値)「変更範囲の検証の値」の探索で補う。
+   候補に出ない不変条件試験、動的な呼び出し、設定の移行、通知の旧期待値、CLI全体の一覧は、[verification.md](verification.md#変更範囲の検証の値)「変更範囲の検証の値」の探索で補う。
 5. 失敗の確かめ直しには次の形を使う。
    - 失敗したテストだけは`--only-failed --from-run <初回のrun_id>`で実行する。
      `--from-run`を省いた`--only-failed`は他の作業ツリーを含むホスト全体の直近の実行を参照し、それに失敗が無ければ何も実行せずに終了0となり、自分の失敗が残っていても成功として報告される。

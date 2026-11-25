@@ -382,7 +382,7 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
             if not pathlib.Path(original).is_absolute() or "\n" in original:
                 raise ValueError("一覧ファイル1件の絶対パスが必要")
             originals = _material_paths("評価用WI原本", original)
-            texts = review_contract.read_wi_originals(originals[0], names)
+            inputs = review_contract.read_wi_originals(originals[0], names)
         except ValueError as error:
             raise _material_error("評価用WI原本", str(error)) from error
     else:
@@ -395,7 +395,8 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
         )
         if missing:
             raise _material_error("WI記録", f"AWI本文を取得できません: {', '.join(missing)}")
-        texts = {path.name: text for path, _repo, text, _state, _kind in selected}
+        inputs = {path.name: (path, text) for path, _repo, text, _state, _kind in selected}
+    texts = {name: text for name, (_path, text) in inputs.items()}
     required: dict[str, tuple[int, int]] = {}
     for name, text in texts.items():
         parsed = frontmatter.parse_frontmatter(text)
@@ -422,7 +423,12 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
         )
     try:
         paths = _material_paths("review_contract", value)
-        review_contract.validate(paths[0].read_text(encoding="utf-8"), required)
+        review_contract.validate(
+            paths[0].read_text(encoding="utf-8"),
+            required,
+            originals=texts,
+            original_paths={name: path for name, (path, _text) in inputs.items()},
+        )
     except ValueError as error:
         raise _material_error("review_contract", f"{', '.join(required)}: {error}。条件表の書式: {reference}") from error
 

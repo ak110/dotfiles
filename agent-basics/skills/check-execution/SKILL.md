@@ -31,13 +31,13 @@ description: >
 | 実装に着手する直前（基準版を記録する時点）と、テスト・検証・CIの結果を成功時も含めて判定する前（警告の帰属、個別と全体の所要時間の比較を含む） | `references/diagnostics.md` |
 | 受入シナリオ検証の前（エージェント向け文書の試行、操作・故障注入・自動終了の失敗が使う資源の所有者と共有範囲の判定、本番の起動単位からの公開前の観測を含む） | `references/acceptance-scenarios.md` |
 | 速度や資源使用量を測る前と、測った数値で採否を決める・報告する前 | `references/performance.md` |
-| 要求の結果を観測する手段と環境を選ぶ前 | `agent-basics:writing-standards/references/testing.md` |
+| 要求の結果を観測する手段と環境を選ぶ前 | `agent-basics:writing-standards/references/testing-design.md` |
 | 変更の挙動を画面・CLI・サービスの実際の操作で確かめる時に、アプリを操作して確かめる手順のスキルがプロジェクトに無い時と、その手順が想定外の結果になった時 | `agent-basics:verify-skill/SKILL.md` |
 | 検証を選ぶ変更が状態遷移・並行処理・再試行・構文解析・認可の境界・停止性・等価であるべき書き換え・固定幅整数の計算に触れる時（形式検証を当てるかの判定）、その性質を有界の範囲で確かめる検査として残す時、その検査の対象のコードを変えた時 | `agent-basics:formal-verification/SKILL.md` |
 
 ## 実行条件と結果
 
-1. 要求の結果を直接観測できる手段と環境を、`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選ぶ。
+1. 要求の結果を直接観測できる手段と環境を、`agent-basics:writing-standards/references/testing-design.md`「検証単位の選定」で選ぶ。
    着手の直前に基準版を記録する（`agent-basics:check-execution/references/diagnostics.md`「基準版と変更行への帰属」）。
 2. 実行するチェックとテストを、実際の差分が変えた契約から`agent-basics:check-execution/references/verification-scope.md`で選ぶ。
    ローカルは直接の利用側までとし、リポジトリ全体のテストと静的検査はCIに委ねる。

@@ -31,6 +31,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 
 _MARKETPLACE = ".claude-plugin/marketplace.json"
 _MANIFEST = ".claude-plugin/plugin.json"
@@ -42,7 +43,9 @@ class CheckError(Exception):
 
 
 def _git(repo_root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, encoding="utf-8", check=False)
+    return subprocess.run(
+        ["git", *args], cwd=repo_root, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", check=False
+    )
 
 
 def _require(result: subprocess.CompletedProcess[str], operation: str) -> str:
@@ -54,9 +57,14 @@ def _require(result: subprocess.CompletedProcess[str], operation: str) -> str:
     return result.stdout.strip()
 
 
-def _plugins(repo_root: pathlib.Path) -> list[tuple[str, str]]:
+def _plugins(repo_root: pathlib.Path, current: str | None = None) -> list[tuple[str, str]]:
     try:
-        data = json.loads((repo_root / _MARKETPLACE).read_text(encoding="utf-8"))
+        text = (
+            _require(_git(repo_root, "show", f"{current}:{_MARKETPLACE}"), f"比較先の{_MARKETPLACE}の取得")
+            if current is not None
+            else (repo_root / _MARKETPLACE).read_text(encoding="utf-8")
+        )
+        data = json.loads(text)
     except (OSError, ValueError) as error:
         raise CheckError(
             f"{_MARKETPLACE}を読めない: {error}。JSONとして読める内容へ直して同じ検証コマンドを再実行してください"
@@ -132,17 +140,22 @@ def _version(text: str, source: str) -> str:
         ) from error
 
 
-def check(repo_root: pathlib.Path) -> list[str]:
+def check(repo_root: pathlib.Path, *, base: str | None = None, current: str | None = None) -> list[str]:
     """検査を実行し、版数を据え置いたプラグインごとの失敗理由を返す。
 
     前提となる操作の失敗は`CheckError`を送出する。
     """
-    current = os.environ.get("CURRENT_SHA") or None
+    current = current if current is not None else os.environ.get("CURRENT_SHA") or None
     if current is not None:
         current = _commit(repo_root, current, f"CURRENT_SHA（{current}）の解決")
-    base = _base_revision(repo_root)
+    if base is None:
+        base = _base_revision(repo_root)
+    elif _ZERO_OID.fullmatch(base):
+        raise CheckError("新規refの公開済み基点が無い。既存の公開先へ送るか、公開先の初回作成を別に扱ってください")
+    else:
+        base = _commit(repo_root, base, "push前のリモート先端の解決")
     failures = []
-    for name, root in _plugins(repo_root):
+    for name, root in _plugins(repo_root, current):
         changed = _changed_files(repo_root, base, current, root)
         if not changed:
             continue
@@ -171,6 +184,44 @@ def check(repo_root: pathlib.Path) -> list[str]:
     return failures
 
 
+def _published_develop(repo_root: pathlib.Path, remote: str | None) -> str:
+    if remote is None:
+        raise CheckError("新規refの公開済み基点が無い。Gitのpre-pushが渡すリモートで検査してください")
+    refs = _require(
+        _git(repo_root, "ls-remote", "--heads", "--", remote, "refs/heads/develop"), "公開先のdevelopの照会"
+    ).splitlines()
+    if len(refs) != 1 or not refs[0].endswith("\trefs/heads/develop"):
+        raise CheckError("公開先にdevelopが無く、新規refの公開済み基点を確定できません")
+    return _commit(repo_root, refs[0].split("\t", 1)[0], "公開先developの解決（未取得なら先にgit fetch）")
+
+
+def _shared_push_base(repo_root: pathlib.Path, published: str, current: str) -> str:
+    bases = _require(
+        _git(repo_root, "merge-base", "--all", published, current), "公開済みdevelopとの共通祖先の解決"
+    ).splitlines()
+    if len(bases) != 1:
+        raise CheckError("公開済みdevelopと新規refの共通祖先を一意に確定できません")
+    return bases[0]
+
+
+def check_push(repo_root: pathlib.Path, lines: Iterable[str], remote: str | None = None) -> list[str]:
+    failures: list[str] = []
+    published = None
+    for line in lines:
+        fields = line.split()
+        if len(fields) != 4:
+            raise CheckError("Gitのpre-push入力に4フィールドが無い")
+        _local_ref, local_oid, remote_ref, remote_oid = fields
+        if any(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid) is None for oid in (local_oid, remote_oid)):
+            raise CheckError("Gitのpre-push入力に完全なOIDが必要")
+        if not _ZERO_OID.fullmatch(local_oid):
+            if _ZERO_OID.fullmatch(remote_oid):
+                published = published or _published_develop(repo_root, remote)
+                remote_oid = _shared_push_base(repo_root, published, local_oid)
+            failures.extend(f"{remote_ref}: {failure}" for failure in check(repo_root, base=remote_oid, current=local_oid))
+    return failures
+
+
 def main() -> int:
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -181,7 +232,12 @@ def main() -> int:
         repo_root = pathlib.Path(
             _require(_git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel"), "git rev-parse --show-toplevel")
         )
-        failures = check(repo_root)
+        arguments = sys.argv[1:]
+        failures = (
+            check_push(repo_root, sys.stdin, arguments[2] if len(arguments) == 3 else None)
+            if arguments[:1] == ["--pre-push"]
+            else check(repo_root)
+        )
     except CheckError as error:
         print(str(error), file=sys.stderr)
         return 2

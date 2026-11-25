@@ -85,6 +85,8 @@
 19. commitの直前に`agent-toolkit:atk-mode/playbooks/commit.md`に従う。
     そのcommitの実装単位に属する継続的な方針の保存と既存箇所の見直しの項目（計画かAWIの`## 反映内容と反映先`。8節形式では`### 恒久化`と`### リファクタリング`の行）を差分と比べ、足りなければ同じcommitに含める。
     最後の実装commitの前に、全ての項目がどれかのcommitに対応することを確かめる。
+    追加した分岐・検査・変数・設定・フォールバックを要求か観測した欠陥と照らし、対応の無いものを除く（`agent-basics:writing-standards/references/design-heuristics.md`「問題と手段の比例性」）。
+    依頼で除外された対象を変更・再実行していないことは、`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「終了と報告内容の確認」の表の証拠で確かめる。
     実装、レビュー修正、CI修正の各commitの対応は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」で記録する（最初の記録では、専用worktreeの絶対パスとブランチ名を`--result`へ渡す）。
 20. `agent-toolkit:atk-mode/playbooks/review-fix.md`「返却前の確認」を行い、結果を`agent-toolkit:atk-mode/roles/exec.subagent.md`「出力」の`実装完了`の形式でまとめる。
     レーン担当とsingle-laneのメインは、これを自分が実行レビューを起動する入力に使い、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」手順3へ進む（レーン担当はメインへ送らない）。

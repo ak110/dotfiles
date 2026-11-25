@@ -317,12 +317,14 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                     ),
                 )
             )
-        if not is_codex and (error := user_facing_checks.external_source_review_needed(session_id, tool_input)):
+        if not is_codex and (
+            error := user_facing_checks.external_source_review_needed(session_id, tool_input, cwd=payload.get("cwd"))
+        ):
             return Decision(
                 block=_block_notice(
                     f"外部資料の対応表が不足しているため、方針の承認はまだ求めていない。\n{error}",
                     fix=(
-                        f"セッション一時領域の`{user_facing_checks.SOURCE_REVIEW_FILE}`に、各資料の必須列を書いてください。引く案が無ければ、調べた既存の箇所と理由を書いてください。"
+                        f"セッション一時領域の`{user_facing_checks.SOURCE_REVIEW_FILE}`に、各主張の必須列と既存との差分を書いてください。差分がなければ既存の対応箇所を`path:行`で示してください。"
                         "`agent-basics:writing-standards/references/design-heuristics.md`"
                         "「外部資料に基づく改善案の評価」の配布範囲も確かめてください。"
                     ),

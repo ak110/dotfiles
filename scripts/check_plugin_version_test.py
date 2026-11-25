@@ -50,16 +50,24 @@ def _repository(tmp_path: Path) -> tuple[Path, str]:
     return checkout, published
 
 
-def _run(checkout: Path, **env: str) -> subprocess.CompletedProcess[str]:
+def _run(
+    checkout: Path, *, push_input: str | None = None, push_remote: str | None = None, **env: str
+) -> subprocess.CompletedProcess[str]:
     environ = {key: value for key, value in os.environ.items() if key not in {"BASE_SHA", "CURRENT_SHA"}}
     return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
+        [
+            sys.executable,
+            str(_SCRIPT),
+            *(["--pre-push"] if push_input is not None else []),
+            *(["origin", push_remote] if push_remote is not None else []),
+        ],
         cwd=checkout,
         env={**environ, **env},
         check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",
+        input=push_input,
     )
 
 
@@ -67,6 +75,53 @@ def _commit(checkout: Path) -> str:
     _git(checkout, "add", ".")
     _git(checkout, "commit", "-m", "change")
     return _git(checkout, "rev-parse", "HEAD")
+
+
+def test_pre_push_checks_every_sent_oid_and_ignores_worktree(tmp_path: Path) -> None:
+    checkout, published = _repository(tmp_path)
+    _write(checkout / "scripts/tool.py", "print(2)\n")
+    unrelated = _commit(checkout)
+    _write(checkout / "agent-toolkit/agent_toolkit/hook.py", "VALUE = 2\n")
+    rejected = _commit(checkout)
+    _set_version(checkout, "agent-toolkit", "1.0.1")
+    accepted = _commit(checkout)
+    _write(checkout / ".claude-plugin/marketplace.json", "{}")
+    push_input = (
+        f"refs/heads/one {unrelated} refs/heads/one {published}\nrefs/heads/two {rejected} refs/heads/two {published}\n"
+    )
+    result = _run(checkout, push_input=push_input, BASE_SHA=accepted, CURRENT_SHA=accepted)
+    assert result.returncode == 1
+    assert "refs/heads/two:" in result.stderr
+    assert "refs/heads/one:" not in result.stderr
+    result = _run(checkout, push_input=f"refs/heads/two {accepted} refs/heads/two {published}\n")
+    assert result.returncode == 0, result.stderr
+
+
+def test_pre_push_rejects_missing_base_but_accepts_deletion(tmp_path: Path) -> None:
+    checkout, published = _repository(tmp_path)
+    zero = "0" * len(published)
+    created = _run(checkout, push_input=f"refs/heads/candidate {published} refs/heads/candidate {zero}\n")
+    assert created.returncode == 2
+    assert "公開済み基点が無い" in created.stderr
+    deleted = _run(checkout, push_input=f"(delete) {zero} refs/heads/candidate {published}\n")
+    assert deleted.returncode == 0, deleted.stderr
+
+
+def test_new_ref_compares_with_its_published_develop_base(tmp_path: Path) -> None:
+    checkout, published = _repository(tmp_path)
+    remote = (tmp_path / "origin").as_uri()
+    remote_ref = f"refs/heads/candidate {'0' * len(published)}"
+
+    def push(current: str) -> subprocess.CompletedProcess[str]:
+        return _run(checkout, push_input=f"refs/heads/candidate {current} {remote_ref}\n", push_remote=remote)
+
+    _write(checkout / "scripts/tool.py", "print(2)\n")
+    assert push(_commit(checkout)).returncode == 0
+    _write(checkout / "agent-toolkit/agent_toolkit/hook.py", "VALUE = 2\n")
+    missing_bump = push(_commit(checkout))
+    assert missing_bump.returncode == 1 and "据え置かれている" in missing_bump.stderr
+    _set_version(checkout, "agent-toolkit", "1.0.1")
+    assert push(_commit(checkout)).returncode == 0
 
 
 @pytest.mark.parametrize(

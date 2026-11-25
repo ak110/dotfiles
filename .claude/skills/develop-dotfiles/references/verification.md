@@ -8,7 +8,8 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 
 ## テスト配置
 
-テストの要否、期待値の出所、検証単位の選び方は`agent-basics:writing-standards/references/testing.md`に従い、本節は配置と隔離の決まりを持つ。
+テストの要否は`agent-basics:writing-standards/references/testing.md`、期待値の出所と検証単位は`agent-basics:writing-standards/references/testing-design.md`に従う。
+本節は配置と隔離の決まりを持つ。
 
 - テストは対象の近くに置く。
   Pythonモジュールの単体テストは同じディレクトリの`<name>_test.py`とし、文書・設定・スクリプトの実物を読むテストは、そのファイルと同じディレクトリか、対象群を包含する最も近い上位ディレクトリに置く。
@@ -91,6 +92,12 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 [検証コマンドの実行](verification-execution.md#検証コマンドの実行)へ進む。
 
 ## 公開前の検証
+
+`make setup` は版数検査のGit pre-pushフックを導入する。
+既存の公開用checkoutでは、反映後の最初のpushより先に `make install-plugin-version-hook` で導入する。
+フックは作業ツリーではなく実際に送る全refの新旧OIDを検査する。
+既存の別のpre-pushフックは上書きしない。
+新規refは、送信先の公開済みdevelopと送るcommitの一意な共通祖先と比べ、基点を特定できない場合は検査を成功扱いにしない。
 
 公開する担当は統合後、実際にpushするHEADで、[作業ツリーの準備](worktree.md#作業ツリーの準備)にある規範Markdownの上限検査の成功を確かめる。
 成功の根拠に使うのは、同じHEADで対象のテストが実行され、成功した記録だけとする。

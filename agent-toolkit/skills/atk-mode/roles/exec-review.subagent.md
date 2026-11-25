@@ -53,7 +53,7 @@ startup_documents:
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 判定の観点と並行する探索・再発防止観点の確認に関する判断・作業の前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` |
-| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:atk-mode/playbooks/verification.md` |
+| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-basics:writing-standards/references/testing-design.md`、`agent-toolkit:atk-mode/playbooks/verification.md` |
 | 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `agent-toolkit:atk-mode/roles/reader-fit-review.parent.md` |
 
 ## 入力
@@ -106,6 +106,9 @@ startup_documents:
 - 読者別探索担当の起動
 
 完成条件証拠の判定結果と根拠を記述するのは実行レビュー担当のみであり、レビュー対象者に根拠の補足を求めた場合も、反映は本担当が行う。
+
+外部資料を原本に持つimplementでは、承認の質問や起票が無い経路でも、原本と対応表を比べる。
+表の有無、主張の網羅、差分の具体、「なし」が指す箇所の意味を検収する。
 
 検証は保存済みの検証証拠を先に読み、レビュー対象HEADと本文・対象・依存・実行条件が一致する成功を再利用する（`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」）。
 自分で実行するのは、その成功が覆わない検証と、判定に追加の観測が必要なものに限る。

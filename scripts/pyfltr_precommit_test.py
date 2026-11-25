@@ -73,6 +73,35 @@ def test_consumer_and_verify_modes_are_exclusive() -> None:
     assert exc.value.code == 2
 
 
+@pytest.mark.parametrize("include", [False, True])
+def test_document_consumers_are_required_by_both_verification_operations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], include: bool
+) -> None:
+    document = "docs/behavior.md"
+    consumer = "reader_test.py"
+    root = init_repository(
+        tmp_path / "repo", files={document: "# 手順", consumer: f"SOURCE = {document!r}"}, commit_message="init"
+    )
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: name)
+    assert pyfltr_precommit.main(["--consumer-tests", document]) == 0
+    snapshot = json.loads(capsys.readouterr().out)
+    assert len(snapshot["candidates"]) == 1
+    assert snapshot["candidates"][0]["required"] is False
+    review = tmp_path / "review.json"
+    review.write_text(
+        json.dumps(
+            {**snapshot, "decisions": [{"source": document, "test": consumer, "include": True, "reason": "文書を読む"}]}
+        ),
+        encoding="utf-8",
+    )
+    argv = ["run", "--no-always-targets", document, *([consumer] if include else [])]
+    options = ["--consumer-review", str(review)]
+    _install_pyfltr(monkeypatch, root, pytest_started_at=_iso(60), argv=argv)
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(argv), *options]) == int(not include)
+    assert pyfltr_precommit.main(["--verify-run", "01RUN", *options]) == int(not include)
+
+
 @pytest.mark.parametrize("include_consumer", [False, True])
 def test_scoped_run_is_only_reusable_for_lane_verification(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, include_consumer: bool

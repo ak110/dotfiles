@@ -9,6 +9,9 @@ import pytest
 
 
 @pytest.mark.windows
+@pytest.mark.cpu_limit(
+    0.69, reason="新旧版の隔離配置を含む。2ケースの判定CPU秒はLinux単独0.254〜0.295、4並列0.272〜0.298、CI失敗時最大0.686973"
+)
 @pytest.mark.parametrize("child_exit", [0, 7])
 def test_post_update_imports_only_new_version(tmp_path: pathlib.Path, child_exit: int) -> None:
     source = pathlib.Path(__file__).resolve().parents[1]

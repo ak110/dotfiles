@@ -24,7 +24,7 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
         path = (root / name).resolve()
         if not path.is_relative_to(root) or not path.is_file():
             raise ValueError(f"リポジトリ内のファイルでない: {name}")
-        if path.suffix == ".py" and not path.stem.endswith("_test") and not path.name.startswith("test_"):
+        if not _is_test(path):
             changed.add(path)
     listed = git_command.run(["-C", str(root), "ls-files", "-z", "--", "*.py"], capture_output=True, timeout=60)
     if listed.returncode:
@@ -35,9 +35,11 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
     paths = {(root / os.fsdecode(name)).resolve() for name in listed.stdout.split(b"\0") if name}
     if any(not path.is_relative_to(root) for path in paths):
         raise ValueError("追跡ファイルがリポジトリ外を参照している")
+    support = _support_references(paths, root, changed)
+    hook_entries = _hook_entry_references(paths, root, changed)
     candidates: list[dict[str, Any]] = []
     for path in sorted(paths):
-        if not (path.stem.endswith("_test") or path.name.startswith("test_")):
+        if not _is_test(path):
             continue
 
         if not path.is_file():
@@ -51,17 +53,24 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
             module = _module_name(source)
             relative_parts = source.relative_to(root).with_suffix("").parts
             namespace_module = ".".join(relative_parts) if all(part.isidentifier() for part in relative_parts) else module
-            direct = module in imports or namespace_module in imports
-            named = path.parent == source.parent and path.stem.startswith(source.stem + "_")
+            python = source.suffix == ".py"
+            direct = python and (module in imports or namespace_module in imports)
+            named = python and path.parent == source.parent and path.stem.startswith(source.stem + "_")
             reasons = []
             if direct:
                 reasons.append("direct-import")
             if named:
                 reasons.append("test-name")
-            if re.search(rf"(?<!\w){re.escape(source.stem)}(?!\w)", body):
+            if python and re.search(rf"(?<!\w){re.escape(source.stem)}(?!\w)", body):
                 reasons.append("text-reference")
             if source.relative_to(root).as_posix() in body:
                 reasons.append("path-reference")
+            elif not python and _mentions_filename(body, source.name):
+                reasons.append("filename-reference")
+            if imports & support.get(source, set()):
+                reasons.append("test-support-reference")
+            if imports & hook_entries.get(source, set()):
+                reasons.append("hook-entry-reference")
             if reasons:
                 candidates.append(
                     {
@@ -86,6 +95,63 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
             for name in sorted({item["test"] for item in candidates})
         },
     }
+
+
+def _is_test(path: pathlib.Path) -> bool:
+    return path.suffix == ".py" and (path.stem.endswith("_test") or path.name.startswith("test_"))
+
+
+def _mentions_filename(body: str, name: str) -> bool:
+    return re.search(rf"(?<![\w.-]){re.escape(name)}(?![\w.-])", body) is not None
+
+
+def _support_references(
+    paths: set[pathlib.Path], root: pathlib.Path, changed: set[pathlib.Path]
+) -> dict[pathlib.Path, set[str]]:
+    sources = {source for source in changed if source.suffix != ".py"}
+    if not sources:
+        return {}
+    result: dict[pathlib.Path, set[str]] = {source: set() for source in sources}
+    for path in paths:
+        if "_testing" not in path.relative_to(root).parts[:-1] or _is_test(path) or not path.is_file():
+            continue
+        body = path.read_text(encoding="utf-8")
+        for source in sources:
+            if source.relative_to(root).as_posix() in body or _mentions_filename(body, source.name):
+                result[source].add(_module_name(path))
+    return result
+
+
+def _hook_entry_references(
+    paths: set[pathlib.Path], root: pathlib.Path, changed: set[pathlib.Path]
+) -> dict[pathlib.Path, set[str]]:
+    hooks = root / "agent-toolkit/agent_toolkit/_hooks"
+    sources = {source for source in changed if source.suffix == ".py" and source.is_relative_to(hooks)}
+    result: dict[pathlib.Path, set[str]] = {source: set() for source in sources}
+    for entry in (hooks / "stop.py", hooks / "pretooluse/dispatch.py"):
+        if not sources or entry not in paths or not entry.is_file():
+            continue
+        tree = ast.parse(entry.read_text(encoding="utf-8"))
+        imports = _imported_modules(tree, entry)
+        if entry.name == "stop.py":
+            for node in tree.body:
+                if (
+                    isinstance(node, ast.Assign)
+                    and any(
+                        isinstance(target, ast.Name) and target.id in {"CHECK_MODULE_NAMES", "CODEX_CHECK_MODULE_NAMES"}
+                        for target in node.targets
+                    )
+                    and isinstance(node.value, ast.Tuple)
+                ):
+                    imports.update(
+                        f"agent_toolkit._hooks.{item.value}"
+                        for item in node.value.elts
+                        if isinstance(item, ast.Constant) and isinstance(item.value, str)
+                    )
+        for source in sources:
+            if _module_name(source) in imports:
+                result[source].add(_module_name(entry))
+    return result
 
 
 def _module_name(path: pathlib.Path) -> str:

@@ -65,6 +65,9 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 | `subagent_md_path` | `add-wi` |
 | `extra_params` | `投入する要求`には要求ファイルの絶対パス、`引き継ぎ記録先`には記録先のパスを渡す |
 
+外部資料を原本に持つ案件では、委譲元の作業契約の絶対パスを依頼本文で渡し、保存担当は `atk wi add --source-contract <絶対パス>` で同じ案件の対応表を検査する。
+パスを渡さなかった委譲では保存側の機械検査が届かない場合があるため、投入前レビューで表を確かめる。
+
 ```json
 {"投入する要求":"/absolute/managed-temp/requirements.md","引き継ぎ記録先":"/absolute/managed-temp/handoff.md（新規）"}
 ```
