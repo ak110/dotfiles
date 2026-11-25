@@ -235,13 +235,13 @@ async def test_failed_refresh_displays_newer_independent_observation(
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/usage")
     expect = playwright.async_api.expect
-    status = page.locator("#usage-status")
-    await expect(status).to_contain_text("最終取得")
+    status = page.locator("#update-status")
+    await expect(status).to_be_hidden()
     await expect(page.get_by_role("progressbar")).to_have_attribute("value", "20")
     monkeypatch.setattr(usage_refresh, "refresh", refresh)
     try:
         await page.get_by_role("button", name="再取得").click()
-        await expect(status).to_contain_text("取得中")
+        await expect(page.get_by_role("button", name="再取得")).to_be_disabled()
         observe(45, now)
     finally:
         release.set()

@@ -209,12 +209,17 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 await asyncio.gather(*(refresh_remote(host) for host in hosts if host not in unsupported))
             await asyncio.sleep(60)
 
-    @app.before_serving
-    async def start_refresh() -> None:
-        app.add_background_task(refresh_remotes)
+    background_started = False
+
+    def start_refresh() -> None:
+        nonlocal background_started
+        if not background_started:
+            background_started = True
+            app.add_background_task(refresh_remotes)
 
     @app.get("/settings")
     async def settings_index() -> quart.Response:
+        start_refresh()
         return no_store(
             render_index(app.config["PLANS_CONTEXT"], safe_base_path(quart.request.root_path), "settings"),
             "text/html; charset=utf-8",
@@ -222,9 +227,13 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
 
     @app.get("/api/settings")
     async def settings_get() -> quart.Response:
+        start_refresh()
         try:
             host = await asyncio.to_thread(_request_host)
             background = quart.request.args.get("background") == "1"
+            if background and quart.request.args.get("retry") == "1":
+                hosts = (host,) if host else await asyncio.to_thread(_remote_hosts, read_only=True)
+                await asyncio.gather(*(refresh_remote(name) for name in hosts if name not in unsupported))
             if background and host:
                 snapshot = snapshots.get(host)
                 if snapshot is None or host in errors:

@@ -1,9 +1,8 @@
-import {BASE_PATH} from "./common.js";
+import {setUpdateError, BASE_PATH} from "./common.js";
 import {registerScreen} from "./shell.js";
 import {DAY, claudeResetScopeName, dateJst, forecast, quotaName} from "./usage_display.js";
 
 const view = document.getElementById("usage-content");
-const status = document.getElementById("usage-status");
 const refreshButton = document.getElementById("usage-refresh");
 const visible = () => document.body.dataset.screen === "usage" && !document.hidden;
 let pending = false;
@@ -218,7 +217,7 @@ async function request(path, body) {
 async function update(force) {
   if (pending || !visible()) return;
   pending = true;
-  status.textContent = "取得中。前回の値を表示しています。";
+
   refreshButton.disabled = true;
   try {
     if (!data) {
@@ -228,10 +227,9 @@ async function update(force) {
     if (!visible()) return;
     data = await request("/api/usage/refresh", {force});
     render(data);
-    status.textContent = data.refresh_failures?.length ? "取得に失敗した項目があります。理由を確認して再取得してください。" :
-      `最終取得: ${dateJst(data.last_refresh_at)}`;
+    setUpdateError("usage", "refresh", data.refresh_failures?.length ? "利用枠の取得に失敗した項目があります。" : "", () => update(true));
   } catch (error) {
-    status.textContent = `利用枠の取得に失敗しました。 ${error.message}`;
+    setUpdateError("usage", "refresh", `利用枠の取得に失敗しました。 ${error.message}`, () => update(true));
   } finally {
     pending = false;
     refreshButton.disabled = false;

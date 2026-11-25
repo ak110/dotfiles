@@ -99,6 +99,7 @@ button,
 textarea { resize: vertical; }
 :where(input[type="checkbox"], input[type="radio"]) {
   appearance: none;
+  font: inherit;
   box-sizing: border-box;
   display: inline-grid;
   place-content: center;
@@ -340,7 +341,6 @@ main > .toolbar {
 
   .app-nav a {
     padding: 4px 8px;
-    font-size: var(--font-size-small);
   }
 }
 
@@ -419,3 +419,5 @@ main > .toolbar {
   font-size: var(--font-size-small);
 }
 .metric-warning { color: var(--color-warning); }
+
+.update-status { padding: 4px 16px; background: var(--color-warning-quiet); }

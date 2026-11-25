@@ -364,7 +364,10 @@
   margin-block-start: var(--space-3);
   padding-block-start: var(--space-2);
 }
-#settings-content .settings-format { color: var(--color-secondary-text); }
+#settings-content .settings-format {
+  color: var(--color-secondary-text);
+  font-size: var(--font-size-small);
+}
 #settings-content [data-conflict] {
   padding: var(--space-2);
   color: var(--color-warning);

@@ -19,6 +19,27 @@ function readBootstrap() {
   return element ? JSON.parse(element.textContent) : {};
 }
 
+const updateErrors = new Map();
+const updateStatus = document.getElementById("update-status");
+
+function renderUpdateStatus() {
+  if (!updateStatus) return;
+  const failures = [...(updateErrors.get(document.body.dataset.screen)?.values() ?? [])];
+  updateStatus.hidden = failures.length === 0;
+  updateStatus.querySelector("[role=status]").textContent = failures.map(item => item.message).join(" / ");
+  updateStatus.querySelector("button").onclick = () => failures.forEach(item => item.retry());
+}
+
+export function setUpdateError(screen, key, message, retry) {
+  if (!updateErrors.has(screen)) updateErrors.set(screen, new Map());
+  const errors = updateErrors.get(screen);
+  if (message) errors.set(key, {message, retry});
+  else errors.delete(key);
+  renderUpdateStatus();
+}
+
+document.addEventListener("atk-screen-change", renderUpdateStatus);
+
 const DEFAULT_STALL_MS = 45000;
 
 // SSEの無通信を判定する時間。サーバーがheartbeat間隔の3回分として埋め込む。
@@ -42,10 +63,23 @@ export function connectEvents(path, handlers) {
   let timer = null;
   const touch = () => { lastSeen = Date.now(); };
 
+  const screen = {"/api/events": "wi", "/api/plans/events": "plans", "/api/sessions/events": "sessions"}[path];
+
+  function reconnect() {
+    source?.close();
+    open();
+  }
+
+  function disconnected() {
+    if (screen) setUpdateError(screen, "sse", "接続が切れました。再接続中です。", reconnect);
+  }
+
   function open() {
     source = new EventSource(url);
     touch();
     source.addEventListener("heartbeat", touch);
+    source.addEventListener("error", disconnected);
+    source.addEventListener("open", () => { if (screen) setUpdateError(screen, "sse"); });
     for (const [name, handler] of Object.entries(handlers)) {
       source.addEventListener(name, (event) => {
         if (name !== "error") touch();
@@ -57,8 +91,8 @@ export function connectEvents(path, handlers) {
   function check() {
     if (!source) return;
     if (source.readyState === EventSource.CLOSED || Date.now() - lastSeen > limit) {
-      source.close();
-      open();
+      disconnected();
+      reconnect();
     }
   }
 

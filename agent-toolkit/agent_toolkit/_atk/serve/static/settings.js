@@ -1,4 +1,4 @@
-import {BASE_PATH} from "./common.js";
+import {BASE_PATH, setUpdateError} from "./common.js";
 import {registerScreen} from "./shell.js";
 import {formatLocalMinute, renderResetPermissions} from "./reset_permissions.js";
 
@@ -69,11 +69,12 @@ function field(parent, label, value = "", choices, type = "text", labels = {}) {
   return input;
 }
 
-async function request(payload, cached = false, background = false) {
+async function request(payload, cached = false, background = false, retry = false) {
   const parameters = new URLSearchParams();
   if (host) parameters.set("host", host);
   if (cached) parameters.set("cached", "1");
   if (background) parameters.set("background", "1");
+  if (retry) parameters.set("retry", "1");
   const query = parameters.size ? "?" + parameters : "";
   const response = await fetch(BASE_PATH + "/api/settings" + query, payload ? {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
@@ -536,7 +537,7 @@ function renderConflicts() {
   updateWriteControls();
 }
 
-async function loadHost(background = false) {
+async function loadHost(background = false, retry = false) {
   if (busy || (background && (fetching || displayedData?.legacy || displayedData?.automatic_unsupported?.includes(host)))) return;
   const generation = ++loadGeneration;
   fetching = true;
@@ -547,7 +548,7 @@ async function loadHost(background = false) {
     const displayedHost = host;
     const savedDrafts = hostDrafts.get(displayedHost);
     const editingSnapshot = displayedData ?? savedDrafts?.snapshot;
-    const initial = await request(undefined, !background && Boolean(host) && !displayedData, background);
+    const initial = await request(undefined, !background && Boolean(host) && !displayedData, background, retry);
     if (generation !== loadGeneration) return;
     const focus = rememberSettingFocus(document.activeElement);
     const scroll = content.closest("main");
@@ -557,8 +558,7 @@ async function loadHost(background = false) {
     if (initial.cached) {
       render(initial);
       restoreEditors(prior);
-      const fetched = new Date(initial.fetched_at).toLocaleString();
-      status.textContent = `取得: ${fetched} · 更新中。最新の値が届くまで保存できません。`;
+      status.textContent = "更新中。最新の値が届くまで保存できません。";
       data = await request();
       if (generation !== loadGeneration) return;
     }
@@ -587,16 +587,15 @@ async function loadHost(background = false) {
     restoreSettingFocus(focus);
     loading = false;
     updateWriteControls();
-    status.textContent = data.legacy ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
+    const failures = Object.entries(data.automatic_errors ?? {}).map(([name, reason]) => `${name}: ${reason}`);
+    setUpdateError("settings", "refresh", failures.join(" / "), () => loadHost(true, true));
+    status.textContent = data.legacy || data.automatic_unsupported?.includes(host) ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
   } catch (error) {
     if (generation !== loadGeneration) return;
-    status.textContent = error.message;
-    if (displayedData?.fetched_at) {
-      status.textContent += ` 取得: ${new Date(displayedData.fetched_at).toLocaleString()}。最新の値が届くまで保存できません。`;
-    }
     loading = Boolean(host) && Boolean(displayedData);
     updateWriteControls();
-    status.append(" ", button("再試行", () => loadHost(background)));
+    status.textContent = loading ? "最新の値が届くまで保存できません。" : "";
+    setUpdateError("settings", "refresh", host ? `${host}: ${error.message}` : error.message, () => loadHost(background, background));
   } finally {
     if (generation === loadGeneration) {
       fetching = false;

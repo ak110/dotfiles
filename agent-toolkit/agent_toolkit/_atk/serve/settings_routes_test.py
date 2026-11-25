@@ -164,3 +164,25 @@ def test_remote_settings_limit_covers_shared_git_update_without_extending_reads(
         assert calls[1] > git_sync.LOCK_WAIT_TIMEOUT_SECONDS + git_sync.LOCK_HOLD_TIMEOUT_SECONDS
     else:
         assert calls[1] == calls[0]
+
+
+@pytest.mark.parametrize("supported", [True, False])
+def test_background_snapshot_never_falls_back_to_legacy_reads(monkeypatch, supported):
+    calls = []
+
+    def run(command, **_kwargs):
+        operation = command[-1]
+        calls.append(operation)
+        if operation == "uname -s":
+            return subprocess.CompletedProcess(command, 0, b"Linux\n", b"")
+        assert operation == "atk config snapshot --read-only"
+        return subprocess.CompletedProcess(command, 0 if supported else 2, b'{"settings":{}}', b"")
+
+    monkeypatch.setattr(settings_routes, "run_with_timeout", run)
+    if supported:
+        snapshot, _runner = settings_routes._remote_snapshot("host", read_only=True)
+        assert snapshot == {"settings": {}}
+    else:
+        with pytest.raises(settings_routes._ReadOnlyUnsupported):
+            settings_routes._remote_snapshot("host", read_only=True)
+    assert calls == ["uname -s", "atk config snapshot --read-only"]

@@ -9,6 +9,9 @@
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
 <body data-screen="__INITIAL_SCREEN__">
+  <div id="update-status" class="update-status" hidden>
+    <span role="status"></span> <button type="button">再取得</button>
+  </div>
   <section id="screen-wi" class="screen" __WI_HIDDEN__>
   <header class="app-header">
     <div class="header-title">
@@ -459,7 +462,6 @@
         <a href="__BASE_PATH_HTML__/settings?group=usage&amp;host=">リセットの許可を設定</a>
         <button id="usage-refresh" class="button-primary" type="button">再取得</button>
       </div>
-      <p id="usage-status" role="status"></p>
       <div id="usage-content" class="metric-columns"></div>
     </main>
   </section>

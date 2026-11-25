@@ -436,9 +436,9 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     assert not calls
     await picker.select_option("uncached-host")
-    await expect(status).to_contain_text(failures["uncached-host"])
+    await expect(page.locator("#update-status")).to_contain_text(failures["uncached-host"])
     await expect(editor).to_have_count(0)
-    await expect(status.get_by_role("button", name="再試行")).to_be_enabled()
+    await expect(page.locator("#update-status").get_by_role("button", name="再取得")).to_be_enabled()
 
     await picker.select_option("cached-host")
     await expect(field).to_have_value("cached-value")
@@ -447,14 +447,14 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     error = "SSH先で設定を非昇格で取得できません。接続先でユーザーがログオンしていることを確認してください"
     failures["cached-host"] = error
     await picker.select_option("cached-host")
-    await expect(status).to_contain_text(error)
-    await expect(status).to_contain_text("取得:")
+    await expect(page.locator("#update-status")).to_contain_text(error)
+    await expect(status).to_contain_text("最新の値が届くまで保存できません")
     await expect(field).to_have_value("cached-value")
     await expect(editor.get_by_role("button", name="保存", exact=True)).to_be_disabled()
 
     del failures["cached-host"]
     snapshot["settings"]["serve_host"].update(effective="recovered-value", saved="recovered-value")
-    await status.get_by_role("button", name="再試行").click()
+    await page.locator("#update-status").get_by_role("button", name="再取得").click()
     await expect(field).to_have_value("recovered-value")
     await expect(editor.get_by_role("button", name="保存", exact=True)).to_be_enabled()
 
@@ -598,3 +598,24 @@ async def test_observed_codex_account_and_weekly_cutoff_save_without_typing_iden
     assert permit["count"] == 1
     assert re.fullmatch(r"codex-\d{8}-\d{6}-[0-9a-f]{8}", permit["id"])
     assert datetime.datetime.fromisoformat(permit["until"]).timestamp() == reset - grace * day
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_settings_periodic_read_preserves_draft_and_detects_conflict(
+    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    page = screen_harness.page
+    await page.clock.install()
+    await page.goto(screen_harness.base_url + "/settings")
+    await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
+    editor = page.locator('[data-setting="serve_host"]')
+    field = editor.get_by_label("保存値")
+    await field.fill("draft-host")
+    config.update_settings({"action": "set", "key": "serve_host", "value": "saved-host"})
+    await page.clock.fast_forward(30_000)
+    expect = playwright.async_api.expect
+    await expect(editor.locator("[data-conflict]")).to_be_visible()
+    await expect(field).to_have_value("draft-host")

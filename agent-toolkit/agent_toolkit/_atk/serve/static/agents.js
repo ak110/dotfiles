@@ -1,10 +1,9 @@
-import {BASE_PATH} from "./common.js";
+import {setUpdateError, BASE_PATH} from "./common.js";
 import {registerScreen} from "./shell.js";
 
 const active = () => document.body.dataset.screen === "agents";
 const checkbox = document.getElementById("agents-terminated");
 const hosts = document.getElementById("agents-hosts");
-const error = document.getElementById("agents-error");
 
 async function fetchJson(url) {
   const response = await fetch(BASE_PATH + url);
@@ -115,10 +114,12 @@ function watchHost(content, host) {
     if (host !== null) params.set("host", host);
     try {
       const payload = await fetchJson("/api/agents/list?" + params);
-      if (payload.error) content.textContent = payload.error;
-      else renderRoots(content, payload.roots);
+      if (payload.error) throw new Error(payload.error);
+      renderRoots(content, payload.roots);
+      setUpdateError("agents", host);
     } catch (cause) {
-      content.textContent = cause.message;
+      if (content.textContent === "読み込み中…") content.textContent = "";
+      setUpdateError("agents", host, `${host ?? "ローカル"}: ${cause.message}`, refresh);
     } finally {
       pending = false;
       if (active()) timer = setTimeout(refresh, 2000);
@@ -134,7 +135,7 @@ async function init() {
   hosts.dataset.initialized = "true";
   try {
     const data = await fetchJson("/api/agents/hosts");
-    error.hidden = true;
+    setUpdateError("agents", "hosts");
     for (const hostname of [null, ...data.remote]) {
       const section = document.createElement("section");
       const heading = document.createElement("h2");
@@ -147,8 +148,7 @@ async function init() {
       watchHost(content, hostname);
     }
   } catch (cause) {
-    error.textContent = cause.message;
-    error.hidden = false;
+    setUpdateError("agents", "hosts", cause.message, init);
     delete hosts.dataset.initialized;
   }
 }

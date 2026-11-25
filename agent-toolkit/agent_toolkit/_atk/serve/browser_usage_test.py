@@ -57,7 +57,7 @@ async def test_usage_displays_observations_and_refresh_failure_without_losing_va
     await page.goto(screen_harness.base_url + "/usage")
     expect = playwright.async_api.expect
     screen = page.locator("#screen-usage")
-    await expect(screen.locator("#usage-status")).to_contain_text("最終取得")
+    await expect(page.locator("#update-status")).to_be_hidden()
     await expect(screen.get_by_role("progressbar", name="週 · codex:primaryの使用率")).to_have_attribute("value", "80")
     await expect(screen.locator(".metric-tick")).to_have_count(6)
     await expect(screen.locator(".metric-warning")).to_contain_text("上限に達する見込み")
@@ -65,11 +65,11 @@ async def test_usage_displays_observations_and_refresh_failure_without_losing_va
     await expect(screen).not_to_contain_text("fixture-account")
     try:
         await screen.get_by_role("button", name="再取得").click()
-        await expect(screen.locator("#usage-status")).to_contain_text("取得中")
+        await expect(screen.get_by_role("button", name="再取得")).to_be_disabled()
         await expect(screen.get_by_role("progressbar")).to_be_visible()
     finally:
         release.set()
-    await expect(screen.locator("#usage-status")).to_contain_text("取得に失敗した項目")
+    await expect(page.locator("#update-status")).to_contain_text("取得に失敗した項目")
     await expect(screen.get_by_text("取得失敗: Codex:", exact=False)).to_contain_text("最後の観測")
     await expect(screen.get_by_role("progressbar")).to_have_attribute("value", "80")
     assert started.is_set()
@@ -96,9 +96,10 @@ async def test_usage_fetch_is_scoped_to_the_visible_screen(
     await page.goto(screen_harness.base_url + "/")
     await expect(page.locator("#entry-list .entry-row").first).to_be_visible()
     assert not any("/api/usage" in url for url in screen_harness.requests)
-    await page.get_by_role("navigation", name="画面").get_by_role("link", name="利用枠").click()
+    async with page.expect_response("**/api/usage/refresh"):
+        await page.get_by_role("navigation", name="画面").get_by_role("link", name="利用枠").click()
     await expect(page).to_have_title("利用枠 - atk serve")
-    await expect(page.locator("#usage-status")).to_contain_text("最終取得")
+    await expect(page.locator("#screen-usage .metric-section").first).to_be_visible()
     assert sum(url.endswith("/api/usage/refresh") for url in screen_harness.requests) == 1
     await page.go_back()
     await expect(page).to_have_title("ワークアイテム - atk serve")

@@ -273,9 +273,7 @@ function subscribeEvents() {
     },
     error: () => {
       byId('connection-status').dataset.connected = 'false';
-      if (byId('connection-status').dataset.syncFailed === 'true') return;
-      byId('connection-status').textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / 自動更新`, '自動更新を再接続中');
-      byId('connection-status').hidden = false;
+
     },
     changed: (event) => {
       void initialization.then(() => reloadFromExternalChange('sse', event));
