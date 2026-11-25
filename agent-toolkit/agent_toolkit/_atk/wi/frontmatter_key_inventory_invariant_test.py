@@ -57,33 +57,41 @@ _NON_ACTIVE_FIELDS = {
     "wi_submit_bindings",
 }
 _METADATA_NAMES = {"frontmatter_data", "data", "metadata", "updated_data", "updates", "stored_data", "frontmatter"}
-_RESERVED_FIELD_TABLES = {"_RESERVED_ADD_KEY_NEXT_ACTIONS", "_RESERVED_EDIT_KEY_NEXT_ACTIONS"}
+_METADATA_ASSIGNMENT_NAMES = _METADATA_NAMES | {"_RESERVED_ADD_KEY_NEXT_ACTIONS", "_RESERVED_EDIT_KEY_NEXT_ACTIONS"}
+_METADATA_KEY_METHODS = {"get", "pop", "setdefault"}
 
 
 def _metadata_name(node: ast.expr) -> bool:
     return isinstance(node, ast.Name) and node.id in _METADATA_NAMES
 
 
+def _add_literal_key(keys: set[str], node: ast.expr | None) -> None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        keys.add(node.value)
+
+
 def _literal_metadata_keys(path: pathlib.Path) -> set[str]:
     keys: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        literals: list[ast.expr | None] = []
-        if isinstance(node, ast.Subscript) and _metadata_name(node.value):
-            literals.append(node.slice)
-        elif isinstance(node, ast.Assign | ast.AnnAssign):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if isinstance(node.value, ast.Dict) and any(
-                isinstance(target, ast.Name) and target.id in _METADATA_NAMES | _RESERVED_FIELD_TABLES for target in targets
-            ):
-                literals.extend(node.value.keys)
-        elif isinstance(node, ast.Call) and isinstance(method := node.func, ast.Attribute) and _metadata_name(method.value):
-            if method.attr in {"get", "pop", "setdefault"} and node.args:
-                literals.append(node.args[0])
+        if isinstance(node, ast.Subscript):
+            if _metadata_name(node.value):
+                _add_literal_key(keys, node.slice)
+        elif isinstance(node, ast.Call):
+            method = node.func
+            if not isinstance(method, ast.Attribute) or not _metadata_name(method.value):
+                continue
+            if method.attr in _METADATA_KEY_METHODS and node.args:
+                _add_literal_key(keys, node.args[0])
             elif method.attr == "update":
                 keys.update(item.arg for item in node.keywords if item.arg is not None)
                 if node.args and isinstance(node.args[0], ast.Dict):
-                    literals.extend(node.args[0].keys)
-        keys.update(key.value for key in literals if isinstance(key, ast.Constant) and isinstance(key.value, str))
+                    for key in node.args[0].keys:
+                        _add_literal_key(keys, key)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Dict):
+            targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+            if any(isinstance(target, ast.Name) and target.id in _METADATA_ASSIGNMENT_NAMES for target in targets):
+                for key in node.value.keys:
+                    _add_literal_key(keys, key)
     return keys
 
 

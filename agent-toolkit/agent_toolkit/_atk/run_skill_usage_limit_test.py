@@ -11,7 +11,7 @@ import types
 
 import pytest
 
-from agent_toolkit._atk import orchestrator, run_skill
+from agent_toolkit._atk import orchestrator, run_skill, run_skill_state
 from agent_toolkit._common import claude_usage_limit
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 from agent_toolkit._testing.run_skill_support import _engine_env, _Env, _log_files, _records, _run, _startup_input
@@ -55,25 +55,34 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     monkeypatch.setenv("CODEX_HOME", str(engine_env.state / "codex"))
     monkeypatch.setattr(sys.stderr, "isatty", lambda: progress)
     sleeps: list[float] = []
+    timeouts: list[float] = []
     clock = [1000.0]
+    monotonic = [0.0]
+    real_run_locked = run_skill.run_locked
 
     def sleep(delay: float) -> None:
         sleeps.append(delay)
         clock[0] += delay
+        monotonic[0] += delay
 
-    monkeypatch.setattr(
-        run_skill,
-        "time",
-        types.SimpleNamespace(
-            time=lambda: clock[0],
-            monotonic=lambda: clock[0],
-            sleep=sleep,
-        ),
-    )
+    def run_with_activity(*args, wait_session, **kwargs) -> int:
+        def timed_wait(*wait_args, timeout: float, **wait_kwargs) -> int:
+            result = wait_session(*wait_args, timeout=timeout, **wait_kwargs)
+            timeouts.append(timeout)
+            monotonic[0] += 0.5
+            return result
+
+        return real_run_locked(*args, wait_session=timed_wait, **kwargs)
+
+    fake_time = types.SimpleNamespace(time=lambda: clock[0], monotonic=lambda: monotonic[0], sleep=sleep)
+    monkeypatch.setattr(run_skill, "time", fake_time)
+    monkeypatch.setattr(run_skill_state, "time", fake_time)
+    monkeypatch.setattr(run_skill, "run_locked", run_with_activity)
     code, out, err = _run(["--target-repo", str(engine_env.repo), "--timeout", "2", "resume-skill"], capsys)
     assert code == 0, err
     assert out.startswith("成功: ") and len(out.splitlines()) == 1
     assert sleeps == [10, 300]
+    assert timeouts == [2, 1.5, 1]
     sessions = _records(engine_env, "session")
     assert len(sessions) == 3
     assert all(session["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "0" for session in sessions)
