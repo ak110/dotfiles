@@ -130,7 +130,7 @@ def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib
 
 
 @pytest.mark.cpu_limit(
-    9.5, reason="全追跡試験のASTと読取先を解析し、別配置の規範読取も検出するため局所化できない（Linux CI CPU4.475秒）"
+    10.73, reason="全追跡試験のASTと読取先を解析する。判定CPU秒はLinux単独2.629〜2.846、4並列3.116〜3.227、CI失敗時10.720"
 )
 def test_agent_doc_readers_are_in_invariant_tests() -> None:
     repository = pathlib.Path(__file__).resolve().parent
