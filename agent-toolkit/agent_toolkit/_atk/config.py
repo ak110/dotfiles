@@ -313,6 +313,7 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
             "saved": shared.get(key, default) if shared_key else saved.get(key, default),
             "default": default,
             "source": source,
+            "shared": shared_key,
             "description": description,
             "format": _config_settings.setting_format(key),
             "choices": _config_settings.SETTING_CHOICES.get(key),

@@ -108,7 +108,11 @@ async def test_settings_temporary_preset_repository_and_array_operations(
     await nav.get_by_text("一時指定", exact=True).click()
     temporary = page.locator("section").filter(has=page.get_by_role("heading", name="一時指定", exact=True)).last
     await temporary.get_by_label("キー", exact=True).select_option("codex_fast_mode")
-    await temporary.get_by_label("値", exact=True).fill("true")
+    value = temporary.get_by_label("値", exact=True)
+    await playwright.async_api.expect(value.locator("option")).to_have_text(
+        ["自動判定（auto）", "高速（true）", "通常（false）"]
+    )
+    await value.select_option("true")
     await temporary.get_by_label("期限（このブラウザーの時刻）").fill("2099-01-01T00:00")
     await temporary.get_by_role("button", name="一時指定を保存").click()
     key = page.locator('[data-setting="codex_fast_mode"]')
