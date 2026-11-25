@@ -1,5 +1,6 @@
 import itertools
 import pathlib
+from typing import Any
 from unittest.mock import Mock
 
 from agent_toolkit._agents_server import service_io
@@ -13,7 +14,7 @@ def test_shutdown_guard_keeps_ownership_for_all_orderings_of_three_obligations(t
     coordinator = ServiceCoordinator(target, tmp_path, ServiceManagers(), Mock(), Mock())
     coordinator.bind_runtime(service_io.Runtime("G1", target, ResourceBroker("G1")))
     moving = Mock()
-    obligations = {
+    obligations: dict[str, dict[str, Any]] = {
         "conversation": coordinator.managers.conversations,
         "move": coordinator._moving,  # pylint: disable=protected-access
         "update": coordinator._updates,  # pylint: disable=protected-access
