@@ -31,9 +31,10 @@ def allowed_temporary_key(key: str) -> bool:
 
 def update_temporary(key: str | None, value: str | None, until: str | None) -> None:
     if key is not None:
-        if not allowed_temporary_key(key) or value is None:
+        if not allowed_temporary_key(key):
             raise ValueError("一時指定できるのは工程モデル・接続使用順・速度・上限待機方針だけ")
-        config_settings.validate_mutable_setting(key, value)
+        if value is not None:
+            config_settings.validate_mutable_setting(key, value)
     if until is not None:
         deadline(until)
     path = settings_path()
@@ -45,8 +46,15 @@ def update_temporary(key: str | None, value: str | None, until: str | None) -> N
             if key is None:
                 state.pop("values", None)
                 state.pop("until", None)
+            elif value is None:
+                values = temporary_settings()
+                values.pop(key, None)
+                if values:
+                    state["values"] = values
+                else:
+                    state.pop("values", None)
+                    state.pop("until", None)
             else:
-                assert value is not None
                 values = temporary_settings()
                 values[key] = config_settings.normalize_setting(key, value)
                 state.update(values=values, until=until)
@@ -94,11 +102,12 @@ def build_parser(sub: Any) -> None:
     set_.add_argument("key", help="一時指定する工程モデル・接続使用順・速度・待機方針の設定キー")
     set_.add_argument("value", help="通常設定と同じ書式の設定値")
     set_.add_argument("--until", help="タイムゾーンを含む期限。省略時は明示解除まで")
-    help_text.add_command(
+    clear = help_text.add_command(
         actions,
         "clear",
         **help_text.HELP["atk config temporary clear"],
     )
+    clear.add_argument("key", nargs="?", help="このキーの一時指定だけを解除する。省略時は全て解除する。")
     help_text.add_command(
         actions,
         "show",
@@ -134,7 +143,7 @@ def dispatch(
         if args.temporary_action == "set":
             update_temporary(args.key, args.value, args.until)
         elif args.temporary_action == "clear":
-            update_temporary(None, None, None)
+            update_temporary(args.key, None, None)
         state = read_settings()
         print(
             json.dumps(

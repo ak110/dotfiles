@@ -7,6 +7,7 @@ from typing import Any
 
 import session_evidence_execution
 from agent_toolkit._common import session_review
+from session_conversation import compact_assistant_reports
 from session_evidence_candidates import (
     _BUNDLE_BODY_LENGTH,
     _adhoc_processing_events,
@@ -155,6 +156,7 @@ def _bundle_events(
     )
     for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, scans, strict=True):
         if filename == "conversation.jsonl":
+            scan_events, _ = compact_assistant_reports(scan_events)
             scan_events = [
                 {**event, **_conversation_body(event["text"], True)} if event.get("kind") == "tool-call" else event
                 for event in scan_events

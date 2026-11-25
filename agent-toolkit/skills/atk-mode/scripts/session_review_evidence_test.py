@@ -464,3 +464,28 @@ def test_assistant_clipping_without_improvement_and_main_record_separation() -> 
     event.update(kind="final-result", record="main", line=1)
     candidates = evidence_candidates._candidate_events([event], [], [])  # pylint: disable=protected-access
     assert not candidates[:-1]
+
+
+def test_bundle_shortens_report_copies_but_detail_keeps_the_original(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    asks = {"type": "user", "message": {"role": "user", "content": "確認する"}}
+    status = "進捗: 統合前の検証"
+    report = {"type": "assistant", "message": {"role": "assistant", "content": status}}
+    distinct = {"type": "assistant", "message": {"role": "assistant", "content": "検証結果: 2件合格"}}
+    transcript = _write_transcript(tmp_path, [asks, report, report, distinct, asks, report])
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    conversations = [json.loads(line) for line in (bundle / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [event["text"] for event in conversations if event["kind"] == "utterance"] == [
+        "確認する",
+        status,
+        "検証結果: 2件合格",
+        "確認する",
+        status,
+    ]
+    assert evidence.main([str(transcript), "--detail", "main:3"]) == 0
+    assert status in capsys.readouterr().out

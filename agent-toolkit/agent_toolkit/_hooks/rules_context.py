@@ -76,7 +76,7 @@ def delegated_compact_notice(launch: work_contract.DelegatedLaunch | None) -> st
     targets = [f"委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`", "起動の入力が示した役割文書"]
     if launch is not None and launch.whole_contract is not None:
         targets.append(f"全体作業契約`{launch.whole_contract}`")
-    if launch is not None and launch.handoff is not None:
+    if launch is not None and launch.handoff is not None and pathlib.Path(launch.handoff).is_file():
         targets.append(f"自身の引き継ぎ記録`{launch.handoff}`")
     return DELEGATED_COMPACT_NOTICE + "、".join(targets) + "。"
 

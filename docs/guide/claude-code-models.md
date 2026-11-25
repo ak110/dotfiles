@@ -136,11 +136,11 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 
 | プリセット | 初期値から変更する工程 |
 | --- | --- |
-| `codex-balanced` | executeを`claude:opus[1m]/low,codex:sol/low`へ変更 |
+| `codex-balanced` | executeを`claude:opus[1m]/medium,codex:sol/medium`へ変更 |
 | `codex-near-primary` | 初期値と同一 |
 | `codex-primary` | orchestrateを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
-| `claude-balanced` | executeを`claude:opus[1m]/low,codex:sol/low`、choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
-| `claude-primary` | executeを`claude:opus[1m]/low,codex:sol/low`、reviewを`claude:sonnet[1m]/medium,codex:sol/medium`、review_fastを`claude:haiku/medium,codex:luna/medium`、choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
+| `claude-balanced` | executeを`claude:opus[1m]/medium,codex:sol/medium`、choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
+| `claude-primary` | executeを`claude:opus[1m]/medium,codex:sol/medium`、reviewを`claude:sonnet[1m]/medium,codex:sol/medium`、review_fastを`claude:haiku/medium,codex:luna/medium`、choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
 
 その他の主な設定は次のとおりである。
 
@@ -150,9 +150,14 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 | `claude_usage_limit_wait`・`codex_usage_limit_wait` | 利用上限に達した時に解除を待つ範囲。`five-hour`（初期値）は5時間枠だけ、`always`は週次枠なども待ち、`never`は待たずに次の候補へ進む |
 | `claude_*_connections`・`codex_*_connections`ほか | Claude・Codexのサブスクリプション・APIクレジット・従量課金APIの使い分け。設定は[接続の使い分け](claude-code-connections.md#接続の使い分け)を参照 |
 
+未設定の環境では、executeを`codex:sol/medium,claude:opus[1m]/medium`の順に試す。
+以前に保存した候補列はそのまま使う。
+
 工程別モデルと`codex_fast_mode`は、同じprivate-notesを同期する環境で共有する。
 ファイルの場所と共有設定から解決したキーは`atk config show`の標準エラーで確認できる。
 特定のホストだけ変える場合は`atk config temporary`か`AGENT_TOOLKIT_CONFIG_<KEY>`を使う。
+共有するキーのローカル値が残っている場合は、[共有設定への移行](claude-code-connections.md#共有設定への移行)を先に行う。
+`set`で保存済みでも上書き元の案内が出たときは、その設定を解除して`get`で確かめる。
 
 初期設定ではCodexの5時間枠の解除を待つ。
 それ以外の枠は適用できるreset許可があれば先に確認し、resetしなければ使用順の残りの接続先や次のモデル候補を使う。

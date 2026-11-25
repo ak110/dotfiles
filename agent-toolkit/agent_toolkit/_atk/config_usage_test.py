@@ -35,7 +35,7 @@ def test_temporary_expiry_uses_current_normal_setting(tmp_path: pathlib.Path, mo
         _main(tmp_path, "config", "temporary", "set", "execute_model", temporary, "--until", "1970-01-01T00:03:20+00:00") == 0
     )
     assert config.resolve_mutable_setting("execute_model") == temporary
-    assert _main(tmp_path, "config", "set", "execute_model", latest) == 0
+    assert _main(tmp_path, "config", "set", "execute_model", latest) != 0
     assert config.resolve_mutable_setting("execute_model") == temporary
     monkeypatch.setattr(config_usage.time, "time", lambda: 201.0)
     assert config.resolve_mutable_setting("execute_model") == latest
@@ -143,3 +143,18 @@ def test_legacy_inventory_migrates_without_granting_permission(tmp_path, capsys)
     capsys.readouterr()
     assert _main(tmp_path, "config", "usage", "--json") == 0
     assert json.loads(capsys.readouterr().out)["claude_reset_inventory"] == []
+
+
+def test_set_with_temporary_value_requires_no_resave_after_clearing_one_key(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _main(tmp_path, "config", "temporary", "set", "execute_model", "claude:opus/medium") == 0
+    assert _main(tmp_path, "config", "temporary", "set", "review_model", "claude:sonnet/medium") == 0
+    capsys.readouterr()
+    assert _main(tmp_path, "config", "set", "execute_model", "codex:sol/medium") != 0
+    output = capsys.readouterr()
+    assert "成功:" not in output.out
+    assert "保存済み" in output.err and "temporary clear execute_model" in output.err
+    assert _main(tmp_path, "config", "temporary", "clear", "execute_model") == 0
+    assert config.resolve_mutable_setting("execute_model") == "codex:sol/medium"
+    assert config.resolve_mutable_setting("review_model") == "claude:sonnet/medium"

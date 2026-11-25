@@ -5,6 +5,7 @@ import datetime
 import re
 from typing import Any, NamedTuple
 
+from session_conversation import compact_assistant_reports
 from session_review_prepare_text import _clip_utf8
 
 _CONVERSATION_MAX_BYTES = 100_000
@@ -271,6 +272,7 @@ def _merge_by_time(groups: list[list[_ConversationRow]]) -> list[_ConversationRo
 
 
 def _conversation_document(events: list[dict[str, Any]], detail_command: str, main_record: str | None) -> str:
+    events, _ = compact_assistant_reports(events)
     by_record: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for event in events:
         if event.get("kind") != "record-provenance":

@@ -12,6 +12,7 @@
 - 巡回の最終完了は、単位ごとの公開の成功とは別に、選定全体の処置と最終SHAのCI成功で判定する。
   長い処理の間も、統合済みで公開できる変更は`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で先に公開し、未完了のレーン・WI・計画・所有と元の要求は保つ。
 - 公開工程の開始前に、選定メインが`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」を行い、今回追加と判定した項目は必要な工程を終えてから公開へ進む。
+  公開操作が新着WIの通知で止まったら、今回扱う必要のない項目はinboxに残し、判定を記録せず同じ公開操作を再発行する。
   公開対象は、選定で確定した項目と、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」で合流した項目である。
   目標が明示されている場合の必要な作業は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」に従い、それ以外の新規の項目は次回へ残す。
 - all-reposから委譲されたリポジトリ担当も、自分の対象のcwd、処理対象WI、ベースブランチへ公開工程を適用し、処理の所有を公開・CI・確認・再開まで保つ。

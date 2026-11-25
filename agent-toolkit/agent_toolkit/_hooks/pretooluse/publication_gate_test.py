@@ -83,9 +83,10 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
     monkeypatch.setattr(work_contract, "record_path", lambda _sid: contract)
     contract.write_text(f"- 新着WIの判定: {names[0]} | 次回: 別ホストで観測する\n", encoding="utf-8")
     pending = gate("git push")
-    assert pending is not None and names[0] not in pending and names[1] in pending
+    assert pending is not None and names[0] in pending and names[1] in pending
     _write_uwi_file(notes, names[1], answer="")
-    assert gate("git push") is None
+    remaining = gate("git push")
+    assert remaining is not None and names[0] in remaining and names[1] not in remaining
     _write_uwi_file(notes, names[0], answer="")
     assert gate("git push") is None
     _write_uwi_file(notes, names[1], answer="回答済み")
@@ -96,11 +97,6 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
     both = gate("git push")
     assert both is not None and names[0] in both and names[1] in both
     contract.write_text(f"- 新着WIの判定: {names[0]} | 次回: 別ホストで観測する\n", encoding="utf-8")
-    partial = gate("git push")
-    assert partial is not None and names[0] not in partial
-    contract.write_text("", encoding="utf-8")
-    again = gate("git push")
-    assert again is not None and names[0] in again
     assert gate("git push") is None
 
 

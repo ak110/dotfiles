@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import math
@@ -7,12 +8,13 @@ import os
 import pathlib
 import re
 import sys
+from collections.abc import Generator
 from typing import Any
 
 lazy import platformdirs
 
 from agent_toolkit._atk import config_repositories
-from agent_toolkit._common import codex_models, private_notes, runtime_environment
+from agent_toolkit._common import codex_models, file_lock, private_notes, runtime_environment
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.usage_settings import validate_permissions
@@ -24,7 +26,7 @@ MODEL_TYPES = ("execute", "review", "review_fast", "chores", "chores_fast", "orc
 """工程ごとに直接解決するモデル候補列の種別。"""
 
 MODEL_DEFAULTS = {
-    "execute_model": "codex:sol/low,claude:opus[1m]/low",
+    "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
     "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
     "chores_model": "codex:sol/low,claude:sonnet[1m]/low",
@@ -37,26 +39,26 @@ MODEL_DEFAULTS = {
 PRESET_MODELS = {
     "codex-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "claude:opus[1m]/low,codex:sol/low",
+        "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
     },
     "codex-near-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "codex:sol/low,claude:opus[1m]/low",
+        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
     },
     "codex-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "codex:sol/low,claude:opus[1m]/low",
+        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
         "orchestrate_model": "codex:sol/medium,claude:opus[1m]/medium",
     },
     "claude-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "claude:opus[1m]/low,codex:sol/low",
+        "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
         "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
         "chores_fast_model": "claude:haiku/low,codex:luna/low",
     },
     "claude-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "claude:opus[1m]/low,codex:sol/low",
+        "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
         "review_model": "claude:sonnet[1m]/medium,codex:sol/medium",
         "review_fast_model": "claude:haiku/medium,codex:luna/medium",
         "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
@@ -349,10 +351,38 @@ def load_shared_settings(path: pathlib.Path) -> dict[str, str]:
     return data
 
 
+@contextlib.contextmanager
+def _local_config_lock(path: pathlib.Path) -> Generator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix(".lock").open("a+b") as lock:
+        file_lock.acquire_lock(lock)
+        try:
+            yield
+        finally:
+            file_lock.release_lock(lock)
+
+
+def _write_config_locked(path: pathlib.Path, config: dict[str, Any]) -> None:
+    atomic_write(path, json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+
 def save_config(config: dict[str, Any]) -> None:
     path = config_file_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    with _local_config_lock(path):
+        _write_config_locked(path, config)
+
+
+def drop_migrated_local_settings(expected: dict[str, Any]) -> None:
+    path = config_file_path()
+    with _local_config_lock(path):
+        current = load_config_strict()
+        pending = {key: current[key] for key in SHARED_SETTING_KEYS if key in current}
+        if pending != expected:
+            raise _next_action.ActionableError(
+                "移行中にローカル設定が変わった",
+                next_action="atk config migrate-sharedで現在の差を確認し直す",
+            )
+        _write_config_locked(path, {key: value for key, value in current.items() if key not in expected})
 
 
 def config_env_name(key: str) -> str:

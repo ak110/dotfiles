@@ -8,7 +8,7 @@ from agent_toolkit._common import delegated_session, process_loop_session
 from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
 from agent_toolkit._git import command as git_command
 from agent_toolkit._git.remote import resolve_repo_identifier
-from agent_toolkit._hooks import agent_id, notice, work_contract
+from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
 lazy from agent_toolkit._atk.wi.formatters import NewWorkItem
 lazy from agent_toolkit._atk.wi.listing import progress_new_wis
@@ -67,9 +67,9 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
     if rows is not None:
         recipient = actor
         reason, snapshot = notice.new_wi_preview(session_id, recipient, rows)
-        reason = reason.replace("処理可能な新着WI:", "公開前に判定を要する新着WI:", 1)
+        reason = reason.replace("処理可能な新着WI:", "公開前の新着WI:", 1)
         notice.stage_new_wi_preview(reason, session_id, recipient, snapshot, scoped=True)
-    return reason, f"{fix}判定を記録できない場合は、同じ操作を再発行すれば実行する。"
+    return reason, f"{fix}同じ操作を再発行すると実行する。"
 
 
 def _owner(payload: dict, session_id: str) -> str:
@@ -211,13 +211,8 @@ def _check(
         )
     if not rows:
         return None
-    decided = work_contract.recorded_new_wi_decisions(owner)
-    pending = [row for row in rows if row.filename not in decided]
-    if not pending:
-        return None
     return (
-        "公開前に判定を要する新着WI: " + "、".join(row.filename for row in pending),
-        "巡回の統括がatk wi showで本文を読み、今回扱うものは公開前に処理する。処理可能な状態で残る項目は"
-        "統括の作業契約に「- 新着WIの判定: <ファイル名> | <判定と根拠>」を各1行記録して再試行する。",
-        pending,
+        "公開前の新着WI: " + "、".join(row.filename for row in rows),
+        "今回扱う項目があれば公開前に処理してください。次回扱う項目はinboxに残してください。",
+        list(rows),
     )

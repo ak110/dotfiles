@@ -61,8 +61,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk config temporary set codex_fast_mode true\n  atk config temporary set claude_worker_connections payg --until 2030-01-01T12:00:00+09:00",
     },
     "atk config temporary clear": {
-        "summary": "一時指定を全て解除する",
-        "description": "一時指定を全て解除する。\n\n目的: 通常設定の適用へ戻す。\n利用場面: 緊急運用や一時的な変更を終えるとき。\n対象と出力: 上書き集合を空にし、保存値と実効値をJSONで返す。通常設定は変更しない。\n前提: なし。\n復元・後始末: 再指定にはtemporary setを使う。",
+        "summary": "キーの一時指定、または全ての一時指定を解除する",
+        "description": "キーの一時指定、または全ての一時指定を解除する。\n\n目的: 通常設定の適用へ戻す。\n利用場面: 緊急運用や一時的な変更を終えるとき。\n対象と出力: 指定したキーの一時値を除き、キーを省略した場合は全て除く。保存値と実効値をJSONで返す。通常設定は変更しない。\n前提: なし。\n復元・後始末: 再指定にはtemporary setを使う。",
         "epilog": "実行例:\n\n  atk config temporary clear",
     },
     "atk config temporary show": {
@@ -326,6 +326,18 @@ HELP: dict[str, dict[str, str]] = {
         "description": "XDG関連パスとモデル設定を一覧表示する。\n\n目的: XDG関連パス、モデル設定、Codexの速度、Claude・Codexの接続設定などを`<キー>: <値>`で1キー1行ずつ表示する。モデル設定はexecute・review・review_fast・chores・chores_fast・orchestrate・writeの7工程の順に並べる。参考一覧外のモデル名・effortも表示する。各キーの受理値と初期値は`atk config set --help`に示す。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧を書く。廃止キーがある場合は移行結果を保存する。旧`serve.toml`がある場合は未保存の値を`serve_*`キーへ移行し、元のファイルを`serve.toml.migrated`へ改名して標準エラーへ警告行を書く。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
     },
+    "atk config migrate-shared": {
+        "summary": "ホストのローカル設定と共有設定を比較・移行する",
+        "description": "保存値を比較し、採用する値を指定して共有へ移行する。\n\n"
+        "目的: 移行前の値を本人や認可されたエージェントが比較し、同期後にだけローカル値を除く。\n"
+        "利用場面: 共有設定の書込みが未移行のローカル値のため止まった時。\n"
+        "対象と出力: 比較だけの実行ではローカル値、共有値、差の種類と版をJSONで返す。"
+        "環境変数や一時設定の値は出力しない。共有ファイルがなく旧速度設定がある場合だけ、initial_not_sharedに移行後の初期値autoを示す。既存の共有ファイルがあれば、別のホストの初回移行でも旧速度設定は比較と選択の対象になる。--applyは指定した版にだけ変更を適用する。\n"
+        "前提: private-notesの同期先が必要。--keep-localの値は他のホストにも届く。\n"
+        "復元・後始末: 同期を確認できない場合はローカル値を除かない。設定が変わった場合は比較からやり直す。",
+        "epilog": "実行例:\n\n  atk config migrate-shared\n"
+        "  atk config migrate-shared --apply <REVISION> --keep-shared review_model",
+    },
     "atk config get": {
         "summary": "1件以上の設定値を取得する",
         "description": "1件以上の設定値を取得する。\n\n目的: 指定した設定キーの値を指定順に1行ずつ出力する。モデル設定は系列名を含む設定値を返す。\n利用場面: シェルから`private_notes`などの解決値またはモデル候補の設定値を取得するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ値だけを書く。未知のキーは終了コード2で理由を示す。\n前提: KEYは`atk config show`が出力するキーと同じ名前で指定する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
@@ -343,7 +355,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度、Claude・Codexの接続（サブスクリプション・APIクレジット・従量課金API）の使い分け、`atk serve`の待受と参照元を切り替えるとき。\n対象と出力: 工程別モデル・使用順・Codexの速度などの共有キーはprivate-notesの`atk-config.json`へ保存する。private-notesが無い場合とホスト固有キー（`serve_port`など）は`config.json`へ保存する。ホストだけ一時的に変えるには`atk config temporary`を使う。\n前提: KEYは変更できるキー。接続設定は次のとおり。ClaudeのAPI認証は`atk config get config_dir`が返すディレクトリの`claude-credits.env`・`claude-payg.env`へ種別ごとに置く。`codex_credits_provider`・`codex_payg_provider`はCodexの`config.toml`に定義したprovider ID 1つ（`openai`も可）を受理し、初期値は空。`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`は統括担当・委譲先の使用順で、`subscription`・`credits`・`payg`を重複なしでASCIIカンマ区切りに並べる。統括担当の初期値は`subscription,credits`、委譲先の初期値は`credits,subscription`で、`payg`は明記した役割だけで使う。エンジンごとに使用順やAPI認証を指定しなければ、親環境と通常の認証解決を使う。切替の規則と条件ごとの設定例はガイドに示す（URLは末尾を参照）。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。`codex_fast_mode`は`auto`・`true`・`false`を受理する。初期値は`auto`で、対象契約のサブスクリプション接続を提供期間中だけ高速にする。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。開始時候補のeffortはexecute・chores・chores_fast・writeがlow、review・review_fast・orchestrateがmedium。保存値は初期値変更では書き換えない。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。廃止した接続設定キーは移行先を案内する。`serve_host`は待受ホスト、`serve_port`は1〜65535の待受ポート（初期値はLinux等28766、Windows28876）、`serve_plans_root`は計画の参照元のパス（空文字列は未指定）、`remote_hosts`はSSH接続先名のJSON文字列配列を受理し、`atk serve`の次回起動から反映する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。Codexのprovider IDは空文字列を設定して解除する。接続設定の変更は新しい会話と、使用順から外した種別を使う会話の次の継続へ反映する。",
+        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度、Claude・Codexの接続（サブスクリプション・APIクレジット・従量課金API）の使い分け、`atk serve`の待受と参照元を切り替えるとき。\n対象と出力: 工程別モデル・使用順・Codexの速度などの共有キーはprivate-notesの`atk-config.json`へ保存する。private-notesが無い場合とホスト固有キー（`serve_port`など）は`config.json`へ保存する。未移行のローカル共有キーがあるときは`atk config migrate-shared`を先に使う。指定値が実効値にならない場合は優先元を示して終了2で返す。ホストだけ一時的に変えるには`atk config temporary`を使う。\n前提: KEYは変更できるキー。接続設定は次のとおり。ClaudeのAPI認証は`atk config get config_dir`が返すディレクトリの`claude-credits.env`・`claude-payg.env`へ種別ごとに置く。`codex_credits_provider`・`codex_payg_provider`はCodexの`config.toml`に定義したprovider ID 1つ（`openai`も可）を受理し、初期値は空。`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`は統括担当・委譲先の使用順で、`subscription`・`credits`・`payg`を重複なしでASCIIカンマ区切りに並べる。統括担当の初期値は`subscription,credits`、委譲先の初期値は`credits,subscription`で、`payg`は明記した役割だけで使う。エンジンごとに使用順やAPI認証を指定しなければ、親環境と通常の認証解決を使う。切替の規則と条件ごとの設定例はガイドに示す（URLは末尾を参照）。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。`codex_fast_mode`は`auto`・`true`・`false`を受理する。初期値は`auto`で、対象契約のサブスクリプション接続を提供期間中だけ高速にする。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。開始時候補のeffortはchores・chores_fast・writeがlow、execute・review・review_fast・orchestrateがmedium。保存値は初期値変更では書き換えない。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。廃止した接続設定キーは移行先を案内する。`serve_host`は待受ホスト、`serve_port`は1〜65535の待受ポート（初期値はLinux等28766、Windows28876）、`serve_plans_root`は計画の参照元のパス（空文字列は未指定）、`remote_hosts`はSSH接続先名のJSON文字列配列を受理し、`atk serve`の次回起動から反映する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。Codexのprovider IDは空文字列を設定して解除する。接続設定の変更は新しい会話と、使用順から外した種別を使う会話の次の継続へ反映する。",
         "epilog": "実行例:\n\n  atk config set execute_model codex:sol/medium\n  atk config set review_model claude:sonnet[1m]/medium,codex:sol/medium\n  atk config set claude_worker_connections credits,subscription\n\n"
         + CONNECTION_GUIDE_NOTICE,
     },

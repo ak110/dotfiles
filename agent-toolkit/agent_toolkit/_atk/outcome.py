@@ -83,6 +83,7 @@ STATE_CHANGE_COMMANDS = frozenset(
 VALUE_OUTPUT_COMMANDS = frozenset(
     {
         "atk config usage",
+        "atk config migrate-shared",
         "atk config temporary set",
         "atk config temporary clear",
         "atk config temporary show",

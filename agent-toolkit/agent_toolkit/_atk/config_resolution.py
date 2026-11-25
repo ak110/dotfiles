@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from agent_toolkit._atk import config_migration, config_settings
 from agent_toolkit._common import runtime_environment
 from agent_toolkit._common.next_action import ActionableError
@@ -29,6 +31,26 @@ def connections_configured(engine: str) -> bool:
     if (path := config_settings.shared_settings_path()) is not None:
         stored = config_settings.load_shared_settings(path) | stored
     return any(runtime_environment.environment().get(config_settings.config_env_name(key), "") or key in stored for key in keys)
+
+
+def mutable_setting_source(
+    key: str,
+    *,
+    environment_source: str,
+    temporary: Mapping[str, object],
+    local: Mapping[str, object],
+    shared: Mapping[str, object],
+    shared_target: bool,
+) -> str:
+    if environment_source:
+        return environment_source
+    if key in temporary:
+        return "一時指定"
+    if key in local:
+        return "移行前のローカル保存値" if shared_target else "保存値"
+    if key in shared:
+        return "共有"
+    return "省略時の値"
 
 
 def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
