@@ -113,7 +113,9 @@ def test_notice_is_given_once_per_subject(tmp_path: pathlib.Path) -> None:
     env = _plan_file_state_env(tmp_path)
     main = {"tool_name": "Grep", "tool_input": {"pattern": "needle"}, "session_id": "subjects"}
     child = {**main, "agent_id": "child"}
-    assert _notified(_run(main, env)) == {_SEARCH_SKILL}
+    first = _run(main, env)
+    assert _notified(first) == {_SEARCH_SKILL}
+    assert len(_additional_context(first)) <= 120
     assert not _notified(_run(main, env))
     assert _notified(_run(child, env)) == {_SEARCH_SKILL}
     assert not _notified(_run(child, env))
