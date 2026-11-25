@@ -2,25 +2,26 @@ diff --git a/draft.md b/draft.md
 new file mode 100644
 --- /dev/null
 +++ b/draft.md
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,19 @@
 +# スナップショットと障害時の検証の見直し
 +
-+資料と現行を比べ、既存の一括交換を保ったまま必要な試験を選ぶ。
++公開スナップショットの一括交換はそのまま保ち、仮想時計による障害注入と再試行の停止の試験を加える。
 +
 +## 反映内容と反映先
 +
-+保管サービスに既存の一括交換の規定を保つ。再試行の停止を確かめる試験を追加するかは、資料の差分に基づいて選ぶ。
++docs/current.mdの一括交換の規定は保つ。tests/service_test.pyに、src/service.pyのclockへ仮想時計を渡す事例と、max_attemptsで指定した回数を超えて再試行しない事例を加える。
 +
 +## 調査結果と判断根拠
 +
 +| 資料URL | 資料の主張（原文の抜粋） | 既存の対応箇所 | 既存との差分 | 削る・まとめる・置き換える案 | 採否と理由 |
 +| --- | --- | --- | --- | --- | --- |
 +| https://example.test/source | 公開スナップショットはトランザクション単位で交換する。 | docs/current.md:3 | なし | 現行の一括交換の段にまとめる | 現行を保つ |
-+| https://example.test/source | 依存先の障害を仮想時計で注入し、再試行が上限で止まることを確かめる。 | 該当する試験は無い | 再現可能な停止条件の試験 | 実時計を待つ試験を増やさず仮想時計で確かめる | 採用する |
++| https://example.test/source | 依存先の障害を仮想時計で注入 | tests/service_test.py:4（正常応答だけ。READMEとdocsに試験方針なし） | 外部障害を繰り返し再現できる | 実時計を待つ試験を増やさず仮想時計で確かめる | 採用する |
++| https://example.test/source | 再試行が上限で止まることを確かめる | src/service.py:1（上限を定義）、tests/service_test.py:4（未検証） | 上限を超えた再試行を検出できる | 障害注入の試験で呼び出し回数も確認する | 採用する |
 +
 +## 完成条件
 +
-+- 資料の主張を別々に評価し、既存と違うものだけを改善の候補とする。
++- 依存先が失敗し続ける条件を仮想時計で再現でき、再試行の上限に達した後は依存先を呼び出さないことを試験で確かめる。
 diff --git a/requirements.md b/requirements.md
 new file mode 100644
 --- /dev/null
@@ -40,7 +41,7 @@ new file mode 100644
 @@ -0,0 +1,3 @@
 +# 現状の観測
 +
-+READMEにはこのサービスの対象と機能の紹介だけがある。docs/current.mdには一括交換の規定だけがあり、障害注入や再試行の試験は無い。
++READMEは機能の紹介だけ、docs/current.mdは一括交換の規定だけを持つ。src/service.pyのreadはclockとmax_attemptsを受け取り、tests/service_test.pyは正常応答だけを確かめる。障害注入と上限の試験は追加先の利用側と配布する規定の両方に無い。
 diff --git a/docs/current.md b/docs/current.md
 new file mode 100644
 --- /dev/null
@@ -49,3 +50,28 @@ new file mode 100644
 +# スナップショット
 +
 +公開スナップショットはトランザクション単位で交換する。
+diff --git a/src/service.py b/src/service.py
+new file mode 100644
+--- /dev/null
++++ b/src/service.py
+@@ -0,0 +1,9 @@
++def read(fetch, clock, max_attempts):
++    for attempt in range(max_attempts):
++        try:
++            return fetch()
++        except TimeoutError:
++            if attempt + 1 == max_attempts:
++                raise
++            clock.sleep(1)
++    raise ValueError("positive max_attempts required")
+diff --git a/tests/service_test.py b/tests/service_test.py
+new file mode 100644
+--- /dev/null
++++ b/tests/service_test.py
+@@ -0,0 +1,6 @@
++from types import SimpleNamespace
++from src.service import read
++
++def test_normal_read():
++    clock = SimpleNamespace(sleep=lambda _: None)
++    assert read(lambda: "document", clock, max_attempts=3) == "document"

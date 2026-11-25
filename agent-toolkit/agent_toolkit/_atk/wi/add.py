@@ -605,14 +605,16 @@ def _check_external_source_review(
         if isinstance(entry, dict):
             recorded = entry.get("urls")
     urls = external_source_review.contract_urls(body, recorded)
-    for message in messages:
-        frontmatter, _body = parse_entry_message(message, entry_type=args.type)
-        if args.source is not None:
-            frontmatter = {"source": args.source, **frontmatter}
-        metadata = run_report_metadata(frontmatter, question_type=args.question_type, scope=args.scope, new_report=True)
-        slot = metadata.get("weekly_slot")
-        if isinstance(slot, str) and slot.startswith("research@"):
-            urls.update(research_sources.collected_source_urls(slot))
+    configured_slot = os.environ.get(session_review.WEEKLY_SLOT_ENV, "")
+    if configured_slot.startswith("research@"):
+        for message in messages:
+            frontmatter, _body = parse_entry_message(message, entry_type=args.type)
+            if args.source is not None:
+                frontmatter = {"source": args.source, **frontmatter}
+            metadata = run_report_metadata(frontmatter, question_type=args.question_type, scope=args.scope, new_report=True)
+            if metadata.get("weekly_slot") == configured_slot:
+                urls.update(research_sources.collected_source_urls(configured_slot))
+                break
     return external_source_review.check_table(contract, urls, local_worktree or pathlib.Path.cwd())
 
 
