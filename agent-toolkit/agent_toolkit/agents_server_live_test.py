@@ -389,6 +389,8 @@ GRANDCHILD_INPUT = LiveInput(
 )
 
 
+@pytest.mark.cpu_limit(1.2, reason="実CLIの2世代の起動・結果配送を含み、実測で通常上限0.5秒を超える")
+@pytest.mark.timeout(240)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("candidate", [("codex", "sol", "medium"), ("claude", "sonnet[1m]", "medium")])
 async def test_live_grandchild_wait_resumes_same_session(
@@ -417,7 +419,7 @@ async def test_live_grandchild_wait_resumes_same_session(
             session = manager.sessions[started["session_id"]]
             async with asyncio.timeout(120):
                 while not (release.with_suffix(".ready").exists() and session.awaiting_auto_resume):
-                    await asyncio.sleep(0.01)
+                    await asyncio.sleep(0.1)
             release.touch()
             result = await _wait_terminal(manager)
         finally:
