@@ -802,7 +802,7 @@ def test_run_with_timeout_stops_descendants(monkeypatch, tmp_path):
 
     class ReadyPopen(subprocess.Popen):
         def communicate(self, input=None, timeout=None):
-            if timeout is not None:
+            if timeout is not None and not started:
                 _wait_for_ready_marker(marker)
                 started.extend([psutil.Process(self.pid), *process_tree.collect_descendants(self.pid)])
             return super().communicate(input, timeout=timeout)

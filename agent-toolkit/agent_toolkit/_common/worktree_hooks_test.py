@@ -94,8 +94,11 @@ def test_hook_timeout_takes_precedence_over_caller_timeout(
     release = tmp_path / "hook.release"
 
     class ReadyPopen(subprocess.Popen):
+        timed_calls = 0
+
         def communicate(self, input=None, timeout=None):
-            if timeout is not None:
+            if timeout is not None and not self.timed_calls:
+                self.timed_calls += 1
                 deadline = time.monotonic() + 30
                 while not release.with_suffix(".ready").exists():
                     assert self.poll() is None and time.monotonic() < deadline

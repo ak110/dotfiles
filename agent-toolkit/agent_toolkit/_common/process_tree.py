@@ -754,7 +754,11 @@ def run_with_timeout(
             failure = stop_owned_process(process, context="run_with_timeout", known=known, pins=pins, output_open=True)
             if failure is not None:
                 raise failure from error
-            stdout, stderr = process.communicate()
+            try:
+                stdout, stderr = process.communicate(timeout=RECLAIM_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                # 一度も観測できずに切り離された子孫が出力を保持し続ける場合も、時間上限を守って戻る。  pyfltr: allow-comment
+                stdout = stderr = None
             encoding = kwargs.get("encoding") or "utf-8"
             error.output = stdout.encode(encoding) if isinstance(stdout, str) else stdout
             error.stderr = stderr.encode(encoding) if isinstance(stderr, str) else stderr

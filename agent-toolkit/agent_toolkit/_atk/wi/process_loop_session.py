@@ -5,6 +5,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -584,6 +585,36 @@ def _unwaited_weekly_limit(
     return None
 
 
+class _BackgroundCall[T]:
+    """無出力の監視を止めないよう、戻らないおそれのある外部の照会を別スレッドで実行する。
+
+    照会が戻らなくても監視の待機ループは進み、終了時にもスレッドの終了を待たない。
+    照会の例外は`result`で呼び出し側へ送出する。  pyfltr: allow-comment
+    """
+
+    def __init__(self, function: Callable[..., T], *args: object) -> None:
+        self._result: T | None = None
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, args=(function, *args), daemon=True)
+        self._thread.start()
+
+    def _run(self, function: Callable[..., T], *args: object) -> None:
+        try:
+            self._result = function(*args)
+        except BaseException as error:  # pylint: disable=broad-exception-caught  # 呼び出し側のスレッドで送出し直す
+            self._error = error
+
+    def wait(self, timeout: float) -> bool:
+        """最大`timeout`秒だけ終了を待ち、終了していれば真を返す。  pyfltr: allow-comment"""
+        self._thread.join(timeout)
+        return not self._thread.is_alive()
+
+    def result(self) -> T | None:
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+
 def _last_record_update(identifier: str | None, env: dict[str, str], started_at: float) -> float:
     record = (
         _record_paths.find_session_record(
@@ -618,6 +649,7 @@ def _run_cli_session(
     """
     started_at = time.time()
     last_usage_check = time.monotonic()
+    usage_check: tuple[_BackgroundCall[_claude_usage_limit.UsageLimitState | None], float] | None = None
     rollout: pathlib.Path | None = None
     published: str | None = None
     # 時間上限なし: 長時間の子セッションの実行そのものであり、無出力の監視と中断は呼び出し側の待機ループが扱う。
@@ -757,13 +789,17 @@ def _run_cli_session(
                         orchestrator == "claude"
                         and identifier is not None
                         and claude_connection is not None
+                        and usage_check is None
                         and time.time() - updated >= _claude_usage_limit.RECHECK_SECONDS
                         and time.monotonic() - last_usage_check >= _claude_usage_limit.RECHECK_SECONDS
                     ):
                         last_usage_check = time.monotonic()
-                        limit = _unwaited_weekly_limit(claude_connection, env)
+                        usage_check = (_BackgroundCall(_unwaited_weekly_limit, claude_connection, dict(env)), updated)
+                    if identifier is not None and usage_check is not None and usage_check[0].wait(1.0):
+                        (call, checked_update), usage_check = usage_check, None
+                        limit = call.result()
                         latest_update = _last_record_update(identifier, env, started_at)
-                        if limit is not None and latest_update == updated and process.poll() is None:
+                        if limit is not None and latest_update == checked_update and process.poll() is None:
                             _stop_orchestrator(
                                 process,
                                 context="process-loop weekly usage limit",

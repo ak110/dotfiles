@@ -8,6 +8,7 @@ import pathlib
 import stat
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -373,3 +374,36 @@ def test_idle_claude_cli_stops_only_for_unwaited_weekly_limit(
     else:
         assert run().returncode == 0
     assert calls == ([] if policy == "always" else [connection])
+
+
+def test_idle_claude_cli_stall_stops_while_usage_refresh_hangs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 実例: 上限の照会が戻らず無出力の監視ごと止まり、終了しない統括が5時間残った。  pyfltr: allow-comment
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
+    env = {**os.environ, "CLAUDE_CONFIG_DIR": str(tmp_path), _pl_env.PROCESS_LOOP_SESSION_ID_ENV: "hung-refresh"}
+    monkeypatch.setattr(_pl_session, "_attach_orchestrator_child", lambda *_args: None)
+    monkeypatch.setattr(claude_usage_limit, "RECHECK_SECONDS", 0)
+    monkeypatch.setattr(_pl_session, "_last_record_update", lambda *_: 1.0)
+    monkeypatch.setattr(_pl_session._process_loop_log, "append", lambda *_args, **_kwargs: None)  # pylint: disable=protected-access
+    release = threading.Event()
+    started: list[float] = []
+
+    def hung_refresh(_selected, _env):
+        started.append(time.monotonic())
+        release.wait(30)
+        return []
+
+    monkeypatch.setattr(_pl_session.usage_refresh, "refresh_claude", hung_refresh)
+    began = time.monotonic()
+    try:
+        result = _ORIGINAL_CODEX_SESSION(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            env,
+            tmp_path,
+            orchestrator="claude",
+            claude_connection=claude_connection.Connection("subscription"),
+        )
+    finally:
+        release.set()
+    assert started, "上限の照会を起動していない"
+    assert result.returncode == 1
+    assert time.monotonic() - began < 15, "上限の照会が戻るまで無出力の監視が止まった"
