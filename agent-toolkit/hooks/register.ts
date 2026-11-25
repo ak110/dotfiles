@@ -57,11 +57,6 @@ export const register: Register = (on) => {
       "直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。");
     return next({ ...e, context: [...(e.context ?? []), notice] });
   });
-  // 圧縮の結果を待たずに戻す。後続の圧縮処理が失敗しても、次の発話で案内を欠かさないためである。 pyfltr: allow-comment
-  on("session.compact", async ($, e, next) => {
-    await $.state.set({ plugin: "agent-toolkit", key: "sendContractNotified" }, false);
-    return next(e);
-  });
   on("session.start", async ($, e, next) => {
     await $.state.set({ plugin: "agent-toolkit", key: "sendContractNotified" }, false);
     usageLimitSession.delegated = await isDelegated($);
