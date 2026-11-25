@@ -269,7 +269,7 @@ async def test_resume_close_wait_preserves_initialization_timeout(monkeypatch: p
             )
         )
         monkeypatch.setattr(client, "request", request)
-        monkeypatch.setattr(subject.shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.01)
+        monkeypatch.setattr(subject.shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.2)
         with pytest.raises(TimeoutError):
             await backend._request_thread_resume(client, {"threadId": "thread-1"})
         assert request.await_count == 1

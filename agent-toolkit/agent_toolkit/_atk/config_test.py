@@ -28,10 +28,9 @@ __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
 
 @pytest.mark.parametrize("losing_migration", [False, True])
 def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_path, monkeypatch, capsys, losing_migration):
-    remote = tmp_path / "remote.git"
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     first = tmp_path / "first"
     second = tmp_path / "second"
-    subprocess.run(["git", "init", "--bare", str(remote)], cwd=tmp_path, check=True)
     subprocess.run(["git", "clone", str(remote), str(first)], cwd=tmp_path, check=True)
     for key, value in (("user.name", "Config Test"), ("user.email", "config@example.invalid")):
         subprocess.run(["git", "config", key, value], cwd=first, check=True)

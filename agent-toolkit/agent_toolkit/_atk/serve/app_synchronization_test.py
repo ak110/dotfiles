@@ -5,10 +5,10 @@ import os
 import pathlib
 import subprocess
 
-import filelock
 import pytest
 
 from agent_toolkit._atk.serve import state, wi_operations
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._testing.serve_support import _BlockingSync, _sync_app
 
@@ -65,25 +65,16 @@ async def test_sync_api_git_failure_returns_check_and_retry_action(tmp_path: pat
     assert "dotfilesの作者へ報告する" in body["next_action"]
 
 
-def test_background_sync_uses_stale_sync_and_skips_lock_conflict(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("result", [True, None])
+def test_background_sync_uses_shared_worker(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, result: bool | None
 ) -> None:
-    """定期更新は鮮度判定付き同期を使い、ロック競合時はその周期を見送る。"""
-    calls: list[str] = []
+    calls: list[pathlib.Path] = []
 
-    def synchronize(_path: pathlib.Path, *, only_if_stale: bool, **_kwargs: object) -> bool:
-        assert only_if_stale
-        calls.append("sync")
-        return False
+    def run(path: pathlib.Path) -> bool | None:
+        calls.append(path)
+        return result
 
-    monkeypatch.setattr(_wi_sync, "synchronize", synchronize)
-    operations = wi_operations.Operations(tmp_path)
-    assert operations.background_sync() is False
-    assert calls == ["sync"]
-
-    def conflicting_sync(_path: pathlib.Path, **_kwargs: object) -> bool:
-        raise filelock.Timeout("lock")
-
-    monkeypatch.setattr(_wi_sync, "synchronize", conflicting_sync)
-    assert operations.background_sync() is None
-    assert calls == ["sync"]
+    monkeypatch.setattr(background_sync, "run", run)
+    assert wi_operations.Operations(tmp_path).background_sync() is result
+    assert calls == [tmp_path]
