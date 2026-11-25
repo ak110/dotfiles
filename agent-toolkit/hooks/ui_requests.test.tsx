@@ -1,5 +1,6 @@
 import type { On } from "claude-code";
 import { expect, mock, test } from "claude-code/testing";
+import outputPolicy from "./output-policy.ts";
 import { placedMessage } from "./ui_requests.tsx";
 
 function queue(on: On, session: string, id: string) {
@@ -61,7 +62,7 @@ for (const placed of [true, false]) {
       const rendered = JSON.stringify(await $.ui.render({ surface: "terminal", component: "Placed", requestId: "placed-row", props: { plugin: "agent-toolkit", id } }));
       expect(rendered).toContain('"text":"表示する本文"');
       expect(rendered).not.toContain("送達時刻");
-      expect(response.reason.length).toBeLessThan(70);
+      expect(response.reason.length).toBeLessThan(outputPolicy.send_max_chars + 1);
     } else {
       expect(response.reason).toContain("対応画面なし");
       expect(response.reason).toContain("未送信");
@@ -90,6 +91,7 @@ test("MCP送信済みの詳しい案内は初回だけ返し、新しい警告�
   expect(responses.length).toBe(2);
   expect(responses[0]).toContain("新しい報告はsend_to_userで送る");
   expect(responses[1]).not.toContain("新しい報告はsend_to_userで送る");
+  expect((responses[1]?.split("\n")[0] ?? "").length).toBeLessThan(outputPolicy.send_repeat_max_chars + 1);
   expect(responses[1]).toContain("時刻の一部が伏せ字");
   expect((responses[1] ?? "").length).toBeLessThan((responses[0] ?? "").length);
 });

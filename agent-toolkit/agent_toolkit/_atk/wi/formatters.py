@@ -20,9 +20,9 @@ class NewWorkItem:
     source: str
     has_merge_branch: bool
 
-    def label(self) -> str:
+    def label(self, *, omit_defaults: bool) -> str:
         name = self.filename if re.fullmatch(r"[A-Za-z0-9._-]+", self.filename) else json.dumps(self.filename)
-        merge = "、merge_branch: あり" if self.has_merge_branch else ""
+        merge = "、merge_branch: あり" if self.has_merge_branch else "" if omit_defaults else "、merge_branch: なし"
         return f"{name} (source: {self.source}{merge})"
 
 

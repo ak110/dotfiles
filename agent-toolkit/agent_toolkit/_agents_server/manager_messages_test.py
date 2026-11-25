@@ -259,7 +259,7 @@ async def test_send_message_previous_and_stopped_results_relay_improvements(
         assert previous == stopped_result
         assert previous["agent_message"] == message
         action = previous["next_action"]
-        assert action.count(result_projection.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
+        assert action.count(result_projection.improvement_result_next_action()) == 1
         assert (result_projection.REVIEW_RESULT_NEXT_ACTION in action) is (
             status == "completed" and label == "lane-01-exec-review"
         )

@@ -9,6 +9,7 @@ lazy from collections.abc import Callable, Generator, Sequence
 
 lazy from agent_toolkit._atk.wi.formatters import NewWorkItem
 lazy from agent_toolkit._common import message_format as _common_message_format
+lazy from agent_toolkit._common.output_policy import rules
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import message_format as _message_format
 
@@ -119,8 +120,15 @@ def new_wi_preview(session_id: str, recipient: str, rows: Sequence[NewWorkItem],
             identities = None
         if isinstance(identities, list):
             known.update(item for item in identities if isinstance(item, str))
-    added = [row.label() for key, row in identifiers.items() if key not in known]
-    text = f"処理可能な新着WI: 計{len(identifiers)}件"
+    policy = rules()
+    added = [
+        row.label(omit_defaults=policy["omit_defaults"])
+        for key, row in identifiers.items()
+        if not policy["suppress_repeats"] or key not in known
+    ]
+    text = "処理可能な新着WI:"
+    if policy["show_total_with_delta"]:
+        text += f" 計{len(identifiers)}件"
     if added:
         text += "。今回: " + "、".join(added)
     snapshot = known.union(identifiers) if scoped else identifiers.keys()

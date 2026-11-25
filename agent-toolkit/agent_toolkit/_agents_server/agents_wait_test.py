@@ -285,9 +285,12 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
     action = result["next_action"]
     assert "既存の案内" in action
     marked = message.startswith("完了\n")
-    assert (result_projection.IMPROVEMENT_RESULT_NEXT_ACTION in action) is marked
+    assert (result_projection.improvement_result_next_action() in action) is marked
     if marked:
-        assert action.count(result_projection.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
+        assert action.count(result_projection.improvement_result_next_action()) == 1
+        assert (
+            len(result_projection.improvement_result_next_action()) <= result_projection.rules()["wait_improvement_max_chars"]
+        )
     if status == "completed" and label.endswith("-review"):
         if label.endswith("reader-fit-review"):
             assert result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION in action

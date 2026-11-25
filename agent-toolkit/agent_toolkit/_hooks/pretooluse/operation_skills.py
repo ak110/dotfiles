@@ -21,6 +21,7 @@ lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
+lazy from agent_toolkit._common.output_policy import rules
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -609,11 +610,13 @@ def notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     done = observed.get(subject, []) if isinstance(observed, dict) else []
     cwd = str(payload.get("cwd", ""))
     texts = []
+    policy = rules()
     for entry in OPERATION_SKILLS:
-        if entry.skill_name in done or entry.skill_name in advised or not entry.matches(tool_name, tool_input, cwd):
+        known = entry.skill_name in done or (policy["suppress_repeats"] and entry.skill_name in advised)
+        if known or not entry.matches(tool_name, tool_input, cwd):
             continue
         text = llm_notice(
-            f"{entry.operation}の前に、スキル`{entry.skill_name}`を起動してください。",
+            policy["search_guidance"].format(operation=entry.operation, skill=entry.skill_name),
             "pretooluse",
         )
         stage_delivery(text, session_id, NOTIFIED_KEY, subject, entry.skill_name)

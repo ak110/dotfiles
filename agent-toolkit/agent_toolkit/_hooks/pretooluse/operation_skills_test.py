@@ -115,7 +115,9 @@ def test_notice_is_given_once_per_subject(tmp_path: pathlib.Path) -> None:
     child = {**main, "agent_id": "child"}
     first = _run(main, env)
     assert _notified(first) == {_SEARCH_SKILL}
-    assert len(_additional_context(first)) <= 120
+    from agent_toolkit._common.output_policy import rules  # pylint: disable=import-outside-toplevel
+
+    assert len(_additional_context(first)) <= rules()["search_max_chars"]
     assert not _notified(_run(main, env))
     assert _notified(_run(child, env)) == {_SEARCH_SKILL}
     assert not _notified(_run(child, env))

@@ -10,6 +10,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import logging_config, turn_state
 from agent_toolkit._common import runtime_inserted, session_registry
+from agent_toolkit._common.output_policy import rules
 
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終了を観測してから`send_message`を再送する"
 """turnが中断中または未終了のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
@@ -42,9 +43,8 @@ _LANE_RECEIPT_ACTION = (
 )
 
 
-IMPROVEMENT_RESULT_NEXT_ACTION = (
-    "`気付いた改善点:`は送達成功記録と比べ、未送達・新しい観測を「受領後の扱い」に従って転記してください。"
-)
+def improvement_result_next_action() -> str:
+    return rules()["wait_improvement_guidance"]
 
 
 def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[str, Any]:
@@ -140,7 +140,7 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
         )
     if isinstance(message, str) and runtime_inserted.reported_improvement_lines(message):
         guidance.append(
-            (IMPROVEMENT_RESULT_NEXT_ACTION, ("agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」",))
+            (improvement_result_next_action(), ("agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」",))
         )
     return guidance
 
