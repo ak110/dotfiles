@@ -13,11 +13,11 @@ from typing import Any
 
 lazy import platformdirs
 
-from agent_toolkit._atk import config_repositories
 from agent_toolkit._common import codex_models, file_lock, private_notes, runtime_environment, weekly_work
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.usage_settings import validate_permissions
+lazy from agent_toolkit._atk import config_repositories
 
 CONFIG_FILENAME = "config.json"
 

@@ -5,7 +5,7 @@ import time
 import playwright.async_api
 import pytest
 
-from agent_toolkit._atk import config, config_settings, usage_refresh
+from agent_toolkit._atk import config_settings, usage_refresh
 from agent_toolkit._atk.serve import settings_routes
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_fixture,
@@ -146,12 +146,19 @@ async def test_failed_refresh_displays_newer_independent_observation(
     await expect(page.locator(".metric-row")).not_to_contain_text("1時間以上前")
 
 
+@pytest.mark.cpu_limit(
+    0.65,
+    reason="実Chromium・HTTPで設定と利用枠を往復し、ローカル設定の再取得と許可エディターの描画を確かめる（CI実測最大0.550秒）。",
+)
 async def test_usage_settings_link_selects_local_with_permission_editor(
     screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_settings.save_config({"remote_hosts": '["fixture-remote"]'})
-    snapshot = config.settings_snapshot(screen_harness.root)
-    snapshot["usage"] = [{"engine": "codex", "window_id": "fixture-remote-window", "used_percent": 57}]
+    snapshot = {
+        "settings": {},
+        "paths": {},
+        "usage": [{"engine": "codex", "window_id": "fixture-remote-window", "used_percent": 57}],
+    }
     monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host: (snapshot, None))
     monkeypatch.setattr(usage_refresh, "refresh", lambda **_kwargs: [])
     page = screen_harness.page
@@ -160,6 +167,7 @@ async def test_usage_settings_link_selects_local_with_permission_editor(
     picker = page.get_by_label("設定対象ホスト")
     await picker.select_option("fixture-remote")
     await page.get_by_role("navigation", name="設定の分類").get_by_text("利用枠", exact=True).click()
+    await expect(picker).to_have_value("fixture-remote")
     settings = page.locator("#screen-settings")
     await expect(settings).not_to_contain_text("fixture-remote-window")
     await settings.get_by_role("link", name="利用枠の使用率とリセット権を見る").click()

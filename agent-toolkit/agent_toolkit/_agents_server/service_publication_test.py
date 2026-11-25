@@ -513,9 +513,13 @@ async def _wait_for_discovery(directory: pathlib.Path, generation: str, process:
 
 
 def _reap_generation_process(process: subprocess.Popen) -> None:
-    if process.poll() is None:
-        process.kill()
-    process.wait(timeout=5)
+    try:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+    finally:
+        if process.stdin is not None:
+            process.stdin.close()
 
 
 async def _launch_generation_process(
@@ -525,12 +529,15 @@ async def _launch_generation_process(
     processes: list[subprocess.Popen],
     *,
     startup_deadline: float | None = None,
+    stdin: int | None = None,
 ) -> subprocess.Popen:
     ready = script.with_suffix(".ready")
     if startup_deadline is not None and asyncio.get_running_loop().time() >= startup_deadline:
         raise TimeoutError(f"{ready.name}: 子を起動する前に準備期限を超えた")
     # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、呼出元が終了を見届けた後で手放す。
-    process = subprocess.Popen([sys.executable, str(script), *arguments], cwd=cwd)  # pylint: disable=consider-using-with
+    process = subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, str(script), *arguments], cwd=cwd, stdin=stdin
+    )
     processes.append(process)
     if startup_deadline is None:
         startup_deadline = asyncio.get_running_loop().time() + _GENERATION_READY_TIMEOUT
@@ -931,34 +938,41 @@ async def test_same_version_successor_keeps_conversation_after_shutdown_request(
     directory = _isolated_directory(tmp_path, monkeypatch)
     registry = GenerationRegistry(directory)
     processes: list[subprocess.Popen] = []
+    startup_deadline = asyncio.get_running_loop().time() + _GENERATION_READY_TIMEOUT
     try:
-        old = await _launch_previous_generation(tmp_path, directory, "IN_PROGRESS", processes)
+        old = await _launch_previous_generation(
+            tmp_path, directory, "IN_PROGRESS", processes, startup_deadline=startup_deadline
+        )
         registry.reserve("new", tmp_path / "new", "1.0.0")
-        command = [sys.executable, "-m", service.__name__, str(directory), "new"]
-        with subprocess.Popen(command, stdin=subprocess.PIPE) as successor:
-            try:
-                new = await _wait_for_discovery(directory, "new", successor)
-                accepted = await service_rpc.request(new, "publish", {})
-                assert accepted["generation"] == "new"
-                assert await service_rpc.request(old, "owns", _OWNED)
-                (tmp_path / "finish-turn").touch()
-                assert await asyncio.to_thread(processes[0].wait, 30) == 0
-                assert await service_rpc.request(new, "owns", _OWNED)
+        script = tmp_path / "successor_generation.py"
+        script.write_text(
+            "import pathlib\n"
+            "from agent_toolkit._agents_server import service\n"
+            "pathlib.Path(__file__).with_suffix('.ready').touch()\n"
+            "raise SystemExit(service.main())\n",
+            encoding="utf-8",
+        )
+        successor = await _launch_generation_process(
+            script, [str(directory), "new"], tmp_path, processes, startup_deadline=startup_deadline, stdin=subprocess.PIPE
+        )
+        new = await _wait_for_discovery(directory, "new", successor)
+        accepted = await service_rpc.request(new, "publish", {})
+        assert accepted["generation"] == "new"
+        assert await service_rpc.request(old, "owns", _OWNED)
+        (tmp_path / "finish-turn").touch()
+        assert await asyncio.to_thread(processes[0].wait, 30) == 0
+        assert await service_rpc.request(new, "owns", _OWNED)
 
-                assert successor.stdin is not None
-                successor.stdin.close()
-                successor.terminate()
-                await asyncio.sleep(1)
-                assert successor.poll() is None
-                sessions = await service_rpc.request(new, "parent_sessions", {"parent": _PARENT, "include_terminated": False})
-                assert [session["session_id"] for session in sessions] == [_SESSION]
-                owner = session_registry.resolve(_SESSION, state_root=directory.parent.parent)
-                assert owner.server_instance == new["server_instance"]
-            finally:
-                if successor.poll() is None:
-                    successor.kill()
+        assert successor.stdin is not None
+        successor.stdin.close()
+        successor.terminate()
+        await asyncio.sleep(1)
+        assert successor.poll() is None
+        sessions = await service_rpc.request(new, "parent_sessions", {"parent": _PARENT, "include_terminated": False})
+        assert [session["session_id"] for session in sessions] == [_SESSION]
+        owner = session_registry.resolve(_SESSION, state_root=directory.parent.parent)
+        assert owner.server_instance == new["server_instance"]
     finally:
-        for process in processes:
-            if process.poll() is None:
-                process.kill()
-            process.wait()
+        with contextlib.ExitStack() as children:
+            for process in processes:
+                children.callback(_reap_generation_process, process)

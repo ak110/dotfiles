@@ -1,9 +1,10 @@
+import contextlib
 import datetime
 import json
 import pathlib
 import re
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from typing import Any
 
 from agent_toolkit._atk import config_repositories, config_settings, outcome
@@ -17,6 +18,10 @@ SOURCE = "github-submission"
 ACCEPT_CHOICE = "取り込む"
 DECLINE_CHOICE = "取り込まない"
 _REPOSITORY = re.compile(r"github\.com/([A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+)", re.ASCII | re.IGNORECASE)
+_REGISTRATION_ACTION = "`atk config repos list`で対象リポジトリの登録、GitHub投稿取り込みと系統の設定を確認してください。"
+_SAVE_ACTION = (
+    "`atk config get private_notes`で保存先を調べ、書き込み権限と、そのディレクトリでの`git status`の出力を確認してください。"
+)
 
 
 def canonical_source(repo_id: str, kind: str, number: object) -> str | None:
@@ -51,6 +56,23 @@ def _github_rows(endpoint: str) -> Iterator[dict[str, Any]]:
         if not isinstance(page, list) or any(not isinstance(row, dict) for row in page):
             raise alerts.AlertCollectError("GitHubの一覧の応答形状が不正です")
         yield from page
+
+
+@contextlib.contextmanager
+def _with_diagnosis(subject: str, next_action: str) -> Generator[None]:
+    try:
+        yield
+    except ActionableError:
+        raise
+    except (alerts.AlertCollectError, OSError, ValueError, subprocess.CalledProcessError) as error:
+        raise ActionableError(f"{subject}: {error}", next_action=next_action) from error
+
+
+def _list_action(endpoint: str) -> str:
+    return (
+        f'`gh api --hostname github.com "{endpoint}" --paginate --slurp`で一覧の応答を確認してください。'
+        "応答が不正なら、秘匿値を伏せた診断を報告してください。"
+    )
 
 
 def _quote(value: object, limit: int, source: str) -> str:
@@ -109,37 +131,51 @@ def _trusted_authors(repo_info: dict[str, Any], repo: str, configured: list[str]
 
 def _collect(repo_id: str, existing: set[str], configured: list[str] | None) -> Iterator[tuple[str, str, str]]:
     repo = repo_id.lower().removeprefix("github.com/")
-    repo_info = _github_api(f"repos/{repo}")
-    full_name = repo_info.get("full_name")
-    if not isinstance(full_name, str) or not full_name.isascii() or full_name.lower() != repo:
-        raise alerts.AlertCollectError("GitHubの応答のリポジトリが照会対象と一致しません")
-    if repo_info.get("visibility") != "public" or repo_info.get("private") is not False:
-        raise alerts.AlertCollectError("GitHubリポジトリが公開であることを確認できません")
-    trusted = _trusted_authors(repo_info, repo, configured)
-    for endpoint, kind in (("issues", "issues"), ("pulls", "pull")):
-        for row in _github_rows(f"repos/{repo}/{endpoint}?state=open&per_page=100"):
-            state = row.get("state")
-            if state not in ("open", "closed"):
-                raise alerts.AlertCollectError("GitHubの一覧の応答に既知の状態がありません")
-            if state == "closed" or (kind == "issues" and "pull_request" in row):
-                continue
-            source = canonical_source(repo_id, kind, row.get("number"))
-            url = row.get("html_url")
-            if source is None or not isinstance(url, str) or not url.isascii() or url.lower() != source:
-                raise alerts.AlertCollectError("GitHubの応答のURLが照会対象のリポジトリ・種別・番号と一致しません")
-            user = row.get("user")
-            login = user.get("login") if isinstance(user, dict) else None
-            author = login if isinstance(login, str) else ""
-            is_trusted = author.isascii() and author.lower() in trusted
-            if source in existing or (kind == "pull" and is_trusted):
-                continue
-            filenames: list[str] = []
-            if kind == "pull":
-                for file in _github_rows(f"repos/{repo}/pulls/{row['number']}/files?per_page=100"):
-                    if not isinstance(filename := file.get("filename"), str):
-                        raise alerts.AlertCollectError("GitHubの変更ファイル一覧の応答形状が不正です")
-                    filenames.append(filename)
-            yield source, WI_TYPE_AWI if is_trusted else WI_TYPE_UWI, _submission_body(source, kind, row, author, filenames)
+    metadata_endpoint = f"repos/{repo}"
+    with _with_diagnosis(
+        f"リポジトリ情報（{metadata_endpoint}）",
+        f"`gh api --hostname github.com {metadata_endpoint}`で公開設定と照会先を確認してください。"
+        "`gh auth status --hostname github.com`で認証を、`atk config repos list`で対象の登録を確認してください。",
+    ):
+        repo_info = _github_api(metadata_endpoint)
+        full_name = repo_info.get("full_name")
+        if not isinstance(full_name, str) or not full_name.isascii() or full_name.lower() != repo:
+            raise alerts.AlertCollectError("GitHubの応答のリポジトリが照会対象と一致しません")
+        if repo_info.get("visibility") != "public" or repo_info.get("private") is not False:
+            raise alerts.AlertCollectError("GitHubリポジトリが公開であることを確認できません")
+        trusted = _trusted_authors(repo_info, repo, configured)
+    for resource, kind, label in (("issues", "issues", "Issue一覧"), ("pulls", "pull", "PR一覧")):
+        endpoint = f"repos/{repo}/{resource}?state=open&per_page=100"
+        with _with_diagnosis(label, _list_action(endpoint)):
+            for row in _github_rows(endpoint):
+                state = row.get("state")
+                if state not in ("open", "closed"):
+                    raise alerts.AlertCollectError("GitHubの一覧の応答に既知の状態がありません")
+                if state == "closed" or (kind == "issues" and "pull_request" in row):
+                    continue
+                source = canonical_source(repo_id, kind, row.get("number"))
+                url = row.get("html_url")
+                if source is None or not isinstance(url, str) or not url.isascii() or url.lower() != source:
+                    raise alerts.AlertCollectError("GitHubの応答のURLが照会対象のリポジトリ・種別・番号と一致しません")
+                user = row.get("user")
+                login = user.get("login") if isinstance(user, dict) else None
+                author = login if isinstance(login, str) else ""
+                is_trusted = author.isascii() and author.lower() in trusted
+                if source in existing or (kind == "pull" and is_trusted):
+                    continue
+                filenames = _pull_filenames(repo, row["number"]) if kind == "pull" else []
+                yield source, WI_TYPE_AWI if is_trusted else WI_TYPE_UWI, _submission_body(source, kind, row, author, filenames)
+
+
+def _pull_filenames(repo: str, number: int) -> list[str]:
+    endpoint = f"repos/{repo}/pulls/{number}/files?per_page=100"
+    filenames = []
+    with _with_diagnosis(f"PR #{number}の変更ファイル一覧", _list_action(endpoint)):
+        for file in _github_rows(endpoint):
+            if not isinstance(filename := file.get("filename"), str):
+                raise alerts.AlertCollectError("GitHubの変更ファイル一覧の応答形状が不正です")
+            filenames.append(filename)
+    return filenames
 
 
 def check_and_submit(
@@ -153,7 +189,8 @@ def check_and_submit(
         return 0
     submitted = 0
     try:
-        settings = config_settings.repository_settings(check_paths=False).get(repo_id, {})
+        with _with_diagnosis("リポジトリの登録情報", _REGISTRATION_ACTION):
+            settings = config_settings.repository_settings(check_paths=False).get(repo_id, {})
         if settings.get("github_issues") is not True:
             return 0
         candidates = list(
@@ -163,16 +200,20 @@ def check_and_submit(
         )
         if not candidates:
             return 0
-        branch_settings = config_repositories.branch_settings(settings)
-        registry = {} if branch_settings is None else {repo_id: branch_settings}
-        target_branch = branches.resolve_for_save(repo_id, branch, registry)
+        with _with_diagnosis("リポジトリの系統設定", _REGISTRATION_ACTION):
+            branch_settings = config_repositories.branch_settings(settings)
+            registry = {} if branch_settings is None else {repo_id: branch_settings}
+            target_branch = branches.resolve_for_save(repo_id, branch, registry)
         with sync.DEFAULT_STORAGE.mutation(private_notes) as mutation:
             sync.ensure_guarded_update_clean(private_notes)
             upstream = git.output(["rev-parse", "@{u}"], private_notes) if sync.has_remote(private_notes) else None
 
             def verify_unchanged_upstream() -> None:
                 if git.output(["rev-parse", "@{u}"], private_notes) != upstream:
-                    raise alerts.AlertCollectError("共有キューが更新されたため、次回の確認で取り込み直します")
+                    raise ActionableError(
+                        "共有キューが更新されたため、次回の確認で取り込み直します",
+                        next_action="次回の定期確認に任せてください。",
+                    )
 
             existing = alerts.existing_github_sources(private_notes, repo_id)
             changed: list[str] = []
@@ -197,12 +238,9 @@ def check_and_submit(
             if changed:
                 mutation.commit_guarded("chore: import GitHub submissions", changed, verify_unchanged_upstream)
                 submitted = len(changed)
-    except (ActionableError, alerts.AlertCollectError, OSError, ValueError, subprocess.CalledProcessError) as error:
+    except (alerts.AlertCollectError, OSError, ValueError, subprocess.CalledProcessError) as error:
         outcome.report_warning(
-            f"GitHubのIssueとPRを取り込めません: {redact_secrets(str(error))}",
-            next_action=(
-                "リポジトリの公開設定を確認してください。"
-                "`gh auth status --hostname github.com`で認証を、`atk config repos list`で対象の登録を確認してください。"
-            ),
+            f"GitHubのIssueとPRを取り込めません（{repo_id}）: {redact_secrets(str(error))}",
+            next_action=redact_secrets(error.next_action if isinstance(error, ActionableError) else _SAVE_ACTION),
         )
     return submitted
