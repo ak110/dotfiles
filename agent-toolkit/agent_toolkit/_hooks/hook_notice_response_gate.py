@@ -1,7 +1,9 @@
 """このターンに届いた警告のhook通知へ、`hook通知への対応:`の行を書かずに終える応答を一度止める。  pyfltr: allow-comment
 
 対象は、最後のターン境界（人間の入力、完了通知、機械生成の入力、会話の圧縮）の後に届いた`kind="warn"`の通知である。
-hookの添付（`hook_additional_context`・`hook_system_message`）と、agent-toolkitのMCPツールを直接呼んだ結果の本文から集める。
+hookの添付（`hook_additional_context`・`hook_system_message`）だけから集める。
+ツール結果の本文は、ツール自身の警告と、取得した資料や委譲先の報告に引用された同じ形の文字列を区別できないため数えない。
+`send_to_user`の警告は、呼出しを識別できる送達ではPostToolUseの添付として届くため、添付の側で数える。
 最後の警告より後のアシスタントの本文かツールの入力（`send_to_user`の本文、REPLのコード）に、行頭が`hook通知への対応:`の行があれば通す。
 対応の中身（処置したか、誤検出の根拠か）は判定せず、行の有無だけを見る。
 同じ警告の組で一度止めた後の終了は通し、止めるのは組ごとに1回とする（再発行で通す）。
@@ -10,12 +12,11 @@ hookの添付（`hook_additional_context`・`hook_system_message`）と、agent-
 通知を遮断にする根拠: hook通知の処置と対応行は規範で定めていたが
 （`agent-toolkit:atk-mode`の`references/conduct.md`「方針が衝突する場合の優先順位」）、
 ユーザーが2026年10月27日から11月25日までにhookの通知の無視を少なくとも6回指摘し、文章の規範だけでは止まらなかった。
-効果を判定した再発防止のうち効いたのは、誤った操作の時点で機械が止めて正しい代替を示す型だった（`agent-basics:bugfix`の`references/prevention.md`）。
+効果を判定した再発防止のうち有効だったのは、誤った操作の時点で機械が止めて正しい代替を示す型だった（`agent-basics:bugfix`の`references/prevention.md`）。
 行の有無は記録から機械的に確定でき、1行の追記で回復できる。
 
 委譲先での実行可否: Claude Codeの`Stop`で動く会話（メインと`agents_server`の委譲先）を対象とし、
 `agent_id`を持つサブエージェントの終了と、記録の形が異なるCodex・Antigravityは判定しない。
-REPLの中から呼んだMCPツールの結果はREPLの出力に混ざり引用と区別できないため数えず、hookの添付だけを使う。
 """
 
 import json
@@ -34,7 +35,6 @@ RESPONSE_PREFIX = "hook通知への対応:"
 _STATE_KEY = "hook_notice_response_gate"
 _SEND_STATE_KEY = "hook_notice_response_gate_send"
 _HOOK_RECORD_TYPES = frozenset({"hook_additional_context", "hook_system_message"})
-_TOOLKIT_TOOL_PREFIX = "mcp__plugin_agent-toolkit_"
 _SUMMARY_LENGTH = 60
 _LISTED_LIMIT = 3
 
@@ -77,7 +77,6 @@ def _scan(turn: list[dict]) -> tuple[list[str], int, int]:
     """ターンの警告の一覧と、最後の警告と最後の対応行の位置を返す。位置が無ければ-1とする。 pyfltr: allow-comment"""
     warnings: list[str] = []
     last_warning = last_response = -1
-    toolkit_calls: set[str] = set()
     for index, entry in enumerate(turn):
         attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
         if isinstance(attachment, dict) and attachment.get("type") in _HOOK_RECORD_TYPES:
@@ -96,18 +95,11 @@ def _scan(turn: list[dict]) -> tuple[list[str], int, int]:
                 if _has_response(str(block.get("text", ""))):
                     last_response = index
             elif entry.get("type") == "assistant" and block.get("type") == "tool_use":
-                if str(block.get("name", "")).startswith(_TOOLKIT_TOOL_PREFIX) and isinstance(block.get("id"), str):
-                    toolkit_calls.add(block["id"])
                 arguments = block.get("input")
                 if isinstance(arguments, dict) and any(
                     _input_has_response(value) for value in arguments.values() if isinstance(value, str)
                 ):
                     last_response = index
-            elif block.get("type") == "tool_result" and block.get("tool_use_id") in toolkit_calls:
-                for text in _strings(block.get("content")):
-                    if found := _warnings(text):
-                        warnings.extend(found)
-                        last_warning = index
     return warnings, last_warning, last_response
 
 
@@ -170,7 +162,7 @@ def send_block(payload: dict, session_id: str, tool_name: str, tool_input: dict)
     ターンの終わり（Stop）より前の、次にユーザーへ届く時点で処置させる。警告は作業の途中に届き、
     ターンの終わりの検査だけでは、警告を受けた操作から離れた時点でしか処置を促せなかった（2026年11月25日の分析）。
     `send_to_user`は本文に対応行があれば通す。
-    質問は選択肢の形が決まっているため、対応行を先に`send_to_user`で送らせる。 pyfltr: allow-comment
+    質問は選択肢の形が決まっているため、エージェントが対応行を先に`send_to_user`で送る形にする。 pyfltr: allow-comment
     """
     message = tool_input.get("message")
     if isinstance(message, str) and _has_response(message):

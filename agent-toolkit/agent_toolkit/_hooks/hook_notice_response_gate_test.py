@@ -73,7 +73,16 @@ def _evaluate(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> t
         ([_attachment(_WARN), _HUMAN, _text("終えた。")], False),
         ([_HUMAN, _attachment(_WARN, event="Stop"), _text("終えた。")], False),
         ([_HUMAN, _attachment(_WARN, record_type="hook_system_message"), _text("終えた。")], True),
-        ([_HUMAN, _call(_SEND_TO_USER, "s1", {"message": "報告"}), _result("s1", "送信済み。" + _WARN), _text("…")], True),
+        ([_HUMAN, _call(_SEND_TO_USER, "s1", {"message": "報告"}), _result("s1", "送信済み。" + _WARN), _text("…")], False),
+        (
+            [
+                _HUMAN,
+                _call("mcp__plugin_agent-toolkit_agents_server__send_message", "m1", {"message": "続けて"}),
+                _result("m1", json.dumps({"result": "委譲先の報告: " + _WARN}, ensure_ascii=False)),
+                _text("終えた。"),
+            ],
+            False,
+        ),
         ([_HUMAN, _call("Bash", "b1", {"command": "cat log"}), _result("b1", _WARN), _text("終えた。")], False),
     ],
     ids=[
@@ -87,7 +96,8 @@ def _evaluate(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> t
         "warn-in-previous-turn",
         "stop-hook-output",
         "system-message-warn",
-        "toolkit-tool-result-warn",
+        "quoted-warn-in-toolkit-result",
+        "quoted-warn-in-delegate-report",
         "quoted-warn-in-command-output",
     ],
 )
