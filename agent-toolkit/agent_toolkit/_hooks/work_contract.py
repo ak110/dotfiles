@@ -214,10 +214,14 @@ def progress_update_warning(session_id: str) -> str | None:
 
 def _progress_record_lines(body: str) -> list[int]:
     found = []
+    conditions = False
     for number, line in _visible_contract_lines(body):
+        heading = re.match(r"^ {0,3}#{1,6} +(.+)$", line)
+        if heading:
+            conditions = heading[1].rstrip(" #") in {"完成条件", "検収条件", "受入条件"}
         item = re.sub(r"^ {0,3}(?:#{1,6} +|[-*] +)", "", line)
-        reference_only = re.match(r"^[^:：]+[:：]\s*(?:`(?:/|[A-Za-z]:[/\\])[^`]+`|(?:/|[A-Za-z]:[/\\])\S+)\s*$", item)
-        if item.startswith(">") or reference_only:
+        reference_only = re.fullmatch(r"[^:：]+[:：]\s*(?:`(?:/|[A-Za-z]:[/\\])[^`]+`|(?:/|[A-Za-z]:[/\\])\S+)\s*", item)
+        if item.lstrip().startswith(">") or reference_only:
             continue
         timestamp = re.match(r"^\d{4}-\d{2}-\d{2}(?:T[\d:+Z-]+)? +", item)
         text = item[timestamp.end() :] if timestamp else item
@@ -225,16 +229,25 @@ def _progress_record_lines(body: str) -> list[int]:
             r"(?:現在の進捗|進捗(?:状況|ログ)?|現在の担当状況|担当の現在状態|"
             r"検収結果|実装結果|検証結果|経緯|新着WIの判定)(?:[:： ]|$)",
             text,
-        ) or (
-            re.search(
-                r"(?:検収|実装|検証|統合|レビュー|公開)(?:が|を|は)?"
-                r"(?:開始した|終了した|完了した|済み|終えた|完了)[。！!]?\s*$",
-                text,
-            )
-            is not None
         ):
             found.append(number)
+            continue
+        if conditions or re.match(r"(?:完成条件|検収条件|受入条件|期限|制約) *[:：]", text):
+            continue
+        if _has_progress_assertion(text, timed=timestamp is not None):
+            found.append(number)
     return found
+
+
+def _has_progress_assertion(text: str, *, timed: bool) -> bool:
+    # 達成すべき条件にも「検証を完了」と書くため、時刻のない体言止めでは判定しない。  pyfltr: allow-comment
+    phase = r"(?:検収|実装|検証|統合|レビュー|公開)(?:が|を|は)?"
+    for sentence in re.split(r"[。！!]", text):
+        if re.search(phase + r"(?:開始した|終了した|完了した|済み|終えた)\s*$", sentence):
+            return True
+        if timed and re.search(phase + r"完了\s*$", sentence):
+            return True
+    return False
 
 
 def _visible_contract_lines(body: str) -> Iterator[tuple[int, str]]:
