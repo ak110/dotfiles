@@ -30,6 +30,11 @@ EXPECTED_CASES = {
     "suppression-scope-agent": "dialogue",
     "suppression-scope-user": "dialogue",
     "merge-depth-agent": "dialogue",
+    "scope-excel-first": "single",
+    "scope-excel-correction": "single",
+    "scope-preserve-existing": "single",
+    "scope-shared-options": "single",
+    "scope-past-decision": "single",
 }
 # 保存例ごとに未達となる検査ID。課題の期待集合（private/grade.py）と保存例の提出内容から導いた。
 _FAILED_CHECKS: dict[str, dict[str, set[str]]] = {
@@ -43,6 +48,11 @@ _FAILED_CHECKS: dict[str, dict[str, set[str]]] = {
     "suppression-scope-agent": {"failure": {"after-submission"}},
     "suppression-scope-user": {"failure": {"after-submission"}},
     "merge-depth-agent": {"failure": {"rewrite-targets", "duplicates", "independent"}},
+    "scope-excel-first": {"failure": {"no-csv"}},
+    "scope-excel-correction": {"failure": {"no-csv"}},
+    "scope-preserve-existing": {"failure": {"legacy-csv"}},
+    "scope-shared-options": {"failure": {"both", "no-toggle"}},
+    "scope-past-decision": {"failure": {"confirm"}},
     "goal-discovery": {"failure": {"report", "empty"}},
     "strategy-update": {"failure": {"mixed", "decimal"}},
     "purpose-boundary": {"failure": {"discovery", "strategy", "coordination", "verification"}},

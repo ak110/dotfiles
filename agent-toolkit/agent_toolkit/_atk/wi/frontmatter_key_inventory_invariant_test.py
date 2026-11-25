@@ -3,7 +3,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._atk.wi import add, branches, priority
+from agent_toolkit._atk.wi import add_drafts, branches, priority
 
 _FIELD_USES = {
     "alert_keys": ("alerts.existing_alert_keys", "同じ警告を重ねて起票しないために記録する"),
@@ -11,6 +11,7 @@ _FIELD_USES = {
     "cooldown_until": ("readiness", "その項目の着手を待つ期限を指定する"),
     "depends_on": ("readiness", "処理を前提項目の終了まで待たせる"),
     "effect_check": ("effect_checkとlisting", "必要な項目の効果確認の結果を追跡する"),
+    "github_source": ("alertsとgithub_submission_approval", "外部報告の再登録を防ぎ、承認したAWIの出所を記録する"),
     "important": ("filtersの重要度選択", "優先的に閲覧したい項目を区別する"),
     "legacy_operation_approval": ("operation_permissionsの旧承認処理", "旧形式の承認の消費を記録する。手入力しない"),
     "merge_branch": ("merge_verification", "取り込むブランチを識別する"),
@@ -24,6 +25,8 @@ _FIELD_USES = {
     "priority_evidence": ("priority.reason_of", "旧形式の緊急化の観測根拠を読む。手入力しない"),
     "priority_impact": ("priority.reason_of", "旧形式の緊急化の影響を読む。手入力しない"),
     "priority_release": ("priority.reason_of", "旧形式の緊急化の解除条件を読む。手入力しない"),
+    "proposal_fingerprint": ("add_draftsの重複検査", "登録済み原稿との内容の一致を照合する。手入力しない"),
+    "processing_owner": ("transitionsの担当照合", "処理中の担当を識別し、旧担当の終了操作を拒否する。手入力しない"),
     "proposal_id": ("addの重複検査", "同じ提案の再投入を防ぐ識別子を指定する"),
     "question_type": ("uwiの回答形式処理", "問いの回答方式を決める"),
     "queue_schedule": ("readinessの旧スケジュール読取", "旧形式の再開期限を維持する。手入力しない"),
@@ -94,7 +97,8 @@ def test_each_wi_frontmatter_key_has_a_consumer_and_a_reason_to_change_it() -> N
         branches.KEY,
         priority.PRIORITY_KEY,
         "alert_keys",
-        add.PROPOSAL_ID_KEY,
+        add_drafts.PROPOSAL_ID_KEY,
+        add_drafts.FINGERPRINT,
     }
     for path in root.rglob("*.py"):
         if not path.name.endswith("_test.py"):

@@ -14,6 +14,9 @@ WIとの対応は記録から取得し、メッセージの件名や説明文か
 1. 記録する。
    実装commitを作る前に、対応するAWIの集合と今のHEADを取得する。
    `git commit`を単独で実行して正常に終わった時だけ、作成前のHEAD、新しいHEAD、worktree、対応する全てのAWIを`atk run-script plan-progress`へ渡す。
+   - 旧書式の計画と引き継ぎ記録では、`--completed-step`と`--result`も渡し、本文へ進捗の行を追記する。
+     新書式の計画は進捗ログを持たないため、両者を省いてよく、本文を変えずに対応だけを記録する（`--rewrite-map`も同じ）。
+     `atk run-script plan-rewrite`も、新書式の計画は本文を変えずに対応だけを更新する（同コマンドの`--completed-step`と`--result`は必須のまま）。
    - 1つのcommitが複数のAWIの変更を含む場合は、全件を同じ記録へ渡す。
    - 引き継ぎ記録へは、`--handoff`と対象AWI全件の`--allowed-awi`を指定する。
    - 計画が必要なAWIと不要なAWIの変更を1つのcommitが含む場合は、同じ作成前HEADと新しいHEADで、計画の`related_wis`にあるAWIを計画へ、残りを引き継ぎ記録へ記録する。

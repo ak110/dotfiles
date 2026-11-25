@@ -12,15 +12,15 @@ import time
 from agent_toolkit._atk import managed_temp, research_sources
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import add_drafts as _add_drafts
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
-from agent_toolkit._atk.wi import uwi as _uwi
+from agent_toolkit._atk.wi import uwi_body as _uwi
 from agent_toolkit._atk.wi.add_reports import (
     check_run_report_sync,
     compare_draft_openings,
@@ -257,7 +257,7 @@ def _resolve_submitter_session() -> str | None:
     return _owner_records.resolve_conversation_session_id()
 
 
-def _add_entries_locked(
+def add_entries_locked(
     private_notes: pathlib.Path,
     *,
     parsed_messages: list[tuple[dict[str, object], str]],
@@ -277,6 +277,7 @@ def _add_entries_locked(
     item_branches: list[str | None] | None = None,
     target_commit_branch: str | None = None,
     initial_state: str = WI_STATE_INBOX,
+    insertions: list[_add_drafts.Insertion] | None = None,
 ) -> list[tuple[str, str]]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
 
@@ -298,14 +299,16 @@ def _add_entries_locked(
     ):
         raise ValueError("repair_targetとrepair_kindは同時に指定してください")
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    counter = _wi_filenames.max_existing_seq(private_notes, timestamp) + 1
+    counter = _wi_filenames.max_existing_seq(private_notes, timestamp) + 1 if insertions is None else 0
     generated: list[tuple[str, str]] = []
-    for (frontmatter, body), repair_target, repair_kind, item_branch in zip(
-        parsed_messages,
-        effective_repair_targets,
-        effective_repair_kinds,
-        effective_branches,
-        strict=True,
+    for index, ((frontmatter, body), repair_target, repair_kind, item_branch) in enumerate(
+        zip(
+            parsed_messages,
+            effective_repair_targets,
+            effective_repair_kinds,
+            effective_branches,
+            strict=True,
+        )
     ):
         raw_target_repo = frontmatter.get("target_repo", target_repo)
         raw_source = frontmatter.get("source", source)
@@ -318,10 +321,12 @@ def _add_entries_locked(
         except WebInputError as error:
             raise _target_repo_error(raw_target_repo, error) from error
         item_source = raw_source if isinstance(raw_source, str) else source
-        filename = f"{timestamp}-{counter:03d}.md"
-        while filename in _wi_filenames.existing_entry_filenames(private_notes):
-            counter += 1
+        if insertions is not None:
+            filename = insertions[index].filename
+            item_dependencies = insertions[index].depends_on
+        else:
             filename = f"{timestamp}-{counter:03d}.md"
+            item_dependencies = depends_on
         frontmatter_data: dict[str, object] = {"target_repo": item_target_repo}
         if item_branch is not None:
             frontmatter_data[_wi_branches.KEY] = item_branch
@@ -331,6 +336,9 @@ def _add_entries_locked(
         if item_source:
             frontmatter_data["source"] = item_source
         frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
+        for key in (_add_drafts.FINGERPRINT, "github_source"):
+            if key in frontmatter:
+                frontmatter_data[key] = frontmatter[key]
         if entry_type == WI_TYPE_UWI:
             frontmatter_data = run_report_metadata(frontmatter_data, question_type=question_type, scope=scope, new_report=True)
         if entry_type != WI_TYPE_AWI:
@@ -347,8 +355,8 @@ def _add_entries_locked(
             logical_body = f"\n{_uwi.QUESTION_HEADING}\n\n{body}\n\n{_uwi.ANSWER_HEADING}\n\n{_uwi.ANSWER_MARKER}\n"
         else:
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
-            if depends_on:
-                frontmatter_data["depends_on"] = list(depends_on)
+            if item_dependencies:
+                frontmatter_data["depends_on"] = list(item_dependencies)
             if cooldown_until is not None:
                 frontmatter_data["cooldown_until"] = cooldown_until
         content = _frontmatter.normalize_newlines(_frontmatter.serialize_frontmatter(frontmatter_data, logical_body))
@@ -382,6 +390,8 @@ def add_entries(
     target_branch: str | None = None,
     initial_state: str = WI_STATE_INBOX,
     draft_basis: DraftBasis | None = None,
+    draft_namespace: str | None = None,
+    resolve_draft_links: bool = True,
 ) -> list[str]:
     """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
 
@@ -417,10 +427,27 @@ def add_entries(
     with storage.mutation(private_notes) as mutation:
         if draft_basis is not None:
             draft_basis.verify(target_commit_branch)
-        parsed_messages, item_branches = _skip_registered_proposals(private_notes, parsed_messages, item_branches)
-        if not parsed_messages:
-            return []
-        written = _add_entries_locked(
+        insertions = None
+        if resolve_draft_links:
+            insertions, _ = _add_drafts.prepare(
+                private_notes,
+                parsed_messages,
+                entry_type=entry_type,
+                namespace=draft_namespace,
+                timestamp=now.strftime("%Y%m%d-%H%M%S"),
+                depends_on=depends_on,
+            )
+            if not insertions:
+                return []
+            item_branches = [item_branches[item.position] for item in insertions]
+            parsed_messages = [item.message for item in insertions]
+        else:
+            kept = _add_drafts.legacy_proposal_positions(private_notes, parsed_messages)
+            if not kept:
+                return []
+            item_branches = [item_branches[index] for index in kept]
+            parsed_messages = [parsed_messages[index] for index in kept]
+        written = add_entries_locked(
             private_notes,
             parsed_messages=parsed_messages,
             target_repo=normalized_target_repo,
@@ -437,6 +464,7 @@ def add_entries(
             item_branches=item_branches,
             target_commit_branch=target_commit_branch,
             initial_state=initial_state,
+            insertions=insertions,
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
@@ -471,45 +499,6 @@ def add_entries(
             next_action="回答の有無は`atk wi show <ファイル名>`で確かめる",
         )
     return generated
-
-
-PROPOSAL_ID_KEY = "proposal_id"
-
-
-def _skip_registered_proposals(
-    private_notes: pathlib.Path,
-    parsed_messages: list[tuple[dict[str, object], str]],
-    item_branches: list[str | None],
-) -> tuple[list[tuple[dict[str, object], str]], list[str | None]]:
-    if not any(isinstance(metadata.get(PROPOSAL_ID_KEY), str) for metadata, _body in parsed_messages):
-        return parsed_messages, item_branches
-    registered: dict[str, str] = {}
-    for path in _wi_layout.iter_entry_paths(private_notes):
-        parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
-        if parsed is not None and isinstance(value := parsed[0].get(PROPOSAL_ID_KEY), str):
-            registered.setdefault(value, path.name)
-    kept: list[tuple[dict[str, object], str]] = []
-    branches: list[str | None] = []
-    seen: set[str] = set()
-    for message, branch in zip(parsed_messages, item_branches, strict=True):
-        proposal = message[0].get(PROPOSAL_ID_KEY)
-        if isinstance(proposal, str) and proposal in registered:
-            _outcome.report_warning(
-                f"提案ID {proposal} のAWIは登録済みのため登録しなかった: {registered[proposal]}",
-                next_action=f"`atk wi show {registered[proposal]}`で登録済みの内容を確かめる",
-            )
-            continue
-        if isinstance(proposal, str) and proposal in seen:
-            _outcome.report_warning(
-                f"提案ID {proposal} の原稿が同じ追加操作に複数あるため、最初の原稿だけを登録した",
-                next_action="原稿の提案IDを見直し、別の提案なら別のIDを付けて追加する",
-            )
-            continue
-        if isinstance(proposal, str):
-            seen.add(proposal)
-        kept.append(message)
-        branches.append(branch)
-    return kept, branches
 
 
 def _resolve_item_branches(
@@ -580,6 +569,16 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
     if in_process_wi and timing is None:
         raise WebInputError("process-wi実行中のAWI投入には対処の時機が必要", next_action=next_action)
     return timing == "this-run"
+
+
+def _draft_namespace(args: argparse.Namespace) -> str | None:
+    explicit = getattr(args, "source_contract", None)
+    if explicit is not None:
+        path = pathlib.Path(explicit)
+        return path.parent.name if path.is_absolute() and path.is_file() else None
+    session = _resolve_submitter_session()
+    temp = managed_temp.find_session_temp(session) if session is not None else None
+    return temp.name if temp is not None and (temp / "work-contract.md").is_file() else None
 
 
 def _check_external_source_review(
@@ -764,6 +763,7 @@ def cmd_add(
     canonical_dependencies = _normalize_dependencies(args.depends_on, dependency_dir)
     choices = normalize_choices(",".join(args.choices)) if args.choices is not None else None
     saved_details: dict[str, dict[str, object | None]] = {}
+    namespace = _draft_namespace(args)
     sources = [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
     try:
         if args.dry_run:
@@ -782,6 +782,14 @@ def cmd_add(
             if draft_basis is not None:
                 _ensure_draft_destinations(draft_basis, parsed_messages, item_branches, resolved_branch)
                 draft_basis.verify(resolved_branch)
+            _, key_names = _add_drafts.prepare(
+                private_notes,
+                parsed_messages,
+                entry_type=args.type,
+                namespace=namespace,
+                timestamp=None,
+                depends_on=canonical_dependencies,
+            )
             print_draft_openings(
                 messages,
                 sources,
@@ -789,6 +797,8 @@ def cmd_add(
                 output_paths=args.opening_output,
                 is_uwi=args.type == WI_TYPE_UWI,
             )
+            for key, name in key_names.items():
+                print(f"  原稿キー: {key} → {name}")
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             if args.type == WI_TYPE_AWI:
                 print_deferral_candidates(messages, sources)
@@ -821,6 +831,7 @@ def cmd_add(
             target_branch=target_branch,
             initial_state=WI_STATE_HOLD if hold else WI_STATE_INBOX,
             draft_basis=draft_basis,
+            draft_namespace=namespace,
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)

@@ -15,6 +15,7 @@ from agent_toolkit._atk.wi.entry_text import EntryText, EntryTexts, parse_frontm
 from agent_toolkit._atk.wi.formatters import parse_source, parse_target_repo
 from agent_toolkit._atk.wi.frontmatter import write_entry_text
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths, unique_dated_entry_path
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
 
@@ -48,6 +49,31 @@ def subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
     return path
 
 
+def append_result_lines(body: str, additions: list[str]) -> str:
+    headings = top_level_atx_headings(body, 2)
+    for index in range(len(headings) - 1, -1, -1):
+        if headings[index][1] == "処理結果":
+            lines = body.split("\n")
+            following = headings[index + 1][0].map if index + 1 < len(headings) else None
+            boundary = following[0] if following else len(lines)
+            first = "\n".join(lines[:boundary]).rstrip("\n")
+            rest = "\n".join(lines[boundary:])
+            return first + "\n" + "\n".join(additions) + "\n" + ("\n" + rest if rest else "")
+    return body.rstrip("\n") + "\n\n## 処理結果\n\n" + "\n".join(additions) + "\n"
+
+
+def without_last_result_section(body: str) -> str:
+    headings = top_level_atx_headings(body, 2)
+    for index in range(len(headings) - 1, -1, -1):
+        token, title = headings[index]
+        if title == "処理結果" and token.map:
+            lines = body.split("\n")
+            following = headings[index + 1][0].map if index + 1 < len(headings) else None
+            first = "\n".join(lines[: token.map[0]]).rstrip("\n")
+            return first + "\n\n" + "\n".join(lines[following[0] :]) if following else first + "\n"
+    return body
+
+
 def stamp_result(
     path: pathlib.Path,
     *,
@@ -59,12 +85,7 @@ def stamp_result(
     effect_check_reason: str | None = None,
 ) -> None:
     body = path.read_text(encoding="utf-8")
-    if not body.endswith("\n"):
-        body += "\n"
     lines = [
-        "",
-        "## 処理結果",
-        "",
         f"- 採否: {outcome}",
         f"- 処理日時: {now.astimezone().isoformat(timespec='seconds')}",
     ]
@@ -87,8 +108,7 @@ def stamp_result(
             lines.extend(("- メモ:", "", f" {fence}", *(f" {line}" for line in note.splitlines()), f" {fence}"))
         else:
             lines.append(f"- メモ: {note}")
-    body += "\n".join(lines) + "\n"
-    write_entry_text(path, body)
+    write_entry_text(path, append_result_lines(body, lines))
 
 
 def canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
