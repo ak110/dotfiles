@@ -88,7 +88,11 @@ def test_denial_warning_then_missing_response_blocks_question_once(tmp_path: pat
     assert "hook_notice_response_gate" not in str(_hook("pretooluse", tmp_path, **question))
 
 
-def test_stop_handles_denial_once_and_ignores_ordinary_output(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("delegated", [False, True])
+def test_stop_handles_denial_once_and_ignores_ordinary_output(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, delegated: bool
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1" if delegated else "0")
     _hook(
         "posttooluse",
         tmp_path,
@@ -101,6 +105,10 @@ def test_stop_handles_denial_once_and_ignores_ordinary_output(tmp_path: pathlib.
     _denial(tmp_path)
     stopped = _hook("stop", tmp_path, hook_event_name="Stop")
     assert stopped["decision"] == "block" and _SOURCE in stopped["reason"]
+    if delegated:
+        assert "委譲元へ報告する" in stopped["reason"] and "AskUserQuestion" not in stopped["reason"]
+    else:
+        assert "AskUserQuestion" in stopped["reason"]
     assert _SOURCE not in str(_hook("stop", tmp_path, hook_event_name="Stop", stop_hook_active=True))
 
 

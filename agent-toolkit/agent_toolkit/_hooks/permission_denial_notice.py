@@ -1,10 +1,17 @@
+"""Claude Codeの権限拒否について、次のツール呼び出しかStopで一度だけ案内する。  pyfltr: allow-comment
+
+委譲先での実行可否: `agents_server`の委譲先でも実行し、委譲元への報告を案内する。
+組み込みのサブエージェントの通知は同じ`agent_id`のツール呼び出しで扱い、メインのStopでは消費しない。
+"""
+
 import time
 from typing import Literal
 
 from agent_toolkit._common import session_layout, session_state
-from agent_toolkit._hooks import message_format, notice, stop_session
+from agent_toolkit._hooks import notice
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks import message_format, stop_session
 
 _STATE_KEY = "pending_permission_denials"
 _SOURCE = "permission_denial_notice"

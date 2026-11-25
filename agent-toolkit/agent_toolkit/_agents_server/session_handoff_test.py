@@ -181,6 +181,7 @@ async def test_legacy_codex_disconnect_result_starts_handoff(
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         started = await manager.start("execute", "未完了の検証を続ける", str(tmp_path))
         predecessor = manager.sessions[started["session_id"]]
+        predecessor.label = "CI の失敗を調査"
         _complete(
             predecessor,
             message="編集済みの進捗全文",
@@ -190,6 +191,7 @@ async def test_legacy_codex_disconnect_result_starts_handoff(
         assert "handoff_from" in result["next_action"]
         response = await mcp_tools.start(handoff_from=predecessor.session_id)
         successor = manager.sessions[response["session_id"]]
+        assert response["label"] == successor.label == predecessor.label
         assert "編集済みの進捗全文" in successor.prompt
         assert successor.model_type == predecessor.model_type
         assert not successor.excluded_candidates

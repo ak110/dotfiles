@@ -393,10 +393,10 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
             "model": "gpt-test",
             "effort": "high",
             "fast_mode": False,
-            "label": "調査",
+            "label": "delegate",
         }
         steered = await manager.send_message("thread-codex", "追加指示")
-        assert steered == {"delivery": "steered", "label": "調査"}
+        assert steered == {"delivery": "steered", "label": "delegate"}
         assert manager.sessions["thread-codex"].turn_seq == 1
         assert client.requests[-1][0] == "turn/steer"
         killed = await manager.kill("thread-codex", timeout=0)
