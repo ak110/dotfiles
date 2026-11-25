@@ -38,7 +38,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._common import process_identity, process_tree, runtime_environment, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
-from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing import late_descendant, service_lifetime
 from agent_toolkit._testing.agents_server_tool_contract import EXPECTED_TOOL_NAMES
 from agent_toolkit._testing.codex_plugin_support import _stop_mcp_services
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
@@ -323,7 +323,6 @@ class _LaunchedServer:
             else [sys.executable, str(_PLUGIN_ROOT / "scripts" / "launch.py"), "agent_toolkit/agents_server_mcp.py", *arguments]
         )
         self.state_dir = tmp_path / "agent-toolkit"
-        self._state_base = tmp_path
         self.temporary = tmp_path / "tmp"
 
         self._owner = contextlib.ExitStack()
@@ -332,17 +331,23 @@ class _LaunchedServer:
         self._lines: queue.Queue[bytes] = queue.Queue()
         self.stderr = b""
         self._readers: list[threading.Thread] = []
-        self.process = self._owner.enter_context(
-            process_tree.process_scope(
-                command,
-                env=env,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=os.name != "nt",
-                close_streams=False,
+        try:
+            if "--check-dependencies" not in arguments:
+                self._owner.enter_context(service_lifetime.guard(tmp_path))
+            self.process = self._owner.enter_context(
+                process_tree.process_scope(
+                    command,
+                    env=env,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=os.name != "nt",
+                    close_streams=False,
+                )
             )
-        )
+        except BaseException:
+            self._owner.close()
+            raise
         try:
             for target in (self._read_stdout, self._drain_stderr):
                 reader = threading.Thread(target=target, daemon=True)
@@ -370,25 +375,6 @@ class _LaunchedServer:
                 if reader.ident is not None:
                     cleanup.callback(self._join_reader, reader)
             self._owner.close()
-            if not self._services:
-                _stop_mcp_services(self._state_base)
-
-            for process, identity, arguments in self._services:
-                try:
-                    if not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-                        continue
-                    if not identity.matches(process):
-                        assert not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
-                        continue
-                    command = process.cmdline()
-                    if not command:
-                        assert not process_tree.wait_until_released([process], timeout=_LAUNCH_TIMEOUT)
-                        continue
-                    assert command == arguments
-                    result = process_tree.stop_tree(process)
-                    assert not result.residual and not result.unresolved, result.descriptions()
-                except psutil.NoSuchProcess, psutil.ZombieProcess:
-                    continue
 
     @staticmethod
     def _join_reader(reader: threading.Thread) -> None:
@@ -416,7 +402,7 @@ class _LaunchedServer:
         self.process.stdin.write(json.dumps(payload).encode() + b"\n")
         self.process.stdin.flush()
 
-    def initialize(self) -> None:
+    def initialize(self, *, capture_services: bool = True) -> None:
         """initializeの応答を同期点とし、シグナルの記録handlerの設置後に操作を始める。"""
         response = self.request(
             1,
@@ -428,6 +414,8 @@ class _LaunchedServer:
 
         listed = self.request(10, "tools/call", {"name": "list", "arguments": {}})
         assert "result" in listed and not listed["result"].get("isError", False)
+        if not capture_services:
+            return
         [path] = list(self.state_dir.rglob("generations.json"))
         registry = json.loads(path.read_text(encoding="utf-8"))
         target = registry["generations"][registry["current"]]
@@ -520,6 +508,24 @@ def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, laun
             assert server.wait() == 0
             assert server.stderr == b"", server.stderr
             assert not list((server.state_dir / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl"))
+
+
+@pytest.mark.parametrize("capture", [False, True], ids=["before-capture", "after-capture"])
+@pytest.mark.cpu_limit(2.0, reason="実MCPの管理サービスを起動し、試験例外後に独立した起動元と本体の終了を待つ。")
+def test_launcher_reclaims_service_after_test_failure(
+    tmp_path: pathlib.Path, launcher_environment: dict[str, str], capture: bool
+) -> None:
+    observed: list[psutil.Process] = []
+    with pytest.raises(RuntimeError, match="試験本体の失敗"), _LaunchedServer(tmp_path, launcher_environment) as server:
+        server.initialize(capture_services=capture)
+        # pyfltr: allow-comment 回収の検査側が起動引数を観測し、通信試験の世代情報には触れない。
+        targets = service_lifetime._targets(tmp_path)
+        observed.extend(process for priority, process, identity in targets if priority > 0 and identity.matches(process))
+        assert bool(server._services) == capture
+        raise RuntimeError("試験本体の失敗")
+
+    assert len(observed) == 2
+    assert not process_tree.wait_until_released(observed, timeout=1)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのシグナル転送と終了状態を検証する")

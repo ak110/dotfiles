@@ -152,7 +152,9 @@ def _wait_receipt(identifier: str) -> dict[str, Any]:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのshebangと独立セッションの実境界を確認する")
-@pytest.mark.parametrize("batched", [False, True], ids=["single", "batch"])
+@pytest.mark.parametrize(
+    ("batched", "remote"), [(False, False), (True, False), (False, True)], ids=["single", "batch", "sync-worker"]
+)
 @pytest.mark.usefixtures("share_package_caches")
 @pytest.mark.cpu_limit(
     4.0,
@@ -161,12 +163,37 @@ def _wait_receipt(identifier: str) -> dict[str, Any]:
         ".869秒）。"
     ),
 )
-def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatch, capsys, host_environ, batched):
+def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatch, capsys, host_environ, batched, remote):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     engine = bin_dir / "claude"
     engine.write_text(_ENGINE.format(python=sys.executable), encoding="utf-8")
     engine.chmod(0o700)
+    upstream = tmp_path / "upstream"
+    sync_ready = tmp_path / "sync-ready"
+    sync_release = tmp_path / "sync-release"
+    if remote:
+        git_repository.commit_all(notes, "同期の起点")
+        branch = git_repository.git_output(notes, "branch", "--show-current")
+        git_repository.init_bare_repository(upstream, initial_branch=branch)
+        git_repository.run_git(notes, "remote", "add", "origin", str(upstream))
+        git_repository.run_git(notes, "push", "--set-upstream", "origin", "HEAD")
+        git = shutil.which("git")
+        assert git is not None
+        shim = bin_dir / "git"
+        shim.write_text(
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys, time\n"
+            "if '--no-write-fetch-head' in sys.argv and '--refmap=' in sys.argv:\n"
+            f"    pathlib.Path({str(sync_ready)!r}).touch()\n"
+            "    deadline = time.monotonic() + 30\n"
+            f"    while not pathlib.Path({str(sync_release)!r}).exists():\n"
+            "        assert time.monotonic() < deadline\n"
+            "        time.sleep(0.02)\n"
+            f"os.execv({git!r}, [{git!r}, *sys.argv[1:]])\n",
+            encoding="utf-8",
+        )
+        shim.chmod(0o700)
     monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ["PATH"])
     set_orchestrate_environment(monkeypatch, "claude:sonnet/high")
     monkeypatch.setenv("PYTHONPATH", str(pathlib.Path(submit.__file__).resolve().parents[3]))
@@ -240,13 +267,30 @@ def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatc
     receipts = accepted if batched else [accepted]
     assert [submit.validate_ticket(item["ticket"]).request_id for item in receipts] == [item["request_id"] for item in requests]
     value = None
+    copy: pathlib.Path | None = None
     try:
         request.unlink()
         parent.rmdir()
         shutil.rmtree(source.parent)
+        if remote:
+            deadline = time.monotonic() + 35
+            while not sync_ready.exists():
+                assert time.monotonic() < deadline, submit.show("request-1")
+                time.sleep(0.02)
+            active = submit.show("request-1")
+            identity = session_registry.ProcessIdentity(**active["receipt"]["owner"])
+            copy = pathlib.Path(active["run"]["runtime_root"])
+            assert identity.exists() and copy.is_dir()
+            sync_release.touch()
         value = _wait_receipt("request-1")
         assert value["run"]["status"] == "completed", value
-        assert value["run"]["report_synced"]
+        if remote:
+            assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(
+                upstream, "rev-parse", "HEAD"
+            )
+            assert copy is not None and not copy.exists()
+        else:
+            assert value["run"]["report_synced"]
         assert {item["request_id"]: item for item in value["run"]["requests"]} == {
             item["request_id"]: item for item in requests
         }
@@ -277,6 +321,7 @@ def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatc
         with pytest.raises(ValueError, match="一致"):
             submit.validate_ticket(invalid)
     finally:
+        sync_release.touch()
         if value is None:
             receipt = submit.show("request-1")
             identity = session_registry.ProcessIdentity(**receipt["receipt"]["owner"])

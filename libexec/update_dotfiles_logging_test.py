@@ -31,7 +31,10 @@ from pytools._internal import plugin_warmup  # noqa: E402  # pylint: disable=wro
 
 
 def test_persistent_log_redacts_only_saved_diagnostic() -> None:
-    output = "api_key=fake-update-key\nhttps://fake-user:fake-pass@example.invalid/path?token=fake-query\n"
+    output = (
+        "api_key=fake-update-key\n"
+        "https://fake-user:fake-pass@example.invalid/path?token=fake-query&JWT=fake-jwt&sig=fake-sig&download=1\n"
+    )
     screen = io.StringIO()
     handler = logging.StreamHandler(screen)
     update_dotfiles_runtime.logger.addHandler(handler)
@@ -46,12 +49,12 @@ def test_persistent_log_redacts_only_saved_diagnostic() -> None:
         update_dotfiles_runtime.logger.removeHandler(handler)
         handler.close()
     saved = update_dotfiles_runtime.LOG_PATH.read_text(encoding="utf-8")
-    for value in ("fake-update-key", "fake-user", "fake-pass", "fake-query", "fake-update-bearer"):
+    for value in ("fake-update-key", "fake-user", "fake-pass", "fake-query", "fake-jwt", "fake-sig", "fake-update-bearer"):
         assert value not in saved
         assert value in screen.getvalue()
     assert output in screen.getvalue()
     assert "stage=child exit=7 stdout:\n" in saved
-    assert "example.invalid/path?token=" in saved
+    assert 'example.invalid/path?token="[REDACTED]"&JWT=[REDACTED]&sig=[REDACTED]&download=1' in saved
     assert "RuntimeError" in saved
     assert "[REDACTED]" in saved
 

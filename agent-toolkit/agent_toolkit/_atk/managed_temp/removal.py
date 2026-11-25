@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import pathlib
 import shutil
@@ -10,6 +11,7 @@ from agent_toolkit._atk.managed_temp import paths, permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._common import plugin_root_leases
 
+_LOG = logging.getLogger(__name__)
 PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
 """稼働中のagents_serverが版固定の配布物を複製する領域の接頭辞。旧形式と共有形式の両方がこの名前で始まる。"""
 
@@ -124,3 +126,17 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
         remove_tree(path)
     except OSError as error:
         raise ManagedTempError(f"管理対象を回収できない: {path}: {error}") from error
+
+
+def release_stable_plugin_root(root: pathlib.Path) -> None:
+    area = root.parent
+    if area.parent != paths.temp_root_path() or plugin_root_leases.completed_plugin_copy(area) != root:
+        return
+    try:
+        validate_managed_temp(area)
+        plugin_root_leases.release_plugin_root_use(area)
+        cleanup_managed_temp(area)
+    except ManagedTempError as exc:
+        _LOG.debug("配布物rootを保持します: root=%s error=%s", root, exc)
+    except (OSError, ValueError) as exc:
+        _LOG.warning("配布物rootの解放に失敗しました: root=%s error=%s", root, exc)

@@ -51,6 +51,20 @@ def test_independent_copy_failure_never_falls_back_to_source(tmp_path, monkeypat
     assert source.is_dir()
 
 
+def test_finished_independent_roots_do_not_accumulate(tmp_path, monkeypatch):
+    source = _source(tmp_path)
+    monkeypatch.setattr(plugin_root_leases.psutil, "process_iter", lambda: [])
+    protected = plugin_root.resolve_stable_plugin_root(source, independent=True)
+    for _ in range(3):
+        finished = plugin_root.resolve_stable_plugin_root(source, independent=True)
+        assert finished.parent != protected.parent
+        plugin_root.release_stable_plugin_root(finished)
+        assert not finished.parent.exists()
+        assert (protected / "content.py").read_text(encoding="utf-8") == "value = 1\n"
+    plugin_root.release_stable_plugin_root(protected)
+    assert not protected.parent.exists()
+
+
 def test_checkout_resolution_does_not_write_capability_record(tmp_path):
     source = _source(tmp_path)
     for _ in range(3):

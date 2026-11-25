@@ -181,7 +181,10 @@ def main() -> int:
                 environment["PYTHONPATH"] = str(stable)
 
                 inherited_venv.record_launch_value(environment, "PYTHONPATH", caller_environment.get("PYTHONPATH"))
-                return _run_agents_server(arguments, environment, independent=True)
+                try:
+                    return _run_agents_server(arguments, environment, independent=True)
+                finally:
+                    plugin_root.release_stable_plugin_root(stable)
             if target == root / _AGENTS_SERVER_TARGET:
                 return _run_agents_server(arguments, environment)
             if target == root / "agent_toolkit/_common/pyfltr_entry.py" and options.arguments[:1] == ["mcp"]:

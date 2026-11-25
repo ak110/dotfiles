@@ -25,22 +25,25 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import session_record_format
-from agent_toolkit._testing import isolation, late_descendant
+from agent_toolkit._testing import isolation, late_descendant, service_lifetime
 from agent_toolkit._testing.git_repository import init_repository, run_git
 
 pytestmark = [pytest.mark.live_agents, pytest.mark.usefixtures("live_agents_environment")]
 
 
 @pytest.fixture
-def live_agents_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+def live_agents_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> collections.abc.Iterator[None]:
     """エージェントの会話から実行しても、その会話の全体作業契約や記録先へ起動結果を結び付けない。
 
     通常委譲の起動は所有会話のmanaged-tempに全体作業契約が無いと拒否するため、呼出元の会話を継承すると
     試験の成否が呼出元の状態で変わる。端末から実行した場合と同じく所有会話を持たない状態にそろえる。
     """
-    isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
+    state_base = tmp_path / "agents-state"
+    isolation.restore_live_agents_environment(monkeypatch, state_base)
     for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.delenv(name, raising=False)
+    with service_lifetime.guard(state_base):
+        yield
 
 
 @dataclasses.dataclass(frozen=True)

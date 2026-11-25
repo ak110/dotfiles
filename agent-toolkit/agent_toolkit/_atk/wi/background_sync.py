@@ -208,13 +208,16 @@ def warn_if_unhealthy(notes: pathlib.Path) -> bool:
     return True
 
 
-def finish_local_save(notes: pathlib.Path, exit_code: int, *, skip: bool) -> int:
+def finish_local_save(notes: pathlib.Path, exit_code: int, *, skip: bool, wait_for_worker: bool = False) -> int:
     unhealthy = warn_if_unhealthy(notes)
     if exit_code:
         return exit_code
     if not skip and sync.has_remote(notes):
         try:
-            schedule(notes)
+            if wait_for_worker:
+                schedule(notes, wait_for_worker=True)
+            else:
+                schedule(notes)
         except OSError as error:
             outcome.report_warning(
                 f"ローカル保存は完了したが、裏の同期を起動できなかった: {error}",
@@ -237,7 +240,7 @@ def explicit_sync_finished(notes: pathlib.Path) -> None:
         _report(status, previous.get("state") or "pending", last_fetch=time.time(), reason=previous.get("reason"))
 
 
-def schedule(notes: pathlib.Path) -> None:
+def schedule(notes: pathlib.Path, *, wait_for_worker: bool = False) -> None:
     if not sync.has_remote(notes):
         return
     lock, _ = _files(notes)
@@ -262,7 +265,10 @@ def schedule(notes: pathlib.Path) -> None:
         start_new_session=os.name != "nt",
         creationflags=HIDDEN_DETACHED_CREATIONFLAGS if os.name == "nt" else 0,
     )
-    threading.Thread(target=worker.wait, daemon=True).start()
+    if wait_for_worker:
+        worker.wait()
+    else:
+        threading.Thread(target=worker.wait, daemon=True).start()
 
 
 if __name__ == "__main__":

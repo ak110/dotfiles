@@ -20,6 +20,7 @@ import filelock
 import pydantic
 
 from agent_toolkit._atk import orchestrator, outcome, run_skill, run_skill_state
+from agent_toolkit._atk.managed_temp.removal import release_stable_plugin_root
 from agent_toolkit._atk.wi import add, background_sync, frontmatter, layout, sync, uwi_scan
 from agent_toolkit._common import (
     diagnostic_process,
@@ -541,7 +542,8 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
         run["report_committed"] = add.has_committed_run_report(notes, run_id=run["run_id"], scope=SKILL)
         run["report_synced"] = run["report_committed"] and not sync.has_remote(notes)
         if run["report_committed"]:
-            background_sync.finish_local_save(notes, 0, skip=False)
+            # pyfltr: allow-comment 同期の子が同じ配布物を読むため、独立監督は子が終わるまで使用登録を保つ。
+            background_sync.finish_local_save(notes, 0, skip=False, wait_for_worker=True)
         run["report_error"] = None
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, filelock.Timeout) as error:
         run["report_committed"] = False
@@ -911,4 +913,9 @@ def dispatch(args: argparse.Namespace) -> int:
 if __name__ == "__main__":
     if len(sys.argv) != 3 or sys.argv[1] not in {"worker", "execute"}:
         sys.exit(2)
-    sys.exit(worker(sys.argv[2]) if sys.argv[1] == "worker" else _execute(sys.argv[2]))
+    if sys.argv[1] == "execute":
+        sys.exit(_execute(sys.argv[2]))
+    try:
+        sys.exit(worker(sys.argv[2]))
+    finally:
+        release_stable_plugin_root(pathlib.Path(__file__).resolve().parents[3])
