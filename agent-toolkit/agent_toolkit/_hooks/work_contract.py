@@ -188,18 +188,37 @@ def _original_user_text(raw: str, *, include_answers: bool = False) -> str | Non
     return None
 
 
-def recorded_new_wi_decisions(session_id: str) -> frozenset[str]:
+def progress_update_warning(session_id: str) -> str | None:
     path = record_path(session_id)
     if path is None:
-        return frozenset()
+        return None
+    key = "work_contract_progress_checked"
     try:
-        body = path.read_text(encoding="utf-8")
+        stat = path.stat()
+        stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
+        if read_state(session_id).get(key) == stamp:
+            return None
+        lines = _visible_contract_lines(path.read_text(encoding="utf-8"))
+        found = [
+            number
+            for number, line in lines
+            if re.match(
+                r"^ {0,3}(?:#{1,6} +|[-*] +)(?:\d{4}-\d{2}-\d{2}(?:T[\d:+Z-]+)? +)?"
+                r"(?:現在の進捗|進捗(?:状況|ログ)?|現在の担当状況|担当の現在状態|"
+                r"検収結果|実装結果|検証結果|経緯|新着WIの判定)(?:[:： ]|$)",
+                line,
+            )
+        ]
     except OSError, UnicodeError:
-        return frozenset()
-    return frozenset(
-        match[1]
-        for _, line in _visible_contract_lines(body)
-        if (match := re.fullmatch(r"- 新着WIの判定: ([A-Za-z0-9._-]+[.]md) [|] [^\s].*", line))
+        return None
+    update_state(session_id, lambda state: {**state, key: stamp})
+    if not found:
+        return None
+    numbers = "、".join(str(number) for number in found)
+    return (
+        f"`{path}`の{numbers}行目に進捗・検収の記録がある。"
+        "担当の引き継ぎ記録、対応する計画かWI、または公開担当の引き継ぎ記録へ移し、"
+        "全体作業契約には原本の所在だけを残してください。"
     )
 
 

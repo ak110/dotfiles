@@ -8,7 +8,7 @@ from agent_toolkit._common import delegated_session, process_loop_session
 from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
 from agent_toolkit._git import command as git_command
 from agent_toolkit._git.remote import resolve_repo_identifier
-from agent_toolkit._hooks import agent_id, notice, work_contract
+from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
 lazy from agent_toolkit._atk.wi.listing import progress_new_wis
 lazy from agent_toolkit._hooks.user_response_advisor import resend_scope
@@ -44,7 +44,7 @@ def _is_publication(tool_name: str, tool_input: dict) -> bool:
 
 
 def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
-    """公開前の新着WIの判定漏れを止める。同じ発話の中で同じ操作を再発行すれば解除する。  pyfltr: allow-comment"""
+    """公開操作の前に新着WIを通知する。同じ発話の中で同じ操作を再発行すれば解除する。  pyfltr: allow-comment"""
     if not _applies(payload, session_id, tool_name, tool_input):
         return None
     actor = agent_id.resolve_hook_agent_id(payload)
@@ -57,12 +57,12 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
         actor,
         _RESEND_KEY,
         json.dumps(tool_input, ensure_ascii=False, sort_keys=True) + "\n" + found[0],
-        label=f"公開前の新着WIの判定を確認できない公開の操作（{found[0]}）",
+        label=f"公開前に新着WIの確認が必要な操作（{found[0]}）",
         scope=resend_scope(payload),
         limit=1,
     ):
         return None
-    return found[0], f"{found[1]}判定を記録できない場合は、同じ操作を再発行すれば実行する。"
+    return found[0], f"{found[1]}同じ操作を再発行すると実行する。"
 
 
 def _owner(payload: dict, session_id: str) -> str:
@@ -199,12 +199,7 @@ def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> 
         )
     if not rows:
         return None
-    decided = work_contract.recorded_new_wi_decisions(owner)
-    pending = [row for row in rows if row.rsplit(" (source:", 1)[0] not in decided]
-    if not pending:
-        return None
     return (
-        "公開前に判定を要する新着WI: " + "、".join(pending),
-        "巡回の統括がatk wi showで本文を読み、今回扱うものは公開前に処理する。処理可能な状態で残る項目は"
-        "統括の作業契約に「- 新着WIの判定: <ファイル名> | <判定と根拠>」を各1行記録して再試行する。",
+        "公開前の新着WI: " + "、".join(rows),
+        "今回扱う項目があれば公開前に処理する。次回扱う項目はinboxに残す。",
     )

@@ -102,3 +102,22 @@ def test_updated_contract_checks_actual_user_utterance(tmp_path, monkeypatch):
     assert work_contract.quote_update_warning("session", str(transcript)) is None
     contract.write_text(f"## 追加要求（U5）\n\n- 原文: 「{original}」\n", encoding="utf-8")
     assert work_contract.quote_update_warning("session", str(transcript)) is None
+
+
+def test_progress_update_warning(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "work-contract.md"
+    monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
+    valid = (
+        "## 現在有効な要求・制約\n"
+        "- 2026-11-25T11:22:00Z までに確認する。\n"
+        "> 進捗: 実装済み\n"
+        "```md\n## 検収結果\n```\n"
+        "## 原本の所在\n"
+        "- 引き継ぎ記録: /example/handoff.md\n"
+    )
+    path.write_text(valid, encoding="utf-8")
+    assert work_contract.progress_update_warning("session") is None
+    path.write_text(valid + "- 2026-11-25T11:22:00Z 進捗: 完了。\n", encoding="utf-8")
+    warning = work_contract.progress_update_warning("session")
+    assert warning is not None and "9行目" in warning and "引き継ぎ記録" in warning
+    assert work_contract.progress_update_warning("session") is None
