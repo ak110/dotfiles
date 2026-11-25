@@ -14,7 +14,7 @@ import time
 from asyncio.subprocess import Process
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
-from types import SimpleNamespace
+from types import FunctionType, SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -161,6 +161,12 @@ async def _environment(
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     clients: list[_MemoryAppServer] = []
 
+    async def isolated_file_operation[T](operation: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+        return operation(*args, **kwargs)
+
+    # 隔離済みの読取をexecutor経由にせず、実readerとRPCの状態遷移を確かめる。  # pyfltr: allow-comment
+    monkeypatch.setattr(codex_reset, "run_file_operation", isolated_file_operation)
+
     def client_factory(*args: Any, **kwargs: Any) -> _MemoryAppServer:
         client = _MemoryAppServer(*args, **kwargs)
         clients.append(client)
@@ -173,8 +179,29 @@ async def _environment(
 
 
 async def _until(backend: codex.AppServerManager, predicate: Callable[[], bool]) -> None:
-    async with backend._condition:
-        await asyncio.wait_for(backend._condition.wait_for(predicate), timeout=5)
+    try:
+        async with backend._condition:
+            await asyncio.wait_for(backend._condition.wait_for(predicate), timeout=5)
+    except TimeoutError as error:
+        observed = []
+        for session in backend.sessions.values():
+            client = backend._owned_client(session)
+            task = backend._auto_reset_checks.get(session.session_id)
+            observed.append(
+                {
+                    "status": session.status,
+                    "pending": session.codex_auto_reset_pending,
+                    "awaiting_auto_resume": session.awaiting_auto_resume,
+                    "turn_completed": session.turn_completed,
+                    "result_available": session.result_available,
+                    "requests": [name for name, _ in client.requests] if isinstance(client, _MemoryAppServer) else [],
+                    "check_stack": (
+                        [(frame.f_code.co_name, frame.f_lineno) for frame in task.get_stack()] if task is not None else []
+                    ),
+                }
+            )
+        expected = predicate.__code__.co_names if isinstance(predicate, FunctionType) else type(predicate).__name__
+        raise AssertionError(f"待機条件 {expected} に未到達。観測: {observed}") from error
 
 
 def _fail(
@@ -592,15 +619,14 @@ async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
             deadline = session.usage_limit_resume_at
             assert deadline is not None
             loop = asyncio.get_running_loop()
-            await asyncio.sleep(max(0, deadline - loop.time() - 0.25))
             account_release.set()
             if permitted:
                 await asyncio.wait_for(client.consume_started.wait(), timeout=5)
                 await asyncio.sleep(max(0, deadline - loop.time() + 0.05))
                 assert not client.consume_cancelled.is_set() and session.codex_auto_reset_pending
             else:
-                async with asyncio.timeout_at(deadline + 0.15):
-                    await _until(backend, lambda: session.result_available)
+                await _until(backend, lambda: session.result_available)
+                assert loop.time() >= deadline
         finally:
             account_release.set()
             consume_release.set()
