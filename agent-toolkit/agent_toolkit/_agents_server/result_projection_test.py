@@ -14,6 +14,16 @@ from agent_toolkit._agents_server import (
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+def test_repeated_result_keeps_improvement_original_but_not_full_instructions() -> None:
+    message = "- 気付いた改善点: 同じ案内を毎回読む。"
+    first = result_projection.with_result_next_action({"status": "completed", "agent_message": message}, None)
+    repeated = result_projection.with_result_next_action(first, None)
+    assert repeated["agent_message"] == message
+    assert len(repeated["next_action"]) < 120
+    assert repeated["next_action"].count("受領後の扱い") == 1
+    assert repeated["read_requirements"] == ["agent-toolkit:atk-mode/playbooks/delegation-receiving.md#「受領後の扱い」"]
+
+
 def test_review_wait_statement_does_not_request_review_receipt() -> None:
     """レビュー担当の待機表明を、指摘を受領した完了結果として案内しない。"""
     held = {

@@ -13,6 +13,7 @@ from agent_toolkit._atk import lane_cleanup as _lane_cleanup
 from agent_toolkit._atk import lane_create as _lane_create
 from agent_toolkit._atk import lane_integration as _lane_integration
 from agent_toolkit._atk import lane_records as _lane_records
+from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.lane_activity import process_activity as _process_activity
 from agent_toolkit._atk.lane_activity import session_activity as _session_activity
 from agent_toolkit._atk.lane_activity import worktree_activity as _worktree_activity
@@ -167,7 +168,13 @@ def dispatch(args: argparse.Namespace) -> int:
                 result["orphans"] = _lane_cleanup.cleanup_orphans(repo, base, caller)
                 if result.get("result_path"):
                     _lane_records.save(pathlib.Path(result["result_path"]), result)
-        print(json.dumps(result, ensure_ascii=False))
+        shown = result
+        if args.lane_subcommand == "create" and is_agent_environment():
+            shown = {
+                key: result[key]
+                for key in ("session_id", "lane", "record_path", "worktree", "branch", "initial_head", "ready", "reused")
+            }
+        print(json.dumps(shown, ensure_ascii=False))
         if result.get("target_advanced"):
             outcome.report_warning(
                 f"統合先が準備の時点から進んだ: {result['target_advanced']['actual']}", next_action=result["next_action"]

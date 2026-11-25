@@ -42,7 +42,7 @@ _SUBJECTS: dict[str, tuple[dict[str, str], dict[str, str]]] = {
 }
 """スキルを使う委譲先の主体の区分ごとの環境変数とhook入力の追加項目。区分はagents_serverが委譲先へ渡す起動区分で表す。"""
 
-_NOTICE = re.compile(r"スキル`([^`]+)`をまだ起動していなければ")
+_NOTICE = re.compile(r"スキル`([^`]+)`を起動してください")
 """起動を求める案内から、案内したスキルの名前を取り出す。"""
 
 

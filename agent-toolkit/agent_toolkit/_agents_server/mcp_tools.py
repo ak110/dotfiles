@@ -808,7 +808,8 @@ async def send_to_user(
 
     tool_use_id = _TOOL_USE_ID.get()
     result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})
-    result["guidance"] = guidance
+    if guidance:
+        result["guidance"] = guidance
     return result
 
 

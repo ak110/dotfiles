@@ -437,7 +437,6 @@ def test_notice_distinguishes_partial_failed_and_absent_observations(
     }[case]
     assert expected in notice
     if case == "partial":
-        # 一覧コマンドでは見えない失敗対象の所在と診断を、通知から直接たどれる。
         assert "root/w.json: ValueError" in notice and "agents-server" in notice
     if case == "observe-error":
         assert "denied" in notice and "`atk config get state_dir`" in notice
@@ -496,6 +495,23 @@ def test_process_loop_point_lists_merge_candidate(monkeypatch):
     notice = progress_self_check.claim_notice(payload, now=1801.0)
     assert notice and f"{name} (source: implement、merge_branch: あり)" in notice
     progress_self_check.release_reservations()
+
+
+def test_new_wi_preview_counts_all_but_repeats_only_undelivered_ids() -> None:
+    sid = _session_id()
+    old = "20261123-145959-001.md"
+    new = "20261123-150000-001.md"
+    before = (f"{old} (source: implement、merge_branch: なし)",)
+    text, snapshot = notice_module.new_wi_preview(sid, "main", before)
+    notice_module.stage_new_wi_preview(text, sid, "main", snapshot)
+    assert old in text and "merge_branch" not in text
+    assert old in notice_module.new_wi_preview(sid, "main", before)[0]
+    notice_module.record_delivery(text)
+
+    after = (*before, f"{new} (source: implement、merge_branch: あり)")
+    text, _ = notice_module.new_wi_preview(sid, "main", after)
+    assert old not in text and new in text and "計2件" in text and "merge_branch: あり" in text
+    assert old in notice_module.new_wi_preview(sid, "other", after)[0]
 
 
 def test_self_check_lists_skipped_notices_once() -> None:

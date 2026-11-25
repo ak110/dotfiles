@@ -660,6 +660,8 @@ class TestExampleScopeNotice:
                 id="open-enumeration",
             ),
             pytest.param("ログとか設定とかを整理して", id="repeated-toka"),
+            pytest.param("外部入力に限らず、エージェント基盤のトラブル全般が対象", id="broader-target"),
+            pytest.param("フックメッセージの注意点は冗長さだけじゃないよ", id="open-review-criteria"),
         ],
     )
     def test_example_without_investigation_receives_scope_notice(
@@ -670,6 +672,7 @@ class TestExampleScopeNotice:
         assert len(bodies) == 1
         assert "「原文の保持と取り込み」" in bodies[0]
         assert "原文の対象と例示の関係を判断してください" in bodies[0]
+        assert "「発話の理解」では、対象の全体と例示を分けて" in bodies[0]
         assert "例示以外の候補を探してから範囲を確定してください" in bodies[0]
         assert "`explore`へ分担する案" not in bodies[0]
         assert "自ら調査へ着手する前に" not in bodies[0]

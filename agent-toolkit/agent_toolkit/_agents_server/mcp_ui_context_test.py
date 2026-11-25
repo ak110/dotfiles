@@ -45,8 +45,6 @@ async def test_ui_authorization_uses_bound_caller(monkeypatch: pytest.MonkeyPatc
                     response = await mcp_tools.mcp.call_tool(name, arguments)
                     request.assert_awaited_once_with("launcher-main", name, arguments)
                     expected = {"status": "confirmed"}
-                    if name == "send_to_user":
-                        expected["guidance"] = ""
                     assert isinstance(response, CallToolResult)
                     assert response.structured_content == expected
 
@@ -125,12 +123,12 @@ async def test_send_to_user_consults_report_guidance_for_improvement_lines(
     assert isinstance(response, CallToolResult)
     assert response.structured_content is not None
     assert response.structured_content["status"] == "confirmed"
-    guidance = response.structured_content["guidance"]
     if consulted:
+        guidance = response.structured_content["guidance"]
         assert "改善点報告の区分名が、報告行の書式と一致しない。" in guidance
         assert "報告の案内を取得できなかった" not in guidance
     else:
-        assert guidance == ""
+        assert "guidance" not in response.structured_content
     request.assert_awaited_once_with("launcher-main", "send_to_user", {"message": message})
 
 

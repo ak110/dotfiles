@@ -106,7 +106,7 @@ from check_selection_lanes import (
     missing_overlap_reason,
     process_estimate_warnings,
 )
-from check_selection_loading import _NEXT_SOURCE_MISMATCH, _check_allocation_sources, load_selection
+from check_selection_loading import _NEXT_SOURCE_MISMATCH, _check_allocation_sources, load_inline_addition, load_selection
 from check_selection_norms import (
     _NEXT_NORM_SPEC,
     _NEXT_PUBLIC_RATIONALE,
@@ -431,9 +431,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--history", action="store_true", help="保存済み選定の履歴を表示する。実行配分の成立判定や更新と併用しない"
     )
-    parser.add_argument("--merge", type=pathlib.Path, metavar="PATH", help="追加選定YAMLの絶対パス")
+    parser.add_argument("--merge", type=pathlib.Path, metavar="PATH|-", help="追加選定YAMLのパス。-は標準入力の意味判断")
     parser.add_argument(
-        "--extend-write-targets", type=pathlib.Path, metavar="PATH", help="保存済みWIの書込対象・新設先・重なりを追加するYAML"
+        "--extend-write-targets", type=pathlib.Path, metavar="PATH|-", help="書込対象の追加入力YAML。-は標準入力"
     )
     parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
     parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した選定結果の保存先")
@@ -472,6 +472,9 @@ def main(argv: list[str] | None = None) -> int:
         "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"
     )
     args = parser.parse_args(argv)
+    inline_merge = args.merge == pathlib.Path("-")
+    if inline_merge and (args.output is None or args.lane_map is not None):
+        parser.error("--merge -は--outputと組で指定し、レーン対応は標準入力のYAMLへ書いてください")
     processed_wis: set[str] | None = None
     if args.mark_integrated_wis is not None:
         error = "--mark-integrated-wisは--mark-integratedと組で、重複のないWI名のJSON配列を指定する"
@@ -587,6 +590,7 @@ def main(argv: list[str] | None = None) -> int:
         and args.reopen_wi is None
         and args.extend_write_targets is None
         and args.transfer_wi is None
+        and not inline_merge
         and not (args.output is not None and args.merge is None and args.lane_map is None)
         and any(value is not None for value in (args.merge, args.lane_map, args.output))
         and not all(value is not None for value in (args.merge, args.lane_map, args.output))
@@ -640,7 +644,12 @@ def main(argv: list[str] | None = None) -> int:
                 ) from error
         if args.extend_write_targets is not None:
             try:
-                addition = yaml.safe_load(args.extend_write_targets.read_text(encoding="utf-8"))
+                text = (
+                    sys.stdin.read()
+                    if args.extend_write_targets == pathlib.Path("-")
+                    else args.extend_write_targets.read_text(encoding="utf-8")
+                )
+                addition = yaml.safe_load(text)
                 selection = extend_write_targets(selection, addition)
             except (OSError, UnicodeError, ValueError, yaml.YAMLError) as error:
                 raise InputError(
@@ -669,15 +678,18 @@ def main(argv: list[str] | None = None) -> int:
                 if unknown:
                     raise InputError(f"指定レーンに属さないWI: {sorted(unknown)}", next_action=_FIX_CONTENT)
         if args.merge is not None:
-            assert args.lane_map is not None
             try:
-                mapping = json.loads(args.lane_map.read_text(encoding="utf-8"))
+                if inline_merge:
+                    addition, mapping = load_inline_addition(sys.stdin.read(), selection, work_dir, args.candidate_file)
+                else:
+                    assert args.lane_map is not None
+                    mapping = json.loads(args.lane_map.read_text(encoding="utf-8"))
+                    addition = load_selection(args.merge, additional=True, candidate_file=args.candidate_file)
                 updates = None
                 if args.lane_cost_updates is not None:
                     updates = json.loads(args.lane_cost_updates.read_text(encoding="utf-8"))
                     if not isinstance(updates, dict):
                         raise ValueError("費用更新JSONは最終レーンから補正前後の実装秒数・統合秒数と根拠の5欄への写像とする")
-                addition = load_selection(args.merge, additional=True, candidate_file=args.candidate_file)
                 selection_contract.require_shared_wait_basis(addition.get(_selection.ESTIMATE_CORRECTION_KEY))
                 for data in (selection, addition):
                     estimate_errors = _check_estimate_records(
@@ -685,21 +697,25 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if estimate_errors:
                         raise ValueError("\n".join(error.reason for error in estimate_errors))
-                merged = merge_selection(selection, addition, mapping, updates, derive_order=args.candidate_file is not None)
+                merged = merge_selection(
+                    selection, addition, mapping, updates, derive_order=inline_merge or args.candidate_file is not None
+                )
                 added_items = typing.cast(list[dict[str, object]], _selection.decisions(addition) or [])
                 existing_items = typing.cast(list[dict[str, object]], _selection.decisions(selection) or [])
                 merged_wis = frozenset(str(item[_selection.WI_KEY]) for item in added_items) - {
                     str(item[_selection.WI_KEY]) for item in existing_items
                 }
+                if inline_merge and body_wis is None:
+                    body_wis = set(merged_wis)
                 rerecord = merge_rerecord_pairs(selection, addition, merged), _NEXT_OVERLAP_MISSING_MERGE
                 selection = merged
             except TemporaryLaneCollisionError as error:
                 raise InputError(
                     str(error), next_action="仮名を既存レーン名と重ならない名前へ付け替えて同じコマンドを再実行する"
                 ) from error
-            except (OSError, ValueError) as error:
+            except (OSError, ValueError, yaml.YAMLError) as error:
                 raise InputError(
-                    str(error), next_action="追加入力・レーン対応JSON・費用更新JSONを直して同じ統合操作を再実行する"
+                    str(error), next_action="追加入力の判断・レーン対応・費用を確かめ、同じ統合操作を再実行してください"
                 ) from error
             structural, models = selection_contract.structure_errors(selection)
             if structural or models:
@@ -734,9 +750,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.output is not None:
         try:
-            if args.merge is not None and args.output.resolve() == args.merge.resolve():
+            if args.merge is not None and not inline_merge and args.output.resolve() == args.merge.resolve():
                 raise OSError("追加YAMLを保存先に指定できない")
-            if args.extend_write_targets is not None and args.output.resolve() == args.extend_write_targets.resolve():
+            if (
+                args.extend_write_targets not in (None, pathlib.Path("-"))
+                and args.output.resolve() == args.extend_write_targets.resolve()
+            ):
                 raise OSError("書込対象の追加入力YAMLを保存先に指定できない")
             freeze_overlap_pairs(selection)
             _save_selection(args.output, original_output, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
@@ -752,7 +771,12 @@ def main(argv: list[str] | None = None) -> int:
             load_target_seconds(work_dir),
         ):
             print(f"警告: {warning}", file=sys.stderr)
-    print("\n".join(summary_lines(selection, body_wis, load_target_seconds(work_dir), history=args.history)))
+    if inline_merge:
+        decisions = _selection.decisions(selection) or []
+        print(f"WI総数: {len(decisions)}")
+        print("追加WI: " + "、".join(sorted(merged_wis)))
+    else:
+        print("\n".join(summary_lines(selection, body_wis, load_target_seconds(work_dir), history=args.history)))
     return 0
 
 

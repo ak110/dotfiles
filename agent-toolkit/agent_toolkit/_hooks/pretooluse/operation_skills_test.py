@@ -35,7 +35,7 @@ _SEARCH_SKILL = "agent-basics:search"
 _BUGFIX_SKILL = "agent-basics:bugfix"
 _WRITING_SKILL = "agent-basics:writing-standards"
 _CHECK_EXECUTION_SKILL = "agent-basics:check-execution"
-_NOTICE = re.compile(r"スキル`([^`]+)`をまだ起動していなければ")
+_NOTICE = re.compile(r"スキル`([^`]+)`を起動してください")
 """起動を求める案内から、案内したスキルの名前を取り出す。"""
 _ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n- 期待: 対象の全件を処理する。\n- 原因: 範囲の指定の誤り。\n"
 

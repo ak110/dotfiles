@@ -1,6 +1,7 @@
 """公開された選定の統合操作が保存する結果と、失敗時に原本を保持することを検証する。"""
 
 import argparse
+import io
 import json
 import pathlib
 
@@ -89,6 +90,46 @@ def fixture_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> t
 
 def _dispatch(*args: str) -> int:
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
+
+
+def test_public_merge_reads_judgments_and_mapping_from_stdin(inputs, tmp_path, capsys, monkeypatch):
+    repo, existing, added = inputs
+    data = yaml.safe_load(added.read_text(encoding="utf-8"))
+    data.pop("見込みの補正")
+    data["レーン対応"] = {"lane-03": "lane-01", "lane-04": "lane-02"}
+    candidates = tmp_path / "existing-candidates.jsonl"
+    candidates.write_text(
+        "\n".join(
+            json.dumps({"filename": item["WI"], "staleness": item.pop("鮮度"), "state": "processing"}) for item in data["選定"]
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "merged.yaml"
+    args = (
+        str(existing),
+        "--merge",
+        "-",
+        "--candidate-file",
+        str(candidates),
+        "--output",
+        str(output),
+        "--work-dir",
+        str(repo),
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO(yaml.safe_dump(data, allow_unicode=True)))
+    assert _dispatch(*args) == 0, capsys.readouterr().err
+    result = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert {row["WI"]: row["レーン"] for row in result["選定"]} == {
+        "a.md": "lane-01",
+        "b.md": "lane-02",
+        "c.md": "lane-01",
+        "d.md": "lane-02",
+    }
+    original = output.read_bytes()
+    data["選定"][0]["WI"] = "供給されなかったWI.md"
+    monkeypatch.setattr("sys.stdin", io.StringIO(yaml.safe_dump(data, allow_unicode=True)))
+    assert _dispatch(*args) != 0
+    assert output.read_bytes() == original
 
 
 @pytest.mark.parametrize("existing_coefficient,coefficient", [(1, 1), (1, 2), (2, 2)])

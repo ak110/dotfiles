@@ -57,12 +57,18 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
         actor,
         _RESEND_KEY,
         json.dumps(tool_input, ensure_ascii=False, sort_keys=True) + "\n" + found[0],
-        label=f"公開前の新着WIの判定を確認できない公開の操作（{found[0]}）",
+        label="公開前の新着WIを確認する操作",
         scope=resend_scope(payload),
         limit=1,
     ):
         return None
-    return found[0], f"{found[1]}判定を記録できない場合は、同じ操作を再発行すれば実行する。"
+    reason, fix, rows = found
+    if rows is not None:
+        recipient = f"publication:{actor}"
+        reason, snapshot = notice.new_wi_preview(session_id, recipient, rows)
+        reason = reason.replace("処理可能な新着WI:", "公開前に判定を要する新着WI:", 1)
+        notice.stage_new_wi_preview(reason, session_id, recipient, snapshot)
+    return reason, f"{fix}判定を記録できない場合は、同じ操作を再発行すれば実行する。"
 
 
 def _owner(payload: dict, session_id: str) -> str:
@@ -177,7 +183,7 @@ def _publication_targets(payload: dict, tool_name: str, tool_input: dict) -> fro
     return frozenset({(target, ref.removeprefix("refs/heads/"))}) if target else None
 
 
-def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
+def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str, list[str] | None] | None:
     owner = _owner(payload, session_id)
     try:
         targets = _publication_targets(payload, tool_name, tool_input)
@@ -185,17 +191,20 @@ def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> 
             return (
                 "公開対象を確定できないため、開始時集合との比較を行っていない。",
                 "公開先のリポジトリとブランチを確認し、コマンドで明示して再試行する。",
+                None,
             )
         rows = progress_new_wis(owner, targets=targets)
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
         return (
             f"公開前に処理可能な新着WIを取得できない（{type(error).__name__}）。",
             "開始時集合の所在とatk wi listの同期診断を確認し、原因を解消してから再試行する。",
+            None,
         )
     if rows is None:
         return (
             "公開前の新着WI確認に必要な開始時集合がない。",
             "同じ巡回の開始時に保存した集合と、対象ごとの保存結果を確認する。現在の集合で置き換えない。",
+            None,
         )
     if not rows:
         return None
@@ -207,4 +216,5 @@ def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> 
         "公開前に判定を要する新着WI: " + "、".join(pending),
         "巡回の統括がatk wi showで本文を読み、今回扱うものは公開前に処理する。処理可能な状態で残る項目は"
         "統括の作業契約に「- 新着WIの判定: <ファイル名> | <判定と根拠>」を各1行記録して再試行する。",
+        pending,
     )

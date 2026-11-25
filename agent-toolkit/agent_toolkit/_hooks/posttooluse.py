@@ -106,7 +106,7 @@ importするため、循環importを避けて本モジュールに置く。
 規則で分類を誤ると、現物との比較を最も要する発話で注記が返らず、欠落にも気付けないためである。
 """
 
-_EXAMPLE_WORDS = ("例えば", "たとえば", "例として", "その手の")
+_EXAMPLE_WORDS = ("例えば", "たとえば", "例として", "その手の", "に限らず", "だけじゃない")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
 
 
@@ -116,10 +116,10 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     if not (any(word in text for word in _EXAMPLE_WORDS) or text.count("とか") >= 2):
         return None
     body = (
-        "発話に例示の語がある。応答・具体化の前に、"
+        "「発話の理解」では、対象の全体と例示を分けて示してください。"
         "`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
         "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断してください。"
-        "例示が上位の対象の一部なら、上位の対象を言葉で定め、例示以外の候補を探してから範囲を確定してください。"
+        "明示された限定は保ち、例示以外の候補を探してから範囲を確定してください。"
     )
     if any(word in text for word in _INVESTIGATION_WORDS):
         body += (
