@@ -125,7 +125,7 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
             (basics / "skills").mkdir()
             reloaders.append(self)
 
-        def _inventory(self) -> list[claude_plugins._InstalledPlugin]:
+        def _inventory(self) -> list[claude_plugins._InstalledPlugin | claude_plugins._WatchPlugin]:
             if broken and failure == "inventory":
                 raise ValueError("不正な導入一覧")
             return [claude_plugins._InstalledPlugin(id="agent-toolkit@mine", installPath=str(root))]
@@ -221,7 +221,7 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
             (basics / "skills").mkdir()
             reloaders.append(self)
 
-        def _inventory(self) -> list[claude_plugins._InstalledPlugin]:
+        def _inventory(self) -> list[claude_plugins._InstalledPlugin | claude_plugins._WatchPlugin]:
             with patch.object(claude_plugins.process_tree, "run_with_timeout", inventory):
                 return super()._inventory()
 
@@ -374,7 +374,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
             await super().prepare()
             reloaders.append(self)
 
-        def _inventory(self) -> list[claude_plugins._InstalledPlugin]:
+        def _inventory(self) -> list[claude_plugins._InstalledPlugin | claude_plugins._WatchPlugin]:
             def inventory(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
                 if failure == "inventory-unreclaimed" and reloaders:
                     assert survivor is not None

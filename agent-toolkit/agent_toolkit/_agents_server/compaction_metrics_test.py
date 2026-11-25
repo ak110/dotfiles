@@ -9,6 +9,7 @@ import pytest
 
 from agent_toolkit._agents_server import codex, state
 from agent_toolkit._agents_server import compaction_metrics as subject
+from agent_toolkit._atk import usage_refresh
 from agent_toolkit._common import state_paths
 
 
@@ -102,3 +103,43 @@ async def test_notifications_record_only_completed_compaction(
             json.loads(line)["item_id"]
             for line in _record_path(tmp_path, session.session_id).read_text(encoding="utf-8").splitlines()
         ] == ["complete"]
+
+
+@pytest.mark.asyncio
+async def test_optional_measurement_failures_preserve_codex_completion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(usage_refresh, "enabled", lambda: True)
+
+    def fail_record(*_args: object) -> None:
+        raise OSError("観測先へ保存できない")
+
+    monkeypatch.setattr(subject, "append_compaction_record", fail_record)
+    session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    session.compaction_started_at_ms["item-1"] = 1000
+    async with codex.AppServerManager({session.session_id: session}) as manager:
+        await manager._handle_notification(  # pylint: disable=protected-access
+            {"method": "account/rateLimits/updated", "params": {"rateLimits": {"primary": {"usedPercent": 10**400}}}}
+        )
+        await manager._handle_notification(  # pylint: disable=protected-access
+            {
+                "method": "item/completed",
+                "params": {
+                    "threadId": session.session_id,
+                    "turnId": session.turn_id,
+                    "completedAtMs": 3500,
+                    "item": {"id": "item-1", "type": "contextCompaction"},
+                },
+            }
+        )
+        await manager._handle_notification(  # pylint: disable=protected-access
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": session.session_id,
+                    "turn": {"id": session.turn_id, "status": "completed", "error": None},
+                },
+            }
+        )
+    assert session.turn_completed and not session.compaction_started_at_ms
+    assert "利用枠の観測を省略" in caplog.text and "コンパクションの計測を省略" in caplog.text

@@ -209,6 +209,13 @@ async def _until(backend: codex.AppServerManager, predicate: Callable[[], bool])
         raise AssertionError(f"待機条件 {expected} に未到達。観測: {observed}") from error
 
 
+async def _await_reset_check(task: asyncio.Task[None], session: state.SessionState) -> None:
+    done, _ = await asyncio.wait({task}, timeout=5)
+    assert task in done, f"reset確認が未終了: pending={session.codex_auto_reset_pending}"
+    task.result()
+    assert not session.codex_auto_reset_pending
+
+
 def _fail(
     client: _MemoryAppServer, session: state.SessionState, tmp_path: Path, *, minutes: int = 10080, both_windows: bool = False
 ) -> None:
@@ -244,8 +251,9 @@ async def test_weekly_reset_uses_reader_and_resumes_same_session(
         if explicit_subscription:
             session.codex_model_provider = session.codex_subscription_provider = "openai"
         _fail(client, session, tmp_path)
-        await _until(backend, lambda: session.awaiting_auto_resume and not session.codex_auto_reset_pending)
-        assert not session.result_available
+        await asyncio.wait_for(client.consume_started.wait(), timeout=5)
+        await _await_reset_check(backend._auto_reset_checks[session.session_id], session)
+        assert session.awaiting_auto_resume and not session.result_available
         assert session.usage_limit_resume_at is not None and session.usage_limit_resume_at <= asyncio.get_running_loop().time()
         assert [method for method, _ in client.requests].count("account/rateLimitResetCredit/consume") == 1
         assert client.reader_failure is None
@@ -630,6 +638,7 @@ async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
         try:
             _fail(client, session, tmp_path)
             await asyncio.wait_for(client.account_read.wait(), timeout=5)
+            reset_check = backend._auto_reset_checks[session.session_id]
             deadline = session.usage_limit_resume_at
             assert deadline is not None
             account_release.set()
@@ -643,7 +652,8 @@ async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
         finally:
             account_release.set()
             consume_release.set()
-        await _until(backend, lambda: not session.codex_auto_reset_pending)
+        # 消費の確定後は、状態更新と通知を行う確認タスク自体を待つ。  # pyfltr: allow-comment
+        await _await_reset_check(reset_check, session)
         if permitted:
             assert client.weekly_usage == 0 and session.awaiting_auto_resume
         else:

@@ -71,7 +71,10 @@ class CodexNotificationsMixin:
             return
         if method == "account/rateLimits/updated":
             if usage_refresh.enabled():
-                await run_file_operation(usage_refresh.record_codex, params)
+                try:
+                    await run_file_operation(usage_refresh.record_codex, params)
+                except (OSError, ValueError, OverflowError) as error:
+                    _LOG.warning("Codexの利用枠の観測を省略する: %s", error)
             return
         thread_id = _thread_id_from(params)
         if method == "thread/tokenUsage/updated":
