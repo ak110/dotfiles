@@ -423,6 +423,10 @@ class ClaudePluginReloader:
                     continue
                 if not Path(project).is_absolute():
                     raise PluginReloadError("利用対象のprojectPathには絶対パスが必要。Claudeの導入状態を確認する")
+            if entry.get("installPath") in (None, ""):
+                plugin_id = entry.get("id")
+                if isinstance(plugin_id, str) and plugin_id and not plugin_id.startswith("agent-toolkit@"):
+                    continue
             items.append(_InstalledPlugin.model_validate(entry))
         return items
 

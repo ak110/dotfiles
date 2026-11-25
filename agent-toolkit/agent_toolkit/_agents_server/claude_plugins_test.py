@@ -553,6 +553,26 @@ async def test_unused_installation_fields_do_not_block_prepare_or_reload(
         client._query._send_control_request.assert_awaited_once()
 
 
+@pytest.mark.parametrize("plugin_id", ["cc-plugin-agents-md@builtin", "external@future"])
+@pytest.mark.parametrize("path_fields", [{}, {"installPath": None}, {"installPath": ""}])
+def test_pathless_non_toolkit_is_not_loadable(
+    tmp_path: Path, inventory: SimpleNamespace, plugin_id: str, path_fields: dict[str, Any]
+) -> None:
+    root = _plugin(tmp_path / "checkout")
+    toolkit = _installed(root)
+    inventory.items = [toolkit, {"id": plugin_id, "scope": "user", "enabled": True, **path_fields}]
+
+    loop = asyncio.new_event_loop()
+    try:
+        reloader = claude_plugins.ClaudePluginReloader(_options(tmp_path, root), loop)
+        assert reloader._inventory() == [claude_plugins._InstalledPlugin.model_validate(toolkit)]
+        del toolkit["installPath"]
+        with pytest.raises(ValidationError, match="installPath"):
+            reloader._inventory()
+    finally:
+        loop.close()
+
+
 @pytest.mark.parametrize("path", ["", "relative", None, {"shape": "changed"}])
 @pytest.mark.asyncio
 async def test_selected_installation_path_remains_required(tmp_path: Path, inventory: SimpleNamespace, path: Any) -> None:
