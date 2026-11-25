@@ -70,7 +70,8 @@ def delegation_delivery_body(text: str) -> str | None:
 
 
 def has_startup_goal(text: str) -> bool:
-    return _startup_message(text.strip(), "process-loop", "goal") is not None
+    text = text.strip()
+    return any(_startup_message(text, source, "goal") is not None for source in ("process-loop", "run-skill"))
 
 
 def has_delegation_launch_prompt(text: str) -> bool:

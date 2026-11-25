@@ -1,10 +1,13 @@
 import asyncio
 import functools
 import json
+import os
+from pathlib import Path
 
 import playwright.async_api
 import pytest
 
+from agent_toolkit._atk import run_skill_execution
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_fixture,
     _hold_route,
@@ -12,6 +15,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _screen_harness_fixture,
     _ScreenHarness,
 )
+from agent_toolkit._common import automated_prompt, skill_modes
 from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._testing.serve_browser_sessions_support import _remote_sessions_harness_fixture  # noqa: F401  # pylint: disable=unused-import
 
@@ -113,6 +117,44 @@ async def test_session_details_open_the_initial_work_but_not_empty_developer_or_
     await expect(page.locator("#detail .kind-developer:not([open])")).to_have_count(1)
     await expect(page.locator("#detail .kind-injected[open]")).to_contain_text("最初の作業依頼")
     await expect(page.locator("#detail .kind-injected:not([open])")).to_have_count(1)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+async def test_session_details_open_run_skill_goal(screen_harness: _ScreenHarness, engine: str) -> None:
+    goal = automated_prompt.wrap(
+        run_skill_execution.build_goal(skill_modes.PROCESS_WI, "single-lane"),
+        source=automated_prompt.SOURCE_RUN_SKILL,
+        kind=automated_prompt.KIND_GOAL,
+    )
+    followup = auto_message("後からの追送", source="agents-server", kind="delivery")
+    root = screen_harness.root.parent
+    if engine == "claude":
+        (record,) = (root / "claude" / "projects").glob("*/*.jsonl")
+        entries = [
+            {"type": "user", "cwd": "/home/aki/proj", "message": {"role": "user", "content": text}} for text in (goal, followup)
+        ]
+    else:
+        (record,) = (root / "codex").rglob("rollout-*.jsonl")
+        entries = [
+            {"type": "session_meta", "payload": {"cwd": "/work"}},
+            *[
+                {
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+                }
+                for text in (goal, followup)
+            ],
+        ]
+    record.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator(f'#sessions .session-item[data-engine="{engine}"]').first.click()
+    expect = playwright.async_api.expect
+    await expect(page.locator("#detail .kind-injected[open]")).to_contain_text("工程を完遂する")
+    await expect(page.locator("#detail .kind-injected:not([open])")).to_have_count(1)
+    if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
+        await page.screenshot(path=Path(directory) / f"007-{engine}.png")
 
 
 @pytest.mark.asyncio(loop_scope="session")
