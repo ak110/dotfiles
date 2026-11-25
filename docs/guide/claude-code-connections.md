@@ -73,8 +73,9 @@ Codexの会話は移った接続を使い続け、新しい会話だけを使用
 
 1. 移行する各ホストで `atk config migrate-shared` を実行する。
    JSONの `local` と `shared` を比較し、`comparison` で一致、差、片方にのみあるキーを確かめる。
-   初回の旧`codex_fast_mode`は共有へ移さない。
-   `initial_not_shared`に移行後の初期値`auto`が出る。
+   共有ファイルがまだなく、手元に旧`codex_fast_mode`がある場合は、このキーを共有へ移さず、`initial_not_shared`に移行後の初期値`auto`を示す。
+   それ以外では`initial_not_shared`は空になる。
+   共有ファイルが既にあれば、そのホストで初めて移行する場合も、旧速度設定は他のキーと同じく比較と選択の対象になる。
    両ホストの値が違う場合は、共有に採る値を決めてから実行する。
    認可されたエージェントも同じコマンドを使える。
 2. `atk config migrate-shared --apply <REVISION>` に、そのホストで比較時に出た版を渡す。
