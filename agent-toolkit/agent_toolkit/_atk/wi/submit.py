@@ -20,7 +20,7 @@ import filelock
 import pydantic
 
 from agent_toolkit._atk import orchestrator, outcome, run_skill, run_skill_state
-from agent_toolkit._atk.wi import add, frontmatter, layout, sync, uwi_scan
+from agent_toolkit._atk.wi import add, background_sync, frontmatter, layout, sync, uwi_scan
 from agent_toolkit._common import (
     diagnostic_process,
     plugin_environment,
@@ -388,7 +388,7 @@ def resume(identifier: str) -> dict[str, Any]:
     path = _run_path(receipt["run_id"])
     with _guard():
         run = _read(path)
-        if run["status"] == "completed" and run["report_synced"] or _identity_live(run.get("owner")):
+        if run["status"] == "completed" and _report_committed(run) or _identity_live(run.get("owner")):
             return show(identifier)
         try:
             record = run_skill_state.load(run["run_id"])
@@ -486,6 +486,10 @@ def _verify_files(result: Result, target_repo: str) -> None:
                     raise ValueError("未完了のfilesには確認UWIを指定する")
 
 
+def _report_committed(run: dict[str, Any]) -> bool:
+    return bool(run.get("report_committed") or run.get("report_synced"))
+
+
 def _report(run: dict[str, Any], path: pathlib.Path) -> None:
     with git_command.timeout_scope(REPORT_TIMEOUT_SECONDS):
         _sync_report(run, path)
@@ -498,7 +502,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
 
     os.environ["AGENT_TOOLKIT_RUN_SKILL_ID"] = run["run_id"]
     try:
-        if not add.has_synced_run_report(notes, run_id=run["run_id"], scope=SKILL):
+        if not add.has_committed_run_report(notes, run_id=run["run_id"], scope=SKILL):
             with sync.repo_lock(notes, timeout=30):
                 reports = []
                 for entry in layout.iter_entry_paths(notes):
@@ -511,7 +515,9 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
                     ):
                         reports.append(entry)
                 if reports:
-                    sync.commit_and_push(notes, "chore: 独立WI投入の報告を同期", [str(p.relative_to(notes)) for p in reports])
+                    sync.commit_and_push(
+                        notes, "chore: 独立WI投入の報告を保存", [str(p.relative_to(notes)) for p in reports], skip_push=True
+                    )
             if not reports:
                 body = (
                     "---\nrun_skill_report: true\n---\n\n"
@@ -530,11 +536,15 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
                     entry_type="uwi",
                     scope=SKILL,
                     question_type="yes-no",
-                    storage=sync.Storage(lock_timeout=30),
+                    storage=sync.Storage(local_only=True, lock_timeout=30),
                 )
-        run["report_synced"] = add.has_synced_run_report(notes, run_id=run["run_id"], scope=SKILL)
+        run["report_committed"] = add.has_committed_run_report(notes, run_id=run["run_id"], scope=SKILL)
+        run["report_synced"] = run["report_committed"] and not sync.has_remote(notes)
+        if run["report_committed"]:
+            background_sync.finish_local_save(notes, 0, skip=False)
         run["report_error"] = None
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, filelock.Timeout) as error:
+        run["report_committed"] = False
         run["report_synced"] = False
         run["report_error"] = str(error)
     finally:
@@ -564,9 +574,9 @@ def _finalize(path: pathlib.Path, *, failure: str | None) -> None:
         run["failure"] = run["failure"] or "未完了の要求がある"
     run["status"] = "failed" if run["failure"] else "completed"
     _report(run, path)
-    if not run["report_synced"]:
+    if not _report_committed(run):
         run["status"] = "failed"
-        run["failure"] = run["failure"] or "報告未同期"
+        run["failure"] = run["failure"] or "報告未保存"
         _write(path, run)
     if run["status"] == "failed":
         try:
@@ -721,9 +731,9 @@ def _recover_runs(target: str, owner: session_registry.ProcessIdentity) -> None:
                 )
                 continue
             _finalize(path, failure="監督消失（同じ実行と保存済みWIの照会が必要）")
-        elif not run["report_synced"]:
+        elif not _report_committed(run):
             _report(run, path)
-            if run["report_synced"] and run.get("result") and run.get("failure") == "報告未同期":
+            if _report_committed(run) and run.get("result") and run.get("failure") in {"報告未同期", "報告未保存"}:
                 _finalize(path, failure=None)
         elif run["status"] == "failed" and run.get("result"):
             try:
@@ -840,7 +850,7 @@ def reobserve() -> None:
             if run.get("resume_requested"):
                 targets.add(_target(receipt["request"]))
                 continue
-            if run["status"] == "completed" and run["report_synced"]:
+            if run["status"] == "completed" and _report_committed(run):
                 if time.time() - run["updated_at"] > run_skill.LOG_RETENTION_SECONDS:
                     path.unlink()
 
@@ -858,7 +868,7 @@ def reobserve() -> None:
                         shutil.rmtree(work)
                 continue
             if not _identity_live(run.get("owner")):
-                if run["status"] == "failed" and run["report_synced"]:
+                if run["status"] == "failed" and _report_committed(run):
                     try:
                         resumed = run_skill_state.load(run["run_id"])
                     except FileNotFoundError:

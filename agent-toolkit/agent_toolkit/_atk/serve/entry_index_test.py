@@ -151,6 +151,7 @@ def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(
             st_mtime_ns=reported_mtime_ns,
             st_mtime=reported_mtime_ns / 1_000_000_000,
             st_size=file_stat.st_size,
+            st_ctime_ns=file_stat.st_ctime_ns,
         )
 
     _patch_stat(monkeypatch, path, original_stat, reported_stat)
@@ -177,7 +178,11 @@ def _report_fixed_stat(
 
     def reported_stat(*_args: typing.Any, **_kwargs: typing.Any) -> types.SimpleNamespace:
         return types.SimpleNamespace(
-            st_mode=file_stat.st_mode, st_mtime_ns=mtime_ns, st_mtime=mtime_ns / 1_000_000_000, st_size=file_stat.st_size
+            st_mode=file_stat.st_mode,
+            st_mtime_ns=mtime_ns,
+            st_mtime=mtime_ns / 1_000_000_000,
+            st_size=file_stat.st_size,
+            st_ctime_ns=file_stat.st_ctime_ns,
         )
 
     _patch_stat(monkeypatch, path, original_stat, reported_stat)

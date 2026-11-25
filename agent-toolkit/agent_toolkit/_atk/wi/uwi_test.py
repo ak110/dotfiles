@@ -334,12 +334,12 @@ class TestUwiAddEditorBeforePull:
     エディター起動より前に維持する。
     """
 
-    def test_pull_fails_after_editor_invoked(
+    def test_local_save_succeeds_after_editor_invoked(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """messages省略時、エディターは起動された後にpullが失敗して例外が送出される（対象リポジトリはcwdから解決）。"""
+        """messages省略時、エディターは起動され、通信せずローカル保存に成功する。  pyfltr: allow-comment"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -374,9 +374,9 @@ class TestUwiAddEditorBeforePull:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add", "--type=uwi", "--question-type=yes-no"], home=tmp_path, now=_FIXED_DT)
 
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
         assert editor_calls
-        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+        assert list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
     def test_choice_validation_fires_before_pull(
         self,

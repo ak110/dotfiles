@@ -2,9 +2,12 @@ import dataclasses
 import json
 import os
 import pathlib
+import re
 
 from agent_toolkit._common import delegated_session, process_loop_session
 from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
+from agent_toolkit._git import command as git_command
+from agent_toolkit._git.remote import resolve_repo_identifier
 from agent_toolkit._hooks import agent_id, notice, work_contract
 from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
 lazy from agent_toolkit._atk.wi.listing import progress_new_wis
@@ -45,7 +48,7 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
     if not _applies(payload, session_id, tool_name, tool_input):
         return None
     actor = agent_id.resolve_hook_agent_id(payload)
-    found = _check(payload, session_id)
+    found = _check(payload, session_id, tool_name, tool_input)
     if found is None:
         notice.forget_resends(session_id, actor, _RESEND_KEY)
         return None
@@ -74,10 +77,116 @@ def _applies(payload: dict, session_id: str, tool_name: str, tool_input: dict) -
     )
 
 
-def _check(payload: dict, session_id: str) -> tuple[str, str] | None:
+def _gh_target(command: str, cwd: str) -> frozenset[tuple[str, str | None]] | None:
+    segments = tuple(extract_execution_segments(command))
+    if len(segments) != 1:
+        return None
+    segment = segments[0]
+    tokens = segment.tokens
+    if (
+        not segment.resolved
+        or not tokens
+        or pathlib.PureWindowsPath(tokens[0]).name.lower() not in {"gh", "gh.exe"}
+        or tokens[1:3] != ("pr", "create")
+    ):
+        return None
+    options = {"-R": "repo", "--repo": "repo", "-B": "base", "--base": "base"}
+    values: dict[str, str] = {}
+    arguments = iter(tokens[3:])
+    for arg in arguments:
+        flag, equals, inline = arg.partition("=")
+        if flag in options:
+            value = inline if equals else next(arguments, "")
+            if not value or options[flag] in values:
+                return None
+            values[options[flag]] = value
+        elif flag in {
+            "-H",
+            "--head",
+            "-t",
+            "--title",
+            "-b",
+            "--body",
+            "-F",
+            "--body-file",
+            "--template",
+            "-a",
+            "--assignee",
+            "-l",
+            "--label",
+            "-m",
+            "--milestone",
+            "-p",
+            "--project",
+            "-r",
+            "--reviewer",
+        }:
+            if not equals and next(arguments, None) is None:
+                return None
+        elif arg not in {"--draft", "-d", "--fill", "--fill-first", "--fill-verbose", "--no-maintainer-edit", "--web", "-w"}:
+            return None
+    repo = values.get("repo")
+    if repo:
+        if not re.fullmatch(r"(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+            return None
+        target = resolve_repo_identifier("https://" + (repo if repo.count("/") == 2 else f"github.com/{repo}"))
+    else:
+        target = resolve_repo_identifier(cwd)
+    base = values.get("base")
+    if not base or not re.fullmatch(r"[A-Za-z0-9_./-]+", base):
+        return None
+    return frozenset({(target, base)}) if target else None
+
+
+def _publication_targets(payload: dict, tool_name: str, tool_input: dict) -> frozenset[tuple[str, str | None]] | None:
+    if tool_name.startswith("mcp__") and tool_name.endswith("__create_pull_request"):
+        owner, repo, base = (tool_input.get(key) for key in ("owner", "repo", "base"))
+        if not all(isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.-]+", value) for value in (owner, repo)):
+            return None
+        target = resolve_repo_identifier(f"https://github.com/{owner}/{repo}")
+        return frozenset({(target, base if isinstance(base, str) and base else None)}) if target else None
+    command = tool_input.get("command")
+    cwd = tool_input.get("workdir") or payload.get("cwd")
+    if tool_name not in _SHELL_TOOLS or not isinstance(command, str) or not isinstance(cwd, str) or not cwd:
+        return None
+    direct = re.fullmatch(r"\s*git\s+push(?:\s+([A-Za-z0-9_.-]+)\s+([A-Za-z0-9_./:-]+))?\s*", command)
+    if direct is None:
+        return _gh_target(command, cwd)
+    remote, refspec = direct.groups()
+    if remote is None:
+        upstream = git_command.run(
+            ["rev-parse", "--symbolic-full-name", "@{push}"], cwd=cwd, capture_output=True, text=True, check=False, timeout=2
+        )
+        refname = upstream.stdout.strip()
+        if upstream.returncode or not refname.startswith("refs/remotes/"):
+            return None
+        remote, _, refspec = refname.removeprefix("refs/remotes/").partition("/")
+    if remote.startswith("-") or not refspec:
+        return None
+    source, separator, destination = refspec.partition(":")
+    ref = destination if separator else source
+    if not ref or ref.startswith("-") or ":" in ref or (ref.startswith("refs/") and not ref.startswith("refs/heads/")):
+        return None
+    result = git_command.run(
+        ["remote", "get-url", "--push", "--all", remote], cwd=cwd, capture_output=True, text=True, check=False, timeout=2
+    )
+    urls = result.stdout.splitlines()
+    if result.returncode or len(urls) != 1:
+        return None
+    target = resolve_repo_identifier(urls[0])
+    return frozenset({(target, ref.removeprefix("refs/heads/"))}) if target else None
+
+
+def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
     owner = _owner(payload, session_id)
     try:
-        rows = progress_new_wis(owner)
+        targets = _publication_targets(payload, tool_name, tool_input)
+        if targets is None:
+            return (
+                "公開対象を確定できないため、開始時集合との比較を行っていない。",
+                "公開先のリポジトリとブランチを確認し、コマンドで明示して再試行する。",
+            )
+        rows = progress_new_wis(owner, targets=targets)
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
         return (
             f"公開前に処理可能な新着WIを取得できない（{type(error).__name__}）。",

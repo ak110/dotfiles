@@ -38,11 +38,18 @@ function button(text, action) {
   return result;
 }
 
-function field(parent, label, value = "", choices, type = "text") {
+const FAST_MODE_LABELS = {auto: "自動判定（auto）", true: "高速（true）", false: "通常（false）"};
+function sharedScope(syncs) {
+  return syncs
+    ? "保存先: 同じprivate-notesを使うホストで共有されます。このホストだけ変えるには一時指定を使ってください。"
+    : "保存先: このホストのprivate-notes。同期先が未設定のため、他のホストには反映されません。";
+}
+
+function field(parent, label, value = "", choices, type = "text", labels = {}) {
   const wrapper = element("div");
   wrapper.className = "settings-field";
   const input = element(choices ? "select" : "input");
-  for (const choice of choices ?? []) input.append(new Option(choice, choice));
+  for (const choice of choices ?? []) input.append(new Option(labels[choice] ?? choice, choice));
   if (!choices) input.type = type;
   input.id = `settings-field-${++fieldCount}`;
   const caption = element("label", label);
@@ -113,6 +120,11 @@ function restoreEditors(drafts, editorKey) {
   for (const editor of content.querySelectorAll("[data-editor]")) {
     const previous = drafts.get(editor.dataset.editor);
     if (previous?.open) editor.open = true;
+    if (editor.dataset.editor === "temporary" && previous?.values[0] != null) {
+      const key = editor.querySelector("select");
+      key.value = previous.values[0];
+      key.dispatchEvent(new Event("change"));
+    }
     editor.querySelectorAll("input, select").forEach((input, index) => {
       const draft = previous?.values[index];
       if (draft != null) input.value = draft;
@@ -153,6 +165,10 @@ function keyEditor(parent, key, item, listen) {
     parent.append(block);
     return;
   }
+  if (item.shared) block.append(element("p", sharedScope(item.shared_sync)));
+  if (key === "codex_fast_mode") {
+    block.append(element("p", "実効値は採用中の設定です。自動判定で実際に使う速度は接続先と提供期間で決まります。"));
+  }
   if (timing) block.append(element("p", key === "remote_hosts" ?
     "反映: 設定のホスト切替は保存後、計画とセッションは次回のatk serve起動" : `反映: ${timing}`));
   if (item.source === "一時指定" || item.source?.startsWith("AGENT_TOOLKIT_CONFIG_")) {
@@ -181,7 +197,7 @@ function keyEditor(parent, key, item, listen) {
     submit(editor, "追加");
   } else if (key !== "repositories") {
     const editor = form(block, () => operate({action: "set", key, value: input.value}, output));
-    const input = field(editor, "保存値", item.saved, item.choices);
+    const input = field(editor, "保存値", item.saved, item.choices, "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
     if (key === "serve_port") input.inputMode = "numeric";
     if (!item.choices && item.format) {
       const hint = element("small", `形式: ${item.format}。${item.default === undefined ? "" : ` 初期値: ${item.default || "未指定"}`}`);
@@ -318,6 +334,8 @@ function render(data) {
     item.dataset.editor = `preset:${preset}`;
     item.append(element("summary", preset));
     if (Object.keys(values).some(name => !data.settings[name] || data.settings[name].read_only)) continue;
+    const sharedSetting = Object.keys(values).find(name => data.settings[name].shared);
+    if (sharedSetting) item.append(element("p", sharedScope(data.settings[sharedSetting].shared_sync)));
     for (const [name, presetValue] of Object.entries(values)) {
       item.append(element("p", `${name}: 現在 ${data.settings[name].effective} → 保存 ${presetValue}`));
     }
@@ -376,8 +394,18 @@ function renderTemporary(temporary, data) {
       until: until.value ? new Date(until.value).toISOString() : null}, output);
   });
   const key = field(editor, "キー", keys[0], keys);
-  const value = field(editor, "値", data.settings[key.value].effective);
-  key.addEventListener("change", () => { value.value = data.settings[key.value].effective; });
+  function valueField(parent) {
+    const setting = data.settings[key.value];
+    return field(parent, "値", setting.effective, setting.choices, "text",
+      key.value === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
+  }
+  let value = valueField(editor);
+  key.addEventListener("change", () => {
+    const replacement = document.createDocumentFragment();
+    const next = valueField(replacement);
+    value.parentElement.replaceWith(replacement);
+    value = next;
+  });
   const until = field(editor, "期限（このブラウザーの時刻）", "", null, "datetime-local");
   submit(editor, "一時指定を保存");
   if (entries.length) temporary.append(button("一時指定を全解除", () => operate({action: "temporary-clear"}, output)));

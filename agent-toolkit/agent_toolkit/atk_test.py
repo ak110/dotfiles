@@ -173,7 +173,7 @@ def test_child_config_env_derives_values_from_defaults(monkeypatch: pytest.Monke
 
 
 @pytest.mark.parametrize("entry", _SYNC_MUTATION_ENTRIES)
-def test_main_reports_pending_commit_only_for_sync_mutations(
+def test_local_mutations_do_not_report_existing_pending_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -189,13 +189,8 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv, home=tmp_path)
     monkeypatch.undo()
-    assert exc_info.value.code == 3
-    output = capsys.readouterr()
-    assert "警告: private-notesに未pushのcommitが" in output.err
-
-    next_action = next(line for line in output.err.splitlines() if line.startswith("次の操作: "))
-    assert f"`git -C {notes.resolve()} status`" in next_action
-    assert "atk wi commit" in next_action
+    assert exc_info.value.code == 0
+    assert "未pushのcommit" not in capsys.readouterr().err
 
     monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     monkeypatch.setattr(_wi_listing, "cmd_list", lambda *_args: None)
@@ -270,6 +265,7 @@ def test_main_does_not_report_commit_pushed_by_concurrent_process(
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(argv, home=tmp_path)
+        release.touch()
         assert writer.wait(timeout=30) == 0
 
     assert exc_info.value.code == 0

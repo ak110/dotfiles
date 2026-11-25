@@ -8,9 +8,9 @@ from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import plans_bundle as _plans_bundle
 from agent_toolkit._atk import plans_checkout as _plans_checkout
 from agent_toolkit._atk import plans_storage as _plans_storage
+from agent_toolkit._atk.wi import background_sync as _background_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._common.next_action import recover_from_failure
-from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import owner_records as _owner_records
@@ -115,13 +115,7 @@ def commit_plan(
             ) from error
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
         saved_main = _plan_file.new_plans_root(private_notes) / relative_main
-        saved_bundle_exists = saved_main.is_file()
-        if checkout_record is not None and _atk_git_sync.has_remote(private_notes):
-            _git_command.run_quiet(["fetch"], cwd=private_notes)
-        elif not working_bundle or not saved_bundle_exists:
-            if not skip_push:
-                _atk_git_sync.push_pending_commits(private_notes)
-            _atk_git_sync.pull(private_notes)
+        _atk_git_sync.ensure_not_rebasing(private_notes)
         snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]] = {}
         if checkout_record is not None:
             saved_bundle = _plans_bundle.saved_plan_bundle(private_notes, relative_main)
@@ -177,11 +171,7 @@ def commit_plan(
             bundle = _plans_bundle.plan_bundle(private_notes, relative_main)
         relative_paths = tuple(_plans_bundle.as_relative_notes_path(path, private_notes) for path in bundle)
         message = f"chore: update plan {_plans_storage.plan_display_name(relative_main)}"
-        _atk_git_sync.commit_and_push(private_notes, message, relative_paths, skip_push=skip_push)
-        if not skip_push and _atk_git_sync.has_remote(private_notes) and not _atk_git_sync.remote_contains_head(private_notes):
-            raise _wi_web_input.WebInputError(
-                "計画commitがremote branchへ到達したことを確認できません", next_action=_plans_bundle.UNPUSHED_NEXT_ACTION
-            )
+        _atk_git_sync.commit_and_push(private_notes, message, relative_paths, skip_push=True)
         if checkout_record is not None:
             _plans_storage.remove_checked_out_working_bundle(working_bundle, snapshots, requested_relative)
             _plans_checkout.remove_checkout_record(requested_relative)
@@ -191,7 +181,8 @@ def commit_plan(
             _plans_storage.remove_finalized_working_bundle(working_bundle, snapshots, bundle, relative_main, home)
             _owner_records.remove_owner_record(working_main)
             working_main.with_name(_bundle_kinds.CREATED_RECORD.name_for(working_main.stem)).unlink(missing_ok=True)
-    return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
+    sync_code = _background_sync.finish_local_save(private_notes, 0, skip=skip_push)
+    return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message, "sync_code": sync_code}
 
 
 def commit_ci_review(
@@ -234,12 +225,7 @@ def commit_ci_review(
     working_contents = {working.name: snapshots[working][1]}
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
         saved = _plan_file.new_plans_root(private_notes) / relative
-        if checkout_record is not None and _atk_git_sync.has_remote(private_notes):
-            _git_command.run_quiet(["fetch"], cwd=private_notes)
-        elif not saved.exists():
-            if not skip_push:
-                _atk_git_sync.push_pending_commits(private_notes)
-            _atk_git_sync.pull(private_notes)
+        _atk_git_sync.ensure_not_rebasing(private_notes)
         if saved.exists() and (saved.is_symlink() or not saved.is_file()):
             raise _wi_web_input.WebInputError(
                 f"保存先のCI対応レビュー指摘管理表が通常ファイルではありません: {saved}",
@@ -299,13 +285,15 @@ def commit_ci_review(
             )
         relative_path = _plans_bundle.as_relative_notes_path(saved, private_notes)
         message = f"chore: update CI review {working.stem}"
-        _atk_git_sync.commit_and_push(private_notes, message, (relative_path,), skip_push=skip_push)
-        if not skip_push and _atk_git_sync.has_remote(private_notes) and not _atk_git_sync.remote_contains_head(private_notes):
-            raise _wi_web_input.WebInputError(
-                "CI対応レビュー指摘管理表のcommitがremote branchへ到達したことを確認できません",
-                next_action=_plans_bundle.UNPUSHED_NEXT_ACTION,
-            )
+        _atk_git_sync.commit_and_push(private_notes, message, (relative_path,), skip_push=True)
         _plans_storage.remove_checked_out_working_bundle((working,), snapshots, working_relative)
         if checkout_record is not None:
             _plans_checkout.remove_checkout_record(requested_relative)
-    return {"plan_file": relative.as_posix(), "paths": (relative_path,), "message": message, "kind": "ci-review"}
+    sync_code = _background_sync.finish_local_save(private_notes, 0, skip=skip_push)
+    return {
+        "plan_file": relative.as_posix(),
+        "paths": (relative_path,),
+        "message": message,
+        "kind": "ci-review",
+        "sync_code": sync_code,
+    }

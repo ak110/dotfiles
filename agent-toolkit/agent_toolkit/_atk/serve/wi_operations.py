@@ -15,12 +15,12 @@ import subprocess
 import threading
 import typing
 
-import filelock
 import markdown_it
 import mdit_py_plugins.footnote
 
 from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import add as awi_add
+from agent_toolkit._atk.wi import background_sync as wi_background_sync
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import branches as wi_branches
 from agent_toolkit._atk.wi import constants as wi_constants
@@ -60,10 +60,6 @@ _WEB_LOCK_TIMEOUT = 30.0
 定期同期のfetch・pushや他の`atk`プロセスが保持する区間は、低速な環境では数秒から十数秒に及ぶ。
 待機を短くすると、競合しただけの保存が「別の操作が進行中です」で失敗するため長めに取る。
 """
-
-
-_BACKGROUND_SYNC_LOCK_TIMEOUT = 2.0
-"""定期同期がロックを待つ上限秒数。取得できない周期は見送り、画面の操作を待たせない。"""
 
 
 _RECENT_REPO_RETENTION = datetime.timedelta(days=7)
@@ -440,22 +436,25 @@ class Operations:
             is_plan = indexed.kind == wi_constants.WI_TYPE_AWI and isinstance(metadata.get("plan_file"), str)
             if plan_filter != "all" and is_plan != (plan_filter == "plan"):
                 continue
-            if not wi_filters.answered_matches(indexed.kind, indexed.text, answered_filter):
-                continue
             if not wi_filters.important_value_matches(metadata.get("important") is True, filters.get("important", "all")):
                 continue
             source = _json_compatible(metadata.get("source"))
             if filters.get("source_empty") == "true" and not (source is None or isinstance(source, str) and not source.strip()):
                 continue
             item_target_repo = _json_compatible(metadata.get("target_repo"))
-            if not target_repo_matcher.matches(item_target_repo):
+            if not wi_filters.selection_matches(
+                kind=indexed.kind,
+                kinds={kind_filter},
+                text=indexed.text,
+                target_repo=item_target_repo,
+                repository=target_repo_matcher,
+                answered=answered_filter,
+                source=wi_filters.normalized_source(source),
+                sources=filters.get("source") or None,
+            ):
                 continue
             item_branch = _target_branch(metadata, item_target_repo, branch_registry)
             if target_branch_filter is not None and item_branch != target_branch_filter:
-                continue
-            if filters.get("source") and not wi_filters.source_matches_any(
-                wi_filters.normalized_source(source), filters["source"]
-            ):
                 continue
             if filters.get("source_kind") and ("unset" if source is None else "set") != filters["source_kind"]:
                 continue
@@ -592,15 +591,13 @@ class Operations:
         return wi_sync.synchronize(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
 
     def background_sync(self) -> bool | None:
-        """定期更新としてリポジトリを同期し、実際にpullしたかを返す。
-
-        直近のpullから一定時間内であれば省略する。ロックを取得できない場合は
-        その周期を見送り、Noneを返して次周期で再試行する。
-        """
-        try:
-            return wi_sync.synchronize(self.private_notes, only_if_stale=True, lock_timeout=_BACKGROUND_SYNC_LOCK_TIMEOUT)
-        except filelock.Timeout:
-            return None
+        """CLIと同じ裏の同期を実行し、既に稼働中の場合はその周期を見送る。  pyfltr: allow-comment"""
+        result = wi_background_sync.run(self.private_notes)
+        if result is False:
+            status = wi_background_sync.read_status(self.private_notes)
+            if status.get("state") in {"failed", "recovery-required"}:
+                raise ValueError(status.get("reason") or "private-notesの同期を完了できない")
+        return result
 
     def branch_registry(self) -> dict[str, JsonObject]:
         return {

@@ -16,7 +16,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
-from agent_toolkit._atk.wi import frontmatter
+from agent_toolkit._atk.wi import background_sync, frontmatter
 from agent_toolkit._atk.wi import mutations as _atk_wi_mutations
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths
@@ -527,16 +527,14 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
         original_run(args, cwd, forward_error_output=forward_error_output)
 
     monkeypatch.setattr(_wi_sync, "run_git", run_git)
-    with pytest.raises(SystemExit, match="3"):
+    monkeypatch.setattr(background_sync, "schedule", lambda _notes: None)
+    with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "hold", "20260831-101752-001.md"], home=tmp_path)
     held = capsys.readouterr()
     assert held.out.splitlines()[0].startswith("成功: ")
     assert "失敗: " not in held.err
-    assert held.err.count("警告: ") == held.err.count("次の操作: ") == 1
-    assert "未push commit: 1件" in held.err
-    assert "ローカルのみ1件、upstreamのみ1件" in held.err
-    assert "atk wi commit" in held.err
-    assert "元の`atk`操作" not in held.err
+    assert background_sync.run(local) is False
+    assert background_sync.read_status(local)["state"] == "recovery-required"
     assert entry_state_of(entry_path(local, "20260831-101752-001.md")) == "hold"
 
     with pytest.raises(SystemExit, match="1"):
@@ -544,7 +542,9 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
     blocked = capsys.readouterr()
     assert blocked.err.count("失敗: ") == 1
     next_action = blocked.err.rsplit("次の操作: ", 1)[1]
-    assert next_action.index("clean") < next_action.index("git -c submodule.recurse=false rebase")
+    assert next_action.strip()
+    assert dirty.is_file()
+    assert not _atk_git_sync.is_rebase_in_progress(local)
 
     dirty.unlink()
     with pytest.raises(SystemExit, match="0"):
@@ -951,6 +951,7 @@ def test_notes_cli_with_upstream_states(
         if configuration == "upstream":
             git_repository.run_git(notes, "push", "-u", "origin", "main")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setattr(background_sync, "schedule", lambda _notes: None)
     source = tmp_path / "body.md"
     source.write_text(AGENT_AWI_BODY, encoding="utf-8")
 
@@ -960,9 +961,7 @@ def test_notes_cli_with_upstream_states(
         assert result.value.code == 0
         captured = capsys.readouterr()
         if args[1] in {"add", "edit"}:
-            assert ("upstreamが無いため" in captured.err) == (configuration == "remote")
-            if configuration == "remote":
-                assert "branch --set-upstream-to=" in captured.err and "push -u" in captured.err
+            assert "upstreamが無いため" not in captured.err
         return captured.out
 
     previous = git_repository.run_git(notes, "rev-parse", "HEAD").stdout

@@ -26,6 +26,8 @@ def connections_configured(engine: str) -> bool:
     ):
         return True
     stored = config_settings.load_config()
+    if (path := config_settings.shared_settings_path()) is not None:
+        stored = config_settings.load_shared_settings(path) | stored
     return any(runtime_environment.environment().get(config_settings.config_env_name(key), "") or key in stored for key in keys)
 
 
@@ -40,13 +42,13 @@ def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
         if key == "remote_hosts"
         else (runtime_environment.environment().get(env_name, ""), env_name)
     )
-    value = env_value or (
-        config_settings.raw_mutable_setting(key)
-        if fallback is None
-        else config_settings.raw_mutable_setting(key, fallback=fallback)
-    )
-    if not env_value:
-        value = temporary_settings().get(key, value)
+    value = env_value or temporary_settings().get(key)
+    if value is None:
+        value = (
+            config_settings.raw_mutable_setting(key)
+            if fallback is None
+            else config_settings.raw_mutable_setting(key, fallback=fallback)
+        )
     try:
         config_settings.validate_mutable_setting(key, value)
     except ValueError as error:

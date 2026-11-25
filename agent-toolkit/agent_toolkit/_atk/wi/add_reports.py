@@ -11,6 +11,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.managed_temp.creation import create_output_temp
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -50,7 +51,7 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
 
 
 def check_run_report_sync(
-    private_notes: pathlib.Path, *, run_id: str, scope: str, sync_report: bool = False
+    private_notes: pathlib.Path, *, run_id: str, scope: str, sync_report: bool = False, local_only: bool = False
 ) -> RunReportGap | None:
     """同期済みなら`None`、未同期なら確認できなかった段階を返す。  pyfltr: allow-comment
 
@@ -62,7 +63,7 @@ def check_run_report_sync(
     with _wi_sync.repo_lock(private_notes, timeout=30):
         remote = merge_ref = ""
         remote_revision: str | None = None
-        if _wi_sync.has_remote(private_notes):
+        if not local_only and _wi_sync.has_remote(private_notes):
             branch = _git_refs.resolve_branch(private_notes, git_fn=lambda path, args: _git_command.output(args, path))
             if branch is None:
                 return RunReportGap("追跡ブランチを解決できない", {"private_notes": str(private_notes)})
@@ -208,7 +209,9 @@ def check_run_report_sync(
                 message = redact_secrets(stderr or str(error))[-2000:]
                 return RunReportGap("報告の回復に失敗", {"段階": stage, "診断": message})
     if repaired:
-        return check_run_report_sync(private_notes, run_id=run_id, scope=scope)
+        if local_only:
+            background_sync.finish_local_save(private_notes, 0, skip=False)
+        return check_run_report_sync(private_notes, run_id=run_id, scope=scope, local_only=local_only)
     if gap is not None:
         return gap
     candidates.sort(key=lambda item: str(item["file"]), reverse=True)
@@ -216,6 +219,10 @@ def check_run_report_sync(
         "報告用UWIが無い",
         {"run_id": run_id, "scope": expected, "candidates": candidates[:_CANDIDATE_LIMIT], "candidate_count": len(candidates)},
     )
+
+
+def has_committed_run_report(private_notes: pathlib.Path, *, run_id: str, scope: str) -> bool:
+    return check_run_report_sync(private_notes, run_id=run_id, scope=scope, local_only=True) is None
 
 
 def _run_report_content(content: str) -> tuple[dict[str, object], str] | None:

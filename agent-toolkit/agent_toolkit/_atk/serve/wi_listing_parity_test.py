@@ -1,13 +1,15 @@
 import json
+import os
 import pathlib
+import time
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import config as serve_config
+from agent_toolkit._atk.serve import entry_index, wi_operations
 from agent_toolkit._atk.serve import state as serve_state
-from agent_toolkit._atk.serve import wi_operations
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -96,6 +98,62 @@ def test_cli_and_web_list_return_same_entries(
     filters: dict[str, str],
 ) -> None:
     assert _cli_filenames(notes, monkeypatch, capsys, filters) == _web_filenames(notes, filters)
+
+
+@pytest.mark.parametrize("command", ["list", "grep", "show"])
+@pytest.mark.parametrize("cache_state", ["absent", "valid", "corrupt", "external-edit"])
+def test_wi_commands_keep_uncached_output(
+    notes: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    cache_state: str,
+) -> None:
+    cache = tmp_path / "index.json"
+    monkeypatch.setattr(entry_index, "default_cache_path", lambda: cache)
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    common = ["--target-repo=all", "--skip-pull", "--type=all", "--summary-only", "--state=all"]
+    options = {"list": [], "grep": ["-F", "本文"], "show": ["--all"]}[command]
+    past = time.time() - 10
+    for path in notes.glob("*/*/*.md"):
+        os.utime(path, (past, past))
+
+    def invoke() -> str:
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", command, *options, *common], home=tmp_path)
+        assert result.value.code == 0
+        captured = capsys.readouterr()
+        assert not captured.err
+        return captured.out
+
+    if cache_state != "absent":
+        invoke()
+        assert cache.is_file()
+    if cache_state == "corrupt":
+        cache.write_text("{", encoding="utf-8")
+    if cache_state == "external-edit":
+        path = notes / "2026" / "01" / "20260101-000000-001.md"
+        before = path.stat()
+        path.write_text(path.read_text(encoding="utf-8").replace("本文", "更新"), encoding="utf-8")
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        assert path.stat().st_size == before.st_size
+        assert path.stat().st_mtime_ns == before.st_mtime_ns
+    original = _wi_entries.iter_entries
+
+    def uncached(*args, **kwargs):
+        kwargs["indexed"] = False
+        return original(*args, **kwargs)
+
+    with monkeypatch.context() as uncached_context:
+        uncached_context.setattr(_wi_entries, "iter_entries", uncached)
+        expected = invoke()
+
+    assert invoke() == expected
+    assert json.loads(cache.read_text(encoding="utf-8"))["entries"]
+    if cache_state == "external-edit" and command == "grep":
+        assert "20260101-000000-001.md" not in expected
 
 
 @pytest.mark.parametrize("status", ["active", "all"])

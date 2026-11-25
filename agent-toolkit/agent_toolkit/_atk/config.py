@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import pathlib
+import subprocess
 import sys
 from collections.abc import Callable
 from typing import Any, cast
@@ -36,10 +38,14 @@ from agent_toolkit._atk.config_settings import MUTABLE_KEY_DEFAULTS as _MUTABLE_
 from agent_toolkit._atk.config_settings import RETIRED_CONNECTION_KEYS as _RETIRED_CONNECTION_KEYS
 from agent_toolkit._atk.config_settings import config_env_name as _config_env_name
 from agent_toolkit._atk.config_settings import config_file_path as _config_file_path
-from agent_toolkit._common import codex_models, runtime_environment, usage_observation, usage_settings
+from agent_toolkit._atk.environment import is_human_terminal
+from agent_toolkit._common import codex_fast_mode, codex_models, runtime_environment, usage_observation, usage_settings
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
+lazy from agent_toolkit._atk import git_sync
+lazy from agent_toolkit._atk.wi import sync as wi_sync
+lazy from agent_toolkit._git import command as git_command
 
 __all__ = [
     "CONNECTION_KINDS",
@@ -77,11 +83,52 @@ def save_mutable_settings(updates: dict[str, str]) -> bool:
             raise KeyError(key)
         _config_settings.validate_mutable_setting(key, value)
     updates = {key: _config_settings.normalize_setting(key, value) for key, value in updates.items()}
+    shared = {key: value for key, value in updates.items() if key in _config_settings.SHARED_SETTING_KEYS}
+    path = _config_settings.shared_settings_path() if shared else None
+    shared_changed = False
+    if path is not None:
+        shared_changed = _save_shared_settings(path, shared)
+        updates = {key: value for key, value in updates.items() if key not in shared}
     config = _config_settings.load_config_strict()
     if all(config.get(key) == value for key, value in updates.items()):
-        return False
+        return shared_changed
     _config_settings.save_config({**config, **updates})
     return True
+
+
+def _save_shared_settings(path: pathlib.Path, updates: dict[str, str]) -> bool:
+    notes = path.parent
+    next_action = f"{notes}のGit同期の状態を確認し、未同期の変更を解消してから再実行する"
+    try:
+        with wi_sync.DEFAULT_STORAGE.mutation(notes):
+            if git_command.output(["status", "--porcelain", "--ignored=matching", "--", path.name], notes):
+                raise _next_action.ActionableError(f"{path}に未保存の変更がある", next_action=next_action)
+            current = _config_settings.load_shared_settings(path)
+            changed = current | updates
+            if changed != current:
+                _commit_shared_settings(path, changed, "chore: update shared agent settings")
+            wi_sync.push_pending_commits(notes)
+            if git_sync.push_was_deferred(notes):
+                raise _next_action.ActionableError(
+                    f"{path}はローカルに保存したが共有先へ同期できていない", next_action=next_action
+                )
+    except subprocess.SubprocessError as error:
+        raise _next_action.ActionableError(f"{path}の保存・同期に失敗した: {error}", next_action=next_action) from error
+    return changed != current
+
+
+def _commit_shared_settings(path: pathlib.Path, values: dict[str, str], message: str) -> None:
+    existed = path.exists()
+    atomic_write(path, json.dumps(values, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    try:
+        wi_sync.commit_and_push(path.parent, message, [path.name], skip_push=True)
+    except OSError, subprocess.SubprocessError:
+        git_command.run(["reset", "--", path.name], cwd=path.parent, check=True)
+        if existed:
+            git_command.run(["restore", "--worktree", "--", path.name], cwd=path.parent, check=True)
+        else:
+            path.unlink()
+        raise
 
 
 def resolved_settings(home: pathlib.Path) -> dict[str, str]:
@@ -124,9 +171,91 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 
 
 def _cmd_config_show(home: pathlib.Path) -> None:
+    human = is_human_terminal()
+    if human:
+        _migrate_shared_settings()
     settings = resolved_settings(home)
     for key, value in settings.items():
         print(f"{key} {value}")
+    if (path := _config_settings.shared_settings_path()) is not None:
+        shared = _config_settings.load_shared_settings(path)
+        local = _config_settings.load_config()
+        temporary = usage_settings.temporary_settings()
+        active = [
+            key
+            for key in sorted(shared)
+            if key not in local and key not in temporary and not runtime_environment.environment().get(_config_env_name(key))
+        ]
+        print(f"共有設定ファイル: {path}", file=sys.stderr)
+        if active:
+            print("共有設定から解決したキー: " + "、".join(active), file=sys.stderr)
+    if human and settings["codex_fast_mode"] == "auto":
+        print(_auto_fast_report(), file=sys.stderr)
+
+
+def _auto_fast_report() -> str:
+    managed = connections_configured("codex")
+    if managed and not any("subscription" in connection_order("codex", role) for role in ("orchestrator", "worker")):
+        return "Codex自動速度: 通常（使用順にサブスクリプション接続がない）"
+
+    async def report() -> str:
+        cwd = str(pathlib.Path.cwd())
+
+        async def query(request):
+            return await codex_fast_mode.auto_service_tier(request, cwd, subscription=True if managed else None)
+
+        async with asyncio.timeout(5):
+            decision = await codex_models.with_app_server(query, cwd=cwd)
+        speed = "高速" if decision.tier == "priority" else "通常"
+        if managed:
+            return f"Codex自動速度: 接続ごとに判定（サブスクリプションは{speed}: {decision.explanation}、APIは通常）"
+        return f"Codex自動速度: {speed}（{decision.explanation}）"
+
+    try:
+        return asyncio.run(report())
+    except OSError, ValueError, TimeoutError:
+        return "Codex自動速度: 通常（判定に必要な接続情報を取得できない）"
+
+
+def _migrate_shared_settings() -> None:
+    path = _config_settings.shared_settings_path()
+    if path is None or not git_sync.has_remote(path.parent):
+        return
+    local = _config_settings.load_config_strict()
+    pending = {key: local[key] for key in _config_settings.SHARED_SETTING_KEYS if key in local}
+    if not pending:
+        return
+    initial = {key: value for key, value in pending.items() if key != "codex_fast_mode"}
+    notes = path.parent
+    next_action = f"{notes}のGit同期を確認し、同期後に本人が atk config show をもう一度実行する"
+    try:
+        with wi_sync.repo_lock(notes):
+            wi_sync.ensure_mutation_allowed(notes)
+            wi_sync.run_git(["fetch"], notes)
+            git_sync.keep_remote_initial_file(notes, path.name, _config_settings.SHARED_SETTINGS_MIGRATION_MESSAGE)
+            wi_sync.run_git(["merge", "--ff-only", "@{u}"], notes)
+            if git_command.output(["status", "--porcelain", "--ignored=matching", "--", path.name], notes):
+                raise _next_action.ActionableError(f"{path}に未保存の変更がある", next_action=next_action)
+            if not path.exists() and not path.is_symlink():
+                for key, value in initial.items():
+                    if not isinstance(value, str):
+                        raise ValueError(f"{key}の保存値は文字列で指定してください")
+                    _config_settings.validate_mutable_setting(key, value)
+                _commit_shared_settings(path, initial, _config_settings.SHARED_SETTINGS_MIGRATION_MESSAGE)
+            # 初回作成同士をrebaseすると、採用されなかった設定が競合中の作業ツリーに残る。  # pyfltr: allow-comment
+            # 通常pushだけを許し、負けた側は次回の取得時に勝者へ揃える。  # pyfltr: allow-comment
+            wi_sync.run_git(["push"], notes)
+            if not git_sync.remote_contains_head(notes):
+                raise _next_action.ActionableError(f"{path}は共有先に採用されていない", next_action=next_action)
+            adopted = _config_settings.load_shared_settings(path)
+            latest = _config_settings.load_config_strict()
+            if any(latest.get(key) != value for key, value in pending.items()):
+                raise _next_action.ActionableError("移行中にローカル設定が変わった", next_action=next_action)
+            _config_settings.save_config({key: value for key, value in latest.items() if key not in pending})
+    except subprocess.SubprocessError as error:
+        raise _next_action.ActionableError(f"{path}を共有先へ移行できない: {error}", next_action=next_action) from error
+    for key, previous in sorted(pending.items()):
+        print(f"{key}: ローカルの {previous} を除去。共有設定の値: {adopted.get(key, '省略時の値')}", file=sys.stderr)
 
 
 def _report_candidate_warnings(warnings: list[str]) -> None:
@@ -138,9 +267,14 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
 def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
     effective = resolved_settings(home)
     saved = _config_settings.load_config()
+    shared_path = _config_settings.shared_settings_path()
+    shared = _config_settings.load_shared_settings(shared_path) if shared_path is not None else {}
+    shared_sync = shared_path is not None and git_sync.has_remote(shared_path.parent)
     temporary = usage_settings.temporary_settings()
     settings = {}
     for key, default in _config_settings.MUTABLE_KEY_DEFAULTS.items():
+        shared_key = shared_path is not None and key in _config_settings.SHARED_SETTING_KEYS
+        migration_pending = shared_key and key in saved
         env = _config_settings.config_env_name(key)
         env_source = (
             _config_migration.remote_hosts_environment()[1]
@@ -149,13 +283,31 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
             if runtime_environment.environment().get(env)
             else ""
         )
-        source = env_source if env_source else "一時指定" if key in temporary else "保存値" if key in saved else "省略時の値"
+        if env_source:
+            source = env_source
+        elif key in temporary:
+            source = "一時指定"
+        elif key in saved:
+            source = "移行前のローカル保存値" if migration_pending else "保存値"
+        elif key in shared:
+            source = "共有"
+        else:
+            source = "省略時の値"
+        description = _config_settings.setting_description(key)
+        if migration_pending:
+            if shared_sync:
+                description += "\n共有の保存値を使うには、このホストの端末で atk config show を実行してください。"
+            else:
+                description += "\nprivate-notesの同期先を設定するまで、このホストの旧設定は移行されません。"
+                description += "同期先の設定後、端末で atk config show を実行してください。"
         settings[key] = {
             "effective": effective.pop(key),
-            "saved": saved.get(key, default),
+            "saved": shared.get(key, default) if shared_key else saved.get(key, default),
             "default": default,
             "source": source,
-            "description": _config_settings.setting_description(key),
+            "shared": shared_key,
+            "shared_sync": shared_key and shared_sync,
+            "description": description,
             "format": _config_settings.setting_format(key),
             "choices": _config_settings.SETTING_CHOICES.get(key),
             "array": key in _config_settings.ARRAY_KEYS,
@@ -285,8 +437,13 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
     _config_migration.migrate_serve_settings()
     value = _config_settings.normalize_setting(args.key, args.value)
-    config = _config_migration.plan_legacy_migration(_config_settings.load_config_strict(), updates={args.key: value})
-    _config_settings.save_config(config)
+    if args.key not in _config_settings.SHARED_SETTING_KEYS or _config_settings.shared_settings_path() is None:
+        config = _config_migration.plan_legacy_migration(_config_settings.load_config_strict(), updates={args.key: value})
+        _config_settings.save_config(config)
+    else:
+        if is_human_terminal():
+            _migrate_shared_settings()
+        save_mutable_settings({args.key: value})
     _outcome.report_success(f"設定を更新した: {args.key}={value}")
     active_env = (
         _config_settings.config_env_name(args.key) if os.environ.get(_config_settings.config_env_name(args.key), "") else None
@@ -306,8 +463,11 @@ def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
                 print(f"  {key}: {value}")
         return
     settings = _config_settings.PRESET_MODELS[args.preset]
-    config = _config_migration.plan_legacy_migration(_config_settings.load_config(), updates=settings)
-    _config_settings.save_config(config)
+    if _config_settings.shared_settings_path() is None:
+        config = _config_migration.plan_legacy_migration(_config_settings.load_config(), updates=settings)
+        _config_settings.save_config(config)
+    else:
+        save_mutable_settings(settings)
     _outcome.report_success(f"工程別モデル設定をpreset「{args.preset}」で一括保存した: {len(settings)}件")
     for key, value in settings.items():
         print(f"{key}: {value}")

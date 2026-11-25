@@ -43,7 +43,7 @@ def test_missing_claude_file_already_at_fixed_path_does_not_block_config(tmp_pat
     _write_config(tmp_path, {key: str(path)})
 
     assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
-    assert capsys.readouterr().out.strip() == "false"
+    assert capsys.readouterr().out.strip() == "auto"
     assert key not in _saved(tmp_path)
 
 

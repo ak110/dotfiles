@@ -10,9 +10,11 @@
 
 保存の契機に達した時点で、所有主体が計画stemのバンドルを`atk plans commit`へ渡す。
 契機は起動形態ごとに`agent-toolkit/skills/atk-mode/references/plan-storage.md`の`## 計画ファイルの保存と参照`が定め、本節は保存の契機を再掲しない。
-同コマンドはprivate-notesへ移動して対象限定commit・pushを完了し、成功後に作業側を回収する。
-外側の運用がpushを禁止した場合は`--skip-push`で対象限定commitまでを完了し、作業側を回収する。
-失敗時は作業側を保持し、保存先が同内容なら再実行でcommit・pushを再開し、異内容なら上書きせず停止する。
+同コマンドはprivate-notesへ移動して対象限定のローカルcommitを確定し、作業側を回収する。
+送信は裏の同期に任せる。
+`--skip-push`はその呼び出しから裏の同期を起動しない。
+ローカル保存の失敗時は作業側を保持し、保存先が同内容なら再実行でcommitを再開する。
+送信の失敗はprivate-notesの同期状態として知らせる。
 修正系列を始めた時点のHEADの7文字以上の一意な短縮OIDを`修正系列の開始時のHEAD`とし、同じ再帰的CI失敗処理では原因commitが変わっても同じCI対応レビュー指摘管理表を継続する。
 
 保存済み計画へ追記する手段は、`atk plans checkout`で`~/.claude/plans`へ取得して更新し、`atk plans commit`で保存し直す手順に限る。

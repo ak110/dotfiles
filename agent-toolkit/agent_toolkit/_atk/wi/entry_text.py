@@ -15,8 +15,12 @@ class EntryText(str):
     parsed: ParsedFrontmatter
 
     def __new__(cls, text: str) -> EntryText:
+        return cls.from_parsed(text, frontmatter.parse_frontmatter(text))
+
+    @classmethod
+    def from_parsed(cls, text: str, parsed: ParsedFrontmatter) -> EntryText:
         instance = super().__new__(cls, text)
-        instance.parsed = frontmatter.parse_frontmatter(text)
+        instance.parsed = parsed
         return instance
 
 

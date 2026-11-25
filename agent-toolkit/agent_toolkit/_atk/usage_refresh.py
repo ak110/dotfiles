@@ -92,12 +92,20 @@ def session_signature(session: Any) -> str:
 
 
 @contextlib.contextmanager
-def cli_activity(engine: str, model: str | None, effort: str | None, connection: str | None = None) -> Generator[None]:
+def cli_activity(
+    engine: str,
+    model: str | None,
+    effort: str | None,
+    connection: str | None = None,
+    *,
+    service_tier: str | None = None,
+) -> Generator[None]:
     if engine not in {"claude", "codex"} or not enabled():
         yield
         return
     identifier = f"cli:{os.getpid()}"
-    fast = engine == "codex" and config.resolve_mutable_setting("codex_fast_mode") == "true"
+    # CLIが速度を送っていない場合は、設定値から実効速度を推定しない。  # pyfltr: allow-comment
+    fast = (service_tier == "priority" if service_tier is not None else None) if engine == "codex" else False
     signature = json.dumps(
         [engine, model, effort, fast, connection if engine == "claude" else None, connection if engine == "codex" else None]
     )

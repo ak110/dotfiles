@@ -4,11 +4,11 @@ import pathlib
 import sys
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sections as _wi_sections
-from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
@@ -113,9 +113,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not args.filenames and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
     validated_filenames = _wi_entries.validate_named_filenames(private_notes, args.filenames)
-    if not args.skip_pull:
-        with _wi_sync.repo_lock(private_notes):
-            _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
+    background_sync.prepare_read(private_notes, skip=args.skip_pull, force=getattr(args, "pull", False))
     resolved_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in (args.target_repo or ())))
     branch_settings = _wi_branches.registry()
 
@@ -150,6 +148,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         important=getattr(args, "important", "all"),
         target_branch=_wi_branches.requested_filter(args, resolved_repos, branch_settings),
         branch_settings=branch_settings,
+        indexed=True,
     )
     for header_type in WI_TYPES:
         entries: dict[str, list[tuple[str, str, str]]] = {}

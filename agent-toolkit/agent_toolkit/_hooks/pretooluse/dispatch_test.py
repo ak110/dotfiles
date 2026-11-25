@@ -8,6 +8,7 @@ import shlex
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._hooks import user_prompt_submit
 from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
@@ -17,6 +18,60 @@ from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _write_session_state
 from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
+
+
+@pytest.mark.parametrize(
+    ("command", "protected"),
+    [
+        ("atk config temporary set orchestrate_model codex:sol/medium", True),
+        ("atk config temporary set codex_fast_mode auto", True),
+        ("atk config temporary clear", True),
+        ("atk config set review_model codex:sol", True),
+        ("atk config set codex_worker_connections subscription", True),
+        ("atk config apply-preset codex-primary", True),
+        ("atk config apply-preset --list", False),
+        ("atk config apply-preset show", False),
+        ("atk config show", False),
+        ("atk config set codex_fast_mode auto", False),
+        ('atk config update <<\'JSON\'\n{"action":"temporary-clear"}\nJSON', True),
+        ('atk config update <<\'JSON\'\n{"action":"set","key":"codex_fast_mode","value":"auto"}\nJSON', False),
+        ("atk config update < request.json", True),
+        ("cat request.json | atk config update", True),
+        ('atk config update <<JSON\n{"action":"set","key":"$KEY","value":"auto"}\nJSON', True),
+    ],
+)
+@pytest.mark.parametrize("is_codex", [False, True])
+def test_model_setting_command_uses_host_permission(command, protected, is_codex, capsys):
+    tool_input = {"command": command}
+    payload = {"session_id": "permission-test", "tool_input": tool_input}
+    decision = pretooluse._decide(payload, "Bash", tool_input, "permission-test", is_codex=is_codex)
+    assert pretooluse._emit(decision, [], is_codex=is_codex) == 0
+    output = capsys.readouterr().out
+    actual = json.loads(output)["hookSpecificOutput"].get("permissionDecision") if output else None
+    assert actual == (("deny" if is_codex else "ask") if protected else None)
+
+
+@pytest.mark.parametrize(("is_codex", "approve", "writes"), [(False, True, True), (False, False, False), (True, True, False)])
+def test_host_decision_controls_actual_local_model_save(tmp_path, monkeypatch, capsys, is_codex, approve, writes):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "missing"))
+    setting = "claude:opus[1m]/medium"
+    data = {"command": f"atk config set review_model {setting}"}
+    payload = {"session_id": "permission-test", "tool_input": data}
+    decision = pretooluse._decide(payload, "Bash", data, "permission-test", is_codex=is_codex)
+    assert pretooluse._emit(decision, [], is_codex=is_codex) == 0
+    permission = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["permissionDecision"]
+    assert permission == ("deny" if is_codex else "ask")
+    if permission == "ask" and approve:
+        with pytest.raises(SystemExit) as result:
+            atk.main(["config", "set", "review_model", setting], home=tmp_path)
+        assert result.value.code == 0
+    with pytest.raises(SystemExit) as result:
+        atk.main(["config", "get", "review_model"], home=tmp_path)
+    assert result.value.code == 0
+    assert (capsys.readouterr().out.splitlines()[-1] == setting) is writes
 
 
 @pytest.mark.parametrize("host", ["claude-code", "codex"])

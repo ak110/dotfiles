@@ -322,7 +322,7 @@ async def test_answer_api_returns_saved_post_approval_state(
 
 
 @pytest.mark.asyncio
-async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeout(
+async def test_answer_api_waits_for_lock_held_by_another_writer(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -333,7 +333,7 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
     lock_path = tmp_path / "repo.lock"
     attempting: asyncio.Queue[float] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    monkeypatch.setattr(wi_operations, "_BACKGROUND_SYNC_LOCK_TIMEOUT", 0.02)
+    contention_interval = 0.02
 
     def lock(_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
         instance = filelock.FileLock(str(lock_path), timeout=timeout)
@@ -385,7 +385,7 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
         async with asyncio.timeout(5):
             first_attempt = await attempting.get()
             # 定期同期の短い期限を越えても取得失敗が続くことを観測してから解放する。
-            while await attempting.get() - first_attempt < wi_operations._BACKGROUND_SYNC_LOCK_TIMEOUT:
+            while await attempting.get() - first_attempt < contention_interval:
                 pass
         assert not request.done()
         release.set()

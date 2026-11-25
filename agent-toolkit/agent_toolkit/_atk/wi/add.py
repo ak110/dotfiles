@@ -24,6 +24,7 @@ from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.add_reports import (
     check_run_report_sync,
     compare_draft_openings,
+    has_committed_run_report,
     has_synced_run_report,
     print_deferral_candidates,
     print_draft_openings,
@@ -855,6 +856,7 @@ __all__ = [
     "_parse_leading_frontmatter",
     "body_is_effectively_empty",
     "check_run_report_sync",
+    "has_committed_run_report",
     "has_synced_run_report",
     "normalize_cooldown_until",
 ]

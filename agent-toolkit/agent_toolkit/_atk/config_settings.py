@@ -12,7 +12,7 @@ from typing import Any
 lazy import platformdirs
 
 from agent_toolkit._atk import config_repositories
-from agent_toolkit._common import codex_models, runtime_environment
+from agent_toolkit._common import codex_models, private_notes, runtime_environment
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.usage_settings import validate_permissions
@@ -125,6 +125,11 @@ ARRAY_KEYS = SERVE_HOSTS_KEYS
 PROVIDER_KEYS = frozenset({"codex_credits_provider", "codex_payg_provider"})
 
 CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.endswith("_connections"))
+SHARED_SETTING_KEYS = (
+    frozenset(MODEL_DEFAULTS) | CONNECTION_ORDER_KEYS | {"codex_fast_mode", "claude_usage_limit_wait", "codex_usage_limit_wait"}
+)
+SHARED_SETTINGS_FILENAME = "atk-config.json"
+SHARED_SETTINGS_MIGRATION_MESSAGE = "chore: migrate shared agent settings"
 
 WEEKLY_KEY_DEFAULTS = {
     "weekly_meta_auto_start": "true",
@@ -137,7 +142,7 @@ WEEKLY_FLAG_KEYS = frozenset({"weekly_meta_auto_start", "weekly_research_auto_st
 
 MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
-    "codex_fast_mode": "false",
+    "codex_fast_mode": "auto",
     "usage_reset_permissions": "[]",
     **CONNECTION_DEFAULTS,
     "claude_usage_limit_wait": "five-hour",
@@ -318,6 +323,32 @@ def load_config_strict() -> dict[str, Any]:
     return data
 
 
+def shared_settings_path() -> pathlib.Path | None:
+    root = private_notes.default_private_notes(runtime_environment.home())
+    return root.resolve() / SHARED_SETTINGS_FILENAME if root.is_dir() else None
+
+
+def load_shared_settings(path: pathlib.Path) -> dict[str, str]:
+    try:
+        if path.is_symlink():
+            raise ValueError("シンボリックリンクは使えません")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or data.keys() - SHARED_SETTING_KEYS:
+            raise ValueError("共有する設定キーだけをJSON objectで指定してください")
+        for key, value in data.items():
+            if not isinstance(value, str):
+                raise ValueError(f"{key}は文字列で指定してください")
+            validate_mutable_setting(key, value)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as error:
+        raise _next_action.ActionableError(
+            f"共有設定ファイル{path}を読めない: {error}",
+            next_action=f"{path}の書式を確認し、正しい設定値に直して再実行する",
+        ) from error
+    return data
+
+
 def save_config(config: dict[str, Any]) -> None:
     path = config_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -380,7 +411,7 @@ SETTING_CHOICES = {
     "dotfiles_mode": ("full", "minimal"),
     "claude_usage_limit_wait": ("never", "five-hour", "always"),
     "codex_usage_limit_wait": ("never", "five-hour", "always"),
-    "codex_fast_mode": ("true", "false"),
+    "codex_fast_mode": ("auto", "true", "false"),
     "session_review_auto_start": ("true", "false"),
     **dict.fromkeys(sorted(WEEKLY_FLAG_KEYS), ("true", "false")),
 }
@@ -393,7 +424,7 @@ _SETTING_DESCRIPTIONS = {
     "chores_fast_model": "軽量な補助作業を担当するモデル候補",
     "orchestrate_model": "統括を担当するモデル候補",
     "write_model": "文書執筆を担当するモデル候補",
-    "codex_fast_mode": "Codexの高速モードを使うか",
+    "codex_fast_mode": "Codexの高速モード（autoは契約と提供期間で判定）",
     "usage_reset_permissions": "利用枠のresetを許可する対象と期間",
     "codex_credits_provider": "Codexの有限クレジット用provider ID",
     "codex_payg_provider": "Codexの従量課金用provider ID",
@@ -614,7 +645,12 @@ def raw_mutable_setting(key: str, *, fallback: str | None = None) -> str:
     explicit = runtime_environment.environment().get(config_env_name(key), "")
     if explicit:
         return explicit
-    return load_config().get(key, default if fallback is None else fallback)
+    local = load_config()
+    if key in local:
+        return local[key]
+    if key in SHARED_SETTING_KEYS and (path := shared_settings_path()) is not None:
+        return load_shared_settings(path).get(key, default if fallback is None else fallback)
+    return default if fallback is None else fallback
 
 
 def normalize_setting(key: str, value: str) -> str:

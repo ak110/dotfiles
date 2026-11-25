@@ -13,6 +13,7 @@ lazy from agent_toolkit._atk import help_text as _atk_help
 lazy from agent_toolkit._atk import outcome as _outcome
 lazy from agent_toolkit._atk.wi import add as _add
 lazy from agent_toolkit._atk.wi import alerts as _alerts
+lazy from agent_toolkit._atk.wi import background_sync as _background_sync
 lazy from agent_toolkit._atk.wi import batch as _batch
 lazy from agent_toolkit._atk.wi import constants as _wi_constants
 lazy from agent_toolkit._atk.wi import effect_check as _effect_check
@@ -317,17 +318,41 @@ def dispatch(
         "pull": lambda: _pull_command(private_notes),
         "check-alerts": lambda: _alerts.cmd_check_alerts(args, private_notes, now),
     }
+    local_save = (
+        sub
+        in {
+            "add",
+            "hold",
+            "unhold",
+            "return-to-inbox",
+            "adopt",
+            "reject",
+            "rm",
+            "record-observation",
+            "effect-check",
+            "set-dependencies",
+            "set-priority",
+        }
+        or sub in {"edit", "answer"}
+        and bool(getattr(args, "filenames", None) or getattr(args, "filename", None))
+    ) and not getattr(args, "dry_run", False)
     _atk_git_sync.reset_sync_attempt()
     try:
-        exit_code = commands[sub]() or 0
+        with _wi_sync.local_save(local_save):
+            exit_code = commands[sub]() or 0
     except (ValueError, _atk_git_sync.RebaseInProgressError) as error:
         _cli_support.report_rejected(args, error)
+        _background_sync.warn_if_unhealthy(private_notes)
         return 1
     except subprocess.CalledProcessError as error:
         _cli_support.report_git_failure(error, private_notes)
+        _background_sync.warn_if_unhealthy(private_notes)
         return 1
-    return _wi_sync.sync_exit_code(
-        exit_code,
-        private_notes,
-        should_check=_atk_git_sync.sync_attempted() and not getattr(args, "skip_push", False),
-    )
+    if local_save:
+        return _background_sync.finish_local_save(private_notes, exit_code, skip=getattr(args, "skip_push", False))
+    if exit_code == 0 and sub in {"pull", "commit"}:
+        _background_sync.explicit_sync_finished(private_notes)
+    if sub in {"list", "show", "grep"}:
+        return exit_code
+    unhealthy = _background_sync.warn_if_unhealthy(private_notes)
+    return 3 if not exit_code and unhealthy else exit_code

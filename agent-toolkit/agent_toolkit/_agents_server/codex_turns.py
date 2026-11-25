@@ -6,7 +6,7 @@ import logging
 import typing
 from typing import Any
 
-from agent_toolkit._agents_server import codex_resume_state, configured_model
+from agent_toolkit._agents_server import codex_providers, codex_resume_state, configured_model
 from agent_toolkit._agents_server.codex_instructions import _current_service_tier
 from agent_toolkit._agents_server.codex_protocol import (
     JsonRpcResponseError,
@@ -18,6 +18,7 @@ from agent_toolkit._agents_server.codex_protocol import (
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._atk import codex_connection
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -121,13 +122,17 @@ class CodexTurnsMixin:
         self._start_auto_reset_monitor(session, client)
 
         await session.attach_executor_async(_client_pid(client))
+        provider = session.codex_model_provider or session.codex_state_provider
+        subscription: bool | None = await run_file_operation(codex_connection.subscription_provider_for, provider) is not None
+        if not codex_providers.has_provider_configuration() and provider in (None, "openai"):
+            subscription = None
         params: dict[str, Any] = {
             "threadId": session.session_id,
             "input": [{"type": "text", "text": prompt}],
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandboxPolicy": {"type": "dangerFullAccess"},
-            "serviceTier": await run_file_operation(_current_service_tier),
+            "serviceTier": await _current_service_tier(client.request, session.cwd, subscription=subscription),
         }
         if session.model is not None:
             params["model"] = session.model

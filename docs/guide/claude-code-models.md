@@ -146,9 +146,13 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 
 | キー | 内容 |
 | --- | --- |
-| `codex_fast_mode` | `true`でCodexのfast modeを使う。初期値は`false` |
+| `codex_fast_mode` | 初期値は`auto`。対象契約のサブスクリプション接続で、追加料金なしの提供期間中だけfast modeを使う。`true`は常に有効、`false`は常に無効 |
 | `claude_usage_limit_wait`・`codex_usage_limit_wait` | 利用上限に達した時に解除を待つ範囲。`five-hour`（初期値）は5時間枠だけ、`always`は週次枠なども待ち、`never`は待たずに次の候補へ進む |
 | `claude_*_connections`・`codex_*_connections`ほか | Claude・Codexのサブスクリプション・APIクレジット・従量課金APIの使い分け。設定は[接続の使い分け](claude-code-connections.md#接続の使い分け)を参照 |
+
+工程別モデルと`codex_fast_mode`は、同じprivate-notesを同期する環境で共有する。
+ファイルの場所と共有設定から解決したキーは`atk config show`の標準エラーで確認できる。
+特定のホストだけ変える場合は`atk config temporary`か`AGENT_TOOLKIT_CONFIG_<KEY>`を使う。
 
 初期設定ではCodexの5時間枠の解除を待つ。
 それ以外の枠は適用できるreset許可があれば先に確認し、resetしなければ使用順の残りの接続先や次のモデル候補を使う。

@@ -42,6 +42,32 @@ from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 
+
+def keep_remote_initial_file(notes: pathlib.Path, filename: str, migration_message: str) -> bool:
+    """排他中に競合した初回移行だけを除き、後続のローカルcommitを共有先に対して適用する。  pyfltr: allow-comment"""
+    commits = _git_command.output(["rev-list", "--reverse", "--parents", "@{u}..HEAD"], notes).splitlines()
+    parents = [line.split() for line in commits]
+    if not parents or any(len(parts) != 2 for parts in parents):
+        return False
+    migration, base = parents[0]
+    if _git_command.output(["log", "-1", "--format=%s", migration], notes) != migration_message:
+        return False
+    delta = _git_command.output(["diff-tree", "--no-commit-id", "--name-status", "-r", migration], notes)
+    if delta != f"A\t{filename}" or _git_command.output(["status", "--porcelain"], notes):
+        return False
+    if _git_command.run(["cat-file", "-e", f"@{{u}}:{filename}"], cwd=notes, check=False, capture_output=True).returncode:
+        return False
+    if _git_command.run(["merge-base", "--is-ancestor", base, "@{u}"], cwd=notes, check=False).returncode:
+        return False
+    args = (
+        ["reset", "--merge", "@{u}"]
+        if len(commits) == 1
+        else ["-c", "submodule.recurse=false", "rebase", "--onto", "@{u}", migration]
+    )
+    _git_command.run(args, cwd=notes, check=True, capture_output=True)
+    return True
+
+
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
 """履歴が分岐し、無関係な差分もある場合に、commitの完了とpushの保留を伝える文言。"""
 

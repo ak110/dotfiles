@@ -131,7 +131,7 @@ class TestShowMultipleFiles:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", "fb-002.md", "fb-001.md"], home=tmp_path)
+            atk.main(["wi", "show", "--pull", "fb-002.md", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()

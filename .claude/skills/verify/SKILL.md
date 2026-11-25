@@ -124,7 +124,7 @@ AWIをinboxへ投入し、一覧と本文で確かめ、処理中を経て採用
 ### 設定の取得と変更
 
 1. `<sandbox> run <S> config-before atk config get codex_fast_mode`を実行する。
-   `false`が出る。
+   `auto`が出る。
 2. `<sandbox> run <S> config-set atk config set codex_fast_mode true`を実行する。
    `成功:`の行が出る。
 3. `<sandbox> run <S> config-after atk config get codex_fast_mode`を実行する。

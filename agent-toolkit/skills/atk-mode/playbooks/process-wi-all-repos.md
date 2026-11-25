@@ -13,7 +13,9 @@
    同じ対象と系統を使用中なら保留し、空いている対象は固有手順か既存のWorktreeCreateで系統の先端から専用作業ツリーを準備する。
 2. 開始時に、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「直前の同期結果の検分」の更新ログの確認を、選定と担当の起動と並行して始める。
    対象が複数でも同じ更新の実行の確認は1つにまとめる。
-3. 初回は対象の作業ツリーで`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の初回取得を`--jsonl`で行い、候補の出力と開始時集合をそれぞれ`candidate_file`と`snapshot_file`へ保存する。
+3. 初回だけ、統括が全対象で共通の `atk wi pull` を1回行う。
+   その後、対象ごとの一覧では `--pull` の代わりに `--skip-pull` を指定し、同じ取得結果を使う。
+   初回は対象の作業ツリーで`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の初回取得を`--jsonl`で行い、候補の出力と開始時集合をそれぞれ`candidate_file`と`snapshot_file`へ保存する。
    開始条件の診断と対象ごとの候補・作業ツリーを `repositories` の順序付きJSON配列へ記録する。
    対象一覧と両方の保存先の絶対パスを統括の引き継ぎ記録に残す。
    各対象の書き込み担当を重ねず、選定から検収まで同じ作業ツリーを使う。

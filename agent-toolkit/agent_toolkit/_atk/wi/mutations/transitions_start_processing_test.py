@@ -63,7 +63,7 @@ class TestStartProcessingMultiple:
         assert entry_state_of(processing / "fb-002.md") == "processing"
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: start processing 2 entries" in commit_cmds[0]
+        assert any(arg.startswith("chore: start processing 2 entries\n\nWI-Claim: ") for arg in commit_cmds[0])
 
     def test_mixed_target_repo_rejects_entire_batch_before_moving(
         self,

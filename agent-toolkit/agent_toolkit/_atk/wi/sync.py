@@ -1,4 +1,5 @@
 import contextlib
+import contextvars
 import dataclasses
 import datetime
 import os
@@ -19,6 +20,17 @@ from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import command as _git_command
+
+_LOCAL_SAVE = contextvars.ContextVar("wi-local-save", default=False)
+
+
+@contextlib.contextmanager
+def local_save(enabled: bool) -> Generator[None]:
+    token = _LOCAL_SAVE.set(enabled)
+    try:
+        yield
+    finally:
+        _LOCAL_SAVE.reset(token)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -53,8 +65,10 @@ class Mutation:
     private_notes: pathlib.Path
     skip_push: bool
 
-    def commit(self, message: str, rel_paths: Iterable[str]) -> int | None:
+    def commit(self, message: str, rel_paths: Iterable[str], *, exclusive_claim: bool = False) -> int | None:
         """操作で確定した変更を、取得済み方針に従ってcommitする。"""
+        if exclusive_claim:
+            return commit_and_push(self.private_notes, message, rel_paths, skip_push=self.skip_push, exclusive_claim=True)
         return commit_and_push(self.private_notes, message, rel_paths, skip_push=self.skip_push)
 
 
@@ -311,6 +325,9 @@ def pull(private_notes: pathlib.Path) -> None:
     他プロセスのfetchおよび`pull.rebase`設定から独立させる。
     """
     assert_repo_lock_held(private_notes)
+    if _LOCAL_SAVE.get():
+        ensure_mutation_allowed(private_notes)
+        return
     _pull_remote(private_notes)
     migrate_legacy_reservations(private_notes)
     _atk_wi_legacy.migrate_legacy_layout(
@@ -398,6 +415,7 @@ def commit_and_push(
     rel_paths: Iterable[str],
     *,
     skip_push: bool = False,
+    exclusive_claim: bool = False,
 ) -> int | None:
     """指定パスをaddしcommit・pushする。
 
@@ -416,14 +434,24 @@ def commit_and_push(
         private_notes,
         message,
         rel_paths,
-        skip_push=skip_push,
+        skip_push=skip_push or _LOCAL_SAVE.get(),
         run_git=run_git,
-        push_pending_fn=push_pending_commits,
+        push_pending_fn=_push_claim if exclusive_claim else push_pending_commits,
     )
+
+
+def _push_claim(private_notes: pathlib.Path) -> int | None:
+    if not has_remote(private_notes):
+        return None
+    # 拒否後にrebaseすると、取得時にinboxだった根拠を再検証できない。  # pyfltr: allow-comment
+    run_git(["push"], private_notes)
+    return 0
 
 
 def push_pending_commits(private_notes: pathlib.Path) -> int | None:
     """ローカルcommitをpushし、同等終了の回復またはrebase後に1回だけ再試行する。"""
+    if _LOCAL_SAVE.get():
+        return 0
     return _atk_git_sync.push_pending_commits(
         private_notes,
         run_git=run_git,

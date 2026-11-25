@@ -9,6 +9,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import plans as _atk_plans
 from agent_toolkit._atk import review_table as _review_table
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._plan import locations as _plan_file
@@ -30,7 +31,7 @@ __all__ = ["_isolate_state_directory"]
     1.25,
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.607秒。"),
 )
-def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.Path) -> None:
+def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """対応する計画なしの再帰的CI失敗で同じ表を取得、更新、再保存できる。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
@@ -45,7 +46,9 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     _review_table.init(working)
     _review_table.add(working, "1", "exec-review", "sample.py:1", "初回指摘", "仕様")
 
+    monkeypatch.setattr(background_sync, "schedule", lambda _notes: None)
     first = _atk_plans.commit_plan(notes, str(working), home=home)
+    assert background_sync.run(notes) is True
 
     saved_relative = pathlib.Path("ci") / name
     saved = _plan_file.new_plans_root(notes) / saved_relative
@@ -88,6 +91,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     assert _review_table.validate(working) == 0
 
     second = _atk_plans.commit_plan(notes, name, home=home)
+    assert background_sync.run(notes) is True
 
     assert second["plan_file"] == saved_relative.as_posix()
     assert not working.exists()

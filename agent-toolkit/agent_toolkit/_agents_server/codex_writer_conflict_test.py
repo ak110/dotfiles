@@ -22,6 +22,11 @@ from agent_toolkit._testing.codex_backend_support import _assert_writer_conflict
 pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 
+@pytest.fixture(autouse=True)
+def _disable_auto_speed_rpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
+
+
 @pytest.mark.parametrize("path", ["warm", "cold", "restored"])
 @pytest.mark.parametrize("provider", ["openai", "api-other"])
 @pytest.mark.asyncio

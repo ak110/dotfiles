@@ -678,12 +678,12 @@ def test_retention_keeps_incomplete_unreported_and_removes_only_old_completed(mo
 
     monkeypatch.setattr(submit, "_launch_worker", no_launch)
     for status, reported in (("failed", True), ("completed", False)):
-        run.update(status=status, report_synced=reported)
+        run.update(status=status, report_synced=reported, report_committed=reported)
         path.write_text(json.dumps(run), encoding="utf-8")
         submit.reobserve()
         assert (root / "requests/request-1.json").exists()
         assert path.exists()
-    run.update(status="completed", report_synced=True)
+    run.update(status="completed", report_synced=False, report_committed=True)
     path.write_text(json.dumps(run), encoding="utf-8")
     submit.reobserve()
     assert not (root / "requests/request-1.json").exists()
