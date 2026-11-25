@@ -90,6 +90,9 @@ Modは実行中のOSアカウントの権限で動くため、信頼できるも
 スキル・フック・MCPの役割は[READMEの構成と機能](../../agent-toolkit/README.md#構成と機能)を参照。
 各フックの判定条件とCodexでの対応範囲は[design-hooks-host-support.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)、Codexでの信頼操作は[Codex利用ガイド](codex-guide.md#フックの信頼確認)を参照。
 
+会話内の表示を担う `send_to_user` では、エージェントが本文検査の誤検出を申告できる。
+未送達なら同じ本文で再送し、表示済みなら本文を二重に表示せず、対象の警告だけを処置する。
+
 ### 手動で起動する主なスキル
 
 最初に使う登録・処理の操作は[READMEの最初の操作](../../agent-toolkit/README.md#最初の操作)、運用ごとの例は[推奨ワークフロー](claude-code-workflows.md#推奨ワークフロー)を参照。

@@ -5,6 +5,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._common import send_misdetection, session_record_paths
 from agent_toolkit._hooks import hook_notice_response_gate as gate
 from agent_toolkit._hooks.user_prompt_submit_test import _run_subcommand
 
@@ -216,3 +217,43 @@ def test_warning_before_completion_notice_is_kept(tmp_path: pathlib.Path) -> Non
     }
     entries = [_HUMAN, _attachment(_WARN), _text("待つ。"), notification, _text("終えた。")]
     assert _evaluate(entries, tmp_path)[0] == "block"
+
+
+def test_misdetection_resolves_only_matching_delivery(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(session_record_paths, "stop_log_path", lambda sid: tmp_path / f"{sid}.log")
+    first, second = "1" * 32, "2" * 32
+    sid = "misdetection"
+
+    def warning(identifier):
+        return (
+            f'<atk-auto source="send-to-user" kind="warn" check="missing-disposition" delivery_id="{identifier}">\n'
+            f"警告 {identifier}\n</atk-auto>"
+        )
+
+    warnings = [warning(first), warning(second)]
+    send_misdetection.remember_warnings(sid, warnings)
+    args = {"check": "missing-disposition", "reason": "類型を説明しただけである。", "delivery_id": first}
+    claims, error = send_misdetection.parse([args])
+    assert error is None
+    assert send_misdetection.validate_displayed(sid, claims) is None
+    invalid, _ = send_misdetection.parse([{**args, "delivery_id": "3" * 32}])
+    assert send_misdetection.validate_displayed(sid, invalid) is not None
+    assert send_misdetection.resolved(sid) == set()
+    assert send_misdetection.record(sid, claims, None)
+    path = tmp_path / "transcript.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps(entry) for entry in [_HUMAN, *(_attachment(body, uuid=str(i)) for i, body in enumerate(warnings))]
+        ),
+        encoding="utf-8",
+    )
+    reason = gate.send_block({"session_id": sid, "transcript_path": str(path)}, sid, "AskUserQuestion", {})
+    assert reason is not None
+    assert second in reason
+    assert first not in reason
+    summary = send_misdetection.summary(sid)
+    assert "missing-disposition: 1件" in summary
+    assert first in summary
+    assert args["reason"] in summary

@@ -14,7 +14,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolRequestParams, CallToolResult
 
 from agent_toolkit._agents_server import mcp_tools, service_context
-from agent_toolkit._common import function_hook_requests, runtime_environment
+from agent_toolkit._common import function_hook_requests, runtime_environment, send_misdetection, session_record_paths
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -312,3 +312,48 @@ async def test_send_to_user_keeps_warnings_in_result_when_stash_fails(
         assert "guidance" not in response.structured_content
     else:
         assert warning in response.structured_content["guidance"]
+
+
+@pytest.mark.asyncio
+async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, tmp_path):
+    identifier = "a" * 32
+    request = AsyncMock(return_value={"ok": True, "id": identifier})
+    monkeypatch.setattr(function_hook_requests, "request", request)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "misdetection-mcp"))
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(session_record_paths, "stop_log_path", lambda sid: tmp_path / f"{sid}.log")
+    message = "引用の例を提示する。"
+
+    environment = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+    with runtime_environment.bind(runtime_environment.CallerContext(environment, tmp_path)):
+        send_misdetection.remember_rejection("misdetection-mcp", "missing-prevention", message, identifier)
+        with pytest.raises(ToolError, match="申告できる判定"):
+            await mcp_tools.mcp.call_tool(
+                "send_to_user",
+                {
+                    "message": message,
+                    "misdetection": [{"check": "authorization", "reason": "例"}],
+                },
+            )
+        request.assert_not_awaited()
+        result = await mcp_tools.mcp.call_tool(
+            "send_to_user",
+            {
+                "message": message,
+                "misdetection": [{"check": "missing-prevention", "reason": "説明用の引用である。"}],
+            },
+        )
+
+    assert isinstance(result, CallToolResult)
+    assert result.structured_content == {"ok": True, "id": identifier}
+    request.assert_awaited_once_with(
+        "misdetection-mcp",
+        "send_to_user",
+        {
+            "message": message,
+            "misdetection_checks": ["missing-prevention"],
+        },
+    )
+    summary = send_misdetection.summary("misdetection-mcp")
+    assert "missing-prevention: 1件" in summary
+    assert identifier in summary

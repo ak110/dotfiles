@@ -76,7 +76,7 @@ lazy import dataclasses
 lazy from agent_toolkit._atk.config_settings import APPLY_PRESET_SHOW, CONNECTION_ORDER_KEYS, MODEL_DEFAULTS
 lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
-lazy from agent_toolkit._common import delegated_session, send_to_user
+lazy from agent_toolkit._common import delegated_session, send_misdetection, send_to_user
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
 lazy from agent_toolkit._common.session_state import read_state
@@ -290,15 +290,24 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
     return [text for text in notices if text]
 
 
-def _send_understanding_block(message: object) -> str | None:
-    if isinstance(message, str) and user_facing_checks.has_original_text_label_in_understanding(message):
+def _send_understanding_block(message: object, retry: set[str] | None = None) -> str | None:
+    retry = retry or set()
+    if (
+        "understanding-original" not in retry
+        and isinstance(message, str)
+        and user_facing_checks.has_original_text_label_in_understanding(message)
+    ):
         return _block_notice(
-            "「発話の理解」に「原文」の見出しがある。",
+            "「発話の理解」に「原文」の見出しがある。" + send_misdetection.retry_hint("understanding-original"),
             fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送してください。",
         )
-    if isinstance(message, str) and user_facing_checks.missing_alternative(message):
+    if (
+        "understanding-alternative" not in retry
+        and isinstance(message, str)
+        and user_facing_checks.missing_alternative(message)
+    ):
         return _block_notice(
-            "「発話の理解」に「別案」の項目がない。",
+            "「発話の理解」に「別案」の項目がない。" + send_misdetection.retry_hint("understanding-alternative"),
             fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
         )
     return None
@@ -387,8 +396,20 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                     ),
                 )
             )
+    claims, error = send_misdetection.parse(tool_input.get("misdetection")) if is_send_to_user_tool(tool_name) else ([], None)
+    if error or (claims and (error := send_misdetection.validate_displayed(session_id, claims))):
+        return Decision(
+            block=_block_notice(error or "申告を確認できない。", fix="判定名・理由・送達識別子を確かめてください。")
+        )
+    retry = send_misdetection.retry_checks(claims) if claims else set()
+    if retry and retry - send_misdetection.rejection_sources(session_id, retry, tool_input.get("message")).keys():
+        return Decision(
+            block=_block_notice(
+                "同じ本文と判定の未送達記録を確認できない。", fix="未送達の通知と同じ本文・判定かを確かめてください。"
+            )
+        )
     if (is_send_to_user_tool(tool_name) or tool_name == "AskUserQuestion") and (
-        notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input)
+        notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
     ):
         return Decision(block=notice_block)
     if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
@@ -407,7 +428,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
 
         message = tool_input.get("message")
         kind = tool_input.get("kind")
-        reason = _send_understanding_block(message)
+        reason = _send_understanding_block(message, retry)
         edit_body = True
         if reason is None and session_id and send_to_user.is_completion(message, kind):
             if pending := outstanding_before_completion(session_id, _agent_id.resolve_hook_agent_id(payload)):
@@ -428,15 +449,28 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             edit_body = reason is None
         if reason is None:
             reason = bugfix_gate.send_block(payload, message, kind=kind, warnings=send_warnings) or (
-                norm_excuse_gate.text_block(payload, message, "ユーザーへの送達")
+                norm_excuse_gate.text_block(payload, message, "ユーザーへの送達", retry=retry)
             )
         if reason is not None:
+            if isinstance(message, str):
+                for check in send_misdetection.RETRY:
+                    if send_misdetection.retry_hint(check) in reason:
+                        send_misdetection.remember_rejection(session_id, check, message, payload.get("tool_use_id"))
             return _retry_send(payload, tool_name, tool_input, session_id, reason, edit_body=edit_body)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (
-            clock_claims.warning([message], payload) if is_send_to_user_tool(tool_name) and isinstance(message, str) else None
+            clock_claims.warning(
+                [message],
+                payload,
+                masked_hint=send_misdetection.retry_hint("clock-claim"),
+                skip_masked="clock-claim" in retry,
+            )
+            if is_send_to_user_tool(tool_name) and isinstance(message, str)
+            else None
         )
+        if timing and isinstance(message, str) and send_misdetection.retry_hint("clock-claim") in timing:
+            send_misdetection.remember_rejection(session_id, "clock-claim", message, payload.get("tool_use_id"))
         return Decision(allow=True, context=timing, notices=tuple(send_warnings))
     if tool_name == "Skill":
         return Decision()

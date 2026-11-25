@@ -23,6 +23,7 @@ import json
 import re
 
 from agent_toolkit._hooks import notice
+lazy from agent_toolkit._common import send_misdetection
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.prevention_kinds import KINDS_GUIDANCE, starts_with_kind
 lazy from agent_toolkit._common.session_state import update_state
@@ -90,10 +91,10 @@ def _consume_retry(payload: dict, text: str) -> bool:
     )
 
 
-def _block_body(phrase: str, delivery: str) -> str:
+def _block_body(phrase: str, delivery: str, hint: str = "") -> str:
     return _block_notice(
         f"本文が既存の規範を理由に対処を見送る言い回し「{phrase}」を含むため、{delivery}を止めた。"
-        "規範があっても起きた誤りは、その規範だけでは再発を防げない。",
+        "規範があっても起きた誤りは、その規範だけでは再発を防げない。" + hint,
         fix=(
             "`agent-basics:bugfix`の`references/prevention.md`「案を比べる順」に従い、誘因の除去・構造・検査のどれかを選んで"
             "処置し、本文を書き直してください。案内を確認し、本文を維持する場合は同じ主体から同じ本文を再発行してよい。"
@@ -101,10 +102,10 @@ def _block_body(phrase: str, delivery: str) -> str:
     )
 
 
-def _untyped_prevention_body(line: str, delivery: str) -> str:
+def _untyped_prevention_body(line: str, delivery: str, hint: str = "") -> str:
     return _block_notice(
         f"本文の再発防止の行「{line}」が対策の種類の語で始まらないため、{delivery}を止めた。"
-        "既存の規則があることや守れなかったことは、再発防止を見送る理由にならない。",
+        "既存の規則があることや守れなかったことは、再発防止を見送る理由にならない。" + hint,
         fix=(
             f"`agent-basics:bugfix`の`references/prevention.md`に従って策を決め、行の先頭に種類の語を置いてください。{KINDS_GUIDANCE}。"
             "行が再発防止の記録でないなら、同じ主体から同じ本文を再発行してよい。"
@@ -112,16 +113,23 @@ def _untyped_prevention_body(line: str, delivery: str) -> str:
     )
 
 
-def text_block(payload: dict, text: object, delivery: str) -> str | None:
+def text_block(payload: dict, text: object, delivery: str, *, retry: set[str] | None = None) -> str | None:
     if not isinstance(text, str):
         return None
-    phrase = find_excuse(text)
-    untyped = None if phrase is not None else find_untyped_prevention(text)
+    checks = retry or set()
+    phrase = None if "norm-excuse" in checks else find_excuse(text)
+    untyped = None if phrase is not None or "prevention-kind" in checks else find_untyped_prevention(text)
     if phrase is None and untyped is None:
         return None
-    if _consume_retry(payload, text):
+    if not checks and _consume_retry(payload, text):
         return None
-    return _block_body(phrase, delivery) if phrase is not None else _untyped_prevention_body(untyped or "", delivery)
+    if phrase is not None:
+        return _block_body(phrase, delivery, send_misdetection.retry_hint("norm-excuse") if retry is not None else "")
+    return _untyped_prevention_body(
+        untyped or "",
+        delivery,
+        send_misdetection.retry_hint("prevention-kind") if retry is not None else "",
+    )
 
 
 def _codex_turn_texts(lines: list[str]) -> list[str]:

@@ -26,7 +26,7 @@ lazy import hashlib
 lazy import re
 
 from agent_toolkit._hooks import notice
-lazy from agent_toolkit._common import session_state, transcript
+lazy from agent_toolkit._common import send_misdetection, session_state, transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._common.message_format import AUTO_ELEMENT_NAME_PATTERN
 lazy from agent_toolkit._hooks import stop_session as _stop_session
@@ -56,9 +56,11 @@ def _strings(value: object) -> list[str]:
     return []
 
 
-def _warnings(text: str) -> list[str]:
+def _warnings(text: str, resolved: set[tuple[str, str]] | None = None) -> list[str]:
     found = []
     for match in _warn_pattern().finditer(text):
+        if resolved and send_misdetection.warning_pair(match[0]) in resolved:
+            continue
         first = next((line.strip() for line in match["body"].splitlines() if line.strip()), "")
         summary = first if len(first) <= _SUMMARY_LENGTH else first[:_SUMMARY_LENGTH] + "…"
         found.append(f"{match['source']}: {summary}")
@@ -87,7 +89,7 @@ def _since_human_input(entries: list[dict]) -> list[dict]:
     return entries
 
 
-def _scan(turn: list[dict]) -> tuple[list[str], list[str], int, int]:
+def _scan(turn: list[dict], resolved: set[tuple[str, str]] | None = None) -> tuple[list[str], list[str], int, int]:
     """警告の一覧、警告の添付の識別子、最後の警告と最後の対応行の位置を返す。位置が無ければ-1とする。 pyfltr: allow-comment"""
     warnings: list[str] = []
     identities: list[str] = []
@@ -96,7 +98,7 @@ def _scan(turn: list[dict]) -> tuple[list[str], list[str], int, int]:
         attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
         if isinstance(attachment, dict) and attachment.get("type") in _HOOK_RECORD_TYPES:
             for text in _strings(attachment.get("content")):
-                if found := _warnings(text):
+                if found := _warnings(text, resolved):
                     warnings.extend(found)
                     identities.append(str(entry.get("uuid") or entry.get("timestamp") or attachment.get("toolUseID") or index))
                     last_warning = index
@@ -135,7 +137,8 @@ def _unanswered(payload: dict, session_id: str) -> list[str] | None:
     lines = transcript.read_transcript_lines(path)
     if not lines:
         return None
-    warnings, identities, last_warning, last_response = _scan(_since_human_input(_conversation_entries(lines)))
+    resolved = send_misdetection.resolved(session_id)
+    warnings, identities, last_warning, last_response = _scan(_since_human_input(_conversation_entries(lines)), resolved)
     if last_warning < 0 or last_response > last_warning:
         return None
     signature = hashlib.sha256(json.dumps([warnings, identities], ensure_ascii=False).encode("utf-8")).hexdigest()
@@ -173,14 +176,19 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     )
 
 
-def send_block(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> str | None:
+def send_block(
+    payload: dict, session_id: str, tool_name: str, tool_input: dict, *, claims: list[send_misdetection.Claim] | None = None
+) -> str | None:
     """未対応の警告が残るまま、ユーザーへ届く次の操作（報告の送達・質問）へ進む呼出しを一度止める。
 
     ターンの終わり（Stop）より前の、次にユーザーへ届く時点で処置させる。警告は作業の途中に届き、
     ターンの終わりの検査だけでは、警告を受けた操作から離れた時点でしか処置を促せなかった（2026年11月25日の分析）。
     `send_to_user`は本文に対応行があれば通す。
+    表示済み警告の有効な申告を運ぶ送達も通すが、その送達の成功までは処置を記録せず、未申告の警告は次の操作で扱う。
     質問は選択肢の形が決まっているため、エージェントが対応行を先に`send_to_user`で送る形にする。 pyfltr: allow-comment
     """
+    if any(item["delivery_id"] is not None for item in claims or []):
+        return None
     message = tool_input.get("message")
     if isinstance(message, str) and _has_response(message):
         return None

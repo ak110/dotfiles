@@ -315,3 +315,38 @@ for (const [label, stored, text] of [
     expect(rendered).not.toContain("送達時刻");
   });
 }
+
+test("未送達の本文に申告した判定だけを外して一度配置する", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  let id = "1".repeat(32);
+  const session = "misdetection";
+  const message = "期待: 一覧を表示する。\n原因: 引用である。\n処置: 引用はそのままにする。\n終了時刻の例は15:2x。";
+  let skipped: string[] = [];
+  const responses: { ok: boolean; warnings?: string[] }[] = [];
+  let placements = 0;
+  on("session.id", () => ({ value: session }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.exists", () => ({ value: true }));
+  on("fs.list", () => ({ value: [{ name: `ui-request-${session}-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false }] }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: {
+    message, tool_use_id: "call", misdetection_checks: skipped,
+  }, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => { if (e.path.includes("/ui-response-")) responses.push(JSON.parse(e.text)); return { value: undefined }; });
+  on("ui.place", () => { placements++; return { value: { isPlaced: true, requestId: "placed-row" } }; });
+  await $.turn.start({ text: "操作", turnId: "misdetection-turn" });
+  await clock.advance(100);
+  expect(responses[0]?.ok).toBe(false);
+  expect(placements).toBe(0);
+  id = "2".repeat(32);
+  skipped = ["missing-prevention"];
+  await clock.advance(100);
+  await clock.advance(100);
+  expect(responses[1]?.ok).toBe(true);
+  expect(placements).toBe(1);
+  expect(responses[1]?.warnings?.join("\n")).toContain('check="clock-claim"');
+  expect(responses[1]?.warnings?.join("\n")).not.toContain('check="missing-prevention"');
+  const rendered = JSON.stringify(await $.ui.render({ surface: "terminal", component: "Placed", requestId: "placed-row",
+    props: { plugin: "agent-toolkit", id } }));
+  expect(rendered).toContain(JSON.stringify(message));
+});

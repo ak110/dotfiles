@@ -71,7 +71,7 @@ from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.send_to_user import CLAUDE_TOOL_NAME
 lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
-lazy from agent_toolkit._common import sent_warnings
+lazy from agent_toolkit._common import send_misdetection, sent_warnings
 lazy from agent_toolkit._common.operation_approvals import request_display
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -128,6 +128,10 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
         return await function_hook_requests.request(identifier, operation, inputs)
     except function_hook_requests.HookRequestRejected as error:
         if operation == "send_to_user" and error.resend:
+            if isinstance(message := inputs.get("message"), str) and "`missing-prevention`" in str(error):
+                await run_file_operation(
+                    send_misdetection.remember_rejection, identifier, "missing-prevention", message, inputs.get("tool_use_id")
+                )
             next_action = await run_file_operation(
                 resend_guidance,
                 identifier,
@@ -782,22 +786,45 @@ async def show_session(
 async def send_to_user(
     message: Annotated[str, Field(description="画面へそのまま表示する日本語のMarkdown本文")],
     kind: Annotated[str | None, Field(description="最終の完了報告では completion。途中の報告では省略する")] = None,
+    misdetection: Annotated[
+        list[dict[str, str]] | None,
+        Field(description="誤検出のときだけcheckとreasonを指定する。表示済みの警告にはさらにdelivery_idを指定する。"),
+    ] = None,
 ) -> dict[str, Any]:
     """メイン専用。会話内modが表示を確認した場合だけ成功を返す。表示後の本文は再掲しない。"""
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
     tool_use_id = _TOOL_USE_ID.get()
-    if response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN:
+    claims, error = send_misdetection.parse(misdetection)
+    session_id = _manager().launcher_session_id() if claims else None
+    if error or (session_id and (error := send_misdetection.validate_displayed(session_id, claims))):
+        raise ValueError(error)
+    retry = send_misdetection.retry_checks(claims)
+    sources = await run_file_operation(send_misdetection.rejection_sources, session_id or "", retry, message) if retry else {}
+    if retry - sources.keys():
+        raise ValueError("同じ本文と判定の未送達記録を確認できない。")
+    if (
+        "response-language" not in retry
+        and response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN
+    ):
+        identifier = _manager().launcher_session_id()
+        if identifier:
+            await run_file_operation(
+                send_misdetection.remember_rejection, identifier, "response-language", message, tool_use_id
+            )
         action = await run_file_operation(
             resend_guidance,
-            _manager().launcher_session_id(),
+            identifier,
             message,
             tool_name=CLAUDE_TOOL_NAME,
             tool_use_id=tool_use_id,
             kind=kind,
         )
-        raise ActionableError("本文を日本語で書き直すまで画面へ表示していない。", next_action=action)
+        raise ActionableError(
+            "本文を日本語で書き直すまで画面へ表示していない。" + send_misdetection.retry_hint("response-language"),
+            next_action=action,
+        )
     try:
         guidance = ""
         if runtime_inserted.reported_improvement_lines(message):
@@ -829,9 +856,21 @@ async def send_to_user(
         inputs["kind"] = kind
     if tool_use_id:
         inputs["tool_use_id"] = tool_use_id
+    if retry:
+        inputs["misdetection_checks"] = sorted(retry)
     result = await _ui_request("send_to_user", inputs)
+    if (
+        claims
+        and session_id
+        and not await run_file_operation(
+            send_misdetection.record, session_id, claims, result.get("id") or tool_use_id, sources=sources
+        )
+    ):
+        guidance += "\n本文は表示済みだが、誤検出の申告は記録できなかった。本文は再掲しない。"
     relayed = result.pop("warnings", None)
     warnings = [text for text in [*(relayed if isinstance(relayed, list) else []), guidance] if isinstance(text, str) and text]
+    if warnings and (warning_session := _manager().launcher_session_id()):
+        await run_file_operation(send_misdetection.remember_warnings, warning_session, warnings)
     if (
         warnings
         and tool_use_id
@@ -842,7 +881,10 @@ async def send_to_user(
         # pyfltr: allow-comment -- PostToolUseのhookが同じ呼出しの添付として届ける。預けられなければ結果に残す。
         pass
     elif warnings:
-        result["guidance"] = "\n".join(warnings)
+        reason = result.get("reason")
+        unrelayed = [warning for warning in warnings if not isinstance(reason, str) or warning not in reason]
+        if unrelayed:
+            result["guidance"] = "\n".join(unrelayed)
     return result
 
 

@@ -208,3 +208,12 @@ for (const [message, rejects] of [
     expect(missingPreventionLine(message)).toBe(rejects);
   });
 }
+
+test("申告した判定だけを送達後の警告から外す", () => {
+  const message = "ミスが見つかった。ユーザーから指摘を受けた。";
+  const deliveryId = "1".repeat(32);
+  const warnings = reportWarnings(message, deliveryId, ["missing-prevention"]);
+  expect(warnings.some((warning) => warning.includes('check="missing-disposition"'))).toBe(true);
+  expect(warnings.some((warning) => warning.includes('check="missing-prevention"'))).toBe(false);
+  expect(warnings.every((warning) => warning.includes(`delivery_id="${deliveryId}"`))).toBe(true);
+});
