@@ -23,6 +23,7 @@ export function register(on: On): void {
   let busy = false;
   let initialized = false;
   let cleanupFailed = false;
+  let sendGuidanceDelivered = false;
   on("session.start", { cwd: /^/ }, async ($, e, next) => {
     const result = await next(e);
     const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
@@ -83,7 +84,7 @@ export function register(on: On): void {
           ok = placed.isPlaced;
           reason = placed.isPlaced ? "" : `${placed.reason}。報告は未送信です。必要な情報は通常の応答本文で伝えてください。`;
           if (ok) {
-            reason = [deliverySucceeded, ...reportWarnings(request.input.message)].join("\n");
+            reason = [sendGuidanceDelivered ? "送信済み。再送・再掲は不要。" : deliverySucceeded, ...reportWarnings(request.input.message)].join("\n");
           }
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
           else if (typeof request.input.tool_use_id === "string") {
@@ -164,6 +165,7 @@ export function register(on: On): void {
         if (request.expires * 1000 > Date.now() && await $.fs.exists(source)) {
           const response = responseBase.replace(/\.txt$/, `-${request.id}.txt`);
           await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, resend, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
+          if (request.operation === "send_to_user" && ok) sendGuidanceDelivered = true;
           if (request.detached) cleanupNeeded = true;
         } else if (request.operation === "periodic_recheck" && reason) {
           // hookが応答の待機を諦めた後の装着失敗は、失わないよう次のターンの入力として届ける。

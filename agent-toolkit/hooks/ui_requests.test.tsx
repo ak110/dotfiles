@@ -71,6 +71,29 @@ for (const placed of [true, false]) {
   });
 }
 
+test("MCP送信済みの詳しい案内は初回だけ返し、新しい警告は残す", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  let id = "d".repeat(32);
+  const responses: string[] = [];
+  on("fs.list", () => ({ value: [{ name: `ui-request-guide-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false }] }));
+  on("fs.exists", () => ({ value: true }));
+  on("session.id", () => ({ value: "guide" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message: "終了時刻は15:2xです。" }, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => { if (e.path.includes("/ui-response-")) responses.push(JSON.parse(e.text).reason); return { value: undefined }; });
+  on("ui.place", () => ({ value: { isPlaced: true, requestId: "placed-row" } }));
+  await $.turn.start({ text: "操作", turnId: "guide-turn" });
+  await clock.advance(100);
+  id = "e".repeat(32);
+  await clock.advance(100);
+  expect(responses.length).toBe(2);
+  expect(responses[0]).toContain("新しい報告はsend_to_userで送る");
+  expect(responses[1]).not.toContain("新しい報告はsend_to_userで送る");
+  expect(responses[1]).toContain("時刻の一部が伏せ字");
+  expect((responses[1] ?? "").length).toBeLessThan((responses[0] ?? "").length);
+});
+
 test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに差し戻す", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);
