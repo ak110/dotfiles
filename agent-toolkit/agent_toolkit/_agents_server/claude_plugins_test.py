@@ -609,9 +609,10 @@ async def test_external_inventory_variants_do_not_block_prepare(tmp_path: Path, 
         assert reloader._inventory()[0] == expected
         samples.append(extra)
 
+    variants: tuple[object, ...] = (None, "", "future", 0, [])
     for field in fields:
         check(field, False, None)
-        for variant in (None, "", "future", 0, []):
+        for variant in variants:
             check(field, True, variant)
 
     @given(
@@ -622,7 +623,7 @@ async def test_external_inventory_variants_do_not_block_prepare(tmp_path: Path, 
     def check_generated(field: str, value: Any) -> None:
         check(field, True, value)
 
-    check_generated()
+    check_generated()  # pylint: disable=no-value-for-parameter
     inventory.items = [toolkit, None, *samples]
     async with reloader:
         assert reloader._source == root
