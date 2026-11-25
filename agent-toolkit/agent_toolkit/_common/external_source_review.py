@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pathlib
 import re
-import unicodedata
 from collections.abc import Iterator
+lazy import unicodedata
 
-from markdown_it import MarkdownIt
+lazy from markdown_it import MarkdownIt
 
-from agent_toolkit._common.markdown_headings import without_literal_blocks
+lazy from agent_toolkit._common.markdown_headings import without_literal_blocks
 
 EXTERNAL_SOURCE_ENTRY_KEY = "external_source_entry"
 _SOURCE_URL = re.compile(r"https?://(?:[A-Za-z0-9._~*/:?#\[\]@!$&'()+,;=\-]|%[0-9A-Fa-f]{2})+")

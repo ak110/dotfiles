@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import re
-import urllib.parse
+lazy import urllib.parse
 
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as _git_command
