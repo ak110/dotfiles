@@ -285,6 +285,8 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
     temporary = usage_settings.temporary_settings()
     settings = {}
     for key, default in _config_settings.MUTABLE_KEY_DEFAULTS.items():
+        shared_key = shared_path is not None and key in _config_settings.SHARED_SETTING_KEYS
+        migration_pending = shared_key and key in saved
         env = _config_settings.config_env_name(key)
         env_source = (
             _config_migration.remote_hosts_environment()[1]
@@ -298,17 +300,20 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
         elif key in temporary:
             source = "一時指定"
         elif key in saved:
-            source = "保存値"
+            source = "移行前のローカル保存値" if migration_pending else "保存値"
         elif key in shared:
             source = "共有"
         else:
             source = "省略時の値"
+        description = _config_settings.setting_description(key)
+        if migration_pending:
+            description += "\n共有の保存値を使うには、このホストの端末で atk config show を実行してください。"
         settings[key] = {
             "effective": effective.pop(key),
-            "saved": saved.get(key, shared.get(key, default)),
+            "saved": shared.get(key, default) if shared_key else saved.get(key, default),
             "default": default,
             "source": source,
-            "description": _config_settings.setting_description(key),
+            "description": description,
             "format": _config_settings.setting_format(key),
             "choices": _config_settings.SETTING_CHOICES.get(key),
             "array": key in _config_settings.ARRAY_KEYS,

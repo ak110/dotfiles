@@ -10,6 +10,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config as config_module
+from agent_toolkit._atk import config_settings
 from agent_toolkit._atk.wi import sync
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import git_repository
@@ -123,6 +124,29 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
         assert "共有先へ移行できない" in capsys.readouterr().err
     assert git_repository.git_output(notes, "rev-list", "--count", "@{u}..HEAD") == "1"
     assert json.loads((notes / "atk-config.json").read_text(encoding="utf-8")) == {"review_model": original["review_model"]}
+
+
+def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_path, monkeypatch):
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="main", origin=str(remote), files={".gitkeep": ""}
+    )
+    git_repository.commit_all(notes, "initialize")
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    _write_config(tmp_path, {"codex_fast_mode": "false", "review_model": "claude:sonnet/medium"})
+
+    config_module.update_settings({"action": "set", "key": "codex_fast_mode", "value": "true"})
+    config_module.update_settings({"action": "preset", "preset": "codex-primary"})
+
+    settings = config_module.settings_snapshot(tmp_path)["settings"]
+    for key, effective in (("codex_fast_mode", "false"), ("review_model", "claude:sonnet/medium")):
+        assert settings[key]["effective"] == effective
+        assert settings[key]["source"] == "移行前のローカル保存値"
+        assert "atk config show" in settings[key]["description"]
+    assert settings["codex_fast_mode"]["saved"] == "true"
+    assert settings["review_model"]["saved"] == config_settings.PRESET_MODELS["codex-primary"]["review_model"]
+    assert _saved(tmp_path) == {"codex_fast_mode": "false", "review_model": "claude:sonnet/medium"}
 
 
 class TestCodexFastMode:
