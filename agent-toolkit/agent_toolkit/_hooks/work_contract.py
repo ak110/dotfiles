@@ -241,6 +241,7 @@ def _progress_record_lines(body: str) -> list[int]:
 
 def _has_progress_assertion(text: str, *, timed: bool) -> bool:
     # 達成すべき条件にも「検証を完了」と書くため、時刻のない体言止めでは判定しない。  pyfltr: allow-comment
+    text = re.sub(r'「[^」]*」|『[^』]*』|“[^”]*”|"[^"]*"|`[^`]*`', " ", text)
     phase = r"(?:検収|実装|検証|統合|レビュー|公開)(?:が|を|は)?"
     for sentence in re.split(r"[。！!]", text):
         if re.search(phase + r"(?:開始した|終了した|完了した|済み|終えた)\s*$", sentence):
