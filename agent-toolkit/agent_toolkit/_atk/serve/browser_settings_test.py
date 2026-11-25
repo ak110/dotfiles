@@ -42,11 +42,23 @@ async def test_settings_shows_supported_keys_and_saves_with_cli_validation(
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     await port.get_by_label("保存値").fill("54002")
     await port.get_by_role("button", name="保存").click()
-    await playwright.async_api.expect(page.get_by_text("設定を保存しました。", exact=True)).to_have_count(1)
+    expect = playwright.async_api.expect
+    warning = port.get_by_role("alert")
+    await expect(warning).to_be_visible()
+    await expect(warning).to_contain_text("serve_portの指定値は保存済み")
+    await expect(warning).to_contain_text("実効値は別の設定を優先している: AGENT_TOOLKIT_CONFIG_SERVE_PORT")
+    await expect(warning).to_contain_text(
+        "環境変数AGENT_TOOLKIT_CONFIG_SERVE_PORTを解除し、atk config get serve_portで確かめる"
+    )
+    await expect(page.get_by_text("設定を保存しました。", exact=True)).to_have_count(0)
     assert config_settings.load_config()["serve_port"] == "54002"
-    await playwright.async_api.expect(port).to_contain_text("実効値: 54001")
-    await playwright.async_api.expect(port.get_by_role("alert")).to_be_focused()
-    await playwright.async_api.expect(draft).to_have_value("codex:sol/high")
+    assert config.resolve_mutable_setting("serve_port") == "54001"
+    await expect(port).to_contain_text("実効値: 54001")
+    await expect(draft).to_have_value("codex:sol/high")
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_SERVE_PORT")
+    await page.reload()
+    await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
+    await expect(port).to_contain_text("実効値: 54002")
 
 
 @pytest.mark.asyncio(loop_scope="session")
