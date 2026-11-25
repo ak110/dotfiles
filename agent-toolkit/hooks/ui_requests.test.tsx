@@ -56,12 +56,12 @@ for (const placed of [true, false]) {
     expect(response.id).toBe(id);
     expect(response.ok).toBe(placed);
     if (placed) {
-      expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容を再送したり、通常の応答本文で再掲・送信確認・要約したりしてはいけません。");
+      expect(response.reason.split("\n")[0]).toBe("送信済み。再送・再掲・確認・要約は不要。新しい報告はsend_to_userで送る。新情報がなく本文が必須なら「…」。");
       expect(response.reason).toContain("新しい報告はsend_to_userで送る");
       const rendered = JSON.stringify(await $.ui.render({ surface: "terminal", component: "Placed", requestId: "placed-row", props: { plugin: "agent-toolkit", id } }));
       expect(rendered).toContain('"text":"表示する本文"');
       expect(rendered).not.toContain("送達時刻");
-      expect(response.reason).toContain("Claude Codeが可視の本文を求める場合の最小の応答は「…」");
+      expect(response.reason.length).toBeLessThan(70);
     } else {
       expect(response.reason).toContain("対応画面なし");
       expect(response.reason).toContain("未送信");
