@@ -260,7 +260,10 @@ def _contract_rows(texts: dict[str, str]) -> list[str]:
         items = headings.last_h2_section_items(text, "完成条件")
         for number, item in enumerate(items, start=1):
             rows.append(f"| {name} | {number} | 補足条件 | {_cell(item)} | 完成条件 {number} |")
+        excluded = review_contract.excluded_reflections(text)
         for number, item in enumerate(headings.last_h2_section_items(text, "反映内容と反映先"), start=1):
+            if number in excluded:
+                item = f"除外: 本文「採らないもの」により実施しない。{item}"
             rows.append(f"| {name} | {len(items) + number} | 主要完成状態 | {_cell(item)} | {name} 反映内容{number} |")
         if "反映内容と反映先" not in sections:
             rows.append(f"| {name} | {len(items) + 1} | 主要完成状態 | {_cell(_opening(text))} | H1と冒頭 |")
@@ -587,7 +590,12 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
             contract_text = "\n".join([*header, *rows, ""])
             repair = "scripts/review_eval.pyの条件表生成と評価セットの保存WI原本を直して再準備する"
         try:
-            review_contract.validate(contract_text, _requirements(texts), originals=texts)
+            review_contract.validate(
+                contract_text,
+                _requirements(texts),
+                originals=texts,
+                original_paths={name: pathlib.Path(path) for name, path in originals.items()},
+            )
         except ValueError as error:
             raise ActionableError(f"条件表が不完全: {case.id}: {error}", next_action=repair) from error
         if deliver:

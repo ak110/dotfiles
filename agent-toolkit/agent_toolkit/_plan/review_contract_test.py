@@ -1,3 +1,5 @@
+import pathlib
+
 import pytest
 
 from agent_toolkit._plan import review_contract
@@ -38,3 +40,32 @@ def test_background_cannot_create_an_implementation_obligation() -> None:
     table = _TABLE + f"| {_SECOND} | 3 | 主要完成状態 | 比較候補を実装する。 | 調査結果と判断根拠の比較候補 |\n"
     with pytest.raises(ValueError, match="実装義務の出典"):
         review_contract.validate(table, _REQUIRED, originals=_ORIGINALS)
+
+
+def test_explicit_non_adoption_is_not_a_major_requirement() -> None:
+    original = {
+        **_ORIGINALS,
+        _SECOND: _ORIGINALS[_SECOND] + "\n## 反映内容と反映先\n\n1. 変更する。\n\n採らないもの:\n\n- 新しい基盤を作る。\n",
+    }
+    required = {**_REQUIRED, _SECOND: (1, 2)}
+    table = _TABLE + f"| {_SECOND} | 3 | 主要完成状態 | 新しい基盤を作る。 | 反映内容2 |\n"
+    with pytest.raises(ValueError, match="実装義務の出典"):
+        review_contract.validate(table, required, originals=original)
+    review_contract.validate(table.replace("新しい基盤を作る。", "対象外: 新しい基盤は不要"), required, originals=original)
+
+
+def test_numbered_reference_must_name_the_registered_original_and_item(tmp_path: pathlib.Path) -> None:
+    source = tmp_path / _SECOND
+    paths = {_SECOND: source}
+    table = _TABLE.replace("比較する。", f"参照: `{source}#完成条件1`")
+    review_contract.validate(table, _REQUIRED, originals=_ORIGINALS, original_paths=paths)
+    review_contract.validate(
+        table.replace(f"参照: `{source}#完成条件1`", f"{source}「完成条件」項目1"),
+        _REQUIRED,
+        originals=_ORIGINALS,
+        original_paths=paths,
+    )
+    with pytest.raises(ValueError, match="原本の全文と一致しない"):
+        review_contract.validate(
+            table.replace("#完成条件1", "#完成条件2"), _REQUIRED, originals=_ORIGINALS, original_paths=paths
+        )

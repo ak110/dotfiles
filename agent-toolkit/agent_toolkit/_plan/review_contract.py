@@ -9,7 +9,7 @@ from collections.abc import Mapping, Set
 
 from markdown_it import MarkdownIt
 
-from agent_toolkit._common.markdown_headings import last_h2_section_items
+from agent_toolkit._common.markdown_headings import last_h2_section_items, last_h2_section_lines
 
 
 def required_counts(
@@ -20,7 +20,7 @@ def required_counts(
     return supplements, reflections
 
 
-def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, str]:
+def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, tuple[pathlib.Path, str]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -33,7 +33,8 @@ def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, str]:
         missing = sorted(names - data.keys())
         if missing:
             raise ValueError(f"保存本文の指定が無い: {', '.join(missing)}")
-        return {name: pathlib.Path(data[name]).read_text(encoding="utf-8") for name in sorted(names)}
+        paths = {name: pathlib.Path(data[name]) for name in sorted(names)}
+        return {name: (original, original.read_text(encoding="utf-8")) for name, original in paths.items()}
     except (OSError, ValueError) as error:
         raise ValueError(f"評価用WI原本を読み込めない: {path}: {error}。一覧と保存本文を直して再準備する") from error
 
@@ -47,7 +48,33 @@ def _numbered_conditions(original: str) -> dict[str, str]:
     return conditions
 
 
-def validate(text: str, required: Mapping[str, tuple[int, int]], *, originals: Mapping[str, str] | None = None) -> None:
+def excluded_reflections(original: str) -> set[int]:
+    section = "\n".join(last_h2_section_lines(original, "反映内容と反映先") or [])
+    match = re.search(r"(?m)^採らないもの[:：]\s*$", section)
+    if match is None:
+        return set()
+    remaining = section[match.end() :]
+    return {index for index, item in enumerate(last_h2_section_items(original, "反映内容と反映先"), 1) if item in remaining}
+
+
+def _condition_reference(content: str, original_path: pathlib.Path | None, number: str) -> bool:
+    if original_path is None:
+        return False
+    text = re.sub(r"^参照[:：]\s*", "", content).replace("`", "")
+    return text == f"{original_path}「完成条件」項目{number}" or any(
+        text == f"{original_path}{separator}完成条件{space}{number}{closing}"
+        for separator, closing in (("#", ""), ("「", "」"))
+        for space in ("", " ")
+    )
+
+
+def validate(
+    text: str,
+    required: Mapping[str, tuple[int, int]],
+    *,
+    originals: Mapping[str, str] | None = None,
+    original_paths: Mapping[str, pathlib.Path] | None = None,
+) -> None:
     tokens = MarkdownIt("commonmark").enable("table").parse(text)
     rows: list[list[str]] = []
     row: list[str] | None = None
@@ -80,11 +107,18 @@ def validate(text: str, required: Mapping[str, tuple[int, int]], *, originals: M
             errors.append(f"{name}: 条件番号が不正または重複")
         original = (originals or {}).get(name, "")
         numbered = _numbered_conditions(original)
+        excluded = excluded_reflections(original)
         for row in own:
+            reflections = {int(number) for number in re.findall(r"反映内容([1-9][0-9]*)", row[4])}
             if (
                 row[2] == "主要完成状態"
-                and re.search(r"背景|比較候補|調査結果と判断根拠|不実施", row[4])
-                and not re.search(r"反映内容[1-9][0-9]*|完成条件|目的|原因分析", row[4])
+                and (
+                    (reflections and reflections <= excluded)
+                    or (
+                        re.search(r"背景|比較候補|調査結果と判断根拠|不実施", row[4])
+                        and not re.search(r"反映内容[1-9][0-9]*|完成条件|目的|原因分析", row[4])
+                    )
+                )
                 and not re.search(r"除外|不採用|実施しない|対象外", row[3])
             ):
                 errors.append(f"{name}: 条件 {row[1]} は背景・比較候補・不実施の説明だけを実装義務の出典にしている")
@@ -97,7 +131,9 @@ def validate(text: str, required: Mapping[str, tuple[int, int]], *, originals: M
                 continue
             content = " ".join(re.sub(r"<br\s*/?>", " ", row[3], flags=re.IGNORECASE).split())
             expected = numbered[number]
-            if content not in {expected, f"{number}. {expected}", f"{number}) {expected}"}:
+            if content not in {expected, f"{number}. {expected}", f"{number}) {expected}"} and not _condition_reference(
+                content, (original_paths or {}).get(name), number
+            ):
                 errors.append(f"{name}: 補足条件 {number} が原本の全文と一致しない")
         for number in numbered.keys() - {row[1] for row in own if row[2] == "補足条件"}:
             errors.append(f"{name}: 原本の補足条件 {number} が表にない")
