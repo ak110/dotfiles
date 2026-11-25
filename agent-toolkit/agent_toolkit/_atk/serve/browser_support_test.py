@@ -101,8 +101,8 @@ async def _wait_screen_requests_consumed(page: playwright.async_api.Page, stream
 
 
 class _BrowserMutation(wi_sync.Mutation):
-    def commit(self, message: str, rel_paths: Iterable[str]) -> int | None:
-        del message, rel_paths
+    def commit(self, message: str, rel_paths: Iterable[str], *, exclusive_claim: bool = False) -> int | None:
+        del message, rel_paths, exclusive_claim
         return 0
 
 

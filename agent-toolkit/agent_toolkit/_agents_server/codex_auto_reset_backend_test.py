@@ -155,6 +155,8 @@ class _MemoryAppServer(codex.JsonRpcProcess):
 async def _environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, permitted: bool = True, policy: str | None = None
 ) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
+    # リセット由来のaccount/readだけを観測し、速度判定のaccount/readは対象にしない。  # pyfltr: allow-comment
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([_PERMISSION] if permitted else []))
     if policy is None:
         monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", raising=False)

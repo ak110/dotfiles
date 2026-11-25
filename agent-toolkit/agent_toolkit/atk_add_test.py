@@ -178,13 +178,10 @@ class TestAddSingleMessage:
         remote_url_cmd = ["git", "-C", str(myrepo), "remote", "get-url", "origin"]
         assert remote_url_cmd in git_cmds
         saved_commands = [cmd for cmd in git_cmds if cmd[1] in {"fetch", "merge", "add", "commit", "push"}]
-        assert saved_commands[:4] == [
-            ["git", "fetch"],
-            ["git", "merge", "--ff-only", "@{u}"],
+        assert saved_commands == [
             ["git", "add", "--all", "--", f"2024/01/{files[0].name}"],
             ["git", "commit", "-m", "chore: add 1 awi item", "--", f"2024/01/{files[0].name}"],
         ]
-        assert ["git", "push"] in saved_commands[4:]
         for call in git_calls:
             if call["cmd"][:2] != ["git", "-C"]:
                 assert call["kwargs"].get("cwd") == notes
@@ -238,7 +235,7 @@ class TestMqLifecycleScenario:
         git_cmds = [call["cmd"] for call in git_calls]
         assert any(cmd[:2] == ["git", "add"] for cmd in git_cmds)
         assert any(cmd[:2] == ["git", "commit"] for cmd in git_cmds)
-        assert ["git", "push"] in git_cmds
+        assert ["git", "push"] not in git_cmds
 
 
 class TestAddCompletionNoQueueOverview:
