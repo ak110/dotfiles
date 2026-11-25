@@ -39,7 +39,11 @@ function button(text, action) {
 }
 
 const FAST_MODE_LABELS = {auto: "自動判定（auto）", true: "高速（true）", false: "通常（false）"};
-const SHARED_SCOPE = "保存先: 同じprivate-notesを使うホストで共有されます。このホストだけ変えるには一時指定を使ってください。";
+function sharedScope(syncs) {
+  return syncs
+    ? "保存先: 同じprivate-notesを使うホストで共有されます。このホストだけ変えるには一時指定を使ってください。"
+    : "保存先: このホストのprivate-notes。同期先が未設定のため、他のホストには反映されません。";
+}
 
 function field(parent, label, value = "", choices, type = "text", labels = {}) {
   const wrapper = element("div");
@@ -161,7 +165,7 @@ function keyEditor(parent, key, item, listen) {
     parent.append(block);
     return;
   }
-  if (item.shared) block.append(element("p", SHARED_SCOPE));
+  if (item.shared) block.append(element("p", sharedScope(item.shared_sync)));
   if (key === "codex_fast_mode") {
     block.append(element("p", "実効値は採用中の設定です。自動判定で実際に使う速度は接続先と提供期間で決まります。"));
   }
@@ -330,7 +334,8 @@ function render(data) {
     item.dataset.editor = `preset:${preset}`;
     item.append(element("summary", preset));
     if (Object.keys(values).some(name => !data.settings[name] || data.settings[name].read_only)) continue;
-    if (Object.keys(values).some(name => data.settings[name].shared)) item.append(element("p", SHARED_SCOPE));
+    const sharedSetting = Object.keys(values).find(name => data.settings[name].shared);
+    if (sharedSetting) item.append(element("p", sharedScope(data.settings[sharedSetting].shared_sync)));
     for (const [name, presetValue] of Object.entries(values)) {
       item.append(element("p", `${name}: 現在 ${data.settings[name].effective} → 保存 ${presetValue}`));
     }

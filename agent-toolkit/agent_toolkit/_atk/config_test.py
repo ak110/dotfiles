@@ -126,13 +126,15 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
     assert json.loads((notes / "atk-config.json").read_text(encoding="utf-8")) == {"review_model": original["review_model"]}
 
 
-def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_path, monkeypatch):
+@pytest.mark.parametrize("upstream", [True, False])
+def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_path, monkeypatch, upstream):
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     notes = git_repository.init_repository(
         tmp_path / "notes", initial_branch="main", origin=str(remote), files={".gitkeep": ""}
     )
     git_repository.commit_all(notes, "initialize")
-    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    if upstream:
+        git_repository.run_git(notes, "push", "-u", "origin", "main")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     _write_config(tmp_path, {"codex_fast_mode": "false", "review_model": "claude:sonnet/medium"})
 
@@ -143,7 +145,10 @@ def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_
     for key, effective in (("codex_fast_mode", "false"), ("review_model", "claude:sonnet/medium")):
         assert settings[key]["effective"] == effective
         assert settings[key]["source"] == "移行前のローカル保存値"
+        assert settings[key]["shared"] is True
+        assert settings[key]["shared_sync"] is upstream
         assert "atk config show" in settings[key]["description"]
+        assert ("同期先を設定するまで" in settings[key]["description"]) is not upstream
     assert settings["codex_fast_mode"]["saved"] == "true"
     assert settings["review_model"]["saved"] == config_settings.PRESET_MODELS["codex-primary"]["review_model"]
     assert _saved(tmp_path) == {"codex_fast_mode": "false", "review_model": "claude:sonnet/medium"}

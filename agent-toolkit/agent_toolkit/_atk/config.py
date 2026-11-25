@@ -263,6 +263,7 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
     saved = _config_settings.load_config()
     shared_path = _config_settings.shared_settings_path()
     shared = _config_settings.load_shared_settings(shared_path) if shared_path is not None else {}
+    shared_sync = shared_path is not None and git_sync.has_remote(shared_path.parent)
     temporary = usage_settings.temporary_settings()
     settings = {}
     for key, default in _config_settings.MUTABLE_KEY_DEFAULTS.items():
@@ -288,13 +289,18 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
             source = "省略時の値"
         description = _config_settings.setting_description(key)
         if migration_pending:
-            description += "\n共有の保存値を使うには、このホストの端末で atk config show を実行してください。"
+            if shared_sync:
+                description += "\n共有の保存値を使うには、このホストの端末で atk config show を実行してください。"
+            else:
+                description += "\nprivate-notesの同期先を設定するまで、このホストの旧設定は移行されません。"
+                description += "同期先の設定後、端末で atk config show を実行してください。"
         settings[key] = {
             "effective": effective.pop(key),
             "saved": shared.get(key, default) if shared_key else saved.get(key, default),
             "default": default,
             "source": source,
             "shared": shared_key,
+            "shared_sync": shared_key and shared_sync,
             "description": description,
             "format": _config_settings.setting_format(key),
             "choices": _config_settings.SETTING_CHOICES.get(key),
