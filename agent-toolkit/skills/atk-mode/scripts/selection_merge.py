@@ -37,7 +37,8 @@ def _rows(data: dict[str, object], *, costs: bool = False) -> _Rows:
 
 def _pin_integrated_items(items: _Rows, integrated: set[str]) -> None:
     for item in items:
-        if item.get(_selection.LANE_KEY, item.get("lane")) in integrated:
+        lane = item.get(_selection.LANE_KEY, item.get("lane"))
+        if lane in integrated and _selection.lane_owns(item, lane):
             item.setdefault(_selection.INTEGRATION_STATE_KEY, _selection.INTEGRATED)
 
 
@@ -222,6 +223,7 @@ def reopen_wis(existing: dict[str, object], names: list[str], *, new_plan: bool 
     freeze_overlap_pairs(result)
     _pin_integrated_items(items, _selection.integrated_lanes(existing))
     for name in names:
+        by_wi[name].pop(_selection.OBSERVATION_OWNER_KEY, None)
         by_wi[name][_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         if new_plan:
             by_wi[name]["再開位置"] = "なし"

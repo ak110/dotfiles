@@ -91,7 +91,7 @@ def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -
         if not handoff.is_absolute() or not handoff.is_file():
             raise ValueError("計画なしでは既存の引き継ぎ記録をhandoffへ絶対パスで指定する")
     expected = set(_lane_records.selection_state(record)["lane_wis"])
-    if expected and expected != {row["name"] for row in manifest["wis"]}:
+    if expected != {row["name"] for row in manifest["wis"]}:
         raise ValueError("manifestのWI集合が選定の今回のレーン集合と一致しない")
     if "processed_wis" in manifest:
         processed = manifest["processed_wis"]

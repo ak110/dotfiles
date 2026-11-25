@@ -35,6 +35,7 @@ _DECISION_KEYS = frozenset(
         _selection.EXCLUDED_PATHS_KEY,
         _selection.DERIVED_NEW_PATHS_KEY,
         _selection.INTEGRATION_STATE_KEY,
+        _selection.OBSERVATION_OWNER_KEY,
         _selection.TRANSFERRED_FROM_KEY,
         _UPSTREAM_TARGETS_KEY,
         *_DECISION_STRING_KEYS,
@@ -377,6 +378,12 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
         state = item.get(_selection.INTEGRATION_STATE_KEY, _selection.NOT_INTEGRATED)
         if state not in (_selection.NOT_INTEGRATED, _selection.INTEGRATED):
             errors.append(f"{label}: 統合状態は未統合か統合済みを指定する: {state!r}")
+        if _selection.OBSERVATION_OWNER_KEY in item and (
+            item[_selection.OBSERVATION_OWNER_KEY] != _selection.OBSERVATION_OWNER_MAIN
+            or item.get(_selection.LANE_KEY) == _LANE_NONE
+            or state == _selection.INTEGRATED
+        ):
+            errors.append(f"{label}: 公開後の観測担当は、統合済みでないレーン所属項目に統括を指定する")
         if _STALENESS_KEY in item and not isinstance(item[_STALENESS_KEY], dict):
             errors.append(f"{label}: `{_STALENESS_KEY}`が写像ではない: {item[_STALENESS_KEY]!r}")
         errors.extend(
@@ -500,7 +507,9 @@ def unfinished_assignment(selection: dict[str, object]) -> dict[str, str]:
     return {
         item[_selection.WI_KEY]: item[_selection.LANE_KEY]
         for item in typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
-        if item.get(_selection.INTEGRATION_STATE_KEY) != _selection.INTEGRATED and item[_selection.LANE_KEY] not in integrated
+        if _selection.lane_owns(item, item[_selection.LANE_KEY])
+        and item.get(_selection.INTEGRATION_STATE_KEY) != _selection.INTEGRATED
+        and item[_selection.LANE_KEY] not in integrated
     }
 
 
