@@ -9,8 +9,8 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import claude_connection, codex_connection, config_settings
 from agent_toolkit._atk import config as config_module
-from agent_toolkit._atk import config_settings
 from agent_toolkit._atk.wi import sync
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import git_repository
@@ -54,9 +54,27 @@ def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_pat
     if not losing_migration:
         assert _main(tmp_path, "config", "get", "review_model") == 0
         assert capsys.readouterr().out == model + "\n"
+        override = "claude:sonnet/medium"
+        assert _main(tmp_path, "config", "temporary", "set", "review_model", override) == 0
+        capsys.readouterr()
+        assert _main(tmp_path, "config", "get", "review_model") == 0
+        assert capsys.readouterr().out == override + "\n"
+        with monkeypatch.context() as other_host:
+            other_host.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(first))
+            other_host.setattr(
+                config_module.platformdirs, "user_state_dir", lambda *_args, **_kw: str(tmp_path / "first-state")
+            )
+            assert _main(tmp_path, "config", "get", "review_model") == 0
+            assert capsys.readouterr().out == model + "\n"
+        assert _main(tmp_path, "config", "temporary", "clear") == 0
+        capsys.readouterr()
     _write_config(tmp_path, {"review_model": "claude:sonnet/medium", "codex_fast_mode": "true"})
     assert _main(tmp_path, "config", "get", "review_model") == 0
     assert capsys.readouterr().out == "claude:sonnet/medium\n"
+    assert _main(tmp_path, "config", "snapshot") == 0
+    snapshot = json.loads(capsys.readouterr().out)
+    assert snapshot["settings"]["review_model"]["effective"] == "claude:sonnet/medium"
+    assert _saved(tmp_path) == {"review_model": "claude:sonnet/medium", "codex_fast_mode": "true"}
     monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
     monkeypatch.setattr(config_module, "_auto_fast_report", lambda: "Codex自動速度: 通常（テスト）")
     assert _main(tmp_path, "config", "show") == 0
@@ -173,6 +191,28 @@ def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_
     assert settings["codex_fast_mode"]["saved"] == "true"
     assert settings["review_model"]["saved"] == config_settings.PRESET_MODELS["codex-primary"]["review_model"]
     assert _saved(tmp_path) == {"codex_fast_mode": "false", "review_model": "claude:sonnet/medium"}
+
+
+def test_shared_connection_order_selects_both_engines_without_local_copy(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "notes"))
+    notes = git_repository.init_repository(tmp_path / "notes", files={".gitkeep": ""})
+    git_repository.commit_all(notes, "initialize")
+    monkeypatch.setattr(claude_connection, "subscription_available", lambda *_args, **_kwargs: True)
+    assert not claude_connection.managed()
+    assert not codex_connection.managed()
+    for key in ("claude_worker_connections", "codex_worker_connections"):
+        config_module.update_settings({"action": "set", "key": key, "value": "subscription"})
+    assert claude_connection.managed()
+    assert codex_connection.managed()
+    assert claude_connection.candidates("delegate", cli=True).require_first().kind == "subscription"
+    assert codex_connection.provider_entries("delegate") == (("subscription", "openai"),)
+    assert not _config_file(tmp_path).exists()
+    assert _main(tmp_path, "config", "apply-preset", "claude-primary") == 0
+    config_module.update_settings({"action": "set", "key": "serve_port", "value": "45401"})
+    shared = json.loads((notes / "atk-config.json").read_text(encoding="utf-8"))
+    assert shared["review_model"] == config_settings.PRESET_MODELS["claude-primary"]["review_model"]
+    assert "serve_port" not in shared
+    assert _saved(tmp_path) == {"serve_port": "45401"}
 
 
 class TestCodexFastMode:

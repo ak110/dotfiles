@@ -22,13 +22,14 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 import pytest
 from pytilpack import modelcheck
 
 from agent_toolkit._atk import git_sync
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import sync as wi_sync
 from agent_toolkit._git import command as git_command
 from agent_toolkit._testing import git_repository
@@ -57,6 +58,7 @@ class _Update:
     actor: str
     clone: str
     entry: int
+    local_only: bool = False
     via_atk: bool = True
     """偽なら`atk`を使わない別ホストのcommit（取得・commit・pushを1手順で行う）。"""
 
@@ -75,6 +77,7 @@ class _Scenario:
     name: str
     updates: tuple[_Update, ...]
     conflict: bool
+    worker_clone: str | None = None
     """真なら2つの主体が同じ項目を別の内容へ更新する（性質2）。偽なら全て別の項目（性質1）。"""
 
 
@@ -104,6 +107,22 @@ _CONFLICT_WITH_SHARED_CLONE = _Scenario(
 )
 
 
+_WORKER_EXTERNAL = _Scenario(
+    "worker-external",
+    "同じcloneのCLIと裏の同期、別cloneの外部更新",
+    (_Update("A", "x", 1, local_only=True), _Update("C", "z", 2, via_atk=False)),
+    conflict=False,
+    worker_clone="x",
+)
+_WORKER_CONFLICT = _Scenario(
+    "worker-conflict",
+    "同じ項目を別のcloneで更新し、片方は裏の同期で送信する",
+    (_Update("A", "x", 1, local_only=True), _Update("B", "y", 1)),
+    conflict=True,
+    worker_clone="x",
+)
+
+
 @dataclasses.dataclass(frozen=True)
 class _Op:
     resource: tuple[str, str]
@@ -127,7 +146,10 @@ def _subcommand(args: list[str]) -> str:
 
 
 def _git_op(args: list[str], cwd: object) -> _Op | None:
-    if args[:1] == ["rev-parse"] and any(word in ("--git-common-dir", "--git-path") for word in args):
+    if args[:1] == ["rev-parse"] and (
+        any(word in ("--git-common-dir", "--git-path") for word in args)
+        or args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+    ):
         return None
     subcommand = _subcommand(args)
     label = "git " + " ".join(args)
@@ -235,6 +257,7 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("GIT_AUTHOR_DATE", "2026-11-19T00:00:00+00:00")
     monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-11-19T00:00:00+00:00")
+    monkeypatch.setattr(background_sync, "_files", lambda notes: (notes.parent / "worker.lock", notes.parent / "worker.json"))
     monkeypatch.setattr(git_command, "_launch", launch)
     monkeypatch.setattr(git_sync._RepoLock, "acquire", acquire)  # pylint: disable=protected-access
     monkeypatch.setattr(git_sync._RepoLock, "release", release)  # pylint: disable=protected-access
@@ -280,10 +303,13 @@ def _remote_commit(repositories: _Repositories, run: _Run, update: _Update) -> s
 def _atk_update(repositories: _Repositories, run: _Run, update: _Update) -> str:
     """WIの状態遷移（`transitions.py`）と同じ排他区間で、1つの項目を書き換えてcommitとpushを行う。"""
     clone = repositories.path(update.clone)
-    with wi_sync.DEFAULT_STORAGE.mutation(clone, push_pending=True) as mutation:
+    with wi_sync.local_save(update.local_only), wi_sync.DEFAULT_STORAGE.mutation(clone, push_pending=True) as mutation:
         run.before(_Op(("clone", str(clone.resolve())), True, f"{update.path}の書き換え"))
         (clone / update.path).write_text(update.content, encoding="utf-8")
         mutation.commit(f"chore: update by {update.actor}", [update.path])
+    # ローカル保存の成功を遠隔への到達と区別する。到達を条件にすると非同期化の契約に反する。  # pyfltr: allow-comment
+    if update.local_only:
+        return "local"
     return "deferred" if git_sync.push_was_deferred(clone) else "ok"
 
 
@@ -291,6 +317,8 @@ def _shared_resources(repositories: _Repositories, scenario: _Scenario) -> froze
     users: dict[str, int] = {}
     for update in scenario.updates:
         users[update.clone] = users.get(update.clone, 0) + 1
+    if scenario.worker_clone is not None:
+        users[scenario.worker_clone] += 1
     clones = {("clone", str(repositories.path(clone).resolve())) for clone, count in users.items() if count > 1}
     return frozenset({_REMOTE, *clones})
 
@@ -362,7 +390,7 @@ def _judge(repositories: _Repositories, scenario: _Scenario, run: _Run) -> _Verd
         if outcome is None:
             verdict.violate("終了", f"{update.actor}が終わらなかった")
         elif update.actor not in accepted:
-            if outcome in ("ok", "deferred"):
+            if outcome in ("ok", "deferred", "local"):
                 verdict.violate("成功は受理を伴う", f"{update.actor}は{outcome}で終わったがcommitしていない")
             if (repositories.path(update.clone) / update.path).read_text(encoding="utf-8") == update.content:
                 verdict.violate(
@@ -393,14 +421,14 @@ def _judge(repositories: _Repositories, scenario: _Scenario, run: _Run) -> _Verd
     for clone in sorted(rebasing):
         if not any(
             update.clone == clone and verdict.outcomes.get(update.actor) == "CalledProcessError" for update in scenario.updates
-        ):
+        ) and not (clone == scenario.worker_clone and verdict.outcomes.get("W") == "recovery-required"):
             verdict.violate("rebaseの停止は報告される", f"{clone}がrebaseの途中だが、失敗を返した主体が無い")
     if not scenario.conflict:
         refused = sorted(update.actor for update in scenario.updates if update.actor not in accepted)
         unpushed = sorted(
             update.actor
             for update in scenario.updates
-            if update.actor in accepted and _blob_id(update.content) not in remote_blobs
+            if update.actor in accepted and not update.local_only and _blob_id(update.content) not in remote_blobs
         )
         if refused or unpushed or rebasing:
             verdict.violate(
@@ -465,8 +493,12 @@ def _follow_up(repositories: _Repositories, scenario: _Scenario, unsynced: set[s
     """
     for clone in sorted(unsynced):
         path = repositories.path(clone)
+        if clone == scenario.worker_clone and not git_sync.is_rebase_in_progress(path):
+            reached = background_sync.run(path)
+            if not reached and not (scenario.conflict and git_sync.is_rebase_in_progress(path)):
+                verdict.violate("後続の同期", f"{clone}の裏の同期が共有先へ到達しなかった")
         with wi_sync.repo_lock(path):
-            if not git_sync.is_rebase_in_progress(path):
+            if clone != scenario.worker_clone and not git_sync.is_rebase_in_progress(path):
                 try:
                     wi_sync.push_pending_commits(path)
                     wi_sync.pull(path)
@@ -520,6 +552,14 @@ def _schedules(repositories: _Repositories, scenario: _Scenario) -> Iterator[_Ru
         _ACTOR.name = update.actor
         return (_atk_update if update.via_atk else _remote_commit)(repositories, run, update)
 
+    def worker() -> str:
+        _ACTOR.name = "W"
+        assert scenario.worker_clone is not None
+        notes = repositories.path(scenario.worker_clone)
+        if background_sync.run(notes):
+            return "synced"
+        return str(background_sync.read_status(notes).get("state") or "unknown")
+
     def as_op(step: modelcheck.Step) -> _Op:
         if step.kind == "acquire":
             resource, _ = cast("tuple[tuple[str, str], str]", step.resource)
@@ -527,13 +567,23 @@ def _schedules(repositories: _Repositories, scenario: _Scenario) -> Iterator[_Ru
             resource = cast("tuple[str, str]", step.resource)
         return _Op(resource, step.effective_write, step.label or "")
 
+    actors: dict[str, Callable[[], str]] = {update.actor: functools.partial(actor, update) for update in scenario.updates}
+    if scenario.worker_clone is not None:
+        actors["W"] = worker
     explorer = modelcheck.ThreadExplorer(
-        {update.actor: functools.partial(actor, update) for update in scenario.updates},
+        actors,
         setup,
         step_timeout=_STEP_TIMEOUT_SECONDS,
         count_equivalent=True,
         backtrack_by="planned",
-        independent=lambda a, b: _independent(as_op(a), as_op(b)),
+        independent=lambda a, b: (
+            _independent(as_op(a), as_op(b))
+            and not (
+                scenario.worker_clone is not None
+                and a.actor != b.actor
+                and ((as_op(a).resource == _REMOTE) != (as_op(b).resource == _REMOTE))
+            )
+        ),
     )
     results = iter(explorer)
     while True:
@@ -597,7 +647,7 @@ def _summary(exploration: _Exploration) -> str:
     return "\n".join(lines)
 
 
-_SCENARIOS = (_SEPARATE_CLONES, _SHARED_CLONE, _CONFLICT, _CONFLICT_WITH_SHARED_CLONE)
+_SCENARIOS = (_SEPARATE_CLONES, _SHARED_CLONE, _CONFLICT, _CONFLICT_WITH_SHARED_CLONE, _WORKER_EXTERNAL, _WORKER_CONFLICT)
 _KNOWN_FINDINGS = {_SEPARATE_CLONES.key: {"性質1（操作の終了時）"}}
 """現在のコードで反例が見つかっている性質。内容は`.claude/skills/git-sync-interleavings/SKILL.md`「既知の反例」にある。"""
 

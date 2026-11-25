@@ -133,7 +133,7 @@ def _gh_target(command: str, cwd: str) -> frozenset[tuple[str, str | None]] | No
     else:
         target = resolve_repo_identifier(cwd)
     base = values.get("base")
-    if base and not re.fullmatch(r"[A-Za-z0-9_./-]+", base):
+    if not base or not re.fullmatch(r"[A-Za-z0-9_./-]+", base):
         return None
     return frozenset({(target, base)}) if target else None
 

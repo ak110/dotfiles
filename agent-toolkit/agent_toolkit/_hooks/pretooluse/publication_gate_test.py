@@ -4,7 +4,7 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import config
+from agent_toolkit._atk import config, config_repositories
 from agent_toolkit._atk.wi import listing, snapshot
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import progress_self_check, work_contract
@@ -232,6 +232,39 @@ def test_explicit_publication_scope_requires_its_own_baseline(tmp_path, monkeypa
     assert denied is not None and "開始時集合がない" in denied[0]
     uncertain = publication_gate.check(payload, session, "Bash", {"command": "git push origin --all"})
     assert uncertain is not None and "比較を行っていない" in uncertain[0]
+    unspecified_base = publication_gate.check(payload, session, "Bash", {"command": "gh pr create --repo example/foo"})
+    assert unspecified_base is not None and "比較を行っていない" in unspecified_base[0]
+
+
+def test_pr_base_needs_its_own_branch_baseline(tmp_path, monkeypatch):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    configured = tuple(
+        config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git", branch=branch, default_branch="develop")
+        for branch in ("develop", "maintenance")
+    )
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: configured)
+    branches = config_repositories.BranchSettings(("develop", "maintenance"), "develop", {})
+    monkeypatch.setattr(config, "repository_branch_settings", lambda: {repo: branches})
+    session = "pr-base-scope"
+    _register_circuit(tmp_path, monkeypatch, session)
+    late = _write_awi_file(notes, "20261124-085011-005.md", target_repo=repo)
+    late.write_text(
+        late.read_text(encoding="utf-8").replace("state: inbox", "state: inbox\ntarget_branch: maintenance"), encoding="utf-8"
+    )
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+
+    def check(options):
+        return publication_gate.check(payload, session, "Bash", {"command": "gh pr create --repo example/foo " + options})
+
+    assert check("--base develop") is None
+    maintenance = check("--base maintenance")
+    assert maintenance is not None and late.name in maintenance[0]
+    missing = check("--base unrecorded")
+    assert missing is not None and "開始時集合がない" in missing[0]
+    unspecified = check("")
+    assert unspecified is not None and "比較を行っていない" in unspecified[0]
 
 
 @pytest.mark.parametrize("first_configured", [False, True])

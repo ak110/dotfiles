@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import datetime
 import json
 import logging
 from typing import Any
@@ -11,6 +12,9 @@ from typing import Any
 import pytest
 
 from agent_toolkit._agents_server import codex, codex_connections, codex_providers, codex_reset, manager, resume_waits
+from agent_toolkit._agents_server.state_resume import fast_mode_fields
+from agent_toolkit._atk import usage_refresh
+from agent_toolkit._common import codex_fast_mode
 from agent_toolkit._testing.agents_server_support import install_backend
 from agent_toolkit._testing.codex_provider_support import ProviderClient, backend_with_client, complete, fail_subscription
 
@@ -129,12 +133,29 @@ async def test_manager_turn_start_failure_finishes_without_provider_details(
 @pytest.mark.asyncio
 async def test_provider_failover_sequence(monkeypatch, tmp_path, provider_environment, caplog):
     del provider_environment
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "auto")
+    monkeypatch.setattr(
+        codex_fast_mode,
+        "_FREE_FAST_MODE_PERIODS",
+        ((frozenset({"business"}), datetime.datetime(2099, 1, 1, tzinfo=datetime.UTC), "https://example.invalid"),),
+    )
     client = ProviderClient()
+    original_request = client.request
+
+    async def business_request(method, params=None, **kwargs):
+        result = await original_request(method, params, **kwargs)
+        if method == "account/read":
+            result["account"]["planType"] = "business"
+        return result
+
+    monkeypatch.setattr(client, "request", business_request)
     client.reject.add("paid-a")
     caplog.set_level("INFO", logger="agent-toolkit.agents-server.codex")
     async with backend_with_client(monkeypatch, client) as backend:
         session = await fail_subscription(backend, tmp_path)
         assert session.status == "running" and session.pending_result is not None
+        assert fast_mode_fields(session.engine, session.fast_mode) == {"fast_mode": True}
+        assert json.loads(usage_refresh.session_signature(session))[3] is True
         assert not backend._archive_tasks
         response = await backend.send_message(session, codex_providers.CONTINUE_PROMPT)
         assert response["delivery"] == "reply_started"
@@ -145,6 +166,12 @@ async def test_provider_failover_sequence(monkeypatch, tmp_path, provider_enviro
             " code=-32600 reason=thread/resume: model is not accepted"
         ) in caplog.text
         assert session.codex_model_provider == "paid-b"
+        assert fast_mode_fields(session.engine, session.fast_mode) == {"fast_mode": False}
+        assert json.loads(usage_refresh.session_signature(session))[3] is False
+        assert [params["serviceTier"] for method, params in client.requests if method == "turn/start"] == [
+            "priority",
+            "default",
+        ]
         assert all(params["threadId"] == session.session_id for method, params in client.requests if method == "thread/resume")
         await complete(backend, session, {"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 401}}})
         response = await backend.send_message(session, codex_providers.CONTINUE_PROMPT)
