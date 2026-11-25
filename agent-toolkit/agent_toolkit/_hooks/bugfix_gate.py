@@ -336,7 +336,19 @@ def _has_typed_prevention(text: object) -> bool:
     if not isinstance(text, str):
         return False
     bodies = [body for _, body in prevention_lines(text) if body]
-    return bool(bodies) and all(starts_with_kind(body) for body in bodies)
+    return bool(bodies) and all(starts_with_kind(body) and not _names_regression_test(body) for body in bodies)
+
+
+def _names_regression_test(body: str) -> bool:
+    """回帰テストは今回の事象だけを検出する処置であり、再発防止の行に置かない。
+
+    根拠はbugfixの`prevention.md`「言葉の区別」。  pyfltr: allow-comment
+    """
+    return "回帰テスト" in body
+
+
+def _mentions_regression_prevention(text: object) -> bool:
+    return isinstance(text, str) and any(_names_regression_test(body) for _, body in prevention_lines(text))
 
 
 def _has_report_structure(message: object) -> bool:
@@ -378,6 +390,13 @@ def _turn_block(
         and any(_understanding_kind(text) is None and _has_typed_prevention(text) for text in _delivered_messages(entries))
     ):
         return None
+    if _mentions_regression_prevention(message):
+        return _block_notice(
+            f"`再発防止:`の行に回帰テストがあるため、{delivery}を止めた。"
+            "回帰テストは今回の事象だけを検出する処置であり、再発防止ではない。",
+            fix="回帰テストは`処置:`か`確認:`の行へ移し、`再発防止:`の行には原因が違っても同じ害を防ぐ策か、"
+            "採らない区分名と理由を書いてください。",
+        )
     return _block_notice(
         f"種類付きの再発防止の行がないため、{delivery}を止めた。",
         fix="`agent-basics:bugfix`の記録に従い、種類付きの `再発防止:` の行を書いてください。",

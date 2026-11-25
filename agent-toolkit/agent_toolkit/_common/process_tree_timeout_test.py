@@ -1,6 +1,8 @@
+import contextlib
 import pathlib
 import subprocess
 import sys
+import time
 
 import psutil
 import pytest
@@ -41,6 +43,33 @@ def test_run_with_timeout_reclaims_output_holder_left_by_exited_root(tmp_path, m
     with pytest.raises(subprocess.TimeoutExpired):
         process_tree.run_with_timeout([_python_without_launcher(), "-c", root], capture_output=True, timeout=1)
     assert not finished.exists(), "時間切れの後、出力を保持する子の自然終了まで待った"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="中間プロセスの終了で子孫を親から切り離す手順がPOSIXの親子関係に依存する")
+@pytest.mark.cpu_limit(
+    3.0, reason="起点・中間・保持者の実プロセス3つで、観測できない出力保持者が残っても時間上限内に戻ることを確かめる。"
+)
+def test_run_with_timeout_returns_while_unobserved_holder_keeps_output(tmp_path):
+    holder_pid = tmp_path / "holder.pid"
+    holder = f"import os, pathlib, time; pathlib.Path({str(holder_pid)!r}).write_text(str(os.getpid())); time.sleep(60)"
+    intermediate = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {holder!r}])"
+    root = (
+        "import pathlib, subprocess, sys, time; "
+        f"subprocess.run([sys.executable, '-c', {intermediate!r}], check=True); "
+        f"path = pathlib.Path({str(holder_pid)!r}); deadline = time.monotonic() + 30\n"
+        "while not path.exists() and time.monotonic() < deadline: time.sleep(0.05)\n"
+        "time.sleep(60)"
+    )
+    started = time.monotonic()
+    try:
+        with pytest.raises(subprocess.TimeoutExpired):
+            process_tree.run_with_timeout([_python_without_launcher(), "-c", root], capture_output=True, timeout=3)
+        elapsed = time.monotonic() - started
+    finally:
+        if holder_pid.exists():
+            with contextlib.suppress(psutil.Error):
+                psutil.Process(int(holder_pid.read_text())).kill()
+    assert elapsed < 3 + process_tree.RECLAIM_TIMEOUT_SECONDS + 10, f"出力を保持する子孫の終了まで待った: {elapsed:.1f}秒"
 
 
 @pytest.mark.cpu_limit(1.0, reason="出力を閉じて正常終了する実プロセス1つで、終了後の全OS走査を省くことを確かめる。")

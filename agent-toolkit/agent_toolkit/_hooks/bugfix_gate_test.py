@@ -145,6 +145,23 @@ def test_correction_requires_typed_report(tmp_path, monkeypatch, report):
     assert "decision" not in _stop(entries, tmp_path, monkeypatch)
 
 
+@pytest.mark.parametrize(
+    ("report", "denied"),
+    [
+        # 実例: 回帰テストを再発防止として報告し、ユーザーに是正された。  pyfltr: allow-comment
+        ("再発防止: 自動検出: 今回の実際の冒頭を回帰テストに加えた。", True),
+        ("再発防止: 原因の除去: 照合を外した。自動検出: 回帰テストを加えた。", True),
+        ("処置: 直した。回帰テストを加えた。\n再発防止: 設計: 監視を外部の照会から切り離した。", False),
+    ],
+)
+def test_regression_test_is_not_accepted_as_prevention(tmp_path, report, denied):
+    entries = [_human("直っていない。"), *_classified(), _BUGFIX]
+    payload = _payload(entries, tmp_path)
+    assert _pretooluse_denied(payload, report) is denied
+    if denied:
+        assert "回帰テスト" in (bugfix_gate.send_block(payload, report) or "")
+
+
 def test_send_to_user_without_defect_report_or_by_subagent_is_allowed(tmp_path: pathlib.Path) -> None:
     assert not _pretooluse_denied(_payload([_human("進捗を教えて"), *_classified("非是正")], tmp_path))
     assert _pretooluse_denied(_payload([_BUGFIX, _human("まだバグっている")], tmp_path))
