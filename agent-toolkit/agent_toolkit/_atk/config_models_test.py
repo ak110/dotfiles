@@ -38,8 +38,10 @@ def test_public_model_round_trip_and_environment_precedence(tmp_path, monkeypatc
     assert capsys.readouterr().out == "claude:sonnet/low\n"
     assert _main(tmp_path, "config", "show") == 0
     assert f"{key} claude:sonnet/low\n" in capsys.readouterr().out
-    assert _main(tmp_path, "config", "set", key, saved) == 0
-    assert "優先" in capsys.readouterr().err
+    assert _main(tmp_path, "config", "set", key, saved) != 0
+    captured = capsys.readouterr()
+    assert "優先" in captured.err and "保存済み" in captured.err
+    assert "成功:" not in captured.out
     assert _saved(tmp_path)[key] == saved
     monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}")
     assert config_module.resolve_mutable_setting(key) == saved
@@ -53,7 +55,7 @@ def test_public_model_round_trip_and_environment_precedence(tmp_path, monkeypatc
 def test_presets_save_exact_six_stage_values_and_preserve_write(tmp_path, capsys, preset):
     expected = {key: value for key, value in _DEFAULTS.items() if key != "write_model"}
     if preset in {"codex-balanced", "claude-balanced", "claude-primary"}:
-        expected["execute_model"] = "claude:opus[1m]/low,codex:sol/low"
+        expected["execute_model"] = "claude:opus[1m]/medium,codex:sol/medium"
     if preset == "codex-primary":
         expected["orchestrate_model"] = "codex:sol/medium,claude:opus[1m]/medium"
     if preset.startswith("claude-"):
@@ -155,11 +157,11 @@ def test_direct_candidates_preserve_order_and_bypass_saved_settings(tmp_path):
     assert path.read_bytes() == before
 
 
-def test_exec_lane_uses_medium_only_without_explicit_model(tmp_path, monkeypatch):
+def test_execute_uses_medium_by_default_but_keeps_explicit_candidates(tmp_path, monkeypatch):
     monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", raising=False)
     parse = config_module.parse_unresolved_model_candidates
     assert ("codex", "sol", "medium") in parse("execute", exec_lane=True)
-    assert ("codex", "sol", "low") in parse("execute")
+    assert ("codex", "sol", "medium") in parse("execute")
     assert parse("codex:sol/low", exec_lane=True) == [("codex", "sol", "low")]
     _write_config(tmp_path, {"execute_model": "codex:sol/high"})
     assert parse("execute", exec_lane=True) == [("codex", "sol", "high")]

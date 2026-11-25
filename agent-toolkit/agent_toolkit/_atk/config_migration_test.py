@@ -291,7 +291,7 @@ def test_explicit_save_after_legacy_configuration_keeps_user_choice(tmp_path, ca
     assert _main(tmp_path, "config", *arguments) == 0
     capsys.readouterr()
     assert _main(tmp_path, "config", "get", "execute_model") == 0
-    expected = "claude:sonnet" if operation == "set" else "claude:opus[1m]/low,codex:sol/low"
+    expected = "claude:sonnet" if operation == "set" else "claude:opus[1m]/medium,codex:sol/medium"
     assert capsys.readouterr().out == expected + "\n"
     assert "execute_engine" not in _saved(tmp_path)
 
@@ -320,7 +320,7 @@ def test_pre_tier_configuration_is_cleaned_without_reintroducing_old_migration(t
         tmp_path,
         {"high_tier_model": "agy:obsolete", "medium_tier_model": "claude:obsolete", "low_tier_model": "codex:obsolete"},
     )
-    assert config_module.parse_unresolved_model_candidates("execute")[0] == ("codex", "sol", "low")
+    assert config_module.parse_unresolved_model_candidates("execute")[0] == ("codex", "sol", "medium")
     assert not _saved(tmp_path)
 
 
