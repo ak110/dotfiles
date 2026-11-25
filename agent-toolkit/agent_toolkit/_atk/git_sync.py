@@ -42,6 +42,25 @@ from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 
+
+def keep_remote_initial_file(notes: pathlib.Path, filename: str, migration_message: str) -> bool:
+    """排他中に、競合した移行専用の1コミットだけをremoteの初回作成に揃える。  pyfltr: allow-comment"""
+    if len(_git_command.output(["rev-list", "@{u}..HEAD"], notes).splitlines()) != 1:
+        return False
+    if _git_command.output(["log", "-1", "--format=%s"], notes) != migration_message:
+        return False
+    if _git_command.output(["diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD"], notes) != f"A\t{filename}":
+        return False
+    if _git_command.output(["status", "--porcelain"], notes):
+        return False
+    if _git_command.run(["cat-file", "-e", f"@{{u}}:{filename}"], cwd=notes, check=False, capture_output=True).returncode:
+        return False
+    if _git_command.run(["merge-base", "--is-ancestor", "HEAD^", "@{u}"], cwd=notes, check=False).returncode:
+        return False
+    _git_command.run(["reset", "--merge", "@{u}"], cwd=notes, check=True, capture_output=True)
+    return True
+
+
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
 """履歴が分岐し、無関係な差分もある場合に、commitの完了とpushの保留を伝える文言。"""
 

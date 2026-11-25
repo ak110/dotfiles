@@ -1,5 +1,5 @@
 ---
-verified-digest: d260a785da7aec1a071e0aa13c79109528fec6a5a270755d0d6146750ae41924
+verified-digest: 0c581a92220a9a8406773476f16111cb5452071345965ffced7827dcdc76a92a
 name: git-sync-interleavings
 user-invocable: false
 description: >
@@ -32,6 +32,7 @@ uv run --frozen pytest -q -p no:cacheprovider agent-toolkit/agent_toolkit/_atk/w
 workerの最初の受信・送信を一時停止し、通信中に別の主体が作業ツリーのロックを取得できることを確かめる。
 受信待ち中のローカルcommit、送信待ち中のローカルcommit、最初の受信後に別cloneが送る更新の有無を独立に振り、8通りすべてでローカルとremoteが最終的に一致し、作った更新が履歴または本文に残ることを確かめる。
 同じinbox項目の着手を2つのcloneで同じ時刻に確定し、送信を競合させる試験では成功が1件だけであることを確かめる。
+共有設定の初回作成が2つのcloneで競合する試験では、先にremoteへ届いた設定を裏の同期が維持し、rebaseの途中状態を残さないことを確かめる。
 この列挙は、指定した停止位置に各主体が1回だけ更新する場合に限る。
 別の停止位置、継続的な書き込み、プロセス停止、認証失敗、Windowsでの子プロセス起動順は列挙しない。
 

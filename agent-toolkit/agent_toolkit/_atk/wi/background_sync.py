@@ -15,6 +15,7 @@ import uuid
 import filelock
 
 from agent_toolkit._atk import git_sync, outcome
+from agent_toolkit._atk.config_settings import SHARED_SETTINGS_FILENAME, SHARED_SETTINGS_MIGRATION_MESSAGE
 from agent_toolkit._atk.wi import sync
 from agent_toolkit._common import state_paths
 from agent_toolkit._common.atomic_file import atomic_write
@@ -98,22 +99,10 @@ def _synchronize(notes: pathlib.Path, status: pathlib.Path) -> bool:
                 if behind.returncode == 0:
                     git.run(["merge", "--ff-only", upstream], cwd=notes, check=True, capture_output=True)
                 elif behind.returncode == 1:
-                    if git_sync.is_worktree_dirty(notes):
-                        _report(
-                            status,
-                            "recovery-required",
-                            last_fetch=last_fetch,
-                            reason="未保存の変更があるため履歴の分岐を解消できない",
-                        )
-                        return False
-                    try:
-                        git.run(
-                            ["-c", "submodule.recurse=false", "rebase", upstream], cwd=notes, check=True, capture_output=True
-                        )
-                    except subprocess.CalledProcessError:
-                        _report(
-                            status, "recovery-required", last_fetch=last_fetch, reason="private-notesのrebaseを完了できない"
-                        )
+                    migrated = git_sync.keep_remote_initial_file(
+                        notes, SHARED_SETTINGS_FILENAME, SHARED_SETTINGS_MIGRATION_MESSAGE
+                    )
+                    if not migrated and not _rebase(notes, status, upstream, last_fetch):
                         return False
                 else:
                     raise RuntimeError("private-notesの先行commitを判定できない")
@@ -140,6 +129,18 @@ def _synchronize(notes: pathlib.Path, status: pathlib.Path) -> bool:
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         _report(status, "failed", last_fetch=last_fetch, reason=str(error))
     return False
+
+
+def _rebase(notes: pathlib.Path, status: pathlib.Path, upstream: str, last_fetch: float | None) -> bool:
+    if git_sync.is_worktree_dirty(notes):
+        _report(status, "recovery-required", last_fetch=last_fetch, reason="未保存の変更があるため履歴の分岐を解消できない")
+        return False
+    try:
+        git.run(["-c", "submodule.recurse=false", "rebase", upstream], cwd=notes, check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        _report(status, "recovery-required", last_fetch=last_fetch, reason="private-notesのrebaseを完了できない")
+        return False
+    return True
 
 
 def _upstream_refs(notes: pathlib.Path) -> tuple[str, str, str]:

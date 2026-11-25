@@ -129,6 +129,7 @@ SHARED_SETTING_KEYS = (
     frozenset(MODEL_DEFAULTS) | CONNECTION_ORDER_KEYS | {"codex_fast_mode", "claude_usage_limit_wait", "codex_usage_limit_wait"}
 )
 SHARED_SETTINGS_FILENAME = "atk-config.json"
+SHARED_SETTINGS_MIGRATION_MESSAGE = "chore: migrate shared agent settings"
 
 WEEKLY_KEY_DEFAULTS = {
     "weekly_meta_auto_start": "true",

@@ -226,7 +226,7 @@ def _migrate_shared_settings() -> None:
         with wi_sync.repo_lock(notes):
             wi_sync.ensure_mutation_allowed(notes)
             wi_sync.run_git(["fetch"], notes)
-            _drop_losing_migration(path)
+            git_sync.keep_remote_initial_file(notes, path.name, _config_settings.SHARED_SETTINGS_MIGRATION_MESSAGE)
             wi_sync.run_git(["merge", "--ff-only", "@{u}"], notes)
             if git_command.output(["status", "--porcelain", "--ignored=matching", "--", path.name], notes):
                 raise _next_action.ActionableError(f"{path}に未保存の変更がある", next_action=next_action)
@@ -235,7 +235,7 @@ def _migrate_shared_settings() -> None:
                     if not isinstance(value, str):
                         raise ValueError(f"{key}の保存値は文字列で指定してください")
                     _config_settings.validate_mutable_setting(key, value)
-                _commit_shared_settings(path, initial, "chore: migrate shared agent settings")
+                _commit_shared_settings(path, initial, _config_settings.SHARED_SETTINGS_MIGRATION_MESSAGE)
             # 初回作成同士をrebaseすると、採用されなかった設定が競合中の作業ツリーに残る。  # pyfltr: allow-comment
             # 通常pushだけを許し、負けた側は次回の取得時に勝者へ揃える。  # pyfltr: allow-comment
             wi_sync.run_git(["push"], notes)
@@ -250,25 +250,6 @@ def _migrate_shared_settings() -> None:
         raise _next_action.ActionableError(f"{path}を共有先へ移行できない: {error}", next_action=next_action) from error
     for key, previous in sorted(pending.items()):
         print(f"{key}: ローカルの {previous} を除去。共有設定の値: {adopted.get(key, '省略時の値')}", file=sys.stderr)
-
-
-def _drop_losing_migration(path: pathlib.Path) -> None:
-    notes = path.parent
-    commits = git_command.output(["rev-list", "@{u}..HEAD"], notes).splitlines()
-    if len(commits) != 1:
-        return
-    if git_command.output(["log", "-1", "--format=%s"], notes) != "chore: migrate shared agent settings":
-        return
-    if git_command.output(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"], notes) != path.name:
-        return
-    if git_command.output(["status", "--porcelain"], notes):
-        return
-    upstream_file = git_command.run(["cat-file", "-e", f"@{{u}}:{path.name}"], cwd=notes, capture_output=True, check=False)
-    if upstream_file.returncode != 0:
-        return
-    ancestor = git_command.run(["merge-base", "--is-ancestor", "HEAD^", "@{u}"], cwd=notes, check=False)
-    if ancestor.returncode == 0:
-        wi_sync.run_git(["reset", "--merge", "@{u}"], notes)
 
 
 def _report_candidate_warnings(warnings: list[str]) -> None:
