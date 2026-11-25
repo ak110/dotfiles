@@ -22,6 +22,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from pytools._internal import repository_references
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
 INSTALL_SH = REPO_ROOT / "install-claude.sh"
 INSTALL_PS1 = REPO_ROOT / "install-claude.ps1"
@@ -421,7 +423,7 @@ def render_chezmoi_modify_template(template: pathlib.Path, content: str, environ
     return result.stdout
 
 
-_PLUGIN_PREFIX = "agent-" + "toolkit"
+_PLUGIN_PREFIX = repository_references.PLUGIN_PREFIX
 
 
 def resolve_plugin_reference(value: str, root: pathlib.Path) -> pathlib.Path | None:
@@ -437,7 +439,7 @@ def resolve_plugin_reference(value: str, root: pathlib.Path) -> pathlib.Path | N
     return root / plugin / "skills" / rest if "/" in rest else root / plugin / "skills" / rest / "SKILL.md"
 
 
-_SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
+_SOURCE_SUFFIXES = repository_references.SOURCE_SUFFIXES
 
 
 _AUDIT_RECORDS = pathlib.Path("docs/development/audit-records.md")
