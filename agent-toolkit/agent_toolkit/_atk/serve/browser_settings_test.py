@@ -114,7 +114,7 @@ async def test_settings_temporary_preset_repository_and_array_operations(
     key = page.locator('[data-setting="codex_fast_mode"]')
     await playwright.async_api.expect(key).to_contain_text("実効値: true（出所: 一時指定）")
     await temporary.get_by_role("button", name="一時指定を全解除").click()
-    await playwright.async_api.expect(key).to_contain_text("実効値: false")
+    await playwright.async_api.expect(key).to_contain_text("実効値: auto")
 
     await nav.get_by_text("工程別モデル", exact=True).click()
     preset = page.locator("details").filter(has=page.get_by_text("claude-primary", exact=True))

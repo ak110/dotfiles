@@ -158,7 +158,7 @@ def test_commit_keeps_local_saved_bundle_when_sync_needs_recovery(
 
     monkeypatch.setattr(_atk_git_sync, "commit_and_push", diverge_then_commit)
 
-    requested = []
+    requested: list[pathlib.Path] = []
     monkeypatch.setattr(background_sync, "schedule", requested.append)
     _atk_plans.commit_plan(notes, saved_main.name, home=home)
     assert requested == [notes]

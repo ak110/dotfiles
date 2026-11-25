@@ -10,7 +10,9 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config as config_module
+from agent_toolkit._atk.wi import sync
 from agent_toolkit._common import state_paths
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.config_support import (
     _config_file,
     _isolate_platformdirs,
@@ -97,9 +99,6 @@ def test_interactive_show_keeps_auto_setting_separate_from_decision(tmp_path, mo
 
 
 def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeypatch, capsys):
-    from agent_toolkit._atk.wi import sync  # noqa: PLC0415
-    from agent_toolkit._testing import git_repository  # noqa: PLC0415
-
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     notes = git_repository.init_repository(
         tmp_path / "notes", initial_branch="main", origin=str(remote), files={".gitkeep": ""}

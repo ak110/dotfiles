@@ -11,6 +11,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.managed_temp.creation import create_output_temp
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -209,8 +210,6 @@ def check_run_report_sync(
                 return RunReportGap("報告の回復に失敗", {"段階": stage, "診断": message})
     if repaired:
         if local_only:
-            from agent_toolkit._atk.wi import background_sync  # noqa: PLC0415
-
             background_sync.finish_local_save(private_notes, 0, skip=False)
         return check_run_report_sync(private_notes, run_id=run_id, scope=scope, local_only=local_only)
     if gap is not None:

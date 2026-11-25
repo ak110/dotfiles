@@ -199,7 +199,7 @@ def warn_if_unhealthy(notes: pathlib.Path) -> bool:
     when = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(timestamp)) if isinstance(timestamp, (int, float)) else "不明"
     outcome.report_warning(
         f"以前のprivate-notes同期が未回復（{when}）: {status.get('reason') or '原因不明'}",
-        next_action=f"git -C {notes} statusで状態を確認し、原因を解消してから atk wi pull または atk wi commit を実行する",
+        next_action=f"git -C {notes} statusで原因を確認し、解消後に atk wi pull または atk wi commit を実行してください",
     )
     return True
 
@@ -238,7 +238,7 @@ def schedule(notes: pathlib.Path) -> None:
         return
     lock, _ = _files(notes)
     lock.parent.mkdir(parents=True, exist_ok=True)
-    # 稼働中のworkerに追送を伝え、最後の送信と親の新しいcommitが交差しても次の取得を落とさない。  # pyfltr: allow-comment
+    # 稼働中のworkerに追送を伝え、最後の送信と親の新しいcommitが交差しても次の取得を行う。  # pyfltr: allow-comment
     atomic_write(lock.with_suffix(".request"), uuid.uuid4().hex)
     try:
         with filelock.FileLock(lock, timeout=0):

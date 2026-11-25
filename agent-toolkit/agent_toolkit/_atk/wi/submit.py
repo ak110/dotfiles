@@ -20,7 +20,7 @@ import filelock
 import pydantic
 
 from agent_toolkit._atk import orchestrator, outcome, run_skill, run_skill_state
-from agent_toolkit._atk.wi import add, frontmatter, layout, sync, uwi_scan
+from agent_toolkit._atk.wi import add, background_sync, frontmatter, layout, sync, uwi_scan
 from agent_toolkit._common import (
     diagnostic_process,
     plugin_environment,
@@ -538,8 +538,6 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
                     question_type="yes-no",
                     storage=sync.Storage(local_only=True, lock_timeout=30),
                 )
-        from agent_toolkit._atk.wi import background_sync  # noqa: PLC0415
-
         run["report_committed"] = add.has_committed_run_report(notes, run_id=run["run_id"], scope=SKILL)
         run["report_synced"] = run["report_committed"] and not sync.has_remote(notes)
         if run["report_committed"]:

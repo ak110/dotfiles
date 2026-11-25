@@ -38,7 +38,7 @@ class TestAddOrderEditorFirst:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         _patch_add_git(monkeypatch, myrepo, failing_prefix=["git", "merge"])
-        scheduled = []
+        scheduled: list[pathlib.Path] = []
         monkeypatch.setattr(background_sync, "schedule", scheduled.append)
         _patch_add_editor(monkeypatch, "消失させたくない本文")
 

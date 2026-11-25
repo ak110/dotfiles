@@ -1,5 +1,5 @@
 ---
-verified-digest: 3ddd2289ae33088114cb8cdb08284e03fd9af17712c0e0d49b3743ab50408328
+verified-digest: d260a785da7aec1a071e0aa13c79109528fec6a5a270755d0d6146750ae41924
 name: git-sync-interleavings
 user-invocable: false
 description: >

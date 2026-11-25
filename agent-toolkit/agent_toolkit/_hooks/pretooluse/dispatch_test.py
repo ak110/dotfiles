@@ -41,8 +41,9 @@ from agent_toolkit._testing.pretooluse_support import run_without_skill_notices 
 )
 @pytest.mark.parametrize("is_codex", [False, True])
 def test_model_setting_command_uses_host_permission(command, protected, is_codex, capsys):
-    payload = {"session_id": "permission-test", "tool_input": {"command": command}}
-    decision = pretooluse._decide(payload, "Bash", payload["tool_input"], "permission-test", is_codex=is_codex)
+    tool_input = {"command": command}
+    payload = {"session_id": "permission-test", "tool_input": tool_input}
+    decision = pretooluse._decide(payload, "Bash", tool_input, "permission-test", is_codex=is_codex)
     assert pretooluse._emit(decision, [], is_codex=is_codex) == 0
     output = capsys.readouterr().out
     actual = json.loads(output)["hookSpecificOutput"].get("permissionDecision") if output else None

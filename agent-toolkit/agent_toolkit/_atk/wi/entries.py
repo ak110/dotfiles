@@ -6,6 +6,7 @@ import sys
 from collections.abc import Iterable, Iterator, Mapping
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import filters as _wi_filters
@@ -130,8 +131,6 @@ def iter_entries(
     texts = texts if texts is not None else EntryTexts()
     selected_states = set(states)
     if indexed:
-        from agent_toolkit._atk.serve import entry_index  # noqa: PLC0415
-
         index = entry_index.EntryIndex(private_notes, cache_path=entry_index.default_cache_path(), verify_content=True)
         verified = index.verified_texts()
         if verified is not None:

@@ -235,7 +235,7 @@ class TestSkipPush:
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-        scheduled = []
+        scheduled: list[pathlib.Path] = []
         monkeypatch.setattr(background_sync, "schedule", scheduled.append)
 
         with pytest.raises(SystemExit) as exc_info:
@@ -258,7 +258,7 @@ class TestSkipPush:
         _write_awi_file(notes, "fb-002.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-        scheduled = []
+        scheduled: list[pathlib.Path] = []
         monkeypatch.setattr(background_sync, "schedule", scheduled.append)
 
         with pytest.raises(SystemExit) as first_exc_info:

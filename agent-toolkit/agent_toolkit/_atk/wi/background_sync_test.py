@@ -1,5 +1,6 @@
 import concurrent.futures
 import datetime
+import pathlib
 import queue
 import subprocess
 import threading
@@ -40,7 +41,7 @@ def test_worker_pushes_locally_committed_changes_without_holding_git_lock_during
         git(peer, "add", "other.md")
         git(peer, "commit", "-m", "peer")
 
-    waiting = queue.Queue()
+    waiting: queue.Queue[str] = queue.Queue()
     release = {"fetch": threading.Event(), "push": threading.Event()}
     git_run = background_sync.git.run
 
@@ -79,12 +80,12 @@ def test_worker_pushes_locally_committed_changes_without_holding_git_lock_during
 
 
 def test_default_read_schedules_and_explicit_modes_do_not(tmp_path, monkeypatch):
-    requests = []
+    requests: list[pathlib.Path] = []
     monkeypatch.setattr(background_sync.sync, "has_remote", lambda _notes: True)
     monkeypatch.setattr(background_sync, "read_status", lambda _notes: {})
     monkeypatch.setattr(background_sync, "schedule", requests.append)
     background_sync.prepare_read(tmp_path, skip=True, force=False)
-    assert requests == []
+    assert not requests
     background_sync.prepare_read(tmp_path, skip=False, force=False)
     assert requests == [tmp_path]
 
@@ -102,7 +103,7 @@ def test_same_start_claim_returns_success_to_only_one_clone(tmp_path, monkeypatc
         git_repository.run_git(notes, "config", "user.name", "WI Claim Test")
         git_repository.run_git(notes, "config", "user.email", "wi-claim@example.invalid")
     joined = threading.Barrier(2, timeout=5)
-    push = sync._push_claim
+    push = sync._push_claim  # pylint: disable=protected-access
 
     def concurrent_push(notes):
         joined.wait()

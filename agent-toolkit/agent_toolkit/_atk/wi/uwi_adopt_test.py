@@ -163,7 +163,7 @@ class TestUwiAdopt:
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
-        scheduled = []
+        scheduled: list[pathlib.Path] = []
         monkeypatch.setattr(background_sync, "schedule", scheduled.append)
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
