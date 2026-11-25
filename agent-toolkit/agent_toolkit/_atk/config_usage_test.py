@@ -158,3 +158,50 @@ def test_set_with_temporary_value_requires_no_resave_after_clearing_one_key(
     assert _main(tmp_path, "config", "temporary", "clear", "execute_model") == 0
     assert config.resolve_mutable_setting("execute_model") == "codex:sol/medium"
     assert config.resolve_mutable_setting("review_model") == "claude:sonnet/medium"
+
+
+def test_usage_and_snapshot_keep_existing_window_keys_but_editor_gets_extra_fields(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    usage_refresh.record_codex(
+        {
+            "accountId": "fixture-workspace",
+            "rateLimits": {
+                "limitId": "codex",
+                "limitName": "fixture-plan",
+                "primary": {"usedPercent": 20, "resetsAt": 96000, "windowDurationMins": 10080},
+            },
+            "ordinaryUsageAllowed": True,
+            "rateLimitResetCredits": {"availableCount": 0, "credits": [{"id": "fixture-credit", "status": "active"}]},
+        },
+        contract="plan",
+        permission_account="fixture-permission-account",
+    )
+    legacy_fields = {
+        "engine",
+        "account",
+        "window_id",
+        "used_percent",
+        "resets_at",
+        "observed_at",
+        "scope",
+        "contract",
+        "duration_seconds",
+        "rejected",
+    }
+    assert _main(tmp_path, "config", "usage", "--json") == 0
+    usage = json.loads(capsys.readouterr().out)
+    for key in ("windows", "current_windows"):
+        assert set(usage["usage"][key][0]) == legacy_fields
+    assert usage["metadata"]["codex"] == {
+        "account": "fixture-workspace",
+        "contract": "plan",
+        "reset_available_count": 0,
+        "permission_account": "fixture-permission-account",
+        "observed_at": 100.0,
+    }
+    assert _main(tmp_path, "config", "snapshot") == 0
+    snapshot = json.loads(capsys.readouterr().out)
+    assert set(snapshot["usage"][0]) == legacy_fields
+    assert snapshot["reset_editor"]["accounts"]["codex"]["account"] == "fixture-permission-account"
+    assert snapshot["reset_editor"]["windows"][0]["limit_name"] == "fixture-plan"

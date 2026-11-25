@@ -14,6 +14,7 @@ from agent_toolkit._atk.serve import runtime as _runtime
 from agent_toolkit._atk.serve import shell_routes as _shell_routes
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.serve import wi_operations as _wi_operations
+from agent_toolkit._atk.wi import attachments
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import constants as wi_constants
 
@@ -219,9 +220,40 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
             )
         return quart.jsonify(entries=result, warnings=warnings)
 
+    def detail_with_attachments(state_name: str, filename: str) -> dict[str, object]:
+        entry = ops.detail(state_name, filename)
+        return {
+            **entry,
+            "attachments": [
+                {"name": path.name, "image": attachments.previewable(ops.private_notes, str(entry["filename"]), path.name)}
+                for path in attachments.paths(ops.private_notes, str(entry["filename"]))
+            ],
+        }
+
+    @app.get("/api/wi-attachments/<filename>/<name>")
+    async def attachment(filename: str, name: str) -> quart.Response:
+        def load() -> tuple[bytes, str | None]:
+            entry = ops.detail(wi_constants.WI_STATE_INBOX, filename)
+            try:
+                return attachments.read_attachment(ops.private_notes, str(entry["filename"]), name)
+            except ValueError as error:
+                raise _wi_operations.WebApiInputError(str(error)) from error
+
+        data, raster = await workers.run(load)
+        disposition = "inline" if raster else "attachment"
+        return quart.Response(
+            data,
+            content_type=raster or "application/octet-stream",
+            headers={
+                "Content-Disposition": f'{disposition}; filename="{name}"',
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, no-store",
+            },
+        )
+
     @app.get("/api/entries/<state_name>/<filename>")
     async def detail(state_name: str, filename: str) -> quart.Response:
-        entry = await workers.run(ops.detail, state_name, filename)
+        entry = await workers.run(detail_with_attachments, state_name, filename)
         return quart.Response(
             json.dumps({"entry": entry}, ensure_ascii=False, separators=(",", ":"), allow_nan=False),
             content_type="application/json",

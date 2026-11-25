@@ -150,6 +150,7 @@ async def select(
                     usage_refresh.record_codex,
                     usage,
                     account=usage_refresh.codex_account(auth),
+                    permission_account=usage_refresh.codex_permission_account(auth),
                     contract=str(account.get("planType") or "") if isinstance(account, dict) else "",
                 )
             value = usage.get("ordinaryUsageAllowed")

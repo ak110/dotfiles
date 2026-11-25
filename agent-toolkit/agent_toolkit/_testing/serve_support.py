@@ -101,6 +101,7 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
                 "wi_waiting.js",
                 "wi_mutations.js",
                 "wi_create.js",
+                "wi_push.js",
                 "wi.js",
             )
         )
@@ -249,6 +250,11 @@ globalThis.document = {{
   getElementById(id) {{ return elements[id] || null; }},
   addEventListener(name, handler) {{ this.listeners[name] = handler; }},
   createElement(tagName) {{ return new Element('', tagName.toUpperCase()); }},
+  createElementNS(namespaceURI, tagName) {{
+    const element = this.createElement(tagName);
+    element.namespaceURI = namespaceURI;
+    return element;
+  }},
   createTextNode(text) {{ const node = new Element('', '#TEXT'); node.textContent = text; return node; }},
   querySelector(selector) {{ return selector === '.app-header' ? appHeader : null; }},
   querySelectorAll(selector) {{

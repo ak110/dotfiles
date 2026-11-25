@@ -232,6 +232,44 @@ function renderMetadata(entry, metadata) {
   appendMetadataItem(metadata, 'updated_at', parts.time ? `${parts.date} ${parts.time}` : parts.date);
 }
 
+function renderAttachmentReferences(content, entry) {
+  const attachments = new Map((entry.attachments ?? []).map(item => [item.name, item]));
+  if (attachments.size === 0) return;
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    if (node.parentElement.closest('a, pre')) continue;
+    const fragment = document.createDocumentFragment();
+    let offset = 0;
+    for (const match of node.data.matchAll(/(?<![A-Za-z0-9_.-])attachment:([A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?)/g)) {
+      const item = attachments.get(match[1]);
+      if (!item) continue;
+      fragment.append(node.data.slice(offset, match.index));
+      const href = `${BASE_PATH}/api/wi-attachments/${encodeURIComponent(entry.filename)}/${encodeURIComponent(item.name)}`;
+      if (item.image) {
+        const image = document.createElement('img');
+        image.src = href;
+        image.alt = item.name;
+        image.loading = 'lazy';
+        image.style.maxWidth = '100%';
+        fragment.append(image);
+      } else {
+        const link = document.createElement('a');
+        link.href = href;
+        link.download = item.name;
+        link.textContent = `${item.name} をダウンロード`;
+        fragment.append(link);
+      }
+      offset = match.index + match[0].length;
+    }
+    if (offset > 0) {
+      fragment.append(node.data.slice(offset));
+      node.replaceWith(fragment);
+    }
+  }
+}
+
 function renderDetailView(entry, part) {
   part('detail-view').hidden = false;
   part('detail-filename').textContent = entry.filename;
@@ -240,6 +278,7 @@ function renderDetailView(entry, part) {
   state.dataset.state = entry.state;
   const content = part('detail-content');
   content.innerHTML = entry.body_html ?? entry.content_html ?? '';
+  renderAttachmentReferences(content, entry);
   linkWiReferences(content, entry);
   renderMetadata(entry, part('detail-metadata'));
   part('readonly-notice').hidden = EDITABLE_STATES.has(entry.state);
@@ -250,7 +289,6 @@ export function setDetailMode(mode) {
   const commenting = mode === 'user-comment';
   const decisionAction = mode === 'decide-adopt' ? 'adopt' : mode === 'decide-reject' ? 'reject' : '';
   const mutating = editing || commenting || decisionAction !== '';
-  const unansweredUwi = wiState.currentEntry?.kind === 'uwi' && wiState.currentEntry.answered === false;
   const processable = wiState.currentEntry && PROCESSABLE_STATES.has(wiState.currentEntry.state);
   const mutable = wiState.currentEntry && MUTABLE_STATES.has(wiState.currentEntry.state);
   const deletable = wiState.currentEntry && DELETABLE_STATES.has(wiState.currentEntry.state);
@@ -290,8 +328,9 @@ export function setDetailMode(mode) {
   const more = byId('detail-more');
   more.hidden = waiting || !Array.from(more.querySelectorAll('button')).some(button => !button.hidden);
   syncDetailMutationAvailability();
-  byId('edit-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
-  byId('adopt-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
+  const adoptPrimary = !answering && !byId('adopt-button').hidden;
+  byId('edit-button').className = answering || adoptPrimary ? 'button-secondary' : 'button-primary';
+  byId('adopt-button').className = adoptPrimary ? 'button-primary' : 'button-secondary';
   if (!editing) setFieldError(byId('edit-content'), byId('edit-content-error'), '');
   if (!answering) setFieldError(byId('answer-input'), byId('answer-input-error'), '');
   if (!commenting) setFieldError(byId('user-comment-input'), byId('user-comment-input-error'), '');

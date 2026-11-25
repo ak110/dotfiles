@@ -35,6 +35,7 @@ async def test_navigation_switches_screens_in_declared_order(screen_harness: _Sc
         "計画ファイル",
         "エージェント",
         "セッション",
+        "利用枠",
         "設定",
     ]
     assert await navigation.locator('a[aria-current="page"]').inner_text() == "ワークアイテム"
@@ -274,7 +275,14 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
     plan_link = page.locator("#files .file").first
     plan_link_width = await plan_link.evaluate("element => element.getBoundingClientRect().width")
     await plan_link.hover(position={"x": plan_link_width - 2, "y": 2})
-    plan_link_background = await plan_link.evaluate("element => getComputedStyle(element).backgroundColor")
+    plan_link_highlighted = await plan_link.evaluate(
+        """element => {
+          const probe = document.createElement("span");
+          probe.style.backgroundColor = "var(--color-primary-quiet)";
+          element.append(probe);
+          return getComputedStyle(element).backgroundColor === getComputedStyle(probe).backgroundColor;
+        }"""
+    )
 
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#detail .event").first.wait_for(state="visible")
@@ -282,7 +290,7 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
 
     assert plan_width == session_width == 320
     assert plan_link_width <= plan_width
-    assert plan_link_background == "rgb(238, 242, 255)"
+    assert plan_link_highlighted
     assert await page.locator('#sessions .session-item[aria-current="true"]').count() == 1
 
 

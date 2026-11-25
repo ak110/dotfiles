@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.help_wi_attachments import ATTACHMENT_HELP
 from agent_toolkit._common import skill_modes
 from agent_toolkit._plan import locations as _plan_locations
 
@@ -112,6 +113,7 @@ HELP: dict[str, dict[str, str]] = {
         "description": "エントリをinboxへ投入する。\n\n目的: AWIまたはUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せず、検証済み原稿のH1から最初のフェンス外H2直前までを原文の改行・空白・末尾空行のまま標準出力とmanaged-tempへ出力し、入力パス・冒頭保存先・文字数を返す。frontmatterと管理用見出しは含めない。複数原稿は全件検証後に入力ごとに返し、検証・抽出保存の失敗は非0で終了する。AWIでは、本文の`## 反映内容と反映先`と`## 完成条件`にある行のうち、判断を処理工程へ回す言い回しに一致する行を、保存と`--dry-run`のどちらでも`情報:`の行で先送りの候補として行番号つきで標準出力へ示す。候補は投入前レビューが判定する材料であり、成否と終了コードを変えない。\n原稿ごとの依存: frontmatterの`key: prevention`を別の原稿の`needs: [prevention]`と本文の`{{key:prevention}}`から参照する。`needs`には保存済みWIのファイル名も指定できる。`--depends-on`は全原稿に共通。dry-runはキーが解決される予定を示す。\n再投入: 原稿の`proposal_id`、または解決できた作業契約の一時領域名とキーの組（`<領域名>/<キー>`）で既存の原稿を識別する。識別子のない原稿は重複判定しない。同じ識別子で内容が変わった場合は保存せずに拒否する。\n前提: 本文を`--body-file`または$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`の抽出ファイルは作成主体が検収・受渡しを終えてから回収し、残したファイルはmanaged-tempの7日保持後の自動削除に従う。",
         "epilog": "実行例:\n\n  atk wi add --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
+    **ATTACHMENT_HELP,
     "atk wi verify-merge": {
         "summary": "マージ用WIの完全OIDとCIを確認する",
         "description": (

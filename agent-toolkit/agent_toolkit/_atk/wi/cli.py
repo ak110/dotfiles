@@ -12,6 +12,7 @@ lazy from agent_toolkit._atk import git_sync as _atk_git_sync
 lazy from agent_toolkit._atk import help_text as _atk_help
 lazy from agent_toolkit._atk import outcome as _outcome
 lazy from agent_toolkit._atk.wi import add as _add
+lazy from agent_toolkit._atk.wi import attachments as _attachments
 lazy from agent_toolkit._atk.wi import background_sync as _background_sync
 lazy from agent_toolkit._atk.wi import batch as _batch
 lazy from agent_toolkit._atk.wi import constants as _wi_constants
@@ -54,6 +55,13 @@ def build_parser(mq: argparse.ArgumentParser) -> None:
         _add_mq_submit_parser,
     ):
         register(sub)
+    for name in ("attach", "attachments", "detach"):
+        parser = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk wi {name}"])
+        parser.add_argument("filename", help="保存済みWIのファイル名")
+        if name == "attach":
+            parser.add_argument("paths", type=pathlib.Path, nargs="+", help="添付するファイルのパス")
+        elif name == "detach":
+            parser.add_argument("name", help="削除する添付名")
     merge = _atk_help.add_command(sub, "verify-merge", **_atk_help.HELP["atk wi verify-merge"])
     merge.add_argument("filename", metavar="FILENAME", help="確認するマージ用WIのファイル名")
     merge.add_argument("--head", required=True, metavar="OID", help="取込み候補の取得済み完全OID")
@@ -307,6 +315,7 @@ def dispatch(
         "add": lambda: (
             _batch.cmd_add_batch(args, private_notes, now, home) if args.batch else _add.cmd_add(args, private_notes, now, home)
         ),
+        **{key: lambda: _attachments.cmd_attachments(args, private_notes) for key in ("attach", "attachments", "detach")},
         "list": lambda: _listing.cmd_list(args, private_notes),
         "show": lambda: _show.cmd_show(args, private_notes),
         "start-processing": lambda: _mutation_transitions.cmd_start_processing(args, private_notes, now),

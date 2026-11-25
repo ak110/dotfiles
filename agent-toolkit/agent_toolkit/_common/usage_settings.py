@@ -60,10 +60,10 @@ def temporary_settings() -> dict[str, str]:
     return values
 
 
-def record_metadata(engine: str, metadata: dict[str, Any]) -> None:
+def record_metadata(engine: str, metadata: dict[str, Any], *, identified_account: str = "") -> None:
     """契約から読めた課金・reset情報を残量と分けて表示する。"""
     try:
-        _save_metadata(engine, metadata)
+        _save_metadata(engine, metadata, identified_account=identified_account)
     except (OSError, ValueError, KeyError, TypeError) as error:
         logging.getLogger("agent-toolkit.usage").warning(
             "利用枠の付随情報を保存できません。保存先%sの権限と空き容量を確認し、"
@@ -73,7 +73,7 @@ def record_metadata(engine: str, metadata: dict[str, Any]) -> None:
         )
 
 
-def _save_metadata(engine: str, metadata: dict[str, Any]) -> None:
+def _save_metadata(engine: str, metadata: dict[str, Any], *, identified_account: str) -> None:
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.with_suffix(".lock").open("a+", encoding="utf-8") as lock:
@@ -82,7 +82,17 @@ def _save_metadata(engine: str, metadata: dict[str, Any]) -> None:
             state = read_settings()
             entries = state.setdefault("metadata", {})
             key = f"{context_id()}:{engine}"
-            entries[key] = {**entries.get(key, {}), **metadata, "observed_at": time.time()}
+            previous = entries.get(key, {})
+            if (
+                engine == "codex"
+                and metadata.get("permission_account") == ""
+                and identified_account
+                and identified_account == metadata.get("account") == previous.get("account")
+            ):
+                saved = previous.get("permission_account")
+                if isinstance(saved, str):
+                    metadata = {**metadata, "permission_account": saved}
+            entries[key] = {**previous, **metadata, "observed_at": time.time()}
             if len(entries) > 256:
                 state["metadata"] = dict(sorted(entries.items(), key=lambda item: item[1]["observed_at"])[-256:])
             atomic_write(path, json.dumps(state, ensure_ascii=False, allow_nan=False) + "\n")

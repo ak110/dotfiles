@@ -386,7 +386,8 @@ function renderEvent(event, index) {
 
   const summary = document.createElement("summary");
   const kind = document.createElement("span");
-  kind.className = "event-kind";
+  kind.className = "event-kind status-chip";
+  kind.dataset.state = ({user: "inbox", assistant: "success", tool_call: "warning"})[event.kind] || "";
   kind.textContent = KIND_LABELS[event.kind] || event.kind;
   const time = document.createElement("span");
   time.className = "event-time";
@@ -405,14 +406,15 @@ function renderEvent(event, index) {
     name.textContent = event.name;
     summary.append(name);
   }
-  if (event.kind === "tool_call") {
-    const input = toolInputSummary(event);
-    if (input) {
-      const inputSummary = document.createElement("span");
-      inputSummary.className = "event-input-summary";
-      inputSummary.textContent = input;
-      summary.append(inputSummary);
-    }
+  const preview = event.kind === "tool_call" ? toolInputSummary(event) :
+    !block.open && (event.kind === "tool_result" || event.kind === "injected") ?
+      (event.text?.trim().split(/\r?\n/, 1)[0] || (event.detail || event.html ? "本文あり" : "本文なし")) : "";
+  if (preview) {
+    const excerpt = document.createElement("span");
+    excerpt.className = "event-input-summary text-clip";
+    excerpt.textContent = preview;
+    excerpt.title = preview;
+    summary.append(excerpt);
   }
   block.append(summary);
 

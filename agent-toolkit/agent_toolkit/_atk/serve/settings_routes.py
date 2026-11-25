@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import datetime
 import json
 import pathlib
 import re
@@ -143,7 +144,8 @@ def _request_host() -> str:
 
 
 def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
-    lock = asyncio.Lock()
+    locks: dict[str, asyncio.Lock] = {}
+    snapshots: dict[str, dict[str, typing.Any]] = {}
 
     @app.get("/settings")
     async def settings_index() -> quart.Response:
@@ -154,35 +156,44 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
 
     @app.get("/api/settings")
     async def settings_get() -> quart.Response:
-        async with lock:
-            try:
-                host = await asyncio.to_thread(_request_host)
+        try:
+            host = await asyncio.to_thread(_request_host)
+            if host and quart.request.args.get("cached") == "1" and host in snapshots:
+                hosts = await asyncio.to_thread(_remote_hosts)
+                cached = snapshots.get(host)
+                if cached is not None and host in hosts:
+                    return json_no_store({**cached, "cached": True, "hosts": hosts})
+            async with locks.setdefault(host, asyncio.Lock()):
                 if host:
                     snapshot, _ = await asyncio.to_thread(_remote_snapshot, host)
+                    snapshot["fetched_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+                    snapshots[host] = snapshot
                 else:
                     snapshot = await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home())
                     snapshot["listen"] = {
                         "serve_host": [serve.host, serve.host_source],
                         "serve_port": [serve.port, serve.port_source],
                     }
-                snapshot["hosts"] = await asyncio.to_thread(_remote_hosts)
-            except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
-                message = error if isinstance(error, ValueError) else ValueError("設定を読み込めませんでした")
-                raise web_input_error_from(message, next_action="ホストの設定とSSHの接続を確認する") from error
-            return json_no_store(snapshot)
+                hosts = await asyncio.to_thread(_remote_hosts)
+                return json_no_store({**snapshot, "hosts": hosts})
+        except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
+            message = error if isinstance(error, ValueError) else ValueError("設定を読み込めませんでした")
+            raise web_input_error_from(message, next_action="ホストの設定とSSHの接続を確認する") from error
 
     @app.post("/api/settings")
     async def settings_post() -> quart.Response:
         payload = await quart.request.get_json(silent=True)
         if not isinstance(payload, dict):
             raise WebInputError("JSONオブジェクトを指定してください", next_action="画面から値を入力して保存する")
-        async with lock:
-            try:
-                host = await asyncio.to_thread(_request_host)
+        try:
+            host = await asyncio.to_thread(_request_host)
+            async with locks.setdefault(host, asyncio.Lock()):
                 if host:
+                    # 失敗時も遠隔で変更が行われたか分からないため、保存前の値を再利用しない。 pyfltr: allow-comment
+                    snapshots.pop(host, None)
                     await asyncio.to_thread(_remote_update, host, payload)
                 else:
                     await asyncio.to_thread(config.update_settings, payload)
-            except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
-                raise web_input_error_from(error, next_action="説明で受理される値を確認し、入力を直して保存する") from error
+        except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
+            raise web_input_error_from(error, next_action="説明で受理される値を確認し、入力を直して保存する") from error
         return json_no_store({"saved": True})

@@ -1,3 +1,4 @@
+import {pushHandlesNotifications} from "./wi_push.js";
 import {
   ENTRY_PAGE_SIZE, PROCESSABLE_STATES, byId, entryKey, wiState
 } from "./wi_state.js";
@@ -183,8 +184,10 @@ export async function refreshKnownEntries({notify = false, timing = {}} = {}) {
   allEntries.forEach(entry => wiState.knownEntryFilenames.add(entry.filename));
   wiState.knownEntryBaselineReady = true;
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if (!added.length || await pushHandlesNotifications()) return;
   const notifications = [
     ['新規未回答UWI', added.filter(entry => entry.kind === 'uwi' && entry.answered === false)],
+    ['新規要確認AWI', added.filter(entry => entry.kind === 'awi' && entry.needs_verify === true)],
   ];
   for (const [title, entries] of notifications) {
     if (!entries.length) continue;

@@ -240,8 +240,8 @@ def test_list_renders_branch_badge_and_filter_only_when_registered() -> None:
     result = _run_node_ui(
         """
 const rows = entries => { wiState.entries = entries; renderEntries(); return byId('entry-list').children.map(
-  row => row.children[0].children.flatMap(cell => cell.children)
-    .filter(c => c.className === 'branch-badge').map(c => c.textContent)); };
+  row => row.children[0].children.find(cell => cell.classList.contains('status-cell')).children
+    .filter(cell => cell.classList.contains('branch-badge')).map(cell => cell.textContent)); };
 const entry = (filename, extra = {}) => ({
   kind: 'awi', state: 'inbox', filename, important: false, answered: null, needs_verify: false, cooldown_until: null,
   plan: false, target_repo: 'github.com/example/repo', source: null, summary: filename,

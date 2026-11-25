@@ -17,10 +17,11 @@ entries = [
 renderEntries([{state: 'inbox', filename: 'bad.md', reason: 'UTF-8として読み取れません'}], true);
 const announced = elements['result-status'].textContent;
 const warning = elements['list-warning'].textContent;
-  const awiCells = elements['entry-list'].children[2].children[0].children;
-  const kindState = awiCells[2].children.map(child => child.textContent);
-const targetCell = awiCells[1];
-  const summary = awiCells[3].textContent;
+const awiCells = elements['entry-list'].children[2].children[0].children;
+const meta = awiCells.find(cell => cell.classList.contains('entry-meta'));
+const kindState = awiCells.find(cell => cell.classList.contains('status-cell')).children.map(child => child.textContent);
+const targetCell = meta.children.find(cell => cell.classList.contains('target-repo-cell'));
+const summary = awiCells.find(cell => cell.classList.contains('summary-cell')).textContent;
 elements['result-status'].textContent = '変更しない';
 renderEntries([], false);
 process.stdout.write(JSON.stringify({
@@ -47,7 +48,7 @@ process.stdout.write(JSON.stringify({
         "warning": "［WI / node-test / /notes / inbox/bad.md］一覧から除外したファイル: UTF-8として読み取れません",
         "announced": "3件を表示",
         "kindState": ["awi", "inbox", "plan"],
-        "targetLabel": "github.co…itory-name",
+        "targetLabel": "example/a-very-long-repository-name",
         "targetAria": "target-repo: github.com/example/a-very-long-repository-name",
         "rowAria": "f.md、github.com/example/a-very-long-repository-name、awi、inbox、plan、本文",
         "summary": "本文",
