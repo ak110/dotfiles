@@ -464,7 +464,7 @@ def _coverage_problem(root: pathlib.Path, argv: list[str], review: object) -> st
         if commands is not None and "pytest" not in commands.split(","):
             return "argv不適合: --commandsにpytestが含まれていない"
     targets = _argv_targets(argv)
-    sources = [target for target in targets if target.endswith(".py")]
+    sources = [target for target in targets if target.endswith(".py") or (root / target).is_file()]
     try:
         snapshot = consumer_tests(root, sources)
         required = required_tests(snapshot, review)
