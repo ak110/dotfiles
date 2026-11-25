@@ -216,7 +216,8 @@ def _progress_record_lines(body: str) -> list[int]:
     found = []
     for number, line in _visible_contract_lines(body):
         item = re.sub(r"^ {0,3}(?:#{1,6} +|[-*] +)", "", line)
-        if item.startswith(">") or re.match(r"^[^:：]+[:：]\s*`?(?:/|[A-Za-z]:[/\\])", item):
+        reference_only = re.match(r"^[^:：]+[:：]\s*(?:`(?:/|[A-Za-z]:[/\\])[^`]+`|(?:/|[A-Za-z]:[/\\])\S+)\s*$", item)
+        if item.startswith(">") or reference_only:
             continue
         timestamp = re.match(r"^\d{4}-\d{2}-\d{2}(?:T[\d:+Z-]+)? +", item)
         text = item[timestamp.end() :] if timestamp else item
@@ -225,7 +226,12 @@ def _progress_record_lines(body: str) -> list[int]:
             r"検収結果|実装結果|検証結果|経緯|新着WIの判定)(?:[:： ]|$)",
             text,
         ) or (
-            timestamp and re.search(r"(?:検収|実装|検証|統合|レビュー|公開)(?:が|を|は)?(?:開始|終了|完了|済み|終えた)", text)
+            re.search(
+                r"(?:検収|実装|検証|統合|レビュー|公開)(?:が|を|は)?"
+                r"(?:開始した|終了した|完了した|済み|終えた|完了)[。！!]?\s*$",
+                text,
+            )
+            is not None
         ):
             found.append(number)
     return found

@@ -115,10 +115,14 @@ def test_progress_update_warning(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
         "## 原本の所在\n"
         "- 引き継ぎ記録: /example/handoff.md\n"
     )
-    valid += "- 検収結果: `/example/results.md:19`\n"
+    valid += "- 検収結果: `/example/results.md:19`\n- 2026-11-25T11:22:00Z まで公開を開始しない。\n"
     path.write_text(valid, encoding="utf-8")
     assert work_contract.progress_update_warning("session") is None
-    path.write_text(valid + "- 2026-11-25T11:22:00Z 検収完了。\n", encoding="utf-8")
+    path.write_text(
+        valid + "- 2026-11-25T11:22:00Z 検収完了。\n- 公開担当が検収を終えた。\n"
+        "- 検収結果: `/example/results.md:19` を確認し、CIは合格した。\n",
+        encoding="utf-8",
+    )
     warning = work_contract.progress_update_warning("session")
-    assert warning is not None and "10行目" in warning and "引き継ぎ記録" in warning
+    assert warning is not None and "11、12、13行目" in warning and "引き継ぎ記録" in warning
     assert work_contract.progress_update_warning("session") is None
