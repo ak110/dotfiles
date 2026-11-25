@@ -195,6 +195,22 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
     assert json.loads((notes / "atk-config.json").read_text(encoding="utf-8")) == {"review_model": original["review_model"]}
 
 
+def test_read_only_snapshot_does_not_run_migrations(tmp_path, monkeypatch, capsys):
+    _write_config(tmp_path, {"codex_fast_mode": "false"})
+    original = _config_file(tmp_path).read_bytes()
+
+    def unexpected_migration():
+        pytest.fail("読み取り専用の取得で移行が呼ばれた")
+
+    for name in ("migrate_legacy_settings", "migrate_serve_settings"):
+        monkeypatch.setattr(config_module._config_migration, name, unexpected_migration)
+
+    assert _main(tmp_path, "config", "snapshot", "--read-only") == 0
+    snapshot = json.loads(capsys.readouterr().out)
+    assert snapshot["settings"]["codex_fast_mode"]["effective"] == "false"
+    assert _config_file(tmp_path).read_bytes() == original
+
+
 @pytest.mark.parametrize("upstream", [True, False])
 def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_path, monkeypatch, upstream):
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")

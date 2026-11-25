@@ -10,8 +10,10 @@ let host = "";
 let activeGroup = "models";
 let busy = false;
 let loading = false;
+let fetching = false;
 let loadGeneration = 0;
 let displayedData;
+let refreshTimer;
 const hostDrafts = new Map();
 const conflicts = new Map();
 let fieldCount = 0;
@@ -67,10 +69,11 @@ function field(parent, label, value = "", choices, type = "text", labels = {}) {
   return input;
 }
 
-async function request(payload, cached = false) {
+async function request(payload, cached = false, background = false) {
   const parameters = new URLSearchParams();
   if (host) parameters.set("host", host);
   if (cached) parameters.set("cached", "1");
+  if (background) parameters.set("background", "1");
   const query = parameters.size ? "?" + parameters : "";
   const response = await fetch(BASE_PATH + "/api/settings" + query, payload ? {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
@@ -533,18 +536,22 @@ function renderConflicts() {
   updateWriteControls();
 }
 
-async function loadHost() {
-  if (busy) return;
+async function loadHost(background = false) {
+  if (busy || (background && (fetching || displayedData?.legacy || displayedData?.automatic_unsupported?.includes(host)))) return;
   const generation = ++loadGeneration;
+  fetching = true;
   loading = true;
   updateWriteControls();
-  status.textContent = "読み込み中…";
+  if (!background) status.textContent = "読み込み中…";
   try {
     const displayedHost = host;
     const savedDrafts = hostDrafts.get(displayedHost);
     const editingSnapshot = displayedData ?? savedDrafts?.snapshot;
-    const initial = await request(undefined, Boolean(host) && !displayedData);
+    const initial = await request(undefined, !background && Boolean(host) && !displayedData, background);
     if (generation !== loadGeneration) return;
+    const focus = rememberSettingFocus(document.activeElement);
+    const scroll = content.closest("main");
+    const scrollTop = scroll.scrollTop;
     const prior = content.hasChildNodes() ? rememberEditors() : savedDrafts?.editors ?? new Map();
     let data = initial;
     if (initial.cached) {
@@ -563,6 +570,12 @@ async function loadHost() {
       const old = previous?.settings[key];
       const edited = Array.from(drafts).some(([name, draft]) =>
         (name === slot || name.startsWith(key + ":")) && draft.values.some(Boolean));
+      if (conflicts.has(slot)) {
+        const conflict = conflicts.get(slot);
+        conflicts.set(slot, {...conflict, latest});
+        rendered.settings[key] = conflict.old;
+        continue;
+      }
       if (!old || latest.read_only || old.saved === latest.saved || !edited) continue;
       conflicts.set(slot, {key, old, latest});
       rendered.settings[key] = old;
@@ -570,6 +583,8 @@ async function loadHost() {
     render(rendered);
     restoreEditors(drafts);
     renderConflicts();
+    scroll.scrollTop = scrollTop;
+    restoreSettingFocus(focus);
     loading = false;
     updateWriteControls();
     status.textContent = data.legacy ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
@@ -579,14 +594,21 @@ async function loadHost() {
     if (displayedData?.fetched_at) {
       status.textContent += ` 取得: ${new Date(displayedData.fetched_at).toLocaleString()}。最新の値が届くまで保存できません。`;
     }
-    status.append(" ", button("再試行", loadHost));
+    loading = Boolean(host) && Boolean(displayedData);
+    updateWriteControls();
+    status.append(" ", button("再試行", () => loadHost(background)));
   } finally {
-    if (generation === loadGeneration) hostPicker.disabled = false;
+    if (generation === loadGeneration) {
+      fetching = false;
+      hostPicker.disabled = false;
+    }
   }
 }
 
 async function enter() {
+  clearInterval(refreshTimer);
   if (document.body.dataset.screen !== "settings") return;
+  refreshTimer = setInterval(() => void loadHost(true), 30_000);
   const query = new URLSearchParams(location.search);
   if (query.get("group") === "usage") activeGroup = "usage";
   if (query.get("host") === "" && host) {

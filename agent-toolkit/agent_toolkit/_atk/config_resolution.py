@@ -53,11 +53,12 @@ def mutable_setting_source(
     return "省略時の値"
 
 
-def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
+def resolve_mutable_setting(key: str, *, fallback: str | None = None, read_only: bool = False) -> str:
     if key not in config_settings.MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
     config_migration.check_legacy_environment()
-    config_migration.migrate_legacy_settings()
+    if not read_only:
+        config_migration.migrate_legacy_settings()
     env_name = config_settings.config_env_name(key)
     env_value, source_env = (
         config_migration.remote_hosts_environment()

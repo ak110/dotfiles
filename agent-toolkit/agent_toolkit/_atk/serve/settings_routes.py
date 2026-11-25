@@ -16,9 +16,10 @@ from agent_toolkit._atk.wi.web_input import WebInputError, web_input_error_from
 from agent_toolkit._common.process_tree import run_with_timeout
 
 
-def _remote_hosts() -> tuple[str, ...]:
-    config_migration.migrate_serve_settings()
-    return config.parse_remote_hosts(config.resolve_mutable_setting("remote_hosts"))
+def _remote_hosts(*, read_only: bool = False) -> tuple[str, ...]:
+    if not read_only:
+        config_migration.migrate_serve_settings()
+    return config.parse_remote_hosts(config.resolve_mutable_setting("remote_hosts", read_only=read_only))
 
 
 def _setting_timeout(operation: str, payload: dict[str, typing.Any] | None) -> int:
@@ -76,7 +77,11 @@ _SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
 _PATH_KEYS = {"config_dir", "state_dir", "data_dir", "private_notes"}
 
 
-def _remote_snapshot(host: str) -> tuple[dict[str, typing.Any], _ConfigRunner]:
+class _ReadOnlyUnsupported(Exception):
+    pass
+
+
+def _remote_snapshot(host: str, *, read_only: bool = False) -> tuple[dict[str, typing.Any], _ConfigRunner]:
     platform = _ssh(host, "uname -s")
     if platform.returncode == 255:
         raise WebInputError("SSH先に接続できません", next_action="接続先とSSHの接続を確認する")
@@ -86,7 +91,8 @@ def _remote_snapshot(host: str) -> tuple[dict[str, typing.Any], _ConfigRunner]:
         if platform.returncode == 0 and platform.stdout.strip() in {b"Linux", b"Darwin", b"FreeBSD", b"OpenBSD", b"NetBSD"}
         else _ssh_unelevated
     )
-    result = runner(host, "atk config snapshot", None)
+    operation = "atk config snapshot --read-only" if read_only else "atk config snapshot"
+    result = runner(host, operation, None)
     if result.returncode == 0:
         snapshot = json.loads(result.stdout)
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get("settings"), dict):
@@ -102,6 +108,8 @@ def _remote_snapshot(host: str) -> tuple[dict[str, typing.Any], _ConfigRunner]:
     if result.returncode != 2:
         raise ValueError("SSH先で設定を取得できません。接続とSSH先のatkの起動を確認してください")
 
+    if read_only:
+        raise _ReadOnlyUnsupported
     legacy = runner(host, "atk config show", None)
     if legacy.returncode != 0:
         raise ValueError("SSH先で設定を取得できません。SSH先でatk config showの実行結果を確認してください")
@@ -164,7 +172,7 @@ def _unconfirmed_remote_save() -> WebInputError:
 
 def _request_host() -> str:
     host = quart.request.args.get("host", "")
-    if host and host not in _remote_hosts():
+    if host and host not in (_remote_hosts(read_only=True) if quart.request.args.get("background") == "1" else _remote_hosts()):
         raise ValueError("ローカル設定のremote_hostsに登録したホストを選んでください")
     return host
 
@@ -172,6 +180,38 @@ def _request_host() -> str:
 def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
     locks: dict[str, asyncio.Lock] = {}
     snapshots: dict[str, dict[str, typing.Any]] = {}
+
+    unsupported: set[str] = set()
+    errors: dict[str, str] = {}
+
+    async def refresh_remote(host: str) -> None:
+        async with locks.setdefault(host, asyncio.Lock()):
+            try:
+                snapshot, _ = await asyncio.to_thread(_remote_snapshot, host, read_only=True)
+                snapshot["fetched_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+                snapshots[host] = snapshot
+            except _ReadOnlyUnsupported:
+                unsupported.add(host)
+                errors.pop(host, None)
+            except ValueError, TypeError, OSError, subprocess.TimeoutExpired, WebInputError:
+                errors[host] = "自動取得に失敗しました"
+            else:
+                unsupported.discard(host)
+                errors.pop(host, None)
+
+    async def refresh_remotes() -> None:
+        while True:
+            try:
+                hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
+            except ValueError, OSError:
+                app.logger.warning("自動更新の対象ホストを取得できません")
+            else:
+                await asyncio.gather(*(refresh_remote(host) for host in hosts if host not in unsupported))
+            await asyncio.sleep(60)
+
+    @app.before_serving
+    async def start_refresh() -> None:
+        app.add_background_task(refresh_remotes)
 
     @app.get("/settings")
     async def settings_index() -> quart.Response:
@@ -184,6 +224,18 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
     async def settings_get() -> quart.Response:
         try:
             host = await asyncio.to_thread(_request_host)
+            background = quart.request.args.get("background") == "1"
+            if background and host:
+                snapshot = snapshots.get(host)
+                if snapshot is None or host in errors:
+                    raise ValueError(errors.get(host, "リモート設定の自動取得を待っています"))
+                return json_no_store(
+                    {
+                        **snapshot,
+                        "hosts": await asyncio.to_thread(_remote_hosts, read_only=True),
+                        "automatic_unsupported": sorted(unsupported),
+                    }
+                )
             if host and quart.request.args.get("cached") == "1" and host in snapshots:
                 hosts = await asyncio.to_thread(_remote_hosts)
                 cached = snapshots.get(host)
@@ -195,13 +247,28 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                     snapshot["fetched_at"] = datetime.datetime.now(datetime.UTC).isoformat()
                     snapshots[host] = snapshot
                 else:
-                    snapshot = await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home())
+                    snapshot = (
+                        await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home(), read_only=True)
+                        if background
+                        else await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home())
+                    )
                     snapshot["listen"] = {
                         "serve_host": [serve.host, serve.host_source],
                         "serve_port": [serve.port, serve.port_source],
                     }
-                hosts = await asyncio.to_thread(_remote_hosts)
-                return json_no_store({**snapshot, "hosts": hosts})
+                hosts = (
+                    await asyncio.to_thread(_remote_hosts, read_only=True)
+                    if background
+                    else await asyncio.to_thread(_remote_hosts)
+                )
+                return json_no_store(
+                    {
+                        **snapshot,
+                        "hosts": hosts,
+                        "automatic_errors": {key: errors[key] for key in hosts if key in errors},
+                        "automatic_unsupported": sorted(unsupported.intersection(hosts)),
+                    }
+                )
         except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
             message = error if isinstance(error, ValueError) else ValueError("設定を読み込めませんでした")
             raise web_input_error_from(message, next_action="ホストの設定とSSHの接続を確認する") from error

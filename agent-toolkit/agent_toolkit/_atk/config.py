@@ -13,7 +13,7 @@ from typing import Any, cast
 lazy import platformdirs
 
 from agent_toolkit._atk import config_migration as _config_migration
-from agent_toolkit._atk import config_repositories_cli, config_usage
+from agent_toolkit._atk import config_repositories, config_repositories_cli, config_usage
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
@@ -142,17 +142,18 @@ def _commit_shared_settings(path: pathlib.Path, values: dict[str, str], message:
         raise
 
 
-def resolved_settings(home: pathlib.Path) -> dict[str, str]:
+def resolved_settings(home: pathlib.Path, *, read_only: bool = False) -> dict[str, str]:
     _config_migration.check_legacy_environment()
-    _config_migration.migrate_legacy_settings()
-    _config_migration.migrate_serve_settings()
+    if not read_only:
+        _config_migration.migrate_legacy_settings()
+        _config_migration.migrate_serve_settings()
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     settings = {
         "config_dir": str(_config_settings.config_dir()),
         "state_dir": str(_state_paths.state_dir()),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes.default_private_notes(home)),
-        **{key: resolve_mutable_setting(key) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
+        **{key: resolve_mutable_setting(key, read_only=read_only) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
     }
     return settings
 
@@ -352,8 +353,8 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
         _outcome.report_warning(message, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
 
 
-def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
-    effective = resolved_settings(home)
+def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[str, Any]:
+    effective = resolved_settings(home, read_only=read_only)
     saved = _config_settings.load_config()
     shared_path = _config_settings.shared_settings_path()
     shared = _config_settings.load_shared_settings(shared_path) if shared_path is not None else {}
@@ -383,12 +384,15 @@ def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
     usage = usage_observation.snapshot(include_history=True)
     state = usage_settings.read_settings()
     windows = config_usage.profile_windows(usage)
+    repositories = _config_settings.load_config_strict().get("repositories", "{}")
+    if not isinstance(repositories, str):
+        raise ValueError("repositoriesの保存値はJSON文字列で指定する")
     return {
         "settings": settings,
         "paths": effective,
         "presets": _config_settings.PRESET_MODELS,
         "temporary": {"values": temporary, "until": state.get("until")},
-        "repositories": json.loads(config_repositories_cli.update_repositories(argparse.Namespace(repos_subcommand="list"))),
+        "repositories": config_repositories.parse(repositories, check_paths=False),
         "model_candidates": {engine: sorted(names) for engine, names in _config_settings.KNOWN_MODELS.items()},
         "usage": config_usage.cli_windows(windows),
         "reset_editor": config_usage.reset_editor_snapshot(windows, usage["history"], state),
@@ -645,7 +649,9 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     _atk_help.add_command(sub, "show", **_atk_help.HELP["atk config show"])
     _atk_help.add_command(sub, "list", **_atk_help.HELP["atk config list"])
     for name in ("snapshot", "update"):
-        _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
+        parser = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
+        if name == "snapshot":
+            parser.add_argument("--read-only", action="store_true", help="設定を移行または保存せずに読み取る。")
     for name in ("add", "remove"):
         array = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
         array.add_argument("key", metavar="KEY", help="JSON配列型の設定キー。")
@@ -679,7 +685,7 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
         elif sub in {"show", "list"}:
             _cmd_config_show(home)
         elif sub == "snapshot":
-            print(json.dumps(settings_snapshot(home)))
+            print(json.dumps(settings_snapshot(home, read_only=getattr(args, "read_only", False))))
         elif sub == "update":
             payload = json.load(sys.stdin.buffer)
             if not isinstance(payload, dict):
