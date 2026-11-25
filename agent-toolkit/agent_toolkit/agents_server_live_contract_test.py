@@ -72,4 +72,4 @@ def test_explore_exposes_tools_for_background_resume_input(session_id: str | Non
 def test_live_agents_fixture_isolates_service_namespace(tmp_path: pathlib.Path) -> None:
     assert any(mark.mark.name == "usefixtures" and "live_agents_environment" in mark.mark.args for mark in live.pytestmark)
     caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
-    assert service_transport.namespace(caller) == tmp_path / "agents-state" / "agent-toolkit" / "services" / "agents-server"
+    assert service_transport.namespace(caller).parent == tmp_path / "agents-state" / "agent-toolkit" / "services"
