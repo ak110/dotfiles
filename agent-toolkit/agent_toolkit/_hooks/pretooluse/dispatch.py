@@ -91,6 +91,7 @@ lazy from agent_toolkit._hooks import (
     clock_claims,
     command_timing,
     delivered_repost_gate,
+    hook_notice_response_gate,
     norm_excuse_gate,
     repository_protection,
     work_contract,
@@ -341,6 +342,10 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                     ),
                 )
             )
+    if (is_send_to_user_tool(tool_name) or tool_name == "AskUserQuestion") and (
+        notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input)
+    ):
+        return Decision(block=notice_block)
     if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
         return Decision(block=_block_notice(publication_block[0], fix=publication_block[1]))
     if tool_name == "ExitPlanMode":

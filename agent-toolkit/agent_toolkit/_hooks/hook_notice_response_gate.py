@@ -1,0 +1,189 @@
+"""このターンに届いた警告のhook通知へ、`hook通知への対応:`の行を書かずに終える応答を一度止める。  pyfltr: allow-comment
+
+対象は、最後のターン境界（人間の入力、完了通知、機械生成の入力、会話の圧縮）の後に届いた`kind="warn"`の通知である。
+hookの添付（`hook_additional_context`・`hook_system_message`）と、agent-toolkitのMCPツールを直接呼んだ結果の本文から集める。
+最後の警告より後のアシスタントの本文かツールの入力（`send_to_user`の本文、REPLのコード）に、行頭が`hook通知への対応:`の行があれば通す。
+対応の中身（処置したか、誤検出の根拠か）は判定せず、行の有無だけを見る。
+同じ警告の組で一度止めた後の終了は通し、止めるのは組ごとに1回とする（再発行で通す）。
+ユーザーへ届く次の操作（`send_to_user`と`AskUserQuestion`）も、PreToolUseから`send_block`で組ごとに1回止める。
+
+通知を遮断にする根拠: hook通知の処置と対応行は規範で定めていたが
+（`agent-toolkit:atk-mode`の`references/conduct.md`「方針が衝突する場合の優先順位」）、
+ユーザーが2026年10月27日から11月25日までにhookの通知の無視を少なくとも6回指摘し、文章の規範だけでは止まらなかった。
+効果を判定した再発防止のうち効いたのは、誤った操作の時点で機械が止めて正しい代替を示す型だった（`agent-basics:bugfix`の`references/prevention.md`）。
+行の有無は記録から機械的に確定でき、1行の追記で回復できる。
+
+委譲先での実行可否: Claude Codeの`Stop`で動く会話（メインと`agents_server`の委譲先）を対象とし、
+`agent_id`を持つサブエージェントの終了と、記録の形が異なるCodex・Antigravityは判定しない。
+REPLの中から呼んだMCPツールの結果はREPLの出力に混ざり引用と区別できないため数えず、hookの添付だけを使う。
+"""
+
+import json
+lazy import hashlib
+lazy import re
+
+from agent_toolkit._hooks import notice
+lazy from agent_toolkit._common import session_state, transcript
+lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
+lazy from agent_toolkit._common.message_format import AUTO_ELEMENT_NAME_PATTERN
+lazy from agent_toolkit._hooks import stop_session as _stop_session
+lazy from agent_toolkit._hooks.delivered_repost_gate import _conversation_entries, _current_turn
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+
+RESPONSE_PREFIX = "hook通知への対応:"
+_STATE_KEY = "hook_notice_response_gate"
+_SEND_STATE_KEY = "hook_notice_response_gate_send"
+_HOOK_RECORD_TYPES = frozenset({"hook_additional_context", "hook_system_message"})
+_TOOLKIT_TOOL_PREFIX = "mcp__plugin_agent-toolkit_"
+_SUMMARY_LENGTH = 60
+_LISTED_LIMIT = 3
+
+_block_notice = notice.block_formatter("hook_notice_response_gate")
+
+
+def _warn_pattern() -> re.Pattern[str]:
+    return re.compile(
+        rf'<(?:{AUTO_ELEMENT_NAME_PATTERN})\s+source="(?P<source>[^"]*)"\s+kind="warn"[^>]*>(?P<body>[\s\S]*?)</(?:{AUTO_ELEMENT_NAME_PATTERN})>'
+    )
+
+
+def _strings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [text for item in value for text in _strings(item.get("text") if isinstance(item, dict) else item)]
+    return []
+
+
+def _warnings(text: str) -> list[str]:
+    found = []
+    for match in _warn_pattern().finditer(text):
+        first = next((line.strip() for line in match["body"].splitlines() if line.strip()), "")
+        summary = first if len(first) <= _SUMMARY_LENGTH else first[:_SUMMARY_LENGTH] + "…"
+        found.append(f"{match['source']}: {summary}")
+    return found
+
+
+def _has_response(text: str) -> bool:
+    return any(line.strip().lstrip("-*> \t").startswith(RESPONSE_PREFIX) for line in text.splitlines())
+
+
+def _input_has_response(text: str) -> bool:
+    """ツールの入力（REPLのコードなど）では、文字列の引用符の直後に始まる対応行も数える。 pyfltr: allow-comment"""
+    return re.search(rf"(?:^|[\n`\"'])[ \t\-*>]*{RESPONSE_PREFIX}", text) is not None
+
+
+def _scan(turn: list[dict]) -> tuple[list[str], int, int]:
+    """ターンの警告の一覧と、最後の警告と最後の対応行の位置を返す。位置が無ければ-1とする。 pyfltr: allow-comment"""
+    warnings: list[str] = []
+    last_warning = last_response = -1
+    toolkit_calls: set[str] = set()
+    for index, entry in enumerate(turn):
+        attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
+        if isinstance(attachment, dict) and attachment.get("type") in _HOOK_RECORD_TYPES:
+            event = str(attachment.get("hookEvent") or attachment.get("hookName") or "")
+            if not event.startswith(("Stop", "SubagentStop")):
+                for text in _strings(attachment.get("content")):
+                    if found := _warnings(text):
+                        warnings.extend(found)
+                        last_warning = index
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else ():
+            if not isinstance(block, dict):
+                continue
+            if entry.get("type") == "assistant" and block.get("type") == "text":
+                if _has_response(str(block.get("text", ""))):
+                    last_response = index
+            elif entry.get("type") == "assistant" and block.get("type") == "tool_use":
+                if str(block.get("name", "")).startswith(_TOOLKIT_TOOL_PREFIX) and isinstance(block.get("id"), str):
+                    toolkit_calls.add(block["id"])
+                arguments = block.get("input")
+                if isinstance(arguments, dict) and any(
+                    _input_has_response(value) for value in arguments.values() if isinstance(value, str)
+                ):
+                    last_response = index
+            elif block.get("type") == "tool_result" and block.get("tool_use_id") in toolkit_calls:
+                for text in _strings(block.get("content")):
+                    if found := _warnings(text):
+                        warnings.extend(found)
+                        last_warning = index
+    return warnings, last_warning, last_response
+
+
+def _unanswered(payload: dict, session_id: str, key: str) -> list[str] | None:
+    """最後の警告より後に対応行が無ければ、未対応の警告の一覧を返す。同じ組には`key`ごとに1回だけ返す。 pyfltr: allow-comment"""
+    path = payload.get("transcript_path")
+    if (
+        not session_id
+        or payload.get("agent_id")
+        or is_codex_payload(payload)
+        or is_antigravity_payload(payload)
+        or not isinstance(path, str)
+        or not path
+    ):
+        return None
+    lines = transcript.read_transcript_lines(path)
+    if not lines:
+        return None
+    warnings, last_warning, last_response = _scan(_current_turn(_conversation_entries(lines)))
+    if last_warning < 0 or last_response > last_warning:
+        return None
+    signature = hashlib.sha256(json.dumps(warnings, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    def claim(state: dict) -> dict | None:
+        if state.get(key) == signature:
+            return None
+        return {**state, key: signature}
+
+    if not session_state.update_state(session_id, claim):
+        return None
+    return list(dict.fromkeys(warnings))
+
+
+def _listing(listed: list[str]) -> str:
+    shown = "；".join(listed[:_LISTED_LIMIT])
+    rest = f"；ほか{len(listed) - _LISTED_LIMIT}件" if len(listed) > _LISTED_LIMIT else ""
+    return shown + rest
+
+
+def evaluate(payload_text: str) -> tuple[str, str]:
+    resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
+    if resolved is None:
+        return "approve", ""
+    session_id, payload = resolved
+    listed = _unanswered(payload, session_id, _STATE_KEY)
+    if not listed:
+        return "approve", ""
+    return "block", _block_notice(
+        f"このターンに届いた警告の通知に、`{RESPONSE_PREFIX}`の行が無いまま終えようとした。未対応の警告: {_listing(listed)}",
+        fix=(
+            f"警告ごとに処置した結果か、処置しない根拠（誤検出など）を、`{RESPONSE_PREFIX}`で始まる1行にまとめて書いてから終えてください"
+            "（`send_to_user`を使う会話ではその本文に含める）。同じ警告の組で再び止めることはしない。"
+        ),
+    )
+
+
+def send_block(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> str | None:
+    """未対応の警告が残るまま、ユーザーへ届く次の操作（報告の送達・質問）へ進む呼出しを一度止める。
+
+    ターンの終わり（Stop）より前の、次にユーザーへ届く時点で処置させる。警告は作業の途中に届き、
+    ターンの終わりの検査だけでは、警告を受けた操作から離れた時点でしか処置を促せなかった（2026年11月25日の分析）。
+    `send_to_user`は本文に対応行があれば通す。
+    質問は選択肢の形が決まっているため、対応行を先に`send_to_user`で送らせる。 pyfltr: allow-comment
+    """
+    message = tool_input.get("message")
+    if isinstance(message, str) and _has_response(message):
+        return None
+    listed = _unanswered(payload, session_id, _SEND_STATE_KEY)
+    if not listed:
+        return None
+    where = (
+        f"この本文に`{RESPONSE_PREFIX}`の行を加えて再送してください"
+        if is_send_to_user_tool(tool_name)
+        else f"先に`send_to_user`で`{RESPONSE_PREFIX}`の行を送ってから、同じ質問を再発行してください"
+    )
+    return _block_notice(
+        f"このターンに届いた警告の通知に未対応のまま、ユーザーへ届く操作へ進もうとした。未対応の警告: {_listing(listed)}",
+        fix=f"警告ごとに処置した結果か、処置しない根拠（誤検出など）を書いてください。{where}。同じ警告の組で再び止めることはしない。",
+    )

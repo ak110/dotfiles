@@ -111,6 +111,7 @@ from agent_toolkit._plan.structure.sections import (
     is_canonical_main_format,
     legacy_wi_origins,
     progress_log_rows,
+    recurrence_quote_errors,
 )
 
 __all__ = [
@@ -217,6 +218,7 @@ __all__ = [
     "parse_plan_materials",
     "parse_plan_metadata",
     "progress_log_rows",
+    "recurrence_quote_errors",
     "request_section_problems",
     "request_sections",
 ]

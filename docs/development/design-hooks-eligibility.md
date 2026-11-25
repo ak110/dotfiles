@@ -31,13 +31,14 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `pretooluse/dispatch.py` 背景出力・帰属行 | 関連操作の支援・配送 | 途中出力の取扱いと、`commit-message.md`の読み取り時点（Claude Codeの`Read`を含む）に観測した帰属行を共通noticeで通知する |
 | `pretooluse/operation_skills.py` | 関連操作の支援、warn | 検索、原因分析の記述、本文の作成・更新、検証の実行の直前に、対応するagent-basicsのスキルの起動を主体と文脈ごとに1回案内する。`Skill`で起動を観測したスキル、軽量の委譲先、一時領域だけへの書き込みは対象外とする |
 | `work_contract.py` 委譲先の全体作業契約 | 関連操作の支援、warn | 起動時に入れた版から原本が更新された時に、更新後の版ごと主体ごとに1回案内する。本文の配送と遮断はしない |
-| `posttooluse.py` | 観測・配送・出力の変換 | 所有と終了工程の起動証拠を記録し、計画構造、回答UWI、完了処理、Codexが省略した出力の回収（`codex_truncation.py`）の案内を共通noticeへ集約する。退避出力の置換は結果取得先を保つ |
+| `posttooluse.py` | 観測・配送・出力の変換 | 所有と終了工程の起動証拠を記録し、計画構造、回答UWI、完了処理、Codexが省略した出力の回収（`codex_truncation.py`）の案内を共通noticeへ集約する。退避出力の置換は結果取得先を保つ。`send_to_user`で送達した報告への警告は、MCPが呼出しごとに預けた分を同じ呼出しの添付として届ける（`_common/sent_warnings.py`） |
 | `user_prompt_submit.py` | 状態観測・関連規範の配送 | 実ユーザー入力と機械生成を区別する。意味の判定は受領側が文書に従って行う |
 | `rules_context.py`・`rules_context_codex.py` | 起動時の案内の配送 | メインへ入口の起動、委譲先へ入口文書の所在を案内し、一時領域・原記録の所在を届ける。規範の本文は載せない。開始・圧縮という受領境界に対応する |
 | `response_language_advisor.py` | ユーザー向け本文の言語保護、block | 内部返却とClaude Codeの非同期処理を待つStopを除き、作業を終える最上位メインの本文を判定する。Codexの完了本文の保護と、誤検出時に成果・判断・未達を保って終了する手段を維持する |
 | `busy_loop_guard.py`・`process_loop_exit_gate.py` | 常駐運用の終了保証、halt・block | 対象の常駐セッションだけで機械的な無進捗と、報告用UWIの保存後の終了操作の有無を扱う。正当な非同期待機を除く。全てのターン終了を止める旧`autonomous_exit.py`は、誤遮断による終了不能、質問の手段が無いホストでの質問不能、完了報告の反復を招くため戻さない。終了漏れ全般への安全網は、ターンに介入しないランチャーの無出力監視が担い、監視を止めうる外部の照会は監視の待機ループから切り離す |
 | `plan_save_advisor.py` | 回復可能な支援、notify | 所有する現存計画を知らせ、保存契機の判断は受領側へ残す。同じ対象を抑止し、対象変化と解消後の再発を通知する |
 | `agents_server_session_advisor.py` | 観測支援、notify | 呼出主体の未観測対象だけを知らせ、正常な待機と観測済みの対象を除く |
+| `hook_notice_response_gate.py` | 警告の処置の確認、block | 最後の人間入力の後に届いた`kind="warn"`の通知へ`hook通知への対応:`の行が無いまま、ユーザーへ届く操作（`send_to_user`・`AskUserQuestion`）へ進むかターンを終える時に、警告の組ごとに1回止める。行を1行書けば通り、内容の妥当性は判定しない。文章の規定だけでは警告の無視が止まらなかった（2026年11月25日のユーザー指摘） |
 | `user_response_advisor.py` | 可視本文の欠落支援、notify | 人間入力ごとに本文の有無を調べる。回答の内容は判定せず、同じ不足の反復を共通noticeで抑止する |
 | `termination_order_advisor.py` | 起動証拠の不足支援、notify | Claude Codeだけで成果作業の起動不足を通知する。起動済み作業の送達・残工程と報告の固定句は判定しない |
 | `queued_notification_advisor.py` | 既存結果の配送、yield・notify | 他のblockが無ければホスト配送へ戻す。blockが残る場合だけ未配送対象の受領を一度案内する |

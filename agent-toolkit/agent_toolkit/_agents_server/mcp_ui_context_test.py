@@ -123,6 +123,7 @@ async def test_send_to_user_consults_report_guidance_for_improvement_lines(
     assert isinstance(response, CallToolResult)
     assert response.structured_content is not None
     assert response.structured_content["status"] == "confirmed"
+    # 呼出しを識別できない要求では、案内を送信結果へ残す（識別できる場合はPostToolUseの添付で届ける）。 pyfltr: allow-comment
     if consulted:
         guidance = response.structured_content["guidance"]
         assert "改善点報告の区分名が、報告行の書式と一致しない。" in guidance

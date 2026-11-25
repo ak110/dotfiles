@@ -51,6 +51,7 @@ CHECK_MODULE_NAMES = (
     "plan_save_advisor",
     "agents_server_session_advisor",
     "user_response_advisor",
+    "hook_notice_response_gate",
     "bugfix_gate",
     "norm_excuse_gate",
     "termination_order_advisor",

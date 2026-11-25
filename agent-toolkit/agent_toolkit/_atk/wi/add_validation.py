@@ -39,6 +39,7 @@ _EMPTY_AWI_ERROR = "AWI本文が実質空です"
 _EMPTY_AWI_NEXT_ACTION = "本文を記入して再投入する"
 
 _CAUSE_ANALYSIS_HEADING = _plan_structure.REQUEST_H2_CAUSE
+_FINDINGS_HEADING = "調査結果と判断根拠"
 
 """観測した欠陥を起点とする通常AWIだけが持つH2見出し。
 
@@ -162,6 +163,7 @@ def require_cause_analysis_format(body: str, *, original: str | None = None, ent
     """
     if entry_type == WI_TYPE_UWI or not is_agent_environment():
         return
+    _require_recurrence_record(body, original)
     section = _headings.last_h2_section_lines(body, _CAUSE_ANALYSIS_HEADING)
     if section is None:
         return
@@ -177,6 +179,35 @@ def require_cause_analysis_format(body: str, *, original: str | None = None, ent
             next_action=(
                 f"`## 原因分析`のバグ単位（H3が無ければ節全体、あればH3ごと）に{labels}で始まる行を置き、"
                 "各行の本文を同じ行に書く。書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」に従う"
+            ),
+        )
+
+
+def _recurrence_sections(body: str) -> tuple[str, str]:
+    def section(heading: str) -> str:
+        lines = _headings.last_h2_section_lines(body, heading)
+        return "\n".join(lines) if lines is not None else ""
+
+    records = "\n".join(section(heading) for heading in (_CAUSE_ANALYSIS_HEADING, _FINDINGS_HEADING))
+    return section(_plan_structure.REQUEST_H2_QUOTATION), records
+
+
+def _require_recurrence_record(body: str, original: str | None) -> None:
+    """ユーザーの原文が反復に触れる原稿に、前回の対策が防げなかった理由の`再発:`の行があることを確かめる。
+
+    再発の指摘を記録せずに保存すると、前回と同じ種類の対策を重ねても検出できない（2026年10月24日以降のcommit 2855件中、
+    `再発:`の行を持つものは2件だった）。原因が未確定の原稿は`## 調査結果と判断根拠`に書いた行も数える。
+    逐語引用と記録の節が保存済みの本文と変わらない編集（追記など）は、既存の項目を理由に拒否しない。 pyfltr: allow-comment
+    """
+    quote, records = _recurrence_sections(body)
+    if original is not None and _recurrence_sections(original) == (quote, records):
+        return
+    if errors := _plan_structure.recurrence_quote_errors(records, quote):
+        raise WebInputError(
+            "原因分析の書式が不正です: " + "。".join(errors),
+            next_action=(
+                "前回の対策の所在と種類を`agent-basics:bugfix`の`references/recurrence.md`に従って調べ、"
+                "`## 原因分析`か`## 調査結果と判断根拠`に区分の語で始まる`再発:`の行を置く"
             ),
         )
 

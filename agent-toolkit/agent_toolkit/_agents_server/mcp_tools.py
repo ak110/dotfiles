@@ -69,6 +69,7 @@ from agent_toolkit._common import (
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common.next_action import ActionableError
 lazy from agent_toolkit._atk.wi import operation_permissions
+lazy from agent_toolkit._common import sent_warnings
 lazy from agent_toolkit._common.operation_approvals import request_display
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -808,8 +809,14 @@ async def send_to_user(
 
     tool_use_id = _TOOL_USE_ID.get()
     result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})
-    if guidance:
-        result["guidance"] = guidance
+    relayed = result.pop("warnings", None)
+    warnings = [text for text in [*(relayed if isinstance(relayed, list) else []), guidance] if isinstance(text, str) and text]
+    if warnings and tool_use_id and (session_id := _manager().launcher_session_id()):
+        # pyfltr: allow-comment -- 警告は送信結果の本文（データとして読まれる）に入れない。
+        # pyfltr: allow-comment -- PostToolUseのhookが同じ呼出しの添付として届ける。
+        sent_warnings.stash(session_id, tool_use_id, warnings)
+    elif warnings:
+        result["guidance"] = "\n".join(warnings)
     return result
 
 

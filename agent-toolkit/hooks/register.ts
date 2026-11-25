@@ -46,6 +46,10 @@ export const register: Register = (on) => {
   on("prompt.submit", async ($, e, next) => {
     const typed = e.origin.kind === "composer" && !e.text.trimStart().startsWith("<atk-auto");
     if (!(typed || GOAL_PROMPT.test(e.text)) || !(await isTerminalMain($))) return next(e);
+    // 同じ文面を発話ごとに届けると読み飛ばされやすくなり、警告を含む通知全体が軽く扱われた（2026年11月25日の分析）。 pyfltr: allow-comment
+    // 文脈（セッションの開始か会話の圧縮の後）ごとに最初の発話へだけ届ける。送達の有無はStopの再掲判定が毎ターン確かめる。 pyfltr: allow-comment
+    if ((await $.state.get({ plugin: "agent-toolkit", key: "sendContractNotified" })).value) return next(e);
+    await $.state.set({ plugin: "agent-toolkit", key: "sendContractNotified" }, true);
     const listed = (await $.tool.list().catch(() => [])).some((tool) => tool.name === SEND_TO_USER);
     const notice = automatedMessage(listed ? "send-to-user-contract" : "send-to-user-search", "notice",
       "着手・進捗・完了報告は、使える時は常に `send_to_user` で送る。" +
@@ -53,7 +57,13 @@ export const register: Register = (on) => {
       "直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。");
     return next({ ...e, context: [...(e.context ?? []), notice] });
   });
+  // 圧縮の結果を待たずに戻す。後続の圧縮処理が失敗しても、次の発話で案内を欠かさないためである。 pyfltr: allow-comment
+  on("session.compact", async ($, e, next) => {
+    await $.state.set({ plugin: "agent-toolkit", key: "sendContractNotified" }, false);
+    return next(e);
+  });
   on("session.start", async ($, e, next) => {
+    await $.state.set({ plugin: "agent-toolkit", key: "sendContractNotified" }, false);
     usageLimitSession.delegated = await isDelegated($);
     usageLimitSession.processLoop = (await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION")) === "1";
     // 操作パネルはメイン会話だけへ、最初の発話より前に登録する。

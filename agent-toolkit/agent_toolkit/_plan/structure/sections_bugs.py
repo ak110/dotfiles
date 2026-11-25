@@ -10,7 +10,17 @@ import re
 from collections.abc import Iterable
 from typing import NamedTuple
 
-from agent_toolkit._common.prevention_kinds import KINDS_GUIDANCE, starts_with_kind
+from agent_toolkit._common.prevention_kinds import (
+    KINDS_GUIDANCE,
+    RECURRENCE_GUIDANCE,
+    RECURRENCE_NOT_APPLICABLE,
+    STRUCTURE_EXCEPTION_LABEL,
+    TEXT_ONLY_KINDS,
+    adopted_kinds,
+    mentions_recurrence,
+    recurrence_kind,
+    starts_with_kind,
+)
 from agent_toolkit._plan.structure.constants import (
     CAUSE_RECORD_OPTIONAL_LABELS,
     CAUSE_RECORD_REQUIRED_LABELS,
@@ -121,7 +131,44 @@ def _label_line_errors(unit: _CauseRecordUnit, *, saved_record: bool) -> list[st
             for line in lines
             if line.label == "再発防止" and line.text and not starts_with_kind(line.text)
         )
+        errors.extend(_recurrence_line_errors(lines))
     return errors
+
+
+def _recurrence_line_errors(lines: list[CauseRecordLine]) -> list[str]:
+    """`再発:`の行の区分と、再発への対策の種類を確かめる。
+
+    文書・手順だけの対策は判断時に思い出すことに頼り、再発した事象では同じ未適用を繰り返すため、
+    構造・検査の策を含むか、`構造化不可:`で防げない理由を書いた時だけ受理する。 pyfltr: allow-comment
+    """
+    recurrences = [line for line in lines if line.label == "再発" and line.text]
+    if not recurrences:
+        return []
+    errors = [
+        f"`再発:`の行が区分の語で始まらない（{RECURRENCE_GUIDANCE}）"
+        for line in recurrences
+        if recurrence_kind(line.text) is None
+    ]
+    if all(recurrence_kind(line.text) == RECURRENCE_NOT_APPLICABLE for line in recurrences):
+        return errors
+    preventions = [line.text for line in lines if line.label == "再発防止" and line.text]
+    kinds = set().union(*(adopted_kinds(text) for text in preventions)) if preventions else set()
+    if kinds and kinds <= TEXT_ONLY_KINDS and not any(STRUCTURE_EXCEPTION_LABEL in text for text in preventions):
+        errors.append(
+            "再発した事象への`再発防止:`が`文書`・`手順`だけである。"
+            "前回の対策と同じ種類を重ねず、`原因の除去`・`入力の制限`・`判断の集約`・`設計`・`自動検出`・`確認項目`のどれかを含めるか、"
+            f"構造・検査で防げない理由を`{STRUCTURE_EXCEPTION_LABEL}: <理由>`で同じ行に書く"
+        )
+    return errors
+
+
+def recurrence_quote_errors(cause_content: str, quote_content: str) -> list[str]:
+    """ユーザーの原文が反復に触れるのに、原因分析に`再発:`の行が無い時の違反を返す。 pyfltr: allow-comment"""
+    if not mentions_recurrence(quote_content):
+        return []
+    if any(line.label == "再発" and line.text for line in cause_record_lines(cause_content)):
+        return []
+    return [f"`## ユーザー指摘の逐語引用`が同じ問題の反復に触れているのに`再発:`の行が無い（{RECURRENCE_GUIDANCE}）"]
 
 
 def cause_record_errors(content: str, *, accept_legacy: bool = False, saved_record: bool | None = None) -> list[str]:
