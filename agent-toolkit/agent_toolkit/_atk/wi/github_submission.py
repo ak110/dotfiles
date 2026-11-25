@@ -200,6 +200,9 @@ def check_and_submit(
     except (ActionableError, alerts.AlertCollectError, OSError, ValueError, subprocess.CalledProcessError) as error:
         outcome.report_warning(
             f"GitHubのIssueとPRを取り込めません: {redact_secrets(str(error))}",
-            next_action="公開設定と`gh auth status --hostname github.com`、`atk config repos list`の登録を確認する",
+            next_action=(
+                "リポジトリの公開設定を確認してください。"
+                "`gh auth status --hostname github.com`で認証を、`atk config repos list`で対象の登録を確認してください。"
+            ),
         )
     return submitted

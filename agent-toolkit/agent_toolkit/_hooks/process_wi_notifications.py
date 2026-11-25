@@ -8,15 +8,16 @@ import pathlib
 import subprocess
 import time
 
-import filelock
+lazy import filelock
 
-from agent_toolkit._atk import config
-from agent_toolkit._atk.wi import background_sync, listing, sections, snapshot, sync, uwi_scan, wait
-from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
-from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
-from agent_toolkit._common import process_loop_session, session_activity, session_state, uwi_watch
-from agent_toolkit._common.next_action import ActionableError
-from agent_toolkit._hooks import uwi_completion
+from agent_toolkit._common import process_loop_session, session_state
+lazy from agent_toolkit._atk import config
+lazy from agent_toolkit._atk.wi import background_sync, listing, sections, snapshot, sync, uwi_scan, wait
+lazy from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
+lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+lazy from agent_toolkit._common import session_activity, uwi_watch
+lazy from agent_toolkit._common.next_action import ActionableError
+lazy from agent_toolkit._hooks import uwi_completion
 
 _STATE_KEY = "process_wi_change_notifications"
 _PULL_INTERVAL_SECONDS = 60.0

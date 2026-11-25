@@ -403,7 +403,10 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             ):
                 reason = _block_notice(
                     "完了報告の手順書を読んだ証拠がないため、まだ表示していない。",
-                    fix=f"`Read`で`{playbook}`を全文読む。Bashの全文表示でも可。`file(...).text()`は証拠にならない。",
+                    fix=(
+                        f"`Read`で`{playbook}`を全文読んでください。`Bash`で全文を表示しても構いません。"
+                        "`file(...).text()`は証拠にならない。"
+                    ),
                 )
             edit_body = reason is None
         if reason is None:

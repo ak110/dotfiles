@@ -119,34 +119,32 @@ def test_document_template_keeps_progress_and_commit_lookup_in_handoff(
     git_repository.run_git(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "change"
     )
+    commit = git_repository.git_output(repo, "rev-parse", "--short", "HEAD")
+    progress = ["--completed-step", "実装", "--result", "成功"]
+    mapping = ["--commit", "HEAD", "--previous-head", previous, "--worktree", str(repo), "--awi", wi]
     args.script_name = "plan-progress"
-    args.script_args = [
-        str(plan),
-        "--completed-step",
-        "実装",
-        "--result",
-        "成功",
-        "--commit",
-        "HEAD",
-        "--previous-head",
-        previous,
-        "--worktree",
-        str(repo),
-        "--awi",
-        wi,
-    ]
+    args.script_args = [str(plan), *progress]
     before = plan.read_bytes()
     assert run_script.dispatch(args) == 1
     assert "進捗は引き継ぎ記録へ書く" in capsys.readouterr().err
     assert plan.read_bytes() == before
+    args.script_args = [str(plan), *mapping]
+    assert run_script.dispatch(args) == 0
+    assert plan.read_bytes() == before
+    capsys.readouterr()
+    args.script_name = "plan-commits"
+    args.script_args = [str(plan), "--worktree", str(repo), "--awi", wi]
+    assert run_script.dispatch(args) == 0
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [commit]}
+
     handoff = tmp_path / "handoff.md"
     handoff.write_text("# 引き継ぎ記録\n", encoding="utf-8")
-    args.script_args[0] = str(handoff)
-    args.script_args.extend(["--handoff", "--allowed-awi", wi])
+    args.script_name = "plan-progress"
+    args.script_args = [str(handoff), *progress, *mapping, "--handoff", "--allowed-awi", wi]
     assert run_script.dispatch(args) == 0
     assert "実装: 成功" in handoff.read_text(encoding="utf-8")
     capsys.readouterr()
     args.script_name = "plan-commits"
     args.script_args = [str(handoff), "--handoff", "--allowed-awi", wi, "--worktree", str(repo), "--awi", wi]
     assert run_script.dispatch(args) == 0
-    assert json.loads(capsys.readouterr().out)["awi"] == wi
+    assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [commit]}

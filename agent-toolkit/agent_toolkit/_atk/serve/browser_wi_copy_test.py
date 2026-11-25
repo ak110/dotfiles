@@ -35,6 +35,8 @@ pytestmark = [
     ("width", "list_width"),
     [
         (320, None),
+        (500, None),
+        (501, None),
         (700, None),
         (1024, None),
         (1600, None),
@@ -75,19 +77,28 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
         assert await row.locator(".entry-copy").evaluate("element => element.scrollWidth <= element.clientWidth")
         metrics = await row.evaluate("""row => {
           const summary = row.querySelector('.summary-cell');
+          const summaryRect = summary.getBoundingClientRect();
+          const statusRect = row.querySelector('.status-cell').getBoundingClientRect();
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           context.font = getComputedStyle(summary).font;
           return {
-            width: summary.getBoundingClientRect().width,
+            width: summaryRect.width,
             prefixWidth: context.measureText(summary.textContent.slice(0, 6) + '…').width,
-            summaryTop: summary.getBoundingClientRect().top,
-            statusTop: row.querySelector('.status-cell').getBoundingClientRect().top
+            summaryTop: summaryRect.top,
+            summaryBottom: summaryRect.bottom,
+            summaryRight: summaryRect.right,
+            statusTop: statusRect.top,
+            statusLeft: statusRect.left
           };
         }""")
         assert metrics["width"] >= metrics["prefixWidth"], metrics
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-        assert metrics["summaryTop"] < metrics["statusTop"]
+        if width <= 500:
+            assert metrics["summaryTop"] == metrics["statusTop"], metrics
+            assert metrics["summaryRight"] <= metrics["statusLeft"], metrics
+        else:
+            assert metrics["summaryBottom"] <= metrics["statusTop"], metrics
 
     await assert_readable()
 

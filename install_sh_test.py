@@ -173,10 +173,11 @@ def test_install_sh_deploys_distribution(tmp_path: pathlib.Path):
 
 
 def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
-    """Gitが作業ツリーの内容とみなすファイル（追跡ファイルと無視対象外の未追跡ファイル）だけを複製する。
+    """追跡・非無視ファイルのうち、導入時に使わないテストモジュールを除いて複製する。  pyfltr: allow-comment
 
     無視対象（仮想環境、検査のキャッシュ、`.claude/worktrees`配下の作業ツリーなど）まで複製すると、
     開発中の作業ツリーでは数GBのコピーで所要とCPU上限を超え、CIの新しいcheckoutとも条件が変わる。
+    テストモジュールはCodex向け投影でも複製されるため、隔離領域に持ち込まない。
     `.git`はinstall.shとchezmoiが使わないため複製しない。
     """
     listed = subprocess.run(
@@ -185,6 +186,8 @@ def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
         capture_output=True,
     ).stdout
     for name in sorted(set(os.fsdecode(listed).split("\0")) - {""}):
+        if name.endswith("_test.py"):
+            continue
         source = src / name
 
         if not source.is_symlink() and not source.exists():
