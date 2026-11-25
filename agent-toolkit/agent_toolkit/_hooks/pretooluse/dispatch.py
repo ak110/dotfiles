@@ -93,6 +93,7 @@ lazy from agent_toolkit._hooks import (
     delivered_repost_gate,
     hook_notice_response_gate,
     norm_excuse_gate,
+    permission_denial_notice,
     repository_protection,
     work_contract,
 )
@@ -189,6 +190,11 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
 
     with notice_cycle(session_id, "pretooluse:" + str(tool_name), _agent_id.resolve_hook_agent_id(payload)):
         pending_notices: list[str] = list(initial_notices)
+        user_facing = tool_name == "AskUserQuestion" or is_send_to_user_tool(tool_name)
+        if denial_notice := permission_denial_notice.next_notice(payload, session_id, block=user_facing):
+            if user_facing:
+                return _emit(Decision(block=denial_notice), pending_notices, is_codex=is_codex)
+            pending_notices.append(denial_notice)
         if tool_name not in user_facing_checks.USER_FACING_TEXT_TOOL_NAMES:
             user_facing_checks.language_retry(payload, tool_name, tool_input, remember=False)
         decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)

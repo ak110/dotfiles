@@ -95,15 +95,11 @@ def _scan(turn: list[dict]) -> tuple[list[str], list[str], int, int]:
     for index, entry in enumerate(turn):
         attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
         if isinstance(attachment, dict) and attachment.get("type") in _HOOK_RECORD_TYPES:
-            event = str(attachment.get("hookEvent") or attachment.get("hookName") or "")
-            if not event.startswith(("Stop", "SubagentStop")):
-                for text in _strings(attachment.get("content")):
-                    if found := _warnings(text):
-                        warnings.extend(found)
-                        identities.append(
-                            str(entry.get("uuid") or entry.get("timestamp") or attachment.get("toolUseID") or index)
-                        )
-                        last_warning = index
+            for text in _strings(attachment.get("content")):
+                if found := _warnings(text):
+                    warnings.extend(found)
+                    identities.append(str(entry.get("uuid") or entry.get("timestamp") or attachment.get("toolUseID") or index))
+                    last_warning = index
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         for block in content if isinstance(content, list) else ():

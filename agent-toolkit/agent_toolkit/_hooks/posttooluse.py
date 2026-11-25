@@ -62,6 +62,7 @@ lazy from agent_toolkit._hooks import (
     codex_truncation,
     command_timing,
     full_reads,
+    permission_denial_notice,
     process_wi_notifications,
     review_receipt,
     session_title,
@@ -239,6 +240,7 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
     event_name = payload.get("hook_event_name", "")
 
     if event_name == "PermissionDenied":
+        permission_denial_notice.record(payload, session_id, tool_name)
         operation_permissions.observe_denial(payload)
     elif event_name in {"PostToolUse", "PostToolUseFailure"}:
         if event_name == "PostToolUse" and tool_name == _ASK_USER_QUESTION_TOOL:

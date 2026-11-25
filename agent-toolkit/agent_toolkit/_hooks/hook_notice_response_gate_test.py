@@ -74,7 +74,6 @@ def _evaluate(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> t
         ([_HUMAN, _text("hook通知への対応: 先に書いた。"), _attachment(_WARN), _text("終えた。")], True),
         ([_HUMAN, _attachment(_NOTICE), _text("終えた。")], False),
         ([_attachment(_WARN), _HUMAN, _text("終えた。")], False),
-        ([_HUMAN, _attachment(_WARN, event="Stop"), _text("終えた。")], False),
         ([_HUMAN, _attachment(_WARN, record_type="hook_system_message"), _text("終えた。")], True),
         ([_HUMAN, _call(_SEND_TO_USER, "s1", {"message": "報告"}), _result("s1", "送信済み。" + _WARN), _text("…")], False),
         (
@@ -97,7 +96,6 @@ def _evaluate(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> t
         "response-before-warn",
         "notice-only",
         "warn-in-previous-turn",
-        "stop-hook-output",
         "system-message-warn",
         "quoted-warn-in-toolkit-result",
         "quoted-warn-in-delegate-report",
@@ -112,10 +110,12 @@ def test_blocks_only_unanswered_warn(entries: list[dict], blocked: bool, tmp_pat
         assert "pretooluse: " in body or "send-to-user" in body or "pretooluse" in body
 
 
-def test_blocks_once_per_warning_set(tmp_path: pathlib.Path) -> None:
-    entries = [_HUMAN, _attachment(_WARN), _text("終えた。")]
-    assert _evaluate(entries, tmp_path)[0] == "block"
-    assert _evaluate(entries, tmp_path)[0] == "approve"
+@pytest.mark.parametrize("event", ["PreToolUse", "Stop", "SubagentStop"])
+def test_blocks_once_per_warning_set(tmp_path: pathlib.Path, event: str) -> None:
+    entries = [_HUMAN, _attachment(_WARN, event=event), _text("終えた。")]
+    decision, body = _evaluate(entries, tmp_path)
+    assert decision == "block"
+    assert _evaluate([*entries, _attachment(body, event="Stop", uuid="block-1")], tmp_path)[0] == "approve"
     other = _WARN.replace("直接参照", "別の参照")
     assert _evaluate([*entries, _attachment(other), _text("終えた。")], tmp_path)[0] == "block"
 
@@ -153,11 +153,13 @@ def test_send_block_asks_question_after_response_report(tmp_path: pathlib.Path) 
 
 
 @pytest.mark.parametrize("tool_name", [_SEND_TO_USER, "AskUserQuestion"])
-def test_pretooluse_denies_user_facing_call_with_unanswered_warning(tmp_path: pathlib.Path, tool_name: str) -> None:
+@pytest.mark.parametrize("event", ["PreToolUse", "Stop", "SubagentStop"])
+def test_pretooluse_denies_user_facing_call_with_unanswered_warning(tmp_path: pathlib.Path, tool_name: str, event: str) -> None:
     """PreToolUseのhookの入口から、未対応の警告を残した報告・質問を止める。 pyfltr: allow-comment"""
     path = tmp_path / "transcript.jsonl"
     path.write_text(
-        "\n".join(json.dumps(entry, ensure_ascii=False) for entry in [_HUMAN, _attachment(_WARN)]), encoding="utf-8"
+        "\n".join(json.dumps(entry, ensure_ascii=False) for entry in [_HUMAN, _attachment(_WARN, event=event)]),
+        encoding="utf-8",
     )
     payload = {
         "hook_event_name": "PreToolUse",
