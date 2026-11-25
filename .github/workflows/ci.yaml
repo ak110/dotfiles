@@ -345,9 +345,13 @@ jobs:
         run: uv cache prune --ci
   pylint:
     needs: common-ci-owner
-    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pylint (3.15) (non-owner)' || 'pylint (3.15)' }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pylint (3.15) (non-owner)' || format('pylint (3.15) ({0})', matrix.scope) }}
     runs-on: ubuntu-latest
     timeout-minutes: 11
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: ${{ fromJSON(needs.common-ci-owner.outputs.owns == 'true' && '["runtime","remaining","cross-module"]' || '["skip"]') }}
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
@@ -375,7 +379,24 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
       - name: Python 3.15 Pylint
         if: needs.common-ci-owner.outputs.owns == 'true'
-        run: pyfltr ci --commands=pylint
+        env:
+          PYLINT_SCOPE: ${{ matrix.scope }}
+        run: |
+          set -euo pipefail
+          # Pylintはパス正規表現をWindows・POSIXの選択肢に展開する。
+          # 否定条件がどちらの選択肢でも同じ範囲を指すよう、区切りを1文字で照合する。
+          runtime='.*agent-toolkit.agent_toolkit.(_atk|_agents_server|_hooks).'
+          case "$PYLINT_SCOPE" in
+            runtime) omitted="^(?!$runtime)" ;;
+            remaining) omitted="^$runtime" ;;
+            cross-module)
+              exec pyfltr ci --commands=pylint --pylint-args="--disable=all --enable=cyclic-import"
+              ;;
+            *) printf '未知のPylintの分割: %s\n' "$PYLINT_SCOPE" >&2; exit 2 ;;
+          esac
+          # pyfltrのファイル選定を保ち、Pylintがパッケージを展開した後も分割の境界を適用する。
+          # 循環importはファイルをまたぐため、全対象を使うcross-moduleでだけ検査する。
+          exec pyfltr ci --commands=pylint --pylint-args="--ignore-paths=$omitted --disable=cyclic-import"
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv cache prune --ci

@@ -54,8 +54,13 @@ def _workflow_job_names() -> set[str]:
         name = job.get("name", job_id)
         if expanded := re.search(r"\|\| '([^']+)'", name):
             names.add(expanded[1])
-        elif formatted := re.search(r"\|\| format\('([^']+)', matrix\.shard\)", name):
-            names.update(formatted[1].format(shard) for shard in job["strategy"]["matrix"]["shard"])
+        elif formatted := re.search(r"\|\| format\('([^']+)', matrix\.(\w+)\)", name):
+            values = job["strategy"]["matrix"][formatted[2]]
+            if isinstance(values, str):
+                owner_values = re.search(r"&& '(\[[^']+\])' \|\|", values)
+                assert owner_values is not None, values
+                values = json.loads(owner_values[1])
+            names.update(formatted[1].format(value) for value in values)
         elif job_id == "statusline-build":
             names.update(f"statusline-build ({entry['os']})" for entry in job["strategy"]["matrix"]["include"])
         else:
@@ -63,7 +68,21 @@ def _workflow_job_names() -> set[str]:
     return names
 
 
-@pytest.mark.parametrize("evidence", ["complete", "missing", "skipped", "neutral", "non-owner", "step-skipped"])
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        "complete",
+        "missing",
+        "skipped",
+        "neutral",
+        "non-owner",
+        "step-skipped",
+        "missing-pylint-runtime",
+        "missing-pylint-remaining",
+        "missing-pylint-cross-module",
+        "failed-pylint-cross-module",
+    ],
+)
 def test_master_reuses_only_a_complete_owner_attempt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, evidence: str) -> None:
     project, second = "example/dotfiles", "develop-sha"
     run = {
@@ -98,6 +117,11 @@ def test_master_reuses_only_a_complete_owner_attempt(tmp_path: Path, monkeypatch
         unix_job["name"] = "test-linux (non-owner)"
     elif evidence == "step-skipped":
         next(job for job in jobs if job["name"] == "browser-e2e")["steps"][0]["conclusion"] = "skipped"
+    elif evidence.startswith("missing-pylint-"):
+        name = f"pylint (3.15) ({evidence.removeprefix('missing-pylint-')})"
+        jobs.remove(next(job for job in jobs if job["name"] == name))
+    elif evidence == "failed-pylint-cross-module":
+        next(job for job in jobs if job["name"] == "pylint (3.15) (cross-module)")["conclusion"] = "failure"
 
     def pages(path: str, key: str) -> list[dict[str, Any]]:
         if key == "workflow_runs":
