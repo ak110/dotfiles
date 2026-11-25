@@ -483,12 +483,13 @@ else:
 
     AgentsServerManager.save_control_state = save_across_deadline
 
+pathlib.Path(__file__).with_suffix(".ready").touch()
 asyncio.run(service.run(pathlib.Path(directory), generation))
 """
 
 _PARENT, _SESSION = "parent-conversation", "child-session"
 _OWNED = {"parent": _PARENT, "session_id": _SESSION}
-_PREVIOUS_IMPORT_TIMEOUT = 35
+_GENERATION_READY_TIMEOUT = 35
 
 
 def _isolated_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
@@ -511,8 +512,46 @@ async def _wait_for_discovery(directory: pathlib.Path, generation: str, process:
     return json.loads(discovery.read_text(encoding="utf-8"))
 
 
+def _reap_generation_process(process: subprocess.Popen) -> None:
+    if process.poll() is None:
+        process.kill()
+    process.wait(timeout=5)
+
+
+async def _launch_generation_process(
+    script: pathlib.Path,
+    arguments: list[str],
+    cwd: pathlib.Path,
+    processes: list[subprocess.Popen],
+    *,
+    startup_deadline: float | None = None,
+) -> subprocess.Popen:
+    ready = script.with_suffix(".ready")
+    if startup_deadline is not None and asyncio.get_running_loop().time() >= startup_deadline:
+        raise TimeoutError(f"{ready.name}: 子を起動する前に準備期限を超えた")
+    # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、呼出元が終了を見届けた後で手放す。
+    process = subprocess.Popen([sys.executable, str(script), *arguments], cwd=cwd)  # pylint: disable=consider-using-with
+    processes.append(process)
+    if startup_deadline is None:
+        startup_deadline = asyncio.get_running_loop().time() + _GENERATION_READY_TIMEOUT
+    try:
+        async with asyncio.timeout_at(startup_deadline):
+            await _wait_for_child_file(ready, process)
+    except TimeoutError as error:
+        _reap_generation_process(process)
+        processes.pop()
+        raise TimeoutError(f"{ready.name}: 子の準備完了通知が届かなかった") from error
+    return process
+
+
 async def _launch_previous_generation(
-    tmp_path: pathlib.Path, directory: pathlib.Path, turn: str, processes: list[subprocess.Popen], *, mode: str = "normal"
+    tmp_path: pathlib.Path,
+    directory: pathlib.Path,
+    turn: str,
+    processes: list[subprocess.Popen],
+    *,
+    mode: str = "normal",
+    startup_deadline: float | None = None,
 ) -> dict[str, Any]:
     registry = GenerationRegistry(directory)
     registry.reserve("old", tmp_path / "old", "1.0.0")
@@ -520,20 +559,13 @@ async def _launch_previous_generation(
     script.parent.mkdir()
     script.write_text(PREVIOUS_GENERATION, encoding="utf-8")
     arguments = [str(directory), _PARENT, _SESSION, turn, str(tmp_path / "inject-failure"), str(tmp_path / "finish-turn"), mode]
-    # 終了したプロセスのhandleを保持すると生存と判定する環境があるため、呼出元が終了を見届けた後で手放す。
-    processes.append(subprocess.Popen([sys.executable, str(script), *arguments], cwd=tmp_path))  # pylint: disable=consider-using-with
-    process = processes[-1]
-    try:
-        async with asyncio.timeout(_PREVIOUS_IMPORT_TIMEOUT):
-            await _wait_for_child_file(script.with_suffix(".ready"), process)
-    except TimeoutError as error:
-        process.kill()
-        process.wait(timeout=5)
-        processes.pop()
-        raise TimeoutError("旧世代の子からimport完了通知が届かなかった") from error
+    process = await _launch_generation_process(script, arguments, tmp_path, processes, startup_deadline=startup_deadline)
     old = await _wait_for_discovery(directory, "old", process)
     registry.publish("old", endpoint=old["endpoint"], process=old["process"], server_instance=old["server_instance"])
-    async with asyncio.timeout(30):
+    owns_deadline = asyncio.get_running_loop().time() + 30
+    if startup_deadline is not None:
+        owns_deadline = min(owns_deadline, startup_deadline)
+    async with asyncio.timeout_at(owns_deadline):
         while not await service_rpc.request(old, "owns", _OWNED):
             await asyncio.sleep(0.05)
     return old
@@ -766,20 +798,30 @@ async def _publish_across_expiry(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     processes: list[subprocess.Popen] = []
     stop = asyncio.Event()
     serving = None
+    # pyfltr: allow-comment 2子で準備期限を共有し、発見の10秒と2子の回収の最大10秒をpytestの60秒より前に残す。
+    startup_deadline = asyncio.get_running_loop().time() + _GENERATION_READY_TIMEOUT
     try:
         old = await _launch_previous_generation(
-            tmp_path, directory, "COMPLETED", processes, mode="raw" if failure == "options" else "normal"
+            tmp_path,
+            directory,
+            "COMPLETED",
+            processes,
+            mode="raw" if failure == "options" else "normal",
+            startup_deadline=startup_deadline,
         )
         registry.reserve("second", tmp_path / "second", "1.0.1")
         script = tmp_path / "adopting" / "adopting_generation.py"
         script.parent.mkdir()
         script.write_text(_ADOPTING_GENERATION, encoding="utf-8")
-        processes.append(
-            subprocess.Popen(  # pylint: disable=consider-using-with
-                [sys.executable, str(script), str(directory), "second", _SESSION, _PARENT, failure], cwd=tmp_path
-            )
+        process = await _launch_generation_process(
+            script,
+            [str(directory), "second", _SESSION, _PARENT, failure],
+            tmp_path,
+            processes,
+            startup_deadline=startup_deadline,
         )
-        second = await _wait_for_discovery(directory, "second", processes[1])
+        second = await _wait_for_discovery(directory, "second", process)
+        del process
         async with asyncio.timeout(30):
             assert (await service_rpc.request(second, "publish", {}))["generation"] == "second"
         async with asyncio.timeout(30):
@@ -813,9 +855,9 @@ async def _publish_across_expiry(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
         stop.set()
         if serving is not None:
             await asyncio.gather(serving, return_exceptions=True)
-        for process in processes:
-            process.kill()
-            process.wait()
+        with contextlib.ExitStack() as children:
+            for process in processes:
+                children.callback(_reap_generation_process, process)
 
 
 def test_exited_candidate_is_not_published(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
