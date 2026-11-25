@@ -628,6 +628,7 @@ async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
         try:
             _fail(client, session, tmp_path)
             await asyncio.wait_for(client.account_read.wait(), timeout=5)
+            reset_check = backend._auto_reset_checks[session.session_id]
             deadline = session.usage_limit_resume_at
             assert deadline is not None
             account_release.set()
@@ -641,7 +642,11 @@ async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
         finally:
             account_release.set()
             consume_release.set()
-        await _until(backend, lambda: not session.codex_auto_reset_pending)
+        # 消費の確定後は、状態更新と通知を行う確認タスク自体を待つ。  # pyfltr: allow-comment
+        done, _ = await asyncio.wait({reset_check}, timeout=5)
+        assert reset_check in done, f"reset確認が未終了: pending={session.codex_auto_reset_pending}"
+        reset_check.result()
+        assert not session.codex_auto_reset_pending
         if permitted:
             assert client.weekly_usage == 0 and session.awaiting_auto_resume
         else:
