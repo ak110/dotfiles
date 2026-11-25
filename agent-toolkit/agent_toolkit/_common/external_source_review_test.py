@@ -26,10 +26,13 @@ def test_no_difference_requires_a_real_reference(tmp_path: pathlib.Path, referen
 
 
 def test_legacy_table_and_a_table_for_a_different_case_are_rejected(tmp_path: pathlib.Path) -> None:
-    old = f"| 資料URL | 採否と理由 |\n| --- | --- |\n| {_URL} | 採用 |\n"
+    old = f"| 資料URL | 採否と理由 |\n| --- | --- |\n| {_URL} | 採用 |\n| {_URL} | 保留 |\n| {_URL} | 不採用 |\n"
     error = table_error(old, {_URL}, tmp_path)
     assert error is not None
     assert "資料の主張" in error
+    assert all(f"{line}行目" in error for line in (3, 4, 5))
+    assert "既存との差分" in error
+    assert "`path:行`" in error and "同じ行動" in error
 
     other = "| " + " | ".join(COLUMNS) + " |\n"
     other += "| " + " | ".join(["---"] * len(COLUMNS)) + " |\n"

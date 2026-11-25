@@ -164,7 +164,8 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
    各`model_sources`は`since`より後を無料で調べる（`agent-basics:fetch-sources`）。
 2. 固定の変更履歴（`changelog:*`と`web:antigravity`）は全未読版を読み、`truncated`なら`url`の原本を確認し、公式の詳細履歴へのリンクがあればたどる。
    読めない版は理由を記録する。
-3. 内容の変更がない版上げだけを事前に除き、現状と全状態のWIを照らして、`request-intake.md`の手順2〜5で主張ごとの対応表を作る。
+3. `research-sources` の取得結果で `comparison_required: false` の版上げだけを事前に除く（本文が空か版名だけ）。
+   残る資料は現状と全状態のWIを照らし、`request-intake.md`の手順2〜5で主張ごとの対応表を作る。
    実現済み・既出・便益なしも事前に除かず、差分と採否の列で判定する。
    承認の質問は行わないため、報告用UWIを保存する前に「資料起点の比較」で主張の網羅と参照先の意味を自己点検する。
    `atk wi add` は取得した資料URLと表の書式を確かめる。

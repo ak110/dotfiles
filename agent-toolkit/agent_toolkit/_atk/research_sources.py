@@ -147,12 +147,12 @@ def _read(path: pathlib.Path) -> dict[str, Any]:
         return {}
 
 
-def collected_source_urls(slot: str) -> set[str]:
+def collected_source_urls(slot: str) -> set[str] | None:
     pending = _read(pending_path())
     if pending.get("slot") != slot:
-        return set()
+        return None
     urls = pending.get("source_urls")
-    return {url for url in urls if isinstance(url, str)} if isinstance(urls, list) else set()
+    return {url for url in urls if isinstance(url, str)} if isinstance(urls, list) else None
 
 
 def load_state() -> dict[str, Any]:
@@ -238,6 +238,7 @@ def _release_item(version: str, text: str, url: str) -> dict[str, Any]:
         "url": url,
         "text": text[:RELEASE_EXCERPT_CHARS] + "…" if truncated else text,
         "truncated": truncated,
+        "comparison_required": any(line.strip().lstrip("#").strip() not in {"", version} for line in text.splitlines()),
     }
 
 
@@ -793,7 +794,12 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         "user_ids": user_ids,
         "model_sources": list(model_sources),
         "source_urls": sorted(
-            {url for result in read for item in result.items if isinstance(url := item.get("url"), str) and url}
+            {
+                url
+                for result in read
+                for item in result.items
+                if item.get("comparison_required") is not False and isinstance(url := item.get("url"), str) and url
+            }
         ),
     }
     _directory().mkdir(parents=True, exist_ok=True)

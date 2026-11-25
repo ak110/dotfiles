@@ -35,7 +35,7 @@ def test_explicit_contract_controls_case_and_table(tmp_path: pathlib.Path) -> No
 
 def test_weekly_review_uses_collected_urls(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     contract = tmp_path / "work-contract.md"
-    contract.write_text("# 作業契約\n", encoding="utf-8")
+    contract.write_text("# 作業契約\n\n## 原本\n\n- https://example.com/version-only\n", encoding="utf-8")
     slot = "research@2026-11-25"
     monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", "weekly-run")
     monkeypatch.setenv(session_review.WEEKLY_SLOT_ENV, slot)

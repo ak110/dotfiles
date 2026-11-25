@@ -613,7 +613,10 @@ def _check_external_source_review(
                 frontmatter = {"source": args.source, **frontmatter}
             metadata = run_report_metadata(frontmatter, question_type=args.question_type, scope=args.scope, new_report=True)
             if metadata.get("weekly_slot") == configured_slot:
-                urls.update(research_sources.collected_source_urls(configured_slot))
+                collected = research_sources.collected_source_urls(configured_slot)
+                if collected is None:
+                    return "週次の資料URLの記録がありません。`atk run-script research-sources` で取得してください。"
+                urls = collected
                 break
     return external_source_review.check_table(contract, urls, local_worktree or pathlib.Path.cwd())
 

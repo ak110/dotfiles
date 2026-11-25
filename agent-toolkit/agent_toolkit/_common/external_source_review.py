@@ -111,16 +111,27 @@ def table_error(text: str, urls: set[str], root: pathlib.Path) -> str | None:
     root = root.resolve()
     columns: dict[str, int] = {}
     covered: set[str] = set()
-    for line_number, line in enumerate(without_literal_blocks(text).splitlines(), 1):
+    lines = without_literal_blocks(text).splitlines()
+    for line_number, line in enumerate(lines, 1):
         line = line.strip()
         if not line.startswith("|") or not line.endswith("|"):
             columns = {}
             continue
         cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", line[1:-1])]
         if COLUMNS[0] in cells:
-            for column in COLUMNS:
-                if cells.count(column) != 1:
-                    return f"{line_number}行目の見出しに`{column}`を1列書いてください。"
+            bad_columns = [column for column in COLUMNS if cells.count(column) != 1]
+            if bad_columns:
+                columns_text = "、".join(f"`{column}`" for column in bad_columns)
+                diagnostics = [f"{line_number}行目の見出しに{columns_text}を各1列書いてください。"]
+                for affected, following in enumerate(lines[line_number:], line_number + 1):
+                    if not following.strip().startswith("|"):
+                        break
+                    if urls.intersection(source_urls(following)):
+                        diagnostics.append(f"{affected}行目は必須列が揃っていないため比較できません。")
+                diagnostics.append(
+                    "差分が「なし」の行には `path:行` が必要です。既存の箇所が同じ行動を促すか独立に照合するためです。"
+                )
+                return "\n".join(diagnostics)
             columns = {column: cells.index(column) for column in COLUMNS}
             continue
         if not columns or columns[COLUMNS[0]] >= len(cells):
