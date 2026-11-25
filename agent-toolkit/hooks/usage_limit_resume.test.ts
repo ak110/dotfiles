@@ -12,6 +12,7 @@ function deferred<T>() {
 
 async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }, server?: { value: string }, prompt = { value: "first-prompt" }, owner = "") {
   mock.env(on, env);
+  on("clock.every", { ms: 100 }, () => ({ deny: "UI要求の定期読込は再開予約の試験対象外" }));
   const scheduled = deferred<() => void>();
   const completed = deferred<void>();
   const clock = now === undefined ? mock.clock(on) : {
