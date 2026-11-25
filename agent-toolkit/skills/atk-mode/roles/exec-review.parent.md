@@ -51,7 +51,8 @@
 - レビューの後にHEADが変わった時は`agent-toolkit:atk-mode/references/exec-review-head-update.md`を読む。
 - `review_contract`の生成は`agent-toolkit:atk-mode/references/review-contract.md`、判定行の形式は`agent-toolkit:atk-mode/references/review-record.md`にある。
 - 指摘管理表のパス・保存・操作は`agent-toolkit:atk-mode/references/review-record-table.md`にある。
-- 画面差分がある時は`agent-toolkit:atk-mode/roles/usability-review.parent.md`、文章成果物の読者別探索は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`に従う。
+- 画面差分がある時は実装の返却の`同種の既存画面`を渡して、`agent-toolkit:atk-mode/roles/usability-review.parent.md`に従う。
+  文章成果物の読者別探索は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`に従う。
 - 指摘を自分で直す時は`agent-toolkit:atk-mode/playbooks/review-fix.md`を使う。
 - 収束の後の統合は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`と`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`にある。
 

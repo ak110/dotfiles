@@ -429,13 +429,19 @@ def update_settings(payload: dict[str, Any]) -> None:
             raise ValueError("登録操作とリポジトリを指定してください")
         fields = ("edit", "path", "platforms", "branches", "default_branch", "merge_from")
         values = {name: operation_text(payload, name, optional=True) for name in fields}
+        values["github_issue_trusted_authors"] = operation_text(payload, "github_issue_trusted_authors", optional=True)
+        github_issues = payload.get("github_issues")
+        if github_issues is not None and not isinstance(github_issues, bool):
+            raise ValueError("GitHubのIssueとPRを取り込むかどうかを指定してください")
         process_loop = payload.get("process_loop")
         if process_loop is not None and not isinstance(process_loop, bool):
             raise ValueError("process-loopの対象かどうかを指定してください")
         if operation == "add" and not values["edit"]:
             raise ValueError("編集可否を指定してください")
         config_repositories_cli.update_repositories(
-            argparse.Namespace(repos_subcommand=operation, repo=repo, process_loop=process_loop, **values)
+            argparse.Namespace(
+                repos_subcommand=operation, repo=repo, process_loop=process_loop, github_issues=github_issues, **values
+            )
         )
         return
     key, value = operation_text(payload, "key"), operation_text(payload, "value")

@@ -542,6 +542,17 @@ def scan_activity(
     )
 
 
+def recorded_root_process(session_id: str, *, state_root: pathlib.Path | None = None) -> ProcessIdentity | None:
+    try:
+        name = _valid_session(session_id)
+        record = _read(activity_directory(state_root) / f"{name}.json")
+        if _valid_activity_record(record, name) and not record.get("parent_session_id"):
+            return _identity(record.get("process"))
+    except OSError, UnicodeError, ValueError:
+        pass
+    return None
+
+
 def root_activity(session_id: str, *, state_root: pathlib.Path | None = None) -> dict[str, Any]:
     result: dict[str, Any] = {"status": "不明"}
     try:

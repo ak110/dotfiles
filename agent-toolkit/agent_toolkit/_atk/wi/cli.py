@@ -12,7 +12,6 @@ lazy from agent_toolkit._atk import git_sync as _atk_git_sync
 lazy from agent_toolkit._atk import help_text as _atk_help
 lazy from agent_toolkit._atk import outcome as _outcome
 lazy from agent_toolkit._atk.wi import add as _add
-lazy from agent_toolkit._atk.wi import alerts as _alerts
 lazy from agent_toolkit._atk.wi import background_sync as _background_sync
 lazy from agent_toolkit._atk.wi import batch as _batch
 lazy from agent_toolkit._atk.wi import constants as _wi_constants
@@ -21,6 +20,7 @@ lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
 lazy from agent_toolkit._atk.wi import merge_verification as _merge_verification
 lazy from agent_toolkit._atk.wi import process_loop as _process_loop
+lazy from agent_toolkit._atk.wi import process_loop_alerts as _process_loop_alerts
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
@@ -300,6 +300,7 @@ def dispatch(
         "list": lambda: _listing.cmd_list(args, private_notes),
         "show": lambda: _show.cmd_show(args, private_notes),
         "start-processing": lambda: _mutation_transitions.cmd_start_processing(args, private_notes, now),
+        "take-over": lambda: _mutation_transitions.cmd_take_over(args, private_notes),
         "hold": lambda: _mutation_transitions.cmd_hold(args, private_notes, now),
         "unhold": lambda: _mutation_transitions.cmd_unhold(args, private_notes, now),
         "return-to-inbox": lambda: _mutation_transitions.cmd_return_to_inbox(args, private_notes, now),
@@ -316,7 +317,7 @@ def dispatch(
         "answer": lambda: _uwi.cmd_answer(args, private_notes),
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),
         "pull": lambda: _pull_command(private_notes),
-        "check-alerts": lambda: _alerts.cmd_check_alerts(args, private_notes, now),
+        "check-alerts": lambda: _process_loop_alerts.cmd_check_alerts(args, private_notes, now),
     }
     local_save = (
         sub

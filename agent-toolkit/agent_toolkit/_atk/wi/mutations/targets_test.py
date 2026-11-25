@@ -1,7 +1,7 @@
 import contextlib
 import pathlib
 import subprocess
-import time
+from collections.abc import Callable
 
 import pytest
 
@@ -12,6 +12,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import targets as mutation_targets
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
+from agent_toolkit._common import process_tree
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_mutations_support import (
     _disable_convert_git,
@@ -198,6 +199,81 @@ class TestAdoptMultiple:
         assert "chore: process 3 entries (adopted)" in commit_cmds[0]
 
 
+class _RealSyncEnvironment:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, filenames: tuple[str, ...]) -> None:
+        monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)
+        self.tmp_path = tmp_path
+        self.home = tmp_path / "first"
+        self.home.mkdir()
+        self.notes = _setup_notes(self.home)
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(self.notes))
+        for state in ("processing", "adopted", "rejected"):
+            (self.notes / state).mkdir()
+        for filename in filenames:
+            _write_awi_file(self.notes, filename)
+        self.remote = tmp_path / "origin.git"
+        _init_notes_with_origin(self.notes, self.remote)
+        self.workers: list[subprocess.Popen] = []
+        self.before_launch: Callable[[], object] | None = None
+        owner = self
+        real_popen = subprocess.Popen
+
+        class RecordingPopen(real_popen):  # type: ignore[misc,valid-type]
+            def __init__(self, args, *popen_args, **popen_kwargs) -> None:
+                is_worker = isinstance(args, list) and background_sync.__name__ in args
+                if is_worker and owner.before_launch is not None:
+                    owner.before_launch()
+                super().__init__(args, *popen_args, **popen_kwargs)
+                if is_worker:
+                    owner.workers.append(self)
+
+        monkeypatch.setattr(subprocess, "Popen", RecordingPopen)
+
+    def clone_second(self) -> pathlib.Path:
+        second_home = self.tmp_path / "second"
+        second_home.mkdir()
+        second_notes = second_home / "private-notes"
+        git_repository.run_git(self.tmp_path, "clone", "--branch", "main", str(self.remote), str(second_notes))
+        for key, value in (("user.name", "queue-test"), ("user.email", "queue-test@example.invalid")):
+            git_repository.run_git(second_notes, "config", key, value)
+        return second_notes
+
+    def local_head(self) -> str:
+        return git_repository.run_git(self.notes, "rev-parse", "HEAD").stdout.strip()
+
+    def remote_head(self) -> str:
+        return git_repository.run_git(
+            self.tmp_path, "--git-dir", str(self.remote), "rev-parse", "refs/heads/main"
+        ).stdout.strip()
+
+    def run_transition(self, *args: str) -> list[subprocess.Popen]:
+        started = len(self.workers)
+        with pytest.raises(SystemExit) as exit_info:
+            atk.main(["wi", *args], home=self.home, now=_FIXED_DT)
+        assert exit_info.value.code == 0
+        return self.workers[started:]
+
+    def wait_for_sync(self, launched: list[subprocess.Popen], *, timeout: float = 5) -> None:
+        assert len(launched) == 1, f"同期workerが起動していない: {len(launched)}件"
+        try:
+            returncode = launched[0].wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            residual = process_tree.stop_process_tree(launched[0])
+            pytest.fail(f"同期workerが完了しなかった（回収後の残存: {residual}）: {background_sync.read_status(self.notes)}")
+        assert returncode == 0, f"同期workerが異常終了した: {returncode}"
+        status = background_sync.read_status(self.notes)
+        assert status.get("state") == "synced", f"同期後の状態が不正: {status}"
+        assert self.local_head() == self.remote_head(), f"同期完了後もrefが不一致: {status}"
+
+    def assert_entry_state(self, filename: str, state: str) -> None:
+        text = (self.notes / "2026/10" / filename).read_text(encoding="utf-8")
+        assert f"state: {state}\n" in text, f"同期完了後の本文が不正: {filename}はstate: {state}でない"
+
+    def assert_history(self, subjects: list[str]) -> None:
+        actual = git_repository.run_git(self.notes, "log", f"-{len(subjects)}", "--format=%s").stdout.splitlines()
+        assert actual == subjects, f"同期完了後の履歴が不正: {actual}"
+
+
 class TestSkipPush:
     @pytest.mark.parametrize("action", ["adopt", "reject"])
     def test_skip_push_commits_without_push_and_reports_result(
@@ -310,78 +386,82 @@ class TestSkipPush:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
+        env = _RealSyncEnvironment(monkeypatch, tmp_path, ("default-adopt.md", "default-reject.md", "skip.md", "following.md"))
+        notes = env.notes
+        second_notes = env.clone_second()
 
-        monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)
-        first_home = tmp_path / "first"
-        first_home.mkdir()
-        notes = _setup_notes(first_home)
-        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
-        for state in ("processing", "adopted", "rejected"):
-            (notes / state).mkdir()
-        for filename in ("default-adopt.md", "default-reject.md", "skip.md", "following.md"):
-            _write_awi_file(notes, filename)
+        env.wait_for_sync(env.run_transition("adopt", "default-adopt.md"))
+        env.assert_entry_state("default-adopt.md", "adopted")
 
-        remote = tmp_path / "origin.git"
-        _init_notes_with_origin(notes, remote)
-
-        second_home = tmp_path / "second"
-        second_home.mkdir()
-        second_notes = second_home / "private-notes"
-        git_repository.run_git(tmp_path, "clone", "--branch", "main", str(remote), str(second_notes))
-        for key, value in (("user.name", "queue-test"), ("user.email", "queue-test@example.invalid")):
-            git_repository.run_git(second_notes, "config", key, value)
-
-        def local_head() -> str:
-            return git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
-
-        def remote_head() -> str:
-            return git_repository.run_git(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main").stdout.strip()
-
-        def wait_for_push():
-            deadline = time.monotonic() + 5
-            while local_head() != remote_head() and time.monotonic() < deadline:
-                time.sleep(0.02)
-            assert local_head() == remote_head(), background_sync.read_status(notes)
-
-        with pytest.raises(SystemExit) as adopt_exit:
-            atk.main(["wi", "adopt", "default-adopt.md"], home=first_home, now=_FIXED_DT)
-        assert adopt_exit.value.code == 0
-        wait_for_push()
-
-        with pytest.raises(SystemExit) as reject_exit:
-            atk.main(["wi", "reject", "default-reject.md"], home=first_home, now=_FIXED_DT)
-        assert reject_exit.value.code == 0
-        wait_for_push()
+        env.wait_for_sync(env.run_transition("reject", "default-reject.md"))
+        env.assert_entry_state("default-reject.md", "rejected")
 
         git_repository.run_git(second_notes, "pull", "--ff-only")
         (notes / "pending.txt").write_text("pending\n", encoding="utf-8")
         git_repository.run_git(notes, "add", "pending.txt")
         git_repository.run_git(notes, "commit", "-m", "pending")
-        pending_head = local_head()
-        remote_before_skip = remote_head()
+        pending_head = env.local_head()
+        remote_before_skip = env.remote_head()
 
-        with pytest.raises(SystemExit) as skip_exit:
-            atk.main(["wi", "adopt", "skip.md", "--skip-push"], home=first_home, now=_FIXED_DT)
-        assert skip_exit.value.code == 0
-        assert remote_head() == remote_before_skip
-        assert local_head() != remote_head()
+        assert not env.run_transition("adopt", "skip.md", "--skip-push")
+        assert env.remote_head() == remote_before_skip
+        assert env.local_head() != env.remote_head()
         assert git_repository.run_git(notes, "merge-base", "--is-ancestor", pending_head, "HEAD", check=False).returncode == 0
-        assert git_repository.run_git(notes, "log", "-2", "--format=%s").stdout.splitlines() == [
-            "chore: process 1 entry (adopted)",
-            "pending",
-        ]
+        env.assert_history(["chore: process 1 entry (adopted)", "pending"])
 
         (second_notes / "remote-update.txt").write_text("remote update\n", encoding="utf-8")
         git_repository.run_git(second_notes, "add", "remote-update.txt")
         git_repository.run_git(second_notes, "commit", "-m", "remote update")
         git_repository.run_git(second_notes, "push")
+        remote_update_head = git_repository.run_git(second_notes, "rev-parse", "HEAD").stdout.strip()
 
-        with pytest.raises(SystemExit) as following_exit:
-            atk.main(["wi", "reject", "following.md"], home=first_home, now=_FIXED_DT)
-        assert following_exit.value.code == 0
-        wait_for_push()
-        assert "state: adopted" in (notes / "2026/10/skip.md").read_text(encoding="utf-8")
-        assert "state: rejected" in (notes / "2026/10/following.md").read_text(encoding="utf-8")
+        env.wait_for_sync(env.run_transition("reject", "following.md"))
+        assert (
+            git_repository.run_git(notes, "merge-base", "--is-ancestor", remote_update_head, "HEAD", check=False).returncode
+            == 0
+        )
+        env.assert_entry_state("skip.md", "adopted")
+        env.assert_entry_state("following.md", "rejected")
+
+    @pytest.mark.usefixtures("leaf_git_commands")
+    @pytest.mark.cpu_limit(
+        2.5,
+        reason=("実Gitの状態・履歴を使う結合境界。同期workerの停止点を排他ロックで制御する。"),
+    )
+    def test_sync_wait_requires_worker_completion_even_when_refs_match(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        env = _RealSyncEnvironment(monkeypatch, tmp_path, ("held.md", "released.md"))
+        notes = env.notes
+        held_lock = _wi_sync.repo_lock(notes, timeout=0)
+
+        # workerを同期の最初のロック取得で止める。  # pyfltr: allow-comment
+        env.before_launch = held_lock.acquire
+        try:
+            launched = env.run_transition("adopt", "held.md")
+            env.before_launch = None
+            assert len(launched) == 1
+            # 試験のGit操作でrefだけを一致させる。  # pyfltr: allow-comment
+            git_repository.run_git(notes, "push", "origin", "HEAD:main")
+            assert env.local_head() == env.remote_head()
+            assert launched[0].poll() is None
+            with pytest.raises(pytest.fail.Exception, match="同期workerが完了しなかった"):
+                env.wait_for_sync(launched, timeout=0.2)
+            assert launched[0].poll() is not None
+        finally:
+            env.before_launch = None
+            if held_lock.is_locked:
+                held_lock.release(force=True)
+
+        env.wait_for_sync(env.run_transition("reject", "released.md"))
+        env.assert_entry_state("released.md", "rejected")
+        env.assert_history(["chore: process 1 entry (rejected)", "chore: process 1 entry (adopted)"])
+        with pytest.raises(AssertionError, match="同期完了後の本文が不正"):
+            env.assert_entry_state("released.md", "adopted")
+        with pytest.raises(AssertionError, match="同期完了後の履歴が不正"):
+            env.assert_history(["chore: process 1 entry (adopted)", "chore: process 1 entry (rejected)"])
 
     def test_skip_push_without_remote_does_not_report_note(
         self,

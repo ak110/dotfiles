@@ -28,7 +28,7 @@ def _stop(signum: int, _frame: FrameType | None) -> None:
     raise _StopRequested(signum)
 
 
-def _run_loop(*, once: bool) -> int:
+def _run_loop(*, once: bool, no_alerts: bool, alert_interval: int) -> int:
     cwd = pathlib.Path.cwd()
     failures = 0
     while not control.consume_process_loop_abort():
@@ -42,6 +42,8 @@ def _run_loop(*, once: bool) -> int:
             resume_request_id=request.request_id if request is not None else None,
         )
         child_env = env.child_env()
+        child_env[env.NO_ALERTS_ENV] = "1" if no_alerts else "0"
+        child_env[env.ALERT_INTERVAL_ENV] = str(alert_interval)
         try:
             engine, model, effort, provider, connection = session.select_available_orchestrator(
                 session.resolve_orchestrator_specs(), child_env, cwd, resume_session_id=resume_id
@@ -90,7 +92,11 @@ def cmd_process_loop(args: argparse.Namespace) -> int:
         with console_title("atk wi process-loop"):
             previous_signals = {signum: signal.signal(signum, _stop) for signum in (signal.SIGINT, signal.SIGTERM)}
             try:
-                return _run_loop(once=args.once)
+                return _run_loop(
+                    once=args.once,
+                    no_alerts=getattr(args, "no_alerts", False),
+                    alert_interval=getattr(args, "alert_interval", env.DEFAULT_ALERT_INTERVAL),
+                )
             except _StopRequested as stop:
                 return 128 + int(stop.args[0])
             except process_tree.ReclaimError as error:

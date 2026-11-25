@@ -43,6 +43,7 @@ def _disable_transition_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "synchronize_owner_check", lambda _path: None)
 
 
 def _write_convert_plan(directory: pathlib.Path, target_commit: str) -> pathlib.Path:

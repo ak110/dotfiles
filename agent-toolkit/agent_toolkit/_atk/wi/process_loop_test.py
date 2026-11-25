@@ -103,3 +103,27 @@ def test_public_launcher_does_not_restart_after_signal(
 
     assert exit_result.value.code == 128 + signum
     assert signals == [signum]
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [
+        ([], ("0", "1800")),
+        (["--no-alerts", "--alert-interval", "45"], ("1", "45")),
+    ],
+)
+def test_public_launcher_passes_alert_settings_to_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, flags: list[str], expected: tuple[str, str]
+) -> None:
+    _launch(monkeypatch, [], tmp_path)
+    captured: list[tuple[str, str]] = []
+
+    def run(_args, _cwd, _prompt, env, **_kwargs):
+        captured.append((env[process_loop_env.NO_ALERTS_ENV], env[process_loop_env.ALERT_INTERVAL_ENV]))
+        return True
+
+    monkeypatch.setattr(process_loop_session, "run_process_session", run)
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "process-loop", "--once", *flags], home=tmp_path)
+    assert result.value.code == 0
+    assert captured == [expected]

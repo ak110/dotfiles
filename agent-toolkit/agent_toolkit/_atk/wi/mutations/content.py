@@ -61,6 +61,9 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
         "frontmatterからplan_fileを除いて再実行する（plan_fileは廃止した型で保存された項目のメタデータであり、新しく書けない）"
     ),
     "priority": "frontmatterからpriorityを除き、優先区分は`atk wi set-priority`で設定する",
+    "github_source": "frontmatterからgithub_sourceを除き、保存されたGitHubの出所は変更しない",
+    "processing_owner": "frontmatterからprocessing_ownerを除き、担当はatk wi take-overで変更する",
+    "proposal_fingerprint": "frontmatterからproposal_fingerprintを除いて再実行する（原稿の指紋はatkが記録する）",
     "submitter_session": "frontmatterからsubmitter_sessionを除いて再実行する（submitter_sessionはatkが記録する）",
     "run_skill_run_id": "frontmatterからrun_skill_run_idを除いて再実行する（実行識別子はatkが記録する）",
 }

@@ -40,6 +40,7 @@ _SOURCES = {
 def _disable_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_wi_sync, "synchronize_owner_check", lambda _path: None)
 
 
 def _state(notes: pathlib.Path) -> str | None:

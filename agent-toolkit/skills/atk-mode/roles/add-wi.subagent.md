@@ -59,7 +59,8 @@ continuations:
    規範読み込みの改善報告では、渡された観測と方針候補を再利用して未確認の部分だけを調べ、同じ資料の報告と既存項目の被覆をまとめる。
    そのうえで、分割、削減、抽象化、`agent-toolkit:atk-mode/playbooks/refine-prompt.md`による改善を、その資料の実際の利用に合わせて比べる。
 3. 新規・編集のdry-runを実行し、入力原稿とユーザー向け部分の抽出保存先を要求識別子ごとに成立性の証拠へ対応付ける。
-   作業用の抽出先を固定する時は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」に従う。
+   `agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3に従う。
+   新規では原稿のfrontmatterに`source`があればその値を使い、無ければ`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決めた値を`--source`へ渡す。
    受領済みの抽出との一致は`--compare-opening-file <抽出の絶対パス>`で確かめ、複数原稿では`--body-file`と同じ順に指定する。
    検収者が冒頭だけで先に判定できるよう、原稿を変えたらdry-runをやり直して抽出を更新する。
 4. 保存前の独立確認を得る。
