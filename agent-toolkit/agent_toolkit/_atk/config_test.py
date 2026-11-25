@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import json
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -185,6 +187,7 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
     assert _main(tmp_path, "config", "migrate-shared") == 0
     preview = json.loads(capsys.readouterr().out)
     assert preview["initial"]
+    assert preview["initial_not_shared"] == {"codex_fast_mode": "auto"}
     assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) != 0
     assert _saved(tmp_path) == original
     assert "共有先へ移行できない" in capsys.readouterr().err
@@ -204,6 +207,19 @@ def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     _write_config(tmp_path, {"codex_fast_mode": "false", "review_model": "claude:sonnet/medium"})
 
+    if not upstream:
+        initial = config_module.settings_snapshot(tmp_path)["settings"]
+        assert initial["codex_fast_mode"]["saved"] == "false"
+        assert not initial["codex_fast_mode"]["shared"]
+        assert _main(tmp_path, "config", "set", "codex_fast_mode", "true") == 0
+        assert _main(tmp_path, "config", "apply-preset", "claude-primary") == 0
+        config_module.update_settings({"action": "set", "key": "codex_fast_mode", "value": "false"})
+        config_module.update_settings({"action": "preset", "preset": "codex-primary"})
+        assert _saved(tmp_path)["codex_fast_mode"] == "false"
+        assert _saved(tmp_path)["review_model"] == config_settings.PRESET_MODELS["codex-primary"]["review_model"]
+        assert not (notes / "atk-config.json").exists()
+        return
+
     with pytest.raises(ValueError, match="移行していない"):
         config_module.update_settings({"action": "set", "key": "codex_fast_mode", "value": "true"})
     with pytest.raises(ValueError, match="移行していない"):
@@ -217,7 +233,7 @@ def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_
         assert settings[key]["shared"] is True
         assert settings[key]["shared_sync"] is upstream
         assert "atk config migrate-shared" in settings[key]["description"]
-        assert ("同期先を設定するまで" in settings[key]["description"]) is not upstream
+        assert "同期先を設定するまで" not in settings[key]["description"]
     assert settings["codex_fast_mode"]["saved"] == "auto"
     assert settings["review_model"]["saved"] == config_settings.MODEL_DEFAULTS["review_model"]
     assert _saved(tmp_path) == {"codex_fast_mode": "false", "review_model": "claude:sonnet/medium"}
@@ -225,8 +241,12 @@ def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_
 
 def test_shared_connection_order_selects_both_engines_without_local_copy(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "notes"))
-    notes = git_repository.init_repository(tmp_path / "notes", files={".gitkeep": ""})
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="main", origin=str(remote), files={".gitkeep": ""}
+    )
     git_repository.commit_all(notes, "initialize")
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
     monkeypatch.setattr(claude_connection, "subscription_available", lambda *_args, **_kwargs: True)
     assert not claude_connection.managed()
     assert not codex_connection.managed()
@@ -495,3 +515,32 @@ def test_explicit_migration_only_drops_values_from_verified_snapshot(tmp_path, m
         assert _saved(tmp_path) == (changed_local if changed.startswith("local") else original)
         if changed == "local":
             assert not (notes / "atk-config.json").exists()
+
+
+@pytest.mark.parametrize("action", ["set", "array-add", "array-remove"])
+@pytest.mark.parametrize("key", [[], {}])
+def test_update_rejects_nonstrings_as_keys(tmp_path, capsys, monkeypatch, action, key):
+    payload = json.dumps({"action": action, "key": key, "value": "true"}).encode()
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(payload)))
+    assert _main(tmp_path, "config", "update") == 2
+    assert "keyは文字列で指定してください" in capsys.readouterr().err
+    assert not _config_file(tmp_path).exists()
+
+
+def test_migration_revision_includes_fallback_for_missing_shared_key(tmp_path, monkeypatch, capsys):
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="main", origin=str(remote), files={"atk-config.json": "{}"}
+    )
+    git_repository.commit_all(notes, "initialize")
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    original = {"execute_model": "codex:sol/high"}
+    _write_config(tmp_path, original)
+    assert _main(tmp_path, "config", "migrate-shared") == 0
+    preview = json.loads(capsys.readouterr().out)
+    assert preview["shared_defaults"]["execute_model"] != "codex:sol/low"
+    monkeypatch.setitem(config_settings.MUTABLE_KEY_DEFAULTS, "execute_model", "codex:sol/low")
+    assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"], "--keep-shared", "execute_model") == 2
+    assert "比較後に" in capsys.readouterr().err
+    assert _saved(tmp_path) == original
