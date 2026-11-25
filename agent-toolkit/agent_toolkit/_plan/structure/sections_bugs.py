@@ -178,7 +178,10 @@ def recurrence_quote_errors(cause_content: str, quote_content: str) -> list[str]
         return []
     if any(line.label == "再発" and line.text for line in cause_record_lines(cause_content)):
         return []
-    return [f"`## ユーザー指摘の逐語引用`が同じ問題の反復に触れているのに`再発:`の行が無い（{RECURRENCE_GUIDANCE}）"]
+    return [
+        "`## ユーザー指摘の逐語引用`が同じ問題の反復に触れているのに`再発:`の行が無い"
+        f"（同じ問題の再発かを確かめて書く。{RECURRENCE_GUIDANCE}）"
+    ]
 
 
 def cause_record_errors(content: str, *, accept_legacy: bool = False, saved_record: bool | None = None) -> list[str]:

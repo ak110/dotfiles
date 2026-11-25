@@ -434,3 +434,21 @@ def test_public_add_requires_recurrence_line_for_repeated_complaints(
         _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
     assert stopped.value.code != 0
     assert "反復に触れているのに`再発:`の行が無い" in capsys.readouterr().err
+
+
+def test_public_add_accepts_not_applicable_line_for_non_recurring_quote(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """反復の候補に当たっても同じ問題の反復でない時は、`再発: 該当なし`と根拠の1行で保存できる。 pyfltr: allow-comment"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body = (
+        "# 文言を直す\n\n説明\n\n## 反映内容と反映先\n対象\n\n"
+        "## 調査結果と判断根拠\n\n- 再発: 該当なし: 前に1回指摘しただけで、同じ問題の反復ではない。\n\n"
+        "## ユーザー指摘の逐語引用\n\n```text\n前に文言を1回指摘しただけだけど、ここも直して。\n```\n"
+    )
+    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert "成功:" in capsys.readouterr().out

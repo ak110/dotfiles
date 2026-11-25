@@ -77,7 +77,7 @@ RECURRENCE_KINDS = ("未適用", "範囲不足", "効果不足", "読込喪失",
 """
 
 RECURRENCE_NOT_APPLICABLE = "該当なし"
-"""ユーザーの原文が反復に触れても、前回の対策が無かった時に`再発:`の行の先頭に置く語。 pyfltr: allow-comment"""
+"""前回の対策が無かった時と、逐語引用が同じ問題の反復を述べていなかった時に`再発:`の行の先頭に置く語。 pyfltr: allow-comment"""
 
 _RECURRENCE_HEAD = re.compile(
     "(?:"
@@ -88,7 +88,8 @@ _RECURRENCE_HEAD = re.compile(
 RECURRENCE_GUIDANCE = (
     "前回の対策が防げなかった理由を"
     + "・".join(f"`{kind}`" for kind in RECURRENCE_KINDS)
-    + f"のどれかで始め、前回の対策が無い時は`{RECURRENCE_NOT_APPLICABLE}`で始めて理由を書く"
+    + "のどれかで始め、前回の対策が無い時と、引用が同じ問題の反復を述べていない時は"
+    + f"`{RECURRENCE_NOT_APPLICABLE}`で始めて根拠を書く"
     "（定義元は`agent-basics:bugfix`の`references/recurrence.md`「`再発:`の行」）"
 )
 
@@ -106,7 +107,9 @@ _RECURRENCE_MENTION = re.compile(
 )
 """ユーザーが同じ問題を繰り返し指摘したと読める言及。
 
-保存を止めるのは、本人が過去に指摘・発言したことと、その反復か再発を同じ文で述べた時に限る。
+語と距離による候補の検出であり、反復かどうかの確定ではない。
+確定は起草者が`再発:`の行で示し、反復でなければ`該当なし`と根拠の1行で保存できる。
+候補は、本人が過去に指摘・発言したことと、その反復か再発を同じ文で述べた時に限る。
 単語だけの判定は「何度も表示される」「以前も使った」「何度も入力を間違える研修」などの定常の挙動や、
 意図した反復まで止めたため（2026年11月25日の実行レビュー）、不具合の反復と確定できない文では止めない。 pyfltr: allow-comment
 """
