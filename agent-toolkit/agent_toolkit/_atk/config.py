@@ -193,8 +193,8 @@ def _cmd_config_show(home: pathlib.Path) -> None:
         print(f"共有設定ファイル: {path}", file=sys.stderr)
         if active:
             print("共有設定から解決したキー: " + "、".join(active), file=sys.stderr)
-    if path is not None and _pending_shared(local):
-        print(f"未移行の共有設定がある。{_MIGRATION_NEXT_ACTION}。", file=sys.stderr)
+        if _pending_shared(local):
+            print(f"未移行の共有設定がある。{_MIGRATION_NEXT_ACTION}。", file=sys.stderr)
     if human and settings["codex_fast_mode"] == "auto":
         print(_auto_fast_report(), file=sys.stderr)
 

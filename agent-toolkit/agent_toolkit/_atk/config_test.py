@@ -470,13 +470,12 @@ def test_explicit_migration_only_drops_values_from_verified_snapshot(tmp_path, m
         git_repository.run_git(peer, "push")
 
     def run_git(args, cwd, **kwargs):
-        result = git(args, cwd, **kwargs)
+        git(args, cwd, **kwargs)
         if args == ["push"]:
             if changed == "local-after-push":
                 _write_config(tmp_path, changed_local)
             if changed == "upstream-after-push":
                 simulate_new_upstream_value()
-        return result
 
     if changed == "local":
         _write_config(tmp_path, changed_local)
