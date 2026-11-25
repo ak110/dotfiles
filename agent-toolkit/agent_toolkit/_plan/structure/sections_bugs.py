@@ -20,6 +20,7 @@ from agent_toolkit._common.prevention_kinds import (
     has_structure_exception,
     mentions_recurrence,
     recurrence_kind,
+    recurrence_reason,
     starts_with_kind,
 )
 from agent_toolkit._plan.structure.constants import (
@@ -150,6 +151,11 @@ def _recurrence_line_errors(lines: list[CauseRecordLine]) -> list[str]:
         for line in recurrences
         if recurrence_kind(line.text) is None
     ]
+    errors.extend(
+        f"`再発:`の行が区分の語だけで根拠が無い（{RECURRENCE_GUIDANCE}）"
+        for line in recurrences
+        if recurrence_kind(line.text) is not None and not recurrence_reason(line.text)
+    )
     if all(recurrence_kind(line.text) == RECURRENCE_NOT_APPLICABLE for line in recurrences):
         return errors
     preventions = [line.text for line in lines if line.label == "再発防止" and line.text]

@@ -85,6 +85,7 @@ _RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
         + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
         "再発した事象への`再発防止:`が`文書`・`手順`だけである",
     ),
+    "recurrence_kind_without_reason": (f"{_RECORD}\n- 再発: 該当なし", "`再発:`の行が区分の語だけで根拠が無い"),
     "recurrence_structural": (f"{_RECORD}\n- 再発: 範囲不足: 前回は1つの経路だけを検査した。", None),
     "recurrence_not_applicable": (
         _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。") + "\n- 再発: 該当なし: 前回の対策が無い。",

@@ -94,6 +94,15 @@ RECURRENCE_GUIDANCE = (
 )
 
 
+def recurrence_reason(text: str) -> str:
+    """`再発:`の行の本文から、区分の語と区切りを除いた理由を返す。区分が無ければ空文字列を返す。 pyfltr: allow-comment"""
+    body = text.lstrip(_LEADING_DECORATION)
+    match = _RECURRENCE_HEAD.match(body)
+    if match is None:
+        return ""
+    return body[match.end() :].strip(" \t　:：、。,・;；.").strip()
+
+
 def recurrence_kind(text: str) -> str | None:
     """`再発:`の行の本文の先頭にある区分の語を返す。無ければNoneを返す。 pyfltr: allow-comment"""
     match = _RECURRENCE_HEAD.match(text.lstrip(_LEADING_DECORATION))
