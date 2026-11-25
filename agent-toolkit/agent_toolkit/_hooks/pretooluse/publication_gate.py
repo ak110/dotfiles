@@ -201,5 +201,5 @@ def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> 
         return None
     return (
         "公開前の新着WI: " + "、".join(rows),
-        "今回扱う項目があれば公開前に処理する。次回扱う項目はinboxに残す。",
+        "今回扱う項目があれば公開前に処理してください。次回扱う項目はinboxに残してください。",
     )

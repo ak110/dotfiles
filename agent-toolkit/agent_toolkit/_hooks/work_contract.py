@@ -198,17 +198,7 @@ def progress_update_warning(session_id: str) -> str | None:
         stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
         if read_state(session_id).get(key) == stamp:
             return None
-        lines = _visible_contract_lines(path.read_text(encoding="utf-8"))
-        found = [
-            number
-            for number, line in lines
-            if re.match(
-                r"^ {0,3}(?:#{1,6} +|[-*] +)(?:\d{4}-\d{2}-\d{2}(?:T[\d:+Z-]+)? +)?"
-                r"(?:現在の進捗|進捗(?:状況|ログ)?|現在の担当状況|担当の現在状態|"
-                r"検収結果|実装結果|検証結果|経緯|新着WIの判定)(?:[:： ]|$)",
-                line,
-            )
-        ]
+        found = _progress_record_lines(path.read_text(encoding="utf-8"))
     except OSError, UnicodeError:
         return None
     update_state(session_id, lambda state: {**state, key: stamp})
@@ -220,6 +210,25 @@ def progress_update_warning(session_id: str) -> str | None:
         "担当の引き継ぎ記録、対応する計画かWI、または公開担当の引き継ぎ記録へ移し、"
         "全体作業契約には原本の所在だけを残してください。"
     )
+
+
+def _progress_record_lines(body: str) -> list[int]:
+    found = []
+    for number, line in _visible_contract_lines(body):
+        item = re.sub(r"^ {0,3}(?:#{1,6} +|[-*] +)", "", line)
+        if item.startswith(">") or re.match(r"^[^:：]+[:：]\s*`?(?:/|[A-Za-z]:[/\\])", item):
+            continue
+        timestamp = re.match(r"^\d{4}-\d{2}-\d{2}(?:T[\d:+Z-]+)? +", item)
+        text = item[timestamp.end() :] if timestamp else item
+        if re.match(
+            r"(?:現在の進捗|進捗(?:状況|ログ)?|現在の担当状況|担当の現在状態|"
+            r"検収結果|実装結果|検証結果|経緯|新着WIの判定)(?:[:： ]|$)",
+            text,
+        ) or (
+            timestamp and re.search(r"(?:検収|実装|検証|統合|レビュー|公開)(?:が|を|は)?(?:開始|終了|完了|済み|終えた)", text)
+        ):
+            found.append(number)
+    return found
 
 
 def _visible_contract_lines(body: str) -> Iterator[tuple[int, str]]:
