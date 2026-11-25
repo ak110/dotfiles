@@ -36,13 +36,14 @@ function screenNameFromUrl(url) {
   if (path.endsWith("/plans")) return "plans";
   if (path.endsWith("/sessions")) return "sessions";
   if (path.endsWith("/agents")) return "agents";
+  if (path.endsWith("/usage")) return "usage";
   if (path.endsWith("/settings")) return "settings";
   return "wi";
 }
 
 function showScreen(name, focusHeading = false) {
   document.body.dataset.screen = name;
-  document.title = `${{wi: "ワークアイテム", plans: "計画ファイル", sessions: "セッション", agents: "エージェント", settings: "設定"}[name]} - atk serve`;
+  document.title = `${{wi: "ワークアイテム", plans: "計画ファイル", sessions: "セッション", agents: "エージェント", settings: "設定", usage: "利用枠"}[name]} - atk serve`;
   for (const screen of document.querySelectorAll(".screen")) {
     screen.hidden = screen.id !== `screen-${name}`;
   }

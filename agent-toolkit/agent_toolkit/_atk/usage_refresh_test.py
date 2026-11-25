@@ -1,5 +1,6 @@
 """公式応答の単位・欠損・対象の違いを観測値へ保つ。"""
 
+import hashlib
 import pathlib
 from types import SimpleNamespace
 
@@ -29,15 +30,34 @@ def test_usage_report_percent_and_extra_spend_are_distinct() -> None:
     usage_refresh.record_claude_report(
         {
             "rate_limits": {
-                "limits": [{"kind": "weekly_all", "percent": 75, "resets_at": "1970-01-01T01:00:00+00:00"}],
-                "extra_usage": {"is_enabled": True, "used_credits": 200, "monthly_limit": 1000, "currency": "USD"},
+                "limits": [
+                    {
+                        "kind": "weekly_all",
+                        "percent": 75,
+                        "resets_at": "1970-01-01T01:00:00+00:00",
+                        "group": "weekly",
+                        "severity": "warning",
+                        "is_active": False,
+                    }
+                ],
+                "extra_usage": {
+                    "is_enabled": True,
+                    "used_credits": 200,
+                    "monthly_limit": 1000,
+                    "currency": "USD",
+                    "utilization": 20,
+                },
             }
         }
     )
     observed = usage_observation.snapshot()
     assert observed["windows"][0]["used_percent"] == 75
     assert observed["windows"][0]["resets_at"] == 3600
+    assert observed["windows"][0]["group"] == "weekly"
+    assert observed["windows"][0]["severity"] == "warning"
+    assert observed["windows"][0]["is_active"] is False
     assert usage_settings.read_metadata("claude")["extra_usage_spend"] == 200
+    assert usage_settings.read_metadata("claude")["extra_usage_utilization"] == 20
 
 
 def test_sdk_fraction_is_converted_without_guessing_missing_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -223,3 +243,76 @@ def test_refresh_uses_explicit_authentication_after_parent_isolation(monkeypatch
     assert len(environments) == 2
     assert all(environment["CLAUDE_CODE_OAUTH_TOKEN"] == "synthetic-oauth" for environment in environments)
     assert usage_observation.snapshot()["windows"][0]["used_percent"] == 75
+
+
+@pytest.mark.parametrize(
+    ("notification", "keep"),
+    [
+        ({"accountId": "workspace"}, True),
+        ({"workspaceRouting": {"chatgptAccountId": "workspace"}}, True),
+        ({"accountId": "other"}, False),
+        ({"accountId": "unknown:1"}, False),
+        ({}, False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_codex_permission_account_tracks_identified_account(notification, keep) -> None:
+    async def request(method, _params):
+        if method == "account/read":
+            return {
+                "account": {"email": "user@example.test", "type": "chatgpt"},
+                "workspaceRouting": {"chatgptAccountId": "workspace"},
+            }
+        return {"accountId": "workspace"}
+
+    await usage_refresh._codex_usage(request)  # pylint: disable=protected-access
+    permission = usage_settings.read_metadata("codex")["permission_account"]
+    assert permission == hashlib.sha256(b"user@example.test").hexdigest()
+    assert "user@example.test" not in usage_settings.settings_path().read_text("utf-8")
+    usage_refresh.record_codex(notification)
+    assert usage_settings.read_metadata("codex")["permission_account"] == (permission if keep else "")
+
+
+def test_codex_stores_projected_details_and_weekly_selection() -> None:
+    weekly = {"windowDurationMins": 10080, "usedPercent": 20, "resetsAt": 1000}
+    usage_refresh.record_codex(
+        {
+            "ordinaryUsageAllowed": False,
+            "rateLimitsByLimitId": {
+                "codex": {
+                    "primary": weekly,
+                    "secondary": {**weekly, "resetsAt": 2000},
+                    "spendControlReached": True,
+                    "rateLimitReachedType": "weekly",
+                    "credits": {"hasCredits": True, "unlimited": False, "balance": "1.5", "id": "private-credit"},
+                },
+            },
+            "rateLimitResetCredits": {
+                "availableCount": 0,
+                "credits": [{"resetType": "codexRateLimits", "status": "used", "id": "private-reset", "expiresAt": "unknown"}],
+            },
+        }
+    )
+    metadata = usage_settings.read_metadata("codex")
+    assert metadata["weekly_window"] == {"window_id": "codex:primary", "resets_at": 1000}
+    assert metadata["ordinaryUsageAllowed"] is False
+    assert metadata["spendControlReached"] is True
+    assert metadata["rateLimitReachedType"] == "weekly"
+    assert metadata["credits"] == {"hasCredits": True, "unlimited": False, "balance": "1.5"}
+    assert metadata["reset_available_count"] == 0
+    assert metadata["reset_credit_details"] == [{"resetType": "codexRateLimits", "status": "used"}]
+    assert "private-" not in usage_settings.settings_path().read_text("utf-8")
+
+
+def test_weekly_validation_failure_does_not_discard_observation() -> None:
+    usage_refresh.record_codex(
+        {
+            "rateLimits": {
+                "limitId": "codex",
+                "primary": {"windowDurationMins": 10080, "usedPercent": 20, "resetsAt": "1970-01-01T01:00:00+00:00"},
+            },
+        }
+    )
+    assert usage_settings.read_metadata("codex")["weekly_window"] is None
+    windows = usage_observation.snapshot()["current_windows"]
+    assert [(row["used_percent"], row["resets_at"]) for row in windows] == [(20, 3600)]

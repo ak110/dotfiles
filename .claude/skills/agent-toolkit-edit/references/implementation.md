@@ -88,11 +88,11 @@
 
 ## atk serveの静的資産
 
-`agent-toolkit/agent_toolkit/_atk/serve/static/`では、WI、Plans、Sessionsの3画面に共通の書体、シェルのスタイル、処理を1か所で定義する（努力目標。画面ごとの再定義は3画面の見た目と挙動をずらすため）。
+全画面を`agent-toolkit/agent_toolkit/_atk/serve/static/app.css`のトークンと共通のスタイルで組み、画面独自の配色やブラウザー既定のままの操作要素を残さない。
+シェルと表示名は[共通スタイルと表示名](../../../../docs/development/design-serve-shell.md#共通スタイルと表示名)に従う。
+ユーザビリティレビューを起動する時は、この節の参照先を`主要シナリオ`の「保つ設計意図」へ書く。
 
-- 書体、フォントサイズ、行の高さ、文字間隔、文字色は`:root`のカスタムプロパティと`body`だけで定義し、`#screen-wi`、`#screen-plans`、`#screen-sessions`の配下は定義済みの値を使う。
-- `#screen-*`の直下に本文の装飾のタグセレクタ（`a`、見出し、`p`、リスト、`table`、`code`、`pre`など）を書かず、Markdownの本文とセッションの本文の装飾は`.markdown-body`を通す。
-  `main`、`aside`、入力要素（`input`、`select`、`textarea`、`dialog`）は、前項のスタイル宣言を持つ時だけこの対象に含める。
-- 共通シェルの要素（`.app-header`、`.app-nav`、共通のダイアログ、`main > .toolbar`）には3画面に共通のスタイルを適用し、画面ごとの上書きは水平方向の余白（margin、padding）に限る。
-- 3画面に共通の処理（SSEの購読と通知の振り分け、一覧の差分描画と選択状態の管理、前後の移動、警告の表示、ドロワーの開閉など）は`common.js`に集め、画面ごとの差分は引数の関数で渡す。
-  スクリプトは`index.html`からESモジュールとして読み、`BASE_PATH`などのリクエストごとに変わる値は`serve-bootstrap`などのJSONブロックから取る。
+- 画面固有のCSSは配置を扱い、共通シェルの高さ・文字サイズを上書きしない。
+  本文の装飾は`.markdown-body`へ限定する。
+- 共通処理（SSEの購読、一覧の差分描画、警告、ドロワーなど）は`common.js`に置き、画面ごとの差分を引数で渡す。
+  `index.html`からESモジュールとして読み、リクエスト固有の値は`serve-bootstrap`などのJSONブロックから取る。

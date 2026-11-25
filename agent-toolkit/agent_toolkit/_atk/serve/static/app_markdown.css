@@ -2,7 +2,7 @@
 
 
 #screen-plans {
-  background-color: #ffffff;
+  background-color: var(--color-surface);
   max-width: 860px;
   margin: 0 auto;
   padding: 1rem;
@@ -18,7 +18,7 @@
 .markdown-body h5,
 .markdown-body h6 {
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--color-text);
   margin-top: 1em;
   margin-bottom: 0.3em;
 }
@@ -67,7 +67,7 @@
   font-size: 1.125rem; /* 18px */
   line-height: 1.7;
   letter-spacing: 0.02em;
-  color: #4d4d4d; /* neutral-solid-gray-700 */
+  color: var(--color-secondary-text); /* neutral-solid-gray-700 */
 }
 
 
@@ -79,11 +79,11 @@
   font-weight: 700;
 }
 .markdown-body a {
-  color: #0031d8; /* blue-800 */
+  color: var(--color-primary); /* blue-800 */
   text-decoration: underline;
 }
 .markdown-body a:hover {
-  color: #002db6; /* blue-900 approx */
+  color: var(--color-primary-hover); /* blue-900 approx */
 }
 
 
@@ -106,9 +106,9 @@
 .markdown-body blockquote {
   margin: 0 0 0.5rem 0;
   padding: 0.25rem 0.75rem;
-  border-left: 4px solid #cccccc; /* neutral-solid-gray-200 */
-  color: #4d4d4d; /* neutral-solid-gray-700 */
-  background-color: #f2f2f2; /* neutral-solid-gray-50 */
+  border-left: 4px solid var(--color-control-border); /* neutral-solid-gray-200 */
+  color: var(--color-secondary-text); /* neutral-solid-gray-700 */
+  background-color: var(--color-background); /* neutral-solid-gray-50 */
   border-radius: 0.25rem; /* border-radius-4 */
 }
 .markdown-body blockquote > p:last-child {
@@ -120,8 +120,8 @@
 .markdown-body code {
   font-family: "Noto Sans Mono", Consolas, monospace;
   padding: 0.125rem 0.375rem;
-  background-color: #f2f2f2; /* neutral-solid-gray-50 */
-  border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+  background-color: var(--color-background); /* neutral-solid-gray-50 */
+  border: 1px solid var(--color-border); /* neutral-solid-gray-100 */
   border-radius: 0.25rem; /* border-radius-4 */
 }
 
@@ -154,23 +154,23 @@
   line-height: 1.5;
 }
 .markdown-body thead {
-  background-color: #f2f2f2; /* neutral-solid-gray-50 */
+  background-color: var(--color-background); /* neutral-solid-gray-50 */
 }
 .markdown-body th {
   font-weight: 700;
   text-align: left;
   padding: 0.5rem 0.75rem;
-  border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+  border: 1px solid var(--color-border); /* neutral-solid-gray-100 */
 }
 .markdown-body td {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+  border: 1px solid var(--color-border); /* neutral-solid-gray-100 */
 }
 
 
 .markdown-body hr {
   border: none;
-  border-top: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+  border-top: 1px solid var(--color-border); /* neutral-solid-gray-100 */
   margin: 1rem 0;
 }
 
@@ -184,5 +184,5 @@
 
 .markdown-body input[type="checkbox"] {
   margin-right: 0.5rem;
-  accent-color: #0031d8; /* blue-800 */
+  accent-color: var(--color-primary); /* blue-800 */
 }

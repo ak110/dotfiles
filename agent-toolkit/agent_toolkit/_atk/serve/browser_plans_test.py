@@ -226,16 +226,13 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
 
     for selector in ("#copy-btn", "#copy-path-btn"):
         button = page.locator(selector)
-        line_metrics = await button.evaluate(
+        assert await button.locator(".short-label").evaluate(
             """element => {
-              const style = getComputedStyle(element);
-              return {
-                contentHeight: element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
-                lineHeight: parseFloat(style.lineHeight),
-              };
+              const range = document.createRange();
+              range.selectNodeContents(element);
+              return range.getClientRects().length === 1;
             }"""
         )
-        assert line_metrics["contentHeight"] <= line_metrics["lineHeight"] + 1
         assert await button.locator(".short-label").evaluate("element => element.getClientRects().length") == 1
 
 

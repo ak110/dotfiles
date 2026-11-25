@@ -25,6 +25,7 @@ async def test_navigation_serves_all_screens(tmp_path: pathlib.Path) -> None:
         ("/agents", "agents"),
         ("/sessions", "sessions"),
         ("/settings", "settings"),
+        ("/usage", "usage"),
     ):
         response = await client.get(path)
         assert response.status_code == 200

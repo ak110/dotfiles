@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#3157d5">
   <title>atk serve</title>
   <link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
   <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
@@ -13,7 +12,7 @@
   <section id="screen-wi" class="screen" __WI_HIDDEN__>
   <header class="app-header">
     <div class="header-title">
-      <h1 tabindex="-1">ワークアイテム</h1>
+      <h1 tabindex="-1">atk serve<span class="visually-hidden"> — ワークアイテム</span></h1>
       <span id="connection-status" class="connection-status" role="status" hidden></span>
     </div>
     <nav class="app-nav" aria-label="画面">
@@ -21,11 +20,14 @@
       <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
       <a href="__BASE_PATH_HTML__/agents">エージェント</a>
         <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/usage">利用枠</a>
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       <span class="nav-loading-slot"><span id="loading-indicator" class="nav-loading" role="status" hidden><span class="visually-hidden">読み込み中</span></span></span>
     </nav>
     <div class="header-actions">
       <button id="notification-button" class="button-secondary" type="button" hidden>通知を有効化</button>
+      <button id="push-subscribe-button" class="button-secondary" type="button" hidden>閉じていても通知する</button>
+      <button id="push-unsubscribe-button" class="button-secondary" type="button" hidden>Web Pushを解除</button>
       <button id="refresh-button" class="button-secondary" type="button">今すぐ同期</button>
       <button id="create-button" class="button-primary" type="button">新規追加</button>
     </div>
@@ -109,7 +111,7 @@
     </aside>
     <section class="entry-pane card" aria-labelledby="entry-heading">
       <div class="pane-heading">
-        <h2 id="entry-heading">一覧</h2>
+        <h2 id="entry-heading" class="page-heading">ワークアイテム</h2>
         <div class="entry-heading-meta">
           <span id="entry-count" class="secondary-text">0件（未回答UWI 0件）</span>
           <span id="entry-period" class="secondary-text">直近2週間に作成</span>
@@ -121,11 +123,7 @@
       <!-- 外枠は改行を保持する表示（pre-wrap）のため、タグの間へ空白を入れると余分な行になる。 -->
       <div id="list-warning-box" class="list-warning" role="alert" hidden><details id="list-warning-details"><summary id="list-warning-summary"></summary><div id="list-warning" hidden></div></details></div>
       <div class="entry-columns">
-        <span class="entry-metadata-label" aria-hidden="true">ファイル名</span>
-        <span class="entry-metadata-label" aria-hidden="true">target-repo</span>
-        <span class="entry-metadata-label" aria-hidden="true">type・state</span>
-        <span class="summary-column-label" aria-hidden="true">要約</span>
-        <button id="copy-all-button" class="entry-copy button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
+        <button id="copy-all-button" class="button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
       <nav id="pagination" class="pagination" aria-label="一覧ページ">
@@ -207,7 +205,7 @@
           <button id="adopt-button" class="button-primary" type="button" hidden>採用</button>
         </div>
         <div class="detail-footer-right">
-          <button id="edit-button" class="button-primary" type="button">編集</button>
+          <button id="edit-button" class="button-secondary" type="button">編集</button>
           <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
           <button id="save-user-comment-button" class="button-primary" type="button" hidden>コメントを保存</button>
           <button id="confirm-adopt-button" class="button-primary" type="button" hidden>採用を確定</button>
@@ -304,7 +302,7 @@
         <p id="delete-error" class="inline-error" hidden></p>
       </div>
       <footer class="dialog-footer">
-        <button id="delete-submit-button" class="button-danger" type="submit">削除する</button>
+        <button id="delete-submit-button" class="button-danger-confirm" type="submit">削除する</button>
       </footer>
     </form>
   </dialog>
@@ -318,16 +316,17 @@
 
   <section id="screen-plans" class="screen" __PLANS_HIDDEN__>
     <header class="app-header">
-      <div class="header-title"><h1 tabindex="-1">計画ファイル</h1></div>
+      <div class="header-title"><h1 tabindex="-1">atk serve<span class="visually-hidden"> — 計画ファイル</span></h1></div>
       <nav class="app-nav" aria-label="画面">
         <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
         <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
         <a href="__BASE_PATH_HTML__/agents">エージェント</a>
         <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/usage">利用枠</a>
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
-    <div id="plans-app">
+    <div id="plans-app" class="two-pane">
       <aside id="plans-sidebar" class="pane-sidebar">
         <div class="toolbar">
           <label class="visually-hidden" for="plans-filter">計画ファイルを検索</label>
@@ -352,7 +351,7 @@
         </div>
         <div id="meta-mobile" class="empty"></div>
         <div id="plans-loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
-        <article id="preview" class="markdown-body">左の一覧からMarkdownを選択してください。</article>
+        <article id="preview" class="markdown-body">一覧から計画ファイルを選択してください。</article>
       </main>
       <div id="plans-drawer-backdrop"></div>
     </div>
@@ -360,12 +359,13 @@
 
   <section id="screen-agents" class="screen" __AGENTS_HIDDEN__>
     <header class="app-header">
-      <div class="header-title"><h1 tabindex="-1">エージェント</h1></div>
+      <div class="header-title"><h1 tabindex="-1">atk serve<span class="visually-hidden"> — エージェント</span></h1></div>
       <nav class="app-nav" aria-label="画面">
         <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
         <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
         <a href="__BASE_PATH_HTML__/agents">エージェント</a>
         <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/usage">利用枠</a>
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
@@ -378,16 +378,17 @@
 
   <section id="screen-sessions" class="screen" __SESSIONS_HIDDEN__>
     <header class="app-header">
-      <div class="header-title"><h1 tabindex="-1">セッション</h1></div>
+      <div class="header-title"><h1 tabindex="-1">atk serve<span class="visually-hidden"> — セッション</span></h1></div>
       <nav class="app-nav" aria-label="画面">
         <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
         <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
         <a href="__BASE_PATH_HTML__/agents">エージェント</a>
         <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/usage">利用枠</a>
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
-    <div id="sessions-app">
+    <div id="sessions-app" class="two-pane">
       <aside id="sessions-sidebar" class="pane-sidebar">
         <div class="toolbar">
           <label class="visually-hidden" for="sessions-filter">セッションを検索</label>
@@ -409,7 +410,7 @@
           <button id="sessions-prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のセッション" disabled>&uarr;</button>
           <button id="sessions-next-btn" class="nav-btn button-secondary" type="button" aria-label="次のセッション" disabled>&darr;</button>
         </div>
-        <article id="detail" class="markdown-body">左の一覧からセッションを選択してください。</article>
+        <article id="detail" class="markdown-body">一覧からセッションを選択してください。</article>
       </main>
       <div id="sessions-drawer-backdrop"></div>
     </div>
@@ -417,12 +418,13 @@
 
   <section id="screen-settings" class="screen" __SETTINGS_HIDDEN__>
     <header class="app-header">
-      <div class="header-title"><h1 tabindex="-1">設定</h1></div>
+      <div class="header-title"><h1 tabindex="-1">atk serve<span class="visually-hidden"> — 設定</span></h1></div>
       <nav class="app-nav" aria-label="画面">
         <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
         <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
         <a href="__BASE_PATH_HTML__/agents">エージェント</a>
         <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/usage">利用枠</a>
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
@@ -439,6 +441,29 @@
     </main>
   </section>
 
+  <section id="screen-usage" class="screen" __USAGE_HIDDEN__>
+    <header class="app-header">
+      <div class="header-title"><h1 tabindex="-1">atk serve<span class="visually-hidden"> — 利用枠</span></h1></div>
+      <nav class="app-nav" aria-label="画面">
+        <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
+        <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+        <a href="__BASE_PATH_HTML__/agents">エージェント</a>
+        <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/usage">利用枠</a>
+        <a href="__BASE_PATH_HTML__/settings">設定</a>
+      </nav>
+    </header>
+    <main class="metric-page" aria-labelledby="usage-heading">
+      <div class="page-toolbar">
+        <h2 id="usage-heading" class="page-heading">利用枠</h2>
+        <a href="__BASE_PATH_HTML__/settings?group=usage&amp;host=">リセットの許可を設定</a>
+        <button id="usage-refresh" class="button-primary" type="button">再取得</button>
+      </div>
+      <p id="usage-status" role="status"></p>
+      <div id="usage-content" class="metric-columns"></div>
+    </main>
+  </section>
+
   <script id="serve-bootstrap" type="application/json">__SERVE_BOOTSTRAP_JSON__</script>
   <script id="plans-bootstrap" type="application/json">__PLANS_BOOTSTRAP_JSON__</script>
   <script type="module" src="__BASE_PATH_HTML__/static/shell.js"></script>
@@ -447,5 +472,6 @@
   <script type="module" src="__BASE_PATH_HTML__/static/sessions.js"></script>
   <script type="module" src="__BASE_PATH_HTML__/static/agents.js"></script>
   <script type="module" src="__BASE_PATH_HTML__/static/settings.js"></script>
+  <script type="module" src="__BASE_PATH_HTML__/static/usage.js"></script>
 </body>
 </html>

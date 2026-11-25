@@ -58,6 +58,7 @@ SCRIPTS = {
         "wi_feedback.js",
         "wi_list_render.js",
         "wi_list.js",
+        "wi_push.js",
         "wi_detail.js",
         "wi_waiting.js",
         "wi_mutations.js",
@@ -67,6 +68,9 @@ SCRIPTS = {
         "sessions.js",
         "agents.js",
         "settings.js",
+        "usage.js",
+        "usage_display.js",
+        "reset_permissions.js",
     )
 }
 """`/static/<name>.js`で配信するESモジュール。ファイル名を指定して本文を取得する。"""

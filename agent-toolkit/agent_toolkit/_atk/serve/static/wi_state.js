@@ -12,7 +12,6 @@ export const EDITABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted'
 export const TERMINAL_STATES = new Set(['adopted', 'rejected']);
 export const DELETABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted', 'rejected']);
 export const ENTRY_PAGE_SIZE = 100;
-export const TARGET_REPO_DISPLAY_LENGTH = 20;
 export const FRONTMATTER_EXCLUDED_KEYS = new Set(['type', 'origin_session', 'origin_locator']);
 
 export const wiState = {

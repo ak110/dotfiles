@@ -1,3 +1,4 @@
+import {initializePush} from "./wi_push.js";
 import {
   beginUserListOperation, cancelSearchTimer, clearFilters, enableNotifications, endUserListOperation,
   isCurrentUserListOperation, loadBranchRegistry, loadEntries, loadTargetRepos, movePage, refreshKnownEntries, syncNotificationButton
@@ -297,6 +298,7 @@ function subscribeEvents() {
 function initializeApp() {
   subscribeEvents();
   syncNotificationButton();
+  initializePush();
   // 購読を確立できない場合も初期表示を遅らせすぎないよう、待つのは短い上限までとする。
   const subscribed = Promise.race([firstSubscription, new Promise(resolve => setTimeout(resolve, INITIAL_SUBSCRIBE_WAIT_MS))]);
   initialization = subscribed

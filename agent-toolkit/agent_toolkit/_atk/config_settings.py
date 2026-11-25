@@ -85,6 +85,8 @@ SERVE_KEY_DEFAULTS = {
     "serve_host": "127.0.0.1",
     "serve_port": str(serve_default_port()),
     "serve_plans_root": "",
+    "serve_web_push": "false",
+    "serve_web_push_details": "false",
     "remote_hosts": "[]",
 }
 
@@ -142,7 +144,15 @@ WEEKLY_KEY_DEFAULTS = {
 WEEKLY_FLAG_KEYS = frozenset({"weekly_meta_auto_start", "weekly_research_auto_start", "weekly_research_x_api"})
 
 
+WI_ATTACHMENT_LIMIT_DEFAULTS = {
+    "wi_attachment_file_mib": "5",
+    "wi_attachment_item_mib": "20",
+    "wi_attachment_total_mib": "500",
+}
+
+
 MUTABLE_KEY_DEFAULTS = {
+    **WI_ATTACHMENT_LIMIT_DEFAULTS,
     **MODEL_DEFAULTS,
     "codex_fast_mode": "auto",
     "usage_reset_permissions": "[]",
@@ -438,6 +448,8 @@ def parse_agents_concurrency(value: str) -> tuple[str, float] | None:
 
 
 SETTING_CHOICES = {
+    "serve_web_push": ("true", "false"),
+    "serve_web_push_details": ("true", "false"),
     "dotfiles_mode": ("full", "minimal"),
     "claude_usage_limit_wait": ("never", "five-hour", "always"),
     "codex_usage_limit_wait": ("never", "five-hour", "always"),
@@ -473,12 +485,16 @@ _SETTING_DESCRIPTIONS = {
     "dotfiles_mode": "dotfilesの配布範囲",
     "serve_host": "ブラウザーから接続するサーバーの待受アドレス",
     "serve_port": "ブラウザーから接続するサーバーの待受ポート",
+    "serve_web_push": "WI画面を閉じていてもWeb Push通知を送る",
+    "serve_web_push_details": "Web Push通知にWIのタイトルと対象リポジトリを含める",
     "remote_hosts": "設定・計画・エージェント・セッションのSSH接続先",
     "serve_plans_root": "計画ファイルのローカル保存先の上書き。空ならprivate-notesのplansと~/.claude/plansの両方",
 }
 
 
 def setting_format(key: str) -> str:
+    if key in WI_ATTACHMENT_LIMIT_DEFAULTS:
+        return "正の整数（MiB）"
     if key in SETTING_CHOICES:
         return ", ".join(SETTING_CHOICES[key])
     if key in MODEL_DEFAULTS:
@@ -510,6 +526,9 @@ def validate_mutable_setting(key: str, value: str) -> None:
     if key in SETTING_CHOICES:
         if value not in SETTING_CHOICES[key]:
             raise ValueError(f"受理可能値: {setting_format(key)}")
+    elif key in WI_ATTACHMENT_LIMIT_DEFAULTS:
+        if not value.isdecimal() or len(value) > 9 or int(value) < 1:
+            raise ValueError("1から999999999までの整数（MiB）で指定する")
     elif key in PROVIDER_KEYS:
         if any(char.isspace() or char == "," for char in value):
             raise ValueError("config.tomlのprovider ID 1つ（空白とカンマを含まない）、または空文字列で指定する")

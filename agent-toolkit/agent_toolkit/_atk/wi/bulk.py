@@ -12,6 +12,7 @@ import typing
 from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.wi import attachments
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -97,7 +98,9 @@ def _remove_candidates(
     note: str | None,
 ) -> list[str]:
     """ロック保持下で候補を削除し、単一commit・pushへまとめる。"""
-    for path, _repo, _text, _state, _type in candidates:
+    removed = [path for path, *_ in candidates]
+    removed.extend(attachments.paths_for_removal(private_notes, removed))
+    for path in removed:
         path.unlink()
     count = len(candidates)
     item_word = "entry" if count == 1 else "entries"
@@ -105,7 +108,7 @@ def _remove_candidates(
     _wi_sync.commit_and_push(
         private_notes,
         f"chore: remove {count} {item_word}{note_suffix}",
-        [str(path.relative_to(private_notes)) for path, *_ in candidates],
+        [str(path.relative_to(private_notes)) for path in removed],
     )
     return [path.name for path, _repo, _text, _state, _type in candidates]
 

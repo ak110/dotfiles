@@ -4,7 +4,8 @@ import pytilpack.quart
 import pytilpack.sse
 import quart
 
-from agent_toolkit._atk.serve import agent_routes, settings_routes
+from agent_toolkit._atk import config as atk_config
+from agent_toolkit._atk.serve import agent_routes, settings_routes, usage_routes, web_push
 from agent_toolkit._atk.serve import config as serve_config
 from agent_toolkit._atk.serve import entry_index as _entry_index
 from agent_toolkit._atk.serve import plans as serve_plans
@@ -87,6 +88,13 @@ def create_app(
     _shell_routes.register_session_routes(app, sessions, plans)
     agent_routes.register_agent_routes(app, sessions, agent_listing)
     settings_routes.register_settings_routes(app, config)
+    usage_routes.register_usage_routes(app)
+    web_push.register(
+        app,
+        lambda: runtime.operations.entries_with_warnings({"type": "all", "status": "active", "answered": "all"})[0],
+        enabled=atk_config.resolve_mutable_setting("serve_web_push") == "true",
+        details=atk_config.resolve_mutable_setting("serve_web_push_details") == "true",
+    )
     _runtime.register_lifecycle(app, runtime, plans, sessions)
 
     plans.state.stop_requested = state.stop_requested
