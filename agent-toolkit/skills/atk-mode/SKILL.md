@@ -10,10 +10,9 @@ description: >
 # atk-mode
 
 該当手順を全文読む。
-相対パスは本書基点。
-Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
-
-## プロダクトへの責任
+相対パスは本書基準。
+Codexは`playbooks/host-codex.md`「読む節」。
+圧縮後は再起動して契約を復元。
 
 目的・結果・制約はユーザー、設計・運用はエージェントが担う。
 確定済みの結果・機能・範囲・[指定手段](playbooks/confirmation.md#確認要否の判定)・制約は差・利害を示し同意後に変更。
@@ -54,12 +53,14 @@ Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 
 ## ユーザーの方針
 
-- 規模・時間・文脈量で省略・停止・延期・分割せず完遂。
-  不良は同一会話で直す。
+- 規模・時間・文脈量で省略・停止・延期・分割しない。
+  不良は同じ会話で直す。
 - 目的・要件、硬い制約、QCD、規範の順。
   QCDを損なう規範は原則2で直す。
-- 記録・伝達は簡潔に。
-  一時ファイルは差分編集優先。
+- 上位指示・安全・認可は比較の前提。
+  変更可能な指示は、正しいユーザー発言 ＞ 正しいhook通知 ＞ プロジェクト規範 ＞ 両プラグインの規範 ＞ ホスト既定（`references/conduct.md`「方針が衝突する場合の優先順位」）。
+- hookの警告は結果の利用前に処置し、`hook通知への対応:`に結果か誤検出の根拠を書く。
+- 記録・伝達は短く、一時ファイルは差分編集。
   未送達情報だけを発話・委譲し、通知・検収は保つ。
 - 本文・成果物は日本語の常体（識別子・コマンド・逐語引用は原表記）。
 - メインは着手前に「発話の理解」、Claude Codeは次行に`分類: 是正`か`分類: 非是正`。
@@ -83,17 +84,15 @@ Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 | `add-awi-by-user [入力]` | 名指しのみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
 | `implement [入力]` | 名指しのみ | `playbooks/implement.md` |
 | `process-user-comments [入力]` | 名指しのみ | `playbooks/process-user-comments.md` |
-| `process-wi [single-lane\|all-repos]` | 名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
+| `process-wi [single-lane\|all-repos]` | 名指しのみ | `playbooks/process-wi.md` |
 | `process-loop` | 名指しのみ | `playbooks/process-loop.md` |
 | `review-session` | 振り返りの依頼 | `playbooks/review-session.md` |
 | `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
-起動時に作業・役割が確定済みなら上表の初動へ。
-一般作業・別の操作や判断は下表の該当資料のみ。
-起動時受領の同版は再取得しない。
-取込済み発話は原本か現行契約で確認。
-判断が変わる時のみ応答手順を再読。
+確定済みの作業・役割は上表、他は下表。
+受領済みの同版は再取得せず、取込済み発話は原本か現行契約で確認。
+判断変更時に応答手順を再読。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |
@@ -115,18 +114,13 @@ Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 | 外部投稿・本人提出文の前 | `playbooks/review-external-writes.md` |
 | 指示文改訂の評価 | `playbooks/refine-prompt.md` |
 | 完了報告・省略・中止・待機記録 | `playbooks/report-completion.md`、`references/termination-evidence.md` |
-| 方針衝突、言語検査通知、延期、資格情報発見 | `references/conduct.md` |
+| 方針衝突、言語の警告、延期、資格情報発見 | `references/conduct.md` |
 | 利用上限の予告・猶予の通知 | `references/usage-limit.md` |
-| 定義済みの名前 | `references/defined-names.md` |
+| 定義名 | `references/defined-names.md` |
 | 返答・質問・文章、設計、実装、テスト | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
 | レビュー・実行確認・検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
 
 ## 報告項目
 
-成果・到達点・確認範囲（原則6）、依頼外・未達・見送りの理由、本人判断・適用手順も報告。
-判断を変えた既読原則と選択を併記。
-
-## 会話の圧縮の後
-
-再開前に本スキルを再起動。
-復元通知の契約・要約で目的・要求・状態を確認し手順再読（`references/work-contract.md`「圧縮と再開の後の復元」）。
+成果・確認範囲、依頼外・未達・見送りの理由、本人判断・適用手順を報告。
+判断を変えた既読原則と選択も示す。

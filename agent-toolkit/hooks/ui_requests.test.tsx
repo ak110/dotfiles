@@ -103,6 +103,25 @@ test("MCP送信済みの詳しい案内は初回だけ返し、新しい警告�
   expect((responses[1] ?? "").length).toBeLessThan((responses[0] ?? "").length);
 });
 
+test("呼出しを識別できる報告の警告は送信結果の本文でなく応答の別欄で返す", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  const id = "f".repeat(32);
+  queue(on, "warn-session", id);
+  const responses: { reason: string; warnings?: string[] }[] = [];
+  on("session.id", () => ({ value: "warn-session" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message: "終了時刻は15:2xです。", tool_use_id: "toolu_warn" }, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => { if (e.path.includes("/ui-response-")) responses.push(JSON.parse(e.text)); return { value: undefined }; });
+  on("ui.place", () => ({ value: { isPlaced: true, requestId: "placed-row" } }));
+  await $.turn.start({ text: "操作", turnId: "warn-turn" });
+  await clock.advance(100);
+  expect(responses.length).toBe(1);
+  expect(responses[0]?.reason).toContain("新しい報告はsend_to_userで送る");
+  expect(responses[0]?.reason).not.toContain("時刻の一部が伏せ字");
+  expect((responses[0]?.warnings ?? []).join("\n")).toContain("時刻の一部が伏せ字");
+});
+
 test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに差し戻す", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);

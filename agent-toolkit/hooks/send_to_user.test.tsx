@@ -44,6 +44,7 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
     const goal = '<atk-auto source="process-loop" kind="goal">\n起動目標\n</atk-auto>';
     const runSkillGoal = '<atk-auto source="run-skill" kind="goal">\n起動目標\n</atk-auto>';
     const goals = [goal, runSkillGoal];
+    let delivered = false;
     for (const [text, origin] of [
       ["最初の依頼", "composer"],
       ["続き", "composer"],
@@ -54,11 +55,14 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
       [runSkillGoal, "unclassified"],
     ] as const) {
       const previous = text === "続き" ? ["既存の案内"] : undefined;
+      // 同じ文脈では最初に届く発話にだけ案内を添える（同じ文面の繰り返しは読み飛ばされる）。 pyfltr: allow-comment
+      const first = !delivered;
       await $.prompt.submit({ text, context: previous, wait: false, origin: { kind: origin } });
       const submitted = received.shift();
       expect(submitted?.text).toBe(text);
       const context = submitted?.context ?? [];
-      if (shouldDeliver && (goals.includes(text) || (origin === "composer" && !text.startsWith("<atk-auto")))) {
+      if (shouldDeliver && first && (goals.includes(text) || (origin === "composer" && !text.startsWith("<atk-auto")))) {
+        delivered = true;
         expect(context.slice(0, -1)).toEqual(previous ?? []);
         const notice = context.at(-1) ?? "";
         expect(notice).toMatch(/着手.*進捗.*完了報告.*send_to_user/);
@@ -76,6 +80,27 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
     }
   });
 }
+
+test("送り先の案内は会話の圧縮の後に再び1回届く", async ($, on) => {
+  mock.env(on, { AGENT_TOOLKIT_DELEGATED_SESSION: "", AGENT_TOOLKIT_OWNER_SESSION: "" });
+  on("session.surfaces", () => ({ value: ["terminal"] }));
+  const tool = "mcp__plugin_agent-toolkit_agents_server__send_to_user";
+  on("tool.list", () => ({ value: [{ name: tool, description: "表示", mcp: true }] }));
+  const received: { context?: readonly string[] }[] = [];
+  on("prompt.submit", (_$, e) => { received.push(e); return { text: e.text }; });
+  on("session.id", () => ({ value: "compact-notice" }));
+  const summary = [{ role: "user" as const, text: "要約", toolUses: [] }];
+  on("session.compact", () => ({ messages: summary }));
+  const notified = async (text: string) => {
+    await $.prompt.submit({ text, wait: false, origin: { kind: "composer" } });
+    return (received.shift()?.context ?? []).some((item) => item.includes('source="send-to-user-contract"'));
+  };
+  expect(await notified("最初の依頼")).toBe(true);
+  expect(await notified("続き")).toBe(false);
+  await $.session.compact({ trigger: "auto", messages: summary });
+  expect(await notified("圧縮後の依頼")).toBe(true);
+  expect(await notified("さらに続き")).toBe(false);
+});
 
 for (const [message, warns] of [
   ["気付いた改善点: 対象。AWI化ステータス: 不要 被覆 既存の処置がある", false],

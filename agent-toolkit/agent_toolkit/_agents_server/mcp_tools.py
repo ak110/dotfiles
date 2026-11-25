@@ -71,6 +71,7 @@ from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.send_to_user import CLAUDE_TOOL_NAME
 lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
+lazy from agent_toolkit._common import sent_warnings
 lazy from agent_toolkit._common.operation_approvals import request_display
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -828,8 +829,19 @@ async def send_to_user(
     if tool_use_id:
         inputs["tool_use_id"] = tool_use_id
     result = await _ui_request("send_to_user", inputs)
-    if guidance:
-        result["guidance"] = guidance
+    relayed = result.pop("warnings", None)
+    warnings = [text for text in [*(relayed if isinstance(relayed, list) else []), guidance] if isinstance(text, str) and text]
+    if (
+        warnings
+        and tool_use_id
+        and (session_id := _manager().launcher_session_id())
+        and sent_warnings.stash(session_id, tool_use_id, warnings)
+    ):
+        # pyfltr: allow-comment -- 警告は送信結果の本文（データとして読まれる）に入れない。
+        # pyfltr: allow-comment -- PostToolUseのhookが同じ呼出しの添付として届ける。預けられなければ結果に残す。
+        pass
+    elif warnings:
+        result["guidance"] = "\n".join(warnings)
     return result
 
 
