@@ -61,3 +61,21 @@ def test_live_input_texts_name_only_declared_tools(live_input: live.LiveInput) -
 def test_explore_exposes_tools_for_background_resume_input(session_id: str | None) -> None:
     required = live.BACKGROUND_RESUME_INPUTS["delegate"].required_tools
     assert not _unavailable_tools("explore", session_id, required)
+
+
+@pytest.mark.parametrize(
+    ("mode", "status", "message", "accepted"),
+    [
+        ("delegate", "completed", "状態: completed\n結果: AUTO_RESUME_COMPLETED", True),
+        ("delegate", "running", "状態: completed\n結果: AUTO_RESUME_COMPLETED", False),
+        ("delegate", "completed", "状態: failed\n結果: AUTO_RESUME_COMPLETED", False),
+        ("delegate", "completed", "状態: completed\n結果: 未完了", False),
+        ("delegate", "completed", "AUTO_RESUME_COMPLETED", False),
+        ("shell", "completed", "AUTO_RESUME_COMPLETED", True),
+        ("shell", "completed", "状態: completed\n結果: AUTO_RESUME_COMPLETED", False),
+    ],
+)
+def test_background_completion_requires_the_launch_result_contract(
+    mode: str, status: str, message: str, accepted: bool
+) -> None:
+    assert live._has_completed_resume(mode, status, message) is accepted  # pylint: disable=protected-access
