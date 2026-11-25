@@ -342,9 +342,11 @@ def dispatch(
             exit_code = commands[sub]() or 0
     except (ValueError, _atk_git_sync.RebaseInProgressError) as error:
         _cli_support.report_rejected(args, error)
+        _background_sync.warn_if_unhealthy(private_notes)
         return 1
     except subprocess.CalledProcessError as error:
         _cli_support.report_git_failure(error, private_notes)
+        _background_sync.warn_if_unhealthy(private_notes)
         return 1
     if local_save:
         return _background_sync.finish_local_save(private_notes, exit_code, skip=getattr(args, "skip_push", False))

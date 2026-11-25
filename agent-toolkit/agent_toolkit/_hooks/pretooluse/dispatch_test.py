@@ -8,6 +8,7 @@ import shlex
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._hooks import user_prompt_submit
 from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
@@ -48,6 +49,29 @@ def test_model_setting_command_uses_host_permission(command, protected, is_codex
     output = capsys.readouterr().out
     actual = json.loads(output)["hookSpecificOutput"].get("permissionDecision") if output else None
     assert actual == (("deny" if is_codex else "ask") if protected else None)
+
+
+@pytest.mark.parametrize(("is_codex", "approve", "writes"), [(False, True, True), (False, False, False), (True, True, False)])
+def test_host_decision_controls_actual_local_model_save(tmp_path, monkeypatch, capsys, is_codex, approve, writes):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "missing"))
+    setting = "claude:opus[1m]/medium"
+    data = {"command": f"atk config set review_model {setting}"}
+    payload = {"session_id": "permission-test", "tool_input": data}
+    decision = pretooluse._decide(payload, "Bash", data, "permission-test", is_codex=is_codex)
+    assert pretooluse._emit(decision, [], is_codex=is_codex) == 0
+    permission = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["permissionDecision"]
+    assert permission == ("deny" if is_codex else "ask")
+    if permission == "ask" and approve:
+        with pytest.raises(SystemExit) as result:
+            atk.main(["config", "set", "review_model", setting], home=tmp_path)
+        assert result.value.code == 0
+    with pytest.raises(SystemExit) as result:
+        atk.main(["config", "get", "review_model"], home=tmp_path)
+    assert result.value.code == 0
+    assert (capsys.readouterr().out.splitlines()[-1] == setting) is writes
 
 
 @pytest.mark.parametrize("host", ["claude-code", "codex"])

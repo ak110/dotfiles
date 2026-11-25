@@ -194,21 +194,27 @@ def _cmd_config_show(home: pathlib.Path) -> None:
 
 
 def _auto_fast_report() -> str:
+    managed = connections_configured("codex")
+    if managed and not any("subscription" in connection_order("codex", role) for role in ("orchestrator", "worker")):
+        return "Codex自動速度: 通常（使用順にサブスクリプション接続がない）"
+
     async def report() -> str:
         cwd = str(pathlib.Path.cwd())
 
         async def query(request):
-            return await codex_fast_mode.auto_service_tier(request, cwd, subscription=None)
+            return await codex_fast_mode.auto_service_tier(request, cwd, subscription=True if managed else None)
 
         async with asyncio.timeout(5):
             decision = await codex_models.with_app_server(query, cwd=cwd)
         speed = "高速" if decision.tier == "priority" else "通常"
+        if managed:
+            return f"Codex自動速度: 接続ごとに判定（サブスクリプションは{speed}: {decision.explanation}、APIは通常）"
         return f"Codex自動速度: {speed}（{decision.explanation}）"
 
     try:
         return asyncio.run(report())
     except OSError, ValueError, TimeoutError:
-        return "Codex自動速度: 通常（接続情報を取得できない）"
+        return "Codex自動速度: 通常（判定に必要な接続情報を取得できない）"
 
 
 def _migrate_shared_settings() -> None:

@@ -163,12 +163,14 @@ def _upstream_refs(notes: pathlib.Path) -> tuple[str, str, str]:
 
 
 def prepare_read(notes: pathlib.Path, *, skip: bool, force: bool) -> None:
-    warn_if_unhealthy(notes)
-    if skip:
-        return
-    if force:
+    if force and not skip:
         with sync.repo_lock(notes):
             sync.pull_with_recent_reuse(notes, force_pull=True)
+            explicit_sync_finished(notes)
+        warn_if_unhealthy(notes)
+        return
+    warn_if_unhealthy(notes)
+    if skip:
         return
     if not sync.has_remote(notes):
         return
@@ -198,17 +200,18 @@ def warn_if_unhealthy(notes: pathlib.Path) -> bool:
         return False
     timestamp = status.get("at")
     when = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(timestamp)) if isinstance(timestamp, (int, float)) else "不明"
+    problem = "手動回復が必要" if status["state"] == "recovery-required" else "通信または同期に失敗"
     outcome.report_warning(
-        f"以前のprivate-notes同期が未回復（{when}）: {status.get('reason') or '原因不明'}",
+        f"以前のprivate-notes同期が未回復（{problem}、{when}）: {status.get('reason') or '原因不明'}",
         next_action=f"git -C {notes} statusで原因を確認し、解消後に atk wi pull または atk wi commit を実行してください",
     )
     return True
 
 
 def finish_local_save(notes: pathlib.Path, exit_code: int, *, skip: bool) -> int:
+    unhealthy = warn_if_unhealthy(notes)
     if exit_code:
         return exit_code
-    unhealthy = warn_if_unhealthy(notes)
     if not skip and sync.has_remote(notes):
         try:
             schedule(notes)

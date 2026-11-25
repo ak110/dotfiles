@@ -149,3 +149,27 @@ def test_worker_preserves_first_shared_settings_migration_on_remote(tmp_path, mo
     assert (notes / "atk-config.json").read_bytes() == (peer / "atk-config.json").read_bytes()
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(peer, "rev-parse", "HEAD")
     assert git_repository.git_output(notes, "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("state", ["failed", "recovery-required"])
+def test_failure_warning_remains_until_explicit_receive_succeeds(tmp_path, monkeypatch, capsys, state):
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="main", origin=str(remote), files={".gitkeep": ""}
+    )
+    git_repository.commit_all(notes, "initialize")
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    monkeypatch.setattr(background_sync.state_paths, "state_dir", lambda: tmp_path / "state")
+    _, status = background_sync._files(notes)  # pylint: disable=protected-access
+    status.parent.mkdir(parents=True)
+    background_sync._report(status, state, last_fetch=None, reason="以前の診断")  # pylint: disable=protected-access
+    assert background_sync.finish_local_save(notes, 1, skip=True) == 1
+    assert "以前の診断" in capsys.readouterr().err
+    assert background_sync.finish_local_save(notes, 0, skip=True) == 3
+    warning = capsys.readouterr().err
+    assert ("手動回復が必要" if state == "recovery-required" else "通信または同期に失敗") in warning
+    background_sync.prepare_read(notes, skip=True, force=False)
+    assert "以前の診断" in capsys.readouterr().err
+    background_sync.prepare_read(notes, skip=False, force=True)
+    assert "以前の診断" not in capsys.readouterr().err
+    assert background_sync.read_status(notes)["state"] == "synced"

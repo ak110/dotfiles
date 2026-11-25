@@ -99,6 +99,27 @@ def test_interactive_show_keeps_auto_setting_separate_from_decision(tmp_path, mo
     assert "Codex自動速度: 通常" in shown.err
 
 
+def test_interactive_show_separates_managed_subscription_and_api_speed(tmp_path, monkeypatch, capsys):
+    _write_config(tmp_path, {"codex_worker_connections": "credits,subscription"})
+    seen: list[str] = []
+
+    async def probe(operation, **_kwargs):
+        async def request(method, _params):
+            seen.append(method)
+            return {"account": {"type": "chatgpt", "planType": "business"}}
+
+        return await operation(request)
+
+    monkeypatch.setattr(config_module.codex_models, "with_app_server", probe)
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    assert _main(tmp_path, "config", "show") == 0
+    shown = capsys.readouterr()
+    assert "codex_fast_mode auto\n" in shown.out
+    assert "接続ごとに判定" in shown.err
+    assert "APIは通常" in shown.err
+    assert seen == ["account/read"]
+
+
 def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeypatch, capsys):
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     notes = git_repository.init_repository(

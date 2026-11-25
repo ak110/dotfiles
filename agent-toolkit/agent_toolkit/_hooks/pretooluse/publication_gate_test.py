@@ -12,6 +12,27 @@ from agent_toolkit._hooks.pretooluse import publication_gate
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
 
 
+@pytest.fixture(autouse=True)
+def _publication_origin(tmp_path, monkeypatch):
+    git_run = publication_gate.git_command.run
+    resolve = publication_gate.resolve_repo_identifier
+
+    def run(args, cwd, **kwargs):
+        if cwd is not None and pathlib.Path(cwd) == tmp_path:
+            if args == ["rev-parse", "--symbolic-full-name", "@{push}"]:
+                return subprocess.CompletedProcess(args, 0, "refs/remotes/origin/develop\n", "")
+            if args[:4] == ["remote", "get-url", "--push", "--all"]:
+                repo = "foo" if args[4] == "origin" else args[4]
+                return subprocess.CompletedProcess(args, 0, f"https://github.com/example/{repo}.git\n", "")
+        return git_run(args, cwd, **kwargs)
+
+    def repository(value):
+        return "github.com/example/foo" if value == str(tmp_path) else resolve(value)
+
+    monkeypatch.setattr(publication_gate.git_command, "run", run)
+    monkeypatch.setattr(publication_gate, "resolve_repo_identifier", repository)
+
+
 def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkeypatch):
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -119,8 +140,8 @@ def test_publication_uses_registered_baseline_after_session_temp_changes(tmp_pat
         late = _write_awi_file(notes, "20261124-085011-004.md")
         monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner)
         for session, payload in (
-            (owner, {"session_id": owner}),
-            ("codex-delegate", {"session_id": "codex-delegate", "agent_id": "codex-delegate"}),
+            (owner, {"session_id": owner, "cwd": str(tmp_path)}),
+            ("codex-delegate", {"session_id": "codex-delegate", "agent_id": "codex-delegate", "cwd": str(tmp_path)}),
         ):
             denied = publication_gate.check(payload, session, "Bash", {"command": "git push"})
             assert denied is not None and late.name in denied[0]
@@ -181,7 +202,8 @@ def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path,
         progress_self_check.release_reservations()
 
 
-def test_explicit_publication_scope_requires_its_own_baseline(tmp_path, monkeypatch):
+@pytest.mark.parametrize("transport", ["mcp", "gh", "git"])
+def test_explicit_publication_scope_requires_its_own_baseline(tmp_path, monkeypatch, transport):
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     repos = ("github.com/example/foo", "github.com/example/bar")
@@ -193,6 +215,12 @@ def test_explicit_publication_scope_requires_its_own_baseline(tmp_path, monkeypa
     payload = {"session_id": session, "cwd": str(tmp_path)}
 
     def check(repo):
+        if transport == "git":
+            return publication_gate.check(payload, session, "Bash", {"command": f"git push {repo} main"})
+        if transport == "gh":
+            return publication_gate.check(
+                payload, session, "Bash", {"command": f"gh pr create --repo example/{repo} --base main --head work"}
+            )
         return publication_gate.check(
             payload, session, "mcp__github__create_pull_request", {"owner": "example", "repo": repo, "base": "main"}
         )
@@ -202,6 +230,8 @@ def test_explicit_publication_scope_requires_its_own_baseline(tmp_path, monkeypa
     assert denied is not None and late.name in denied[0]
     denied = check("unknown")
     assert denied is not None and "開始時集合がない" in denied[0]
+    uncertain = publication_gate.check(payload, session, "Bash", {"command": "git push origin --all"})
+    assert uncertain is not None and "比較を行っていない" in uncertain[0]
 
 
 @pytest.mark.parametrize("first_configured", [False, True])
