@@ -577,13 +577,18 @@ class TestNonMatchingPrompts:
         assert state["plan_mode_skill_invoked"] is True
 
 
-# test-copy-contract: 同一セッションの各入力で、条件の付かない案内を再配送する契約。
+# test-copy-contract: 同じ文脈の最初の入力に、条件の付かない案内を1回だけ配送する契約（再配送は会話の圧縮の後）。
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
-def test_feedback_rule_is_delivered_before_each_human_prompt(tmp_path: pathlib.Path, host_fields: dict) -> None:
-    for prompt in ("作業を続けて", "手戻り多すぎない？品質が悪いのでは？", "なんでこれ自分で気付けなかったの？"):
+def test_feedback_rule_is_delivered_once_per_context(tmp_path: pathlib.Path, host_fields: dict) -> None:
+    for index, prompt in enumerate(
+        ("作業を続けて", "手戻り多すぎない？品質が悪いのでは？", "なんでこれ自分で気付けなかったの？")
+    ):
         result = _run({"session_id": "feedback", "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "") if result.stdout else ""
+        if index:
+            assert "発話の理解" not in context
+            continue
         assert "場合だけ" not in context
         assert "調査より先に" in context
         assert "最初の`send_to_user`の`message`" in context
@@ -742,15 +747,41 @@ def test_ordinary_prompts_keep_input_observation_without_reinjecting_procedure(t
     sid = "no-timed-procedure"
     if legacy_time is not None:
         _write_state(sid, {"last_user_prompt_at": legacy_time})
-    for prompt in ("最初の依頼", "同じ条件で続ける", "次の依頼"):
+    for index, prompt in enumerate(("最初の依頼", "同じ条件で続ける", "次の依頼")):
         result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
-        bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 1 and "発話の理解" in bodies[0]
+        context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "") if result.stdout else ""
+        bodies = _notice_bodies(context) if context else []
+        # 発話の理解の案内は同じ文脈で最初の入力にだけ届ける（同じ文面の繰り返しは読み飛ばされる）。 pyfltr: allow-comment
+        if index:
+            assert not bodies
+        else:
+            assert len(bodies) == 1 and "発話の理解" in bodies[0]
         state = _read_state(tmp_path, sid)
         assert state.get("last_user_prompt_at") == legacy_time
         evidence = state["termination_evidence"]
         assert evidence["inputs"][evidence["last_input"]]["text"] == prompt
+
+
+@pytest.mark.parametrize("source", ["compact", "clear", "startup"])
+def test_utterance_notice_returns_after_context_loss(tmp_path, source):
+    """文脈を失うSessionStartの後は、発話の理解の案内を再び1回届ける。 pyfltr: allow-comment"""
+    sid = "utterance-after-compact"
+
+    def utterance_count() -> int:
+        result = _run({"session_id": sid, "prompt": "依頼"}, state_dir=tmp_path)
+        assert result.returncode == 0, result.stderr
+        context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "") if result.stdout else ""
+        return sum("発話の理解" in body for body in (_notice_bodies(context) if context else []))
+
+    assert utterance_count() == 1
+    assert utterance_count() == 0
+    started = _run_subcommand(
+        "rules_context", {"hook_event_name": "SessionStart", "source": source, "session_id": sid}, state_dir=tmp_path
+    )
+    assert started.returncode == 0, started.stderr
+    assert utterance_count() == 1
+    assert utterance_count() == 0
 
 
 def test_plan_state_names_session_without_procedure_injection(tmp_path):

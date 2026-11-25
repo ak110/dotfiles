@@ -48,12 +48,13 @@ from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._atk.wi import operation_permissions
-lazy from agent_toolkit._common import function_hook_requests
+lazy from agent_toolkit._common import function_hook_requests, sent_warnings
 lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_session_command, is_atk_command
 lazy from agent_toolkit._common.task_stop_state import consume_completion, target_ids
+lazy from agent_toolkit._common.transcript import SEND_TO_USER_TOOL_SUFFIX
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import (
@@ -61,6 +62,7 @@ lazy from agent_toolkit._hooks import (
     codex_truncation,
     command_timing,
     full_reads,
+    permission_denial_notice,
     process_wi_notifications,
     review_receipt,
     session_title,
@@ -238,6 +240,7 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
     event_name = payload.get("hook_event_name", "")
 
     if event_name == "PermissionDenied":
+        permission_denial_notice.record(payload, session_id, tool_name)
         operation_permissions.observe_denial(payload)
     elif event_name in {"PostToolUse", "PostToolUseFailure"}:
         if event_name == "PostToolUse" and tool_name == _ASK_USER_QUESTION_TOOL:
@@ -447,6 +450,13 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     session_id, "background_task", {"id": failed_task_id, "command": tool_input["command"]}
                 )
         return notices
+    if (
+        tool_name.endswith(SEND_TO_USER_TOOL_SUFFIX)
+        and isinstance(tool_use_id := payload.get("tool_use_id"), str)
+        and tool_use_id
+    ):
+        # pyfltr: allow-comment -- 送達した報告への警告は、送信結果の外の添付として届ける（`_common/sent_warnings.py`）。
+        notices.extend(sent_warnings.take(session_id, tool_use_id))
     if is_main_agent_context(payload):
         uwi_notice = _uwi_completion.build_notice(session_id)
         if uwi_notice is not None:

@@ -64,6 +64,9 @@ export function register(on: On): void {
   });
   on("session.compact", { trigger: /^(manual|auto|plugin|precompute)$/ }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e);
+    // 送り先の案内（register.tsのprompt.submit）を、圧縮後の最初の発話へ再び届ける。 pyfltr: allow-comment
+    // 組織の既定でsession.compactが省かれる環境では再送されず、送達の欠落はStopの再掲判定が止める。 pyfltr: allow-comment
+    await $.state.set({ plugin: "agent-toolkit", key: "sendContractNotified" }, false);
     const sessionId = await $.session.id();
     const resolved = await $.process.run(pluginLaunchCommand($.plugin.root, "skills/atk-mode/scripts/compaction_record.py", [
       "--session-id", sessionId,

@@ -108,6 +108,53 @@ def test_cpu_limit_scale_adjusts_net_and_gross_without_disabling_detection(tmp_p
     assert float(properties["cpu_gross_limit_seconds"]) == pytest.approx(2.8)
 
 
+def test_call_only_keeps_body_and_total_limits_separate(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CI", raising=False)
+    (tmp_path / "conftest.py").write_text(
+        "import pytest\n"
+        "from agent_toolkit._testing import cpu_accounting, pytest_cpu_budget as p\n"
+        "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+        "def pytest_runtest_makereport(item, call):\n"
+        "    if call.when == 'teardown':\n"
+        "        outside, worker = {'test_outside': (0.8, 0.1), 'test_worker': (0.8, 0.2), "
+        "'test_gross': (2.0, 0.1), 'test_failure': (0.8, 0.1), 'test_default': (0.8, 0.1)}[item.name]\n"
+        "        item.stash[p._CPU_TIMES] = {'call': 0.35, 'teardown': outside}\n"
+        "        item.stash[p._CPU_EXCLUSIONS] = {}\n"
+        "        item.stash[p._CPU_BUDGET] = cpu_accounting.CpuBudget()\n"
+        "        if item.name != 'test_default':\n"
+        "            item.stash[p._CALL_CPU_BUDGET] = cpu_accounting.CpuBudget()\n"
+        "            item.stash[p._CALL_CPU_BUDGET].completed['worker'] = worker\n"
+        "        else:\n"
+        "            item.stash[p._CPU_BUDGET].completed['worker'] = worker\n"
+        "    return (yield)\n",
+        encoding="utf-8",
+    )
+    mark = "@pytest.mark.cpu_limit(0.6, reason='fixture teardown is separate', call_limit=0.5)\n"
+    (tmp_path / "probe_test.py").write_text(
+        "import pytest\n"
+        + "".join(f"{mark}def test_{name}(): pass\n" for name in ("outside", "worker", "gross"))
+        + f"{mark}def test_failure(): assert False, 'function still fails'\n"
+        + "def test_default(): pass\n",
+        encoding="utf-8",
+    )
+    result = _run_child_pytest(tmp_path, "--junitxml=result.xml", "probe_test.py")
+    assert result.returncode == pytest.ExitCode.TESTS_FAILED, result.stdout + result.stderr
+    assert "function still fails" in result.stdout
+    cases = {case.get("name"): case for case in ET.parse(tmp_path / "result.xml").iter("testcase")}
+    assert {name for name, case in cases.items() if case.find("error") is not None} == {
+        "test_worker",
+        "test_gross",
+        "test_default",
+    }
+    assert cases["test_failure"].find("failure") is not None
+    properties = {prop.attrib["name"]: prop.attrib["value"] for prop in cases["test_outside"].findall("properties/property")}
+    assert properties["cpu_limit_scope"] == "call"
+    assert float(properties["cpu_budget_seconds"]) == pytest.approx(0.45)
+    assert float(properties["cpu_non_target_seconds"]) == pytest.approx(0.8)
+    assert float(properties["cpu_limit_seconds"]) == pytest.approx(0.5)
+    assert float(properties["cpu_gross_limit_seconds"]) == pytest.approx(2.1)
+
+
 def test_cpu_record_only_reports_overrun_without_failure(tmp_path: pathlib.Path, monkeypatch) -> None:
     """記録のみの指定では、CPU超過を警告とJUnitへ残して合否と再試行から外し、機能失敗は保つ。"""
     monkeypatch.setenv("CI", "1")
@@ -326,6 +373,9 @@ def test_cpu_report_preserves_outcomes_and_records_total(
         pytest.mark.cpu_limit(1, reason="  "),
         pytest.mark.cpu_limit(1, reason=None),
         pytest.mark.cpu_limit(1, 2, reason="理由"),
+        pytest.mark.cpu_limit(1, reason="理由", call_limit=True),
+        pytest.mark.cpu_limit(1, reason="理由", call_limit=0),
+        pytest.mark.cpu_limit(1, reason="理由", call_limit=1.1),
     ],
 )
 def test_cpu_limit_rejects_invalid_declaration_at_collection(
