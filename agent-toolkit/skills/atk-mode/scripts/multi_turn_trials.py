@@ -32,6 +32,11 @@ CASES = (
     "suppression-scope-agent",
     "suppression-scope-user",
     "merge-depth-agent",
+    "scope-excel-first",
+    "scope-excel-correction",
+    "scope-preserve-existing",
+    "scope-shared-options",
+    "scope-past-decision",
 )
 
 

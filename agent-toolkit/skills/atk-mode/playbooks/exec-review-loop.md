@@ -96,7 +96,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    そのthreadへ`send_message`の`instruction: レビュー指摘の対応をせよ`を送り、roundは表から解決させる。
    `extra_params`には全ての計画の`レビュー指摘管理表`と、あれば`レビュー参考意見`を`agent-toolkit:atk-mode/roles/exec.parent.md`「入力」の形で渡す。
 3. 同じthreadを続けられなければ、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従って`レビュー修正担当`を起動し、`再開位置`に`~/.claude/plans`の計画の絶対パスを、管理表と参考意見を手順2の形で渡す。
-4. 修正の返却（`対応完了`、`対応完了（再レビュー不要）`）に`検証結果`と`画面差分`の行が無ければ出し直させる。
+4. 修正の返却（`対応完了`、`対応完了（再レビュー不要）`）の`検証結果`・`画面差分`・`同種の既存画面`は[レーンの返却の受領](lane-receipt.md#実装完了の受領)で検収し、不足・不一致は出し直させる。
    全指摘について本書「応答済みの判定」で未応答0件と、採用した修正の検証を確かめる。
    返却の種類、指摘数、修正commitの有無で再レビューの要否を決めない。
 5. レビュー担当が「要」とした範囲だけ、同じthreadへ`send_message`の`instruction: 再レビューせよ`、`round: <ラウンド番号>`、送信直前に固定した`対象HEAD: <完全OID>`を送る。
@@ -105,13 +105,13 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    - 契約を更新する時は`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」に従い、初回の条項を保つ。
      初回が計画だけの時も契約を作り、更新をまとめた新版を`review_contract: <絶対パス>`で渡す。
    - 前回の後に履歴を書き換えたら、`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」が保存したJSONを`rewrite_map: <絶対パス>`で渡す（引き継ぎ再レビューでは`extra_params`）。
-   - `画面差分: あり`で未起動のレビューには初回を依頼する。
+   - `画面差分: あり`で未起動のレビューには、修正返却の`同種の既存画面`を渡して初回を依頼する。
      既に判定を受けた範囲は、その担当が必要と明示した時だけ再レビューする。
 6. レビュー担当が「不要」とした範囲は、`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」に従い、評価の前提を修正後も保つか確かめる。
    前提が保たれる場合は、修正後の検証が示す条件の証拠を受領側が検収する。
    不足があれば修正担当へ補完を求める。
 7. 再レビューを省くと確かめたら、統合入力HEADを判定行の`レビューHEAD`と別に確定する（amendかautosquashでOIDが変わるため）。
-   新しい画面資産が加わっていれば、ユーザビリティレビューは省かず同じHEADで依頼する。
+   新しい画面資産が加わっていれば、修正返却の`同種の既存画面`を渡し、同じHEADでユーザビリティレビューを依頼する。
    未応答0件と管理表の修正前後の短縮OIDの対応を確かめ、`git rev-parse --short=7`で解決した専用branchのHEADが修正後の短縮OIDと一致することを確かめる。
    その値を統合入力HEAD（`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の指示と受領」）とする。
    受領確認は最後に実際にレビューした`レビューHEAD`で行い、判定行の対象を修正後のHEADへ付け替えない。

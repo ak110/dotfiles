@@ -1,0 +1,81 @@
+{
+  "case": "scope-shared-options",
+  "kind": "single",
+  "source": {
+    "awi": [
+      "20261125-161907-001.md",
+      "20261125-141212-001.md"
+    ],
+    "adaptation": "実例の筋を合成した固定課題。保存例は実モデルの試行ではない。"
+  },
+  "conditions": [
+    "no-dialogue"
+  ],
+  "termination": [
+    "submitted"
+  ],
+  "requirements": [
+    {
+      "id": "both",
+      "description": "チャットと設定の選択肢が同じ。",
+      "tests": [
+        "both"
+      ]
+    },
+    {
+      "id": "no-toggle",
+      "description": "新旧を選ぶ引数を設けない。",
+      "tests": [
+        "no-toggle"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "boundary",
+      "description": "原要求が示す目標を保ち、不要な経路や拒否を足さない。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "no-dialogue",
+      "candidate": "def choices() -> tuple[str, ...]:\n    return (\"標準\", \"詳細\")\n\n\ndef chat_options() -> tuple[str, ...]:\n    return choices()\n\n\ndef settings_options() -> tuple[str, ...]:\n    return choices()\n",
+      "execution": {
+        "case": "scope-shared-options",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例",
+        "settings": {
+          "effort": "未取得"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "no-dialogue",
+      "candidate": "def choices(*, show_deep: bool = False) -> tuple[str, ...]:\n    return (\"標準\", \"詳細\") if show_deep else (\"標準\",)\n\n\ndef chat_options() -> tuple[str, ...]:\n    return choices(show_deep=True)\n\n\ndef settings_options() -> tuple[str, ...]:\n    return choices()\n",
+      "execution": {
+        "case": "scope-shared-options",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例",
+        "settings": {
+          "effort": "未取得"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    }
+  ]
+}

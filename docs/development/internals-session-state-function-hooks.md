@@ -58,5 +58,7 @@ Code Modeの通常awaitでは、内側Bashの`tool_use_id`を圧縮の待機識�
 設定PreToolUseが`repl_`付きBashの開始を、PostToolUse・PostToolUseFailureが終了を同じ要求形式でmodへ渡す。
 この待機は`replExpiresAt`を持ち、TaskStopとStopの`background_tasks`一覧による回収から除く。
 外側REPLのtask IDとの対応は作らない。
+REPL内のツール呼び出しは実行中のセッション記録にまだ無い場合がある（[観測と再検証](audit-records-hooks-protocol.md#code-modeのセッション記録への反映時点)）。
+後続のhookは直前の呼び出しをセッション記録だけから判定しない。
 期限はBashの`timeout`（省略時は`BASH_DEFAULT_TIMEOUT_MS`、未設定時120000ms）に5秒を加える。
 modは期限の単発タイマーを置き、再読み込み後も再設定するため、Postが届かなくても期限後は圧縮候補から外れる。
