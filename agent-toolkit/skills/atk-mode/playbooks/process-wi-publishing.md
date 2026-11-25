@@ -139,7 +139,7 @@
    回復、確認、個別のUWIの保存と回答を要する未終了の項目の保留は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能からの再開」に従う。
    全体検証の失敗を含む場合は`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「検証またはCIの失敗」へ渡し、全体の成功はCIの未判定の解消とは別に全体の結果で判定する。
 2. 公開担当の引き継ぎ記録で再開位置と証拠を管理する。
-   関連する計画があれば`atk plans checkout`の後に`atk run-script plan-progress --`で進捗を記録し、`atk plans commit`で保存する。
+   `atk run-script plan-progress -- <記録先> --handoff`で進捗を引き継ぎ記録へ追記する。
    計画が無ければ、同節に従って再開記録と必要な証拠を公開工程を扱う未終了のAWIの本文へ保存して個別のUWIと対応付け、該当のAWIが無ければ同じ手順で新規に登録する。
    未終了の元の項目には、公開先、commit、確認済みの工程、成功済みの公開後の操作、CIの結果、失敗した操作と対象、足りない前提、baseline・保存出力・UWIの所在、再開位置を`atk wi edit --append`で追記する。
    UWIの保存に失敗した場合は元の項目へ依存を設定せず、未保存の確認事項があることと未完了である旨を記録する。

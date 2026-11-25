@@ -36,7 +36,7 @@ agent-toolkitの用語の索引である。
 | 受入シナリオ検証 | 検証の種類 | `agent-toolkit:atk-mode/references/workflow-phases.md`「用語」 |
 | 公開工程判定 | 完成条件の判定 | `agent-toolkit:atk-mode/references/workflow-phases.md`「用語」 |
 | 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:atk-mode/references/awi-body.md`「直接影響範囲」 |
-| 変更範囲の検証 | 検証の範囲 | `agent-toolkit:atk-mode/references/plan-format.md`「検証」 |
+| 変更範囲の検証 | 検証の範囲 | `agent-toolkit:atk-mode/playbooks/verification.md` |
 | 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビューの回 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |
 | 再レビュー | 実行レビューの回 | `agent-toolkit:atk-mode/roles/exec-review.subagent.md` |

@@ -10,6 +10,7 @@ import typing
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk import lane_integration_input as _lane_integration_input
 from agent_toolkit._atk import lane_records as _lane_records
+from agent_toolkit._atk import plans_wi_review
 from agent_toolkit._git import command as git_command
 
 
@@ -198,6 +199,12 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                             worktree if group == "plans" else target,
                             timeout=record["procedure_timeout"],
                         )
+            if not manifest["plans"] and "wi-review-archive" not in state["completed"]:
+                plans_wi_review.archive_lane_review(
+                    record["initial_head"], [row["name"] for row in manifest["wis"]], pathlib.Path(manifest["handoff"])
+                )
+                state["completed"].append("wi-review-archive")
+                _lane_records.save(path, record)
             _lane_integration_input.integration_input(args, record)
             processed = _lane_integration_input.processed_wis(manifest)
             selected = pathlib.Path(record["selection_file"])

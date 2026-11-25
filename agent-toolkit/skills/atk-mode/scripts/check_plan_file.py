@@ -12,8 +12,12 @@ import re
 import sys
 
 import yaml
+from agent_toolkit._atk.wi.add_validation import require_cause_analysis_format
+from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import structure
+from agent_toolkit._plan.structure.formal_verification import missing_judgment_message
+from agent_toolkit._plan.structure.parsing import is_awi_plan
 from check_plan_file_common import _ClassifiedWarning
 from check_plan_file_formats import (
     _check_eight_section_format,
@@ -24,26 +28,30 @@ from check_plan_file_formats import (
     _detail_path_for,
     _outside_fences,
 )
-from check_plan_file_references import TARGET_REPO_NEXT_ACTION
+from check_plan_file_references import TARGET_REPO_NEXT_ACTION, _check_target_repo
 from check_plan_file_selection import _check_lane_selection, _check_wi_selection, _labeled, _validate_expected_wi
 
 FORMAT_REQUEST = "request"
-"""現行の形式。要求を書く節を通常AWIの本文と同じ見出しで持つ。新規作成はこの形式だけを受け付ける。"""
 FORMAT_EIGHT_SECTION = "eight-section"
 """`## 要件・外部仕様`などの固定8節を持つ1ファイル形式。保存済みの計画の読み取りと進行中の計画の完了に使う。"""
 FORMAT_TWO_FILE = "two-file"
 FORMAT_LEGACY = "legacy"
 
+FORMAT_AWI = "awi"
+
 
 def detect_plan_format(plan_path: pathlib.Path, text: str) -> str:
-    """計画ファイルの形式を返す。
+    """計画ファイルの形式を返す。 pyfltr: allow-comment
 
-    対応する`<stem>.detail.md`があれば旧二ファイル形式とする。
+    frontmatterへ計画用のキーを持てばAWI書式とする。
+    それ以外で対応する`<stem>.detail.md`があれば旧二ファイル形式とする。
     それ以外は、8節形式の2節を両方持てば8節形式とする。
     `## 反映内容と反映先`を持つか、計画メタ情報をH1直下に置いていれば現行の形式とする。
     必須節を欠いた現行の形式の原稿を旧形式と誤認しないよう、計画メタ情報の配置でも判別する。
     どれでもなければ旧単一ファイル形式とする。
     """
+    if is_awi_plan(text):
+        return FORMAT_AWI
     if _detail_path_for(plan_path).is_file():
         return FORMAT_TWO_FILE
     h2_names = {heading.text for heading in structure.extract_headings(text) if heading.level == 2}
@@ -55,6 +63,44 @@ def detect_plan_format(plan_path: pathlib.Path, text: str) -> str:
     ):
         return FORMAT_REQUEST
     return FORMAT_LEGACY
+
+
+def check_awi_plan(text: str, work_dir: pathlib.Path) -> list[str]:
+    metadata, errors = structure.parse_plan_metadata(text)
+    if metadata is not None:
+        errors.extend(_check_target_repo(metadata.values["対象リポジトリ"], work_dir))
+    headings = structure.extract_headings(text)
+    sections = structure.request_sections(text)
+    if (
+        metadata is not None
+        and metadata.values["作業種別"] == "バグ対応"
+        and not metadata.related_wi
+        and (structure.REQUEST_H2_CAUSE, True) not in sections
+    ):
+        errors.append("関連WIが無いバグ対応の計画には`## 原因分析`が必要")
+    errors.extend(structure.request_section_problems(sections))
+    errors.extend(f"新書式にないH2です: {name}" for name, _filled in sections if name not in structure.REQUEST_H2_ORDER)
+    if len({name for name, _filled in sections}) != len(sections):
+        errors.append("同じH2を重複させない")
+    if any(heading.level == 3 and heading.text == structure.PLAN_METADATA_H3 for heading in headings):
+        errors.append("計画メタ情報はfrontmatterに書く")
+    body = structure.markdown_body_text(text)
+    titles = [heading for heading in headings if heading.level == 1]
+    if len(titles) != 1 or not body.lstrip().startswith("# "):
+        errors.append("本文の先頭にH1を1件置く")
+    elif not [
+        line
+        for line in text.splitlines()[
+            titles[0].lineno : next((heading.lineno - 1 for heading in headings if heading.level >= 2), None)
+        ]
+        if line.strip()
+    ]:
+        errors.append("H1の直後に要約を書く")
+    try:
+        require_cause_analysis_format(body)
+    except WebInputError as error:
+        errors.append(error.reason)
+    return errors
 
 
 def check(
@@ -72,11 +118,11 @@ def check(
     agent_rule_paths: tuple[str, ...] = (),
     warning_details: list[_ClassifiedWarning] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """計画ファイルが基準を満たすか判定し、エラーと警告を返す。
+    """計画ファイルが基準を満たすか判定し、エラーと警告を返す。 pyfltr: allow-comment
 
     `~/.claude/plans`直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
     `~/.claude/plans`直下の対象では、保存工程と同じ条件でファイル名が所定の形式であるかも確かめる。
-    形式は`detect_plan_format`で判別し、現行の形式以外は読み取り互換として扱う。
+    形式は`detect_plan_format`で判別する。旧形式は作成済みの計画を読み、完了させるために受理する。
     警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
     種類を分けずに新規作成を失敗させると、行数の助言だけを伴う現行形式の計画まで遮断する。
     移行警告の拒否と、起草時の`## 進捗ログ`内容行の拒否は呼び出し側が独立に指定する。
@@ -91,7 +137,12 @@ def check(
 
     plan_format = detect_plan_format(plan_path, text)
     progress_heading = structure.PLAN_H2_PROGRESS
-    if plan_format == FORMAT_TWO_FILE:
+    classified_warnings: list[_ClassifiedWarning]
+    if plan_format == FORMAT_AWI:
+        format_errors = check_awi_plan(text, work_dir)
+        judgment = missing_judgment_message(text)
+        classified_warnings = [("migration", judgment)] if judgment is not None else []
+    elif plan_format == FORMAT_TWO_FILE:
         format_errors, classified_warnings = _check_new_format(_detail_path_for(plan_path), text, work_dir, private_notes, home)
         if not any(kind == "migration" for kind, _message in classified_warnings):
             classified_warnings.append(("migration", "旧二ファイル書式である。新規作成・改訂では現行の1ファイル書式へ移行する"))

@@ -71,7 +71,7 @@ PRの作成、リリースの作成、タグ付けを依頼が明示した場合
 1. 候補branch、作業branch、履歴を書き換えるpushを含む全てのpushの前に、`agent-toolkit:atk-mode/playbooks/commit.md`と本書を読み、適用してからpushする。
    候補branchのpushを公開工程と別の軽い操作と扱い、手順を読む前にpushした誤りがある。
    読み込みの警告はpushを止めないため、この順序を自分で守る。
-   適用したことを、計画があれば`atk run-script plan-progress -- <計画ファイル> --completed-step push前 --result <宛先とcommit>`で進捗ログへ、無ければ引き継ぎ記録へ1行で残す。
+   適用したことを、`atk run-script plan-progress -- <記録先> --handoff --completed-step push前 --result <宛先とcommit>`で引き継ぎ記録へ1行で残す。
    どちらも無い作業では、作業完了の報告に含める。
 2. pushの認可（計画に記録された元の要求、確認への回答、委譲の依頼文、ユーザーの直接の指示）が、対象のリポジトリとブランチを含むことを確かめる。
    amendかfixupの直後は、作業ツリーに未commitの差分が無いことも確かめる。
@@ -173,7 +173,7 @@ CI定義の判定、baselineの作成、push後の監視、公開後の操作が
    パスワードやトークンなど、資格情報そのものの書き写しはユーザーに求めない。
 4. ユーザーの回答を要する未完了の元タスクだけを、UWIの保存の後に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「承認型UWIと元項目」に従って、そのUWIへの依存で待たせる。
    完了済みの実装タスクの状態はそのまま保つ。
-5. 残りの公開工程の再開記録は、計画の進捗ログへ保存し、計画が無ければ公開工程を扱う未完了AWIの本文へ保存する。
+5. 残りの公開工程の再開記録は、引き継ぎ記録へ書き、別セッションで必要な情報は公開工程を扱う未完了AWIの本文へ追記する。
    該当するAWIが無ければ`agent-toolkit:atk-mode/playbooks/wi-drafting.md`で作り、個別UWIと関連付ける。
    再開記録は本書「公開工程の続行不能の受渡し」の項目に、個別UWIの所在を加えたものとする。
    引き継ぎ記録は同じセッションの中の受け渡しに使い、次のセッションが読む再開記録と証拠は、作成した時点で計画かAWIの本文へ保存する。

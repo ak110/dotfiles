@@ -26,6 +26,8 @@ CI対応レビュー指摘管理表は、計画ファイルの無いCI失敗へ�
 
 表はレビュー基準に応じて次のとおり扱う。
 
-- 基準が`WI`だけ: 最終化まで保持し、レーンの統合では`atk lane integrate`が`phase: finalized`を返した後、直接実装では受領確認と意味の検収を終えた後に、private-notesへ保存せずに削除する。
+- 基準が`WI`だけ: 最終化まで保持する。
+  レーンの統合では、`atk lane integrate`の最終化が表と対応記録を`private-notes/plans/`の年月の階層へ保存して作業用の表を除き、`atk plans checkout`で取得できる。
+  直接実装では、受領確認と意味の検収を終えた後に、private-notesへ保存せずに削除する。
 - 基準に`計画`を含む: 計画を管理する担当が、計画バンドルと一緒に`agent-toolkit:atk-mode/references/plan-storage.md`「計画ファイルの保存と参照」で保存する。
 - 基準に`計画`を含まず`CI記録`を含む: `agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正系列」に従って修正系列の単位で引き継ぎ、同節の手順6で保存する（`process-wi`の公開工程では公開担当が行う）。

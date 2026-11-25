@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 
+from agent_toolkit._common.frontmatter import serialize_frontmatter
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import structure as _plan_format
 
@@ -235,6 +236,27 @@ def request_plan(
 ## {_plan_format.PLAN_H2_CURRENT_PROGRESS}
 
 {PROGRESS_TABLE}"""
+
+
+def awi_plan(
+    *,
+    repo: str | pathlib.Path = REPOSITORY,
+    work_type: str = "通常変更",
+    related_wi: tuple[tuple[str, str], ...] = (),
+    cause: bool = False,
+) -> str:
+    legacy = request_plan(repo=repo, work_type=work_type, related_wi=related_wi, cause=cause)
+    summary, rest = legacy.split("### 計画メタ情報", 1)
+    body = rest[rest.index("## 反映内容と反映先") : rest.index("## 検証")]
+    return serialize_frontmatter(
+        {
+            "launch_route": "write-plan",
+            "target_repo": str(repo),
+            "related_wis": [name for name, _summary in related_wi],
+            "work_kind": work_type,
+        },
+        summary + body,
+    )
 
 
 def eight_section_plan(

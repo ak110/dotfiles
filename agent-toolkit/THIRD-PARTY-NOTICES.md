@@ -7,8 +7,9 @@ agent-toolkitへ取り込んだ第三者素材の原典、改変内容と許諾�
 ## pstack
 
 - 原典: [cursor/plugins](https://github.com/cursor/plugins/tree/bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7/pstack)の`pstack/`（確認commit `bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7`）。
+  `skills/reframe/SKILL.md`は同commitに無いため、確認commit `9e278fe4d4ecd8bfe98b1b79bf4be662efb338cc`の版を使った。
 - 取り込んだ資料:
-  - `skills/principle-never-block-on-the-human/SKILL.md`、`skills/bro/SKILL.md`、`skills/sharpen/SKILL.md`。
+  - `skills/principle-never-block-on-the-human/SKILL.md`、`skills/bro/SKILL.md`、`skills/sharpen/SKILL.md`、`skills/reframe/SKILL.md`。
   - `skills/poteto-mode/playbooks/investigation.md`。
   - `skills/poteto-mode/SKILL.md`と`skills/poteto-mode/playbooks/`の構成。
   - `skills/poteto-mode/playbooks/multi-phase-plan.md`、`opening-a-pr.md`、`babysit.md`、`shipping.md`。
@@ -21,6 +22,7 @@ agent-toolkitへ取り込んだ第三者素材の原典、改変内容と許諾�
   - `skills/atk-mode/playbooks/confirmation.md`（認可された範囲の可逆な技術判断は先に進めてから示す）。
   - `skills/atk-mode/playbooks/user-utterance.md`（通じなかった説明を平易に言い直す、調査だけの依頼の成果物の境界）。
   - `skills/atk-mode/playbooks/wi-drafting.md`（最も元に近い資料へ戻る、第三者が合否を判定できる条件を置く）。
+  - `skills/atk-mode/playbooks/request-intake.md`の手順4（問題の候補と見分ける兆候、専門用語での言い直し、隣接分野、依頼を広げずに深める問い、実験で決まる選択の試作）。
   - `skills/atk-mode/playbooks/write-plan.md`（調査だけの依頼は計画もcommitも作らずに終える）。
   - `skills/atk-mode/references/plan-format.md`（1行を1つの作業単位とし証拠と対にする、記録の原本を1つにする）。
   - `skills/atk-mode/playbooks/report-completion.md`（進捗・判断・報告の原本を1つの作業記録にする）。

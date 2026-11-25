@@ -13,6 +13,7 @@ from agent_toolkit._atk.serve.plans import remote as plans_remote
 from agent_toolkit._atk.serve.plans import views as plans_views
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._plan import viewer_files as plan_viewer_files
+from agent_toolkit._testing import plan_fixture
 from agent_toolkit._testing.serve_plans_support import _context, _failed_ssh, _plan
 
 
@@ -118,3 +119,20 @@ async def test_remote_read_failure_reports_stderr(monkeypatch: pytest.MonkeyPatc
 
     assert "終了コード3" in str(error.value)
     assert expected in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_awi_plan_renders_metadata_and_body(tmp_path: pathlib.Path) -> None:
+    root = tmp_path / "plans"
+    root.mkdir()
+    path = root / "01-0000_plan.md"
+    content = plan_fixture.awi_plan(repo=tmp_path, related_wi=plan_fixture.WI_FILES)
+    path.write_text(content, encoding="utf-8")
+    context = _context(root)
+
+    html = await plans_views.render_file_html(context, context.hostname, context.roots[0].source_id, path.name)
+
+    assert "<dt>関連WI</dt>" in html
+    assert plan_fixture.WI_FILES[0][0] in html
+    assert "反映内容と反映先" in html
+    assert "<pre>" in html

@@ -9,6 +9,7 @@ from agent_toolkit._plan.structure.constants import (
     PLAN_H2_CURRENT_VERIFICATION,
     REQUEST_H2_QUOTATION,
 )
+from agent_toolkit._plan.structure.parsing import is_awi_plan
 from agent_toolkit._plan.structure.sections_history import progress_log_rows
 
 JUDGMENT_LABEL = "形式検証の判定"
@@ -55,29 +56,37 @@ def _scanned_text(text: str) -> str:
     return "\n".join(parts)
 
 
-def _recorded_lines(text: str) -> list[str]:
+def _recorded_lines(text: str, *, awi_plan: bool) -> list[str]:
     normalized = markdown_headings.normalize_newlines(text)
+    section = "調査結果と判断根拠" if awi_plan else PLAN_H2_CURRENT_VERIFICATION
     lines = [
         line
         for name, body in markdown_headings.h2_section_bodies(normalized)
-        if name == PLAN_H2_CURRENT_VERIFICATION
+        if name == section
         for line in markdown_headings.without_literal_blocks("\n".join(body)).split("\n")
     ]
-    with contextlib.suppress(ValueError):
-        lines.extend(result for _at, _step, result in progress_log_rows(normalized))
+    if not awi_plan:
+        with contextlib.suppress(ValueError):
+            lines.extend(result for _at, _step, result in progress_log_rows(normalized))
     return lines
 
 
 def missing_judgment_message(text: str) -> str | None:
-    if any(_JUDGMENT_RE.match(line.strip()) for line in _recorded_lines(text)):
+    awi_plan = is_awi_plan(text)
+    if any(_JUDGMENT_RE.match(line.strip()) for line in _recorded_lines(text, awi_plan=awi_plan)):
         return None
     scanned = _scanned_text(text)
     found = [term for term, pattern in _TERM_PATTERNS.items() if pattern.search(scanned)]
     if not found:
         return None
+    guidance = (
+        f"`## 調査結果と判断根拠`へ`{JUDGMENT_LABEL}: <当てる|当てない>（理由）`の1行を書いてください。"
+        "実装に着手した後は引き継ぎ記録へ書いてください"
+        if awi_plan
+        else f"`## 検証`の表の後へ`{JUDGMENT_LABEL}: <当てる|当てない>（理由）`の1行を書いてください。"
+        "実装に着手した後の計画では、`atk run-script plan-progress`の`--result`で同じ行を進捗ログへ追記してください"
+    )
     return (
         f"計画が形式検証の判定の対象に触れる語（{'、'.join(found)}）を含みますが、結論と理由を書いた`{JUDGMENT_LABEL}:`の行がありません。"
-        "`agent-basics:formal-verification`「当てるかの判定」で判定し、"
-        f"`## 検証`の表の後へ`{JUDGMENT_LABEL}: <当てる|当てない>（理由）`の1行を書いてください。"
-        "実装に着手した後の計画では、`atk run-script plan-progress`の`--result`で同じ行を進捗ログへ追記してください"
+        "`agent-basics:formal-verification`「当てるかの判定」で判定し、" + guidance
     )

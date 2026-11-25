@@ -4,7 +4,7 @@ import os
 import pathlib
 import re
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from agent_toolkit._atk import plans_bundle as _plans_bundle
 from agent_toolkit._atk.wi import web_input as _wi_web_input
@@ -15,6 +15,8 @@ def copy_working_bundle(
     private_notes: pathlib.Path,
     relative_main: pathlib.Path,
     working_bundle: tuple[pathlib.Path, ...],
+    *,
+    destination_names: Mapping[pathlib.Path, str] | None = None,
 ) -> tuple[tuple[pathlib.Path, ...], dict[pathlib.Path, tuple[tuple[int, int], bytes]]]:
     """作業バンドルを`private-notes/plans/`へ排他的に複製し、回収用snapshotを返す。"""
     destination_directory = _plan_file.new_plans_root(private_notes) / relative_main.parent
@@ -25,7 +27,7 @@ def copy_working_bundle(
         source_stat = source.stat(follow_symlinks=False)
         content = source.read_bytes()
         snapshots[source] = ((source_stat.st_dev, source_stat.st_ino), content)
-        destination = destination_directory / source.name
+        destination = destination_directory / (destination_names or {}).get(source, source.name)
         if destination.exists():
             if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != content:
                 raise _wi_web_input.WebInputError(

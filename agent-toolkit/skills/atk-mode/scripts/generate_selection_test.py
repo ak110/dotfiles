@@ -16,6 +16,7 @@ import yaml
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
 from agent_toolkit._testing import git_repository
+from selection_contract import _plan_requirement
 
 
 def _dispatch(*args: str) -> int:
@@ -133,6 +134,7 @@ def test_public_generation_uses_candidate_facts_and_typed_edges_once(
     assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
     saved = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert [item["鮮度"]["later_commit_count"] for item in saved["選定"]] == [0, 1]
+    assert all(item["計画要否"] == "計画あり" for item in saved["選定"])
     assert all("担当モデル" not in item for item in saved["選定"])
     initial = saved["初回配分"]
     assert initial["候補WI"] == names and initial["レーン割当"] == dict.fromkeys(names, "lane-01")
@@ -145,6 +147,14 @@ def test_public_generation_uses_candidate_facts_and_typed_edges_once(
         assert generated["depends_on"] == [names[0]] and generated["リポジトリ1"] == "github.com/test/repo"
     else:
         assert generated["計画1"] == generated["計画2"] == "shared.md"
+
+
+def test_generated_plan_requirement_uses_source_and_wi_type() -> None:
+    for source in ("add-awi-by-user", "process-user-comments", "implement"):
+        assert _plan_requirement({"type": "awi", "source": source}) == "計画なし"
+        assert _plan_requirement({"type": "uwi", "source": source}) == "計画あり"
+    assert _plan_requirement({"type": "awi", "source": "human"}) == "計画あり"
+    assert _plan_requirement({"type": "awi"}) == "計画あり"
 
 
 def test_public_generation_empty_candidates_and_failure_preserve_destination(

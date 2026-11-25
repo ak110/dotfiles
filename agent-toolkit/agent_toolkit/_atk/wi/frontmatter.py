@@ -1,71 +1,22 @@
-"""frontmatterの読み書きを提供する共有モジュール。PyYAMLを使用して標準的なYAML形式をサポート。
-
-このモジュールは`agent_toolkit._atk.wi`配下の他のモジュールへ依存せず、依存グラフの最下層に置く。
-`entries.py`・`formatters.py`・`add.py`・`mutations/`配下、`agent_toolkit._atk.serve`の画面と`uwi_scan.py`が
-このモジュールから一方向にimportする。
-"""
-
 import pathlib
-import re
 import typing
 
-import yaml
+from agent_toolkit._common import frontmatter
+from agent_toolkit._common.frontmatter import normalize_newlines, serialize_frontmatter
 
-if typing.TYPE_CHECKING:
-    _SafeLoaderBase = yaml.SafeLoader
-else:
-    _SafeLoaderBase = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
-
-
-class _LiteralScalarLoader(_SafeLoaderBase):  # pylint: disable=too-many-ancestors
-    """暗黙の型推論を行わず、スカラーノードの字面をそのまま`str`として構築するローダー。
-
-    bool・int・float・null・timestampの各タグで標準的に使うコンストラクターを、
-    `construct_scalar`が返すノード文字列
-    （引用符解決後の生のYAML字面）へ差し替える。マッピング・シーケンスの構築は
-    選択した安全な基底ローダーの標準動作を維持するため、入れ子構造そのものは保持される。
-    """
-
-
-def _construct_literal_scalar(loader: yaml.SafeLoader, node: yaml.Node) -> str:
-    assert isinstance(node, yaml.ScalarNode)
-    return loader.construct_scalar(node)
-
-
-for _tag in (
-    "tag:yaml.org,2002:bool",
-    "tag:yaml.org,2002:int",
-    "tag:yaml.org,2002:float",
-    "tag:yaml.org,2002:null",
-    "tag:yaml.org,2002:timestamp",
-):
-    _LiteralScalarLoader.add_constructor(_tag, _construct_literal_scalar)
-
+__all__ = [
+    "decode_entry_text",
+    "normalize_newlines",
+    "parse_frontmatter",
+    "serialize_frontmatter",
+    "write_entry_text",
+]
 
 _TYPED_KEYS = frozenset({"queue_schedule", "important"})
-"""字面ではなく型付きの値を保持するキー。"""
 
 
-_SIMPLE_LINE = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*): ([^\s\-?:,\[\]{}#&*!|>'\"%@`][^\t]*)")
-"""値がプレーンスカラー1つだけの`キー: 値`の行。値の先頭にYAMLの指示子を置く行は対象外とする。"""
-
-
-def _simple_mapping(source: str) -> dict[str, str] | None:
-    data: dict[str, str] = {}
-    for line in source.split("\n"):
-        match = _SIMPLE_LINE.fullmatch(line)
-        if match is None:
-            return None
-        key, value = match.groups()
-        if key in _TYPED_KEYS or value != value.rstrip() or ": " in value or " #" in value or value.endswith(":"):
-            return None
-        data[key] = value
-    return data
-
-
-def normalize_newlines(text: str) -> str:
-    """CRLFとCRをLFへ正規化して返す。"""
-    return text.replace("\r\n", "\n").replace("\r", "\n")
+def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
+    return frontmatter.parse_frontmatter(text, typed_keys=_TYPED_KEYS)
 
 
 def decode_entry_text(data: bytes) -> str:
@@ -86,56 +37,3 @@ def write_entry_text(path: pathlib.Path, content: str) -> None:
     経ずに符号化して書き込み、保存形式を実行環境から独立させる。
     """
     path.write_bytes(normalize_newlines(content).encode("utf-8"))
-
-
-def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
-    r"""先頭のYAML frontmatterをマッピングとして解析し、本文とともに返す。
-
-    frontmatter区切り（先頭`---\\n`と閉じ`\\n---\\n`）が無い場合、YAML構文が不正な場合、
-    トップレベルがマッピングでない場合はNoneを返す。空のfrontmatter（`---\\n---\\n`）は
-    空dictとして扱う。
-    `queue_schedule`と`important`以外の値は`_LiteralScalarLoader`で解析し、暗黙の型推論を経ない
-    字面のままの`str`として保持する（マッピング・シーケンスの構造自体はそのまま保つ）。
-    `queue_schedule`と`important`は選択した安全な基底ローダーで別途解析し、
-    `carry_count`等の整数と重要フラグのbool型を保つ。型付きのローダーによる2回目の解析は、両キーのいずれかを持つ場合だけ行う。
-    本文は区切り直後から末尾までを一切加工せず（先頭改行の除去も末尾改行の追加もせず）返す
-    （本文が変化しないことは、`serialize_frontmatter`との往復後の本文文字列を直接比較して確認する）。
-    """
-    text = text.removeprefix("\ufeff")
-    if not text.startswith("---\n"):
-        return None
-    try:
-        end = text.index("\n---\n", 3)
-    except ValueError:
-        return None
-    frontmatter_source = text[4:end]
-    if (simple := _simple_mapping(frontmatter_source)) is not None:
-        return simple, text[end + len("\n---\n") :]
-    try:
-        literal = yaml.load(frontmatter_source, Loader=_LiteralScalarLoader)
-        # 型付きの値を使うキーが無い項目では2回目の解析を省く。純Python実装のPyYAMLでは1件の解析が
-        # 1ミリ秒前後かかり、数千件を走査する一覧や同期で所要が倍になるためである。
-        typed = (
-            yaml.load(frontmatter_source, Loader=_SafeLoaderBase)
-            if isinstance(literal, dict) and _TYPED_KEYS & literal.keys()
-            else literal
-        )
-    except yaml.YAMLError:
-        return None
-    # `frontmatter_source`が空文字列（または空白のみ）の場合だけ空dictへ正規化する。
-    # トップレベルがYAML null（`null`・`~`）の場合も両ローダーは`None`を返すが、
-    # この場合は「トップレベルがマッピングでない」契約に従いNoneを返す必要があるため、
-    # 空文字列判定と区別する（無条件にNoneを{}へ正規化すると、トップレベルnullを
-    # 誤って空dictとして受理してしまう）。
-    if not frontmatter_source.strip():
-        literal, typed = {}, {}
-    if not isinstance(literal, dict) or not isinstance(typed, dict):
-        return None
-    data = {key: (typed.get(key) if key in _TYPED_KEYS else value) for key, value in literal.items()}
-    body = text[end + len("\n---\n") :]
-    return data, body
-
-
-def serialize_frontmatter(data: typing.Mapping[str, typing.Any], body: str) -> str:
-    dumped = yaml.safe_dump(dict(data), sort_keys=False, allow_unicode=True, default_flow_style=False)
-    return f"---\n{dumped}---\n{body}"

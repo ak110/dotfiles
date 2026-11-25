@@ -127,8 +127,9 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
 
     receipt = _h2_section(parent, "保存後の意味検収")
-    assert f"再開位置が設定されており、その値が`{prefix}`で始まらない項目については" in receipt
-    assert "前述の計画ファイルの確認に代えて" in receipt
+    assert f"再開位置が設定されており、その値が`計画なし`でも`{prefix}`で始まる値でもない項目については" in receipt
+    assert "`計画なし`の項目は、対象AWIの専用branchかレビュー指摘管理表が残っている" in receipt
+    assert f"`再開区分`が`{prefix}`である項目だけに認め、前述の計画ファイルの確認に代えて" in receipt
     progress_only = _h2_section(selection_text, "処理対象の決定")
     assert "計画ファイルの絶対パスと残る工程の書式を用いて`再開位置`に記録する" in progress_only
     assert "観測のみの書式は、AWI本文に記載された再開記録を読み取った項目に対してのみ使用する" in progress_only
