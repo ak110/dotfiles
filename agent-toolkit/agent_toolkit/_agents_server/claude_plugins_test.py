@@ -14,7 +14,8 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given
+from hypothesis import settings as hypothesis_settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
@@ -586,42 +587,46 @@ def test_watch_targets_skip_paths_with_no_existing_ancestor(tmp_path: Path, monk
         loop.close()
 
 
-@given(
-    field=st.sampled_from(["scope", "enabled", "projectPath", "installPath", "id", "futureField"]),
-    present=st.booleans(),
-    value=st.one_of(
-        st.none(),
-        st.just(""),
-        st.just("future"),
-        st.integers(),
-        st.lists(st.integers()),
-        st.dictionaries(st.text(), st.booleans()),
-    ),
-)
-@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
-def test_external_inventory_variants_do_not_block_prepare(
-    tmp_path: Path, inventory: SimpleNamespace, field: str, present: bool, value: Any
-) -> None:
-    root = tmp_path / "checkout"
-    if not root.exists():
-        _plugin(root)
+async def test_external_inventory_variants_do_not_block_prepare(tmp_path: Path, inventory: SimpleNamespace) -> None:
+    root = _plugin(tmp_path / "checkout")
     toolkit = _installed(root)
-    extra = _installed(tmp_path / "external", id="other@mine", scope="project", projectPath=str(tmp_path))
-    if present:
-        extra[field] = value
-    else:
-        extra.pop(field, None)
-    inventory.items = [toolkit, None, extra]
+    expected = claude_plugins._InstalledPlugin.model_validate(toolkit)
+    options = _options(tmp_path, root)
+    options["setting_sources"] = ["user", "project"]
+    reloader = claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop())
+    fields = ("scope", "enabled", "projectPath", "installPath", "id", "futureField")
+    samples: list[dict[str, Any]] = []
 
-    async def prepare() -> None:
-        options = _options(tmp_path, root)
-        options["setting_sources"] = ["user", "project"]
-        async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
-            assert reloader._source == root
-            assert reloader._watch_keys is not None
+    def check(field: str, present: bool, value: Any) -> None:
+        extra = _installed(tmp_path / "external", id="other@mine", scope="project", projectPath=str(tmp_path))
+        if present:
+            extra[field] = value
+        else:
+            extra.pop(field, None)
+        inventory.items = [toolkit, None, extra]
+        assert reloader._inventory()[0] == expected
+        samples.append(extra)
 
-    asyncio.run(prepare())
+    for field in fields:
+        check(field, False, None)
+        for variant in (None, "", "future", 0, []):
+            check(field, True, variant)
+
+    @given(
+        field=st.sampled_from(fields),
+        value=st.one_of(st.integers(), st.lists(st.integers()), st.dictionaries(st.text(max_size=24), st.booleans())),
+    )
+    @hypothesis_settings(max_examples=48)
+    def check_generated(field: str, value: Any) -> None:
+        check(field, True, value)
+
+    check_generated()
+    inventory.items = [toolkit, None, *samples]
+    async with reloader:
+        assert reloader._source == root
+        assert reloader._watch_keys is not None
 
 
 @pytest.mark.parametrize("path", ["", "relative", None, {"shape": "changed"}])
