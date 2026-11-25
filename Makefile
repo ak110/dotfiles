@@ -56,11 +56,11 @@ install-plugin-version-hook:
 	hook="$$(git rev-parse --git-path hooks/pre-push)"; \
 	if test -e "$$hook" || test -L "$$hook"; then \
 	    test -f "$$hook" && test ! -L "$$hook" && \
-	        printf '%s\n' '#!/bin/sh' 'exec uv run --frozen python scripts/check_plugin_version.py --pre-push' | cmp -s - "$$hook" || \
+	        printf '%s\n' '#!/bin/sh' 'exec uv run --frozen python scripts/check_plugin_version.py --pre-push "$$@"' | cmp -s - "$$hook" || \
 	        { echo "既存のpre-pushを保持しました: $$hook。版数検査を既存のフックへ統合してください。" >&2; exit 1; }; \
 	else \
 	    mkdir -p "$$(dirname "$$hook")"; \
-	    (set -C; printf '%s\n' '#!/bin/sh' 'exec uv run --frozen python scripts/check_plugin_version.py --pre-push' > "$$hook"); \
+	    (set -C; printf '%s\n' '#!/bin/sh' 'exec uv run --frozen python scripts/check_plugin_version.py --pre-push "$$@"' > "$$hook"); \
 	    chmod +x "$$hook"; \
 	fi
 

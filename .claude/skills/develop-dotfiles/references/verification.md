@@ -93,9 +93,10 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 ## 公開前の検証
 
 `make setup` は版数検査のGit pre-pushフックを導入する。
-既存の恒久checkoutでは `make install-plugin-version-hook` で導入する。
+既存の公開用checkoutでは、反映後の最初のpushより先に `make install-plugin-version-hook` で導入する。
 フックは作業ツリーではなく実際に送る全refの新旧OIDを検査する。
 既存の別のpre-pushフックは上書きしない。
+新規refは、送信先の公開済みdevelopと送るcommitの一意な共通祖先と比べ、基点を特定できない場合は検査を成功扱いにしない。
 
 公開する担当は統合後、実際にpushするHEADで、[作業ツリーの準備](worktree.md#作業ツリーの準備)にある規範Markdownの上限検査の成功を確かめる。
 成功の根拠に使うのは、同じHEADで対象のテストが実行され、成功した記録だけとする。

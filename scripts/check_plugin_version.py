@@ -43,7 +43,9 @@ class CheckError(Exception):
 
 
 def _git(repo_root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, encoding="utf-8", check=False)
+    return subprocess.run(
+        ["git", *args], cwd=repo_root, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", check=False
+    )
 
 
 def _require(result: subprocess.CompletedProcess[str], operation: str) -> str:
@@ -182,8 +184,29 @@ def check(repo_root: pathlib.Path, *, base: str | None = None, current: str | No
     return failures
 
 
-def check_push(repo_root: pathlib.Path, lines: Iterable[str]) -> list[str]:
+def _published_develop(repo_root: pathlib.Path, remote: str | None) -> str:
+    if remote is None:
+        raise CheckError("新規refの公開済み基点が無い。Gitのpre-pushが渡すリモートで検査してください")
+    refs = _require(
+        _git(repo_root, "ls-remote", "--heads", "--", remote, "refs/heads/develop"), "公開先のdevelopの照会"
+    ).splitlines()
+    if len(refs) != 1 or not refs[0].endswith("\trefs/heads/develop"):
+        raise CheckError("公開先にdevelopが無く、新規refの公開済み基点を確定できません")
+    return _commit(repo_root, refs[0].split("\t", 1)[0], "公開先developの解決（未取得なら先にgit fetch）")
+
+
+def _shared_push_base(repo_root: pathlib.Path, published: str, current: str) -> str:
+    bases = _require(
+        _git(repo_root, "merge-base", "--all", published, current), "公開済みdevelopとの共通祖先の解決"
+    ).splitlines()
+    if len(bases) != 1:
+        raise CheckError("公開済みdevelopと新規refの共通祖先を一意に確定できません")
+    return bases[0]
+
+
+def check_push(repo_root: pathlib.Path, lines: Iterable[str], remote: str | None = None) -> list[str]:
     failures: list[str] = []
+    published = None
     for line in lines:
         fields = line.split()
         if len(fields) != 4:
@@ -192,6 +215,9 @@ def check_push(repo_root: pathlib.Path, lines: Iterable[str]) -> list[str]:
         if any(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid) is None for oid in (local_oid, remote_oid)):
             raise CheckError("Gitのpre-push入力に完全なOIDが必要")
         if not _ZERO_OID.fullmatch(local_oid):
+            if _ZERO_OID.fullmatch(remote_oid):
+                published = published or _published_develop(repo_root, remote)
+                remote_oid = _shared_push_base(repo_root, published, local_oid)
             failures.extend(f"{remote_ref}: {failure}" for failure in check(repo_root, base=remote_oid, current=local_oid))
     return failures
 
@@ -206,7 +232,12 @@ def main() -> int:
         repo_root = pathlib.Path(
             _require(_git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel"), "git rev-parse --show-toplevel")
         )
-        failures = check_push(repo_root, sys.stdin) if sys.argv[1:] == ["--pre-push"] else check(repo_root)
+        arguments = sys.argv[1:]
+        failures = (
+            check_push(repo_root, sys.stdin, arguments[2] if len(arguments) == 3 else None)
+            if arguments[:1] == ["--pre-push"]
+            else check(repo_root)
+        )
     except CheckError as error:
         print(str(error), file=sys.stderr)
         return 2
