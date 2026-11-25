@@ -40,7 +40,9 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
     ],
 )
 @pytest.mark.asyncio
-async def test_default_effort_selection_recognizes_only_the_exec_lane_role(tmp_path, monkeypatch, role, category, exec_lane):
+async def test_execute_default_is_medium_and_recognizes_only_the_exec_lane_role(
+    tmp_path, monkeypatch, role, category, exec_lane
+):
     async def check_plugin_commands(_cwd):
         return None
 
@@ -65,7 +67,7 @@ async def test_default_effort_selection_recognizes_only_the_exec_lane_role(tmp_p
             startup_inputs={"担当種別": category},
         )
         assert response["engine"] == "codex"
-        assert current.sessions[response["session_id"]].effort == ("medium" if exec_lane else "low")
+        assert current.sessions[response["session_id"]].effort == "medium"
 
 
 @pytest.mark.parametrize("first_engine,selected_engine", [("codex", "claude"), ("claude", "codex")])
