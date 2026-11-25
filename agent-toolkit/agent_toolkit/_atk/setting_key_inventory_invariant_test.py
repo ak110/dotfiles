@@ -24,6 +24,8 @@ _SETTING_USES = {
     "repositories": ("config_settings.resolve_configured_repositories", "巡回と選定の対象を構成する"),
     "session_review_auto_start": ("run_skill_batchのセッションレビュー起動", "個別の振り返りを自動起動するか決める"),
     "weekly_meta_auto_start": ("weekly_scheduleのmeta起動判定", "週次のメタレビューに資源を使うか決める"),
+    "weekly_architecture_auto_start": ("weekly_scheduleの起動判定", "週次の設計の点検に資源を使うか決める"),
+    "weekly_ui_sweep_auto_start": ("weekly_scheduleの起動判定", "週次の画面の巡回に資源を使うか決める"),
     "weekly_research_auto_start": ("weekly_scheduleのresearch起動判定", "週次の外部調査に資源を使うか決める"),
     "weekly_research_x_api": ("research_sourcesのX取得判定", "料金の掛かるX APIの利用を明示する"),
     "agents_concurrency": ("_agents_server.admission.configured_limit", "ホストの利用可能な資源に同時稼働数を合わせる"),

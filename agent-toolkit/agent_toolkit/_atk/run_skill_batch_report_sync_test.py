@@ -10,10 +10,11 @@ import subprocess
 import sys
 import types
 
+import filelock
 import pytest
 
 from agent_toolkit._atk import run_skill_batch, run_skill_batch_evidence, run_skill_batch_test
-from agent_toolkit._atk.wi import add, frontmatter, layout
+from agent_toolkit._atk.wi import add, frontmatter, layout, sync
 from agent_toolkit._atk.wi.mutations import content
 from agent_toolkit._common import session_activity, session_record_paths, session_review
 from agent_toolkit._testing import git_repository
@@ -172,6 +173,45 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
     assert details["plugin_source"]["commit"]
     assert details["exit_code"] is None and details["log"]["tail"] == "終了状態: exit code 0"
     assert "初期要求" not in body and "会話本文" not in body
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+def test_report_lock_contention_keeps_analysis_and_resumes_without_child(tmp_path, monkeypatch, capsys):
+    notes = run_skill_batch_test._notes()
+    run_skill_batch_test._target(tmp_path, "one", "example.com/team/one")
+    calls: list[str] = []
+    execute = run_skill_batch_test._report_and_finish(notes, monkeypatch, calls)
+    lock_path = sync.repo_lock_path(notes)
+    real_lock = sync.repo_lock
+    manifests = []
+
+    with filelock.FileLock(lock_path, timeout=0) as held:
+        held.release()
+
+        def execute_then_lock(args):
+            manifests.append(pathlib.Path(args.batch_manifest))
+            result = execute(args)
+            held.acquire()
+            monkeypatch.setattr(sync, "repo_lock", lambda repo, timeout=None: real_lock(repo, timeout=0))
+            return result
+
+        try:
+            assert run_skill_batch.dispatch(run_skill_batch_test._args("manual"), execute_then_lock) == 1
+        finally:
+            held.release()
+
+    assert len(manifests) == 1
+    manifest = manifests[0]
+    unfinished = session_review.read(manifest)
+    assert unfinished["analysis_succeeded"] and unfinished["status"] == "running"
+    assert "確定を保留" in capsys.readouterr().err
+    assert not run_skill_batch_test._failure_awis(notes)
+    args = run_skill_batch_test._args("manual")
+    args.batch_manifest, args.run_id, args.resume_record = str(manifest), unfinished["run_id"], object()
+
+    assert run_skill_batch.dispatch(args, lambda _: pytest.fail("分析済みの子を再実行した")) == 0
+    assert session_review.read(manifest)["status"] == "completed"
+    assert len(calls) == 1 and not session_review.pending()
 
 
 @pytest.mark.parametrize(

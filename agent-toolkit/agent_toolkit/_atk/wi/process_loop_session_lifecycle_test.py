@@ -17,11 +17,13 @@ import psutil
 import pytest
 
 from agent_toolkit._atk import claude_connection
+from agent_toolkit._atk.wi import process_loop_control, process_loop_log
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import (
     claude_usage_limit,
     codex_usage_limit,
+    next_action,
     process_tree,
     session_record_paths,
     session_registry,
@@ -57,6 +59,19 @@ def test_process_loop_restarts_limited_claude_after_owned_exit(
         "            'status':'rejected','rateLimitType':'five_hour','resetsAt':int(time.time())+3600}}))\n"
         "        sys.exit(1)\n"
         "    sys.exit(0)\n"
+        "records = pathlib.Path(os.environ['CLAUDE_CONFIG_DIR']) / 'projects/test'\n"
+        "records.mkdir(parents=True, exist_ok=True)\n"
+        "if '-p' in sys.argv and '--resume' in sys.argv:\n"
+        "    identifier = sys.argv[sys.argv.index('--resume')+1]\n"
+        "    assert sys.argv[-1] == '/compact' and pathlib.Path.cwd() == root\n"
+        "    assert not any(key in os.environ for key in ('AGENT_TOOLKIT_PROCESS_LOOP_SESSION',\n"
+        "        'AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID', 'AGENT_TOOLKIT_SESSION_START_INPUT',\n"
+        "        'AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM'))\n"
+        "    assert session_registry.resolve(identifier).state is session_registry.Resolution.TERMINAL\n"
+        "    with (records / f'{identifier}.jsonl').open('a', encoding='utf-8') as f:\n"
+        "        f.write(json.dumps({'type':'system','subtype':'compact_boundary'})+'\\n')\n"
+        "    (root / 'compacted').write_text(identifier)\n"
+        "    sys.exit(0)\n"
         "identifier = next((arg.split('=',1)[1] for arg in sys.argv if arg.startswith('--resume=')), None)\n"
         "if identifier is None: identifier = sys.argv[sys.argv.index('--session-id')+1]\n"
         "identity = session_registry.ProcessIdentity.of(os.getpid())\n"
@@ -73,6 +88,7 @@ def test_process_loop_restarts_limited_claude_after_owned_exit(
         "            assert time.monotonic() < deadline\n"
         "            time.sleep(0.01)\n"
         "    sys.exit(1)\n"
+        "assert (root / 'compacted').read_text() == identifier\n"
         "(root / 'continued').write_text(identifier)\n",
         encoding="utf-8",
     )
@@ -82,6 +98,7 @@ def test_process_loop_restarts_limited_claude_after_owned_exit(
         **os.environ,
         "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
         "SWITCH_ROOT": str(tmp_path),
+        "CLAUDE_CONFIG_DIR": str(tmp_path / "claude-home"),
         "HOLD_LIMIT": str(int(hold)),
         _pl_env.PROCESS_LOOP_SESSION_ENV: "1",
     }
@@ -105,6 +122,103 @@ def test_process_loop_restarts_limited_claude_after_owned_exit(
     assert finished == [True]
     info = session_registry.resolve(calls[1]["id"]).resume_info
     assert info is not None and info.claude_connection == "payg" and info.turn_seq == 2
+
+
+@pytest.mark.skipif(os.name == "nt", reason="合成Claude CLIをPOSIXのshebangで起動する")
+@pytest.mark.parametrize("case", ["success", "nonzero", "no-boundary", "unreadable", "native", "picker", "cancelled"])
+def test_claude_resume_launch_preserves_reservation_on_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    identifier = "saved-session"
+    home = tmp_path / "claude-home"
+    native = home / "sessions"
+    native.mkdir(parents=True)
+    record = home / "projects" / "cwd" / f"{identifier}.jsonl"
+    record.parent.mkdir(parents=True)
+    record.write_text('{"type":"system","subtype":"compact_boundary"}\n', encoding="utf-8")
+    binary = tmp_path / "claude"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, sys\n"
+        "root = pathlib.Path.cwd()\n"
+        "case = os.environ['COMPACTION_CASE']\n"
+        "if '--resume' in sys.argv:\n"
+        "    (root / 'compaction-called').touch()\n"
+        "    assert '-p' in sys.argv and sys.argv[-1] == '/compact'\n"
+        "    assert '--settings' in sys.argv and os.environ.get('AGENT_TOOLKIT_PROCESS_LOOP_SESSION') is None\n"
+        "    if case == 'nonzero': sys.exit(14)\n"
+        "    if case == 'success':\n"
+        "        with (root / 'claude-home/projects/cwd/saved-session.jsonl').open('a', encoding='utf-8') as f:\n"
+        "            f.write(json.dumps({'type':'system','subtype':'compact_boundary'})+'\\n')\n"
+        "            message = {'content':'compact-conversation 圧縮前のやり取りと要約は現在の文脈にない'}\n"
+        "            f.write(json.dumps({'type':'user','message':message})+'\\n')\n"
+        "else:\n"
+        "    assert '--resume=saved-session' in sys.argv and '追加指示' in sys.argv[-1]\n"
+        "    (root / 'interactive-called').touch()\n",
+        encoding="utf-8",
+    )
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    if case == "unreadable":
+        registry = session_registry.registry_directory()
+        registry.mkdir(parents=True, exist_ok=True)
+        (registry / f"{identifier}.json").write_text("{", encoding="utf-8")
+    if case == "native":
+        pid = os.getpid()
+        stat_path = pathlib.Path(f"/proc/{pid}/stat")
+        start = stat_path.read_text(encoding="utf-8").rsplit(")", 1)[1].split()[19] if stat_path.exists() else None
+        (native / f"{pid}.json").write_text(
+            json.dumps({"pid": pid, "sessionId": identifier, "procStart": start}), encoding="utf-8"
+        )
+    monkeypatch.setenv(_pl_env.PROCESS_LOOP_SESSION_ENV, "1")
+    env = {
+        **os.environ,
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+        "CLAUDE_CONFIG_DIR": str(home),
+        "COMPACTION_CASE": case,
+    }
+    process_loop_log.append("session_end", session_id=identifier)
+    resume = None if case == "picker" else identifier
+    process_loop_control.cmd_process_loop_resume(resume)
+    request = process_loop_control.read_resume_request()
+    assert request is not None
+    process_loop_control.cmd_process_loop_instruct("保持する指示")
+    if case == "cancelled":
+        process_loop_control.cmd_process_loop_resume_cancel()
+
+    def launch() -> bool:
+        return _pl_session.run_process_session(
+            argparse.Namespace(resume=resume, resume_request_id=request.request_id),
+            tmp_path,
+            "再開",
+            env,
+            orchestrator="claude",
+            model="sonnet",
+            effort="high",
+            resume_pending=True,
+            on_session_finished=lambda _normal: None,
+            claude_connection=claude_connection.Connection("inherit"),
+        )
+
+    if case == "success":
+        assert launch()
+        assert process_loop_control.read_resume_request() is None
+        assert process_loop_log.read_instructions() == []
+        assert "mode=original-record" in process_loop_log.log_path().read_text(encoding="utf-8")
+    else:
+        if case == "cancelled":
+            with pytest.raises(process_loop_control.ResumeChanged):
+                launch()
+            assert process_loop_control.read_resume_request() is None
+        else:
+            with pytest.raises(next_action.ActionableError) as caught:
+                launch()
+            assert identifier in str(caught.value)
+            assert process_loop_control.read_resume_request() == request
+        assert process_loop_log.read_instructions() == ["保持する指示"]
+    assert (tmp_path / "interactive-called").exists() == (case == "success")
+    assert (tmp_path / "compaction-called").exists() == (case in {"success", "nonzero", "no-boundary"})
 
 
 @pytest.mark.parametrize("new_turn", [False, True])

@@ -40,7 +40,7 @@ def _run_set_cli(
 
 
 def _set_decisions(*names: str) -> list[dict[str, str]]:
-    return [{"awi": name, "lane": "lane-01"} for name in names]
+    return [{"awi": name, "lane": "lane-01", "計画要否": "計画あり"} for name in names]
 
 
 def _run_plan_launcher(

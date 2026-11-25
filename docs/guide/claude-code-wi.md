@@ -69,6 +69,21 @@ atk wi answer <UWIファイル名> '<回答本文>'
 - `atk wi list --status=processable`: 自動処理へ渡せる項目
 - `atk wi list --type=uwi --answered=no`: 未回答のUWI
 
+### エージェントが回答・新着AWIを待つ
+
+`atk wi wait --uwi FILENAME --timeout SECONDS`は指定したUWIの回答を待つ。
+`--uwi`は正式なファイル名で繰り返し指定できる。
+新着AWIを待つには、`atk wi list --target-repo ID --snapshot-output PATH`で開始時集合をJSONファイルへ保存する。
+`atk wi wait --new-since PATH --target-repo ID --timeout SECONDS`に同じファイルとリポジトリを指定すると、
+開始時集合に無い処理可能なAWIを待つ。
+両条件を指定した場合は、どちらか一方で終了する。
+開始時に条件を照会するため、すでに回答済みのUWIも検知する。
+別のホストでの変更は、待機中に60秒間隔で起動する同期で取り込まれた後に検知できる。
+
+検知時は `{"type":"uwi","filename":"20261125-123456-001.md"}` のようなJSONを標準出力へ出し、0で終了する。
+時間切れは3、入力エラーは2、内部失敗は1で終了する。
+ユーザーの回答方法は変わらない。
+
 ## 処理対象と検証OS
 
 `atk config repos`で登録済みリポジトリと属性を一覧表示する。
@@ -133,14 +148,16 @@ GitHub CopilotのレビューとDependabotアラートの確認は、既定の�
 
 ```bash
 atk wi process-loop resume SESSION_ID
-atk wi process-loop resume
 atk wi process-loop status
 atk wi process-loop resume-cancel
 ```
 
-値なしの `resume` は次の起動でホストCLIの会話選択画面を開く。
-会話選択画面には対話端末が必要で、非対応のホストでは会話IDを指定する。
 予約コマンド自体は会話を起動せず、後から受理した予約で置き換えられる。
+`resume`をIDなしで実行すると会話選択の予約を保存する。
+その予約で会話を選択できるのはCodexだけである。
+Claude Codeで巡回を起動するとIDなしの予約では会話を起動せず、予約を保持する。
+`status`に表示される直近の統括のIDか、`atk serve`のセッション一覧で探したIDを指定して予約し直す。
+Claude Codeでは起動元の`atk wi process-loop`が同じ会話を圧縮してから再開するため、手動で圧縮する必要はない。
 予約はCLIの実起動で1回消費され、準備・更新・起動の前に失敗した場合は残る。
 旧`--resume`・`--auto-resume`オプションは使わない。
 旧方式の`auto`予約が残ると起動は止まる。

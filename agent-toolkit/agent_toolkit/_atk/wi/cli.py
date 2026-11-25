@@ -27,11 +27,13 @@ lazy from agent_toolkit._atk.wi import show as _show
 lazy from agent_toolkit._atk.wi import submit as _submit
 lazy from agent_toolkit._atk.wi import sync as _wi_sync
 lazy from agent_toolkit._atk.wi import uwi as _uwi
+lazy from agent_toolkit._atk.wi import wait as _wait
 lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
 lazy from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies
 lazy from agent_toolkit._atk.wi.mutations import priority as _mutation_priority
 lazy from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 lazy from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
+lazy from agent_toolkit._common import next_action as _next_action
 lazy from agent_toolkit._common import private_notes as _private_notes
 
 
@@ -201,6 +203,9 @@ def _pull_command(private_notes: pathlib.Path) -> None:
 
 
 def prepare_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if args.command == "wi" and args.wi_subcommand == "wait":
+        _wait.prepare_args(args)
+        return
     if args.command == "wi" and args.wi_subcommand == "list" and args.snapshot_output and args.new_since:
         args.subparser.error("--snapshot-outputと--new-sinceは併用できません。開始時集合は初回だけ保存する。")
     if args.command == "wi" and args.wi_subcommand == "grep":
@@ -283,11 +288,16 @@ def dispatch(
     if sub == "process-loop":
         try:
             return _process_loop.cmd_process_loop(args)
+        except _next_action.ActionableError as error:
+            _outcome.report_failure(error.reason, next_action=error.next_action)
+            return 1
         except (OSError, ValueError) as error:
             _outcome.report_failure(str(error), next_action="process-loop statusで状態を確認し、原因を解消して再実行する")
             return 1
     if sub == "submit":
         return _submit.dispatch(args)
+    if sub == "wait":
+        return _wait.cmd_wait(args, _private_notes.default_private_notes(home))
     private_notes = (
         _private_notes.default_private_notes(home)
         if sub in ("add", "edit") and args.dry_run

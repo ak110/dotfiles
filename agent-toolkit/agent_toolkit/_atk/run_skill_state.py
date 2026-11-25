@@ -47,6 +47,7 @@ class RunRecord(pydantic.BaseModel):
     connection: claude_connection.Connection | None
     remaining: Annotated[float, pydantic.Field(ge=0)]
     deadline: float | None = None
+    weekly_slot: str | None = None
     executor: session_registry.ProcessIdentity | None = None
     status: Literal["running", "interrupted", "completed"] = "interrupted"
 

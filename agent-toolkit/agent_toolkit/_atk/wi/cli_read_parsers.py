@@ -15,6 +15,12 @@ lazy from agent_toolkit._atk.wi import constants as _wi_constants
 
 
 def _add_mq_read_parsers(sub: Any) -> None:
+    wait = _atk_help.add_command(sub, "wait", allow_abbrev=False, **_atk_help.HELP["atk wi wait"])
+    wait.add_argument("--uwi", action="append", default=[], metavar="FILENAME", help="回答を待つUWIの正式名。反復可。")
+    wait.add_argument("--new-since", type=pathlib.Path, metavar="PATH", help="新着AWIと比較する開始時集合のJSON。")
+    wait.add_argument("--target-repo", metavar="ID", help="新着AWIを待つ対象リポジトリ。")
+    wait.add_argument("--timeout", type=float, required=True, metavar="SECONDS", help="待機上限（秒）。0は開始時の照会のみ。")
+    wait.set_defaults(subparser=wait)
 
     list_ = _atk_help.add_command(sub, "list", allow_abbrev=False, **_atk_help.HELP["atk wi list"])
     _arguments.add_target_repo_arg(list_, multiple=True, allow_all=True)

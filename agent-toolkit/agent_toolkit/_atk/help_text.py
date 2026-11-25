@@ -124,6 +124,11 @@ HELP: dict[str, dict[str, str]] = {
         ),
         "epilog": "実行例:\n\n  atk wi verify-merge 20261123-175351-001.md --head 0123456789abcdef0123456789abcdef01234567",
     },
+    "atk wi wait": {
+        "summary": "UWIへの回答または処理可能な新着AWIを待つ",
+        "description": "UWIへの回答または処理可能な新着AWIを待つ。\n\n目的: 指定したUWIへの回答、または開始時集合に無い対象リポジトリの処理可能なAWIを検知する。\n利用場面: エージェントが回答や新規の処理対象を待つとき。\n対象と出力: 両条件を指定した場合はいずれかの成立で終了する。検知時はtypeとfilenameを含むJSONを標準出力へ書いて0で終了する。時間切れは3、入力エラーは2、内部失敗は1。\n前提: Gitで管理したprivate-notesを使う。--new-sinceには開始時集合のJSONを指定する。\n復元・後始末: 待機自体は項目を編集しない。別ホストの変更は待機中の同期で取り込む。",
+        "epilog": "実行例:\n\n  atk wi wait --uwi 20261125-123456-001.md --timeout 90",
+    },
     "atk wi list": {
         "summary": "エントリを1件1行で一覧表示する",
         "description": "エントリを1件1行で一覧表示する。\n\n目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。ユーザーコメント付きのAWIを集めるとき（`--user-comment yes`）。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境では1行1レコードのJSON Lines、それ以外では形式の省略時にテキストで表示する。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。ファイルは変更しない。\n前提: 指定が無ければremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
@@ -271,8 +276,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop resume": {
         "summary": "次回の会話再開を予約する",
-        "description": "次回の会話再開を予約する。\n\n目的: ID指定、または引数省略によるCLI本来のpickerを次の起動へ予約する。\n利用場面: 現在の処理を終えてから会話を再開するとき。\n対象と出力: 同じOSアカウントの状態へ1件保存し、後から受理した予約で置き換える。予約時にCLIは起動しない。\n前提: 停止中も設定でき、通常のprocess-loop起動後に使う。起動準備の失敗やabortでは保持し、実起動で1回消費する。\n復元・後始末: 未消費分はresume-cancelで取り消せる。",
-        "epilog": "実行例:\n\n  atk wi process-loop resume SESSION_ID\n  atk wi process-loop resume",
+        "description": "次回の会話再開を予約する。\n\n目的: 次の起動で指定した会話を再開する。Claude Codeでは会話IDが必要で、起動前に同じ会話を圧縮する。Codexでは引数を省略して会話を選べる。\n利用場面: 現在の処理を終えてから会話を再開するとき。会話IDはprocess-loop statusで確かめる。\n対象と出力: 同じOSアカウントの状態へ1件保存し、後から受理した予約で置き換える。予約時にCLIは起動しない。\n前提: 停止中も設定できる。圧縮を含む起動準備の失敗やabortでは保持し、実起動で1回消費する。\n復元・後始末: 未消費分はresume-cancelで取り消せる。",
+        "epilog": "実行例:\n\n  atk wi process-loop status\n  atk wi process-loop resume SESSION_ID",
     },
     "atk wi process-loop resume-cancel": {
         "summary": "未消費の再開予約を取り消す",

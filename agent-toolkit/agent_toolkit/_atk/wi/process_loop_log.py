@@ -103,6 +103,28 @@ def launch_instructions() -> Generator[str]:
             path.unlink(missing_ok=True)
 
 
+def recent_session_ids() -> tuple[tuple[str, str], ...]:
+    """終了済みの会話を、同じIDを除き新しい記録から最大5件返す。  pyfltr: allow-comment"""
+    path = log_path()
+    found: dict[str, str] = {}
+    for candidate in (path, path.with_suffix(".log.1")):
+        try:
+            lines = candidate.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            continue
+        for line in reversed(lines):
+            parts = line.split()
+            if len(parts) < 3 or parts[1] != "event=session_end":
+                continue
+            for field in parts[2:]:
+                if field.startswith("session_id=") and (identifier := field.removeprefix("session_id=")):
+                    found.setdefault(identifier, parts[0])
+                    if len(found) == 5:
+                        return tuple(found.items())
+                    break
+    return tuple(found.items())
+
+
 def append(event: str, *, session_id: str | None = None, **fields: object) -> None:
     """観測イベントを1行追記する。
 
@@ -113,6 +135,8 @@ def append(event: str, *, session_id: str | None = None, **fields: object) -> No
     if not is_process_loop_session(session_id, os.environ):
         return
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+    if session_id is not None:
+        fields = {"session_id": session_id, **fields}
     rendered = " ".join(f"{key}={value}" for key, value in fields.items())
     line = f"{timestamp} event={event}" + (f" {rendered}" if rendered else "") + "\n"
     _locked_rotate_and_append(log_path(), line, _MAX_BYTES)

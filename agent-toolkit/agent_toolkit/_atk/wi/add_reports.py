@@ -51,7 +51,13 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
 
 
 def check_run_report_sync(
-    private_notes: pathlib.Path, *, run_id: str, scope: str, sync_report: bool = False, local_only: bool = False
+    private_notes: pathlib.Path,
+    *,
+    run_id: str | None,
+    scope: str,
+    sync_report: bool = False,
+    local_only: bool = False,
+    weekly_slot: str | None = None,
 ) -> RunReportGap | None:
     """同期済みなら`None`、未同期なら確認できなかった段階を返す。  pyfltr: allow-comment
 
@@ -109,12 +115,15 @@ def check_run_report_sync(
                 data, _body = parsed
                 saved_scope = data.get("scope")
                 same_scope = isinstance(saved_scope, str) and skill_modes.canonical_scope(saved_scope) == expected
+                saved_run = data.get("run_skill_run_id")
                 if not (
                     data.get("type") == WI_TYPE_UWI
                     and data.get("source") == "run-skill"
                     and same_scope
                     and (data.get("run_skill_report") == "true" or bool(data.get("weekly_slot")))
-                    and data.get("run_skill_run_id") == run_id
+                    and isinstance(saved_run, str)
+                    and (run_id is None or saved_run == run_id)
+                    and (weekly_slot is None or data.get("weekly_slot") == weekly_slot)
                 ):
                     if (
                         data.get("type") == WI_TYPE_UWI
@@ -211,7 +220,7 @@ def check_run_report_sync(
     if repaired:
         if local_only:
             background_sync.finish_local_save(private_notes, 0, skip=False)
-        return check_run_report_sync(private_notes, run_id=run_id, scope=scope, local_only=local_only)
+        return check_run_report_sync(private_notes, run_id=run_id, scope=scope, local_only=local_only, weekly_slot=weekly_slot)
     if gap is not None:
         return gap
     candidates.sort(key=lambda item: str(item["file"]), reverse=True)

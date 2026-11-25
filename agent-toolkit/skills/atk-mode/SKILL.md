@@ -78,7 +78,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 | `process-user-comments [入力]` | 名指しのみ | `playbooks/process-user-comments.md` |
 | `process-wi [single-lane\|all-repos]` | 名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
 | `process-loop` | 名指しのみ | `playbooks/process-loop.md` |
-| `review-session [batch\|meta\|research]` | 振り返りの依頼 | `playbooks/review-session.md` |
+| `review-session` | 振り返りの依頼 | `playbooks/review-session.md` |
 | `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
