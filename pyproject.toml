@@ -108,6 +108,10 @@ dev = [
 ]
 pytest-impact = ["testscope==0.4.2"]
 
+[tool.agent-toolkit.lane-integration]
+# atk lane integrateがこのargvの末尾に実際の統合先OIDを渡す。
+verification = ["uv", "run", "--frozen", "python", "scripts/pyfltr_precommit.py", "--integration-cross-contracts"]
+
 [tool.agent-toolkit.pick-wi-check]
 # `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
 # 記載の手順と理由は`.claude/skills/edit-dotfiles-norms/references/project-norm-designation.md`が定め、

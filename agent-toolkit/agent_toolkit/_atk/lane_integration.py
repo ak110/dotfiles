@@ -168,7 +168,14 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             state.update(phase="verified", new_head=current, verified_base=base, new_base=base)
             _lane_records.save(path, record)
         if state["phase"] == "verified" or (state["phase"] == "prepared" and args.no_merge):
+            required = (
+                []
+                if args.no_merge
+                else _lane_integration_input.project_verification(worktree, state["new_base"], state["new_head"])
+            )
             _lane_integration_input.verify(record, state, manifest.get("verification", []), worktree)
+            if required:
+                _lane_integration_input.verify(record, state, required, worktree, prefix="verification-project")
             advanced = _update_target(record, state, manifest, args, target, worktree)
             if advanced is not None:
                 return dict(

@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._atk import lane, lane_activity, lane_retirement
+from agent_toolkit._atk import lane, lane_activity, lane_cleanup, lane_retirement
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._atk.managed_temp import paths as temp_paths
 from agent_toolkit._common import session_registry
@@ -564,3 +564,43 @@ def test_retired_lane_compares_plugin_content(tmp_path, monkeypatch, capsys, sta
     else:
         assert status == 0 and result["removed"] == ["lane-01"], stderr
         assert not worktree.exists()
+
+
+@pytest.mark.parametrize("root", [".hypothesis", "rust/claude-statusline/target", "agent-toolkit/.claude-plugin/types"])
+@pytest.mark.parametrize("state", ["unchanged", "edited", "unrecorded", "legacy"])
+@pytest.mark.cpu_limit(3.0, reason="固定生成先のハッシュ照合と保持理由を実Gitと公開の回収操作で確かめる。")
+def test_retired_lane_compares_fixed_generated_output(tmp_path, monkeypatch, capsys, root, state):
+    repo, selection, record = _create(tmp_path, monkeypatch, capsys)
+    _selection(selection, integrated=False)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / ".gitignore").write_text(f"/{root}/\n", encoding="ascii")
+    committed = git_repository.commit_all(worktree, "生成先の設定")
+    git_repository.run_git(repo, "merge", "--ff-only", committed)
+
+    generated = worktree / root
+    output = generated / "nested" / "output"
+    output.parent.mkdir(parents=True)
+    outputs = {output.relative_to(generated): (b"generated\n", 0o644)}
+    output.write_bytes(b"generated\n")
+    if state != "legacy":
+        (generated / lane_cleanup.PROJECTION_MANIFEST).write_bytes(lane_cleanup.projection_manifest(generated.name, outputs)[0])
+    if state == "edited":
+        with output.open("ab") as handle:
+            handle.write(b"manual\n")
+    unknown = generated / "nested" / "__pycache__" / "manual.pyc"
+    if state == "unrecorded":
+        unknown.parent.mkdir()
+        unknown.write_bytes(b"manual\n")
+
+    status, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
+
+    if state == "unchanged":
+        assert status == 0 and result["removed"] == ["lane-01"], stderr
+        assert not worktree.exists()
+    else:
+        assert status == 1 and result["retained"], stderr
+        blocker = {"edited": "/nested/output", "unrecorded": "/nested/__pycache__", "legacy": ""}[state]
+        assert result["retained"][0]["reason"].endswith(f": {root}{blocker}")
+        assert output.read_bytes() == (b"generated\nmanual\n" if state == "edited" else b"generated\n")
+        if state == "unrecorded":
+            assert unknown.read_bytes() == b"manual\n"

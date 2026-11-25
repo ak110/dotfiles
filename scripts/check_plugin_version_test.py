@@ -77,40 +77,49 @@ def _commit(checkout: Path) -> str:
     return _git(checkout, "rev-parse", "HEAD")
 
 
-def test_pre_push_checks_every_sent_oid_and_ignores_worktree(tmp_path: Path) -> None:
+def test_pre_push_checks_develop_destination_and_ignores_worktree(tmp_path: Path) -> None:
     checkout, published = _repository(tmp_path)
-    _write(checkout / "scripts/tool.py", "print(2)\n")
-    unrelated = _commit(checkout)
     _write(checkout / "agent-toolkit/agent_toolkit/hook.py", "VALUE = 2\n")
     rejected = _commit(checkout)
     _set_version(checkout, "agent-toolkit", "1.0.1")
     accepted = _commit(checkout)
     _write(checkout / ".claude-plugin/marketplace.json", "{}")
     push_input = (
-        f"refs/heads/one {unrelated} refs/heads/one {published}\nrefs/heads/two {rejected} refs/heads/two {published}\n"
+        f"refs/heads/develop {rejected} refs/heads/candidate {published}\n"
+        f"refs/heads/two {rejected} refs/heads/develop {published}\n"
     )
     result = _run(checkout, push_input=push_input, BASE_SHA=accepted, CURRENT_SHA=accepted)
     assert result.returncode == 1
-    assert "refs/heads/two:" in result.stderr
-    assert "refs/heads/one:" not in result.stderr
-    result = _run(checkout, push_input=f"refs/heads/two {accepted} refs/heads/two {published}\n")
+    assert "refs/heads/develop:" in result.stderr
+    assert "refs/heads/candidate:" not in result.stderr
+    result = _run(checkout, push_input=f"refs/heads/two {accepted} refs/heads/develop {published}\n")
     assert result.returncode == 0, result.stderr
 
 
 def test_pre_push_rejects_missing_base_but_accepts_deletion(tmp_path: Path) -> None:
     checkout, published = _repository(tmp_path)
     zero = "0" * len(published)
-    created = _run(checkout, push_input=f"refs/heads/candidate {published} refs/heads/candidate {zero}\n")
+    created = _run(checkout, push_input=f"refs/heads/candidate {published} refs/heads/develop {zero}\n")
     assert created.returncode == 2
     assert "公開済み基点が無い" in created.stderr
-    deleted = _run(checkout, push_input=f"(delete) {zero} refs/heads/candidate {published}\n")
+    deleted = _run(checkout, push_input=f"(delete) {zero} refs/heads/develop {published}\n")
     assert deleted.returncode == 0, deleted.stderr
+
+
+@pytest.mark.parametrize("new_ref", [False, True])
+def test_pre_push_other_destination_accepts_unbumped_changes(tmp_path: Path, new_ref: bool) -> None:
+    checkout, published = _repository(tmp_path)
+    _write(checkout / "agent-toolkit/agent_toolkit/hook.py", "VALUE = 2\n")
+    current = _commit(checkout)
+    remote_oid = "0" * len(published) if new_ref else published
+    result = _run(checkout, push_input=f"refs/heads/develop {current} refs/heads/work {remote_oid}\n")
+    assert result.returncode == 0, result.stderr
 
 
 def test_new_ref_compares_with_its_published_develop_base(tmp_path: Path) -> None:
     checkout, published = _repository(tmp_path)
     remote = (tmp_path / "origin").as_uri()
-    remote_ref = f"refs/heads/candidate {'0' * len(published)}"
+    remote_ref = f"refs/heads/develop {'0' * len(published)}"
 
     def push(current: str) -> subprocess.CompletedProcess[str]:
         return _run(checkout, push_input=f"refs/heads/candidate {current} {remote_ref}\n", push_remote=remote)

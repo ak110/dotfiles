@@ -47,6 +47,8 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
   直接pytestで切り分ける場合も、同じ影響範囲のテストを指定する。
   前提条件と再検証の手順は`docs/development/audit-records-project-verification.md`に記載されている。
   該当節は「.claude/skills/develop-dotfiles/references/verification.md：変更範囲の検証の値：2026年10月4日」である。
+- 合成後に必要な横断テストは、`scripts/pyfltr_precommit.py --consumer-tests --against <統合先の完全OID> <変更ファイル...>` の `cross_contracts` を通常の利用側に加える。
+  規範の容量、CLI登録・ヘルプ、Markdownの参照、追跡する語句、子プロセスの終了を、該当する差分に限って実行する。
 - コミットフックの実行範囲: `pyfltr fast`は`<ツール名>-fast`がtrueのツールだけを実行し、本リポジトリではpylint・mypy・pyrightなどを含まない。
   そのため、計画のlint（`uv run --frozen pyfltr run --disable=pytest <変更パス>`）全体をフックの成功で置き換えられない。
   実効値は`uv run --frozen pyfltr config list --all`の`*-fast`、実行済みのツールは`uv run --frozen pyfltr list-runs`の`commands`で確かめる。
@@ -95,9 +97,9 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 
 `make setup` は版数検査のGit pre-pushフックを導入する。
 既存の公開用checkoutでは、反映後の最初のpushより先に `make install-plugin-version-hook` で導入する。
-フックは作業ツリーではなく実際に送る全refの新旧OIDを検査する。
+フックは作業ツリーではなく、送信先が `refs/heads/develop` の非削除行の新旧OIDを検査する。
 既存の別のpre-pushフックは上書きしない。
-新規refは、送信先の公開済みdevelopと送るcommitの一意な共通祖先と比べ、基点を特定できない場合は検査を成功扱いにしない。
+送信先の `develop` を新設するときは、公開済みdevelopと送るcommitの一意な共通祖先と比べ、基点を特定できない場合は検査を成功扱いにしない。
 
 公開する担当は統合後、実際にpushするHEADで、[作業ツリーの準備](worktree.md#作業ツリーの準備)にある規範Markdownの上限検査の成功を確かめる。
 成功の根拠に使うのは、同じHEADで対象のテストが実行され、成功した記録だけとする。

@@ -214,11 +214,12 @@ def check_push(repo_root: pathlib.Path, lines: Iterable[str], remote: str | None
         _local_ref, local_oid, remote_ref, remote_oid = fields
         if any(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", oid) is None for oid in (local_oid, remote_oid)):
             raise CheckError("Gitのpre-push入力に完全なOIDが必要")
-        if not _ZERO_OID.fullmatch(local_oid):
-            if _ZERO_OID.fullmatch(remote_oid):
-                published = published or _published_develop(repo_root, remote)
-                remote_oid = _shared_push_base(repo_root, published, local_oid)
-            failures.extend(f"{remote_ref}: {failure}" for failure in check(repo_root, base=remote_oid, current=local_oid))
+        if remote_ref != "refs/heads/develop" or _ZERO_OID.fullmatch(local_oid):
+            continue
+        if _ZERO_OID.fullmatch(remote_oid):
+            published = published or _published_develop(repo_root, remote)
+            remote_oid = _shared_push_base(repo_root, published, local_oid)
+        failures.extend(f"{remote_ref}: {failure}" for failure in check(repo_root, base=remote_oid, current=local_oid))
     return failures
 
 
