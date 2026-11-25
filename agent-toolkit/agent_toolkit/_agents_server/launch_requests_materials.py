@@ -422,7 +422,7 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
         )
     try:
         paths = _material_paths("review_contract", value)
-        review_contract.validate(paths[0].read_text(encoding="utf-8"), required)
+        review_contract.validate(paths[0].read_text(encoding="utf-8"), required, originals=texts)
     except ValueError as error:
         raise _material_error("review_contract", f"{', '.join(required)}: {error}。条件表の書式: {reference}") from error
 

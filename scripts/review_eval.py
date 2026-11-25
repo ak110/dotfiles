@@ -587,7 +587,7 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
             contract_text = "\n".join([*header, *rows, ""])
             repair = "scripts/review_eval.pyの条件表生成と評価セットの保存WI原本を直して再準備する"
         try:
-            review_contract.validate(contract_text, _requirements(texts))
+            review_contract.validate(contract_text, _requirements(texts), originals=texts)
         except ValueError as error:
             raise ActionableError(f"条件表が不完全: {case.id}: {error}", next_action=repair) from error
         if deliver:

@@ -9,6 +9,8 @@ from collections.abc import Mapping, Set
 
 from markdown_it import MarkdownIt
 
+from agent_toolkit._common.markdown_headings import last_h2_section_items
+
 
 def required_counts(
     *, kind: str | None, source: object, sections: Set[str], supplements: int, reflections: int
@@ -36,7 +38,16 @@ def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, str]:
         raise ValueError(f"評価用WI原本を読み込めない: {path}: {error}。一覧と保存本文を直して再準備する") from error
 
 
-def validate(text: str, required: Mapping[str, tuple[int, int]]) -> None:
+def _numbered_conditions(original: str) -> dict[str, str]:
+    conditions: dict[str, str] = {}
+    for item in last_h2_section_items(original, "完成条件"):
+        match = re.fullmatch(r"([0-9]+)[.)][ \t]+(.+)", item, re.DOTALL)
+        if match:
+            conditions[match[1]] = " ".join(match[2].split())
+    return conditions
+
+
+def validate(text: str, required: Mapping[str, tuple[int, int]], *, originals: Mapping[str, str] | None = None) -> None:
     tokens = MarkdownIt("commonmark").enable("table").parse(text)
     rows: list[list[str]] = []
     row: list[str] | None = None
@@ -48,13 +59,14 @@ def validate(text: str, required: Mapping[str, tuple[int, int]]) -> None:
         elif token.type == "tr_open":
             row = []
         elif token.type == "inline" and row is not None:
-            row.append(token.content.strip().strip("`"))
+            row.append(token.content.strip())
         elif token.type == "tr_close" and row is not None:
             cells = list(row)
             if not header:
                 header = cells
             elif set(columns).issubset(header) and len(cells) == len(header):
-                rows.append([cells[header.index(column)] for column in columns])
+                fields = [cells[header.index(column)] for column in columns]
+                rows.append([*(field.strip("`") for field in fields[:3]), *fields[3:]])
             row = None
     errors: list[str] = []
     for name, (count, reflection_count) in required.items():
@@ -66,6 +78,22 @@ def validate(text: str, required: Mapping[str, tuple[int, int]]) -> None:
         numbers = [row[1] for row in own]
         if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
             errors.append(f"{name}: 条件番号が不正または重複")
+        original = (originals or {}).get(name, "")
+        numbered = _numbered_conditions(original)
+        for row in own:
+            if row[2] != "補足条件" or not numbered:
+                continue
+            number = row[1]
+            if number not in numbered:
+                if len(numbered) == count:
+                    errors.append(f"{name}: 原本にない補足条件 {number}")
+                continue
+            content = " ".join(re.sub(r"<br\s*/?>", " ", row[3], flags=re.IGNORECASE).split())
+            expected = numbered[number]
+            if content not in {expected, f"{number}. {expected}", f"{number}) {expected}"}:
+                errors.append(f"{name}: 補足条件 {number} が原本の全文と一致しない")
+        for number in numbered.keys() - {row[1] for row in own if row[2] == "補足条件"}:
+            errors.append(f"{name}: 原本の補足条件 {number} が表にない")
         covered = {int(number) for row in own for number in re.findall(r"反映内容([1-9][0-9]*)(?![0-9])", row[4])}
         uncovered = [f"反映内容{number}" for number in range(1, reflection_count + 1) if number not in covered]
         if uncovered:
