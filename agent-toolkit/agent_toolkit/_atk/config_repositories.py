@@ -98,7 +98,14 @@ class RepositoryLocation:
     common_dir: pathlib.Path
 
 
-def locate(path: pathlib.Path, *, git_options: Sequence[str] = ()) -> RepositoryLocation | None:
+@dataclasses.dataclass(frozen=True)
+class GitStorage:
+    worktree: pathlib.Path
+    common_dir: pathlib.Path
+    origin: str | None
+
+
+def git_storage(path: pathlib.Path, *, git_options: Sequence[str] = ()) -> GitStorage | None:
     result = git.run(
         ["-C", str(path), *git_options, "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"],
         capture_output=True,
@@ -113,9 +120,34 @@ def locate(path: pathlib.Path, *, git_options: Sequence[str] = ()) -> Repository
     worktree, common_dir = (pathlib.Path(line).resolve() for line in lines)
     origin_result = git.run(["--git-dir", str(common_dir), "remote", "get-url", "origin"], capture_output=True, text=True)
     origin = origin_result.stdout.strip() if origin_result.returncode == 0 else None
+    return GitStorage(worktree, common_dir, origin or None)
+
+
+def location_of(storage: GitStorage) -> RepositoryLocation:
     # originなしのlinked worktreeも、共通ディレクトリに属する元repositoryへそろえる。
-    repo_id = remote.normalize_remote_url(origin) if origin else str(common_dir.parent)
-    return RepositoryLocation(repo_id, worktree, common_dir)
+    repo_id = remote.normalize_remote_url(storage.origin) if storage.origin else str(storage.common_dir.parent)
+    return RepositoryLocation(repo_id, storage.worktree, storage.common_dir)
+
+
+def locate(path: pathlib.Path, *, git_options: Sequence[str] = ()) -> RepositoryLocation | None:
+    storage = git_storage(path, git_options=git_options)
+    return None if storage is None else location_of(storage)
+
+
+def local_bare_repository(origin: str) -> pathlib.Path | None:
+    if not pathlib.Path(origin).is_absolute():
+        return None
+    result = git.run(
+        ["--git-dir", origin, "rev-parse", "--is-bare-repository", "--path-format=absolute", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    lines = result.stdout.splitlines()
+    if result.returncode or len(lines) != 2 or lines[0] != "true":
+        return None
+    common_dir = pathlib.Path(lines[1]).resolve()
+    return common_dir if common_dir == pathlib.Path(origin).resolve() else None
 
 
 def identifier(value: str) -> tuple[str, str | None]:
