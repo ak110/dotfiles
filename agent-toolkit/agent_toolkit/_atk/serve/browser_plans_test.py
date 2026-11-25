@@ -11,6 +11,7 @@ import playwright.async_api
 import pytest
 
 from agent_toolkit._atk.serve import plans as serve_plans
+from agent_toolkit._atk.serve import sessions as serve_sessions
 
 # pytestがテストの引数名で参照するfixtureを、このモジュールへ登録する。
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
@@ -274,6 +275,15 @@ async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenH
     assert await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", current_blob_url)
 
 
+@pytest.fixture
+def without_session_record_watch(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def skip(_context: serve_sessions.SessionsContext) -> None:
+        pass
+
+    monkeypatch.setattr(serve_sessions, "start_local_watch_async", skip)
+
+
+@pytest.mark.usefixtures("without_session_record_watch")
 @pytest.mark.asyncio(loop_scope="session")
 async def test_plan_operations_record_open_and_notified_reload(screen_harness: _ScreenHarness) -> None:
     """選択から図の描画まで、変更通知から一覧とプレビューの再描画までを、それぞれ1件の操作として取得と対応付けて記録する。
