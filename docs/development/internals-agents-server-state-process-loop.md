@@ -24,7 +24,7 @@ MCPサーバーの`SessionState`やセッション登録簿自体の更新は、
 
 | 状態 | 保存先 | 読む主体と更新する主体・寿命 |
 | --- | --- | --- |
-| 次回再開予約 | state_dirの`process-wi-resume.json`と同名stemの`.lock` | `process_loop_control.py`のresume/cancelが保存・置換・取消し、statusと常駐が読む。予約・abort操作と実Popenを同じ有限ロックで排他する。実起動成功だけが世代一致の予約を消費し、準備・更新・起動失敗と中断では保持する |
+| 次回再開予約 | state_dirの`process-wi-resume.json`と同名stemの`.lock` | `process_loop_control.py`のresume/cancelが保存・置換・取消し、statusと常駐が読む。予約・abort操作と、Claude Codeの圧縮開始から実Popenまでを同じ有限ロックで排他する。実起動成功だけが世代一致の予約を消費し、準備・圧縮・更新・起動失敗と中断では保持する |
 | 次回の追加指示 | state_dirの`process-wi-instructions`と`.lock` | `process_loop_log.py`の追加・取消と実起動が同じ有限ロックで更新する。実起動の引数へ渡し、起動成功後に1回消費する |
 | picker等で選択した実ID/cwdと所有確定のACK | managed-tempの`startup-identity-*`配下 | 起動側がnonce・所有PID世代と応答先を既存SessionStart入力へ載せ、hookが実ID/cwdを返す。起動側が選択対象の所有・manifestを確定してACKする。hookは所有側の生存と120秒期限を確認し、実行の保護と7日保持に従う |
 | 非対話Codex/Antigravityの実IDを含むJSON出力 | managed-tempの`process-loop-stream-*`配下 | `process_loop_session.py`が通常ファイルへstdoutを保存し、既存のinit/thread.started解析で実IDを取得する。読み取り用FDは別に開き、パイプのEOF待ちや読取スレッドを追加しない。出力の保存先をworkerログへ渡し、7日保持に従う |

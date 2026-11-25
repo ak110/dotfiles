@@ -110,9 +110,13 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     saved_id = "other-run" if mode == "other" else run_id
     if os.environ.get("FAKE_REPORT_ANSWER"):
         body += "\\n## 回答\\n\\n<!-- ユーザーはこの行以降に回答を追記する -->\\n"
+    weekly = (
+        "\\nweekly_slot: " + os.environ["AGENT_TOOLKIT_WEEKLY_SLOT"]
+        if os.environ.get("FAKE_REPORT_WEEKLY") else ""
+    )
     old.write_text("---\\nstate: inbox\\ntype: uwi\\nsource: run-skill\\nscope: " + json.dumps(scope) +
         "\\nrun_skill_report: " + ("false" if mode == "question" else "true") +
-        "\\nrun_skill_run_id: " + saved_id + "\\n---\\n" + body)
+        "\\nrun_skill_run_id: " + saved_id + weekly + "\\n---\\n" + body)
     subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
     subprocess.run(["git", "-C", str(notes), "commit", "-qm", "report"], check=True)
     if os.environ.get("FAKE_REPORT_REMOTE"):

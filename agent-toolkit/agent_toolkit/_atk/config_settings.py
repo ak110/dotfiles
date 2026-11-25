@@ -14,7 +14,7 @@ from typing import Any
 lazy import platformdirs
 
 from agent_toolkit._atk import config_repositories
-from agent_toolkit._common import codex_models, file_lock, private_notes, runtime_environment
+from agent_toolkit._common import codex_models, file_lock, private_notes, runtime_environment, weekly_work
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.usage_settings import validate_permissions
@@ -136,12 +136,11 @@ SHARED_SETTINGS_FILENAME = "atk-config.json"
 SHARED_SETTINGS_MIGRATION_MESSAGE = "chore: migrate shared agent settings"
 
 WEEKLY_KEY_DEFAULTS = {
-    "weekly_meta_auto_start": "true",
-    "weekly_research_auto_start": "false",
+    **{work.setting: str(work.default_enabled).lower() for work in weekly_work.DEFINITIONS.values()},
     "weekly_research_x_api": "false",
 }
 
-WEEKLY_FLAG_KEYS = frozenset({"weekly_meta_auto_start", "weekly_research_auto_start", "weekly_research_x_api"})
+WEEKLY_FLAG_KEYS = frozenset({*(work.setting for work in weekly_work.DEFINITIONS.values()), "weekly_research_x_api"})
 
 
 WI_ATTACHMENT_LIMIT_DEFAULTS = {
@@ -478,8 +477,7 @@ _SETTING_DESCRIPTIONS = {
     "codex_usage_limit_wait": "Codexの利用上限に達した場合に回復を待つ範囲",
     "repositories": "処理対象リポジトリと編集可否・検証OS・系統の登録",
     "session_review_auto_start": "会話の終わりに振り返りの候補を自動で処理するか",
-    "weekly_meta_auto_start": "日曜14時の週枠でメタ分析を自動で起動するか",
-    "weekly_research_auto_start": "日曜14時の週枠で外部情報の調査を自動で起動するか",
+    **{work.setting: f"日曜14時の週枠で{work.title}を自動で起動するか" for work in weekly_work.DEFINITIONS.values()},
     "weekly_research_x_api": "外部情報の調査でX APIの有償取得を使うか",
     "agents_concurrency": "委譲先の同時実行数の上限",
     "dotfiles_mode": "dotfilesの配布範囲",

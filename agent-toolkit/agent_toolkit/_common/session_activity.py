@@ -319,20 +319,71 @@ def _sources(records: Mapping[str, Mapping[str, Any]]) -> list[session_parents.P
     ]
 
 
+def _read_claude_native(path: pathlib.Path, pid: int) -> tuple[dict[str, Any], str]:
+    record = _read(path)
+    session_id = session_launchers.valid_launcher(record.get("sessionId"))
+    native_pid = record.get("pid")
+    if session_id is None or isinstance(native_pid, bool) or not isinstance(native_pid, int) or native_pid != pid:
+        raise ValueError(f"Claude稼働記録の会話IDまたはPIDが不正です: {path}")
+    return record, session_id
+
+
+def _linux_start_tick(pid: int) -> str | None:
+    if os.name != "posix" or not pathlib.Path("/proc").is_dir():
+        return None
+    stat = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[-1].split()
+    if len(stat) <= 19:
+        raise ValueError(f"/proc/{pid}/statの開始tickを読めません")
+    return stat[19]
+
+
+def claude_native_resume_blocker(session_id: str, config_dir: pathlib.Path) -> str | None:
+    """同じ会話の生存プロセスを確認する。形式不明な記録は例外で返す。  pyfltr: allow-comment"""
+    directory = config_dir / "sessions"
+    try:
+        paths = tuple(directory.iterdir())
+    except FileNotFoundError:
+        return None
+    for path in paths:
+        if path.suffix != ".json":
+            continue
+        if not path.stem.isascii() or not path.stem.isdecimal() or int(path.stem) <= 0:
+            raise ValueError(f"Claude稼働記録のファイル名が不正です: {path}")
+        pid = int(path.stem)
+        try:
+            record, recorded_id = _read_claude_native(path, pid)
+        except FileNotFoundError:
+            continue
+        if recorded_id != session_id:
+            continue
+        try:
+            process = psutil.Process(pid)
+            if process.status() in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD}:
+                continue
+            start = _linux_start_tick(pid)
+        except psutil.NoSuchProcess, FileNotFoundError:
+            continue
+        if start is not None:
+            registered = record.get("procStart")
+            if not isinstance(registered, str) or not registered.isdecimal():
+                raise ValueError(f"Claude稼働記録の開始tickが不正です: {path}")
+            if registered != start:
+                continue
+        return f"PID {pid} が稼働中です（{path}）"
+    return None
+
+
 def _native_sessions(process: HostProcess) -> tuple[dict[str, dict[str, Any]], str | None]:
     found: dict[str, dict[str, Any]] = {}
     try:
         if process.engine == "claude":
             path = host_homes.claude_config_dir() / "sessions" / f"{process.identity.pid}.json"
-            native = _read(path)
-            # Claude Code 2.1.296のprocStartはLinuxの/proc/statの開始tickを文字列化した値。
-            if os.name == "posix" and pathlib.Path("/proc").is_dir():
-                stat = pathlib.Path(f"/proc/{process.identity.pid}/stat").read_text(encoding="utf-8")
-                if native.get("procStart") != stat.rsplit(")", 1)[1].split()[19]:
-                    return {}, "登録されたプロセス起点が一致しません"
-            else:
+            native, session_id = _read_claude_native(path, process.identity.pid)
+            start = _linux_start_tick(process.identity.pid)
+            if start is None:
                 return {}, "ホスト登録のプロセス起点を確認できません"
-            session_id = session_launchers.valid_launcher(native.get("sessionId"))
+            if native.get("procStart") != start:
+                return {}, "登録されたプロセス起点が一致しません"
             if session_id is not None:
                 updated = native.get("statusUpdatedAt")
                 found[session_id] = {

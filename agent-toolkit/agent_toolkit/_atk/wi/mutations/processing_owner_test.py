@@ -256,7 +256,7 @@ def test_reopening_preserves_sections_after_processing_result(tmp_path: pathlib.
     notes = _setup_notes(tmp_path)
     git_repository.init_repository(notes)
     name = "commented.md"
-    comment = "## ユーザーコメント\n\n利用者の追記。\n\n## 関連資料\n\n引き継ぐ情報。"
+    comment = "## ユーザーコメント\n\nユーザーの追記。\n\n## 関連資料\n\n引き継ぐ情報。"
     _write_awi_file(notes, name, body=f"# 要求\n\n## 処理結果\n\n- 担当の引き継ぎ: 済\n\n{comment}")
     _actor(monkeypatch, notes, "acting-owner")
     assert _run(tmp_path, "adopt", name) == 0

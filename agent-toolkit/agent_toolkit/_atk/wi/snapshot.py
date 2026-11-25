@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import pathlib
+import uuid
 from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import managed_temp
@@ -141,8 +142,16 @@ def record_list_start(
     output: pathlib.Path | None,
     configured_output: bool,
 ) -> bool:
-    if not (session_id := _progress_session_id()) or (not candidate_list and output is None):
+    if not candidate_list and output is None:
         return False
+    session_id = _progress_session_id()
+    direct = session_id is None
+    if session_id is None:
+        if delegated_session.is_delegated(os.environ):
+            return False
+        session_id = delegated_session.current_conversation_session_id(os.environ)
+        if not session_id or not session_state.read_state(session_id).get(session_state.PROCESS_WI_STATE_KEY):
+            return False
     state = session_state.read_state(session_id)
     if state.get(_START_UNAVAILABLE):
         _unavailable("巡回の開始時集合は初回取得で保存できなかった", output)
@@ -154,7 +163,8 @@ def record_list_start(
         return True
     try:
         registered = _registered_directory(state)
-        directory = registered or managed_temp.resolve_session_temp(session_id) / _START_DIRECTORY
+        name = f"{_START_DIRECTORY}-{uuid.uuid4().hex}" if direct else _START_DIRECTORY
+        directory = registered or managed_temp.resolve_session_temp(session_id) / name
         created = registered is None and _claim_start(directory)
     except (OSError, managed_temp.ManagedTempError) as error:
         saved = session_state.update_state(session_id, lambda state: {**state, _START_UNAVAILABLE: True})
@@ -197,6 +207,11 @@ def record_list_start(
                 values &= frozenset(tuple(value) for value in source["configured"])
             _export(output, values, (path, directory / "source.json"))
     return True
+
+
+def clear_direct_start(state: dict) -> None:
+    state.pop(_START_LOCATION, None)
+    state.pop(_START_UNAVAILABLE, None)
 
 
 def _claim_start(directory: pathlib.Path) -> bool:

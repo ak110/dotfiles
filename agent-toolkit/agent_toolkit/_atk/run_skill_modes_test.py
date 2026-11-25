@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import subprocess
 
 import pytest
 
-from agent_toolkit._atk import run_skill
+from agent_toolkit._atk import run_skill, run_skill_state, weekly_schedule
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._common import session_activity, session_review, skill_modes
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
@@ -124,6 +125,41 @@ def test_batch_normal_exit_without_report_can_resume_same_analysis(engine_env, t
     assert completed["status"] == "completed" and completed["prepared"] == failed["prepared"]
     assert session_review.previous_scope(failed["targets"][0]) is not None
     assert not session_review.pending()
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.parametrize("mode", ["architecture", "ui-sweep"])
+def test_weekly_run_record_is_completed_only_after_the_original_slot_report(engine_env, monkeypatch, capsys, mode):
+    set_orchestrate_environment(monkeypatch, "claude:test-model/low")
+    code, out, error = _run(["--work-dir", str(engine_env.repo), "--args", mode, "review-session"], capsys)
+    assert (code, out) == (1, "") and "結果UWIが保存されていない" in error
+    initial = _records(engine_env, "session")[0]
+    run_id = initial["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    saved = run_skill_state.load(run_id)
+    slot = saved.weekly_slot
+    assert slot is not None and slot.startswith(mode + "@")
+    assert saved.status == "interrupted"
+    assert weekly_schedule.saved_slot(slot) is None
+    notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
+    original = notes / "2026/10" / f"{run_id}.md"
+    content = original.read_text(encoding="utf-8").replace(
+        f"run_skill_run_id: {run_id}", f"run_skill_run_id: {run_id}\nweekly_slot: {slot}"
+    )
+    other = original.with_name("other.md")
+    other.write_text(content.replace(run_id, "f" * 32), encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", str(other)], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-qm", "other run"], check=True)
+    original.write_text(content, encoding="utf-8")
+    assert weekly_schedule.saved_slot(slot) is not None
+
+    monkeypatch.setenv("FAKE_REPORT_WEEKLY", "true")
+    code, out, error = _run(["--resume", run_id], capsys)
+    assert code == 0 and f"週枠 {slot}" in out, error
+    assert run_skill_state.load(run_id).status == "completed"
+    assert weekly_schedule.saved_slot(slot) is not None
+    assert len(_records(engine_env, "session")) == 2
+    assert _run(["--resume", run_id], capsys)[0] == 0
+    assert len(_records(engine_env, "session")) == 2
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])

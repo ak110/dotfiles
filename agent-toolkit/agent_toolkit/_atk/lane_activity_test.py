@@ -369,9 +369,9 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
         encoding="utf-8",
     )
 
-    def child_argv(*_args: Any, **_kwargs: Any) -> tuple[list[str], None]:
+    def child_argv(*_args: Any, **_kwargs: Any) -> tuple[list[str], None, None]:
         # 外部ホストの起動だけを有限の実プロセスへ差し替え、CLI・登録・Git・回収は実物を使う。
-        return [sys.executable, str(script), str(repo), str(selected), str(snapshot), str(exit_code)], None
+        return [sys.executable, str(script), str(repo), str(selected), str(snapshot), str(exit_code)], None, None
 
     monkeypatch.setattr(process_loop_session, "_build_session_argv", child_argv)
     args = argparse.Namespace()

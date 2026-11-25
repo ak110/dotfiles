@@ -2,6 +2,7 @@ import argparse
 import dataclasses
 import datetime
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -429,6 +430,11 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     repositories = _config.resolve_configured_repositories() if configured else None
 
     def configured_start() -> tuple[list[tuple[str, str | None]], frozenset[_wi_snapshot.Identifier]]:
+        if not configured and os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1":
+            values = args.target_repo if isinstance(args.target_repo, list) else [args.target_repo] if args.target_repo else []
+            repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in values))
+            branch = _wi_branches.requested_filter(args, repos, _wi_branches.registry())
+            return [(repo, branch) for repo in repos], frozenset()
         selected = _config.resolve_configured_repositories() if repositories is None else repositories
         branches = _wi_branches.registry() if any(repo.branch is not None for repo in selected) else {}
         return (

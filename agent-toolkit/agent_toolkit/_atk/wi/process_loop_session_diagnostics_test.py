@@ -7,7 +7,7 @@ import pytest
 
 from agent_toolkit._atk import config_settings
 from agent_toolkit._atk.wi import cli, process_loop, process_loop_session
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import next_action, session_registry
 from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
 
 
@@ -53,7 +53,8 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
     stderr = capsys.readouterr().err
     if failure == "identity":
         assert "統括CLIのPIDと起動時刻を取得できない" in stderr
-        assert "process-loop statusで状態を確認し、原因を解消して再実行する" in stderr
+        assert "起動するCLIの実体を確認する" in stderr
+        assert "統括が未起動の場合だけ再試行する" in stderr
     else:
         expected = {
             "format": "KEY=VALUE形式が不正",
@@ -65,3 +66,21 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
         assert "権限・記述を確認" in stderr
     assert "次の操作:" in stderr
     assert "Traceback" not in stderr
+
+
+def test_process_loop_keeps_specific_recovery_action(tmp_path, monkeypatch, capsys):
+    session_id = "a64b97a3-4a65-431f-8b68-56201d97cc76"
+
+    def launch(_args):
+        raise next_action.ActionableError(
+            "新しい compact_boundary を確認できない",
+            next_action=f"`atk wi process-loop resume {session_id}` で予約する",
+        )
+
+    monkeypatch.setattr(process_loop, "cmd_process_loop", launch)
+    args = argparse.Namespace(command="wi", wi_subcommand="process-loop")
+    assert cli.dispatch(args, home=tmp_path, now=datetime.datetime.now(datetime.UTC)) == 1
+    stderr = capsys.readouterr().err
+    assert "新しい compact_boundary を確認できない" in stderr
+    assert f"次の操作: `atk wi process-loop resume {session_id}`" in stderr
+    assert stderr.count("次の操作:") == 1

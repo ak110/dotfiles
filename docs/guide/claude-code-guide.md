@@ -93,9 +93,11 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
   後ろに着眼点を追加できる
 - `agent-toolkit:atk-mode review-session batch`: 振り返り待ちのセッションをまとめて分析する。
   既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
-- `agent-toolkit:atk-mode review-session meta`・`research`: 週次のメタ分析と外部情報の調査。
+- `agent-toolkit:atk-mode review-session meta`・`research`・`architecture`・`ui-sweep`: 週次のメタ分析、外部情報の調査、設計の点検、画面の巡回。
   日曜14時（ホストの現地時刻）の週枠ごとに1回、`atk serve`の常駐か`atk weekly install`で登録したOSのスケジューラから起動し、取り逃した回はセッションの開始・終了で追う。
-  ホストごとに`weekly_meta_auto_start`（初期値true。`session_review_auto_start`がfalseでも止まる）と`weekly_research_auto_start`（初期値false）で切り替え、同じキューを使うホストが複数あれば1台を残して止める。
+  ホストごとに`weekly_meta_auto_start`（初期値true。`session_review_auto_start`がfalseでも止まる）でメタ分析を切り替える。
+  外部情報の調査は `weekly_research_auto_start`、設計の点検は `weekly_architecture_auto_start`、画面の巡回は `weekly_ui_sweep_auto_start` で切り替える（いずれも初期値false）。
+  自動起動は、同じキューを使うホストが複数あれば1台を残して止める。
   外部情報の調査は `atk config repos` の登録先を対象とする。
   起動するホストでは、そのうち1件以上に実在するGit作業ツリーを登録する。
   Xの購読はWIを保存するprivate-notesの `research-subscriptions.json` にあり、同じキューを使うホスト間で同期する。

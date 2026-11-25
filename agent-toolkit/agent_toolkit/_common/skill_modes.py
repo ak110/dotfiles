@@ -1,6 +1,8 @@
 import re
 
-_MODES = {"process-wi": {"single-lane", "all-repos"}, "review-session": {"batch", "meta", "research"}}
+from agent_toolkit._common import weekly_work
+
+_MODES = {"process-wi": {"single-lane", "all-repos"}, "review-session": {"batch", *weekly_work.DEFINITIONS}}
 
 ENTRY_SKILL = "atk-mode"
 ENTRY_WORKS = (
