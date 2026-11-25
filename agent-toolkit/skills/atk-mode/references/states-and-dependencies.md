@@ -61,6 +61,17 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 | `adopted`か`rejected`→`inbox` | `atk wi return-to-inbox --state=<adoptedかrejected>` | 誤って採否を確定した項目から過去の処理結果を除き、再処理のためにキューへ戻す時 |
 | `adopted`か`rejected`→`hold` | `atk wi hold --state=<adoptedかrejected>` | 誤って採否を確定した項目から過去の処理結果を除き、確認や修正の間保留する時 |
 
+会話を解決できるエージェント環境で`atk wi start-processing`を実行すると、最上位の会話とホストを`processing_owner`へ記録する。
+レーンからの操作も統括の会話を使う。
+remoteを設定した環境でエージェントが`adopt`、`reject`、`return-to-inbox`、`hold`する前に最新の状態を取得して担当の有無を確認する。
+取得できない場合は失敗する。
+担当付きの項目は担当の一致を確かめてから送信まで終える。
+担当が違う場合は失敗し、`--skip-push`は使えない。
+人の操作と担当欄が無い旧項目では担当の一致を求めない。
+担当を移す時は`atk wi take-over <ファイル名>`を使う。
+同じホストでは会話が終了している記録が必要。
+別のホストでは前の担当が停止したことを確かめ、確認方法を`--reason`へ渡す。
+
 同じ遷移、メモ、commit、対象リポジトリで終了できる複数の項目は、個別に確かめたファイル名を並べて1回の`atk wi adopt <ファイル名>...`か`atk wi reject <ファイル名>...`で終了する。
 効果確認を指定する採用をまとめるには[効果確認](effect-records.md)の判定と理由もそろえる。
 実装commitの対応記録の保存、取得、補完は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う。
@@ -211,7 +222,7 @@ commitやレビュー記録などの詳細は、その1文の後ろに置く。
 ## 委譲先によるprivate-notesへの反映
 
 委譲先は、状態を変える`atk wi`を反映を抑止するオプション無しで実行する。
-一連の操作の途中で`atk wi adopt`や`atk wi reject`に`--skip-push`を使うと、その呼び出しから裏の同期を起動しない。
+担当の確認が要らない場合に`atk wi adopt`や`atk wi reject`を`--skip-push`付きで実行すると、その呼び出しから裏の同期を起動しない。
 最後の変更操作を`--skip-push`なしで実行すると、裏の同期を起動するだけで共有先への到達は待たない。
 最後の変更操作も`--skip-push`を使った場合は、`atk wi commit`で送信する。
 共有先への到達を確認してから次へ進む必要がある場合は、`atk wi commit`でその場で送信する。

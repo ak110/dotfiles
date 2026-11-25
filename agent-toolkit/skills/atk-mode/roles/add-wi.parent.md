@@ -155,7 +155,9 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 
 1. 原稿と成立性の証拠は、既存の原稿、作業記録、CLIの保存出力を直接読む。
    出所、採否、検証、冒頭抽出の対応がそろっていればそこから検収し、不足する情報だけを既存記録へ補わせる。
-2. 受領済みの抽出と現行原稿の一致は、新規・編集のdry-runに`--compare-opening-file <抽出の絶対パス>`を加えて確かめる（本保存へ同じ指定を付けると、一致した場合だけ保存される）。
+2. `agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runに`--compare-opening-file <抽出の絶対パス>`を加え、受領済みの抽出と現行原稿の一致を確かめる。
+   本保存に同じ指定を付けると、一致した場合だけ保存される。
+   新規では原稿のfrontmatterに`source`があればその値を使い、無ければ`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決めた値を`--source`へ渡す。
    その際は原稿ごとに、成立性の証拠にあるdry-runの入力原稿と抽出保存先の対応を使う。
    複数原稿の対応順と不一致時の更新は`agent-toolkit:atk-mode/references/draft-semantic-review.md`「ユーザーが読む部分」に従い、原稿が変わったら同じ作成主体へdry-runの再実行と新しい抽出の返却を求める。
 3. 起草者から独立に、同書で抽出されたユーザー向け部分を判定してから原稿全体を検収する。

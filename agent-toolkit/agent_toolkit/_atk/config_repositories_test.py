@@ -190,3 +190,31 @@ def test_branch_registration_round_trip(
     assert _main(tmp_path, "config", "repos", "list") == 0
     assert set(json.loads(capsys.readouterr().out)[repo_id]) == {"edit", "path", "process_loop", "platforms"}
     assert [(item.key, item.branch) for item in config.resolve_configured_repositories()] == [(repo_id, None)]
+
+
+def test_github_submission_settings(tmp_path: pathlib.Path) -> None:
+    repo = "github.com/owner/repo"
+    assert (
+        _main(
+            tmp_path,
+            "config",
+            "repos",
+            "add",
+            repo,
+            "--edit",
+            "awi",
+            "--github-issues",
+            "--github-issue-trusted-authors",
+            "Owner,External",
+        )
+        == 0
+    )
+    assert config_settings.repository_settings()[repo]["github_issues"] is True
+    assert config_settings.repository_settings()[repo]["github_issue_trusted_authors"] == ["owner", "external"]
+    assert _main(tmp_path, "config", "repos", "set", repo, "--github-issue-trusted-authors", "") == 0
+    assert config_settings.repository_settings()[repo]["github_issue_trusted_authors"] == []
+    assert (
+        _main(tmp_path, "config", "repos", "set", repo, "--no-github-issues", "--github-issue-trusted-authors", "@default") == 0
+    )
+    assert config_settings.repository_settings()[repo].get("github_issues", False) is False
+    assert config_settings.repository_settings()[repo].get("github_issue_trusted_authors") is None

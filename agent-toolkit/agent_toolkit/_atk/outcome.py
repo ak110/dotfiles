@@ -42,6 +42,7 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk wi add",
         "atk wi check-alerts",
         "atk wi start-processing",
+        "atk wi take-over",
         "atk wi hold",
         "atk wi unhold",
         "atk wi return-to-inbox",

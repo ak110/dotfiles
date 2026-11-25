@@ -8,7 +8,7 @@ import re
 import subprocess
 import sys
 import time
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 
 import filelock
 
@@ -64,6 +64,9 @@ class Mutation:
 
     private_notes: pathlib.Path
     skip_push: bool
+
+    def commit_guarded(self, message: str, rel_paths: Iterable[str], verify_upstream: Callable[[], None]) -> None:
+        commit_guarded(self.private_notes, message, rel_paths, verify_upstream)
 
     def commit(self, message: str, rel_paths: Iterable[str], *, exclusive_claim: bool = False) -> int | None:
         """操作で確定した変更を、取得済み方針に従ってcommitする。"""
@@ -437,6 +440,53 @@ def commit_and_push(
         skip_push=skip_push or _LOCAL_SAVE.get(),
         run_git=run_git,
         push_pending_fn=_push_claim if exclusive_claim else push_pending_commits,
+    )
+
+
+def synchronize_owner_check(private_notes: pathlib.Path) -> None:
+    if not has_remote(private_notes):
+        if _git_command.output(["remote"], private_notes):
+            _atk_git_sync.require_upstream(private_notes)
+        return
+    with local_save(False):
+        pull(private_notes)
+
+
+def ensure_guarded_update_clean(private_notes: pathlib.Path) -> None:
+    if has_remote(private_notes) and _atk_git_sync.is_worktree_dirty(private_notes):
+        raise _atk_git_sync.GitSyncError(
+            "private-notesに未保存の変更があるため担当付きの変更を開始できません",
+            next_action="`git status`で既存の変更を確かめて保存した後に同じ操作を実行する",
+        )
+
+
+def commit_guarded(
+    private_notes: pathlib.Path, message: str, rel_paths: Iterable[str], verify_upstream: Callable[[], None]
+) -> None:
+    assert_repo_lock_held(private_notes)
+    upstream = has_remote(private_notes)
+    before = _git_command.output(["rev-parse", "HEAD"], private_notes)
+
+    def push_guarded(notes: pathlib.Path) -> None:
+        try:
+            run_git(["push"], notes, forward_error_output=False)
+        except subprocess.CalledProcessError:
+            try:
+                run_git(["fetch"], notes)
+                verify_upstream()
+                run_git(["-c", "submodule.recurse=false", "rebase", "@{u}"], notes, forward_error_output=False)
+                run_git(["push"], notes)
+            except Exception, KeyboardInterrupt:
+                if _atk_git_sync.is_rebase_in_progress(notes):
+                    run_git(["rebase", "--abort"], notes)
+                run_git(["reset", "--keep", before], notes)
+                raise
+        except subprocess.TimeoutExpired, KeyboardInterrupt:
+            run_git(["reset", "--keep", before], notes)
+            raise
+
+    _atk_git_sync.commit_and_push(
+        private_notes, message, rel_paths, skip_push=not upstream, run_git=run_git, push_pending_fn=push_guarded
     )
 
 

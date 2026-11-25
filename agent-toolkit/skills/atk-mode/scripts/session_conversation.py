@@ -55,7 +55,6 @@ def _report_identity(text: str) -> str | tuple[str, ...]:
 
 
 def compact_assistant_reports(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """元記録を変えず、同じ人間の発話間にある冗長なアシスタント発話だけを省く。  pyfltr: allow-comment"""
     reported: dict[str, tuple[str | tuple[str, ...], int]] = {}
     kept: list[dict[str, Any] | None] = []
     omitted = 0

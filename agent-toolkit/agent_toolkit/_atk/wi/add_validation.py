@@ -8,7 +8,7 @@ from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import priority as _priority
-from agent_toolkit._atk.wi import uwi as _uwi
+from agent_toolkit._atk.wi import uwi_body as _uwi
 from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
@@ -236,6 +236,9 @@ _RESERVED_ADD_KEY_NEXT_ACTIONS = {
     "depends_on": "--depends-onで指定する",
     "cooldown_until": "--cooldown-untilで指定する",
     "target_commit": "atkによる対象HEADの自動取得に任せる",
+    "proposal_fingerprint": "atkによる原稿の指紋の記録に任せる",
+    "github_source": "GitHubの取り込み処理による出所の記録に任せる",
+    "processing_owner": "atk wi start-processingまたはtake-overで担当を記録する",
     "submitter_session": "atkによる投入元セッションの自動取得に任せる",
     "run_skill_run_id": "atkによるrun-skill実行識別子の自動取得に任せる",
     "plan_file": "通常新規投入では除き、移行・復元では--batchを使う",

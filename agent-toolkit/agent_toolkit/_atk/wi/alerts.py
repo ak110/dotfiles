@@ -11,7 +11,6 @@ GitLab Ultimateプラン限定機能のため対象外とする。
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
 import datetime
 import functools
@@ -25,10 +24,9 @@ from typing import Any
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import add as _add
-from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
-from agent_toolkit._atk.wi import repo as _wi_repo
 from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_AWI
+from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 from agent_toolkit._atk.wi.formatters import parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import process_tree as _process_tree
@@ -38,7 +36,7 @@ from agent_toolkit._git import forge_cli as _forge_cli
 from agent_toolkit._git import refs as _git_refs
 from agent_toolkit._git import remote as _git_remote
 
-_GH_SUBPROCESS_TIMEOUT = 30.0
+GH_SUBPROCESS_TIMEOUT = 30.0
 _GLAB_SUBPROCESS_TIMEOUT = 30.0
 _GIT_SUBPROCESS_TIMEOUT = 10.0
 _FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure"})
@@ -144,9 +142,7 @@ def _github_head(repo: str, branch: str) -> str:
     command = ["gh", "api", f"repos/{target.project_path}/branches/{urllib.parse.quote(branch, safe='')}"]
     if target.hostname:
         command.extend(("--hostname", target.hostname))
-    payload = _run_alert_json_command(
-        command, timeout=_GH_SUBPROCESS_TIMEOUT, operation="GitHubブランチHEAD", expected_type=dict
-    )
+    payload = run_alert_json_command(command, timeout=GH_SUBPROCESS_TIMEOUT, operation="GitHubブランチHEAD", expected_type=dict)
     return _branch_head(payload, "sha")
 
 
@@ -172,7 +168,7 @@ def resolve_target_branch(local_path: pathlib.Path, *, git_fn: GitCaptureFn = _r
     return resolved.branch if resolved else None
 
 
-def _run_alert_json_command(
+def run_alert_json_command(
     command: list[str],
     *,
     timeout: float,
@@ -250,9 +246,9 @@ def _unavailable_diagnostics(exc: Exception) -> str:
 def _github_failure_diagnostics(repo: str, run_id: str) -> str:
     """失敗runのjob・step・ログの抜粋を取得する。取得の失敗は通知を止めず、理由を本文へ残す。"""
     try:
-        payload = _run_alert_json_command(
+        payload = run_alert_json_command(
             ["gh", "run", "view", run_id, "--repo", repo, "--json", "jobs"],
-            timeout=_GH_SUBPROCESS_TIMEOUT,
+            timeout=GH_SUBPROCESS_TIMEOUT,
             operation=f"gh run view {run_id}",
             expected_type=dict,
         )
@@ -271,7 +267,7 @@ def _github_failure_diagnostics(repo: str, run_id: str) -> str:
         return (
             str(job.get("name")),
             summary,
-            lambda: _run_alert_text_command(command, timeout=_GH_SUBPROCESS_TIMEOUT, operation="gh api（jobログ）"),
+            lambda: _run_alert_text_command(command, timeout=GH_SUBPROCESS_TIMEOUT, operation="gh api（jobログ）"),
         )
 
     return _diagnostics_section([job_entry(job) for job in failed])
@@ -282,7 +278,7 @@ def _gitlab_failure_diagnostics(repo: str, pipeline_id: str) -> str:
     glab_repo = _forge_cli.glab_repository(repo, prefer_environment=True)
     env = _forge_cli.glab_environment(repo, prefer_environment=True)
     try:
-        payload = _run_alert_json_command(
+        payload = run_alert_json_command(
             ["glab", "ci", "get", "--repo", glab_repo, "-p", pipeline_id, "-d", "--status=failed", "-F", "json"],
             timeout=_GLAB_SUBPROCESS_TIMEOUT,
             operation=f"glab ci get {pipeline_id}",
@@ -306,7 +302,7 @@ def _gitlab_failure_diagnostics(repo: str, pipeline_id: str) -> str:
 
 
 def _run_gh_run_list(repo: str, branch: str) -> list[dict]:
-    return _run_alert_json_command(
+    return run_alert_json_command(
         [
             "gh",
             "run",
@@ -320,7 +316,7 @@ def _run_gh_run_list(repo: str, branch: str) -> list[dict]:
             "--json",
             "databaseId,workflowName,status,conclusion,headSha,url,createdAt,event",
         ],
-        timeout=_GH_SUBPROCESS_TIMEOUT,
+        timeout=GH_SUBPROCESS_TIMEOUT,
         operation=f"gh run list（{repo}）",
     )
 
@@ -381,7 +377,7 @@ def collect_github_ci_failures(
 
 
 def _run_glab_ci_list(repo: str, ref: str) -> list[dict]:
-    return _run_alert_json_command(
+    return run_alert_json_command(
         [
             "glab",
             "ci",
@@ -447,7 +443,7 @@ def _run_glab_api(host: str, endpoint: str) -> Any:
     if "/" not in host:
         parsed = urllib.parse.urlsplit(f"//{host}")
         target = _git_remote.RemoteLocation(parsed.hostname, "", parsed.port)
-    return _run_alert_json_command(
+    return run_alert_json_command(
         ["glab", "api", endpoint],
         timeout=_GLAB_SUBPROCESS_TIMEOUT,
         operation=f"glab api {endpoint}",
@@ -511,6 +507,15 @@ def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[st
     ):
         keys.update(parse_alert_keys(text))
     return keys
+
+
+def existing_github_sources(private_notes: pathlib.Path, target_repo: str, *, entry_type: str = "all") -> set[str]:
+    sources: set[str] = set()
+    for _path, _repo, text, _state, _type in _wi_entries.iter_entries(private_notes, WI_STATES, target_repo, entry_type):
+        parsed = parse_frontmatter(text)
+        if parsed is not None and isinstance(source := parsed[0].get("github_source"), str):
+            sources.add(source)
+    return sources
 
 
 def _build_alert_message(target_repo_id: str, alert: Alert, branch: str | None = None) -> str:
@@ -639,37 +644,3 @@ def check_and_submit_alerts(
         now=now,
     )
     return AlertCheckResult(len(generated), tuple(failures))
-
-
-def cmd_check_alerts(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> int:
-    local_path = _wi_repo.resolve_local_worktree(args.target_repo)
-    repo_id = _wi_repo.resolve_repo_id(None, cwd=local_path)
-    next_action = (
-        "診断に示した対象・ブランチ設定と`gh auth status`（GitLabは`glab auth status`）を確認し、"
-        "`atk wi check-alerts`を再実行してください"
-    )
-    settings = _wi_branches.registry().get(repo_id)
-
-    branches: tuple[str | None, ...] = (None,) if settings is None else settings.branches
-    submitted = 0
-    failures: list[str] = []
-    for branch in branches:
-        result = check_and_submit_alerts(
-            private_notes,
-            repo_id,
-            local_path,
-            forge=args.forge,
-            now=now,
-            next_action=next_action,
-            branch=branch,
-            include_repository_alerts=settings is None or branch == settings.default_branch,
-        )
-        submitted += result.submitted
-        failures.extend(result.failures)
-    scope = repo_id if settings is None else f"{repo_id}（系統: {', '.join(settings.branches)}）"
-    message = f"CI失敗監視: 対象={scope} AWI投入={submitted}件"
-    if failures:
-        _outcome.report_failure(f"{message} 取得不能={len(failures)}種別", next_action=next_action)
-        return 1
-    _outcome.report_success(message)
-    return 0

@@ -9,6 +9,11 @@ CLIは起動・再起動と制御、セッションはWIの処理と更新を担
    全体作業契約には目的、現行要求と保つ対象だけを書き、再開した場合は既存の検証・公開の結果を読み戻す。
 2. キューを同期し、開始時に処理可能なWIを原則すべて処理候補にする。
    必要なら `atk wi check-alerts` でCIの失敗を別に確認する。
+   `github_issues`を有効にした登録は、初回の選定前と空のキューを再確認する時に
+   `atk wi check-alerts --periodic --target-repo <登録パス>`でCIの失敗とGitHubのIssue・PRを確認する。
+   コマンド側で停止設定と確認間隔を判定する。
+   省略された場合は手動の確認で代用しない。
+   新たに保存したWIもキューの確認に含める。
    進められる対象が1つも無ければ、常駐では60秒待って手順2に戻り、単回実行では `atk agents-exit-session` で終了する。
 3. `agent-toolkit:atk-mode/playbooks/process-wi.md` で対象ごとの設定・認可と候補を確認し、選定、専用worktree、実行レビュー、統合、公開を進める。
    複数対象の配分と担当への受け渡しは `agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md` を使う。

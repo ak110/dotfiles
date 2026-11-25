@@ -28,6 +28,17 @@ PROCESS_LOOP_SESSION_ID_ENV = _orchestrator.PROCESS_LOOP_SESSION_ID_ENV
 
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 
+NO_ALERTS_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_NO_ALERTS"
+ALERT_INTERVAL_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_ALERT_INTERVAL"
+DEFAULT_ALERT_INTERVAL = 1800
+
+
+def positive_alert_interval(value: str) -> int:
+    interval = int(value)
+    if interval <= 0:
+        raise ValueError("確認間隔は正の整数秒で指定する")
+    return interval
+
 
 # Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数が契約どおりに動作するかを確かめられるよう値を固定する。
 _CREATE_NEW_PROCESS_GROUP = 0x00000200

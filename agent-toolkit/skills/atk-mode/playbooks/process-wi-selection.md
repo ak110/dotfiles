@@ -155,6 +155,9 @@
 4. 回答済みUWIが参照する元項目のうち旧運用で`hold`にあるものを`atk wi unhold <filename>... --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
 5. `inbox`の`選定`対象と手順4の元項目を、`atk wi start-processing <filename>... --target-repo=<対象リポジトリの絶対パス>`で1回ずつ`processing`へ移す。
    成功を確かめた遷移は再実行せず、引数にはまだ`processing`でない項目だけを指定する。
+   別の会話の`processing_owner`が残る選定済み項目は、レーンへ渡す前に`atk wi take-over <ファイル名>`で担当を引き継ぐ。
+   前の会話の終了を確認できない項目には着手しない。
+   引き継ぎの条件は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態遷移」に従う。
    今回の巡回で移したUWIは開始済みの項目として処理担当へ渡し、他の担当が処理中のUWIと区別する。
 6. 部分的な状態の不一致や原因不明の失敗が起きたら、追加の遷移をせずに`続行できない理由`を記録する。
    一括の開始の後に失敗した場合は、次の全条件を確かめる。

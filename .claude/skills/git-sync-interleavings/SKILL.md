@@ -1,5 +1,5 @@
 ---
-verified-digest: 1a2d9783e344a4c1f9dd3d3a267904df270b878edb58d950048d22a09354a25f
+verified-digest: 7be2c5df8866073fbed9f9922db9c826953bc517677751014f222b7aab5f6bbe
 name: git-sync-interleavings
 user-invocable: false
 description: >
@@ -11,6 +11,8 @@ verifies:
   - agent-toolkit/agent_toolkit/_atk/wi/sync.py
   - agent-toolkit/agent_toolkit/_atk/wi/background_sync.py
   - agent-toolkit/agent_toolkit/_atk/wi/background_sync_test.py
+  - agent-toolkit/agent_toolkit/_atk/wi/mutations/transitions.py
+  - agent-toolkit/agent_toolkit/_atk/wi/processing_owner.py
   - agent-toolkit/agent_toolkit/_git/command.py
   - agent-toolkit/agent_toolkit/_atk/git_sync_interleaving_test.py
 ---
@@ -49,6 +51,8 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
   共有の実行枠を長く占有しないよう`pytest_plugin`を読み込まず、テストの隔離は`agent-toolkit/conftest.py`が与える。
 - 出力はシナリオごとに、順序の数、所要時間、内容が衝突した順序の数、違反した性質、終了状態の分布、性質ごとの最初の反例（主体ごとの手順の列）である。
   競合のシナリオで内容が衝突した順序が1つも無ければ、性質2を確かめていないためテストは失敗する。
+- 担当引き継ぎのシナリオは、2つのcloneで`adopt`と`take-over`を各1回行う。
+  先に引き継ぎが確定した順序では旧担当の採用を拒否し、先に採用が確定した順序では引き継ぎを拒否することを、remoteの本文と両方の終了結果で確かめる。
 
 ## 対応と前提
 

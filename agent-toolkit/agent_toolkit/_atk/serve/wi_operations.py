@@ -736,6 +736,7 @@ class Operations:
             choices=",".join(choices) if choices else None,
             storage=self._storage,
             target_branch=target_branch,
+            resolve_draft_links=False,
         )
 
     def add_batch(self, text: str) -> dict[str, object]:

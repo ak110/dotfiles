@@ -26,6 +26,16 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
             default=None,
             help="process-loopの対象か。対象にはpathが必要。",
         )
+        command.add_argument(
+            "--github-issues",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="公開GitHubリポジトリのIssueとPRを巡回で取り込む。既定は無効。",
+        )
+        command.add_argument(
+            "--github-issue-trusted-authors",
+            help="Issueを自動投入するアカウントをカンマ区切りで指定する。空文字列は誰も信頼せず、既定値に戻すには@defaultを指定する。",
+        )
         command.add_argument("--platforms", help="検証OSをlinux,windowsのカンマ区切りで指定する。省略時は両方。")
         command.add_argument(
             "--branches",
@@ -69,6 +79,13 @@ def update_repositories(args: argparse.Namespace) -> str:
             item["process_loop"] = args.process_loop
         if args.platforms is not None:
             item["platforms"] = args.platforms.split(",")
+        if args.github_issues is not None:
+            item["github_issues"] = args.github_issues
+        if args.github_issue_trusted_authors is not None:
+            authors = args.github_issue_trusted_authors
+            item["github_issue_trusted_authors"] = (
+                None if authors == "@default" else [name.strip() for name in authors.split(",")] if authors else []
+            )
         _apply_branch_arguments(args, item)
         repositories[repo_id] = item
     value = config_settings.normalize_setting("repositories", json.dumps(repositories, ensure_ascii=False))

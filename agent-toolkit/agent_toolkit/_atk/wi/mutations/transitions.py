@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import pathlib
-import re
 import shlex
 import sys
 import typing
@@ -16,6 +16,7 @@ from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import processing_owner as _owner
 from agent_toolkit._atk.wi import show as _wi_show
 from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -255,15 +256,6 @@ def _update_transition_metadata(
             atomic_write_text(path, updated)
 
 
-def _strip_result_section(path: pathlib.Path) -> None:
-    text = path.read_text(encoding="utf-8")
-    matches = tuple(re.finditer(r"(?m)^## 処理結果[ \t]*\r?\n", text))
-    if not matches:
-        return
-    updated = text[: matches[-1].start()].rstrip() + "\n"
-    atomic_write_text(path, updated)
-
-
 def _apply_transition(
     private_notes: pathlib.Path,
     paths: list[pathlib.Path],
@@ -275,6 +267,7 @@ def _apply_transition(
     cooldown_days: int | None,
     effect_check: str | None,
     effect_check_reason: str | None,
+    processing_owner: _owner.Owner | None = None,
 ) -> None:
     del private_notes
     destination_name = {
@@ -298,10 +291,10 @@ def _apply_transition(
         and _wi_entries.entry_type_of(path, path.read_text(encoding="utf-8")) == WI_TYPE_AWI
     }
     _effect_check.validate_adoption_effect(effect_check, effect_check_reason)
+    if processing_owner is not None:
+        _owner.remember_process(processing_owner)
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
     for path in paths:
-        if action in {"return-to-inbox", "hold"} and _wi_entries.entry_state_of(path) in {WI_STATE_ADOPTED, WI_STATE_REJECTED}:
-            _strip_result_section(path)
         if action in {"adopt", "reject"}:
             _wi_entries.stamp_result(
                 path,
@@ -315,7 +308,13 @@ def _apply_transition(
         parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         data, body = parsed
+        if action in {"return-to-inbox", "hold"} and _wi_entries.entry_state_of(path) in {WI_STATE_ADOPTED, WI_STATE_REJECTED}:
+            body = _wi_entries.without_last_result_section(body)
         data["state"] = destination_name
+        if destination_name != WI_STATE_PROCESSING:
+            data.pop(_owner.KEY, None)
+        elif processing_owner is not None:
+            data[_owner.KEY] = dataclasses.asdict(processing_owner)
         if path in tracked_awis:
             data["effect_check"] = effect_check
         atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
@@ -352,6 +351,35 @@ def _transition_commit_message(action: str, count: int, note: str | None) -> str
     }[action]
 
 
+def _verify_exit_owner(
+    private_notes: pathlib.Path,
+    paths: list[pathlib.Path],
+    *,
+    skip_push: bool,
+    previous: dict[pathlib.Path, _owner.Owner] | None = None,
+) -> dict[pathlib.Path, _owner.Owner]:
+    current = _owner.snapshot(paths)
+    missing = (previous or {}).keys() - current.keys()
+    if missing:
+        raise WebInputError(
+            "取得後にprocessingの担当が無くなりました: " + "、".join(sorted(path.name for path in missing)),
+            next_action="`atk wi show --pull`で対象の現在の状態を確認する",
+        )
+    if not current:
+        return {}
+    has_upstream = _wi_sync.has_remote(private_notes)
+    if skip_push and has_upstream:
+        raise WebInputError(
+            "担当付きの項目の終了には送信が必要です。--skip-pushは指定できません",
+            next_action="担当の照合と送信を行うには、--skip-pushを外して再実行する",
+        )
+    _owner.verify_actor(current, _owner.current())
+    _wi_sync.ensure_guarded_update_clean(private_notes)
+    if has_upstream:
+        _owner.verify_upstream(private_notes, current)
+    return current
+
+
 def transition_entries(
     private_notes: pathlib.Path,
     *,
@@ -383,6 +411,14 @@ def transition_entries(
     inbox_dir = private_notes / WI_STATE_INBOX
     _wi_filenames.validate_filenames_only(filenames, inbox_dir)
     with storage.mutation(private_notes, push_pending=True, skip_push=skip_push) as mutation:
+        check_owner = actor_is_agent and action in _owner.EXIT_ACTIONS
+        prior: dict[pathlib.Path, _owner.Owner] = {}
+        if check_owner:
+            records, _ = _wi_entries.read_named_entries(
+                private_notes, _wi_entries.validate_named_filenames(private_notes, filenames), target_repo=None
+            )
+            prior = _owner.snapshot(record[0] for record in records)
+            _wi_sync.synchronize_owner_check(private_notes)
         missing_is_conflict = action == "remove" and expected_content is not None
         paths = _resolve_transition_paths(
             private_notes,
@@ -392,6 +428,7 @@ def transition_entries(
             missing_is_conflict=missing_is_conflict,
             actor_is_agent=actor_is_agent,
         )
+        guarded = _verify_exit_owner(private_notes, paths, skip_push=skip_push, previous=prior) if check_owner else {}
         _validate_transition_targets(
             paths,
             action=action,
@@ -419,10 +456,13 @@ def transition_entries(
             cooldown_days=cooldown_days,
             effect_check=effect_check,
             effect_check_reason=effect_check_reason,
+            processing_owner=_owner.current() if actor_is_agent and action == "start-processing" else None,
         )
         message = _transition_commit_message(action, len(paths), note)
         changed = [str(path.relative_to(private_notes)) for path in paths]
-        if action == "start-processing":
+        if guarded:
+            mutation.commit_guarded(message, changed, lambda: _owner.verify_upstream(private_notes, guarded))
+        elif action == "start-processing":
             mutation.commit(message, changed, exclusive_claim=True)
         else:
             mutation.commit(message, changed)
@@ -449,9 +489,13 @@ def _bulk_transition(
     cooldown_days = getattr(args, "cooldown_days", None)
     local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if commit is not None else None
     inbox_with_commit: list[str] = []
+    actor_is_agent = is_agent_environment()
 
     def apply_fn(notes: pathlib.Path, candidates: list[_wi_entries.EntryRecord]) -> list[str]:
         paths = [entry[0] for entry in candidates]
+        guarded = (
+            _verify_exit_owner(notes, paths, skip_push=skip_push) if actor_is_agent and action in _owner.EXIT_ACTIONS else {}
+        )
         # 個別指定と同じ内容検証を適用の直前へ置く。`--cooldown-days`の対象種別の制約もここが判定する。
         # processing状態の保護は候補の確認時に`bulk`が判定済みのため、ここでは再判定しない。
         _validate_transition_targets(
@@ -474,14 +518,20 @@ def _bulk_transition(
             cooldown_days=cooldown_days,
             effect_check=getattr(args, "effect_check", None),
             effect_check_reason=getattr(args, "effect_check_reason", None),
+            processing_owner=_owner.current() if actor_is_agent and action == "start-processing" else None,
         )
-        _wi_sync.commit_and_push(
-            notes,
-            _transition_commit_message(action, len(paths), note),
-            [str(path.relative_to(notes)) for path in paths],
-            skip_push=skip_push,
-            **({"exclusive_claim": True} if action == "start-processing" else {}),
-        )
+        message = _transition_commit_message(action, len(paths), note)
+        changed = [str(path.relative_to(notes)) for path in paths]
+        if guarded:
+            _wi_sync.commit_guarded(notes, message, changed, lambda: _owner.verify_upstream(notes, guarded))
+        else:
+            _wi_sync.commit_and_push(
+                notes,
+                message,
+                changed,
+                skip_push=skip_push,
+                **({"exclusive_claim": True} if action == "start-processing" else {}),
+            )
         return [path.name for path in paths]
 
     filenames = _bulk.bulk_apply_entries(
@@ -495,7 +545,7 @@ def _bulk_transition(
         entry_type=args.type,
         answered=args.answered,
         source=args.source,
-        actor_is_agent=is_agent_environment(),
+        actor_is_agent=actor_is_agent,
         apply_fn=apply_fn,
     )
     if action == "adopt":
@@ -533,6 +583,7 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
     filenames = transition_entries(
         private_notes,
         action="adopt",
+        actor_is_agent=is_agent_environment(),
         filenames=args.filenames,
         now=now,
         target_repo=args.target_repo,
@@ -565,6 +616,7 @@ def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     filenames = transition_entries(
         private_notes,
         action="reject",
+        actor_is_agent=is_agent_environment(),
         filenames=args.filenames,
         now=now,
         target_repo=args.target_repo,
@@ -592,6 +644,7 @@ def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, 
     filenames = transition_entries(
         private_notes,
         action="start-processing",
+        actor_is_agent=is_agent_environment(),
         filenames=args.filenames,
         now=now,
         target_repo=args.target_repo,
@@ -599,6 +652,56 @@ def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, 
     _wi_snapshot.remember_processing_started(private_notes, filenames)
     _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
     _report_user_fields(private_notes, filenames)
+
+
+def cmd_take_over(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    actor = _owner.current()
+    if actor is None:
+        raise WebInputError("現在の会話を解決できないため引き継げません", next_action="担当する会話から実行する")
+    filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "take-over")
+    _wi_filenames.validate_filenames_only(filenames, private_notes)
+    with _wi_sync.repo_lock(private_notes):
+        _wi_sync.ensure_mutation_allowed(private_notes)
+        paths = _resolve_transition_paths(
+            private_notes,
+            "return-to-inbox",
+            filenames,
+            WI_STATE_PROCESSING,
+            missing_is_conflict=False,
+            actor_is_agent=False,
+        )
+        previous = _owner.snapshot(paths)
+        if len(previous) != len(paths):
+            raise WebInputError(
+                "担当の記録が無い項目は引き継げません",
+                next_action="旧書式の項目であれば現在の担当を確かめてから従来どおり処理する",
+            )
+        _wi_sync.synchronize_owner_check(private_notes)
+        if _owner.snapshot(path for path in paths if path.is_file()) != previous:
+            raise WebInputError(
+                "取得後に対象の状態か担当が変わりました", next_action="`atk wi show --pull`で現在の状態と担当を確認する"
+            )
+        if _wi_sync.has_remote(private_notes):
+            _owner.verify_upstream(private_notes, previous)
+        _wi_sync.ensure_guarded_update_clean(private_notes)
+        updates = {}
+        for path, owner in previous.items():
+            handoff = _owner.takeover_note(path, owner, actor, args.reason)
+            parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+            assert parsed is not None
+            data, body = parsed
+            data[_owner.KEY] = dataclasses.asdict(actor)
+            updates[path] = _frontmatter.serialize_frontmatter(data, _wi_entries.append_result_lines(body, [handoff]))
+        _owner.remember_process(actor)
+        for path, text in updates.items():
+            atomic_write_text(path, text)
+        _wi_sync.commit_guarded(
+            private_notes,
+            f"chore: take over {len(paths)} WI",
+            [str(path.relative_to(private_notes)) for path in paths],
+            lambda: _owner.verify_upstream(private_notes, previous),
+        )
+    _outcome.report_success(f"{len(paths)}件の担当を{actor}へ移した: {', '.join(path.name for path in paths)}")
 
 
 def cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -658,6 +761,7 @@ def cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, n
     filenames = transition_entries(
         private_notes,
         action="return-to-inbox",
+        actor_is_agent=is_agent_environment(),
         filenames=args.filenames,
         now=now,
         target_repo=args.target_repo,

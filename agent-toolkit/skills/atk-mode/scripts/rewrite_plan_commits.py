@@ -1,4 +1,4 @@
-"""履歴書換えの旧OIDから新OIDへの対応を、影響する全ての計画と引き継ぎ記録へ1回で追記する。
+"""履歴書換えの旧OIDから新OIDへの対応を、影響する全ての計画と引き継ぎ記録へ1回で追記する。  pyfltr: allow-comment
 
 書換えで検収した範囲全体の対応表（WI対応を持たないcommitを含む）と書換え前のHEADを受け取り、
 書換え前のHEADから到達でき、現在のHEADから到達できないcommitだけを付け替える。
@@ -7,7 +7,8 @@
 対象commitの無い記録では、それ以外のどちらのHEADにも無いOIDを過去の書換えの未追記として拒否する。
 作業中・保存済み計画とmanaged-tempから未指定の対象記録を検出し、複数の対応表は書換え順に合成する。
 全ての記録を検証してから書込みを始め、対応表の不足・過去の書換えの未追記・対応表の誤り・保存済み計画のいずれかがあれば
-どの記録も変えずに失敗する。計画には進捗ログの1行を、引き継ぎ記録には`<完了した工程>: <結果>`の1行を追記する。
+どの記録も変えずに失敗する。旧書式の計画には進捗ログの1行を、引き継ぎ記録には`<完了した工程>: <結果>`の1行を追記する。
+新書式の計画（frontmatterを持つ計画）は進捗ログを持たないため、本文を変えずに対応の記録だけを更新する。
 
 未指定の対象記録は書込前に全件を示して拒否する。示された記録を入力へ加え、保存済み計画は`atk plans checkout`で取得する。
 複数の対応表は`--rewrite-map`を書換え順に反復指定し、最初の書換え前HEADを`--previous-head`へ渡す。
@@ -33,6 +34,7 @@ from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._plan import commit_mapping, locations
+from agent_toolkit._plan.structure.parsing import is_awi_plan
 
 _CURRENT_OMISSION_ACTION = (
     "対応表は`atk run-script history-compare -- --operation <rebase|autosquash|amend> --work-dir <worktreeの絶対パス>"
@@ -223,10 +225,15 @@ def _prepare(
     if mapping_pending or change.event is None:
         return _Update(record, change, pending)
 
-    prepared: list[str] = []
-    append = append_progress_log.append_handoff_log if record.handoff else append_progress_log.append_progress_log
-    append(record.path, completed_step, result, writer=lambda _path, value: prepared.append(value))
-    updated = prepared[0]
+    if not record.handoff and is_awi_plan(content):
+        # 本文を書き換えない経路にも保存済み計画の保護を適用する。  # pyfltr: allow-comment
+        locations.reject_saved_plans_root_write(record.path)
+        updated = content
+    else:
+        prepared: list[str] = []
+        append = append_progress_log.append_handoff_log if record.handoff else append_progress_log.append_progress_log
+        append(record.path, completed_step, result, writer=lambda _path, value: prepared.append(value))
+        updated = prepared[0]
     receipt = _Receipt(
         operation.operation_id,
         body,
@@ -290,7 +297,8 @@ def _append_record(update: _Update) -> None:
             assert update.change.event is not None
             prepared = scratch / "prepared"
             prepared.mkdir()
-            atomic_write(prepared / "body", update.body)
+            if update.receipt.old_body != update.receipt.new_body:
+                atomic_write(prepared / "body", update.body)
             atomic_write(prepared / "mapping", commit_mapping.appended_content(record, update.change.event))
             update.receipt.write(prepared / "receipt")
             if update.published is not None:
@@ -335,8 +343,16 @@ def main(argv: list[str] | None = None) -> int:
         "WI対応を持たないcommitを含めてよい。OIDは短縮OIDか完全OID。分割は旧OIDの値に"
         '[{"commit":"新OID","awi":["WIファイル名"]}]を指定し、全旧AWIを実際の変更先へ割り当てる',
     )
-    parser.add_argument("--completed-step", required=True, help="完了した工程。追記する各記録の進捗の行へ書く")
-    parser.add_argument("--result", required=True, help="結果・特記事項。追記する各記録の進捗の行へ書く")
+    parser.add_argument(
+        "--completed-step",
+        required=True,
+        help="完了した工程。旧書式の計画と引き継ぎ記録の進捗の行へ書く。新書式の計画の本文へは書かない",
+    )
+    parser.add_argument(
+        "--result",
+        required=True,
+        help="結果・特記事項。旧書式の計画と引き継ぎ記録の進捗の行へ書く。新書式の計画の本文へは書かない",
+    )
     parser.add_argument(
         "--plan", type=pathlib.Path, action="append", default=None, metavar="PATH", help="計画ファイルの絶対パス。反復指定"
     )

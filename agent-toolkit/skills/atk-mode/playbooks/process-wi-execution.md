@@ -50,7 +50,7 @@
 3. 実行レビュー: `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`の起動契約に従い、実装を担当していない実行レビュー担当を起動する。
    起動前に`agent-toolkit:atk-mode/playbooks/verification.md`に従い、取得版、入力条件、要求別の観測箇所を同じ検証記録へ対応付ける（レビュー担当はその記録を独立に読み、保存済みの成功の適用可否と、不足か影響差分に限った追加の観測を判断する）。
    レビュー指摘管理表の作成と完成条件証拠の受領確認は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`と`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`に従う。
-   画面差分がある場合は`agent-toolkit:atk-mode/roles/usability-review.parent.md`に従ってユーザビリティレビュー担当も起動する。
+   画面差分がある場合は`agent-toolkit:atk-mode/roles/usability-review.parent.md`に従ってユーザビリティレビュー担当も、実装の返却の`同種の既存画面`を渡して起動する。
    各計画のレビュー基準と開始HEADは保つ。
 4. 収束: `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`の手順で指摘を収束させ、修正とGit履歴の統合は自分で行う（管理表の保存は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`）。
    要件や認可の変更、事後承認の確認が必要な場合は、手順1の分担で対応する。

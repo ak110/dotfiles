@@ -164,7 +164,7 @@ def test_malformed_response_redacts_before_truncating(monkeypatch: pytest.Monkey
 
     with pytest.raises(alerts.AlertCollectError) as caught:
         # pylint: disable-next=protected-access
-        alerts._run_alert_json_command(["gh"], timeout=1, operation="gh run view 1", expected_type=dict)
+        alerts.run_alert_json_command(["gh"], timeout=1, operation="gh run view 1", expected_type=dict)
     assert "A" * 10 not in str(caught.value)
     assert "[REDACTED]" in str(caught.value)
 
