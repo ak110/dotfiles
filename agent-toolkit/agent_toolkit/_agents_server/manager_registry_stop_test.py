@@ -14,7 +14,7 @@ import pytest
 
 from agent_toolkit._agents_server import agents_wait, shared_layout, shared_roots, state, status_file, wait_targets
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import session_record_paths, session_registry, session_review, state_paths, task_documents
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeBackend,
@@ -28,6 +28,69 @@ from agent_toolkit._testing.agents_server_support import (
 )
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.asyncio
+async def test_process_loop_registers_only_explicitly_stopped_final_lane(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = "orchestrator"
+    writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity(root, "root.json", None), state_root=tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    records = {
+        identifier: session_record_paths.SessionRecord(engine, (tmp_path / f"{identifier}.jsonl",))
+        for identifier, engine in (("orchestrator", "claude"), ("lane", "codex"), ("unfinished-lane", "codex"))
+    }
+    monkeypatch.setattr(session_record_paths, "find_session_record", records.get)
+    prompt = task_documents.task_prompt_header(tmp_path / "exec.subagent.md")
+    async with server_manager.AgentsServerManager(writer) as manager:
+        install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+        writer.activate()
+        for identifier, result in (("lane", "統合完了"), ("unfinished-lane", "統合準備完了")):
+            child = state.SessionState(identifier, str(tmp_path), engine="codex", announced=True, prompt=prompt)
+            _complete(child, message=result)
+            manager.sessions[identifier] = child
+        assert session_review.lane_review_targets(root) == ({}, None)
+        assert await manager.stop("unfinished-lane", retain_result=True) == {}
+        assert session_review.lane_review_targets(root) == ({}, None)
+        assert await manager.stop("lane") == {}
+        assert await manager.stop("lane") == {}
+        scopes, _ = session_review.lane_review_targets(root)
+        assert scopes == {str(records["lane"].paths[0]): ("lane", "統合完了")}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("owner_root", "expected_parent"),
+    (("mcp-root", "orchestrator"), ("foreign-root", "foreign-root")),
+)
+async def test_stop_registers_lane_under_own_launcher_only(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, owner_root: str, expected_parent: str
+) -> None:
+    writer = status_file.StatusFileWriter(
+        {}, shared_roots.StatusFileIdentity("mcp-root", "root.json", "orchestrator"), state_root=tmp_path
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    records = {
+        identifier: session_record_paths.SessionRecord("codex", (tmp_path / f"{identifier}.jsonl",))
+        for identifier in ("mcp-root", "orchestrator", "foreign-root", "lane")
+    }
+    monkeypatch.setattr(session_record_paths, "find_session_record", records.get)
+    prompt = task_documents.task_prompt_header(tmp_path / "exec.subagent.md")
+    async with server_manager.AgentsServerManager(writer) as manager:
+        install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+        writer.activate()
+        child = state.SessionState("lane", str(tmp_path), engine="codex", announced=True, prompt=prompt)
+        _complete(child, message="統合完了")
+        manager.sessions["lane"] = child
+        session_registry.publish(
+            "lane", state=session_registry.PublicationState.RESULT_COMPLETED, owner_root_session_id=owner_root
+        )
+        assert await manager.stop("lane") == {}
+        scopes, _ = session_review.lane_review_targets(expected_parent)
+        assert scopes == {str(records["lane"].paths[0]): ("lane", "統合完了")}
+        for other_parent in records.keys() - {expected_parent, "lane"}:
+            assert session_review.lane_review_targets(other_parent) == ({}, None)
 
 
 @pytest.mark.asyncio

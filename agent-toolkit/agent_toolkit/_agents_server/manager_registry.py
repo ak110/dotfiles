@@ -10,10 +10,31 @@ from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.responses import RUNNING_STOP_NEXT_ACTION, SESSION_ID_NEXT_ACTION
 from agent_toolkit._agents_server.session_errors import ActionableRuntimeError
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, RegistryResumeState, SessionResumeState, SessionState
-from agent_toolkit._common import session_registry
+from agent_toolkit._atk.orchestrator import PROCESS_LOOP_SESSION_ENV
+from agent_toolkit._common import runtime_environment, session_record_paths, session_registry, session_review, task_documents
 from agent_toolkit._common.next_action import ActionableError, next_action_line
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
+
+
+def _register_stopped_lane(state: SessionResumeState, parent: str | None) -> None:
+    if parent is None or runtime_environment.environment().get(PROCESS_LOOP_SESSION_ENV) != "1":
+        return
+    role = task_documents.launched_task_document(state.prompt)
+    if role is None or role.name not in {"exec.subagent.md", "repository-process.subagent.md"}:
+        return
+    summary = state.agent_message.strip().partition("\n")[0]
+    if state.status != "completed" or not summary or (role.name == "exec.subagent.md" and summary != "統合完了"):
+        return
+    owner = session_record_paths.find_session_record(parent)
+    if owner is None or owner.engine not in {"claude", "codex"}:
+        return
+    lane_record = session_record_paths.find_session_record(state.session_id)
+    if lane_record is None or len(lane_record.paths) != 1 or lane_record.engine != state.engine:
+        raise ValueError("振り返りへ登録するレーンのセッション記録を一意に特定できない")
+    session_review.register_lane(
+        state.session_id, state.cwd, parent, owner.engine, lane_record.paths[0], state.started_at, summary[:240]
+    )
 
 
 class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
@@ -115,6 +136,12 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
             released = await run_file_operation(
                 session_registry.release, session_id, reason="stopped", expected_owner=expected_owner
             )
+            if released and not retain_result:
+                parent = registration.owner_root_session_id
+                writer = self._status_writer
+                if writer is not None and (parent is None or parent == writer.root_session_id):
+                    parent = await writer.launcher_session_id_async() or parent
+                await run_file_operation(_register_stopped_lane, resume_state, parent)
             if released and self._status_writer is not None:
                 if retain_result and not keep_result:
                     (await run_file_operation(self._status_writer.delete_wait_target, session_id))

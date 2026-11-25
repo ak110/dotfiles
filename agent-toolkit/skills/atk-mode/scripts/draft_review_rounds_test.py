@@ -1,0 +1,220 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
+import draft_review_rounds
+import pytest
+from agent_toolkit._agents_server import wait_summary
+
+
+def _time(day: int) -> datetime:
+    return datetime(2026, 11, day, tzinfo=UTC)
+
+
+def _judgment(path: str, verdict: str, identity: str = "", *, stage: str = "本文") -> str:
+    label = f"- 要求識別子: {identity}\n" if identity else ""
+    subject = f"対象資料: {path}\n" if path else ""
+    return f"{label}判定: {verdict}\n確認段階: {stage}\n{subject}"
+
+
+class _Log:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.entries: list[dict] = []
+
+    def call(self, tool: str, args: dict, result: object, *, day: int = 26, sent_day: int | None = None) -> None:
+        call_id = str(len(self.entries))
+        self.entries.extend(
+            [
+                {
+                    "type": "assistant",
+                    "timestamp": _time(sent_day or day).isoformat(),
+                    "message": {"content": [{"type": "tool_use", "name": tool, "id": call_id, "input": args}]},
+                },
+                {
+                    "type": "user",
+                    "timestamp": _time(day).isoformat(),
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": call_id,
+                                "content": result if isinstance(result, str) else json.dumps(result),
+                            }
+                        ]
+                    },
+                },
+            ]
+        )
+
+    def start(self, session: str, **kwargs: str) -> None:
+        self.call("mcp__agents_server__start", kwargs, {"session_id": session})
+
+    def wait(self, session: str, body: str, *, day: int = 26, sent_day: int | None = None, status: str = "completed") -> None:
+        text = (
+            f"{wait_summary.TERMINAL_LINE_PREFIX}session_id={session} label=原稿 status={status}\n"
+            f"{wait_summary.WAIT_BODY_START_PREFIX}{session}\n{body}"
+            f"{wait_summary.WAIT_BODY_END_PREFIX}{session}\n"
+        )
+        self.call("Bash", {"command": f"/example/scripts/atk agents wait {session}"}, text, day=day, sent_day=sent_day)
+
+    def collect(self) -> draft_review_rounds._Collected:
+        self.path.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in self.entries), encoding="utf-8")
+        return draft_review_rounds.collect([self.path.parent])
+
+
+_ROLE = "/example/roles/wi-draft-review.subagent.md"
+
+
+def _wrap_codex(entries: list[dict[str, object]], code: str, output: str, *, day: int = 26) -> None:
+    call_id = str(len(entries))
+    for payload in (
+        {"type": "custom_tool_call", "name": "functions.exec", "input": code},
+        {"type": "custom_tool_call_output", "output": "Script completed\nWall time: 1 seconds\nOutput:\n" + output},
+    ):
+        entries.append(
+            {
+                "type": "response_item",
+                "timestamp": _time(day).isoformat(),
+                "payload": {**payload, "call_id": call_id},
+            }
+        )
+
+
+def test_collects_wrapped_codex_start_and_wait(tmp_path: Path) -> None:
+    path = tmp_path / "rollout-parent.jsonl"
+    entries: list[dict[str, object]] = []
+
+    for index, verdict in enumerate(("修正要", "合格"), 1):
+        if index == 1:
+            _wrap_codex(
+                entries,
+                f'text((await tools.mcp__agents_server__start({{ subagent_md_path: "{_ROLE}" }})).structuredContent)',
+                '{"session_id":"reviewer"}',
+            )
+        _wrap_codex(
+            entries,
+            "text(await tools.mcp__agents_server__wait({}))",
+            json.dumps(
+                {
+                    "structuredContent": {
+                        "sessions": [
+                            {
+                                "session_id": "reviewer",
+                                "status": "completed",
+                                "agent_message": _judgment("/draft.md", verdict),
+                            }
+                        ]
+                    }
+                }
+            ),
+        )
+    path.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    assert draft_review_rounds.period(draft_review_rounds.collect([path]), _time(25), _time(27))["passed"] == 1
+
+
+@pytest.mark.parametrize("pragma", ["", '// @exec: {"yield_time_ms": 1000}\n'])
+def test_collects_wait_process_completion_once(tmp_path: Path, pragma: str) -> None:
+    path = tmp_path / "rollout-parent.jsonl"
+    entries: list[dict[str, object]] = []
+    wait = 'text(await tools.exec_command({cmd:"/example/scripts/atk agents wait"}))'
+
+    def wrap(code: str, *, day: int = 26, **output: object) -> None:
+        _wrap_codex(entries, pragma + code, json.dumps(output), day=day)
+
+    def poll(process: int, *, day: int = 26, **output: object) -> None:
+        wrap(f'text(await tools.write_stdin({{session_id:{process}, chars:""}}))', day=day, **output)
+
+    def result(session: str, path: str) -> str:
+        return (
+            f"{wait_summary.TERMINAL_LINE_PREFIX}session_id={session} label=原稿 status=completed\n"
+            f"{wait_summary.WAIT_BODY_START_PREFIX}{session}\n{_judgment(path, '合格')}\n"
+            f"{wait_summary.WAIT_BODY_END_PREFIX}{session}\n"
+        )
+
+    first, second, unrelated = result("one", "/one.md"), result("two", "/two.md"), result("other", "/other.md")
+    wrap(wait, exit_code=0, output=first, day=25)
+    wrap(wait, session_id=901, output=first[:25])
+    wrap(wait, session_id=902, output="")
+    wrap('text(await tools.exec_command({cmd:"echo agents wait"}))', session_id=903, output="")
+    poll(903, exit_code=0, output=unrelated)
+    poll(904, exit_code=0, output=unrelated)
+    poll(902, exit_code=1, output=unrelated)
+    poll(902, exit_code=0, output=unrelated)
+    poll(901, session_id=901, output=first[25:])
+    poll(901, exit_code=0, output=second)
+    poll(901, exit_code=0, output=unrelated)
+    wrap(wait, exit_code=0, output=second, day=27)
+    wrap(wait, exit_code=1, output=unrelated, day=27)
+    _wrap_codex(
+        entries,
+        'text(await tools.mcp__agents_server__send_message({session_id:"two", prompt:"再レビュー"}))',
+        '{"delivery":"reply_started"}',
+        day=28,
+    )
+    wrap(wait, exit_code=0, output=second, day=28)
+    path.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    assert [(row.timestamp, row.session, row.body) for row in draft_review_rounds.collect([path]).receipts] == [
+        (_time(25), "one", _judgment("/one.md", "合格").strip()),
+        (_time(26), "two", _judgment("/two.md", "合格").strip()),
+        (_time(28), "two", _judgment("/two.md", "合格").strip()),
+    ]
+
+
+def test_rounds_with_handoff_and_receipt_time(tmp_path: Path) -> None:
+    log = _Log(tmp_path / "parent.jsonl")
+    log.start("reviewer", subagent_md_path=_ROLE)
+    log.start("successor", handoff_from="reviewer")
+    log.start("other", subagent_md_path="/example/roles/exec-review.subagent.md")
+    log.wait("other", _judgment("/unrelated.md", "合格"))
+    log.wait(
+        "reviewer",
+        "レビュー結果:\n"
+        + _judgment("/passed.md", "修正要", "a")
+        + _judgment("/failed.md", "修正要", "b")
+        + _judgment("/first.md", "合格", "c")
+        + _judgment("/no-second.md", "修正要", "d")
+        + _judgment("", "修正要", "e")
+        + _judgment("/policy.md", "合格", "f", stage="方針"),
+        sent_day=25,
+    )
+    log.wait("successor", _judgment("/passed.md", "合格"), day=27)
+    log.wait("reviewer", _judgment("/failed.md", "修正要"), day=27)
+    log.wait("reviewer", _judgment("/no-second.md", "合格"), status="failed")
+    assert draft_review_rounds.period(log.collect(), _time(26), _time(26)) == {
+        "passed": 1,
+        "failed": 1,
+        "first_pass": 1,
+        "no_second": 1,
+        "missing_path": 1,
+        "unassigned": 0,
+        "pass_rate": 0.5,
+    }
+
+
+def test_missing_identity_requires_unique_attribution(tmp_path: Path) -> None:
+    log = _Log(tmp_path / "parent.jsonl")
+    log.start("reviewer", subagent_md_path=_ROLE)
+    log.wait("reviewer", _judgment("/same.md", "修正要", "a") + _judgment("/same.md", "修正要", "b"))
+    log.wait("reviewer", _judgment("/same.md", "合格"))
+    log.wait("reviewer", _judgment("/same.md", "合格"))
+    assert draft_review_rounds.period(log.collect(), _time(26), _time(26)) == {
+        "passed": 0,
+        "failed": 0,
+        "first_pass": 0,
+        "no_second": 2,
+        "missing_path": 0,
+        "unassigned": 1,
+        "pass_rate": "判定不能",
+    }
+    log.call(
+        "mcp__agents_server__send_message",
+        {"session_id": "reviewer", "prompt": "要求識別子: b\n対象資料: /same.md"},
+        {"session_id": "reviewer", "status": "running"},
+        day=27,
+    )
+    log.wait("reviewer", _judgment("/same.md", "合格"), day=27)
+    result = draft_review_rounds.period(log.collect(), _time(26), _time(26))
+    assert (result["passed"], result["unassigned"], result["no_second"], result["pass_rate"]) == (1, 1, 1, 1.0)

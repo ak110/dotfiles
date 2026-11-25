@@ -399,7 +399,7 @@ def test_public_single_add_without_level_stores_an_empty_level(tmp_path: pathlib
     location = tmp_path / "location.txt"
     issue = tmp_path / "issue.txt"
     location.write_text("module.py:10", encoding="utf-8")
-    issue.write_text("類似見直し完了件数: 0\n根拠を確かめる。", encoding="utf-8")
+    issue.write_text("類似見直し完了件数: 0\n検収: 修正後に根拠を確かめる\n根拠を確かめる。", encoding="utf-8")
 
     with pytest.raises(SystemExit) as returned:
         atk.main(
@@ -418,3 +418,34 @@ def test_public_single_add_without_level_stores_an_empty_level(tmp_path: pathlib
         )
     assert returned.value.code == 0
     assert table._read(path)[0][4] == ""  # pylint: disable=protected-access
+
+
+def test_summary_counts_only_new_adopted_rows_without_acceptance_result(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "review.tsv"
+    issue = review_bodies.issue_body("指摘")
+    response = review_bodies.response_body("修正した")
+    cases = [
+        ("旧行", issue, response, ""),
+        ("新行・欠落", "", response, ""),
+        ("新行・空値", "", response + "\n検収結果:   ", ""),
+        ("新行・記録済み", "", response + "\n検収結果: abc1234で確認", ""),
+        ("新行・対応不要", "", "", review_bodies.reason_body("対象外")),
+    ]
+    rows = [
+        ["1", _TRACK, location, body or review_table_format.mark_issue(issue, _TRACK, location), "", adopted, rejected]
+        for location, body, adopted, rejected in cases
+    ]
+    path.write_text(
+        "".join("\t".join(json.dumps(cell, ensure_ascii=False) for cell in row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    assert table.show(path, output_format="summary", round_value=1) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "round": 1,
+        "track": _TRACK,
+        "total_count": 5,
+        "unanswered_count": 2,
+        "answered_count": 3,
+    }

@@ -331,7 +331,9 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
     if session_activity.review_activity({target["session_id"]}).has_activity:
         return None
     arguments = (
-        ["--transcript", target["transcript_path"]]
+        ["--agents-session-id", target["session_id"]]
+        if target.get("lane_parent_session_id")
+        else ["--transcript", target["transcript_path"]]
         if target["host"] == "claude"
         else ["--codex-thread-id", target["session_id"]]
     )
@@ -376,6 +378,8 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
         session_review.write(pathlib.Path(prepared["scope_path"]), scope)
 
     prepared.update(host=target["host"], session_id=target["session_id"], generation=target["generation"])
+    if parent := target.get("lane_parent_session_id"):
+        prepared.update(lane_parent_session_id=parent, lane_parent_engine=target["host"])
     return prepared
 
 

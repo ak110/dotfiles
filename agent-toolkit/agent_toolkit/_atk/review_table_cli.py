@@ -27,6 +27,7 @@ from agent_toolkit._atk.review_table_format import (
     _parse_text,
     _require_issue_labels,
     _row_position,
+    mark_issue,
 )
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
@@ -112,8 +113,9 @@ def _read_add_items(raw_path: str, round_value: str, track: str) -> list[list[st
                 f"--items-fileの項目{index}のlevelが正規値ではない",
                 next_action=f"levelを{', '.join(LEVEL_VALUES)}のいずれかにして再実行する",
             )
-        _require_issue_labels(item["location"], item["issue"], round_value, f"--items-fileの項目{index}のissue")
-        rows.append([round_value, _normalize_track(track), item["location"], item["issue"], item.get("level", ""), "", ""])
+        _require_issue_labels(item["location"], item["issue"], round_value, f"--items-fileの項目{index}のissue", track=track)
+        issue = mark_issue(item["issue"], track, item["location"])
+        rows.append([round_value, _normalize_track(track), item["location"], issue, item.get("level", ""), "", ""])
     return rows
 
 
@@ -278,8 +280,8 @@ def dispatch(args: argparse.Namespace) -> int:
             return _add_rows(_path(args.path), _read_add_items(items_file, args.round, args.track))
         location = _required_value(args, "location")
         issue = _required_value(args, "issue")
-        _require_issue_labels(location, issue, args.round, "--issue-file")
-        return add(args.path, args.round, args.track, location, issue, args.level or "")
+        _require_issue_labels(location, issue, args.round, "--issue-file", track=args.track)
+        return add(args.path, args.round, args.track, location, mark_issue(issue, args.track, location), args.level or "")
     if command == "recheck":
         _require_writable_exec_review(args.path)
         return recheck(args.path, args.row_id, args.round, args.verdict, _cell_value(args, "issue"))

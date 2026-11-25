@@ -11,8 +11,66 @@ from agent_toolkit._git import command as git_command
 
 from pytools._internal.common import format_cli_error
 
+_HELP_TEST = "agent-toolkit/agent_toolkit/atk_help_test.py"
+_SIZE_TEST = "norm_size_budget_invariant_test.py"
+_LINK_TEST = "markdown_link_anchor_invariant_test.py"
+_TERM_TEST = "retired_terms_invariant_test.py"
+_STOP_TEST = "subprocess_stop_invariant_test.py"
+_HELP_CHANGE = re.compile(r"\b(add_parser|add_subparsers|register_subcommand|help_text)\b|\bhelp\s*=|--help")
+_STOP_CHANGE = re.compile(r"\.(?:kill|terminate|stop_owned_process|reclaim_processes|reclaim_unreaped)\b|\btimeout\s*=")
 
-def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
+
+def _diff(root: pathlib.Path, base: str, *args: str) -> bytes:
+    result = git_command.run(
+        ["-C", str(root), "diff", "--no-ext-diff", "--no-renames", *args, base, "--"],
+        capture_output=True,
+        timeout=60,
+    )
+    if result.returncode:
+        diagnostic = subprocess.CompletedProcess(
+            result.args, result.returncode, os.fsdecode(result.stdout), os.fsdecode(result.stderr)
+        )
+        raise ValueError(f"統合候補の差分を取得できない: {format_cli_error(diagnostic)}")
+    return result.stdout
+
+
+def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
+    if re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", base) is None:
+        raise ValueError("統合先の基点には完全なcommit OIDを指定する")
+    names = [os.fsdecode(name) for name in _diff(root, base, "--name-only", "-z").split(b"\0") if name]
+    patch = _diff(root, base, "--unified=0").decode("utf-8", errors="replace")
+    changes = re.split(r"^diff --git ", patch, flags=re.MULTILINE)[1:]
+    if len(names) != len(changes):
+        raise ValueError("統合候補の変更ファイルと差分の対応を確定できない")
+    found: set[tuple[str, str]] = set()
+    for name, change in zip(names, changes, strict=True):
+        path = pathlib.PurePosixPath(name)
+        text = "\n".join(
+            line[1:] for line in change.splitlines() if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+        )
+        if path.suffix == ".md":
+            found.add((_LINK_TEST, "markdown-links"))
+            found.add((_TERM_TEST, "tracked-terminology"))
+            if name.startswith(("agent-toolkit/skills/", "agent-basics/skills/")) and "fixtures" not in path.parts:
+                found.add((_SIZE_TEST, "published-norms"))
+        if (
+            name.startswith("agent-toolkit/agent_toolkit/")
+            and path.suffix == ".py"
+            and not _is_test(path)
+            and (name.endswith(("/atk.py", "/run_script.py", "/help_text.py")) or _HELP_CHANGE.search(text))
+        ):
+            found.add((_HELP_TEST, "cli-registration-help"))
+            found.add((_LINK_TEST, "cli-help-links"))
+        if path.suffix == ".py" and not _is_test(path) and _STOP_CHANGE.search(text):
+            found.add((_STOP_TEST, "subprocess-stop"))
+        if name in {_LINK_TEST, _TERM_TEST, _SIZE_TEST, _STOP_TEST, _HELP_TEST}:
+            found.add((name, "cross-contract-definition"))
+        if path.suffix in {".py", ".js", ".ts", ".ps1", ".sh"} and re.search(r"[^\x00-\x7f]", text):
+            found.add((_TERM_TEST, "tracked-terminology"))
+    return [{"test": test, "reason": reason} for test, reason in sorted(found)]
+
+
+def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = None) -> dict[str, Any]:
     """直接importは必須、文字列参照と同接頭辞は意味判定の候補にする。
 
     中間importや動的・設定契約は担当の探索と意味判定で補う。
@@ -85,6 +143,7 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
         raise ValueError(f"HEADを取得できない: {format_cli_error(head)}")
     return {
         "head": head.stdout.strip(),
+        **({"base": base, "cross_contracts": cross_contracts(root, base)} if base is not None else {}),
         "sources": sorted(source.relative_to(root).as_posix() for source in changed),
         "candidates": candidates,
         "source_hashes": {
@@ -97,7 +156,7 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
     }
 
 
-def _is_test(path: pathlib.Path) -> bool:
+def _is_test(path: pathlib.PurePath) -> bool:
     return path.suffix == ".py" and (path.stem.endswith("_test") or path.name.startswith("test_"))
 
 
@@ -204,6 +263,7 @@ def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]
         raise ValueError("利用試験の曖昧候補に意味判定が不足している。候補JSONへ根拠付きdecisionsを記録する")
     return sorted(
         {item["test"] for item in candidates if item["required"] or decisions.get((item["source"], item["test"]), False)}
+        | {item["test"] for item in snapshot.get("cross_contracts", [])}
     )
 
 

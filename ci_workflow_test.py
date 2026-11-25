@@ -180,7 +180,7 @@ def test_pylint_partitions_file_checks_and_propagates_failures(workflow_data: di
         omitted.append(re.compile(str(pattern).replace("\\", "\\\\") + "|" + pattern.as_posix()))
     for path, runtime in (
         ("scripts/ci_copy_diagnostic.py", False),
-        ("agent-toolkit/agent_toolkit/_atk/wi.py", True),
+        ("agent-toolkit/agent_toolkit/_atk/wi/cli.py", True),
         ("agent-toolkit/agent_toolkit/_agents_server/service.py", True),
         ("agent-toolkit/agent_toolkit/_hooks/stop.py", True),
         ("agent-toolkit/agent_toolkit/_common/session_state.py", False),

@@ -15,6 +15,7 @@ SCRIPT_PATHS = {
     "cost-metrics": pathlib.Path("skills/atk-mode/scripts/cost_metrics.py"),
     "improvement-intake": pathlib.Path("skills/atk-mode/scripts/improvement_intake.py"),
     "review-adoption": pathlib.Path("skills/atk-mode/scripts/review_adoption.py"),
+    "review-second-round": pathlib.Path("skills/atk-mode/scripts/review_second_round.py"),
     "delegation-prompt": pathlib.Path("skills/atk-mode/scripts/delegation_prompt.py"),
     "history-compare": pathlib.Path("skills/atk-mode/scripts/compare_history.py"),
     "commit-with-timeout": pathlib.Path("skills/atk-mode/scripts/run_commit.py"),

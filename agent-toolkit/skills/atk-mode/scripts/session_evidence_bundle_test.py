@@ -5,6 +5,7 @@ import pathlib
 
 import pytest
 import session_review_evidence as evidence
+from agent_toolkit._common import session_review
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import (
     codex_tool_result_entry,
@@ -12,6 +13,65 @@ from agent_toolkit._testing.session_evidence_support import (
     hook_attachment,
     read_jsonl,
 )
+from session_evidence_extract import _CollectedRecord, _load_records
+
+
+def test_bundle_excludes_registered_lane_and_inherits_processed_prefix(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def save(path: pathlib.Path, *messages: str) -> None:
+        path.write_text(
+            "".join(
+                json.dumps({"type": "assistant", "message": {"role": "assistant", "content": text}}) + "\n" for text in messages
+            ),
+            encoding="utf-8",
+        )
+
+    parent, lane, descendant, unattended = (
+        tmp_path / f"{name}.jsonl" for name in ("orchestrator", "transcript_full", "worker", "unattended")
+    )
+    for path, text in (
+        (parent, "統括の記録"),
+        (lane, "前回分析済み"),
+        (descendant, "レーンの子"),
+        (unattended, "未登録のレーン"),
+    ):
+        save(path, text)
+
+    def collect() -> list[_CollectedRecord]:
+        return [
+            _CollectedRecord("main", parent, _load_records(str(parent)) or [], None, None, None, None, "main"),
+            _CollectedRecord("lane", lane, _load_records(str(lane)) or [], None, "main", 1, None, "session"),
+            _CollectedRecord("worker", descendant, _load_records(str(descendant)) or [], None, "lane", 1, None, "session"),
+            _CollectedRecord("unattended", unattended, _load_records(str(unattended)) or [], None, "main", 1, None, "session"),
+        ]
+
+    before = session_review.directory() / "reviewed" / "claude-orchestrator.json"
+    session_review.write(before, session_review.scope_records(collect()))
+    session_review.register_lane("lane", str(tmp_path), "orchestrator", "claude", lane, None, "統合完了")
+    save(lane, "前回分析済み", "登録までの続き")
+
+    parent_bundle, lane_bundle = tmp_path / "for-parent", tmp_path / "for-lane"
+    parent_bundle.mkdir()
+    lane_bundle.mkdir()
+    recorded = collect()
+    monkeypatch.setattr(evidence, "_collect_records", lambda *_args, **_kwargs: (recorded, []))
+    assert evidence.main([str(parent), "--bundle", str(parent_bundle), "--after", str(before)]) == 0
+    scope = session_review.read(parent_bundle / "scope.json")
+    assert set(scope["records"]) == {"main", "unattended"}
+    assert set(scope["transferred"]) == {"lane", "worker"}
+    timeline = (parent_bundle / "timeline.jsonl").read_text(encoding="utf-8")
+    boundary = [row for line in timeline.splitlines() if (row := json.loads(line))["kind"] == "lane-review-boundary"]
+    assert boundary == [{"kind": "lane-review-boundary", "session_id": "lane", "result_summary": "統合完了"}]
+    session_review.write(before, scope)
+
+    root = recorded[1]._replace(record_id="main", role="main", source_record=None)
+    worker = recorded[2]._replace(source_record="main")
+    monkeypatch.setattr(evidence, "_collect_records", lambda *_args, **_kwargs: ([root, worker], []))
+    assert evidence.main([str(lane), "--bundle", str(lane_bundle)]) == 0
+    scope = session_review.read(lane_bundle / "scope.json")
+    assert (scope["records"]["main"]["after_line"], scope["records"]["main"]["through_line"]) == (1, 2)
+    assert scope["records"]["worker"]["after_line"] == 1
 
 
 def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
