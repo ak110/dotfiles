@@ -371,7 +371,7 @@ def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
         assert any(
             text in err
             for text in (
-                "反復に触れているのに`再発:`の行が無い",
+                "反復の候補に当たるのに`再発:`の行が無い",
                 "`再発:`の行が区分の語で始まらない",
                 "`文書`・`手順`だけである",
             )
@@ -434,7 +434,7 @@ def test_public_add_requires_recurrence_line_for_repeated_complaints(
     with pytest.raises(SystemExit) as stopped:
         _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
     assert stopped.value.code != 0
-    assert "反復に触れているのに`再発:`の行が無い" in capsys.readouterr().err
+    assert "反復の候補に当たるのに`再発:`の行が無い" in capsys.readouterr().err
 
 
 def test_public_add_accepts_not_applicable_line_for_non_recurring_quote(
