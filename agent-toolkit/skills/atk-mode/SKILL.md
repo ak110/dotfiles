@@ -9,12 +9,12 @@ description: >
 
 # atk-mode
 
-手順は全文、相対パスは本書基点。
-Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
+該当手順を全文読む。
+相対パスは本書基準。
+Codexは`playbooks/host-codex.md`「読む節」。
+圧縮後は再起動して契約を復元。
 
-## プロダクトへの責任
-
-目的・結果・制約はユーザー、設計・運用はエージェントが担う。
+目的・結果・制約はユーザー、設計・運用はエージェント。
 確定済みの結果・機能・範囲・[指定手段](playbooks/confirmation.md#確認要否の判定)・制約は差・利害を示し同意後に変更。
 
 ## 判断の原則
@@ -53,12 +53,14 @@ Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 
 ## ユーザーの方針
 
-- 規模・時間・文脈量で省略・停止・延期・分割せず完遂。
-  不良は同一会話で直す。
+- 規模・時間・文脈量で省略・停止・延期・分割しない。
+  不良は同じ会話で直す。
 - 目的・要件、硬い制約、QCD、規範の順。
   QCDを損なう規範は原則2で直す。
-- 記録・伝達は簡潔に。
-  一時ファイルは差分編集優先。
+- 上位指示・安全・認可は比較の前提。
+  変更可能な指示は、正しいユーザー発言 ＞ 正しいhook通知 ＞ プロジェクト規範 ＞ 両プラグインの規範 ＞ ホスト既定（`references/conduct.md`「方針が衝突する場合の優先順位」）。
+- hookの警告は結果の利用前に処置し、`hook通知への対応:`に結果か誤検出の根拠を書く。
+- 記録・伝達は短く、一時ファイルは差分編集。
   未送達情報だけを発話・委譲し、通知・検収は保つ。
 - 本文・成果物は日本語の常体（識別子・コマンド・逐語引用は原表記）。
 - メインは着手前に「発話の理解」、Claude Codeは次行に`分類: 是正`か`分類: 非是正`。
@@ -74,37 +76,35 @@ Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 
 ## 作業と手順書
 
-起動は`/atk-mode <作業> [入力]`、指定なしは対話。
+`/atk-mode <作業> [入力]`で起動、省略は対話。
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
-| `add-awi-by-user [入力]` | 名指しのみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
+| `add-awi-by-user [入力]` | 名指しのみ | `playbooks/add-awi-by-user.md`「読む節」 |
 | `implement [入力]` | 名指しのみ | `playbooks/implement.md` |
 | `process-user-comments [入力]` | 名指しのみ | `playbooks/process-user-comments.md` |
-| `process-wi [single-lane\|all-repos]` | 名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
+| `process-wi [single-lane\|all-repos]` | 名指しのみ | `playbooks/process-wi.md` |
 | `process-loop` | 名指しのみ | `playbooks/process-loop.md` |
 | `review-session` | 振り返り／週次`architecture`・`ui-sweep` | `playbooks/review-session.md` |
 | `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
-起動時の確定作業・役割は上表へ。
-他の操作・判断は下表該当資料のみ。
-起動時の同版は再取得不要。
-取込済み発話は原本か現行契約で確認。
-判断変更時のみ応答手順を再読。
+確定済み作業・役割は上表、他は下表。
+受領済みの同版は再取得せず、取込発話は原本か現行契約で確認。
+判断変更時に応答手順を再読。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |
 | 確認要否・承認範囲・確認文 | `playbooks/confirmation.md` |
-| 「発話の理解」の対象、指摘・訂正・割り込み・中止、発話・WI記入欄の解釈 | `playbooks/user-utterance.md`（「ユーザー発話の解釈」） |
+| 「発話の理解」の対象、指摘・訂正・割り込み・中止、発話・WI記入欄の解釈 | `playbooks/user-utterance.md`「ユーザー発話の解釈」 |
 | 権限拒否・手順不成立 | `playbooks/permission-denial.md` |
 | 報告・確認・認識合わせの要否・送達 | `references/delivery.md` |
 | 進捗・逸脱・改善点・稼働の報告、点検、停止回避・再提案・指摘・割り込み・是正・WI回答・一時エラー後の続行・委譲結果の確認中継 | `playbooks/main-reporting.md` |
-| 作業契約作成、追送・工程境界・圧縮後の要求・目的の原本 | `references/work-contract.md`（採用案の維持が目的なら縮小・撤回・代替案も比較） |
+| 作業契約作成、追送・工程境界・圧縮後の要求・目的の原本 | `references/work-contract.md`（採用案維持は縮小・撤回・代替案と比較） |
 | WIの起草・保存・取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
 | WIの状態・依存・保留・由来・承認・回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリ変更の開始・計画 | `playbooks/write-plan.md` |
-| 委譲要否・起動・待機・受領・継続 | `playbooks/delegation.md`（「条件と行動」に従う） |
+| 委譲要否・起動・待機・受領・継続 | `playbooks/delegation.md`「条件と行動」 |
 | 委譲・実行モデル選定 | `references/model-settings.md` |
 | ホスト別実行・送達・質問・終了 | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
 | バックグラウンド実行・待機・終了・出力・一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
@@ -113,18 +113,13 @@ Codexの起動・圧縮後は`playbooks/host-codex.md`「読む節」。
 | 外部投稿・本人提出文の前 | `playbooks/review-external-writes.md` |
 | 指示文改訂の評価 | `playbooks/refine-prompt.md` |
 | 完了報告・省略・中止・待機記録 | `playbooks/report-completion.md`、`references/termination-evidence.md` |
-| 方針衝突、言語検査通知、延期、資格情報発見 | `references/conduct.md` |
+| 方針衝突、言語の警告、延期、資格情報発見 | `references/conduct.md` |
 | 利用上限の予告・猶予の通知 | `references/usage-limit.md` |
-| 定義済みの名前 | `references/defined-names.md` |
+| 定義名 | `references/defined-names.md` |
 | 返答・質問・文章、設計、実装、テスト | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
 | レビュー・実行確認・検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
 
 ## 報告項目
 
-成果・到達点・確認範囲（原則6）、依頼外・未達・見送りの理由、本人判断・適用手順も報告。
-判断を変えた既読原則と選択を併記。
-
-## 会話の圧縮の後
-
-再開前に本スキルを再起動。
-復元通知の契約・要約で目的・要求・状態を確認し手順再読（`references/work-contract.md`「圧縮と再開の後の復元」）。
+成果・確認範囲、依頼外・未達・見送りの理由、本人判断・適用手順を報告。
+判断を変えた既読原則と選択を示す。

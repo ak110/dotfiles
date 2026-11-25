@@ -52,10 +52,13 @@ Windows固有pytest、Codex統合、公開ランチャーは`test-windows (tests
 
 GitHub Actionsのpost工程もworkspace上のローカルaction定義を読み直すため、元のcheckoutはjob終了まで保持する。
 
-matrixはtoolkitの3分割だけに使い、`fail-fast: false`で全分割の結果を取得する。
+toolkitの検証matrixは`fail-fast: false`で全分割の結果を取得する。
 toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pytest_plugin`の`--test-shard`が所要降順・同値node ID昇順で、合計所要が最小の分割へ各テストをちょうど1回割り当てる。
 新しい外部plugin、CI中の前run取得、分割数増加は採らない。
 1runnerのtoolkit pytestが約16分を要したため3分割し、通常pytestは最低Git 2.34.1、4worker、workstealと環境隔離を維持する。
+
+Pylintも所有時だけmatrixを展開し、ファイル単位の診断を重複しない2範囲で、循環importを全対象で並行して検査する。
+非所有時は単一の表示名で実処理を行わず、既存の`python-lint-result`は所有時の全分割の結果を待つ。
 
 集約jobは`pytest-toolkit-result`と`python-lint-result`を分け、必須checkの`pytest-toolkit (3.15)`と`python-lint (3.15)`を所有する。
 必要な依存jobがすべて成功した場合だけ成功とし、失敗・取消・skip・所有出力欠落を失敗として残す。

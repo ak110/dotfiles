@@ -253,10 +253,11 @@ async def test_failed_refresh_displays_newer_independent_observation(
 
 @pytest.mark.cpu_limit(
     0.65,
-    reason="実Chromium・HTTPで設定と利用枠を往復し、ローカル設定の再取得と許可エディターの描画を確かめる（CI実測最大0.550秒）。",
+    reason="実Chromium・HTTPでのナビゲーションを測る。共有ブラウザーの準備と終了は全体上限だけに計上する",
+    call_limit=0.65,
 )
 async def test_usage_settings_link_selects_local_with_permission_editor(
-    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:
     config_settings.save_config({"remote_hosts": '["fixture-remote"]'})
     snapshot = {
@@ -276,7 +277,9 @@ async def test_usage_settings_link_selects_local_with_permission_editor(
     settings = page.locator("#screen-settings")
     await expect(settings).not_to_contain_text("fixture-remote-window")
     await settings.get_by_role("link", name="利用枠の使用率とリセット権を見る").click()
+    navigation_started = time.monotonic()
     await page.get_by_role("link", name="リセットの許可を設定").click()
     await expect(picker).to_have_value("")
     editor = settings.locator('[data-setting="usage_reset_permissions"]')
     await expect(editor.get_by_text("許可を追加", exact=True)).to_be_visible()
+    request.node.user_properties.append(("usage_settings_navigation_seconds", time.monotonic() - navigation_started))

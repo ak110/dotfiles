@@ -431,7 +431,7 @@ CAUSE_RECORD_REQUIRED_LABELS: dict[str, str] = {
 """
 
 CAUSE_RECORD_OPTIONAL_LABELS: dict[str, str] = {
-    "再発": "前回の対策の所在と種類、防げなかった理由、今回変えた種類",
+    "再発": "防げなかった理由の区分の語で始め、前回の対策の所在と種類、今回変えた種類",
 }
 """条件が成立した時だけ加える行の行頭語と、その行に書く内容。
 

@@ -731,19 +731,38 @@ async def _publisher_with_delayed_commit_response(
 
 
 @pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")
+@pytest.mark.parametrize("prepare_delay", [0.0, 2.25], ids=["normal-prepare", "delayed-prepare"])
 @pytest.mark.asyncio
 async def test_first_commit_response_deadline_releases_publication(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, prepare_delay: float
 ) -> None:
-    """旧世代が最初の確定を受理して応答だけが遅れても、公開元は10秒で期限切れを返し、直後の公開を通す。"""
     async with _publisher_with_delayed_commit_response(tmp_path, monkeypatch) as new:
-        started = time.monotonic()
+        deliver = service_rpc.request
+        loop = asyncio.get_running_loop()
+        commit: list[tuple[float, float]] = []
+
+        async def delayed_prepare(target: dict, operation: str, arguments: dict, **kwargs: Any) -> Any:
+            if operation == "prepare_update":
+                await asyncio.sleep(prepare_delay)
+            if operation == "commit_update":
+                commit.append((loop.time(), kwargs["timeout"]))
+            return await deliver(target, operation, arguments, **kwargs)
+
+        monkeypatch.setattr(service_rpc, "request", delayed_prepare)
+        requested = loop.time()
         with pytest.raises(RuntimeError, match="TimeoutError"):
-            await service_rpc.request(new, "publish", {}, timeout=30)
-        elapsed = time.monotonic() - started
-        assert (await service_rpc.request(new, "publish", {}, timeout=2))["generation"] == "new"
+            await deliver(new, "publish", {}, timeout=30)
+        responded = loop.time()
+        assert len(commit) == 1
+        started, budget = commit[0]
+        elapsed = responded - started
+        request.node.user_properties.extend(
+            [("before_commit_seconds", started - requested), ("commit_response_seconds", elapsed)]
+        )
+        assert 9 <= budget <= 10
+        assert budget - 0.1 <= elapsed <= budget + 2
+        assert (await deliver(new, "publish", {}, timeout=30))["generation"] == "new"
         assert (tmp_path / "commit-accepted").exists()
-        assert 9 <= elapsed <= 12
 
 
 @pytest.mark.usefixtures("agents_server_isolation", "_owner_session_environment")

@@ -100,6 +100,7 @@ from agent_toolkit._plan.structure.sections import (
     check_plan_request_structure,
     check_plan_structure,
     extract_bug_file_reference,
+    findings_recurrence_errors,
     has_human_action_table,
     has_legacy_acceptance_table,
     has_legacy_action_table,
@@ -111,6 +112,7 @@ from agent_toolkit._plan.structure.sections import (
     is_canonical_main_format,
     legacy_wi_origins,
     progress_log_rows,
+    recurrence_quote_errors,
 )
 
 __all__ = [
@@ -217,6 +219,8 @@ __all__ = [
     "parse_plan_materials",
     "parse_plan_metadata",
     "progress_log_rows",
+    "findings_recurrence_errors",
+    "recurrence_quote_errors",
     "request_section_problems",
     "request_sections",
 ]

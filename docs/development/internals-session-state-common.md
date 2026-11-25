@@ -46,3 +46,9 @@ Claude Codeはツールの並列呼び出しでhookを同時に発火させる�
 
 - `inherited_from_session_id`: 現行の`session_id`に対応する状態が存在しない場合に、一意に特定された前身の`session_id`を記録する。
   共通hookの起動処理が、前身の全状態キーの引き継ぎと同時に1回だけ書き込みを行う
+
+## 権限拒否の案内
+
+`pending_permission_denials`はClaude Codeの`PermissionDenied`を受けた会話に限り、セッションID、ツール名、記録時刻、呼び出しID、エージェントIDを保持する。
+`PreToolUse`または`Stop`が同じ会話・主体の未案内の記録を排他制御下で1件消費し、既存の拒否確認手順を示す。
+拒否された操作の入力や診断本文はこの状態に残さず、操作の承認にも使わない。

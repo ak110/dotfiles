@@ -85,8 +85,10 @@ from agent_toolkit._plan.structure.sections_bugs import (
     cause_record_lines,
     check_bug_file_structure,
     extract_bug_file_reference,
+    findings_recurrence_errors,
     has_legacy_bug_table,
     has_legacy_cause_record,
+    recurrence_quote_errors,
 )
 from agent_toolkit._plan.structure.sections_history import (
     _check_history_section,
@@ -678,6 +680,8 @@ __all__ = [
     "has_legacy_action_table",
     "has_legacy_bug_table",
     "has_legacy_cause_record",
+    "findings_recurrence_errors",
+    "recurrence_quote_errors",
     "has_legacy_history_user_event",
     "has_legacy_refactoring_table",
     "has_progress_log_rows",

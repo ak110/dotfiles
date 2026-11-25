@@ -20,7 +20,7 @@ _DEVELOP_CHECKS = frozenset(
         "plugin-version",
         "python-lint-other (3.15)",
         "python-lint (3.15)",
-        "pylint (3.15)",
+        *(f"pylint (3.15) ({scope})" for scope in ("runtime", "remaining", "cross-module")),
         "pytest (3.15)",
         "pytest-toolkit (3.15)",
         *(f"pytest-toolkit (3.15, {shard}/3)" for shard in range(1, 4)),
