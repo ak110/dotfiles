@@ -123,7 +123,8 @@ def compose_session_start(
             if resume_only:
                 parts.append(
                     message_format.auto_message(
-                        "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元の目的を確認し、"
+                        "再開予約から同じ会話を再開した。圧縮後の復元通知がある場合は、それに従って作業契約と要約から状態を戻し、"
+                        "保存済みの要求・認可・成果と元の目的を確認し、"
                         "最初の未完了工程から続行してください。未達の目的を達成扱いに変えず、成功済みの操作を繰り返さないでください。",
                         source="process-loop",
                         kind="resume",

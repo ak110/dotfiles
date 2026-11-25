@@ -342,15 +342,15 @@ def test_minimal_selection_generation_merge_and_integration(
         'require-text = ["規範変更時の必須記載"]\n',
         encoding="utf-8",
     )
-    names = ["first.md", "second.md"]
+    names = ["first.md", "second.md", *(f"planned-{index}.md" for index in range(9))]
     for name in names:
         _wi(notes, name)
         source = entry_path(notes, name)
         source.write_text(source.read_text(encoding="utf-8") + "`AGENTS.md`を参照する。\n", encoding="utf-8")
-    facts, judgments = _inputs(tmp_path, names + [f"candidate-{index}.md" for index in range(9)])
+    facts, judgments = _inputs(tmp_path, names)
     data = yaml.safe_load(judgments.read_text(encoding="utf-8"))
-    data["選定"] = data["選定"][:2]
-    data["選定"][1]["レーン"] = "lane-02"
+    for row in data["選定"][1:]:
+        row["レーン"] = "lane-02"
     data["レーンの所要時間"].append({**data["レーンの所要時間"][0], "レーン": "lane-02"})
     if phase_correction:
         data["見込みの補正"] = {
@@ -365,7 +365,6 @@ def test_minimal_selection_generation_merge_and_integration(
             row.update({"実装秒数": 200, "統合秒数": 30})
     if staged:
         data["レーンの所要時間"][1].update({"段階": 2, "先行レーン": ["lane-01"]})
-        data["単一段階案の完了見込み秒数"] = 280 if phase_correction else 220
     else:
         data["レーン間の重なり"] = [
             {
@@ -400,9 +399,7 @@ def test_minimal_selection_generation_merge_and_integration(
     if phase_correction:
         added["見込みの補正"] = {**data["見込みの補正"], "共有待ち秒数": 25}
         added["レーンの所要時間"][0].update({"実装秒数": 200, "統合秒数": 30})
-    if staged:
-        added["単一段階案の完了見込み秒数"] = 515 if phase_correction else 330
-    else:
+    if not staged:
         # lane-01へ合流するadded.mdとlane-02のsecond.mdの組は、既存の記録が判定していないため追加側へ記録する。
         added["レーン間の重なり"] = [{**data["レーン間の重なり"][0], "レーン1の定義": ["追加の入力"]}]
     addition.write_text(yaml.safe_dump(added, allow_unicode=True), encoding="utf-8")
@@ -588,3 +585,17 @@ def test_public_phase_correction_merge_rejects_mismatch_and_preserves_destinatio
     added_before = addition.read_bytes()
     assert _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "second.md")) == 2
     assert output.read_bytes() == before and addition.read_bytes() == added_before
+
+
+def test_public_generation_saves_long_single_stage_without_legacy_comparison(environment, tmp_path, capsys):
+    repo, notes = environment
+    _wi(notes, "first.md")
+    facts, judgments = _inputs(tmp_path, ["first.md"])
+    data = yaml.safe_load(judgments.read_bytes())
+    data["レーンの所要時間"][0].update({"実装秒数": 6001, "補正前の実装秒数": 6001})
+    judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    selection = tmp_path / "selection.yaml"
+    assert (
+        _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(selection), "--work-dir", str(repo)) == 0
+    ), capsys.readouterr().err
+    assert "段階案の完了見込み秒数" not in yaml.safe_load(selection.read_bytes())

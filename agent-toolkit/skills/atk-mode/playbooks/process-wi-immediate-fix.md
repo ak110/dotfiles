@@ -127,13 +127,18 @@
    ```
 
    all-reposの初回保存と担当への引き継ぎは`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「開始と振り分け」に従い、各対象の`snapshot_file`を使う。
-2. 30分ごとの点検と公開工程の開始前に、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の手順5と同じ方法で現在の候補差分を取得する。
-   開始時の集合は新規と既存の区別にだけ使う。
+2. 稼働中に新着AWI・UWI回答の通知を受けたら、正式名と対象を取り、「即時対応」で着手の時機を判定する。
+   通知は次のツール実行後に届き、別ホストからの変化はローカルの同期後に届く。
+   60秒は同期を試す間隔であり、通知の期限ではない。
+   通知が届かない経路もあるため、30分ごとの点検と公開工程の開始前の確認は残す。
+   担当の成果を受領・統合した時や、公開単位を検収した時に、新着・未着手の候補を空いた担当に追加できるかも確かめる。
+   候補差分は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」手順5と同じ方法で取得し、開始時の集合と初回配分は変えない。
 3. 今回扱うかを判断する必要があるWIの本文を`atk wi show`で取得する。
    常駐のprocess-loopが起動した統括は、30分ごとの点検と公開開始前の新着確認で、今回の対象の処理可能なAWIが`source: implement`と`merge_branch`を持つことを確認したら、公開開始前は「即時対応」の改善の時機判定を経ず、その回の追加候補へ入れる。
    現在担当中のWIは重複して割り付けない。
    選定済みで担当を離れ、未完のままinboxへ戻った項目は、今回扱うと判定したら新規の追加ではなく`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「既存WIの再開」へ渡す。
-   公開開始後の新着は次回の選定へ残す。
+   公開中の単位には新着を混ぜず、独立した残工程か次の選定へ回す。
+   緊急の不具合は公開単位の検収まで待たせない。
    追加候補は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」へ渡す。
    マージ用AWIは`レーン: なし`とし、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」で取り込んで公開する。
    それ以外の項目は本書「即時対応」で時機を判定し、即時対応・今回追加の項目を同じ追加手順に渡す。

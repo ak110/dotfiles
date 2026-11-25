@@ -51,7 +51,7 @@ from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
-from agent_toolkit._common import delegated_session, external_source_review, session_review, skill_modes
+from agent_toolkit._common import delegated_session, external_source_review, session_review, skill_modes, weekly_work
 from agent_toolkit._common import process_loop_session as _process_loop_session
 from agent_toolkit._common import uwi_watch as _uwi_watch
 from agent_toolkit._common.session_state import read_state
@@ -118,7 +118,7 @@ def _ensure_draft_destinations(
             raise WebInputError("起草の基点を使う原稿の宛先が別repoまたは別系統", next_action=_DRAFT_NEXT)
 
 
-_WEEKLY_SLOT = re.compile(r"(?P<work>meta|research)@\d{4}-\d{2}-\d{2}")
+_WEEKLY_SLOT = weekly_work.SLOT_PATTERN
 
 
 def _active_batch_run_id() -> str | None:
@@ -163,7 +163,7 @@ def run_report_metadata(
         (match := _WEEKLY_SLOT.fullmatch(slot)) is not None
         and data.get("source") == "run-skill"
         and isinstance(raw_scope, str)
-        and skill_modes.canonical_scope(raw_scope) == f"{session_review.REVIEW_SESSION_SCOPE} {match['work']}"
+        and skill_modes.canonical_scope(raw_scope) == weekly_work.DEFINITIONS[match["work"]].scope
         and (data.get("run_skill_report") == "true" or kind == "choice")
     ):
         data = {**data, "run_skill_run_id": run_id, "weekly_slot": slot}

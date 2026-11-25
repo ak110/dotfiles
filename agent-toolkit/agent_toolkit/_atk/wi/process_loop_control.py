@@ -35,7 +35,7 @@ def _resume_lock() -> Generator[None]:
     path = _resume_path().with_suffix(".lock")
     path.parent.mkdir(parents=True, exist_ok=True)
     # 起動だけを保護し、停止した所有者を無期限に待たない。
-    with FileLock(path, timeout=10):
+    with FileLock(path, timeout=90):
         yield
 
 
@@ -65,7 +65,7 @@ def read_resume_request() -> ResumeRequest | None:
 
 @contextlib.contextmanager
 def resume_launch(request_id: str | None) -> Generator[None]:
-    """実Popenだけを排他し、中断と新しい予約を優先して成功した起動だけ消費する。"""
+    """事前圧縮から実Popenまでを排他し、中断と新しい予約を優先して成功した起動だけ消費する。  pyfltr: allow-comment"""
     with _resume_lock():
         if _process_loop_abort_path().exists():
             raise ResumeChanged("中断要求があるため起動を見送った。再開予約と追加指示は保持する")
@@ -127,11 +127,25 @@ def cmd_process_loop_abort_cancel() -> None:
     _outcome.report_success("process-loopへの中断要求を解除した")
 
 
+def recent_session_diagnostic() -> str:
+    try:
+        recent = _process_loop_log.recent_session_ids()
+    except (OSError, UnicodeError) as error:
+        return f"最近の統括の会話IDを読めません: {error}。会話IDは atk serve のセッション一覧で探せます。"
+    lines = ["最近の統括の会話ID（終了時刻）:"]
+    lines.extend(f"  {identifier}  {stamp}" for identifier, stamp in recent)
+    if not recent:
+        lines.append("  記録なし")
+    lines.append("一覧にない会話IDは atk serve のセッション一覧で探せます。")
+    return "\n".join(lines)
+
+
 def cmd_process_loop_status() -> None:
     status = "あり" if _process_loop_abort_path().exists() else "なし"
     print(f"process-loopへの中断要求: {status}")
     request = read_resume_request()
     print("再開予約: 未予約" if request is None else f"再開予約: {request.mode} {request.session_id or ''}".rstrip())
+    print(recent_session_diagnostic())
     instructions = _process_loop_log.read_instructions()
     print(f"保持中の追加指示: {len(instructions)}件")
     for index, body in enumerate(instructions, start=1):

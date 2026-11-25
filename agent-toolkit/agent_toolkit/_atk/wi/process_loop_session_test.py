@@ -72,7 +72,7 @@ class TestProcessLoopPromptAndEnv:
         self, tmp_path: pathlib.Path, orchestrator: str, resume: str | None
     ) -> None:
         prompt = _pl_session.build_process_loop_prompt()
-        argv, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
+        argv, _, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
             argparse.Namespace(resume=resume),
             prompt,
             dict(os.environ),

@@ -26,6 +26,7 @@ from agent_toolkit._testing.selection_check_support import (
     _overlap_record,
     _track,
     _write_selection,
+    additional_active_items,
 )
 from agent_toolkit._testing.selection_check_support import fixture_env as fixture_env
 
@@ -117,7 +118,10 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
         ],
         [{"レーン": "lane-01", "統合状態": "統合済み"}, {"レーン": "lane-02", "統合状態": "統合済み"}],
     )
+    source = notes / "processing" / "c.md"
+    source.write_text(source.read_text(encoding="utf-8").replace("source: test", "source: add-awi-by-user"), encoding="utf-8")
     before = yaml.safe_load(path.read_text(encoding="utf-8"))
+    before["選定"][1]["計画要否"] = "計画なし"
     old_plan = str(tmp_path / "removed-worktree" / "old-plan.md")
     for item in before["選定"][:2]:
         item["再開位置"] = old_plan
@@ -137,6 +141,7 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
     assert after["選定"][1]["再開位置"] == old_plan
     assert [row["統合状態"] for row in after["レーンの所要時間"]] == ["未統合", "統合済み"]
     assert [row["統合状態"] for row in after["選定"]] == ["未統合", "統合済み", "統合済み"]
+    assert [row["計画要否"] for row in after["選定"]] == ["計画あり", "計画なし", "計画なし"]
     saved = path.read_bytes()
     assert _dispatch(str(path), "--reopen-wi", "missing.md", "--output", str(path), "--work-dir", str(repo)) == 2
     assert path.read_bytes() == saved
@@ -443,6 +448,11 @@ def test_merged_lane_keeps_integrated_items_exempt(
 ) -> None:
     repo, notes = env
     path = _integrated_lane_selection(tmp_path, notes)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    active = additional_active_items(repo, notes, "lane-02", 17)
+    data["選定"].extend(active)
+    data["初回配分"] = _initial_allocation(data["選定"])
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     if source == "mark-integrated":
         assert _dispatch(str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo)) == 0
     elif source == "lane-row-only":
@@ -461,7 +471,8 @@ def test_merged_lane_keeps_integrated_items_exempt(
                         "鮮度": {"status": "current", "later_commit_count": 0},
                         "書込対象": ["pytools/post_apply.py"],
                         "統合状態": "統合済み",
-                    }
+                    },
+                    *additional_active_items(repo, notes, "lane-09", 1),
                 ],
                 "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
                 "レーンの所要時間": [
@@ -505,7 +516,7 @@ def test_merged_lane_keeps_integrated_items_exempt(
     assert _dispatch(str(path), *args) == 0
     result = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert result["レーンの所要時間"][0]["統合状態"] == "未統合"
-    items = {item["WI"]: item.get("統合状態", "未統合") for item in result["選定"]}
+    items = {item["WI"]: item.get("統合状態", "未統合") for item in result["選定"] if not item["WI"].startswith("active-")}
     assert items == {"a.md": "統合済み", "b.md": "未統合", "c.md": "未統合", "d.md": "未統合"}
     (repo / "src/model.py").rename(repo / "src/model2.py")
     assert _dispatch(str(path), "--work-dir", str(repo)) == 0
@@ -696,6 +707,7 @@ def test_merge_derives_order_after_applying_new_write_target(
         [
             {"WI": "a.md", "レーン": "lane-01", "書込対象": [shared]},
             {"WI": "b.md", "レーン": "lane-02", "書込対象": [chosen]},
+            *additional_active_items(repo, notes, "lane-02", 8),
         ],
         [{"レーン": "lane-01", "段階": 2, "先行レーン": ["lane-02"]}, {"レーン": "lane-02", "段階": 1}]
         if old_overlap
@@ -736,3 +748,16 @@ def test_merge_derives_order_after_applying_new_write_target(
         predecessor: (1, []),
         successor: (2, [predecessor]),
     }
+
+
+def test_revalidation_cannot_save_missing_plan_requirement_without_source(env, tmp_path, capsys):
+    repo, _notes = env
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "missing.md", "レーン": "lane-01", "統合状態": "統合済み", "書込対象": ["README.md"]}],
+    )
+    original = selection.read_bytes()
+    assert _dispatch(str(selection), "--output", str(selection), "--work-dir", str(repo)) != 0
+    diagnostic = capsys.readouterr().err
+    assert "missing.md" in diagnostic and "計画要否" in diagnostic and "次の操作:" in diagnostic
+    assert selection.read_bytes() == original

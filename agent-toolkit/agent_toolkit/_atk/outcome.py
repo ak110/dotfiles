@@ -90,6 +90,7 @@ VALUE_OUTPUT_COMMANDS = frozenset(
         "atk config temporary show",
         "atk agents effort",
         "atk wi submit",
+        "atk wi wait",
         "atk worktree-stash save",
         "atk worktree-stash drop",
         "atk review-table init",

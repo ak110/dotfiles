@@ -164,9 +164,9 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     output = _selection_format(plugin_root)
     yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     top_fields = set(re.findall(r"^([^\s:]+):", yaml_block, flags=re.MULTILINE))
-    assert selection.SINGLE_STAGE_ESTIMATE_KEY in top_fields
+    assert selection.SINGLE_STAGE_ESTIMATE_KEY not in top_fields
     assert f"  {selection.START_DEPENDENCIES_KEY}:" in yaml_block
-    assert all(f"`{selection.SINGLE_STAGE_ESTIMATE_KEY}`" in content for content in (parent, explanation))
+    assert all("`レーンの所要時間`" in content and "`根拠`" in content for content in (parent, explanation))
 
 
 def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> None:

@@ -1,6 +1,6 @@
 """日曜14時（ホストの現地時刻）を単位とする週枠で、週次の作業の起動を判定する。  pyfltr: allow-comment
 
-週次の作業はメタ分析（`meta`）と外部情報の調査（`research`）で、どちらも`review-session`のモードとして起動する。
+週次の作業は`review-session`のモードとして起動する。
 回の完了の根拠は、その回の結果のUWIがキューに保存されていることとする。
 結果のUWIは`weekly_slot`（`<作業>@<日曜の日付>`）を持ち、全状態のどこかに同じ値があればその回を実行しない。
 UWIの保存の直後、ローカルの記録の前に止まっても、同じ回の再実行・再課金・二重の通知は起きない。
@@ -15,15 +15,14 @@ from __future__ import annotations
 
 import datetime
 import pathlib
-import re
 from typing import Any
 
 from agent_toolkit._atk import config
-from agent_toolkit._atk.wi import frontmatter, layout
-from agent_toolkit._common import private_notes, session_review
+from agent_toolkit._atk.wi import add_reports, frontmatter, layout
+from agent_toolkit._common import private_notes, session_review, weekly_work
 from agent_toolkit._common.wi_layout import DATED_NAME
 
-WORKS = ("meta", "research")
+WORKS = tuple(weekly_work.DEFINITIONS)
 
 SLOT_ENV = session_review.WEEKLY_SLOT_ENV
 
@@ -33,11 +32,11 @@ SLOT_WEEKDAY = 6
 
 SLOT_TIME = datetime.time(14)
 
-RESEARCH_FAILURE_REPORT_THRESHOLD = 2
+RESEARCH_FAILURE_REPORT_THRESHOLD = weekly_work.RESEARCH_FAILURE_REPORT_THRESHOLD
 
-_SLOT_PATTERN = re.compile(r"(?P<work>meta|research)@(?P<date>\d{4}-\d{2}-\d{2})")
+_SLOT_PATTERN = weekly_work.SLOT_PATTERN
 
-_AUTO_START_KEYS = {"meta": "weekly_meta_auto_start", "research": "weekly_research_auto_start"}
+_AUTO_START_KEYS = {work.mode: work.setting for work in weekly_work.DEFINITIONS.values()}
 
 LEGACY_META_RECORD = "meta-start.json"
 
@@ -70,7 +69,7 @@ def parse_slot_id(value: str) -> tuple[str, datetime.date]:
 
 def work_of_scope(scope: str) -> str | None:
     for work in WORKS:
-        if scope == f"{session_review.REVIEW_SESSION_SCOPE} {work}":
+        if scope == weekly_work.DEFINITIONS[work].scope:
             return work
     return None
 
@@ -132,6 +131,19 @@ def saved_slot(slot: str, *, notes: pathlib.Path | None = None) -> pathlib.Path 
     return None
 
 
+def committed_result(work: str, slot: str, *, run_id: str | None = None) -> bool:
+    return (
+        add_reports.check_run_report_sync(
+            private_notes.default_private_notes(),
+            run_id=run_id,
+            scope=weekly_work.DEFINITIONS[work].scope,
+            local_only=True,
+            weekly_slot=slot,
+        )
+        is None
+    )
+
+
 def completed(work: str, slot: datetime.date) -> bool:
     identifier = slot_id(work, slot)
     record = read_record(work)
@@ -139,5 +151,8 @@ def completed(work: str, slot: datetime.date) -> bool:
         return True
     if saved_slot(identifier) is None:
         return False
+    if weekly_work.DEFINITIONS[work].require_saved_result:
+        # 排他の外の予定判定は、実行中に読み書きされる週枠の状態を更新しない。  # pyfltr: allow-comment
+        return committed_result(work, identifier)
     write_record(work, {**record, "completed_slot": identifier})
     return True

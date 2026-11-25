@@ -251,7 +251,9 @@ def test_process_loop_reclaims_settings_when_session_start_log_fails(
     with cast(
         settings.SettingsFile, settings.merge_settings(None, {"CUSTOM_CONNECTION": "value"}, None, force_file=True)
     ) as owned:
-        monkeypatch.setattr(process_loop_session, "_build_session_argv", lambda *_args, **_kwargs: (["claude", owned], None))
+        monkeypatch.setattr(
+            process_loop_session, "_build_session_argv", lambda *_args, **_kwargs: (["claude", owned], None, None)
+        )
 
         def failed_log(*_args: Any, **_kwargs: Any) -> None:
             raise RuntimeError("log failed")
