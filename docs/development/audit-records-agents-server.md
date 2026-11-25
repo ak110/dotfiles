@@ -46,7 +46,9 @@ Codexの委譲先（`codex:sol/medium`）とClaudeの委譲先（`claude:sonnet[
 再開したターンは`atk agents wait`で孫の結果を回収し、呼び出し元は`AUTO_RESUME_COMPLETED`と`turn_seq`2の完了結果を受け取った。
 2件とも成功し、所要時間は141秒だった。
 変更前のCodex backendは、同じ待機表明を`completed`の結果として公開し、孫の識別子を`error.unobservedSessions`へ記録していた（同日の対照観測）。
-再検証は`make test-agents-live`と同じpytest引数（`-m live_agents`）を指定し、呼び出し元の会話と状態ディレクトリを分けるため別の`CLAUDE_CODE_SESSION_ID`を与えて同じテストを実行する。
+再検証は`make test-agents-live`と同じpytest引数（`-m live_agents`）を指定して同じテストを実行する。
+実機テスト共通のfixtureが呼び出し元の会話IDを外し、実行ごとの専用状態領域を指定する。
+会話IDの変更だけでは状態領域は変わらない。
 
 ## agent-toolkit/agent_toolkit/_agents_server/codex_resume_state.py：会話状態の生成先：2026年10月23日
 

@@ -28,16 +28,17 @@ from agent_toolkit._atk import session_record_format
 from agent_toolkit._testing import isolation, late_descendant
 from agent_toolkit._testing.git_repository import init_repository, run_git
 
-pytestmark = pytest.mark.live_agents
+pytestmark = [pytest.mark.live_agents, pytest.mark.usefixtures("live_agents_environment")]
 
 
-@pytest.fixture(autouse=True)
-def _detach_caller_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture
+def live_agents_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """エージェントの会話から実行しても、その会話の全体作業契約や記録先へ起動結果を結び付けない。
 
     通常委譲の起動は所有会話のmanaged-tempに全体作業契約が無いと拒否するため、呼出元の会話を継承すると
     試験の成否が呼出元の状態で変わる。端末から実行した場合と同じく所有会話を持たない状態にそろえる。
     """
+    isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
     for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.delenv(name, raising=False)
 
@@ -172,8 +173,6 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
     )
     source = repository / "input/読取 資料.txt"
     before = _investigation_snapshot(repository)
-    # 認証情報はホストの通常の解決を使い、サーバー状態はテストfixtureの隔離先を保つ。
-    isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
     models = {"claude": "claude:sonnet[1m]/medium", "codex": "codex:sol/medium", "agy": "agy:gemini-3.8-flash/medium"}
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", models[engine])
     python_code = f"import pathlib; s=pathlib.Path({str(source)!r}).read_text(encoding='utf-8'); print(s[:7]+s[7:], end='')"
@@ -300,8 +299,6 @@ async def test_live_launch_waits_for_automatic_resume(
     async with server_manager.AgentsServerManager() as manager:
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         cwd = str(pathlib.Path(__file__).parents[2])
-        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
         monkeypatch.setattr(
             _atk_config,
             "parse_unresolved_model_candidates",
@@ -344,8 +341,6 @@ async def test_live_explore_reads_file_and_continues_same_session(
         first.write_text("EXPLORE_FIRST_CONTENT\n", encoding="utf-8")
         second = tmp_path / "second.txt"
         second.write_text("EXPLORE_CONTINUED_CONTENT\n", encoding="utf-8")
-        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
         monkeypatch.setattr(
             _atk_config,
             "parse_unresolved_model_candidates",
@@ -394,8 +389,6 @@ async def test_live_grandchild_wait_resumes_same_session(
     async with server_manager.AgentsServerManager() as manager:
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         cwd = str(pathlib.Path(__file__).parents[2])
-        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-        isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
         monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
         release = tmp_path / "grandchild.release"
         script = tmp_path / "grandchild.py"
@@ -598,7 +591,6 @@ stream_max_retries = 0
         )
         (codex_home / "config.toml").write_text(providers, encoding="utf-8")
 
-        isolation.restore_live_agents_environment(monkeypatch, tmp_path / "agents-state")
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
         monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_CREDITS_PROVIDER", _PRIMARY_PROVIDER)

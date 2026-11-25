@@ -316,6 +316,7 @@ async def run(
     *,
     stop: asyncio.Event | None = None,
     shutdown_requested: asyncio.Event | None = None,
+    unpublished_grace: float | None = None,
     resources: ResourceBroker | None = None,
 ) -> None:
     address = service_transport.endpoint(directory, generation)
@@ -331,6 +332,9 @@ async def run(
     resources = resources or ResourceBroker(generation, owner_identity=instance.instance_id)
     registry = RegistryForwarder(generation, directory)
     projections = ProjectionHub(generation, directory)
+
+    loop = asyncio.get_running_loop()
+    publish_deadline = None if unpublished_grace is None else loop.time() + unpublished_grace
 
     handed_over = True
     try:
@@ -374,13 +378,14 @@ async def run(
                                     coordinator.registry.confirm_handover(generation, target["process"])
                                     stop.set()
                                     break
-                            if (
-                                shutdown_requested is not None
-                                and shutdown_requested.is_set()
-                                and not peer_states
-                                and coordinator.can_shutdown()
-                            ):
-                                break
+                            if not peer_states and coordinator.can_shutdown():
+                                if shutdown_requested is not None and shutdown_requested.is_set():
+                                    break
+                                if publish_deadline is not None and loop.time() >= publish_deadline:
+                                    entry = coordinator.registry.generations().get(generation, {})
+                                    if not entry.get("ready") or entry.get("process") != target["process"]:
+                                        break
+                                    publish_deadline = None
                             accepting = asyncio.create_task(asyncio.to_thread(listener.accept))
                             stopping = asyncio.create_task(stop.wait())
                             try:
@@ -468,7 +473,12 @@ def main() -> int:
         previous = signal.signal(signal.SIGTERM, lambda *_args: loop.call_soon_threadsafe(shutdown_requested.set))
         restore_recording = logging_config.install_signal_recording()
         try:
-            await run(pathlib.Path(sys.argv[1]), sys.argv[2], shutdown_requested=shutdown_requested)
+            await run(
+                pathlib.Path(sys.argv[1]),
+                sys.argv[2],
+                shutdown_requested=shutdown_requested,
+                unpublished_grace=35.0 if os.environ.get(service_transport.AUTO_PUBLISH_ENV) == "1" else None,
+            )
         finally:
             restore_recording()
             signal.signal(signal.SIGTERM, previous)

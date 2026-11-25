@@ -204,6 +204,8 @@ def ensure_service(
                     "PLUGIN_DATA",
                 }
             }
+            if publish:
+                env[service_transport.AUTO_PUBLISH_ENV] = "1"
             command = [
                 str(python or sys.executable),
                 str(root / "scripts" / "launch.py"),

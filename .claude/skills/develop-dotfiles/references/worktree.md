@@ -36,4 +36,7 @@ UV_NO_SYNC=true uv run --frozen pytest -n 0 -p no:cacheprovider norm_size_budget
    - 配布物の`scripts/atk`は、その配布物の固定のルートで起動する。
    - 検証や調査を委譲する時は、委譲先と入れ子で呼ぶコマンドへ`<対象worktreeの絶対パス>/agent-toolkit/scripts/atk`を渡す。
    - 使うCLIの`info`サブコマンドで、動作するルートが検証の対象と一致することを確かめる。
+   - worktreeのコードから`agents_server`を直接起動する確認では、起動元とその子に専用の状態領域を渡す。
+     Linuxは`XDG_STATE_HOME`、Windowsは`LOCALAPPDATA`を管理対象一時領域内の専用ディレクトリの絶対パスに設定する。
+     通常の委譲の世代登録簿を使わない。
 4. 作業を終え、起動したプロセスが終了したら、`git worktree remove`と`rm -r -- <作成した絶対パス>`で領域を回収する（原則7、`agent-basics:writing-standards/references/quality-principles-ownership.md`）。

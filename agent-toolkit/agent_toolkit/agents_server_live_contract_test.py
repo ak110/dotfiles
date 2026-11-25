@@ -4,13 +4,18 @@ live testは通常のpytestから`live_agents`で除外されるため、入力�
 許可ツールの一覧は`claude._build_options`が生成するSDKオプションから読み、テスト側へ複製しない。
 """
 
+import os
+import pathlib
 import re
 
 import pytest
 
 from agent_toolkit import agents_server_live_test as live
-from agent_toolkit._agents_server import claude, claude_settings
+from agent_toolkit._agents_server import claude, claude_settings, service_transport
 from agent_toolkit._agents_server.state import LaunchKind
+from agent_toolkit._common import runtime_environment
+
+live_agents_environment = live.live_agents_environment
 
 _SESSION_IDS = [None, "saved-session"]
 _LIVE_INPUTS = [
@@ -61,3 +66,10 @@ def test_live_input_texts_name_only_declared_tools(live_input: live.LiveInput) -
 def test_explore_exposes_tools_for_background_resume_input(session_id: str | None) -> None:
     required = live.BACKGROUND_RESUME_INPUTS["delegate"].required_tools
     assert not _unavailable_tools("explore", session_id, required)
+
+
+@pytest.mark.usefixtures("live_agents_environment")
+def test_live_agents_fixture_isolates_service_namespace(tmp_path: pathlib.Path) -> None:
+    assert any(mark.mark.name == "usefixtures" and "live_agents_environment" in mark.mark.args for mark in live.pytestmark)
+    caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
+    assert service_transport.namespace(caller) == tmp_path / "agents-state" / "agent-toolkit" / "services" / "agents-server"
