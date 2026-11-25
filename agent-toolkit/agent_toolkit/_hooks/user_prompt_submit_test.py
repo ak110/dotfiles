@@ -700,6 +700,7 @@ class TestExampleScopeNotice:
             pytest.param("> 例えば旧版ではこう書いていた\n上の引用の出典を確認して", id="quote"),
             pytest.param("> ghとかglabとか\n上の引用の出典を確認して", id="quoted-enumeration"),
             pytest.param("今日とか忙しいので後で確認して", id="single-toka"),
+            pytest.param("公開前ゲートの新着WI通知だけを対象にして。進捗点検は変えないで。", id="explicit-limitation"),
         ],
     )
     def test_other_prompts_do_not_receive_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
