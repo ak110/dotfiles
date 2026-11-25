@@ -111,7 +111,7 @@
   transcriptの実ツール呼び出しが`<synthetic>`を持つ場合も、API失敗の代替本文と区別してStopの応答有無判定を確認する。
   送達した会話を`/exit`で終えて`claude --resume`で開き、各本文が元の呼び出し位置に1回ずつ読めることを確認する。
 
-## Code Modeのセッション記録への反映時点
+## agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md：Code Modeでのツールの探索と実行結果の回収：2026年11月25日
 
 2026年11月25日、Claude Code 2.1.332でCode Modeを有効にしたセッション `bc0c32cb` の観測（20261125-112019-003.md）では、REPL内の読み取りとBashの呼び出し・結果は、REPL終了時の同じ時刻印でセッション記録に追加された。
 同じREPL内の待機後にはまだ現れなかった。
