@@ -34,6 +34,11 @@ _SETTING_USES = {
     "serve_port": ("serve.configとserve.commandの待受設定", "同じホストの起動済みサービスとポートを分ける"),
     "serve_plans_root": ("serve.configのローカル計画一覧", "設定ディレクトリ以外に保存した計画を表示する"),
     "remote_hosts": ("serveのリモート計画・セッション・設定", "この端末から扱うSSH接続先を指定する"),
+    "serve_web_push": ("serve.appのWeb Push初期化", "WI画面を閉じていても通知を受け取る"),
+    "serve_web_push_details": ("serve.appのWeb Push初期化", "通知にWIのタイトルと対象リポジトリを含める"),
+    "wi_attachment_file_mib": ("wi.attachmentsのファイルサイズ検査", "1ファイルの上限を変える"),
+    "wi_attachment_item_mib": ("wi.attachmentsのWI別サイズ検査", "1件のWIの添付の合計上限を変える"),
+    "wi_attachment_total_mib": ("wi.attachmentsの累計サイズ検査", "履歴へ追加する添付の累計上限を変える"),
 }
 
 

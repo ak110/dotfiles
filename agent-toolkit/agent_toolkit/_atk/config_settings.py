@@ -85,9 +85,9 @@ SERVE_KEY_DEFAULTS = {
     "serve_host": "127.0.0.1",
     "serve_port": str(serve_default_port()),
     "serve_plans_root": "",
+    "remote_hosts": "[]",
     "serve_web_push": "false",
     "serve_web_push_details": "false",
-    "remote_hosts": "[]",
 }
 
 SERVE_PATH_KEYS = frozenset({"serve_plans_root"})
@@ -151,7 +151,6 @@ WI_ATTACHMENT_LIMIT_DEFAULTS = {
 
 
 MUTABLE_KEY_DEFAULTS = {
-    **WI_ATTACHMENT_LIMIT_DEFAULTS,
     **MODEL_DEFAULTS,
     "codex_fast_mode": "auto",
     "usage_reset_permissions": "[]",
@@ -165,6 +164,7 @@ MUTABLE_KEY_DEFAULTS = {
     "agents_concurrency": "2.5x",
     "dotfiles_mode": "full",
     **SERVE_KEY_DEFAULTS,
+    **WI_ATTACHMENT_LIMIT_DEFAULTS,
 }
 
 # 旧接続設定キーと移行先。保存値は読込時に移行先へ移し、環境変数とget・setでは移行先を示して拒否する。

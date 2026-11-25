@@ -24,8 +24,8 @@ def _iso(seconds: int) -> str:
     return datetime.datetime.fromtimestamp(seconds, datetime.UTC).isoformat()
 
 
-@pytest.fixture
-def isolated_permissions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+@pytest.fixture(name="isolated_permissions")
+def _isolated_permissions_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

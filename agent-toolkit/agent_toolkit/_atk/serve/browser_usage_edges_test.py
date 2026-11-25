@@ -87,7 +87,7 @@ async def test_reset_inventory_distinguishes_zero_and_missing(
         contract="pro",
     )
 
-    def refresh(*, quiet, environment):
+    def refresh(**_kwargs):
         usage_refresh.record_codex({}, account="fixture", contract="pro")
         return []
 
@@ -120,7 +120,7 @@ async def test_failed_refresh_displays_newer_independent_observation(
             active_seconds=0,
         )
 
-    def refresh(*, quiet, environment):
+    def refresh(**_kwargs):
         assert release.wait(10)
         return ["Codex: 接続できない"]
 

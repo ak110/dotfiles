@@ -10,8 +10,8 @@ from agent_toolkit._atk.serve import usage_routes
 from agent_toolkit._common import state_paths, usage_observation, usage_settings
 
 
-@pytest.fixture
-def usage_client(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+@pytest.fixture(name="usage_client")
+def _usage_client_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(usage_observation, "state_dir", lambda: tmp_path)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -56,7 +56,7 @@ async def test_display_refresh_at_five_minutes_without_permissions(usage_client,
     calls = []
     monkeypatch.setattr(usage_refresh.time, "time", lambda: now)
 
-    def refresh(*, quiet, environment):
+    def refresh(**_kwargs):
         calls.append(now)
         return []
 
@@ -97,7 +97,7 @@ async def test_display_refresh_waits_for_cli_and_reuses_only_matching_context(
             display_waiting.set()
         return acquire(lock, blocking=blocking)
 
-    def refresh(*, quiet, environment):
+    def refresh(**_kwargs):
         if getattr(local, "context", None) == cli_context:
             calls.append("cli")
             cli_started.set()
@@ -117,6 +117,7 @@ async def test_display_refresh_waits_for_cli_and_reuses_only_matching_context(
     monkeypatch.setattr(usage_refresh, "refresh", refresh)
     cli = asyncio.create_task(asyncio.to_thread(run_cli))
     display = None
+    response = None
     try:
         assert await asyncio.to_thread(cli_started.wait, 10)
         display = asyncio.create_task(usage_client.post("/api/usage/refresh", json={"force": True}))
@@ -127,6 +128,7 @@ async def test_display_refresh_waits_for_cli_and_reuses_only_matching_context(
         await cli
         if display is not None:
             response = await display
+    assert response is not None
     assert response.status_code == 200
     payload = await response.get_json()
     assert payload["refresh_failures"] == (["Claude: CLIで取得できない"] if same_context else ["Codex: 画面で取得できない"])

@@ -332,7 +332,7 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     field = editor.get_by_label("保存値")
     expect = playwright.async_api.expect
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
-    assert calls == []
+    assert not calls
     await picker.select_option("uncached-host")
     await expect(status).to_contain_text(failures["uncached-host"])
     await expect(editor).to_have_count(0)

@@ -61,7 +61,6 @@ async def test_worker_displays_notification_without_work_item_page(
         loop.call_soon_threadsafe(packets.put_nowait, request)
         response = requests.Response()
         response.status_code = 201
-        response._content = b""
         return response
 
     monkeypatch.setattr(requests.Session, "send", receive)
