@@ -422,13 +422,15 @@ def _post_update(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-sudo", action="store_true")
     args = parser.parse_args(argv)
-    from agent_toolkit._atk.managed_temp.elevation import sweep_for_update  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk.managed_temp.elevation import sweep_interactively  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-    run_id = os.environ["UPDATE_DOTFILES_RUN_ID"]
-    with update_dotfiles_runtime.configure_persistent_log(run_id) as handler:
+    # pyfltr: allow-comment 旧親は実行IDを渡さず、子の標準エラーを自分の永続ログに記録する。
+    run_id = os.environ.get("UPDATE_DOTFILES_RUN_ID")
+    log = update_dotfiles_runtime.configure_persistent_log(run_id) if run_id else contextlib.nullcontext()
+    with log as handler:
         if handler is None:
             logging.basicConfig(level=logging.INFO, format="%(message)s")
-        sweep_for_update(no_sudo=args.no_sudo, logger=update_dotfiles_runtime.logger)
+        sweep_interactively(no_sudo=args.no_sudo, logger=update_dotfiles_runtime.logger)
     return 0
 
 

@@ -11,7 +11,7 @@ import pathlib
 import subprocess
 import sys
 
-from agent_toolkit._atk.managed_temp import paths, sweep
+lazy from agent_toolkit._atk.managed_temp import paths, sweep
 
 
 def _encoded(value: str, encoding: str = "utf-8") -> str:
@@ -56,7 +56,29 @@ def _command(names: list[str]) -> list[str]:
 
 
 def sweep_for_update(*, no_sudo: bool, logger: logging.Logger) -> None:
-    """通常権限で掃引し、TTYのある手動更新でだけ昇格を求める。"""
+    if not sys.stdin.isatty() or os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") == "1":
+        return
+    # pyfltr: allow-comment 旧親のsys.modulesには更新前のモジュールが残るため、掃引は新プロセスへ引き継ぐ。
+    root = pathlib.Path(__file__).resolve().parents[4]
+    script = root / "libexec" / "update_dotfiles.py"
+    # pyfltr: allow-comment 旧ランチャーはPATHを使わず、ホーム直下の導入先を指定して起動する。
+    uv = os.environ.get("UV") or str(pathlib.Path.home() / ".local/bin" / ("uv.exe" if os.name == "nt" else "uv"))
+    argv = [uv, "run", "--no-project", "--script", str(script), "_post-update"]
+    if no_sudo:
+        argv.append("--no-sudo")
+    env = os.environ.copy()
+    for key in ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT", "UPDATE_DOTFILES_RUN_ID"):
+        env.pop(key, None)
+    env["MISE_AUTO_INSTALL"] = "0"
+    result = subprocess.run(argv, cwd=root, env=env, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", check=False)
+    detail = result.stderr.strip()
+    if result.returncode:
+        raise RuntimeError(f"管理一時資源の回収に失敗しました（終了コード{result.returncode}）: {detail}")
+    if detail:
+        logger.info("%s", detail)
+
+
+def sweep_interactively(*, no_sudo: bool, logger: logging.Logger) -> None:
     if not sys.stdin.isatty() or os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") == "1":
         return
     result = sweep.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC), force=True)
