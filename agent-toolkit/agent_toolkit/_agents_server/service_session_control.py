@@ -24,7 +24,7 @@ from agent_toolkit._agents_server.service_force import (
 )
 from agent_toolkit._agents_server.service_session_move import ServiceSessionMove, _caller_payload, _restore_caller
 from agent_toolkit._common import runtime_environment, session_launchers, session_registry
-from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.next_action import ActionableError, recover_from_failure
 
 if TYPE_CHECKING:
     from agent_toolkit._agents_server.service_generations import GenerationRegistry
@@ -207,12 +207,17 @@ class ServiceSessionControl(ServiceForceControl, ServiceSessionMove):  # pylint:
             if not root.is_dir():
                 raise ActionableError(
                     f"管理サービスの保持配布物が見つかりません: {root}。{params.name}は実行していません",
-                    next_action=(
-                        "update-dotfilesで修正版を導入し、修正版の配布物からagents_serverを接続し直して"
-                        "管理サービスの受付世代を切り替えてから再実行する。"
-                        "同じ版で復旧する場合は、実行中の委譲を確認し、窓口を切断してから"
-                        f"欠落した管理サービス（PID {os.getpid()}）を終了し、実在する配布物から再接続する。"
-                        "窓口だけの再接続では既存の世代は切り替わりません"
+                    next_action=recover_from_failure(
+                        component="管理サービスの配布物",
+                        evidence=f"欠落したroot {root}、管理サービスのPID {os.getpid()}、agents-server.log",
+                        first_step="受付世代の記録と配布物の回収記録を照合する",
+                        retry=(
+                            "認可の範囲でupdate-dotfilesを実行し、更新した配布物から再接続して受付世代を切り替える。"
+                            "同じ版で復旧する場合、窓口だけの再接続では切り替わらないため、"
+                            "実行中の委譲があれば停止を保留し、完了または引継ぎを調整する。"
+                            f"停止の認可があり処理が残っていなければ、窓口を切断し、管理サービス（PID {os.getpid()}）を"
+                            "終了してから実在する配布物で再接続する。回復を確認して同じ操作を再実行する"
+                        ),
                     ),
                 )
         async with self.managers.scope(params) as manager, contextlib.AsyncExitStack() as scopes:

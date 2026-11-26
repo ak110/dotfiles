@@ -910,12 +910,16 @@ def dispatch(args: argparse.Namespace) -> int:
         return 1
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] not in {"worker", "execute"}:
-        sys.exit(2)
-    if sys.argv[1] == "execute":
-        sys.exit(_execute(sys.argv[2]))
+def _main(arguments: list[str]) -> int:
+    if len(arguments) != 2 or arguments[0] not in {"worker", "execute"}:
+        return 2
+    if arguments[0] == "execute":
+        return _execute(arguments[1])
     try:
-        sys.exit(worker(sys.argv[2]))
+        return worker(arguments[1])
     finally:
         release_stable_plugin_root(pathlib.Path(__file__).resolve().parents[3])
+
+
+if __name__ == "__main__":
+    sys.exit(_main(sys.argv[1:]))
