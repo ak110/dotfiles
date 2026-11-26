@@ -27,7 +27,7 @@ process-wiでの同じ実行への追加は`agent-toolkit:atk-mode/playbooks/pro
 重複確認の要否は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「重複判定」で起点ごとに決める。
 調査済みの事項、独立した別件の引き渡し先、再発防止の選定方針と未実施の実装・検証を後続の工程へ渡す。
 完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
-WI作成専用セッションの担当は、要求の件数によらず原則としてメインエージェントが務め、検収の構成は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」に従う。
+WI作成専用セッションの担当は、要求の件数によらず原則としてメインエージェントが務め、検収の構成は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「直接起草と独立した検収の選択」に従う。
 現在の問いに対する回答と、後続の工程へ登録する成果物を出す時機は、`agent-toolkit:atk-mode/playbooks/user-utterance.md`「成果物の制限」で判定する。
 
 ## 用語

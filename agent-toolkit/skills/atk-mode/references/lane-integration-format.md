@@ -181,7 +181,7 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 採否とcommitを対応付け、`wis`へ渡す終了の操作と延期の項目を確定し、状態の変更は公開統合操作から行う。
 延期の判断と理由は引き継ぎ記録へ保存し、計画か引き継ぎ記録で確定した採否と受け取った終了区分を使う。
 
-- メモの先頭の1文は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「終了」の基準（用語は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」）で書く。
+- メモの先頭の1文は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「終了」の基準（用語は[「ユーザーが読む部分の合格基準」](../playbooks/wi-drafting-inputs.md#ユーザーが読む部分の合格基準)）で書く。
   `adopt`では、`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」のH1直下の変更内容を、実際に行った結果に合わせて書く。
   `移管`行を持つ計画のAWIを`adopt`する時は、後続へ分けた要求の単位と移管先の登録済みのWIのファイル名をメモへ書き、行った範囲と分けた範囲を区別する。
 - 採用と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終える。

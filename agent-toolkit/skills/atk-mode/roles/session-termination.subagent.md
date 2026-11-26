@@ -54,7 +54,7 @@ push先はカレントブランチの上流追跡ブランチとし、カレン�
    - 反映後の新しいプロセスでしか観測できず、この担当では観測を終えられない項目: 残る条件と観測の手段を記録し、人間を観測主体とする条件では探した環境と観測できなかった理由も書く。
    - 観測結果が完成条件を満たさなかった項目: 満たさなかった条件と実際の観測結果を記録する。
 3. `adopt`のメモの先頭の1文は、commitの記録より前に書く。
-   基準は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「終了」に従う（用語は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」）。
+   基準は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「終了」に従う（用語は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「ユーザーが読む部分の合格基準」）。
    `agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」のH1直下の変更内容を、実際に行った結果に合わせて書く。
 4. 先行の工程が正常に終わったら、受け取ったAWI名と実装commitのOIDで`adopt`する。
    公開後の操作で新しい実装commitが生じた場合は、AWIの要求を実際に反映したOIDを選び直す。

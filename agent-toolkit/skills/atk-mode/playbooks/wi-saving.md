@@ -44,20 +44,20 @@
 5. 調べ残しを片付ける。
    類似見直しの探索を限定した場合は、`agent-basics:bugfix/references/similar-review.md`に従い、探した範囲と探していない範囲を原稿と証拠に書く。
    是正の範囲は`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」で決める。
-   未確認の範囲は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「未確定事項と確認」に従う。
+   未確認の範囲は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「未確定事項と確認」に従う。
    未確認の範囲には、投入前に確定すべき事項、範囲語や開放列挙のうち未判定の対象、検索に掛からず読んでいない対象、権限と到達可能性の未確認を含む。
    確かめる手段が無い範囲は、`agent-toolkit:atk-mode/references/awi-body.md`「調査結果と判断根拠」の確認対象外の条件か、`agent-toolkit:atk-mode/references/origin-and-approval.md`「範囲語と程度」で扱う。
    どちらでも扱えない場合だけ「続行できない理由」として報告する。
-   後続へ委ねる具体化は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「確定の判定」に従う。
+   後続へ委ねる具体化は、`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定の判定」に従う。
 6. 意味の検収へ渡す。
    原稿、抽出の保存先、要求原本と必要な根拠の所在を投入前レビューへ渡し、冒頭だけの先行判定に使わせる。
    手順3のdry-runが`情報:`で先送りの候補を示した場合は、その出力の所在も渡す。
    付随型の投入担当は、原稿と証拠を委譲元へ返して意味の検収を待つ。
-   専念型と直接起草するメインは、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」で決めた検収へ進む。
+   専念型と直接起草するメインは、`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「直接起草と独立した検収の選択」で決めた検収へ進む。
    検収で確かめる観点は`agent-toolkit:atk-mode/references/draft-semantic-review.md`にある。
 7. 指摘を受けたら、単語だけの指示を除き、指摘された不一致を同じ原稿へ反映する。
    再レビューは`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`「検収と修正」に従い、必要な範囲だけ行う。
-   ユーザーが読む部分の語句への指示では、直した箇所の全体に`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」を適用し直す。
+   ユーザーが読む部分の語句への指示では、直した箇所の全体に`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「ユーザーが読む部分の合格基準」を適用し直す。
    各指示を、投入前に解消すべき成立性の不足、計画工程へ委ねる具体化、説明から補われた要件のどれかに分ける（`agent-toolkit:atk-mode/references/draft-semantic-review.md`「初回と再判定・差戻し」）。
    後の2つは投入の条件へ足さず、判定の根拠を成立性の証拠に残して報告する。
    根拠には、要件とみなされた値の出所（逐語の要求、実際の回答、エージェントが作った質問文や選択肢の説明）を確かめた結果も含める。
@@ -101,7 +101,7 @@
 - 原文との対応: 逐語引用と反映内容を原文と読み比べ、要求の脱落・追加・意味の変化と、ユーザーの回答とエージェントの説明の混同が無い。
   回答済みの注記は、送達した質問だけに付ける。
   分割した場合は、要求と割当先が対応する。
-  要件と技術判断の分類が`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「確定した要件と委譲元の判断」に従い、原文と実際の回答の出所で保存の直前まで裏付けられる。
+  要件と技術判断の分類が`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定した要件と委譲元の判断」に従い、原文と実際の回答の出所で保存の直前まで裏付けられる。
   説明の追記は`agent-toolkit:atk-mode/references/drafting-decisions.md`「採否と実現方式の確定」の必要性の判定を経ており、質問への回答を無関係な変更要求へ変えていない。
 - 判断の展開: ユーザーが確定した判断を複数の通常AWIへ展開する場合は、判断ごとに各本文の反映箇所か非該当の理由を対応付ける。
   保存するのは、全ての判断を反映した集合に限る。
@@ -112,7 +112,7 @@
   会話やcommitメッセージで使った呼称も確かめる。
   別の文書の節名・用語・略号の表記は`agent-basics:writing-standards/references/writing.md`「文章の共通規定」に従う。
   新しい名称は`agent-basics:writing-standards/references/defined-names.md`「命名の方針」に従い、長い正式名称でもタイトルで不当に省かない。
-  ユーザーが読む部分は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」を満たす。
+  ユーザーが読む部分は、`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「ユーザーが読む部分の合格基準」を満たす。
 - 節の内容: `agent-toolkit:atk-mode/references/awi-body.md`「要求固有性と記載量」と「節の構成と分担」に従う。
   既存の値を変える対象ごとに、`agent-toolkit:atk-mode/references/drafting-decisions.md`「方針と判断の記録との比較」の結果を書いている。
 - 採用案: `agent-toolkit:atk-mode/references/drafting-decisions.md`「実現方式の成立」の各項目を満たし、確かめた結論と再取得先を本文と成立性の証拠に書いている。
@@ -135,7 +135,7 @@
 
 ## 投入と取得
 
-作成主体と検収の構成は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」で決める。
+作成主体と検収の構成は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「直接起草と独立した検収の選択」で決める。
 別の分析や実装の途中で通常AWIを投入・更新する主体は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の付随型で独立した担当へ調査と起草を委譲し、親が意味を検収した後に同じ担当が保存する。
 ユーザー固有の値は、ユーザーへ確認できるメインへ戻す。
 

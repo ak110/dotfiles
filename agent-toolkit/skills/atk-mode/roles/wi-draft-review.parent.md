@@ -8,7 +8,7 @@
 投入前レビューは、親エージェントが意味を検収しない作成主体（専念型のWI投入担当、`add-awi-by-user`のメインなど）が、原稿の保存前に独立したレビュー担当から受けるレビューである。
 検収の品質水準は`agent-basics:review-standards`「文章成果物の実害」の作業項目の基準とし、意味を変えない表現だけの修正は保存の条件から外す。
 付随型では`agent-toolkit:atk-mode/roles/add-wi.parent.md`の委譲元による検収を使う。
-起動の要否は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」で判定する。
+起動の要否は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「直接起草と独立した検収の選択」で判定する。
 `add-awi-by-user`では同節の4条件によらず毎回行い、考慮漏れの点検資料の全類型もこのレビューで検収する。
 
 | 時点または条件 | 全文読む資料 |
