@@ -67,12 +67,12 @@ const CUE_PATTERNS = (Object.keys(REPORT_CUES) as Cue[]).map((cue) => [cue, new 
 const RECORD_LINE_CHECKS: readonly { cues: readonly Cue[]; head: string; warning: string }[] = [
   {
     cues: ["deviation"],
-    head: "処置",
+    head: "対策",
     warning: automatedMessage(
       "send-to-user",
       "warn",
-      "本文は表示済みである。逸脱を示す語を含む報告に`処置:`の行が無い。" +
-        "以後の報告では、今回の是正と残る影響を`処置:`の行に書け。bugfixの起動の記録は、今回の事象へ5つの問いを適用したことを示さない。",
+      "本文は表示済みである。逸脱を示す語を含む報告に`対策:`の行が無い。" +
+        "以後の報告では、今回の是正と残る影響を`対策:`の行に書け。bugfixの起動の記録は、今回の事象へ7つの問いを適用したことを示さない。",
     ),
   },
   {
@@ -152,11 +152,11 @@ const PREVENTION_WITHOUT_CHANGE_WARNING = automatedMessage(
     "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書け。",
 );
 
-const BUGFIX_RECORD_HEADS = ["期待", "原因", "処置"] as const;
+const BUGFIX_RECORD_HEADS = ["期待", "原因", "対策"] as const;
 export const missingPreventionRejection = automatedMessage(
   "send-to-user",
   "block",
-  "報告は未送信である。bugfixの記録（`期待:`・`原因:`・`処置:`）に`再発防止:`の行が無い。" +
+  "報告は未送信である。bugfixの記録（`期待:`・`原因:`・`対策:`）に`再発防止:`の行が無い。" +
     "採用する策と変える成果物、採らない区分名と理由、または未解決で調査へ引き継ぐ場合の観測した事象・次に確かめる問い・引継先（`agent-basics:bugfix/references/prevention.md`「`再発防止:`の行」）を`再発防止:`の行に書き、同じ報告をsend_to_userで送り直せ。" +
     '判定名は `missing-prevention`。',
 );
@@ -227,7 +227,7 @@ export function reportWarnings(message: string, deliveryId?: string, skipped: re
   const cues = new Set(CUE_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([cue]) => cue));
   const heads = new Set(body.map((line) => line.replaceAll("：", ":")).filter((line) => line.includes(":")).map((line) => line.split(":", 1)[0]));
   for (const check of RECORD_LINE_CHECKS) {
-    if (check.cues.every((cue) => cues.has(cue)) && !heads.has(check.head)) warn(check.head === "処置" ? "missing-disposition" : "missing-prevention", check.warning);
+    if (check.cues.every((cue) => cues.has(cue)) && !heads.has(check.head)) warn(check.head === "対策" ? "missing-disposition" : "missing-prevention", check.warning);
   }
   for (const line of body.map((item) => item.replaceAll("：", ":"))) {
     if (!line.startsWith("再発防止:")) continue;

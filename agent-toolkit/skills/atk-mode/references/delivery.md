@@ -88,7 +88,7 @@ REPLでは `await` で成否を確かめ、ツール名だけが表示された�
 - 規範からの逸脱
 - エージェントが起草した完成条件の、技術的な理由による変更
 - 限定探索の終了や再発防止策を見送る判断。
-  害の大きさに応じた確定は`agent-basics:bugfix/references/spread.md`「害が大きい時」と`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」に従う。
+  害の大きさに応じた確定は`agent-basics:bugfix/references/similar-review.md`「害が大きい時」と`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」に従う。
   `review-session`の対象では、振り返りの結果の報告が兼ねる
 
 事後承認は、実施の是非がユーザー固有の基準（選好、認可、成果物の見え方など）で決まる場合だけ求める。

@@ -1,7 +1,7 @@
-"""原因分析の記録（AWIの`## 原因分析`と計画のバグ調査の記録）の行頭語の解析と検査。
+"""原因分析の記録（AWIの`## 原因分析`と計画のバグ調査の記録）の行頭語の解析と検査。  pyfltr: allow-comment
 
 記録の形は`agent-basics:bugfix`の`SKILL.md`「記録」が定める。
-バグ単位ごとに`期待:`・`原因:`・`処置:`・`広がり:`・`再発防止:`・`確認:`の行を置き、条件が成立した時だけ`再発:`の行を加える。
+バグ単位ごとに`期待:`・`原因:`・`対策:`・`回帰防止:`・`類似見直し:`・`再発防止:`・`確認:`の行を置き、条件が成立した時だけ`再発:`の行を加える。
 """
 
 from __future__ import annotations
@@ -48,9 +48,12 @@ from agent_toolkit._plan.structure.sections_layout import _check_h1
 _CAUSE_RECORD_LABELS: dict[str, str] = {**CAUSE_RECORD_REQUIRED_LABELS, **CAUSE_RECORD_OPTIONAL_LABELS}
 
 
+_SAVED_LABEL_ALIASES = {"処置": "対策", "広がり": "類似見直し"}
+_MATCHED_LABELS = {*_CAUSE_RECORD_LABELS, *_SAVED_LABEL_ALIASES}
+
 _CAUSE_RECORD_LINE = re.compile(
     r"^\s*(?:[-*+]\s+)?(?:\*\*)?(?P<label>"
-    + "|".join(re.escape(label) for label in sorted(_CAUSE_RECORD_LABELS, key=len, reverse=True))
+    + "|".join(re.escape(label) for label in sorted(_MATCHED_LABELS, key=len, reverse=True))
     + r")(?:\*\*)?\s*[:：](?:\*\*)?(?P<text>.*)$"
 )
 
@@ -114,13 +117,23 @@ def _is_legacy_unit(unit: _CauseRecordUnit, *, accept_short_record: bool) -> boo
     )
 
 
+def _has_previous_record_labels(labels: set[str]) -> bool:
+    return _SAVED_LABEL_ALIASES.keys() <= labels and not labels.intersection(("対策", "回帰防止", "類似見直し"))
+
+
 def _label_line_errors(unit: _CauseRecordUnit, *, saved_record: bool) -> list[str]:
     lines = _match_record_lines(unit.lines)
     present = {line.label for line in lines}
+    optional = _SAVED_RECORD_OPTIONAL_LABELS if saved_record else frozenset()
+    if saved_record and _has_previous_record_labels(present):
+        lines = [line._replace(label=_SAVED_LABEL_ALIASES.get(line.label, line.label)) for line in lines]
+        present = {line.label for line in lines}
+        optional = optional | {"回帰防止"}
+    lines = [line for line in lines if line.label in _CAUSE_RECORD_LABELS]
     errors = [
         f"`{label}:`の行が無い（書く内容: {content}）"
         for label, content in CAUSE_RECORD_REQUIRED_LABELS.items()
-        if label not in present and not (saved_record and label in _SAVED_RECORD_OPTIONAL_LABELS)
+        if label not in present and label not in optional
     ]
     errors.extend(
         f"`{line.label}:`の行に本文が無い（同じ行に書く内容: {_CAUSE_RECORD_LABELS[line.label]}）"
@@ -200,8 +213,9 @@ def cause_record_errors(content: str, *, accept_legacy: bool = False, saved_reco
 
     `accept_legacy`が偽（新規作成と、原因分析を変える編集）では、廃止した表で書いた単位を拒否する。
     真（保存済みの計画の読み取り）では、廃止した表を持つ単位と、表も現行だけの行頭語の行も持たない旧来の短い記録を、
-    表の構成や記入内容を問わず受理する。前の版の初動の短い記録は`期待:`と`処置:`の行を持つため、この2語だけでは現行の形と扱わない。
+    表の構成や記入内容を問わず受理する。旧版の初動で使った2行だけでは現行の形と扱わない。
     `saved_record`が真（新旧を区別できない計画の検査）では、保存済みの記録が持たない行頭語（`再発防止:`）の行の有無を問わない。
+    旧版の行頭語の組だけを持つ記録では、旧名を読み替え、当時存在しない回帰防止の行は求めない。
     行がある場合の本文の有無は検査する。省略時は`accept_legacy`と同じ値とする。
     `saved_record`が偽（AWIの新規保存と原因分析を変える編集）の時だけ、`再発防止:`の行が対策の種類の語で始まることを求める。
     保存済みの記録は種類の語を持たず、計画の検査は新旧を区別できないため、真の時は求めない。
@@ -219,7 +233,11 @@ def cause_record_errors(content: str, *, accept_legacy: bool = False, saved_reco
 
 
 def has_legacy_cause_record(content: str) -> bool:
-    return any(_is_legacy_unit(unit, accept_short_record=True) for unit in _cause_record_units(content))
+    return any(
+        _is_legacy_unit(unit, accept_short_record=True)
+        or _has_previous_record_labels({line.label for line in _match_record_lines(unit.lines)})
+        for unit in _cause_record_units(content)
+    )
 
 
 def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:

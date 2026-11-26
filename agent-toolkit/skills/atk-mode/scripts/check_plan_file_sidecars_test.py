@@ -137,7 +137,7 @@ def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], 
     assert any("廃止した表か表以前の形式で書いたバグ単位がある" in error for error in errors), errors
 
 
-@pytest.mark.parametrize("label", ["期待", "広がり"])
+@pytest.mark.parametrize("label", ["期待", "類似見直し"])
 def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str], label: str) -> None:
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)

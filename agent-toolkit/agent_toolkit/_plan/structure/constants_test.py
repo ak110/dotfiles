@@ -136,7 +136,7 @@ def test_history_origin_and_user_material_reference_are_checked(mutation: tuple[
 def test_legacy_bug_table_predicate_requires_valid_record() -> None:
     content = _BUG_CONTENT
     assert plan_sections.has_legacy_bug_table(content)
-    invalid = content.replace(f"{_plan_fixture.cause_record_line('広がり')}\n", "")
+    invalid = content.replace(f"{_plan_fixture.cause_record_line('類似見直し')}\n", "")
     assert not plan_sections.has_legacy_bug_table(invalid)
 
 
@@ -238,9 +238,9 @@ def test_material_id_annotation_is_rejected_near_the_invalid_line(material_id: s
 
 
 def test_bug_section_rejects_missing_record_line() -> None:
-    content = _BUG_CONTENT.replace(f"{_plan_fixture.cause_record_line('広がり')}\n", "")
+    content = _BUG_CONTENT.replace(f"{_plan_fixture.cause_record_line('類似見直し')}\n", "")
     errors = plan_sections.check_plan_structure(content)
-    assert any("`広がり:`の行が無い" in error for error in errors), errors
+    assert any("`類似見直し:`の行が無い" in error for error in errors), errors
 
 
 def test_bug_section_is_required_only_for_bug_work_type() -> None:

@@ -111,7 +111,7 @@ UWIの`## 回答`とAWIの`## ユーザーコメント`は、ユーザーだけ�
 
 1. 対象項目が未終了なら、調査より先に保留する（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」）。
 2. `agent-basics:review-standards/references/reviewee.md`「ユーザー指摘の受領」に従って採否を確定する。
-3. `agent-basics:bugfix`を起動し、是正の対象へ5つの問いを適用する。
+3. `agent-basics:bugfix`を起動し、是正の対象へ7つの問いを適用する。
 
 記入が以後の同種の作業にも当てはまる方針の候補を含むかは、是正要求に当たるかによらず`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」で判定する。
 記入欄に処理担当宛ての質問があれば、回答をUWIに記録して返し、その保存の完了を、対象の維持か変更を確定して元のWIを終了する条件にする。

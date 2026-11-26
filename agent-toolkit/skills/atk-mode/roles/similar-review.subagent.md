@@ -8,14 +8,14 @@ required_inputs:
 optional_inputs: []
 writes_worktree: false
 startup_documents:
-- agent-basics:bugfix/references/spread.md
+- agent-basics:bugfix/references/similar-review.md
 ---
 
 # 類似見直し担当
 
 判定規則に沿って母集団の候補を限定し、個別に分類する読み取り専用の担当である。
 原因の判断、採否、修正、WIの投入は委譲元が担い、検索と個別の判定は別の担当へ委譲せずに自分で行う。
-最初に3つの入力と、起動の本文に届く品質基準`agent-basics:bugfix/references/spread.md`を読む。
+最初に3つの入力と、起動の本文に届く品質基準`agent-basics:bugfix/references/similar-review.md`を読む。
 
 ## 入力
 

@@ -129,7 +129,7 @@ test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに�
   queue(on, "ui-session", id);
   let placements = 0;
   const responses: string[] = [];
-  const message = "期待: 一覧が表示される。\n原因: 設定の読み違い。\n処置: 直した。\n確認: 再実行した。";
+  const message = "期待: 一覧が表示される。\n原因: 設定の読み違い。\n対策: 直した。\n確認: 再実行した。";
   on("session.id", () => ({ value: "ui-session" }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message }, expires: 99999999999 }) }));
@@ -321,7 +321,7 @@ test("未送達の本文に申告した判定だけを外して一度配置す�
   const clock = mock.clock(on);
   let id = "1".repeat(32);
   const session = "misdetection";
-  const message = "期待: 一覧を表示する。\n原因: 引用である。\n処置: 引用はそのままにする。\n終了時刻の例は15:2x。";
+  const message = "期待: 一覧を表示する。\n原因: 引用である。\n対策: 引用はそのままにする。\n終了時刻の例は15:2x。";
   let skipped: string[] = [];
   const responses: { ok: boolean; warnings?: string[] }[] = [];
   let placements = 0;

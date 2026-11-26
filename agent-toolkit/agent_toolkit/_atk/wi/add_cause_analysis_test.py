@@ -22,7 +22,7 @@ from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
 from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_notes, _write_awi_file
 
 _RECORD = plan_fixture.cause_record()
-_RECORD_WITHOUT_SPREAD = _RECORD.replace(f"{plan_fixture.cause_record_line('広がり')}\n", "")
+_RECORD_WITHOUT_SPREAD = _RECORD.replace(f"{plan_fixture.cause_record_line('類似見直し')}\n", "")
 _PREVIOUS_TABLE = plan_fixture.rows_table(
     ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策"), plan_fixture.BUG_FILLER
 )
@@ -36,11 +36,11 @@ _RECORD_UNTYPED = _RECORD.replace(plan_fixture.cause_record_line("再発防止")
 _SECTIONS: dict[str, tuple[str, str | None]] = {
     "valid": (_RECORD, None),
     "two_units": (f"### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD}", None),
-    "missing_line": (_RECORD_WITHOUT_SPREAD, "`広がり:`の行が無い（書く内容: 同じ仕組みの他の箇所"),
+    "missing_line": (_RECORD_WITHOUT_SPREAD, "`類似見直し:`の行が無い（書く内容: 検索の式と件数"),
     "empty_line": (_RECORD.replace(plan_fixture.cause_record_line("確認"), "- 確認:"), "`確認:`の行に本文が無い"),
     "second_unit_missing": (
         f"### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD_WITHOUT_SPREAD}",
-        "`### 事象B`: `広がり:`の行が無い",
+        "`### 事象B`: `類似見直し:`の行が無い",
     ),
     "legacy_tables": (plan_fixture.legacy_cause_tables(), "原因分析を廃止した表で書いている"),
     "previous_table": (_PREVIOUS_TABLE, "原因分析を廃止した表で書いている"),

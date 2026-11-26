@@ -4,7 +4,7 @@
 合格の主張を再現できた条件の範囲に限る点は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）の適用である。
 共有資源へ作用する前に所有者と認可を確かめる点は原則4（`agent-basics:writing-standards/references/quality-principles-constraints.md`）の適用である。
 この観測から、同じ操作を毎回実行する自動テストの新設は導かず、常設の要否は`agent-basics:writing-standards/references/testing.md`「試験を書く前の確認」で決める。
-不具合修正の受入確認は`agent-basics:bugfix/SKILL.md`「5つの問い」の問い5に従う。
+不具合修正の受入確認は`agent-basics:bugfix/SKILL.md`「7つの問い」の問い7に従う。
 構築・起動・単発実行のコマンドは`agent-basics:check-execution/SKILL.md`「実行条件と結果」の手順3で選ぶ。
 
 ## エージェント向け文書の試行

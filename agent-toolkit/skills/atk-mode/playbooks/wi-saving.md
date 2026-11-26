@@ -38,7 +38,7 @@
    複雑な引用の取り込みには`atk run-script wi-quote-check`を使ってよい。
 4. 本書「投入前の読み直し」で各原稿を読み直し、不備を直して手順3からやり直す。
 5. 調べ残しを片付ける。
-   広がりの探索を限定した場合は、`agent-basics:bugfix/references/spread.md`に従い、探した範囲と探していない範囲を原稿と証拠に書く。
+   類似見直しの探索を限定した場合は、`agent-basics:bugfix/references/similar-review.md`に従い、探した範囲と探していない範囲を原稿と証拠に書く。
    是正の範囲は`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」で決める。
    未確認の範囲は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「未確定事項と確認」に従う。
    未確認の範囲には、投入前に確定すべき事項、範囲語や開放列挙のうち未判定の対象、検索に掛からず読んでいない対象、権限と到達可能性の未確認を含む。
@@ -89,7 +89,7 @@
   採否と適用範囲を左右する技術的な主張は、`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」に従い、入力の生成・変換の手順と観測から保証できる範囲を突き合わせる。
 - 原因分析: `agent-basics:bugfix`を起動して起草し原因を確定した通常AWIでは、`## 原因分析`のバグ単位ごとに`agent-basics:review-standards`「文章成果物の実害」の不具合対応の条件を満たす。
   推測だけの原因は確定とせず、調査を続けるか「続行できない理由」として報告する。
-  `広がり:`は、ユーザーが指定した対象集合を覆う。
+  `類似見直し:`は、ユーザーが指定した対象集合を覆う。
   再発防止を全て見送る記録は、原因となった入力や条文を除く・改める案を比べている（`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）。
   重い案だけを挙げて見送った記録は、この条件を満たさない。
   記録の形と記録先は`agent-toolkit:atk-mode/references/analysis-records.md`に従う。

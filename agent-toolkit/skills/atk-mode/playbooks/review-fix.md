@@ -29,7 +29,7 @@
 4. 再レビューでは、個別修正に着手する前に`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「反復原因の判定」を行う。
    同じ指摘の反復は `agent-basics:review-standards/references/reviewee.md` で扱い、方式見直しの契機は同資料の手順11で判定する。
    理由と結論を各指摘の応答に書く。
-5. 広がりの検索と個別判定を専用の担当へ渡す時は`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動し、受け取った結果からの原因の判断と採否は自分が持つ。
+5. 類似見直しの検索と個別判定を専用の担当へ渡す時は`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動し、受け取った結果からの原因の判断と採否は自分が持つ。
 6. 採用した指摘とCI記録の失敗は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」の手順で直してテストし、返却は本書「完了報告」で行う。
    修正の方針で新しい操作・機構・副作用を採用する前に、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「計画準備の受領」手順3の禁止条件と突き合わせる。
    担当種別ごとに次を加える。
@@ -37,7 +37,7 @@
      `レビュー修正担当`は受領した指摘だけを直し、commitはfixup（直前の1件だけが対象ならamend）に限る（`agent-toolkit:atk-mode/roles/exec.subagent.md`「操作区分」）。
    - ユーザビリティレビューの指摘は、指摘の操作手順、画面状態、表示幅で新しいHEADを対象の実行環境で描画して確かめ（`agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」）、試した条件と結果を応答へ書く。
    - `CI修正担当`は、`CI記録`の7項目を実装契約とし、原因となった失敗だけを直す。
-     原因の調査の前に`agent-basics:bugfix`を起動し、5つの問いをCI記録の原因分析結果へ当てる。
+     原因の調査の前に`agent-basics:bugfix`を起動し、7つの問いをCI記録の原因分析結果へ当てる。
      診断コードを足す時は、CI記録が対応付けた仮説と採取対象に限る（`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正commitが必要なCI失敗を修正するエージェント」の手順3）。
      原因を特定できない時は是正commitとして返さず、行った比較検証、残る可能性、足した診断コードを推定と明記して返す（原則3）。
      原因commitへ取り込むかは`agent-toolkit:atk-mode/references/ci.md`「原因commitへ取り込む区分」で決める。

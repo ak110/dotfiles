@@ -78,7 +78,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 1. 各ラウンドの通知、返却、走査記録で、管理表から外した候補と`気付いた改善点:`行の対応を確かめ、行を要求ごとに保つ。
    process-wi中の処置の時機は、レーン担当が受領した不良もメインが`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で決める。
 2. 正式な対応は`agent-toolkit:atk-mode/roles/add-wi.parent.md`の専念型の投入担当へまとめて渡し、受領側は`agent-basics:bugfix`の起動と走査記録からの原因と対策の読み取りをしない。
-   要求ファイルには`気付いた改善点:`行の全文と走査記録の絶対パスを`確定済みの観測`へ書く（原因・広がり・処置は`投入前に確定すべき事項`）。
+   要求ファイルには`気付いた改善点:`行の全文と走査記録の絶対パスを`確定済みの観測`へ書く（原因・類似見直し・処置は`投入前に確定すべき事項`）。
 3. 起動した投入担当の`session_id`と対象の不良を引き継ぎ記録へ対応付け、再レビューで同じ不良が報告されても担当を重ねて起動しない。
 4. 投入担当の完了を待たずに収束、統合、公開を進め、最終の作業完了の報告の前に全ての担当の終了を完了通知で確かめる。
 5. process-wi中に保存済みAWIの正式名を受けたら、`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」の手順3で今回の処理へ加えるかを判定する。
@@ -193,7 +193,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 
 - 変えるか除く部分は、ユーザー自身の指定でなくエージェントの具体化である（明示の由来の要求でも、その目的、対象範囲、期待する結果、明示された検証の水準は保つ）。
 - `agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」の「ユーザーが確定した判断の変更」に当たらず、ユーザーにしか決められない値（同書「確認要否の判定」）も要しない。
-- 害の大きさに見合う広がりの探索と再発防止に必要な結果と品質を保つ（`agent-basics:bugfix/references/spread.md`「害が大きい時」、`agent-basics:bugfix/references/prevention.md`「案を比べる順」）。
+- 害の大きさに見合う類似見直しの探索と再発防止に必要な結果と品質を保つ（`agent-basics:bugfix/references/similar-review.md`「害が大きい時」、`agent-basics:bugfix/references/prevention.md`「案を比べる順」）。
   確認の手段は、同じ水準に届く別の手段へ変えてよい。
 
 目的の達成に不要なエージェント起草の条件は、レーン担当が上の境界を確かめて除き、判断を記録して報告する。

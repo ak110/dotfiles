@@ -26,20 +26,20 @@ pytestmark = pytest.mark.windows
 
 
 _RECORD = _plan_fixture.cause_record()
-_EXPANSION_LINE = _plan_fixture.cause_record_line("広がり")
+_EXPANSION_LINE = _plan_fixture.cause_record_line("類似見直し")
 _RECORD_WITHOUT_EXPANSION = _RECORD.replace(f"{_EXPANSION_LINE}\n", "")
-_EXPANSION_CONTENT = _plan_format.CAUSE_RECORD_REQUIRED_LABELS["広がり"]
-_MISSING_EXPANSION = f"`広がり:`の行が無い（書く内容: {_EXPANSION_CONTENT}）"
+_EXPANSION_CONTENT = _plan_format.CAUSE_RECORD_REQUIRED_LABELS["類似見直し"]
+_MISSING_EXPANSION = f"`類似見直し:`の行が無い（書く内容: {_EXPANSION_CONTENT}）"
 
 
 @pytest.mark.parametrize(
     "line",
     [
-        "- 広がり: 検索した。",
-        "* **広がり**: 検索した。",
-        "+ **広がり:** 検索した。",
-        "広がり：検索した。",
-        "    - 広がり: 検索した。",
+        "- 類似見直し: 検索した。",
+        "* **類似見直し**: 検索した。",
+        "+ **類似見直し:** 検索した。",
+        "類似見直し：検索した。",
+        "    - 類似見直し: 検索した。",
     ],
 )
 def test_cause_record_accepts_line_forms(line: str) -> None:
@@ -51,8 +51,8 @@ def test_cause_record_accepts_line_forms(line: str) -> None:
     [
         (_RECORD_WITHOUT_EXPANSION, _MISSING_EXPANSION),
         (
-            _RECORD.replace(_EXPANSION_LINE, "- **広がり:**"),
-            f"`広がり:`の行に本文が無い（同じ行に書く内容: {_EXPANSION_CONTENT}）",
+            _RECORD.replace(_EXPANSION_LINE, "- **類似見直し:**"),
+            f"`類似見直し:`の行に本文が無い（同じ行に書く内容: {_EXPANSION_CONTENT}）",
         ),
         (
             f"{_RECORD}\n- 再発:",
@@ -128,10 +128,18 @@ def test_saved_legacy_record_is_accepted_only_for_reading(variant: str) -> None:
     )
 
 
+def test_saved_previous_action_labels_do_not_require_new_regression_line() -> None:
+    record = _RECORD.replace("対策:", "処置:").replace("類似見直し:", "広がり:")
+    record = record.replace(f"{_plan_fixture.cause_record_line('回帰防止')}\n", "")
+    assert not plan_sections.cause_record_errors(record, saved_record=True)
+    assert plan_sections.has_legacy_cause_record(record)
+    assert any("`回帰防止:`の行が無い" in error for error in plan_sections.cause_record_errors(record))
+
+
 def test_incomplete_current_record_is_rejected_for_reading() -> None:
-    content = _plan_fixture.bug_file().replace("広がり", "近傍")
+    content = _plan_fixture.bug_file().replace("類似見直し", "近傍")
     assert not plan_sections.has_legacy_cause_record(content)
-    assert any("`広がり:`の行が無い" in error for error in plan_sections.check_bug_file_structure(content))
+    assert any("`類似見直し:`の行が無い" in error for error in plan_sections.check_bug_file_structure(content))
 
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"

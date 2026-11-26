@@ -12,7 +12,13 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, code
 pytestmark = pytest.mark.usefixtures("without_skill_notices")
 
 _SEND_TO_USER = "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user"
-_TYPED_REPORT = "再発防止: 自動検出: 送達前に検査する。"
+_TYPED_PREVENTION = "再発防止: 自動検出: 送達前に検査する。"
+_RECORD_LEAD = (
+    "対策: 説明を短くした。\n"
+    "回帰防止: 文書表現の修正でテスト対象が無いため追加しない。\n"
+    "類似見直し: 同じ文言を固定文字列で検索し、該当0件。\n"
+)
+_TYPED_REPORT = _RECORD_LEAD + _TYPED_PREVENTION
 
 
 def _human(text: str) -> dict:
@@ -116,7 +122,7 @@ def test_stop_accepts_successfully_delivered_typed_report_only_for_current_turn(
         assert result["decision"] == "block" and "種類付き" in result["reason"]
     for report in ("## 作業完了報告\n確認した。", "気付いた改善点: 別件（AWI化ステータス: 予定）"):
         assert "decision" in _stop(records, tmp_path, monkeypatch, last_assistant_message=report)
-    additional = "再発防止: 確認項目: 対象に漏れがないか確認する。"
+    additional = _RECORD_LEAD + "再発防止: 確認項目: 対象に漏れがないか確認する。"
     assert "decision" not in _stop(records, tmp_path, monkeypatch, last_assistant_message=additional)
     queued = {
         "type": "attachment",
@@ -124,6 +130,38 @@ def test_stop_accepts_successfully_delivered_typed_report_only_for_current_turn(
     }
     records.extend([queued, *_classified(call_id="next"), _BUGFIX])
     assert "decision" in _stop(records, tmp_path, monkeypatch, last_assistant_message="")
+
+
+@pytest.mark.parametrize(
+    ("report", "missing"),
+    [
+        (_TYPED_PREVENTION, ("対策", "回帰防止", "類似見直し")),
+        ("\n".join(_TYPED_REPORT.splitlines()[1:]), ("対策",)),
+        (_TYPED_REPORT.replace("回帰防止: 文書表現の修正でテスト対象が無いため追加しない。", "回帰防止:"), ("回帰防止",)),
+        (_TYPED_REPORT.replace("類似見直し: 同じ文言を固定文字列で検索し、該当0件。", "類似見直し: 未確認"), ("類似見直し",)),
+        (
+            _TYPED_REPORT.replace("類似見直し: 同じ文言を固定文字列で検索し、該当0件。", "類似見直し: 予定: 検索する"),
+            ("類似見直し",),
+        ),
+        (_TYPED_REPORT.replace("類似見直し:", "> 類似見直し:"), ("類似見直し",)),
+        (_TYPED_REPORT, ()),
+        (
+            _TYPED_REPORT.replace(
+                "類似見直し: 同じ文言を固定文字列で検索し、該当0件。", "類似見直し: 対象が単一の手入力文なので行わない。"
+            ),
+            (),
+        ),
+    ],
+)
+def test_bugfix_record_checks_actions_independently(tmp_path, monkeypatch, report, missing):
+    entries = [_human("直っていない。"), *_classified(), _BUGFIX]
+    notice = bugfix_gate.send_block(_payload(entries, tmp_path), report)
+    result = _stop(entries, tmp_path, monkeypatch, last_assistant_message=report)
+    assert (notice is not None) is bool(missing)
+    assert (result.get("decision") == "block") is bool(missing)
+    for label in missing:
+        assert f"`{label}:`" in (notice or "")
+        assert f"`{label}:`" in result["reason"]
 
 
 def test_understanding_requires_classification(tmp_path: pathlib.Path) -> None:
@@ -190,7 +228,7 @@ def test_correction_requires_typed_report(tmp_path, monkeypatch, report):
         ("再発防止: 自動検出: 回帰テストを追加していた箇所を洗い出し、共通の入力検査を導入した。", False),
         ("再発防止: 自動検出: 回帰テストを追加していなかった経路にも、共通の入力検査を適用した。", False),
         ("再発防止: 自動検出: 回帰テストを追加している箇所をもとに構造を統一した。", False),
-        ("処置: 直した。回帰テストを加えた。\n再発防止: 設計: 監視を外部の照会から切り離した。", False),
+        ("再発防止: 設計: 監視を外部の照会から切り離した。", False),
         (
             "再発防止: 設計: 無出力監視を外部の照会から切り離した。"
             "自動検出: 「再発防止:」の行に回帰テストを書いた送達を止めるようにした。",
@@ -201,6 +239,7 @@ def test_correction_requires_typed_report(tmp_path, monkeypatch, report):
 def test_regression_test_is_not_accepted_as_prevention(tmp_path, report, denied):
     entries = [_human("直っていない。"), *_classified(), _BUGFIX]
     payload = _payload(entries, tmp_path)
+    report = _RECORD_LEAD + report
     assert _pretooluse_denied(payload, report) is denied
     stop_decision, stop_reason = bugfix_gate.evaluate(json.dumps({**payload, "last_assistant_message": report}))
     assert (stop_decision == "block") is denied
@@ -222,7 +261,7 @@ def test_regression_test_is_not_accepted_as_prevention(tmp_path, report, denied)
 )
 def test_regression_test_explanation_warns_without_blocking(tmp_path, monkeypatch, explanation):
     entries = [_human("直っていない。"), *_classified(), _BUGFIX]
-    report = f"再発防止: 自動検出: {explanation}"
+    report = _RECORD_LEAD + f"再発防止: 自動検出: {explanation}"
     send_output = _pretooluse_output(_payload(entries, tmp_path), report)
     assert send_output.get("permissionDecision") != "deny"
     assert "説明や履歴への言及ならそのまま続ける" in send_output["additionalContext"]

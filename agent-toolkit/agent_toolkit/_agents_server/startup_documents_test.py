@@ -76,7 +76,7 @@ async def test_lightweight_role_receives_only_its_declared_documents(
 ) -> None:
     params = {"判定規則": "固定文字列の一致", "母集団": "agent-toolkit/skills配下の.md", "判定基準": "同じ誤りの再発"}
     prompt = await _delivered(monkeypatch, tmp_path, "similar-review", params)
-    assert _body(_BASICS / "bugfix/references/spread.md") in prompt
+    assert _body(_BASICS / "bugfix/references/similar-review.md") in prompt
     assert not any(_body(path) in prompt for path in _ON_DEMAND_BODIES)
 
 

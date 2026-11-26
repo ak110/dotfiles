@@ -2,9 +2,10 @@
 
 送達前とStopで、最新の実ユーザー発話に届いた最初の分類を使う。
 未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動を求める。
-送達前は、報告の見出しや再発防止の行を含む送信とkind: completionの送信に限り、種類付きの再発防止を求める。
-Stopでは報告の形によらず、同じ発話に対する種類付きの再発防止を最終応答か送達済みの報告に求める。
-同じ発話に対する種類付きの報告を送達済みなら、報告の構造を含まない最終応答に再掲を求めない。
+送達前の対象は、報告の見出しやバグ対応の記録を含む送信とkind: completionの送信に限る。
+対策・回帰防止・類似見直し・種類付きの再発防止を求める。
+Stopでは報告の形によらず、同じ発話に対する4項目の記録を最終応答か送達済みの報告に求める。
+同じ発話に対する4項目の報告を送達済みなら、報告の構造を含まない最終応答に再掲を求めない。
 起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
 
 通知を遮断にする根拠: 警告だけでは、欠陥指摘の後にbugfixを起動せず原因の推測をユーザーへ報告した事例があった
@@ -45,6 +46,13 @@ _PREVENTION_LINE_RE = re.compile(
     r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<head>[^:：\n。、]{0,20}?再発防止策?)[ \t]*[:：](?P<text>[^\n]*)$",
     re.MULTILINE,
 )
+
+_RECORD_LABELS = ("対策", "回帰防止", "類似見直し")
+_RECORD_LINE_RE = re.compile(
+    r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<label>対策|回帰防止|類似見直し)[ \t]*[:：](?P<body>[^\n]*)$",
+    re.MULTILINE,
+)
+_PENDING_SIMILAR_RE = re.compile(r"^(?:予定|未確認)(?:[。．.]?$|\s*[:：])")
 
 _REPORT_STRUCTURE_RE = re.compile(r"^[ \t]*#{1,6}[ \t]+[^\n]*報告[ \t:：#]*$|AWI化ステータス[ \t]*[:：]", re.MULTILINE)
 
@@ -376,12 +384,29 @@ def _warn_about_regression_mention(message: object, session_id: object, warnings
         return
     if warning := _regression_warning(
         "種類付きの再発防止の行に回帰テストへの言及があります。策として加えたと確定できないため、操作は止めません。",
-        fix="今の事象を確認するために加えたテストなら「処置:」か「確認:」へ移す。説明や履歴への言及ならそのまま続ける。",
+        fix="今の事象を確認するために加えたテストなら「回帰防止:」へ移す。説明や履歴への言及ならそのまま続ける。",
         cause="regression_mention",
         session_id=session_id if isinstance(session_id, str) else "",
         removable_cause=True,
     ):
         warnings.append(warning)
+
+
+def _record_matches(message: object) -> list[re.Match[str]]:
+    if not isinstance(message, str):
+        return []
+    unquoted = QUOTED_MATERIAL_RE.sub("", message).replace("**", "").replace("__", "")
+    return list(_RECORD_LINE_RE.finditer(unquoted))
+
+
+def _missing_record_labels(message: object) -> list[str]:
+    present = {
+        label
+        for match in _record_matches(message)
+        if (body := match["body"].strip())
+        and not ((label := match["label"]) == "類似見直し" and _PENDING_SIMILAR_RE.match(body))
+    }
+    return [label for label in _RECORD_LABELS if label not in present]
 
 
 def _has_report_structure(message: object, kind: object = None) -> bool:
@@ -390,7 +415,7 @@ def _has_report_structure(message: object, kind: object = None) -> bool:
     if not isinstance(message, str):
         return False
     unquoted = QUOTED_MATERIAL_RE.sub("", message).replace("**", "").replace("__", "")
-    return bool(prevention_lines(message)) or _REPORT_STRUCTURE_RE.search(unquoted) is not None
+    return bool(prevention_lines(message) or _record_matches(message)) or _REPORT_STRUCTURE_RE.search(unquoted) is not None
 
 
 def _turn_block(
@@ -439,19 +464,28 @@ def _turn_block(
     if can_classify and not _has_report_structure(message, send_kind):
         return None
     if _has_typed_prevention(message):
+        if missing := _missing_record_labels(message):
+            return _block_notice(
+                f"バグ対応の記録が不足しているため、{delivery}を止めた。",
+                fix="、".join(f"`{label}:`" for label in missing)
+                + " に実施結果か行わない理由を書いてください。類似見直しは予定や未確認だけで終えないでください。",
+            )
         _warn_about_regression_mention(message, session_id, warnings)
         return None
     if (
         not can_classify
         and not _has_report_structure(message)
-        and any(_understanding_kind(text) is None and _has_typed_prevention(text) for text in _delivered_messages(entries))
+        and any(
+            _understanding_kind(text) is None and _has_typed_prevention(text) and not _missing_record_labels(text)
+            for text in _delivered_messages(entries)
+        )
     ):
         return None
     if _mentions_regression_prevention(message):
         return _block_notice(
             f"`再発防止:`の行に回帰テストがあるため、{delivery}を止めた。"
             "回帰テストは今回の事象だけを検出する処置であり、再発防止ではない。",
-            fix="回帰テストは`処置:`か`確認:`の行へ移し、`再発防止:`の行には原因が違っても同じ害を防ぐ策か、"
+            fix="回帰テストは`回帰防止:`の行へ移し、`再発防止:`の行には原因が違っても同じ害を防ぐ策か、"
             "採らない区分名と理由を書いてください。",
         )
     return _block_notice(

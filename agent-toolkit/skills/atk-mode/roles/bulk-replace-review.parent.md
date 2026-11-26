@@ -10,7 +10,7 @@
 ## 運用条件
 
 - 指摘を受けたら、採否と修正の前に`agent-basics:bugfix`を起動する。
-- 害が大きく、広がりの走査（`agent-basics:bugfix/references/spread.md`「害が大きい時」）を独立した担当へ渡す時は、`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動する。
+- 害が大きく、類似見直しの走査（`agent-basics:bugfix/references/similar-review.md`「害が大きい時」）を独立した担当へ渡す時は、`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動する。
   結果の採否は委譲元が確定する。
 
 ## 入力

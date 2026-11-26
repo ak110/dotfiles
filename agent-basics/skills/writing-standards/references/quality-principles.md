@@ -8,7 +8,7 @@
 2. 品質が先、費用と時間はその内側（`quality-principles-qcd.md`）: 手順は目的の手段であり、要らない工程は省く。
 3. 観測したことだけを事実として言う（`quality-principles-facts.md`）: 他者の報告、推論、仮説は分けて出所を示す。
 4. 取り消せないことの前で止まる（`quality-principles-constraints.md`）: 硬い制約は費用や時間と比べない。
-5. 逸脱は情報である（`quality-principles-deviation.md`）: 直す前に、期待、原因、処置、広がり、確認を問う。
+5. 逸脱は情報である（`quality-principles-deviation.md`）: 直す前に、期待、原因、対策、回帰防止、類似見直し、再発防止、確認を問う。
 6. 作る者と確かめる者を分ける（`quality-principles-verification.md`）: 独立した文脈が、外から確認できる証拠で確かめる。
 7. 始めたものは自分で終わらせる（`quality-principles-ownership.md`）: 始めた者が終了を観測して回収する。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）: 読み手が持たない前提を補い、定義は1か所に置く。
