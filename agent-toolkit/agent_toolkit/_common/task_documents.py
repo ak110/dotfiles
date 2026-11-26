@@ -42,7 +42,7 @@ INPUT_CONTRACT_NOTICE = (
     "役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。"
 )
 WHOLE_CONTRACT_PREPARATION = (
-    "通常起動の共通の準備: 起動の前に"
+    "通常起動の前に"
     "`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意する。\n"
     "`agents_server.start`に役割文書の`subagent_md_path`と、以下の役割固有の入力をまとめた`extra_params`を渡す。\n"
     "`mode`は省略する（明示する場合は`mode: task`）。\n"

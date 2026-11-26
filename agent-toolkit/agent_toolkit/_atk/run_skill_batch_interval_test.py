@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit import atk, hook
 from agent_toolkit._atk import run_script, run_skill, run_skill_batch, weekly_schedule
+from agent_toolkit._atk.wi import add
 from agent_toolkit._common import (
     diagnostic_process,
     mcp_environment,
@@ -21,6 +22,7 @@ from agent_toolkit._common import (
     session_review,
     session_state,
 )
+from agent_toolkit._testing import git_repository
 
 
 def _capture_batch_launches(monkeypatch, *, mode="batch"):
@@ -560,8 +562,11 @@ def _run_cli():
     return result.value.code
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
     """hookの2要求をCLIへ接続し、自身を含む準備・確定と競合時の未処理保持を確認する。"""
+    notes = git_repository.init_repository(tmp_path / "reports")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
 
     def record(name, *, batch=False):
         transcript = tmp_path / f"{name}.jsonl"
@@ -615,6 +620,16 @@ def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
         assert invoke(requests[1]) == 1
         with monkeypatch.context() as context:
             context.setenv(session_review.BATCH_ENV, str(path))
+            add.add_entries(
+                notes,
+                messages=["---\nrun_skill_report: true\n---\n# 振り返り結果\n\n確認した。"],
+                target_repo="example.com/team/repo",
+                source="run-skill",
+                now=datetime.datetime.now(datetime.UTC),
+                entry_type="uwi",
+                scope=session_review.BATCH_SCOPE,
+                question_type="post-approval",
+            )
             assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
         return 0
 
@@ -624,7 +639,6 @@ def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
 
     monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._failure", failure)
     monkeypatch.setattr(run_skill, "_dispatch_once", execute)
-    monkeypatch.setattr("agent_toolkit._atk.wi.add.check_run_report_sync", lambda *a, **k: None)
     monkeypatch.setattr(session_activity, "review_activity", lambda *a, **k: types.SimpleNamespace(has_activity=False))
     monkeypatch.setattr(session_activity, "host_process", object)
     monkeypatch.setattr("agent_toolkit._atk.wi.repo.resolve_repo_id_or_raise", lambda *a, **k: None)

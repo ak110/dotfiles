@@ -232,7 +232,6 @@
     display: block;
   }
   #screen-plans main .toolbar {
-    flex-wrap: nowrap;
     padding-inline: var(--space-2);
   }
   #screen-plans #plans-menu-btn {
