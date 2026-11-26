@@ -40,7 +40,7 @@ def locked_index(directory: pathlib.Path, *, write: bool = True) -> Generator[di
                 raise ValueError(f"管理サービスの世代索引が不正: {path}")
             yield data
             if write:
-                atomic_write(path, json.dumps(data, ensure_ascii=False))
+                save_locked_index(directory, data)
         finally:
             file_lock.release_lock(handle)
 
@@ -51,10 +51,14 @@ def repository_reader_boundary(directory: pathlib.Path) -> Generator[dict[str, A
     with (directory / "startup.lock").open("a+", encoding="utf-8") as startup:
         file_lock.acquire_lock(startup)
         try:
-            with locked_index(directory) as data:
+            with locked_index(directory, write=False) as data:
                 yield data
         finally:
             file_lock.release_lock(startup)
+
+
+def save_locked_index(directory: pathlib.Path, data: dict[str, Any]) -> None:
+    atomic_write(directory / "generations.json", json.dumps(data, ensure_ascii=False))
 
 
 def generation_process_alive(value: object) -> bool:

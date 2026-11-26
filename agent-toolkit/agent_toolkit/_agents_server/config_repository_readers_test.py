@@ -24,6 +24,34 @@ def test_repository_format_waits_for_first_compatible_acceptor(tmp_path, monkeyp
     assert registry.reserve("old", tmp_path / "old", "2.310.3")["generation"] == "new"
 
 
+@pytest.mark.parametrize("other", ["empty", "reserved", "exited", "running"])
+def test_repository_cutover_keeps_uninitialized_namespaces_from_accepting_legacy(tmp_path, monkeypatch, other):
+    standard, elevated = tmp_path / "standard", tmp_path / "elevated"
+    monkeypatch.setattr(config_repository_readers, "_registry_directories", lambda: [standard, elevated])
+    running = {"new-process", "old-process"} if other == "running" else {"new-process"}
+    monkeypatch.setattr(agents_generation_index, "generation_process_alive", lambda process: process in running)
+    active, alternate = GenerationRegistry(standard), GenerationRegistry(elevated)
+    active.reserve("new", tmp_path / "new", "2.311.2")
+    active.publish("new", endpoint="new-endpoint", process="new-process")
+    reservation = None if other == "empty" else alternate.reserve("old", tmp_path / "old", "2.310.3")
+    if other in {"exited", "running"}:
+        alternate.publish("old", endpoint="old-endpoint", process="old-process")
+
+    if other == "running":
+        assert not config_repository_readers.prepare_separated_format()
+        previous = alternate.current()
+        assert previous is not None and previous["generation"] == "old"
+        running.remove("old-process")
+    assert config_repository_readers.prepare_separated_format()
+    current = active.current()
+    assert current is not None and current["endpoint"] == "new-endpoint"
+    recovered = alternate.reserve("old", tmp_path / "old", "2.310.3")
+    assert recovered["generation"] == "new"
+    assert "endpoint" not in recovered and recovered["process"] == "" and not recovered["ready"]
+    if reservation is not None:
+        assert reservation["epoch"] < recovered["epoch"]
+
+
 def test_repository_format_changes_after_legacy_service_and_writer_finish(tmp_path, monkeypatch):
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     directory = tmp_path / "services" / "agents-server"

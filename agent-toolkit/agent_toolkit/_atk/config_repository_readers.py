@@ -26,56 +26,96 @@ def prepare_separated_format(*, required: bool = False) -> bool:
 
 
 def _prepare() -> bool:
-    services = state_paths.state_dir() / "services"
-    directories = [services / "agents-server"]
-    if os.name == "nt":
-        directories.extend((services / "agents-server-standard", services / "agents-server-elevated"))
     try:
         with contextlib.ExitStack() as stack:
             snapshots = [
                 (directory, stack.enter_context(agents_generation_index.repository_reader_boundary(directory)))
-                for directory in directories
-                if _has_registry(directory)
+                for directory in _registry_directories()
             ]
-            if not snapshots or not all(_can_cut_over(directory, data) for directory, data in snapshots):
+            if all(_fenced(data) for _, data in snapshots):
+                return True
+            if any(_legacy_in_use(directory, entry) for directory, data in snapshots for entry in _legacy_entries(data)):
                 return False
-            for _, data in snapshots:
-                if not data["generations"]:
-                    continue
-                data["repository_reader_minimum"] = list(agents_generation_index.REPOSITORY_READER_MINIMUM)
-                for entry in data["generations"].values():
-                    if not agents_generation_index.reads_separated_repositories(entry["version"]):
-                        # 旧版のreserve/restoreも旧世代を選ばない形にする。pyfltr: allow-comment
-                        entry.update(epoch=0, ready=False, retired=True)
+            anchor = next(
+                (
+                    current
+                    for _, data in snapshots
+                    if (current := _compatible_current(data)) is not None
+                    and current.get("ready")
+                    and agents_generation_index.generation_process_alive(current["process"])
+                ),
+                None,
+            )
+            if anchor is None:
+                return False
+            for directory, data in snapshots:
+                if not _fenced(data):
+                    _fence(data, anchor)
+                    agents_generation_index.save_locked_index(directory, data)
     except OSError, ValueError, KeyError, TypeError:
         return False
     return True
 
 
-def _has_registry(directory: pathlib.Path) -> bool:
-    try:
-        (directory / "generations.json").stat()
-    except FileNotFoundError:
-        return False
-    return True
+def _registry_directories() -> list[pathlib.Path]:
+    services = state_paths.state_dir() / "services"
+    directories = [services / "agents-server"]
+    if os.name == "nt":
+        directories.extend((services / "agents-server-standard", services / "agents-server-elevated"))
+    return directories
 
 
-def _can_cut_over(directory: pathlib.Path, data: dict[str, Any]) -> bool:
-    entries = data["generations"]
-    if data.get("repository_reader_minimum") == list(agents_generation_index.REPOSITORY_READER_MINIMUM):
-        return True
-    current = entries.get(data["current"])
-    if (
-        current is None
-        or not agents_generation_index.reads_separated_repositories(current["version"])
-        or not current.get("ready")
-        or not agents_generation_index.generation_process_alive(current["process"])
-    ):
-        return False
-    return not any(
-        not agents_generation_index.reads_separated_repositories(entry["version"]) and _legacy_in_use(directory, entry)
-        for entry in entries.values()
+def _legacy_entries(data: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        entry
+        for entry in data["generations"].values()
+        if not agents_generation_index.reads_separated_repositories(entry["version"])
+    ]
+
+
+def _compatible_current(data: dict[str, Any]) -> dict[str, Any] | None:
+    current = data["generations"].get(data["current"])
+    if current is None or not agents_generation_index.reads_separated_repositories(current["version"]):
+        return None
+    return current
+
+
+def _fenced(data: dict[str, Any]) -> bool:
+    return (
+        data.get("repository_reader_minimum") == list(agents_generation_index.REPOSITORY_READER_MINIMUM)
+        and _compatible_current(data) is not None
     )
+
+
+def _fence(data: dict[str, Any], anchor: dict[str, Any]) -> None:
+    legacy = _legacy_entries(data)
+    current = _compatible_current(data)
+    if current is None:
+        # 旧版も参照する復旧候補だけを確保し、別の名前空間の生存・接続先は流用しない。pyfltr: allow-comment
+        generation = anchor["generation"]
+        current = {
+            "generation": generation,
+            "version": anchor["version"],
+            "root": anchor["root"],
+            "epoch": data["next_epoch"],
+            "ready": False,
+            "process": "",
+        }
+        data["generations"][generation] = current
+        data["current"] = generation
+        data["next_epoch"] += 1
+    else:
+        # 旧版が切替のロック前に取得した予約も、現行受付より前に置く。pyfltr: allow-comment
+        old_epoch = current["epoch"]
+        required_epoch = max((entry["epoch"] + 1 for entry in legacy), default=old_epoch)
+        if (shift := required_epoch - old_epoch) > 0:
+            for entry in data["generations"].values():
+                if entry["epoch"] >= old_epoch and entry not in legacy:
+                    entry["epoch"] += shift
+            data["next_epoch"] += shift
+    for entry in legacy:
+        entry.update(epoch=0, ready=False, retired=True)
+    data["repository_reader_minimum"] = list(agents_generation_index.REPOSITORY_READER_MINIMUM)
 
 
 def _legacy_in_use(directory: pathlib.Path, entry: dict[str, Any]) -> bool:

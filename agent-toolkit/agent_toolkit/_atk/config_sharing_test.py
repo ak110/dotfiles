@@ -51,7 +51,15 @@ class _Hosts:
         if compatible_acceptor:
             with agents_generation_index.locked_index(root / "state" / "services" / "agents-server") as data:
                 data["current"] = "compatible"
-                data["generations"]["compatible"] = {"version": "2.311.2", "ready": True, "process": "test-service"}
+                data["generations"]["compatible"] = {
+                    "generation": "compatible",
+                    "version": "2.311.2",
+                    "root": str(root / "plugin"),
+                    "ready": True,
+                    "process": "test-service",
+                    "epoch": 1,
+                }
+                data["next_epoch"] = 2
         if pull:
             git.run_git(self.notes[name], "pull", "--ff-only")
         return root
