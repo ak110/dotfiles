@@ -26,7 +26,8 @@ from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._atk.wi import sync as wi_sync
-from agent_toolkit._common import host_homes, private_notes, state_paths
+from agent_toolkit._common import host_homes, state_paths
+from agent_toolkit._common import private_notes as private_notes_store
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import isolation, wi_entry_files
 from agent_toolkit._testing.pytest_plugin import _BROWSER_EVIDENCE
@@ -508,7 +509,7 @@ def _require_browser_paths(root: Path, paths: dict[str, Path]) -> None:
 def _manual_cli_inputs(root: Path, port: int) -> tuple[Path, config.ServeConfig]:
     home = Path.home()
     state = state_paths.state_dir()
-    notes = private_notes.default_private_notes(home)
+    notes = private_notes_store.default_private_notes(home)
     claude = host_homes.claude_config_dir()
     codex = host_homes.codex_home()
     _require_browser_paths(
@@ -522,7 +523,7 @@ def _manual_cli_inputs(root: Path, port: int) -> tuple[Path, config.ServeConfig]
             "WI設定": notes / ".git" / "config",
             "WI索引": entry_index.default_cache_path(),
             "計測": timings.default_log_path(),
-            "計画作成時刻の索引": plan_creation_times._CREATION_TIME_INDEX_PATH,  # noqa: SLF001
+            "計画作成時刻の索引": plan_creation_times._CREATION_TIME_INDEX_PATH,  # noqa: SLF001  # pylint: disable=protected-access
             "Claude Code": claude / "projects",
             "Codex": codex / "sessions",
             "古いCodex記録": codex / "archived_sessions",
@@ -590,8 +591,8 @@ def _manual_browser_main(argv: list[str]) -> int:
                         return child.wait(timeout=10)
 
     if args.mode == "cli":
-        from agent_toolkit import atk  # noqa: PLC0415
-        from agent_toolkit._atk.serve import cli  # noqa: PLC0415
+        from agent_toolkit import atk  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._atk.serve import cli  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         notes = root / "private-notes"
         _require_browser_paths(root, {"home": Path.home(), "WI": notes})
@@ -668,7 +669,7 @@ def _browser_app(
             "費用キャッシュ": session_state / "serve" / "session-costs.json",
             "費用記録": session_state / "serve" / "cost-records",
             "計測": timing,
-            "計画作成時刻の索引": plan_creation_times._CREATION_TIME_INDEX_PATH,  # noqa: SLF001
+            "計画作成時刻の索引": plan_creation_times._CREATION_TIME_INDEX_PATH,  # noqa: SLF001  # pylint: disable=protected-access
             **({"計画": plans_root} if plans_root is not None else {}),
             **{f"計画{index}": spec.path for index, spec in enumerate(plan_roots)},
         },

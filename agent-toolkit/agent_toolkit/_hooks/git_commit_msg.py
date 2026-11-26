@@ -7,7 +7,6 @@ import os
 import pathlib
 import re
 import subprocess
-import sys
 
 import psutil
 
@@ -65,13 +64,16 @@ def _validate_message(path: pathlib.Path, original: dict[str, str], *, forwarded
         return 0
     exempt = not is_codex and commit_identity.claude_commit_attribution_disabled(str(pathlib.Path.cwd()))
     identity = commit_identity.hook_observed_identity(payload, is_codex=is_codex) if not exempt else None
-    if notice := shell_checks_git._git_commit_block(  # noqa: SLF001
+    if notice := shell_checks_git._git_commit_block(  # noqa: SLF001  # pylint: disable=protected-access
         (cleaned.stdout.decode("utf-8", errors="replace"),),
         identity,
         prepared=True,
     ):
-        print(notice, file=sys.stderr)
-        print("既存のcommit-msgは終了0。" if forwarded else "既存のcommit-msgはありません。", file=sys.stderr)
+        status = "既存のcommit-msgは終了0。" if forwarded else "既存のcommit-msgはありません。"
+        next_action.report(
+            f"{notice}\n{status}",
+            next_action="上記の指摘に従って本文を直し、commitだけを再実行してください。",
+        )
         return 1
     return 0
 

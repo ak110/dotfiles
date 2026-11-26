@@ -20,8 +20,8 @@ _TRAILER = co_author_trailer(_ID)
 _GOOD = f"試験\n\n{_TRAILER}"
 
 
-@pytest.fixture
-def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+@pytest.fixture(name="repo")
+def _repo_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     checkout = init_repository(tmp_path / "repo", commit_message="基点")
     hooks = tmp_path / "hook entry's"
     hooks.mkdir()

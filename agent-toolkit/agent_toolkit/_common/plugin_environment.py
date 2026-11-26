@@ -371,7 +371,7 @@ def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> No
     with Path(value).open("a", encoding="utf-8", newline="\n") as output:
         output.write(f'\nexport PATH={scripts}:"$PATH"\nexport {RUNTIME_DATA_ENV}={data}\n')
         if (root / "agent_toolkit/_hooks/git_commit_msg.py").is_file():
-            from agent_toolkit._common import commit_hook_environment, host_homes  # noqa: PLC0415
+            from agent_toolkit._common import commit_hook_environment, host_homes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
             hooks = host_homes.commit_hook_directory(Path.home(), "claude")
             commit_hook_environment.install(hooks, root)

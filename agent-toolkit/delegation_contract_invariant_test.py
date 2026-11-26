@@ -93,13 +93,16 @@ def test_wi_draft_review_stage_and_continuation_contract() -> None:
     assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
     assert set(declaration.required) == {"要求原本", "引き継ぎ記録先"}
     assert set(declaration.optional) == {"確認段階", "方針", "原稿", "起動発話の位置", "調査原本", "ユーザー向け部分"}
-    (continuation,) = declaration.continuations
+    continuation, rejudgment = declaration.continuations
     assert continuation.instruction == "本文確認"
+    assert rejudgment.instruction == "再判定せよ"
+    assert set(rejudgment.required) == {"指摘の扱い"}
+    assert set(rejudgment.paths) == {"指摘の扱い", "原稿", "方針", "ユーザー向け部分", "dry-run出力"}
     assert set(continuation.required) == {"原稿", "要求原本"}
     assert set(continuation.paths) == set(continuation.required) | {"調査原本", "ユーザー向け部分"}
     # 継続の指示は起動契約だけが定め、投入前レビューを選ぶ手順書は起動契約を名指しする。
     assert "本文確認" in (root / "skills/atk-mode/roles/wi-draft-review.parent.md").read_text(encoding="utf-8")
-    for name in ("skills/atk-mode/playbooks/add-awi-by-user.md", "skills/atk-mode/playbooks/wi-drafting.md"):
+    for name in ("skills/atk-mode/playbooks/add-awi-by-user.md", "skills/atk-mode/playbooks/wi-drafting-inputs.md"):
         content = (root / name).read_text(encoding="utf-8")
         assert "`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`" in content, name
 

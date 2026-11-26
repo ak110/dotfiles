@@ -131,7 +131,7 @@ def main(argv: list[str]) -> int:
     warning_event = _warning_event(argv[0], payload)
 
     if isinstance(payload, dict) and payload.get("hook_event_name") in {"SessionStart", "SubagentStart"}:
-        from agent_toolkit._hooks.pretooluse import commit_identity  # noqa: PLC0415
+        from agent_toolkit._hooks.pretooluse import commit_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         with contextlib.suppress(OSError):
             if argv[0] == "rules_context_codex" or is_codex_payload(payload):

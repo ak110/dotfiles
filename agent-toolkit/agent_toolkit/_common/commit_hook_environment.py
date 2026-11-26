@@ -118,7 +118,7 @@ def install(directory: pathlib.Path, root: pathlib.Path) -> bool:
 
 
 def merge_codex_config(path: pathlib.Path, directory: pathlib.Path | None) -> bool:
-    import tomlkit  # noqa: PLC0415
+    import tomlkit  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     original = path.read_text(encoding="utf-8") if path.exists() else ""
     document = tomlkit.parse(original)

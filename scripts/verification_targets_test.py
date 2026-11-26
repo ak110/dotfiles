@@ -200,7 +200,7 @@ def test_integration_argv_covers_cross_contracts_even_if_sources_are_omitted(
             {"task_documents_invariant_test.py"},
         ),
         (
-            "agent-toolkit/skills/atk-mode/roles/example.subagent.md",
+            f"{_PLUGIN}/skills/atk-mode/roles/example.subagent.md",
             "# Example\n\n## 出力\n\n- 前\n",
             "# Example\n\n## 出力\n\n- 後\n",
             "role-document-generation",

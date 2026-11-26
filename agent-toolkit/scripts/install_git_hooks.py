@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agent_toolkit._common import commit_hook_environment, host_homes  # noqa: E402
+from agent_toolkit._common import commit_hook_environment, host_homes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def main() -> int:
