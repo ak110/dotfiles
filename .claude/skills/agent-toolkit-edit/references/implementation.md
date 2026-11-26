@@ -83,8 +83,7 @@
    `docs/development/`の該当する設計資料と`concepts.md`も対象に含む。
    ユーザーの操作か画面の観測結果が変わる時だけ、対応するガイドも直す。
 2. 改める前の名前は読み取りの互換用の構造定数として残し、新規作成と改訂の検証だけでエラーにする。
-3. 構造定数を持たず`plan-file-standards-structure.md`だけが必須とする見出しは、同ファイルに従う。
-   稼働中の計画が自動チェックで不合格になるのを防ぐためにこの形を選んだ時は、その理由を計画ファイルへ書く。
+3. 現行の必須項目は`agent-toolkit:atk-mode/references/plan-format.md`「計画ファイルの構成」、保存済みの旧形式の読み取りは`agent-toolkit:atk-mode/references/plan-legacy-formats.md`に従う。
 
 ## atk serveの静的資産
 

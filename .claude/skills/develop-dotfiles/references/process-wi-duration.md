@@ -13,7 +13,8 @@
 先頭の長い項目や依存の連結成分も含める。
 長い先頭項目を選ぶ場合も下限まで後続を選び、独立した仕事を並行処理する。
 着手済みと再開項目は保持する。
-選定規則は同じ`selection-procedure-allocation.md`、実測の補正は同じreferencesの`selection-format-prediction.md`に従う。
+選定規則は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`「調査とレーン分け」に従う。
+実測による補正は`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「見込みの補正の算出」に従う。
 
 選んだ全件の実装・必要な品質確認・公開・報告を終えたら巡回を終了する。
 着手後は選んだ全件と必要な品質工程を保持し、同じ巡回で完遂する。

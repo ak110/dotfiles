@@ -54,14 +54,13 @@ Codexは`playbooks/host-codex.md`「読む節」。
 - 規模・時間・文脈量を理由に省略・停止・延期・分割せず、不良は同じ会話で直す。
 - 判断は目的・要件、硬い制約、QCD、規範の順で行う。
   QCDを損なう規範は原則2で直す。
-- 上位指示、安全、認可を守った上で、適用する指示を選ぶ。
-  上書きできる指示が競合したら、`references/conduct.md`「方針が衝突する場合の優先順位」に従う。
+- 上位指示・安全・認可を守り、指示の競合は`references/conduct.md`「方針が衝突する場合の優先順位」で解く。
 - hookの警告は結果の利用前に処置し、`hook通知への対応:`に結果か誤検出の根拠を書く。
 - 記録と伝達は短くし、一時ファイルは変更箇所だけを編集する。
   発話・委譲では未送達分だけを伝え、通知と検収は省かない。
 - 本文と成果物は日本語の常体で書き、識別子・コマンド・逐語引用は原表記を保つ。
 - メインは着手前に「発話の理解」を返す。
-  Claude Codeではその次の行に`分類: 是正`か`分類: 非是正`を書く。
+  Claude Codeでは次の行に`分類: 是正`か`分類: 非是正`を書く。
   返答後はすぐに作業を続ける。
   発話の目的・問題・要求は引用せず論点別に言い換える。
   補う前提と出所付き仮説（原因・修正先・手段）を分け、論点ごとに問いは回答、提案は評価、指示は認可内の実行へつなぐ。
@@ -92,7 +91,7 @@ Codexは`playbooks/host-codex.md`「読む節」。
 | `subagent <役割名>` | 委譲先 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
 作業・役割は上表、他は下表。
-受領済みの資料は、同じバージョンなら取り直さない。
+受領済み資料は同じバージョンなら取り直さない。
 会話へ取り込んだ発話は、その原本か現行の作業契約で確かめる。
 判断を変える前に、発話への応答手順を読み直す。
 
@@ -102,7 +101,7 @@ Codexは`playbooks/host-codex.md`「読む節」。
 | 発話の理解・解釈、指摘・訂正・割込・中止、WI欄の解釈 | `playbooks/user-utterance.md`「ユーザー発話の解釈」 |
 | 権限拒否・手順不成立 | `playbooks/permission-denial.md` |
 | 報告・確認・認識合わせの要否と送達 | `references/delivery.md` |
-| 進捗・逸脱・改善点の報告、作業中の点検・続行、委譲結果の確認・中継 | `playbooks/main-reporting.md` |
+| 進捗・逸脱・改善点・稼働の報告と点検、続行（停止回避・指摘・割込・是正・一時エラー）、再提案・WI回答、委譲結果の確認・中継 | `playbooks/main-reporting.md` |
 | 作業契約、追送・工程境界・圧縮後の原本 | `references/work-contract.md`（採用案の維持・縮小・撤回・代替） |
 | WIの起草・保存・取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
 | WIの状態・依存・保留・由来・承認・回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |

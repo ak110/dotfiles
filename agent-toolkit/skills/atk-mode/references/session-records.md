@@ -66,7 +66,6 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 公式ドキュメント「Thinking」の「Progress updates between tool calls」節の基準で、ツール呼び出しの間の進捗更新（公式ドキュメントの「progress update」、Claude Code内部の名前は`narration`）を判別する。
 APIリクエストの`display`パラメーターが`"updates"`の応答のうち、本文が空でない`thinking`ブロックを持つものを進捗更新とみなす。
 記録ファイルには`display`の値が残らないため、設定内容やホストの送信条件から値を確かめられた範囲だけを判別済みとし、残りは判別不能として件数を分けて数える。
-この節の観測結果についても、前節と同じ監査記録に記載されている。
 
 ## 集計値の典拠
 
