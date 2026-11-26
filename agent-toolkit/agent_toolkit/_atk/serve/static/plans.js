@@ -176,9 +176,7 @@ function updateMetaMobile() {
   const pathSpan = document.createElement("span");
   pathSpan.className = "meta-path";
   pathSpan.textContent = selectedPath;
-  block.appendChild(hostSpan);
-  block.appendChild(ctimeSpan);
-  block.appendChild(pathSpan);
+  block.append(pathSpan, hostSpan, ctimeSpan);
 }
 
 // 遷移先がDOM未描画領域なら、必要分まで表示上限をステップ単位で拡張してから再描画する。

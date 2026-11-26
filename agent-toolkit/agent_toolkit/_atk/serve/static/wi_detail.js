@@ -235,8 +235,10 @@ export function setDetailMode(mode) {
   const extra = more.querySelector('.detail-more-actions');
   const edit = byId('edit-button');
   const adopt = byId('adopt-button');
-  (answering ? extra : document.querySelector('.detail-footer-right')).prepend(edit);
-  (answering ? extra : document.querySelector('.detail-footer-left')).prepend(adopt);
+  const editLocation = answering ? extra : document.querySelector('.detail-footer-right');
+  const adoptLocation = answering ? extra : document.querySelector('.detail-footer-left');
+  if (edit.parentElement !== editLocation) editLocation.prepend(edit);
+  if (adopt.parentElement !== adoptLocation) adoptLocation.prepend(adopt);
   more.hidden = waiting || !Array.from(more.querySelectorAll('button')).some(button => !button.hidden);
   syncDetailMutationAvailability();
   const adoptPrimary = !answering && !byId('adopt-button').hidden;

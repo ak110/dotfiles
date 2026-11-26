@@ -257,13 +257,12 @@
     border-bottom: 1px solid var(--color-border);
     overflow-wrap: anywhere;
   }
-  #screen-plans #meta-mobile .meta-host {
-    font-weight: var(--weight-label);
-    color: var(--color-text);
-  }
   #screen-plans #meta-mobile .meta-path {
     display: block;
-    margin-block-start: var(--space-1);
+    margin-block-end: var(--space-1);
+    color: var(--color-text);
+    font-size: var(--font-size-base);
+    font-weight: var(--weight-label);
   }
   #screen-plans #meta-mobile .meta-ctime {
     display: inline-block;

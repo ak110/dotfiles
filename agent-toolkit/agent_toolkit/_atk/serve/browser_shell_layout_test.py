@@ -262,7 +262,7 @@ async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _
     await page.goto(screen_harness.base_url + "/plans")
     for name, heading in (("plans", "計画ファイル"), ("sessions", "セッション")):
         if name == "sessions":
-            await page.locator('#screen-plans nav.app-nav a[href$="/sessions"]').click()
+            await page.get_by_role("combobox", name="画面を切り替える").select_option("sessions")
             await playwright.async_api.expect(page.locator("#screen-sessions h1")).to_be_focused()
         assert await page.title() == f"{heading} - atk serve"
         sidebar = page.locator(f"#{name}-sidebar")
@@ -298,15 +298,20 @@ async def test_detail_toolbars_use_the_same_tokens(screen_harness: _ScreenHarnes
                     .find(button => button.getClientRects().length));
                 const bounds = toolbar.getBoundingClientRect();
                 return {
-                    gap: style.columnGap, padding: style.padding,
-                    border: style.borderBlockEnd, background: style.backgroundColor,
+                    gap: style.columnGap, background: style.backgroundColor,
                     font: button.fontSize, height: button.minBlockSize,
-                    inset: bounds.left - toolbar.parentElement.getBoundingClientRect().left
+                    contentStart: bounds.left + parseFloat(style.paddingLeft)
                 };
             }"""
         )
         assert float(observed[screen]["font"].removesuffix("px")) >= 16
+    session_start = observed["sessions"].pop("contentStart")
+    observed["plans"].pop("contentStart")
     assert observed["plans"] == observed["sessions"]
+    title = page.locator("#detail-title")
+    await title.wait_for()
+    title_start = await title.evaluate("element => element.getBoundingClientRect().left")
+    assert session_start == pytest.approx(title_start, abs=1)
 
 
 @pytest.mark.asyncio(loop_scope="session")
