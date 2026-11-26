@@ -222,7 +222,7 @@ def _cmd_config_show(home: pathlib.Path) -> int:
         print(f"共有設定ファイル: {path}", file=sys.stderr)
         if active:
             print("共有設定から解決したキー: " + "、".join(active), file=sys.stderr)
-        if git_sync.has_remote(path.parent) and _pending_shared(local):
+        if git_sync.has_remote(path.parent) and _pending_shared(stored):
             print(f"未移行の共有設定がある。{_MIGRATION_NEXT_ACTION}。", file=sys.stderr)
     if human and settings.get("codex_fast_mode") == "auto":
         print(_auto_fast_report(), file=sys.stderr)

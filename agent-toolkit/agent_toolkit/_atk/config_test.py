@@ -218,6 +218,40 @@ def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.C
         assert capsys.readouterr().out.rstrip("\n") == value
 
 
+@pytest.mark.parametrize(
+    ("stored", "expected_keys"),
+    [
+        ({"base_engine": "claude"}, set()),
+        ({"review_model": "claude:sonnet"}, {"review_model"}),
+        ({"base_engine": "claude", "review_model": "claude:sonnet"}, {"review_model"}),
+    ],
+)
+def test_shared_migration_hint_uses_actual_stored_keys(tmp_path, monkeypatch, capsys, stored, expected_keys):
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="main", origin=str(remote), files={"atk-config.json": "{}"}
+    )
+    git_repository.commit_all(notes, "initialize")
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    original = _write_config(tmp_path, stored).read_bytes()
+    run_git = sync.run_git
+
+    def forbid_transport(args, *positional, **kwargs):
+        assert args[0] not in {"fetch", "push", "pull", "ls-remote"}
+        return run_git(args, *positional, **kwargs)
+
+    monkeypatch.setattr(sync, "run_git", forbid_transport)
+    assert _main(tmp_path, "config", "show") == 0
+    shown = capsys.readouterr()
+    assert ("未移行の共有設定がある" in shown.err) == bool(expected_keys)
+    if "base_engine" in stored:
+        assert "execute_model claude:" in shown.out
+    assert _main(tmp_path, "config", "migrate-shared") == 0
+    assert set(json.loads(capsys.readouterr().out)["local"]) == expected_keys
+    assert _config_file(tmp_path).read_bytes() == original
+
+
 def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeypatch, capsys):
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     notes = git_repository.init_repository(
