@@ -251,6 +251,7 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
 
 @pytest.mark.asyncio
 async def test_minimal_followup_uses_restored_launch_history(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_MODEL", "claude:sonnet/medium")
     (tmp_path / "計画.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, _):
         _, prompt, _, _ = launch_requests.task_document_request(
@@ -261,7 +262,16 @@ async def test_minimal_followup_uses_restored_launch_history(monkeypatch: pytest
                 "引き継ぎ記録先": str(tmp_path / "引継ぎ.md"),
             },
         )
-        session = state.SessionState("restored-review", str(tmp_path), engine="claude", prompt=prompt, publish_registry=True)
+        session = state.SessionState(
+            "restored-review",
+            str(tmp_path),
+            engine="claude",
+            model_type="review",
+            model="sonnet",
+            effort="medium",
+            prompt=prompt,
+            publish_registry=True,
+        )
         manager.sessions[session.session_id] = session
         _complete(session)
         await session.publish_registration_async()

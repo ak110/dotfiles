@@ -33,10 +33,11 @@ from agent_toolkit._agents_server import (
     logging_config,
     mcp_tools,
     mcp_transport,
+    service_distribution,
     service_transport,
     session_errors,
 )
-from agent_toolkit._common import process_identity, process_tree, runtime_environment, state_paths
+from agent_toolkit._common import delegated_session, process_identity, process_tree, runtime_environment, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing import late_descendant, service_lifetime
 from agent_toolkit._testing.agents_server_tool_contract import EXPECTED_TOOL_NAMES
@@ -44,6 +45,15 @@ from agent_toolkit._testing.codex_plugin_support import _stop_mcp_services
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+def _publish_test_distribution(environment: dict[str, str], cwd: pathlib.Path, root: pathlib.Path) -> pathlib.Path:
+    environment.pop(service_distribution.SCOPE_ENV, None)
+    environment.pop(delegated_session.CALLER_PLUGIN_ROOT_ENV, None)
+    directory = service_transport.namespace(runtime_environment.CallerContext(environment, cwd))
+    directory.mkdir(parents=True, exist_ok=True)
+    service_distribution.publish(directory, service_distribution.identity(root))
+    return directory
 
 
 @contextlib.asynccontextmanager
@@ -68,7 +78,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
     service: psutil.Process | None = None
     supervisor: psutil.Process | None = None
     identity: process_identity.ProcessIdentity | None = None
-    registry_dir = service_transport.namespace(runtime_environment.CallerContext(env, tmp_path))
+    registry_dir = _publish_test_distribution(env, tmp_path, plugin_root)
     try:
         with anyio.fail_after(20):
             async with stdio_client(params) as streams:
@@ -333,6 +343,7 @@ class _LaunchedServer:
         self._readers: list[threading.Thread] = []
         try:
             if "--check-dependencies" not in arguments:
+                _publish_test_distribution(env, tmp_path, _PLUGIN_ROOT)
                 self._owner.enter_context(service_lifetime.guard(tmp_path))
             self.process = self._owner.enter_context(
                 process_tree.process_scope(
