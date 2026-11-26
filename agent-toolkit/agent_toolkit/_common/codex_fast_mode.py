@@ -107,6 +107,8 @@ def _cache_decision(
     instant: datetime.datetime,
     decision: FastTier | None = None,
     deadline: datetime.datetime | None = None,
+    *,
+    read_at: datetime.datetime | None = None,
 ) -> FastTier | None:
     if provider is None:
         return None
@@ -126,7 +128,7 @@ def _cache_decision(
                 for name, record in loaded.items():
                     if _valid_record(record, instant):
                         records[name] = record
-            retained, result = _transition(records.get(key), identity, instant, decision, deadline)
+            retained, result = _transition(records.get(key), identity, instant, decision, deadline, read_at=read_at)
             if retained is None:
                 records.pop(key, None)
             else:
@@ -148,6 +150,8 @@ def _transition(
     instant: datetime.datetime,
     decision: FastTier | None,
     deadline: datetime.datetime | None,
+    *,
+    read_at: datetime.datetime | None = None,
 ) -> tuple[dict[str, Any] | None, FastTier | None]:
     if previous is not None and not _valid_record(previous, instant):
         previous = None
@@ -155,7 +159,7 @@ def _transition(
         return previous, None
     if decision is not None:
         if identity is None or deadline is None or instant >= deadline:
-            return None, None
+            return {"at": instant.isoformat()}, None
         return {
             "workspace": identity,
             "until": min(instant + _REUSE_LIMIT, deadline).isoformat(),
@@ -163,10 +167,12 @@ def _transition(
             "tier": decision.tier,
             "explanation": decision.explanation,
         }, None
-    if previous is None or identity is None:
+    if previous is None or identity is None or "workspace" not in previous:
         return previous, None
     if previous["workspace"] != identity:
-        return None, None
+        return {"at": instant.isoformat()}, None
+    if datetime.datetime.fromisoformat(previous["until"]) <= (read_at or instant):
+        return previous, None
     return previous, FastTier(previous["tier"], previous["explanation"], "previous")
 
 
@@ -174,12 +180,16 @@ def _valid_record(record: Any, instant: datetime.datetime) -> bool:
     if not isinstance(record, dict):
         return False
     try:
+        at = datetime.datetime.fromisoformat(record["at"])
+        if at.tzinfo is None or instant >= at + _REUSE_LIMIT:
+            return False
+        if set(record) == {"at"}:
+            return True
         return (
             isinstance(record.get("workspace"), str)
             and record.get("tier") in ("priority", "default")
             and isinstance(record.get("explanation"), str)
-            and datetime.datetime.fromisoformat(record["at"]).tzinfo is not None
-            and instant < datetime.datetime.fromisoformat(record["until"])
+            and datetime.datetime.fromisoformat(record["until"]).tzinfo is not None
         )
     except KeyError, TypeError, ValueError:
         return False
@@ -210,8 +220,7 @@ def _account_observation(
     return FastTier("default", f"planType={plan}は提供対象外"), workspace, min(end for _, end in active)
 
 
-async def observe_selection_auth(providers: tuple[str, ...], auth: dict[str, Any]) -> None:
-    instant = datetime.datetime.now(datetime.UTC)
+async def observe_selection_auth(providers: tuple[str, ...], auth: dict[str, Any], instant: datetime.datetime) -> None:
     observed, workspace, _deadline = _account_observation(auth, instant)
     for provider in providers:
         if observed is not None and (observed.tier == "default" or workspace is None):
@@ -229,6 +238,7 @@ async def auto_service_tier(
     provider: str | None = None,
     auth: dict[str, Any] | None = None,
     quota_workspace: str | None = None,
+    auth_observed_at: datetime.datetime | None = None,
 ) -> FastTier:
     instant = now if now is not None else datetime.datetime.now(datetime.UTC)
     if subscription is False or not any(instant < end for _plans, end, _source in _FREE_FAST_MODE_PERIODS):
@@ -245,34 +255,40 @@ async def auto_service_tier(
             return FastTier("default", "実効接続を確認できない", "unavailable")
         current_provider = config["model_provider"]
         if current_provider != "openai" or provider not in (None, current_provider):
+            instant = now or datetime.datetime.now(datetime.UTC)
             decision = FastTier("default", "サブスクリプション接続ではない")
             await asyncio.to_thread(_cache_decision, provider, None, instant, decision)
             return decision
         provider = current_provider
 
     workspace = quota_workspace
+    workspace_at = auth_observed_at if quota_workspace is not None else None
     for attempt in range(0 if quota_workspace is not None else 2):
         if auth is None or attempt:
             try:
                 async with asyncio.timeout(_RETRY_ATTEMPT_SECONDS):
                     auth = await request("account/read", {"refreshToken": False})
+                auth_observed_at = now or datetime.datetime.now(datetime.UTC)
             except Exception:  # pylint: disable=broad-exception-caught
                 continue
         instant = now if now is not None else datetime.datetime.now(datetime.UTC)
+        observed_at = auth_observed_at or instant
         decision, current_workspace, deadline = _account_observation(auth, instant)
         if decision is not None:
-            await asyncio.to_thread(_cache_decision, provider, current_workspace, instant, decision, deadline)
+            await asyncio.to_thread(_cache_decision, provider, current_workspace, observed_at, decision, deadline)
             return decision
         if current_workspace is not None:
             workspace = current_workspace
+            workspace_at = observed_at
     if workspace is None and provider is not None:
         workspace = quota_workspace_id(await read_workspace_quota(request))
+        workspace_at = now or datetime.datetime.now(datetime.UTC)
     instant = now if now is not None else datetime.datetime.now(datetime.UTC)
     if not any(instant < end for _plans, end, _source in _FREE_FAST_MODE_PERIODS):
         decision = FastTier("default", "現在は提供期間外")
         await asyncio.to_thread(_cache_decision, provider, workspace, instant, decision)
         return decision
-    previous = await asyncio.to_thread(_cache_decision, provider, workspace, instant)
+    previous = await asyncio.to_thread(_cache_decision, provider, workspace, workspace_at or instant, read_at=instant)
     return previous or FastTier(
         "default",
         "契約を取得できず、再利用できる判定がない"

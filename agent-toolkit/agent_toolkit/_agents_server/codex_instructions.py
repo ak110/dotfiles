@@ -48,12 +48,20 @@ async def _current_service_tier(
     provider: str | None = None,
     auth: dict[str, Any] | None = None,
     quota_workspace: str | None = None,
+    auth_observed_at: datetime.datetime | None = None,
 ) -> str:
     """現在の接続とアカウントから、Codexに明示する速度を決める。  pyfltr: allow-comment"""
     mode = await run_file_operation(_atk_config.resolve_mutable_setting, "codex_fast_mode")
     if mode == "auto":
         decision = await codex_fast_mode.auto_service_tier(
-            request, cwd, subscription=subscription, now=now, provider=provider, auth=auth, quota_workspace=quota_workspace
+            request,
+            cwd,
+            subscription=subscription,
+            now=now,
+            provider=provider,
+            auth=auth,
+            quota_workspace=quota_workspace,
+            auth_observed_at=auth_observed_at,
         )
     else:
         decision = codex_fast_mode.FastTier("priority" if mode == "true" else "default", f"明示指定: {mode}")

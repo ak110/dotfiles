@@ -8,6 +8,7 @@ Codex CLI 0.162.0のconfig/read・account/read・account/rateLimits/readの
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -41,6 +42,7 @@ class ProviderSelection:
     auto_reset_permitted: bool = False
     auth: dict[str, Any] | None = dataclasses.field(default=None, repr=False, compare=False)
     quota_workspace: str | None = dataclasses.field(default=None, repr=False, compare=False)
+    auth_observed_at: datetime.datetime | None = dataclasses.field(default=None, repr=False, compare=False)
 
 
 def has_provider_configuration() -> bool:
@@ -111,6 +113,7 @@ async def select(
         quota_workspace = codex_fast_mode.quota_workspace_id(usage)
         auth_error = error
         auth = {}
+    auth_observed_at = datetime.datetime.now(datetime.UTC)
     account = auth.get("account")
     account_type = "chatgpt" if quota_workspace is not None else account.get("type") if isinstance(account, dict) else None
     entries = codex_connection.provider_entries(role)
@@ -126,6 +129,7 @@ async def select(
         await codex_fast_mode.observe_selection_auth(
             tuple(candidate for kind, candidate in entries if kind == "subscription" and requires_subscription(candidate)),
             auth,
+            auth_observed_at,
         )
 
     def usable(kind: str, candidate: str) -> bool | None:
@@ -220,6 +224,7 @@ async def select(
         auto_reset_permitted,
         auth,
         quota_workspace,
+        auth_observed_at,
     )
 
 

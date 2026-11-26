@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
 import typing
 from typing import Any
@@ -124,6 +125,7 @@ class CodexTurnsMixin:
         *,
         auth: dict[str, Any] | None = None,
         quota_workspace: str | None = None,
+        auth_observed_at: datetime.datetime | None = None,
     ) -> None:
         if client is None:
             client = await self._acquire_owned_client(session.session_id, session.launch_kind)
@@ -147,6 +149,7 @@ class CodexTurnsMixin:
                 provider=provider,
                 auth=auth,
                 quota_workspace=quota_workspace,
+                auth_observed_at=auth_observed_at,
             ),
         }
         if session.model is not None:

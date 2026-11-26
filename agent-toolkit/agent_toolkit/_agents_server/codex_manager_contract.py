@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import typing
 from collections.abc import Coroutine
 from typing import Any
@@ -79,6 +80,7 @@ class CodexManager(typing.Protocol):
         *,
         auth: dict[str, Any] | None = None,
         quota_workspace: str | None = None,
+        auth_observed_at: datetime.datetime | None = None,
     ) -> str | None: ...
 
     @staticmethod
@@ -206,6 +208,7 @@ class CodexManager(typing.Protocol):
         *,
         auth: dict[str, Any] | None = None,
         quota_workspace: str | None = None,
+        auth_observed_at: datetime.datetime | None = None,
     ) -> None: ...
 
     async def _notify_waiters(self) -> None: ...

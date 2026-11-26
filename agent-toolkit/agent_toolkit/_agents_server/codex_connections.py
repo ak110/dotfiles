@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import typing
 import uuid
@@ -74,6 +75,7 @@ class CodexConnectionsMixin:
                     self._writer_session_ids.get(session.session_id),
                     auth=selection.auth,
                     quota_workspace=selection.quota_workspace,
+                    auth_observed_at=selection.auth_observed_at,
                 )
             except JsonRpcResponseError as exc:
                 session.codex_model_provider = original
@@ -133,6 +135,7 @@ class CodexConnectionsMixin:
         *,
         auth: dict[str, Any] | None = None,
         quota_workspace: str | None = None,
+        auth_observed_at: datetime.datetime | None = None,
     ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
         if archive := self._archive_tasks.get(session.session_id):
@@ -159,6 +162,7 @@ class CodexConnectionsMixin:
                 provider=target,
                 auth=selection.auth if selection is not None else auth,
                 quota_workspace=selection.quota_workspace if selection is not None else quota_workspace,
+                auth_observed_at=selection.auth_observed_at if selection is not None else auth_observed_at,
                 record_start=True,
             ),
         }
