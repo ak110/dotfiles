@@ -253,7 +253,7 @@ pytest-always-targets = ["*_invariant_test.py"]
 [tool.pyfltr.custom-commands.sync-generated-files]
 type = "formatter"
 path = "uv"
-args = ["run", "--frozen", "python", "scripts/sync_generated_files.py"]
+args = ["run", "--frozen", "python", "-E", "scripts/sync_generated_files.py"]
 targets = [
     "AGENTS.md",
     "pyproject.toml",

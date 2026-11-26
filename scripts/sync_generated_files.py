@@ -204,7 +204,7 @@ def sync_quality_principles(root: Path = REPO_ROOT) -> None:
 
 def run_generator(path: str) -> int:
     """個別生成器を現在のPythonで実行する。"""
-    return subprocess.run([sys.executable, path], cwd=REPO_ROOT, check=False).returncode
+    return subprocess.run([sys.executable, "-E", path], cwd=REPO_ROOT, check=False).returncode
 
 
 def main(argv: list[str] | None = None) -> int:
