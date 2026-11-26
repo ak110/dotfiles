@@ -34,10 +34,13 @@ lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
+lazy from agent_toolkit._hooks.background_tasks import pending_async_task_ids
+lazy from agent_toolkit._hooks.background_tasks_launches import collect_background_task_id_tool_use_ids
 lazy from agent_toolkit._hooks.delivered_repost_gate import delivered_messages
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import git_subcommand_tokens
+lazy from agent_toolkit._hooks.transcript_scan import iter_assistant_blocks
 lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context
 
 # フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
@@ -403,6 +406,23 @@ def _record_fix(message: object) -> str:
     return "、".join(labels) + " に実施結果か行わない理由を書いてください。類似見直しは予定や未確認だけで終えないでください。"
 
 
+def _wait_started_during_correction(payload: dict, session_id: str, entries: list[dict]) -> bool:
+    path = payload.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return False
+    live = pending_async_task_ids(path, session_id, background_tasks=payload.get("background_tasks"))
+    if not live:
+        return False
+    calls = {
+        call
+        for block in iter_assistant_blocks(entries)
+        if block.get("type") == "tool_use" and isinstance(call := block.get("id"), str)
+    }
+    return bool(calls & live) or any(
+        task in live and calls & linked for task, linked in collect_background_task_id_tool_use_ids(entries).items()
+    )
+
+
 def _turn_block(
     payload: dict,
     turn: tuple[str, list[dict], str | None],
@@ -411,6 +431,7 @@ def _turn_block(
     *,
     can_classify: bool,
     send_kind: object = None,
+    quiet_intermission: bool = False,
     warnings: list[str] | None = None,
 ) -> str | None:
     _, entries, human_id = turn
@@ -447,6 +468,13 @@ def _turn_block(
             f"是正を受けた後に`agent-basics:bugfix`を起動していないため、{delivery}を止めた。",
             fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。本文には " + _record_fix(None),
         )
+    if (
+        quiet_intermission
+        and started is not None
+        and isinstance(session_id, str)
+        and _wait_started_during_correction(payload, session_id, entries[started + 1 :])
+    ):
+        return None
     if can_classify and not _has_report_structure(message, send_kind):
         return None
     if _has_typed_prevention(message):
@@ -490,8 +518,6 @@ def send_block(payload: dict, message: object = None, *, kind: object = None, wa
 
 
 def evaluate(payload_text: str, *, quiet_intermission: bool = False) -> tuple[str, str]:
-    if quiet_intermission:
-        return "approve", ""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -501,7 +527,13 @@ def evaluate(payload_text: str, *, quiet_intermission: bool = False) -> tuple[st
         return "approve", ""
     warnings: list[str] = []
     body = _turn_block(
-        payload, turn, payload.get("last_assistant_message"), "ターンの終了", can_classify=False, warnings=warnings
+        payload,
+        turn,
+        payload.get("last_assistant_message"),
+        "ターンの終了",
+        can_classify=False,
+        quiet_intermission=quiet_intermission,
+        warnings=warnings,
     )
     if body is None:
         return ("notify", warnings[0]) if warnings else ("approve", "")

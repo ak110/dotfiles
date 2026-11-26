@@ -2,6 +2,9 @@
 
 import json
 import pathlib
+import shutil
+import subprocess
+from collections.abc import Callable
 
 import pytest
 
@@ -51,29 +54,93 @@ def _automatic(text: str) -> dict:
     return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": text}}
 
 
-@pytest.mark.parametrize("periodic", [False, True])
-@pytest.mark.parametrize("waiting", [False, True])
-@pytest.mark.parametrize("answer", ["", "…", "新しい確認結果がある。"])
-def test_only_quiet_periodic_wait_omits_old_correction_and_send(
-    tmp_path: pathlib.Path, periodic: bool, waiting: bool, answer: str
+def _bash_wait() -> list[dict]:
+    return [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_wait",
+                        "name": "Bash",
+                        "input": {"command": "atk agents wait", "run_in_background": True},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "toolUseResult": {"backgroundTaskId": "wait-task"},
+            "message": {
+                "content": [{"type": "tool_result", "tool_use_id": "toolu_wait"}],
+            },
+        },
+    ]
+
+
+def _machine_input(source: str) -> list[dict]:
+    if source == "periodic":
+        return [{"type": "user", "isMeta": True, "message": {"content": PERIODIC_RECHECK_PROMPT}}]
+    if source == "result":
+        return [_automatic('<atk-auto source="runtime-changes" kind="notice">反映コマンドの応答</atk-auto>')]
+    if source == "task":
+        other = _TASK.replace("toolu_wait", "toolu_other").replace("wait-task", "other-task")
+        return [{"type": "user", "origin": {"kind": "task-notification"}, "message": {"content": other}}]
+    return []
+
+
+@pytest.mark.parametrize("machine", ["none", "periodic", "task"])
+@pytest.mark.parametrize("same_work", [False, True])
+@pytest.mark.parametrize("fresh_correction", [False, True])
+def test_wait_only_defers_the_correction_owning_it(
+    tmp_path: pathlib.Path, machine: str, same_work: bool, fresh_correction: bool
 ) -> None:
-    entries = [_human("前の不具合を直して。"), _CAPABILITY, *_classified()]
-    if periodic:
-        entries.append(_automatic(PERIODIC_RECHECK_PROMPT))
+    entries = [_human("前の不具合を直して。"), _CAPABILITY, *_classified(), *_BUGFIX]
+    if fresh_correction:
+        entries.extend(repl_send_to_user_entries("repl_prior", {"message": _TYPED_REPORT}, ok=True))
+    if same_work and not fresh_correction:
+        entries.extend(_bash_wait())
+    if fresh_correction:
+        entries.extend([_human("別の不具合を直して。"), *_classified(call_id="new")])
+        if same_work:
+            entries.extend(_bash_wait())
+    entries.extend(_machine_input(machine))
+    payload = _payload(
+        entries,
+        tmp_path,
+        last_assistant_message="…",
+        background_tasks=[{"id": "wait-task" if same_work else "unrelated", "type": "Bash", "status": "running"}],
+    )
+    result = stop.evaluate(json.dumps(payload))
+    if machine != "none" and same_work and not fresh_correction:
+        assert result == {}
+    else:
+        assert result["decision"] == "block"
+        assert ("起動していない" in str(result["reason"])) is fresh_correction
+
+
+@pytest.mark.parametrize("answer", ["", "…", "新しい確認結果がある。"])
+def test_unchanged_periodic_wait_does_not_repost_previous_correction(tmp_path: pathlib.Path, answer: str) -> None:
+    entries = [
+        _human("前の不具合を直して。"),
+        _CAPABILITY,
+        *_classified(),
+        *_BUGFIX,
+        *repl_send_to_user_entries("repl_prior", {"message": _TYPED_REPORT}, ok=True),
+        *_machine_input("periodic"),
+    ]
     payload = _payload(
         entries,
         tmp_path,
         last_assistant_message=answer,
-        background_tasks=[{"id": "wait-task", "type": "Bash", "status": "running"}] if waiting else [],
+        background_tasks=[{"id": "wait-task", "type": "Bash", "status": "running"}],
     )
     result = stop.evaluate(json.dumps(payload))
-    if periodic and waiting and answer in ("", "…"):
-        assert result == {}
+    if answer and answer != "…":
+        assert "delivered_repost_gate" in str(result)
     else:
-        assert result["decision"] == "block"
-        assert "起動していない" in str(result["reason"])
-        if periodic and answer not in ("", "…"):
-            assert "send_to_user` の結果が無い" in str(result["reason"])
+        assert result == {}
 
 
 def _send(entries: list[dict], tmp_path: pathlib.Path, message: str, *, repl: bool) -> dict:
@@ -127,7 +194,7 @@ def test_correction_recovery_sends_once(tmp_path: pathlib.Path, repl: bool, warn
     assert stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))["decision"] == "block"
 
 
-def _ui_result(call: str, ok: bool) -> dict:
+def _ui_result(call: str, receipt: dict | bool) -> dict:
     return {
         "type": "user",
         "message": {
@@ -136,18 +203,22 @@ def _ui_result(call: str, ok: bool) -> dict:
                     "type": "tool_result",
                     "tool_use_id": call,
                     "is_error": False,
-                    "content": [{"type": "text", "text": json.dumps({"id": "c" * 32, "ok": ok})}],
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(receipt if isinstance(receipt, dict) else {"id": "c" * 32, "ok": receipt}),
+                        }
+                    ],
                 }
             ]
         },
     }
 
 
-@pytest.mark.parametrize("ok", [False, True])
-@pytest.mark.parametrize("final", [False, True])
-def test_runtime_receipt_allows_pause_but_not_completion(tmp_path: pathlib.Path, ok: bool, final: bool) -> None:
+def runtime_review_stop(tmp_path: pathlib.Path, receipt: dict, machine: str, *, final: bool = False) -> dict[str, object]:
     call = "toolu_change"
     entries = [
+        _CAPABILITY,
         {
             "type": "assistant",
             "message": {
@@ -161,18 +232,68 @@ def test_runtime_receipt_allows_pause_but_not_completion(tmp_path: pathlib.Path,
                 ]
             },
         },
-        _ui_result(call, ok),
+        _ui_result(call, receipt),
+        *_machine_input(machine),
     ]
     payload = _payload(entries, tmp_path, last_assistant_message="## 作業完了報告\n作業を完了した。" if final else "…")
     _start_skill(
         payload["session_id"], pathlib.Path(payload["transcript_path"]), "agent-toolkit:atk-mode", arguments="process-wi"
     )
-    result = stop.evaluate(json.dumps(payload))
-    assert ("termination_order_advisor" in str(result)) is (not ok or final)
-    if ok and not final:
-        entries.append(_automatic('<atk-auto source="runtime-changes" kind="notice">反映コマンドの応答</atk-auto>'))
-        resumed = stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))
-        assert "termination_order_advisor" in str(resumed)
+    return stop.evaluate(json.dumps(payload))
+
+
+@pytest.mark.parametrize("machine", ["none", "periodic", "task", "result"])
+@pytest.mark.parametrize("ok", [False, True])
+@pytest.mark.parametrize("final", [False, True])
+def test_runtime_receipt_allows_pause_but_not_completion(tmp_path: pathlib.Path, machine: str, ok: bool, final: bool) -> None:
+    result = runtime_review_stop(tmp_path, {"id": "c" * 32, "ok": ok}, machine, final=final)
+    if ok and not final and machine != "result":
+        assert result == {}
+    else:
+        assert "termination_order_advisor" in str(result)
+
+
+@pytest.mark.cpu_limit(1.0, reason="実Stopに続けてClaude CodeのFunction hooks試験用コピーを構成する")
+def test_runtime_stop_then_function_hook(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    claude = shutil.which("claude", path=host_environ().get("PATH", ""))
+    if claude is None:
+        pytest.skip("Claude CodeのFunction hooks試験ランタイムが未導入")
+    receipt = {
+        "id": "c" * 32,
+        "ok": True,
+        "reason": (
+            "変更反映を予約した。まだ反映完了ではない。現在のターンを終えて反映結果を待て。"
+            "agents_serverの再接続は実行中の子turnを中断し、既存の復旧で同じ会話を再開する。"
+        ),
+    }
+    stop_result = runtime_review_stop(tmp_path, receipt, "periodic")
+    evidence = {"receipt": receipt, "prompt": PERIODIC_RECHECK_PROMPT, "answer": "…", "output": stop_result}
+    source = pathlib.Path(__file__).resolve().parents[2]
+    plugin = tmp_path / "agent-toolkit"
+    shutil.copytree(source / ".claude-plugin", plugin / ".claude-plugin")
+    shutil.copytree(source / "hooks", plugin / "hooks", ignore=shutil.ignore_patterns("*.test.ts", "*.test.tsx"))
+    common = plugin / "agent_toolkit" / "_common"
+    common.mkdir(parents=True)
+    shutil.copyfile(source / "agent_toolkit" / "_common" / "output-policy.ts", common / "output-policy.ts")
+    name = "ui_requests.test.tsx"
+    native_test = (source / "hooks" / name).read_text(encoding="utf-8")
+    original = 'JSON.parse("null") as RuntimeStopEvidence | null'
+    assert native_test.count(original) == 1
+    fixture = json.dumps(json.dumps(evidence, ensure_ascii=False), ensure_ascii=False)
+    injected = native_test.replace(original, f"JSON.parse({fixture}) as RuntimeStopEvidence | null")
+    (plugin / "hooks" / name).write_text(injected, encoding="utf-8")
+    result = subprocess.run(
+        [claude, "plugin", "test", str(plugin)],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=25,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "(pass) 反映予約はターン後に公開コマンドを一度実行し結果を通知する" in output
 
 
 @pytest.mark.parametrize("failed_receipt", [False, True])
@@ -187,49 +308,52 @@ def test_only_successful_report_after_bugfix_is_reusable(
     assert (result.get("decision") != "block") is (started_before_send and not failed_receipt)
 
 
-@pytest.mark.parametrize("notification", ["queued", "completed", "failed", "missing"])
+@pytest.mark.parametrize(
+    "notification", ["queued", "completed", "recovered", "partial", "read_failed", "failed", "unrelated", "missing"]
+)
 def test_wait_reuses_notification_before_starting_another_wait(tmp_path: pathlib.Path, notification: str) -> None:
-    entries = [_human("委譲先の結果を待って。"), _CAPABILITY, *_classified("非是正")]
-    entries.append(
-        {
-            "type": "assistant",
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": "toolu_wait",
-                        "name": "Bash",
-                        "input": {"command": "atk agents wait", "run_in_background": True},
-                    }
-                ]
-            },
-        }
-    )
-    entries.append(
-        {
-            "type": "user",
-            "toolUseResult": {"backgroundTaskId": "wait-task"},
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": "toolu_wait",
-                    }
-                ]
-            },
-        }
-    )
+    entries = [_human("委譲先の結果を待って。"), _CAPABILITY, *_classified("非是正"), *_bash_wait()]
+    path = str(tmp_path / "saved-wait")
+    task = _TASK.replace("</task-notification>", f"<output-file>{path}</output-file></task-notification>")
     if notification == "queued":
-        entries.append({"type": "queue-operation", "operation": "enqueue", "content": _TASK})
+        entries.append({"type": "queue-operation", "operation": "enqueue", "content": task})
     elif notification != "missing":
-        entries.append(
-            {
-                "type": "attachment",
-                "attachment": {
-                    "commandMode": "task-notification",
-                    "prompt": _TASK.replace("completed", notification),
+        if notification == "failed":
+            task = _TASK.replace("completed", "failed")
+        elif notification == "unrelated":
+            task = task.replace("toolu_wait", "toolu_other").replace("wait-task", "other-task")
+        entries.append({"type": "attachment", "attachment": {"commandMode": "task-notification", "prompt": task}})
+    if notification in {"recovered", "partial", "read_failed"}:
+        args = {"file_path": path, **({"limit": 1} if notification == "partial" else {})}
+        entries.extend(
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_read",
+                                "name": "Read",
+                                "input": args,
+                            }
+                        ]
+                    },
                 },
-            }
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_read",
+                                "is_error": notification == "read_failed",
+                                "content": "終了: 1件\n終了行: session_id=previous status=completed",
+                            }
+                        ]
+                    },
+                },
+            ]
         )
     payload = _payload(entries, tmp_path, last_assistant_message="…", background_tasks=[])
     session_state.update_state(
@@ -245,6 +369,7 @@ def test_wait_reuses_notification_before_starting_another_wait(tmp_path: pathlib
     assert "delivered_repost_gate" not in str(result)
     if notification == "queued":
         assert "agents_server_session_advisor" not in str(result)
+        assert result.get("continue") is False
     else:
         assert "agents_server_session_advisor" in str(result)
-        assert ("バックグラウンド起動" in str(result)) is (notification == "missing")
+        assert ("バックグラウンド起動" in str(result)) is (notification in {"recovered", "failed", "unrelated", "missing"})

@@ -36,24 +36,24 @@ from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_s
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._agents_server.continuation_wait import continuation_wait_seconds
 lazy from agent_toolkit._common import delegated_session as _delegated_session
+lazy from agent_toolkit._common.completion_exit import conversation_tool_blocks
 lazy from agent_toolkit._common.session_state import read_state
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._hooks import agents_server_observations as _observations
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
-lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_ID_RE, _TOOL_USE_ID_RE
+lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_ID_RE, _TASK_NOTIFICATION_RE, _TOOL_USE_ID_RE
 lazy from agent_toolkit._hooks.background_tasks_launches import collect_background_task_id_tool_use_ids
 lazy from agent_toolkit._hooks.background_tasks_notifications import queued_task_notification_contents
 lazy from agent_toolkit._hooks.delivered_repost_gate import turn_boundary, turn_prompt
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session
-lazy from agent_toolkit._hooks.transcript_scan import iter_assistant_blocks
+lazy from agent_toolkit._hooks.transcript_scan import iter_assistant_blocks, tool_result_text_blocks
 
 _HOOK_ID = "agents_server_session_advisor"
 _WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
 _WARNING_FIX = "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了してください。"
 
 _CLAUDE_WARNING_FIX = (
-    "既存の完了通知があれば保存された出力と終了状態を先に回収してください。"
-    "それでも通知不着・待機の失敗や独立した未回収対象が残る場合だけ、"
     "バックグラウンド実行が使えるなら実行ホストで引数なしの `atk agents wait` を単独でバックグラウンド起動し、"
     "起動を確認してからターンを終えてください。バックグラウンド実行が使えないなら同じターンでフォアグラウンド回収してください。"
     "結果が不要なら`kill(session_id)`で破棄してから終了してください。"
@@ -143,10 +143,12 @@ def compact_wait_notice(session_id: str, owner_agent_id: str) -> str:
     return "\n".join(lines)
 
 
-def _wait_notice_present(entries: list[dict]) -> bool:
-    queued = queued_task_notification_contents(entries)
-    if not queued:
-        return False
+_OUTPUT_FILE_RE = re.compile(r"<output-file>([^<]+)</output-file>")
+
+
+def _matching_wait_notices(entries: list[dict], notices: list[str]) -> list[str]:
+    if not notices:
+        return []
     calls = {
         call
         for block in iter_assistant_blocks(entries)
@@ -157,15 +159,55 @@ def _wait_notice_present(entries: list[dict]) -> bool:
         and _observations.runs_agents_wait(arguments.get("command"))
     }
     tasks = {task for task, linked in collect_background_task_id_tool_use_ids(entries).items() if calls & linked}
-    return any(calls & set(_TOOL_USE_ID_RE.findall(text)) or tasks & set(_TASK_ID_RE.findall(text)) for text in queued)
+    return [
+        notice
+        for text in notices
+        for notice in _TASK_NOTIFICATION_RE.findall(text)
+        if calls & set(_TOOL_USE_ID_RE.findall(notice)) or tasks & set(_TASK_ID_RE.findall(notice))
+    ]
 
 
-def _completed_notification_prompt(entries: list[dict]) -> bool:
-    for entry in reversed(entries):
-        if not turn_boundary(entry):
+def _read_wait_outputs(entries: list[dict], paths: set[str]) -> set[str]:
+    reads: dict[str, set[str]] = {}
+    recovered: set[str] = set()
+    for entry, block in conversation_tool_blocks(entries):
+        args = block.get("input")
+        if block.get("type") == "tool_use" and isinstance(args, dict) and isinstance(call := block.get("id"), str):
+            if (
+                block.get("name") == "Read"
+                and isinstance(path := args.get("file_path"), str)
+                and path in paths
+                and args.get("limit") is None
+                and args.get("offset") in (None, 0, 1)
+            ):
+                reads[call] = {path}
+            elif block.get("name") == "Bash" and isinstance(command := args.get("command"), str):
+                segments = extract_execution_segments(command)
+                if len(segments) == 1 and (segment := segments[0]).resolved and segment.tokens[:1] == ("cat",):
+                    reads[call] = paths.intersection(segment.tokens[1:])
+        if block.get("type") == "tool_result" and block.get("is_error") is not True:
+            call = block.get("tool_use_id")
+            if not isinstance(call, str) or call not in reads:
+                continue
+            receipt = entry.get("toolUseResult")
+            file = receipt.get("file") if isinstance(receipt, dict) else None
+            if isinstance(file, dict) and file.get("truncatedByTokenCap"):
+                continue
+            if any(text.strip() for text in tool_result_text_blocks(block.get("content"))):
+                recovered.update(reads[call])
+    return recovered
+
+
+def _wait_output_needs_recovery(entries: list[dict]) -> bool:
+    for index in range(len(entries) - 1, -1, -1):
+        if not turn_boundary(entries[index]):
             continue
-        text = turn_prompt(entry)
-        return isinstance(text, str) and text.lstrip().startswith("<task-notification>")
+        text = turn_prompt(entries[index])
+        notices = _matching_wait_notices(entries[:index], [text] if text else [])
+        paths = {path for notice in notices for path in _OUTPUT_FILE_RE.findall(notice)}
+        if paths:
+            return bool(paths - _read_wait_outputs(entries[index + 1 :], paths))
+        return any("<status>completed</status>" in notice for notice in notices)
     return False
 
 
@@ -196,7 +238,9 @@ def evaluate(payload_text: str, *, entries: list[dict] | None = None) -> tuple[s
     if _continuation_owned(payload):
         observed |= _declared_waiting_target_ids(payload.get("last_assistant_message")) & set(pending_session_ids)
     pending_session_ids = [item for item in pending_session_ids if item not in observed]
-    if not awaiting and (not pending_session_ids or (entries and _wait_notice_present(entries))):
+    if not awaiting and (
+        not pending_session_ids or (entries and _matching_wait_notices(entries, queued_task_notification_contents(entries)))
+    ):
         return "approve", ""
 
     description = (
@@ -211,7 +255,7 @@ def evaluate(payload_text: str, *, entries: list[dict] | None = None) -> tuple[s
     fix = "役割が求める指示を`send_message`で返してください。" if awaiting else ""
     if pending_session_ids:
         warning_fix = _WARNING_FIX if is_codex_payload(payload) or is_antigravity_payload(payload) else _CLAUDE_WARNING_FIX
-        if entries and _completed_notification_prompt(entries):
+        if entries and _wait_output_needs_recovery(entries):
             warning_fix = (
                 "完了通知の保存出力と終了状態を回収し、その結果で残る対象を特定してください。"
                 "失敗・通知不着や別の未回収対象がある場合だけ、次の待機を選んでください。"

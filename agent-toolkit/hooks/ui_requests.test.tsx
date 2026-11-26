@@ -166,6 +166,15 @@ test("MCP圧縮要求を表示要求と分けて予約受付する", async ($, o
   expect(result.reason).toContain("完了ではない");
 });
 
+type RuntimeStopEvidence = {
+  receipt: { id: string; ok: boolean; reason: string };
+  prompt: string;
+  answer: string;
+  output: object;
+};
+
+const runtimeStopEvidence = JSON.parse("null") as RuntimeStopEvidence | null;
+
 test("反映予約はターン後に公開コマンドを一度実行し結果を通知する", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);
@@ -202,7 +211,13 @@ test("反映予約はターン後に公開コマンドを一度実行し結果�
   expect(receipts.get(reservation)?.ok).toBe(true);
   expect(receipts.get(reservation)?.reason).toContain("まだ反映完了ではない");
   expect(commands).toEqual([]);
-  const completed = { answer: "…", durationMs: 0, isAborted: false, turnId: "runtime-ui-turn", reason: "answer" as const };
+  if (runtimeStopEvidence) {
+    const receipt = receipts.get(reservation);
+    expect({ id: reservation, ok: receipt?.ok, reason: receipt?.reason }).toEqual(runtimeStopEvidence.receipt);
+    await $.turn.start({ text: runtimeStopEvidence.prompt, turnId: "runtime-ui-recheck" });
+    expect(runtimeStopEvidence.output).toEqual({});
+  }
+  const completed = { answer: runtimeStopEvidence?.answer ?? "…", durationMs: 0, isAborted: false, turnId: runtimeStopEvidence ? "runtime-ui-recheck" : "runtime-ui-turn", reason: "answer" as const };
   await $.turn.complete(completed);
   await clock.advance(0);
   await $.turn.complete(completed);

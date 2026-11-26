@@ -35,11 +35,13 @@ lazy from agent_toolkit._common import completion_exit, function_hook_requests
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.function_hook_requests import cleanup, enqueue
+lazy from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, opening_tag
 lazy from agent_toolkit._common.periodic_recheck import (
     LEGACY_PERIODIC_RECHECK_MARKER,
     PERIODIC_RECHECK_MARKER,
     PERIODIC_RECHECK_PROMPT,
 )
+lazy from agent_toolkit._common.send_to_user import is_completion
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
 lazy from agent_toolkit._hooks import agents_server_observations, delivered_repost_gate
 lazy from agent_toolkit._hooks import busy_loop_guard as _busy_loop_guard
@@ -84,6 +86,7 @@ _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"
 
 _RECHECK_COLLECT_WAIT_SECONDS = 20
 _RUNTIME_TOOLS = frozenset(prefix + "apply_runtime_changes" for prefix in MCP_NAMESPACES)
+_RUNTIME_RESULT_MARKER = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "runtime-changes", "kind": "notice"})
 
 
 def _set_consecutive_block_count(state: dict, count: int) -> dict:
@@ -185,8 +188,16 @@ def _collect_recheck_before_idle(session_id: str) -> None:
 
 
 def _runtime_reserved(entries: list[dict]) -> bool:
+    result_index = next(
+        (
+            index
+            for index in range(len(entries) - 1, -1, -1)
+            if (text := delivered_repost_gate.turn_prompt(entries[index])) and text.lstrip().startswith(_RUNTIME_RESULT_MARKER)
+        ),
+        -1,
+    )
     calls: set[str] = set()
-    for entry, block in completion_exit.conversation_tool_blocks(entries):
+    for entry, block in completion_exit.conversation_tool_blocks(entries[result_index + 1 :]):
         if (
             block.get("type") == "tool_use"
             and isinstance(name := block.get("name"), str)
@@ -207,7 +218,7 @@ def _runtime_reserved(entries: list[dict]) -> bool:
 def _intermission(payload: dict, session_id: str, delivery: tuple[list[dict], bool | None]) -> tuple[bool, bool]:
     """報告なしで区切る根拠と、予約済み反映で同じ作業が再開する根拠を返す。 pyfltr: allow-comment"""
     last = payload.get("last_assistant_message")
-    if (isinstance(last, str) and last.strip() not in ("", "…")) or delivery[1] is not None:
+    if isinstance(last, str) and last.strip() not in ("", "…"):
         return False, False
     entries, _ = delivery
     turn_start = 0
@@ -220,10 +231,15 @@ def _intermission(payload: dict, session_id: str, delivery: tuple[list[dict], bo
             if text is not None and _human_prompt(entry, text) is None:
                 prompt = text.lstrip()
             break
-    if completion_exit.reports(entries[turn_start:]):
+    turn = entries[turn_start:]
+    if completion_exit.reports(turn) or any(
+        is_completion(text, None) for _, _, text in delivered_repost_gate.delivered_messages(turn)
+    ):
         return False, False
-    if _runtime_reserved(entries[turn_start:]):
-        return bool(prompt), True
+    if _runtime_reserved(entries):
+        return bool(prompt) and delivery[1] is None, True
+    if delivery[1] is not None:
+        return False, False
     if queued_task_notification_contents(entries) and prompt:
         return True, False
     if not prompt.startswith((PERIODIC_RECHECK_MARKER, LEGACY_PERIODIC_RECHECK_MARKER, "<task-notification>")):
