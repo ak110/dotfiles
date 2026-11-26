@@ -8,6 +8,7 @@ from typing import Any
 from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import host_homes as _host_homes
 from session_evidence_catalog import CATALOG_PARENT_FIELDS
+from session_evidence_delivery import DELIVERY_CANDIDATE_KINDS
 from session_evidence_extract import (
     _CollectedRecord,
     _default_events,
@@ -46,7 +47,7 @@ def _summary_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "warning",
         "bundle-locator",
         "bundle-warning-group",
-        "delivery-repost-candidate",
+        *DELIVERY_CANDIDATE_KINDS,
     }
     selected = [
         {key: value for key, value in event.items() if key != "locators"} if event["kind"] == "fixed-string-summary" else event
@@ -289,9 +290,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delivery-reposts",
         action="store_true",
-        help="Claude Codeの非sidechainの送達呼び出しと後続の地の文から再掲候補を集計する。"
-        "送達60文字以上・地の文30文字以上、空白を除いた4-gramの少ない側が20要素以上で共通割合0.5以上を候補とする。"
-        "送達ごとに次の人間入力までの最初の一致を数え、確認済みの再掲とは区別する。"
+        help="Claude Codeの非sidechainの送達成功後、次のユーザー入力までの通常本文を内容比較の候補とする。"
+        "候補の送達・応答の記録位置を--detailで照合する。終了の「…」は対象外。確認済みの再掲は自動集計しない。"
+        "比較用に、4-gramの一致と成功後の長文を従来の条件で別に集計する。"
         "--sinceより後・--observation-boundary以前の送達を選び、UTCの送達日別と全期間の件数・割合を返す。"
         "期間指定時の時刻不明の送達は除く。--summary-onlyでは集計だけを返す。"
         "--catalog-claude-projectとも併用できる。",

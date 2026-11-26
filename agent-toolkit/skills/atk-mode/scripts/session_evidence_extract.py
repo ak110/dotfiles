@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from collections.abc import Callable
 from typing import Any
@@ -91,7 +92,9 @@ def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return events
 
 
-def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> list[dict[str, Any]]:
+def extract(
+    entries: list[dict[str, Any]], lines: list[int] | None = None, *, include_delivery_id: bool = False
+) -> list[dict[str, Any]]:
     if not entries:
         return []
     entries = _agy_records.normalize_entries(entries)
@@ -99,17 +102,22 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
     if runtime is None:
         return _fallback()
     numbers = lines if lines is not None else list(range(1, len(entries) + 1))
+    extractor = (
+        functools.partial(_extract_claude, include_delivery_id=True)
+        if include_delivery_id and runtime == "claude"
+        else RUNTIME_EXTRACTORS[runtime]
+    )
     events: list[dict[str, Any]] = []
     start = 0
     for index, entry in enumerate(entries):
         if index > start and entry.get("_record_gap_before"):
-            events.extend(_extract_for_runtime(entries[start:index], runtime, numbers[start:index]))
+            events.extend(extractor(entries[start:index], numbers[start:index]))
             start = index
         if _turn_finished(entry, runtime):
-            events.extend(_finalize(_extract_for_runtime(entries[start : index + 1], runtime, numbers[start : index + 1])))
+            events.extend(_finalize(extractor(entries[start : index + 1], numbers[start : index + 1])))
             start = index + 1
     if start < len(entries):
-        events.extend(_finalize(_extract_for_runtime(entries[start:], runtime, numbers[start:])))
+        events.extend(_finalize(extractor(entries[start:], numbers[start:])))
     for sequence, event in enumerate(events, start=1):
         event["sequence"] = sequence
     return events
@@ -138,15 +146,6 @@ def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
     return entry.get("_agy_original", entry).get("event") == "result"
 
 
-def _extract_for_runtime(
-    entries: list[dict[str, Any]],
-    runtime: _Runtime,
-    lines: list[int] | None = None,
-) -> list[dict[str, Any]]:
-    numbers = lines if lines is not None else list(range(1, len(entries) + 1))
-    return RUNTIME_EXTRACTORS[runtime](entries, numbers)
-
-
 def _fallback() -> list[dict[str, Any]]:
     return [{"sequence": 1, "kind": "fallback", "text": _FALLBACK_TEXT}]
 
@@ -159,8 +158,10 @@ def load_and_extract(raw_path: str) -> list[dict[str, Any]]:
     return _extract_records(loaded.records)
 
 
-def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
-    return extract([record.entry for record in records], [record.line for record in records])
+def _extract_records(records: list[_Record], *, include_delivery_id: bool = False) -> list[dict[str, Any]]:
+    return extract(
+        [record.entry for record in records], [record.line for record in records], include_delivery_id=include_delivery_id
+    )
 
 
 def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
@@ -378,10 +379,14 @@ def _events_with_record(events: list[dict[str, Any]], record_id: str) -> list[di
     return [{**event, "record": record_id} for event in events]
 
 
-def _default_events(collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
+def _default_events(
+    collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], *, include_delivery_id: bool = False
+) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for item in collected:
-        events.extend(_events_with_record(_extract_records(item.records), item.record_id))
+        events.extend(
+            _events_with_record(_extract_records(item.records, include_delivery_id=include_delivery_id), item.record_id)
+        )
     events.extend(_collection_events(collected, unresolved))
     return events
 

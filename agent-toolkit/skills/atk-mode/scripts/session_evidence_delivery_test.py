@@ -29,6 +29,16 @@ def _text(text: str, *, end: bool = True, **fields: Any) -> dict[str, Any]:
     return _assistant([{"type": "text", "text": text}], end=end, **fields)
 
 
+def _result(call: str, *, failed: bool = False) -> dict[str, Any]:
+    return {
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": call, "is_error": failed, "content": "結果"}],
+        },
+    }
+
+
 def _write(path: Path, entries: list[dict[str, Any]]) -> None:
     path.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
 
@@ -279,36 +289,25 @@ def test_new_delivery_candidate_requires_success_and_counts_once(tmp_path: Path,
     paraphrase = "The report was completed successfully. " * 7
     human = {"type": "user", "message": {"role": "user", "content": "次の依頼"}}
 
-    def result(call: str, *, failed: bool = False) -> dict[str, Any]:
-        return {
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": [
-                    {"type": "tool_result", "tool_use_id": call, "is_error": failed, "content": "結果"},
-                ],
-            },
-        }
-
     _write(
         path,
         [
             _send(report, "success"),
-            result("success"),
+            _result("success"),
             _text("…"),
             _text(paraphrase[:200]),
             _text(paraphrase),
             _text(paraphrase),
             human,
             _send(report, "failed"),
-            result("failed", failed=True),
+            _result("failed", failed=True),
             _text(paraphrase),
             human,
             _send(report, "missing"),
             _text(paraphrase),
             human,
             _send(report, "after-boundary"),
-            result("after-boundary"),
+            _result("after-boundary"),
             human,
             _text(paraphrase),
         ],
@@ -324,3 +323,51 @@ def test_new_delivery_candidate_requires_success_and_counts_once(tmp_path: Path,
     assert metric["successful_delivery_count"] == 2
     assert metric["candidate_count"] == 1 and metric["candidate_ratio"] == 0.5
     assert metric["excluded_failed_count"] == metric["excluded_missing_result_count"] == 1
+
+
+def test_short_post_delivery_comparison_is_shared_by_bundle_and_cli(tmp_path, capsys):
+    path = tmp_path / "main.jsonl"
+    report = "検査は全件成功した。"
+    responses = ("All checks passed.", "試験はすべて通った。", "Windowsでも追加試験が通った。")
+    human = {"type": "user", "message": {"role": "user", "content": "次の依頼"}}
+    _write(
+        path,
+        [
+            _send(report, "ok"),
+            _text("送達の応答前"),
+            _result("ok"),
+            _text("…"),
+            *(_text(response, end=index != 2) for index, response in enumerate(responses)),
+            human,
+            _text("別の依頼への回答。"),
+            _send(report, "rejected"),
+            _result("rejected", failed=True),
+            _text("配信されていない報告への応答。"),
+            _send(report, "unknown"),
+            _text("結果不明の報告への応答。"),
+        ],
+    )
+    assert evidence.main([str(path), "--delivery-reposts"]) == 0
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    from_cli = [event for event in events if event["kind"] == delivery.RESPONSE_CANDIDATE]
+    assert [event["line"] for event in from_cli] == [5, 6, 7]
+    assert all(event["delivery_lines"] == [1] and event["delivery_result_lines"] == [3] for event in from_cli)
+    summary = next(event for event in events if event["kind"] == "delivery-repost-summary")
+    comparison = summary["post_delivery_response"]
+    assert (comparison["candidate_count"], comparison["confirmed_repost_count"], comparison["unconfirmed_count"]) == (3, 0, 3)
+    assert summary["candidate_count"] == summary["post_delivery_long_text"]["candidate_count"] == 0
+    assert evidence.main([str(path), "--delivery-reposts", "--summary-only"]) == 0
+    assert delivery.RESPONSE_CANDIDATE not in capsys.readouterr().out
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(path), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    rows = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    found = [row for row in rows if row.get("candidate_kind") == delivery.RESPONSE_CANDIDATE]
+    assert [row["locators"][0]["line"] for row in found] == [5, 6, 7]
+    for candidate, response in zip(found, responses, strict=True):
+        assert candidate["review_status"] == "unreviewed"
+        proof = json.loads((bundle / "candidate-evidence" / f"{candidate['candidate_id']}.json").read_text(encoding="utf-8"))
+        assert {event["line"] for event in proof["events"]} == {1, 3, candidate["locators"][0]["line"]}
+        serialized = json.dumps(proof, ensure_ascii=False)
+        assert report in serialized and response in serialized

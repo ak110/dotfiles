@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +19,11 @@ from session_evidence_extract import (
 from session_evidence_extract_claude import _extract_claude
 
 _LONG_TEXT_THRESHOLD = 200
+RESPONSE_CANDIDATE = "post-delivery-response-candidate"
+DELIVERY_CANDIDATE_KINDS = frozenset({"delivery-repost-candidate", "post-delivery-long-text-candidate", RESPONSE_CANDIDATE})
 
 
-def post_delivery_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def post_delivery_events(timeline: list[dict[str, Any]], collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     events: list[dict[str, Any]] = []
     for event in timeline:
@@ -45,13 +47,27 @@ def post_delivery_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]
                         "delivery_timestamp": delivered.get("timestamp"),
                     }
                 )
-    return events
+    with_delivery = {
+        record
+        for event in timeline
+        if event.get("delivery") == "send_to_user"
+        and isinstance(record := event.get("record"), str)
+        and isinstance(event.get("delivery_tool_use_id"), str)
+    }
+    results = {
+        item.record_id: _result_index(item.records, None)
+        for item in collected
+        if item.runtime == "claude" and item.record_id in with_delivery
+    }
+    responses = _response_candidates(timeline, results)
+    comparable = {(event["record"], event["line"]) for event in responses}
+    return [event for event in events if (event["record"], event["line"]) not in comparable] + responses
 
 
 def _result_index(records: list[_Record], boundary: datetime.datetime | None) -> dict[str, tuple[int, str]]:
     results: dict[str, tuple[int, str]] = {}
     for record in records:
-        if record.entry.get("type") != "user":
+        if record.entry.get("type") != "user" or record.entry.get("isSidechain") is True:
             continue
         stamp = _timestamp(record.entry)
         if boundary is not None and stamp is not None and stamp > boundary:
@@ -68,6 +84,61 @@ def _result_index(records: list[_Record], boundary: datetime.datetime | None) ->
                 status = "failed" if block.get("is_error") is True else "succeeded"
                 results.setdefault(call_id, (record.line, status))
     return results
+
+
+def _in_period(stamp: datetime.datetime | None, since: datetime.datetime | None, boundary: datetime.datetime | None) -> bool:
+    return (since is None and boundary is None) or (
+        stamp is not None and (since is None or since < stamp) and (boundary is None or stamp <= boundary)
+    )
+
+
+def _response_candidates(
+    timeline: list[dict[str, Any]],
+    results: dict[str, dict[str, tuple[int, str]]],
+    *,
+    default_record: str | None = None,
+    since: datetime.datetime | None = None,
+    boundary: datetime.datetime | None = None,
+) -> list[dict[str, Any]]:
+    sent: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for event in timeline:
+        record = event.get("record", default_record)
+        line = event.get("line")
+        if (
+            not isinstance(record, str)
+            or record not in results
+            or not isinstance(line, int)
+            or event.get("is_sidechain") is True
+        ):
+            continue
+        stamp = _timestamp(event)
+        if boundary is not None and stamp is not None and stamp > boundary:
+            continue
+        if event["kind"] == "user" and not _generated_user_event(event):
+            sent.pop(record, None)
+            continue
+        if event.get("delivery") == "send_to_user" and _in_period(stamp, since, boundary):
+            call_id = event.get("delivery_tool_use_id")
+            result_line, status = results[record].get(call_id, (-1, "missing"))
+            if status == "succeeded" and line < result_line:
+                sent[record].append((line, result_line))
+        elif event.get("delivery") == "text" and event["text"].strip() not in ("", "…") and (record, line) not in seen:
+            deliveries = [(start, result) for start, result in sent.get(record, ()) if result < line]
+            if deliveries:
+                seen.add((record, line))
+                candidates.append(
+                    {
+                        **event,
+                        "kind": RESPONSE_CANDIDATE,
+                        "record": record,
+                        "delivery_lines": sorted({start for start, _ in deliveries}),
+                        "delivery_result_lines": sorted({result for _, result in deliveries}),
+                        "review_status": "unreviewed",
+                    }
+                )
+    return candidates
 
 
 def delivery_events(
@@ -99,9 +170,7 @@ def delivery_events(
                 awaiting_long_text.clear()
                 continue
             if event.get("delivery") == "send_to_user":
-                selected = (since is None and boundary is None) or (
-                    stamp is not None and (since is None or since < stamp) and (boundary is None or stamp <= boundary)
-                )
+                selected = _in_period(stamp, since, boundary)
                 if selected and event["text_length"] >= 60:
                     delivery = {
                         "kind": "delivery",
@@ -161,6 +230,15 @@ def delivery_events(
                 else:
                     remaining.append(delivery)
             pending = remaining
+        events.extend(
+            _response_candidates(
+                timeline,
+                {item.record_id: results},
+                default_record=item.record_id,
+                since=since,
+                boundary=boundary,
+            )
+        )
     return events
 
 
@@ -181,6 +259,7 @@ def delivery_summary(
     long_text_candidates = sum(event["kind"] == "post-delivery-long-text-candidate" for event in events)
     deliveries = sum(row["delivery_count"] for row in by_day.values())
     candidates = sum(row["candidate_count"] for row in by_day.values())
+    response_candidates = sum(event["kind"] == RESPONSE_CANDIDATE for event in events)
     return {
         "kind": "delivery-repost-summary",
         "delivery_count": deliveries,
@@ -197,6 +276,15 @@ def delivery_summary(
             "candidate_ratio": long_text_candidates / results["succeeded"] if results["succeeded"] else None,
             "excluded_failed_count": results["failed"],
             "excluded_missing_result_count": results["missing"],
+        },
+        "post_delivery_response": {
+            "description": (
+                "成功した送達後、次のユーザー入力までの通常本文を記録行ごとに数える。"
+                "字面・長さ・言語は条件としない。終了の「…」を除く。内容は未照合。"
+            ),
+            "candidate_count": response_candidates,
+            "confirmed_repost_count": 0,
+            "unconfirmed_count": response_candidates,
         },
         "day_timezone": "UTC",
         "since": since.isoformat() if since is not None else None,
@@ -232,10 +320,18 @@ def catalog_delivery_events(
         }
     )
     return [
-        *(event for event in events if event["kind"] in {"delivery-repost-candidate", "post-delivery-long-text-candidate"}),
+        *comparison_output(events),
         *_unresolved_events(scan.unresolved),
         summary,
     ], 0
+
+
+def comparison_output(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {key: value for key, value in event.items() if key != "text"} if event["kind"] == RESPONSE_CANDIDATE else event
+        for event in events
+        if event["kind"] in DELIVERY_CANDIDATE_KINDS
+    ]
 
 
 def _timestamp(event: dict[str, Any]) -> datetime.datetime | None:
