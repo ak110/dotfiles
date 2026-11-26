@@ -30,7 +30,7 @@ atk wi submit --show REQUEST_ID
 
 | 登録方法 | 選ぶ場面 |
 | --- | --- |
-| `atk wi add` | 依頼内容が既に固まっており、本文をそのまま登録したい |
+| `atk wi add` | 本人が書いた、ユーザー発話の引用節を持たない本文をそのまま登録したい |
 | `atk wi add --batch` | 別環境の`atk wi show --all`の出力を複数件まとめて移行・復元したい |
 | `/agent-toolkit:atk-mode add-awi-by-user <要求>` | 依頼内容を具体化し、必要な要件確認を対話で行って登録したい |
 | `/agent-toolkit:atk-mode process-user-comments` | 登録済みAWIへ込み入ったユーザーコメントを書いた後、質問を対話で済ませて本文を整理し直してから自動処理へ渡したい |
@@ -38,12 +38,13 @@ atk wi submit --show REQUEST_ID
 
 対象の作業をモデル別ランチャーで行う場合の終了と再開については、[Claude Codeのモデル別ランチャー](claude-code-guide.md#claude-codeのモデル別ランチャー)を参照。
 
-通常の登録は、本文を書いたファイルを渡して`atk wi add --body-file <本文ファイル>`を実行する。
+本人が書いた本文を直接登録する場合は、`atk wi add --body-file <本文ファイル>`を実行する。
 `atk wi add --cooldown-until '2026-10-11T12:00:00+09:00' --body-file <本文ファイル>`のように、指定時刻まで処理を始めないAWIも登録できる。
-ユーザーの依頼から作る通常AWIは、題・目的と元の依頼が一致するかを独立した担当が先に確かめる。
-対象を狭めた原稿は保存しない。
-CLIで原稿を保存・更新する担当は、独立した担当が作った該当版の検収結果を `--origin-review <絶対パス>` でdry-runと保存の両方へ渡す。
-エージェントに起票を依頼する場合は、ユーザー自身が検収ファイルを作る必要はない。
+
+ユーザー発話から通常AWIを起票したい場合はエージェントに `/agent-toolkit:atk-mode add-awi-by-user <要求>` で依頼する。
+登録済みのAWIをコメントに沿って整理し直す場合は `/agent-toolkit:atk-mode process-user-comments` を使う。
+起票・更新するエージェントは別の担当に原文と原稿の検収を依頼し、合格した版の結果を `--origin-review <絶対パス>` でdry-runと保存に渡す。
+本人が検収ファイルを作る必要はない。
 
 登録済みのAWIを直したい場合は、`atk wi hold <ファイル名>`で自動処理から外し、本文を直してから`atk wi unhold <ファイル名>`で戻す。
 処理中の項目は保留せず、変更内容を新しいAWIとして登録する。

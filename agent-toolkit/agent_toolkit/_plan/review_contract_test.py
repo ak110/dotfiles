@@ -118,8 +118,8 @@ def test_original_request_cannot_be_replaced_by_the_completion_conditions() -> N
         ("", False),
         (f"{_FIRST} 引用照合1: 未達 — 根拠: 一覧以外の画面が小さく読みにくい", False),
         (f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1・原文要求2", False),
-        (f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1", True),
-        (f"{_FIRST} 引用照合1: 除外 — 根拠: 割当外 — 20261125-030100-002.md#反映内容と反映先", True),
+        (f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1", False),
+        (f"{_FIRST} 引用照合1: 除外 — 根拠: 割当外 — 20261125-030100-002.md#反映内容と反映先", False),
     ],
 )
 def test_quote_receipt_requires_live_original_requirement(evidence: str, valid: bool) -> None:
@@ -134,3 +134,24 @@ def test_quote_receipt_requires_live_original_requirement(evidence: str, valid: 
     else:
         with pytest.raises(ValueError, match="引用照合1"):
             review_contract.validate_origin_verdicts(result, originals)
+
+
+@pytest.mark.parametrize("heading", ["ユーザー指摘の逐語引用", "ユーザーコメント", "回答"])
+@pytest.mark.parametrize("second", ["達成", "未達", "根拠不足", "欠落", "割当外"])
+def test_two_requests_in_one_passage_are_checked_against_original(heading: str, second: str) -> None:
+    original = f"## {heading}\n\n> 受入時に保存を実行する。受入時に再読込を実行する。\n"
+    first = f"{_FIRST} 原文要求1「受入時に保存を実行する。」: 達成 — 根拠: 保存は成功"
+    lines = [f"{_FIRST} 完成条件1: 達成 — 根拠: 保存済み", first]
+    cited = "原文要求1"
+    if second == "割当外":
+        lines.append(f"{_FIRST} 引用除外1.2: 割当外 — 根拠: {_SECOND}#反映内容と反映先")
+    elif second != "欠落":
+        lines.append(f"{_FIRST} 原文要求2「受入時に再読込を実行する。」: {second} — 根拠: 再読込の観測")
+        if second == "達成":
+            cited += "・原文要求2"
+    lines.append(f"{_FIRST} 引用照合1: 達成 — 根拠: {cited}")
+    if second in {"達成", "割当外"}:
+        review_contract.validate_origin_verdicts("\n".join(lines), {_FIRST: original})
+    else:
+        with pytest.raises(ValueError, match="引用照合1.2"):
+            review_contract.validate_origin_verdicts("\n".join(lines), {_FIRST: original})

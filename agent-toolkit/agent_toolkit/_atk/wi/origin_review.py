@@ -16,7 +16,8 @@ _SCOPE_WORD = re.compile(
     r"その他もろもろ|その他諸々|などを含む|(?<!何)(?<!なん)とか|全体的に|すべて|全て|あらゆる|全部|一切"
     r"|全レビュー|全画面|全件|全工程|全項目"
 )
-_REVIEW_HEADINGS = (REQUEST_H2_QUOTATION, "ユーザーコメント", "反映内容と反映先", "完成条件")
+_ORIGIN_HEADINGS = (REQUEST_H2_QUOTATION, "ユーザーコメント")
+_REVIEW_HEADINGS = (REQUEST_H2_QUOTATION, "反映内容と反映先", "完成条件")
 _TARGET_FIELDS = ("target_repo", "target_branch", "target_commit")
 
 
@@ -25,7 +26,7 @@ def _digest(text: str) -> str:
 
 
 def _origin(body: str) -> bool:
-    return any(_section(body, name) for name in _REVIEW_HEADINGS[:2])
+    return any(_section(body, name) for name in _ORIGIN_HEADINGS)
 
 
 def _section(body: str, name: str) -> str:
@@ -71,7 +72,7 @@ def _verify_record(record: dict[str, object], draft: str, body: str) -> None:
     if not isinstance(coverage, dict):
         raise ValueError("範囲対応は辞書で指定する（該当なしは空辞書）")
     quoted_origin = "\n".join(
-        line for heading in _REVIEW_HEADINGS[:2] for line in headings.last_h2_section_lines(body, heading) or []
+        line for heading in _ORIGIN_HEADINGS for line in headings.last_h2_section_lines(body, heading) or []
     )
     markers = set(_SCOPE_WORD.findall(original)) | set(_SCOPE_WORD.findall(quoted_origin))
     if missing := markers - coverage.keys():

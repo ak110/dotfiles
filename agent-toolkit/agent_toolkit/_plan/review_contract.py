@@ -193,48 +193,106 @@ def validate(
         raise ValueError("\n".join(errors))
 
 
-def quoted_passages(original: str) -> list[str]:
-    """逐語節は段落・引用・コードフェンスを同じ番号体系に載せる。 pyfltr: allow-comment"""
-    lines = last_h2_section_lines(original, "ユーザー指摘の逐語引用") or []
+def _origin_passages(original: str, heading: str) -> list[str]:
+    lines = last_h2_section_lines(original, heading) or []
     return [
-        "\n".join(lines[token.map[0] : token.map[1]])
+        token.content.rstrip("\n") if token.type == "fence" else "\n".join(lines[token.map[0] : token.map[1]])
         for token in MarkdownIt().parse("\n".join(lines))
         if token.level == 0 and token.map is not None
     ]
 
 
+def quoted_passages(original: str) -> list[str]:
+    return _origin_passages(original, "ユーザー指摘の逐語引用")
+
+
+def _requirement_units(passage: str) -> list[str]:
+    lines = [re.sub(r"^\s*(?:> *)+", "", line) for line in passage.splitlines()]
+    lines = [re.sub(r"^\s*(?:[-+*]|[0-9]+[.)]) +", "\n", line) for line in lines]
+    paragraphs = re.split(r"\n\s*\n", "\n".join(lines).strip())
+    return [
+        match.group().strip()
+        for paragraph in paragraphs
+        for match in re.finditer(
+            r"[\s\S]*?(?:[。！？][」』）】”’]*|[.!?][」』）】”’]*(?=\s|$)|$)",
+            " ".join(paragraph.split()),
+        )
+        if match.group().strip()
+    ]
+
+
+_EXCLUSIONS = r"(失効|割当外|投入元で完了|回答済み|背景|重複)"
+
+
+def _validate_passage(
+    label: str,
+    passage: str,
+    matching: list[tuple[str, str]],
+    exclusions: dict[int, list[str]],
+    requirements: Mapping[str, tuple[str, str]],
+) -> list[str]:
+    if len(matching) != 1:
+        return [f"{label}: 判定が無いか重複している"]
+    verdict, evidence = matching[0]
+    if verdict in {"未達", "根拠不足"}:
+        return [f"{label}: {verdict}"]
+
+    units = _requirement_units(passage)
+    numbers = re.findall(r"原文要求([1-9][0-9]*)", evidence) if verdict == "達成" else []
+    attributed: set[str] = set()
+    errors = []
+    for number in numbers:
+        quote, status = requirements.get(number, ("", ""))
+        if status != "達成" or quote not in units:
+            errors.append(f"{label}: 原文要求{number}の逐語・達成判定を照合できない")
+        else:
+            attributed.add(quote)
+    if verdict == "達成" and not numbers:
+        errors.append(f"{label}: 達成した原文要求行の参照が無い")
+    if verdict == "除外" and not exclusions:
+        errors.append(f"{label}: 原文単位ごとの除外が無い")
+    for index, unit in enumerate(units, 1):
+        excluded = exclusions.get(index, [])
+        if len(excluded) > 1 or (excluded and unit in attributed):
+            errors.append(f"{label}.{index}: 原文単位の判定が重複している")
+        elif not excluded and unit not in attributed:
+            errors.append(f"{label}.{index}: 原文要求の達成または除外の判定が無い: {unit}")
+    for index in exclusions.keys() - set(range(1, len(units) + 1)):
+        errors.append(f"{label}.{index}: 原本にない原文単位を除外している")
+    return errors
+
+
 def validate_origin_verdicts(result: str, originals: Mapping[str, str]) -> None:
-    rows: dict[tuple[str, int], list[tuple[str, str]]] = {}
-    requirements: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    quotes: dict[str, dict[int, list[tuple[str, str]]]] = {}
+    requirements: dict[str, dict[str, tuple[str, str]]] = {}
+    exclusions: dict[str, dict[int, dict[int, list[str]]]] = {}
+    errors = []
     for line in result.splitlines():
         if match := re.fullmatch(r"(\S+) 引用照合([1-9][0-9]*): (達成|未達|根拠不足|除外) — 根拠: (\S.*)", line):
             name, index, verdict, evidence = match.groups()
-            rows.setdefault((name, int(index)), []).append((verdict, evidence))
+            quotes.setdefault(name, {}).setdefault(int(index), []).append((verdict, evidence))
+        if match := re.fullmatch(rf"(\S+) 引用除外([1-9][0-9]*)\.([1-9][0-9]*): {_EXCLUSIONS} — 根拠: (\S.*)", line):
+            name, block, unit, _, evidence = match.groups()
+            exclusions.setdefault(name, {}).setdefault(int(block), {}).setdefault(int(unit), []).append(evidence)
         if match := re.fullmatch(r"(\S+) 原文要求([1-9][0-9]*)「(.+)」: (達成|未達|根拠不足) — 根拠: \S.*", line):
             name, index, quote, verdict = match.groups()
-            requirements.setdefault((name, index), []).append((quote, verdict))
-    errors = []
+            rows = requirements.setdefault(name, {})
+            if name in originals and (index in rows or verdict != "達成"):
+                errors.append(f"{name} 原文要求{index}: 重複または{verdict}")
+            rows[index] = (" ".join(quote.split()), verdict)
     for name, original in originals.items():
-        for index, passage in enumerate(quoted_passages(original), 1):
-            matching = rows.get((name, index), [])
-            label = f"{name} 引用照合{index}"
-            if len(matching) != 1:
-                errors.append(f"{label}: 判定が無いか重複している")
-                continue
-            verdict, evidence = matching[0]
-            if verdict == "除外":
-                if re.fullmatch(r"(失効|割当外|投入元で完了|回答済み|背景|重複) — \S.*", evidence) is None:
-                    errors.append(f"{label}: 除外した分類と根拠が無い")
-            elif verdict != "達成":
-                errors.append(f"{label}: {verdict}")
-            else:
-                numbers = re.findall(r"原文要求([1-9][0-9]*)", evidence)
-                joined = " ".join(re.sub(r"(?m)^ {0,3}> ?", "", passage).split())
-                for number in numbers:
-                    candidates = requirements.get((name, number), [])
-                    if len(candidates) != 1 or candidates[0][1] != "達成" or candidates[0][0] not in joined:
-                        errors.append(f"{label}: 原文要求{number}の逐語・達成判定を照合できない")
-                if not numbers:
-                    errors.append(f"{label}: 達成した原文要求行の参照が無い")
+        passages = (
+            quoted_passages(original) + _origin_passages(original, "ユーザーコメント") + _origin_passages(original, "回答")
+        )
+        for index, passage in enumerate(passages, 1):
+            errors.extend(
+                _validate_passage(
+                    f"{name} 引用照合{index}",
+                    passage,
+                    quotes.get(name, {}).get(index, []),
+                    exclusions.get(name, {}).get(index, {}),
+                    requirements.get(name, {}),
+                )
+            )
     if errors:
         raise ValueError("\n".join(errors))
