@@ -164,6 +164,37 @@ def test_bugfix_record_checks_actions_independently(tmp_path, monkeypatch, repor
         assert f"`{label}:`" in result["reason"]
 
 
+@pytest.mark.parametrize(
+    ("body", "blocked"),
+    [
+        ("他のMRへの同種の積み増しは未確認", True),
+        ("未確認（これから検索する）", True),
+        ("未確認 (これから検索する)。", True),
+        ("検索予定", True),
+        ("関連ファイルを検索して該当0件。別リポジトリは未確認。", False),
+        ("作業ツリーを検索して該当1件を直した、対象外の別版は未確認。", False),
+    ],
+)
+def test_similar_review_pending_status_is_not_a_result(tmp_path, monkeypatch, body, blocked):
+    entries = [_human("直っていない。"), *_classified(), _BUGFIX]
+    report = _TYPED_REPORT.replace(_RECORD_LEAD.splitlines()[2], f"類似見直し: {body}")
+    payload = _payload(entries, tmp_path)
+    assert bool(bugfix_gate.send_block(payload, report)) is blocked
+    result = _stop(entries, tmp_path, monkeypatch, last_assistant_message=report)
+    assert (result.get("decision") == "block") is blocked
+
+
+@pytest.mark.parametrize("field", ["対策", "回帰防止", "類似見直し"])
+def test_partial_action_report_is_progress_only_until_completion(tmp_path, monkeypatch, field):
+    entries = [_human("直っていない。"), *_classified(), _BUGFIX]
+    report = f"{field}: 説明を短くした。これから該当箇所を探す。"
+    payload = _payload(entries, tmp_path)
+    assert bugfix_gate.send_block(payload, report) is None
+    assert bugfix_gate.send_block(payload, report, kind="progress") is None
+    assert bugfix_gate.send_block(payload, report, kind="completion")
+    assert _stop(entries, tmp_path, monkeypatch, last_assistant_message=report)["decision"] == "block"
+
+
 def test_understanding_requires_classification(tmp_path: pathlib.Path) -> None:
     payload = _payload([_human("この説明は冗長です。")], tmp_path)
     assert _pretooluse_denied(payload, "## 発話の理解\n短くする。")

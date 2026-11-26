@@ -2,8 +2,9 @@
 
 送達前とStopで、最新の実ユーザー発話に届いた最初の分類を使う。
 未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動を求める。
-送達前の対象は、報告の見出しやバグ対応の記録を含む送信とkind: completionの送信に限る。
+送達前の対象は、報告の見出しや再発防止の行を含む送信とkind: completionの送信に限る。
 対策・回帰防止・類似見直し・種類付きの再発防止を求める。
+類似見直しは未着手を明記した行を拒否し、結果や理由の妥当性は報告の検収で確かめる。
 Stopでは報告の形によらず、同じ発話に対する4項目の記録を最終応答か送達済みの報告に求める。
 同じ発話に対する4項目の報告を送達済みなら、報告の構造を含まない最終応答に再掲を求めない。
 起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
@@ -52,7 +53,9 @@ _RECORD_LINE_RE = re.compile(
     r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<label>対策|回帰防止|類似見直し)[ \t]*[:：](?P<body>[^\n]*)$",
     re.MULTILINE,
 )
-_PENDING_SIMILAR_RE = re.compile(r"^(?:予定|未確認)(?:[。．.]?$|\s*[:：])")
+_PENDING_SIMILAR_RE = re.compile(
+    r"(?:(?:[^、。；;\n]+(?:は|が))?未確認|(?:検索|確認)?予定)(?:[。．.]?|[ \t]*[：:].*|[ \t]*(?:（[^）]*）|\([^)]*\))[。．.]?)"
+)
 
 _REPORT_STRUCTURE_RE = re.compile(r"^[ \t]*#{1,6}[ \t]+[^\n]*報告[ \t:：#]*$|AWI化ステータス[ \t]*[:：]", re.MULTILINE)
 
@@ -404,18 +407,22 @@ def _missing_record_labels(message: object) -> list[str]:
         label
         for match in _record_matches(message)
         if (body := match["body"].strip())
-        and not ((label := match["label"]) == "類似見直し" and _PENDING_SIMILAR_RE.match(body))
+        and not ((label := match["label"]) == "類似見直し" and _PENDING_SIMILAR_RE.fullmatch(body))
     }
     return [label for label in _RECORD_LABELS if label not in present]
 
 
-def _has_report_structure(message: object, kind: object = None) -> bool:
+def _has_report_structure(message: object, kind: object = None, *, include_partial_record: bool = False) -> bool:
     if kind == COMPLETION_KIND:
         return True
     if not isinstance(message, str):
         return False
     unquoted = QUOTED_MATERIAL_RE.sub("", message).replace("**", "").replace("__", "")
-    return bool(prevention_lines(message) or _record_matches(message)) or _REPORT_STRUCTURE_RE.search(unquoted) is not None
+    return (
+        bool(prevention_lines(message))
+        or _REPORT_STRUCTURE_RE.search(unquoted) is not None
+        or (include_partial_record and bool(_record_matches(message)))
+    )
 
 
 def _turn_block(
@@ -474,7 +481,7 @@ def _turn_block(
         return None
     if (
         not can_classify
-        and not _has_report_structure(message)
+        and not _has_report_structure(message, include_partial_record=True)
         and any(
             _understanding_kind(text) is None and _has_typed_prevention(text) and not _missing_record_labels(text)
             for text in _delivered_messages(entries)
