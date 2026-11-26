@@ -26,4 +26,4 @@ def test_batch_live_checks_process_state_on_both_routes(monkeypatch, tmp_path, r
 
     if route == "argv" and observation == "pid-reused":
         expected = True
-    assert run_skill_batch._live(manifest) is expected  # pylint: disable=protected-access
+    assert run_skill_batch.execution_live(manifest) is expected
