@@ -39,21 +39,22 @@
 
 ## 変更時の同期対象マトリクス
 
-| 変更内容 | dotfiles | pyfltr | pytilpack | smpr | glatasks | gv | lc |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| GitHub Actions全般 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
-| リリースワークフロー | N/A | ★ | ★ | N/A | ★ | ★ | ★ |
-| git-cliff設定 | N/A | ★ | ★ | N/A | ★ | ★ | ★ |
-| Makefile構成 | ★ | ★ | ★ | ★ | ★ | N/A | N/A |
-| commit.template設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
-| mise設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
-| pre-commit設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
-| textlintルール | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
-| pyfltr設定・更新 | ★ | N/A | ★ | ★ | ★ | ★ | ★ |
-| pinact/アクション更新 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
-| UV_FROZEN運用 | ★ | ★ | ★ | ★ | ★ | N/A | N/A |
-| ドキュメント構成 | ★ | ★ | ★ | △ | ★ | ★ | ★ |
-| Python CI構成 | ★ | ★ | ★ | ★ | N/A | N/A | N/A |
+| 変更内容 | dotfiles | pyfltr | pytilpack | smpr | glatasks | gv | lc | ak110/.github |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GitHub Actions全般 | ★ | ★ | ★ | ★ | ★ | ★ | ★ | N/A |
+| リリースワークフロー | N/A | ★ | ★ | N/A | ★ | ★ | ★ | N/A |
+| git-cliff設定 | N/A | ★ | ★ | N/A | ★ | ★ | ★ | N/A |
+| Makefile構成 | ★ | ★ | ★ | ★ | ★ | N/A | N/A | N/A |
+| commit.template設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ | N/A |
+| mise設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ | N/A |
+| pre-commit設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ | N/A |
+| textlintルール | ★ | ★ | ★ | ★ | ★ | ★ | ★ | N/A |
+| pyfltr設定・更新 | ★ | N/A | ★ | ★ | ★ | ★ | ★ | N/A |
+| pinact/アクション更新 | ★ | ★ | ★ | ★ | ★ | ★ | ★ | N/A |
+| UV_FROZEN運用 | ★ | ★ | ★ | ★ | ★ | N/A | N/A | N/A |
+| ドキュメント構成 | ★ | ★ | ★ | △ | ★ | ★ | ★ | N/A |
+| Python CI構成 | ★ | ★ | ★ | ★ | N/A | N/A | N/A | N/A |
+| コミュニティ健全性ファイル | ★ | ★ | ★ | △ | ★ | ★ | ★ | 原本 |
 
 ★=必須同期、△=確認推奨（smprは厳密一致不要）、N/A=スキップ
 

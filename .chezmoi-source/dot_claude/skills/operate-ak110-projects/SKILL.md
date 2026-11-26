@@ -36,6 +36,7 @@ description: >
 
 | プロジェクト | 一括更新コマンド | リリース運用の対象 |
 | --- | --- | --- |
+| `ak110/.github` | 対象外 | 対象外 |
 | `dotfiles` | `make update` | 対象外（リリースworkflowなし。`develop`から`master`へのマージは`release-dotfiles`が扱う） |
 | `pyfltr` | `make update` | 対象 |
 | `pytilpack` | `make update` | 対象 |

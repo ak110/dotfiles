@@ -70,3 +70,24 @@ docs/development/index.mdの見出しは「開発者向けガイド」で揃え�
 
 README.mdのCI・Release・Deployバッジは参照形式（`[![Name][name-badge]][name-url]`）で書き、キー名は`ci-url`・`release-url`・`deploy-url`に揃える。
 PyPIなど外部サービスのバッジはインライン形式のままでよい。
+
+## コミュニティ健全性ファイル
+
+`ak110/.github` は `SECURITY.md`、`CONTRIBUTING.md`、`.github/ISSUE_TEMPLATE/`（不具合・アクセシビリティの障壁・案内設定）、`.github/PULL_REQUEST_TEMPLATE.md` の原本を持つ。
+共通のアクセシビリティ方針は既定ファイルにせず、`policies/accessibility.md` に置く。
+原本のリポジトリには役割を示す `README.md` と自身の `LICENSE` を置く。
+各リポジトリが自前のIssueテンプレートを1つでも置くと既定のテンプレートが全て使われないため、原則として原本だけに置く。
+
+各製品のルートの `ACCESSIBILITY.md` には、次の製品固有の事実を書く。
+
+- 対象面（Web画面、デスクトップ画面、CLI、ドキュメントサイト、ライブラリAPIのうち該当するもの）
+- 確認した環境、版、観測日、結果と未検証の範囲
+- 既知の障壁と回避策
+- 報告先（その製品の `https://github.com/ak110/<repo>/issues/new/choose`）
+- [共通方針](https://github.com/ak110/.github/blob/main/policies/accessibility.md)へのリンク（目標とする基準、報告で求めないこと、見直す契機の文面は複製しない）
+
+要素構造と実際の支援技術の観測を区別し、実測した版と操作を超える適合を宣言しない。
+既定ファイルはcloneに含まれないため、README.mdの「ドキュメント」章から `ACCESSIBILITY.md` と共通の `CONTRIBUTING.md`・`SECURITY.md` へリンクする。
+公開リポジトリではPrivate vulnerability reportingを有効にする。
+非公開のsmprには公開向けの導線を求めない。
+既定ファイルの表示は許容する。

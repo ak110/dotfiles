@@ -35,7 +35,7 @@
    担当種別ごとに次を加える。
    - レビューの指摘の修正は、どの担当もレビュー修正だけのcommitを作らずに、本書「レビュー修正の履歴統合」で既存の実装commitへ統合する。
      `レビュー修正担当`は受領した指摘だけを直し、commitはfixup（直前の1件だけが対象ならamend）に限る（`agent-toolkit:atk-mode/roles/exec.subagent.md`「操作区分」）。
-   - ユーザビリティレビューの指摘は、指摘の操作手順、画面状態、表示幅で新しいHEADを実ブラウザで描画して確かめ（`agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」）、試した条件と結果を応答へ書く。
+   - ユーザビリティレビューの指摘は、指摘の操作手順、画面状態、表示幅で新しいHEADを対象の実行環境で描画して確かめ（`agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」）、試した条件と結果を応答へ書く。
    - `CI修正担当`は、`CI記録`の7項目を実装契約とし、原因となった失敗だけを直す。
      原因の調査の前に`agent-basics:bugfix`を起動し、5つの問いをCI記録の原因分析結果へ当てる。
      診断コードを足す時は、CI記録が対応付けた仮説と採取対象に限る（`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正commitが必要なCI失敗を修正するエージェント」の手順3）。
