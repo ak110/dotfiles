@@ -488,7 +488,7 @@ def migrate_at_startup() -> None:
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         _startup_failures.add(path)
         outcome.report_warning(
-            f"共有設定の自動移行を保留した: {error}", next_action="private-notesの同期・保存の状態を確認する"
+            f"共有設定の自動移行を保留した: {error}", next_action="private-notesの同期・保存の状態を確認してください。"
         )
 
 
