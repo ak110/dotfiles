@@ -308,23 +308,81 @@ def test_only_successful_report_after_bugfix_is_reusable(
     assert (result.get("decision") != "block") is (started_before_send and not failed_receipt)
 
 
+@pytest.mark.parametrize("recheck", [False, True])
 @pytest.mark.parametrize(
-    "notification", ["queued", "completed", "recovered", "partial", "read_failed", "failed", "unrelated", "missing"]
+    "notification",
+    [
+        "queued",
+        "completed",
+        "recovered",
+        "partial",
+        "read_failed",
+        "failed",
+        "unrelated",
+        "missing",
+        "bash_preview",
+        "bash_marker",
+        "bash_full",
+        "saved_read",
+        "repeated",
+    ],
 )
-def test_wait_reuses_notification_before_starting_another_wait(tmp_path: pathlib.Path, notification: str) -> None:
+def test_wait_reuses_notification_before_starting_another_wait(
+    tmp_path: pathlib.Path, notification: str, recheck: bool
+) -> None:
     entries = [_human("委譲先の結果を待って。"), _CAPABILITY, *_classified("非是正"), *_bash_wait()]
     path = str(tmp_path / "saved-wait")
+    saved = str(tmp_path / "persisted-wait")
     task = _TASK.replace("</task-notification>", f"<output-file>{path}</output-file></task-notification>")
+    if notification == "failed":
+        task = _TASK.replace("completed", "failed")
+    elif notification == "unrelated":
+        task = task.replace("toolu_wait", "toolu_other").replace("wait-task", "other-task")
+    notice = {"type": "attachment", "attachment": {"commandMode": "task-notification", "prompt": task}}
     if notification == "queued":
         entries.append({"type": "queue-operation", "operation": "enqueue", "content": task})
     elif notification != "missing":
-        if notification == "failed":
-            task = _TASK.replace("completed", "failed")
-        elif notification == "unrelated":
-            task = task.replace("toolu_wait", "toolu_other").replace("wait-task", "other-task")
-        entries.append({"type": "attachment", "attachment": {"commandMode": "task-notification", "prompt": task}})
-    if notification in {"recovered", "partial", "read_failed"}:
-        args = {"file_path": path, **({"limit": 1} if notification == "partial" else {})}
+        entries.append(notice)
+    if notification in {"bash_preview", "bash_marker", "bash_full", "saved_read"}:
+        receipt = {"persistedOutputPath": saved} if notification in {"bash_preview", "saved_read"} else {}
+        content = "終了: 1件\n終了行: session_id=previous status=completed"
+        if notification == "bash_marker":
+            content = f"<persisted-output>\nOutput too large (24KB). Full output saved to: {saved}\n</persisted-output>"
+        entries.extend(
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_cat",
+                                "name": "Bash",
+                                "input": {"command": f'cat "{path}"'},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "type": "user",
+                    "toolUseResult": receipt,
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_cat",
+                                "is_error": False,
+                                "content": content,
+                            }
+                        ]
+                    },
+                },
+            ]
+        )
+    if notification in {"recovered", "partial", "read_failed", "saved_read", "repeated"}:
+        args: dict[str, str | int] = {"file_path": saved if notification == "saved_read" else path}
+        if notification == "partial":
+            args["limit"] = 1
         entries.extend(
             [
                 {
@@ -355,6 +413,10 @@ def test_wait_reuses_notification_before_starting_another_wait(tmp_path: pathlib
                 },
             ]
         )
+    if notification == "repeated":
+        entries.append(notice)
+    if recheck:
+        entries.extend(_machine_input("periodic"))
     payload = _payload(entries, tmp_path, last_assistant_message="…", background_tasks=[])
     session_state.update_state(
         payload["session_id"],
@@ -371,5 +433,16 @@ def test_wait_reuses_notification_before_starting_another_wait(tmp_path: pathlib
         assert "agents_server_session_advisor" not in str(result)
         assert result.get("continue") is False
     else:
-        assert "agents_server_session_advisor" in str(result)
-        assert ("バックグラウンド起動" in str(result)) is (notification in {"recovered", "failed", "unrelated", "missing"})
+        body = str(result)
+        assert "agents_server_session_advisor" in body
+        recovered_or_unrelated = notification in {
+            "recovered",
+            "bash_full",
+            "saved_read",
+            "repeated",
+            "failed",
+            "unrelated",
+            "missing",
+        }
+        assert ("バックグラウンド起動" in body) is recovered_or_unrelated
+        assert ("保存出力と終了状態を回収" in body) is not recovered_or_unrelated
