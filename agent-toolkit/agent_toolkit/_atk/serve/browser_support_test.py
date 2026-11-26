@@ -18,7 +18,7 @@ import pytest
 import pytest_asyncio
 
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._atk import config_settings
+from agent_toolkit._atk import config_migration, config_settings
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import config, entry_index, timings, wi_operations
 from agent_toolkit._atk.serve import plans as serve_plans
@@ -516,6 +516,7 @@ def _manual_cli_inputs(root: Path, port: int) -> tuple[Path, config.ServeConfig]
         {
             "home": home,
             "設定": config_settings.config_file_path(),
+            "旧設定": config_migration.legacy_serve_config_path(),
             "状態": state,
             "WI": notes,
             "WI設定": notes / ".git" / "config",
@@ -590,6 +591,7 @@ def _manual_browser_main(argv: list[str]) -> int:
 
     if args.mode == "cli":
         from agent_toolkit import atk  # noqa: PLC0415
+        from agent_toolkit._atk.serve import cli  # noqa: PLC0415
 
         notes = root / "private-notes"
         _require_browser_paths(root, {"home": Path.home(), "WI": notes})
@@ -599,13 +601,29 @@ def _manual_browser_main(argv: list[str]) -> int:
         notes, serve = _manual_cli_inputs(root, args.port)
         plans = Path(serve.plans.root).expanduser() if serve.plans.root else notes / "plans"
         _seed_manual_browser(notes, plans, root)
-        atk.main(["serve", "--host", "127.0.0.1", "--port", str(args.port)])
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(cli, "_weekly_loop", _wait_without_host_weekly_work)
+            atk.main(["serve", "--host", "127.0.0.1", "--port", str(args.port)])
         return 0
     plans = root / "plans"
     app = _browser_app(root, plans)
     _seed_manual_browser(root, plans, root)
-    app.run(host="127.0.0.1", port=args.port, use_reloader=False)
+    asyncio.run(app.run_task(host="127.0.0.1", port=args.port))
     return 0
+
+
+async def _wait_without_host_weekly_work(stop: asyncio.Event) -> None:
+    await stop.wait()
+
+
+def test_manual_cli_rejects_external_legacy_config_before_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_creation_time_index(tmp_path, monkeypatch)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("AGENT_TOOLKIT_SERVE_CONFIG", str(tmp_path.parent / "outside-serve.toml"))
+    monkeypatch.setattr(config, "resolve_config", lambda **_kwargs: pytest.fail("旧設定の移行より先に拒否する"))
+    with pytest.raises(ValueError, match="一時領域外: 旧設定"):
+        _manual_cli_inputs(tmp_path, 28766)
 
 
 def _seed_manual_browser(notes: Path, plans: Path, root: Path) -> None:

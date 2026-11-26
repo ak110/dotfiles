@@ -152,6 +152,13 @@ def test_integration_argv_covers_cross_contracts_even_if_sources_are_omitted(
         ),
         (
             "scripts/sync_generated_files.py",
+            "def main():\n    sync_return_contracts()\n",
+            "def main():\n    pass\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+        (
+            "scripts/sync_generated_files.py",
             "def other():\n    return 1\n",
             "def other():\n    return 2\n",
             "role-document-generation",

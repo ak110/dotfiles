@@ -78,9 +78,20 @@ def _role_generation_python(source: str, entries: set[str]) -> dict[str, str]:
     return result
 
 
+def _role_generation_startup(source: str, entries: set[str]) -> list[str]:
+    return [
+        ast.dump(statement)
+        for definition in ast.parse(source).body
+        if isinstance(definition, ast.FunctionDef) and definition.name == "main"
+        for statement in definition.body
+        if any(isinstance(node, ast.Name) and node.id in entries for node in ast.walk(statement))
+    ]
+
+
 def _role_generation_source(name: str, source: str) -> object:
     if name in _ROLE_GENERATORS:
-        return _role_generation_python(source, _ROLE_GENERATORS[name])
+        entries = _ROLE_GENERATORS[name]
+        return _role_generation_python(source, entries), _role_generation_startup(source, entries)
     if name.endswith(".subagent.md"):
         header = source.split("\n---\n", 1)[0] if source.startswith("---\n") else ""
         return header, [body for title, body in h2_section_bodies(source) if title in {"入力", "出力"}]
