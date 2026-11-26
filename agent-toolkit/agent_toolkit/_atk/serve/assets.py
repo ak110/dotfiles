@@ -60,6 +60,7 @@ SCRIPTS = {
         "wi_list.js",
         "wi_push.js",
         "wi_detail.js",
+        "wi_reference.js",
         "wi_waiting.js",
         "wi_mutations.js",
         "wi_create.js",

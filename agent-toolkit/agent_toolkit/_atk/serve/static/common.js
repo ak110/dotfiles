@@ -104,12 +104,16 @@ export function connectEvents(path, handlers) {
   }
 
   function start() {
-    if (source) return;
+    if (source || (screen && document.body.dataset.screen !== screen)) return;
     open();
     timer = setInterval(check, Math.max(100, Math.min(5000, limit / 3)));
   }
 
   start();
+  document.addEventListener("atk-screen-change", () => {
+    if (screen && document.body.dataset.screen !== screen) close();
+    else start();
+  });
   globalThis.addEventListener?.("pagehide", close);
   globalThis.addEventListener?.("pageshow", (event) => { if (event.persisted) start(); });
   return {close, reopen: start};

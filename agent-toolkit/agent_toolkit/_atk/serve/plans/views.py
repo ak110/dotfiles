@@ -399,9 +399,19 @@ def _awi_plan_html(text: str, body_html: str) -> str:
     metadata, _errors = parse_plan_metadata(text)
     if metadata is None:
         return body_html
-    related = "、".join(name for name, _summary in metadata.related_wi) or "なし"
-    values = metadata.values | {"関連WI": related}
-    fields = "".join(f"<dt>{html_lib.escape(name)}</dt><dd>{html_lib.escape(value)}</dd>" for name, value in values.items())
+    related = (
+        "、".join(
+            f'<span data-wi-reference="{html_lib.escape(name)}">{html_lib.escape(name)}</span>'
+            for name, _summary in metadata.related_wi
+        )
+        or "なし"
+    )
+    fields = "".join(
+        f"<dt>{html_lib.escape(name)}</dt><dd>{html_lib.escape(value)}</dd>"
+        for name, value in metadata.values.items()
+        if name != "関連WI"
+    )
+    fields += f"<dt>関連WI</dt><dd>{related}</dd>"
     return f"<dl>{fields}</dl>{body_html}"
 
 

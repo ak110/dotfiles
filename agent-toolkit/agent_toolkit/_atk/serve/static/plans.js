@@ -1,3 +1,4 @@
+import {decorateWiReferences} from "./wi_reference.js";
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
@@ -405,6 +406,7 @@ async function applyPreviewHtml(html, scrollTop, generation) {
   revokePreviewObjectUrls();
   const preview = document.getElementById("preview");
   preview.innerHTML = html;
+  decorateWiReferences(preview);
   appliedPreviewHtml = null;
   for (const link of preview.querySelectorAll("a[data-plan-path]")) {
     link.href = filePageUrl(selectedHost, link.dataset.planPath, selectedSource);

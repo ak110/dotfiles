@@ -1,3 +1,4 @@
+import {decorateWiReferences} from "./wi_reference.js";
 import {setUpdateError, BASE_PATH} from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -57,6 +58,7 @@ function agentRow(agent, depth) {
     row.append(cell);
   }
   item.append(row);
+  decorateWiReferences(row);
   return item;
 }
 

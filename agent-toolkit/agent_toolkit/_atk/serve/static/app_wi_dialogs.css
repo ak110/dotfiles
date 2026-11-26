@@ -1,6 +1,6 @@
   content: "";
 }
-#screen-wi dialog.dialog-shell {
+:is(#screen-wi, .wi-reference-layer) dialog.dialog-shell {
   width: min(42rem, calc(100% - 2rem));
   max-height: calc(100svh - 2rem);
   overflow: hidden;
@@ -11,22 +11,22 @@
   background: var(--color-surface);
 }
 /* 新規追加は本文を長く書くため、幅が許す範囲で詳細（72rem）よりやや狭い幅まで広げる。 */
-#screen-wi dialog.create-dialog {
+:is(#screen-wi, .wi-reference-layer) dialog.create-dialog {
   width: min(64rem, calc(100% - 2rem));
 }
-#screen-wi dialog.detail-dialog {
+:is(#screen-wi, .wi-reference-layer) dialog.detail-dialog {
   width: min(72rem, calc(100% - 2rem));
 }
-#screen-wi dialog::backdrop {
+:is(#screen-wi, .wi-reference-layer) dialog::backdrop {
   background: var(--color-backdrop);
 }
-#screen-wi .dialog-frame {
+:is(#screen-wi, .wi-reference-layer) .dialog-frame {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   max-height: calc(100svh - 2rem);
   margin: 0;
 }
-#screen-wi .dialog-header {
+:is(#screen-wi, .wi-reference-layer) .dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -35,7 +35,7 @@
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
-#screen-wi .dialog-close {
+:is(#screen-wi, .wi-reference-layer) .dialog-close {
   display: inline-grid;
   flex: 0 0 2.75rem;
   width: 2.75rem;
@@ -47,74 +47,74 @@
   font-size: 1.5rem;
   line-height: 1;
 }
-#screen-wi .dialog-body {
+:is(#screen-wi, .wi-reference-layer) .dialog-body {
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-4);
   background: var(--color-surface);
 }
-#screen-wi .dialog-footer {
+:is(#screen-wi, .wi-reference-layer) .dialog-footer {
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
 }
-#screen-wi .detail-footer {
+:is(#screen-wi, .wi-reference-layer) .detail-footer {
   justify-content: flex-start;
   gap: var(--space-3);
 }
-#screen-wi .detail-more-actions {
+:is(#screen-wi, .wi-reference-layer) .detail-more-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-#screen-wi .detail-more {
+:is(#screen-wi, .wi-reference-layer) .detail-more {
   min-inline-size: 0;
   margin-inline-start: auto;
 }
-#screen-wi .detail-more > summary {
+:is(#screen-wi, .wi-reference-layer) .detail-more > summary {
   display: none;
 }
-#screen-wi .detail-title-row {
+:is(#screen-wi, .wi-reference-layer) .detail-title-row {
   justify-content: space-between;
 }
-#screen-wi .detail-title-row h3 {
+:is(#screen-wi, .wi-reference-layer) .detail-title-row h3 {
   overflow-wrap: anywhere;
 }
-#screen-wi .detail-dialog .dialog-header h2 {
+:is(#screen-wi, .wi-reference-layer) .detail-dialog .dialog-header h2 {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-#screen-wi .metadata {
+:is(#screen-wi, .wi-reference-layer) .metadata {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: var(--space-1) var(--space-3);
 }
-#screen-wi .metadata dt {
+:is(#screen-wi, .wi-reference-layer) .metadata dt {
   font-weight: 700;
 }
-#screen-wi .metadata dd {
+:is(#screen-wi, .wi-reference-layer) .metadata dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
-#screen-wi .detail-metadata {
+:is(#screen-wi, .wi-reference-layer) .detail-metadata {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
   gap: var(--space-3);
 }
-#screen-wi .detail-metadata .metadata-item {
+:is(#screen-wi, .wi-reference-layer) .detail-metadata .metadata-item {
   min-width: 0;
   display: grid;
   gap: var(--space-1);
 }
-#screen-wi .detail-metadata dt {
+:is(#screen-wi, .wi-reference-layer) .detail-metadata dt {
   overflow-wrap: anywhere;
 }
-#screen-wi .detail-metadata dd {
+:is(#screen-wi, .wi-reference-layer) .detail-metadata dd {
   white-space: pre-wrap;
 }
-#screen-wi .detail-body {
+:is(#screen-wi, .wi-reference-layer) .detail-body {
   margin-top: var(--space-4);
 }
-#screen-wi .entry-content {
+:is(#screen-wi, .wi-reference-layer) .entry-content {
   padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
@@ -173,37 +173,37 @@
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--color-border);
 }
-#screen-wi .edit-panel,
-#screen-wi .answer-panel,
-#screen-wi .user-comment-panel,
-#screen-wi .decision-panel {
+:is(#screen-wi, .wi-reference-layer) .edit-panel,
+:is(#screen-wi, .wi-reference-layer) .answer-panel,
+:is(#screen-wi, .wi-reference-layer) .user-comment-panel,
+:is(#screen-wi, .wi-reference-layer) .decision-panel {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
 }
-#screen-wi .field-hint {
+:is(#screen-wi, .wi-reference-layer) .field-hint {
   margin: 0;
 }
-#screen-wi #edit-content {
+:is(#screen-wi, .wi-reference-layer) #edit-content {
   min-height: clamp(14rem, 38svh, 30rem);
 }
 /* 回答欄は詳細のフッター上段に常設し、初期は1行で入力に応じて広げる（開いた時点で回答と他の操作を両方行えるようにするため）。 */
-#screen-wi .detail-footer-answer {
+:is(#screen-wi, .wi-reference-layer) .detail-footer-answer {
   flex: 1 0 100%;
   margin-top: 0;
   padding-top: 0;
   border-top: none;
 }
-#screen-wi .answer-row {
+:is(#screen-wi, .wi-reference-layer) .answer-row {
   display: flex;
   gap: var(--space-2);
   align-items: flex-end;
 }
-#screen-wi #save-answer-button {
+:is(#screen-wi, .wi-reference-layer) #save-answer-button {
   flex: 0 0 auto;
   white-space: nowrap;
 }
-#screen-wi #answer-input {
+:is(#screen-wi, .wi-reference-layer) #answer-input {
   flex: 1 1 auto;
   min-width: 0;
   min-height: auto;
@@ -211,26 +211,26 @@
   field-sizing: content;
   resize: vertical;
 }
-#screen-wi #create-content {
+:is(#screen-wi, .wi-reference-layer) #create-content {
   min-height: clamp(9rem, 28svh, 20rem);
 }
-#screen-wi #create-choices {
+:is(#screen-wi, .wi-reference-layer) #create-choices {
   min-height: clamp(6rem, 16svh, 11rem);
 }
-#screen-wi .answer-choices {
+:is(#screen-wi, .wi-reference-layer) .answer-choices {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-#screen-wi .inline-error {
+:is(#screen-wi, .wi-reference-layer) .inline-error {
   margin: 0;
   color: var(--color-danger);
   font-size: var(--font-size-secondary);
 }
-#screen-wi [aria-invalid="true"] {
+:is(#screen-wi, .wi-reference-layer) [aria-invalid="true"] {
   border-color: var(--color-danger);
 }
-#screen-wi .force-confirmation {
+:is(#screen-wi, .wi-reference-layer) .force-confirmation {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -239,10 +239,10 @@
   border-radius: var(--radius-small);
   background: var(--color-warning-quiet);
 }
-#screen-wi .force-confirmation input {
+:is(#screen-wi, .wi-reference-layer) .force-confirmation input {
   width: auto;
 }
-#screen-wi .operation-notice {
+:is(#screen-wi, .wi-reference-layer) .operation-notice {
   position: fixed;
   z-index: 30;
   display: flex;
@@ -257,15 +257,15 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
 }
-#screen-wi .operation-notice[data-error="true"] {
+:is(#screen-wi, .wi-reference-layer) .operation-notice[data-error="true"] {
   background: var(--color-danger);
 }
-#screen-wi .operation-notice-message {
+:is(#screen-wi, .wi-reference-layer) .operation-notice-message {
   min-width: 0;
   flex: 1;
   overflow-wrap: anywhere;
 }
-#screen-wi .operation-notice-close {
+:is(#screen-wi, .wi-reference-layer) .operation-notice-close {
   display: inline-grid;
   flex: 0 0 2.75rem;
   width: 2.75rem;
@@ -287,51 +287,51 @@
   }
 }
 @media (max-width: 940px) {
-  #screen-wi .app-header {
+  :is(#screen-wi, .wi-reference-layer) .app-header {
     padding-inline: var(--space-2);
   }
 }
 @media (max-width: 700px) {
-  #screen-wi .header-actions {
+  :is(#screen-wi, .wi-reference-layer) .header-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
     width: 100%;
   }
-  #screen-wi .app-layout {
+  :is(#screen-wi, .wi-reference-layer) .app-layout {
     grid-template-columns: 1fr;
     padding: var(--space-2);
   }
-  #screen-wi .entry-pane {
+  :is(#screen-wi, .wi-reference-layer) .entry-pane {
     padding-inline: 0;
   }
-  #screen-wi .filters {
+  :is(#screen-wi, .wi-reference-layer) .filters {
     padding: var(--space-3);
   }
-  #screen-wi #clear-filters-button {
+  :is(#screen-wi, .wi-reference-layer) #clear-filters-button {
     margin-block: var(--space-1);
   }
-  #screen-wi .filter-grid {
+  :is(#screen-wi, .wi-reference-layer) .filter-grid {
     grid-template-columns: 1fr;
   }
-  #screen-wi dialog.dialog-shell {
+  :is(#screen-wi, .wi-reference-layer) dialog.dialog-shell {
     width: calc(100% - 1rem);
     max-height: calc(100svh - 1rem);
   }
-  #screen-wi .dialog-frame {
+  :is(#screen-wi, .wi-reference-layer) .dialog-frame {
     max-height: calc(100svh - 1rem);
   }
-  #screen-wi .dialog-header,
-  #screen-wi .dialog-body,
-  #screen-wi .dialog-footer {
+  :is(#screen-wi, .wi-reference-layer) .dialog-header,
+  :is(#screen-wi, .wi-reference-layer) .dialog-body,
+  :is(#screen-wi, .wi-reference-layer) .dialog-footer {
     padding-inline: var(--space-3);
   }
-  #screen-wi .dialog-footer button {
+  :is(#screen-wi, .wi-reference-layer) .dialog-footer button {
     width: auto;
   }
-  #screen-wi .detail-footer {
+  :is(#screen-wi, .wi-reference-layer) .detail-footer {
     gap: var(--space-2);
   }
-  #screen-wi .detail-more > summary {
+  :is(#screen-wi, .wi-reference-layer) .detail-more > summary {
     display: list-item;
     padding: 0.65rem var(--space-2);
     border: 1px solid var(--color-border);
@@ -339,30 +339,30 @@
     background: var(--color-normal);
     cursor: pointer;
   }
-  #screen-wi .detail-more > summary:hover {
+  :is(#screen-wi, .wi-reference-layer) .detail-more > summary:hover {
     background: var(--color-normal-hover);
   }
-  #screen-wi .detail-more[open] {
+  :is(#screen-wi, .wi-reference-layer) .detail-more[open] {
     flex-basis: 100%;
   }
-  #screen-wi .detail-more-actions {
+  :is(#screen-wi, .wi-reference-layer) .detail-more-actions {
     margin-block-start: var(--space-2);
   }
 }
 /* 低い画面では折り返す操作欄が本文を押し潰すため、詳細全体を単一のスクロール領域にする。 */
 @media (max-height: 30rem) {
-  #screen-wi dialog.detail-dialog {
+  :is(#screen-wi, .wi-reference-layer) dialog.detail-dialog {
     overflow-y: auto;
     scroll-padding-block: var(--space-2);
   }
-  #screen-wi .detail-dialog > .dialog-frame {
+  :is(#screen-wi, .wi-reference-layer) .detail-dialog > .dialog-frame {
     display: block;
     max-height: none;
   }
-  #screen-wi .detail-dialog .dialog-body {
+  :is(#screen-wi, .wi-reference-layer) .detail-dialog .dialog-body {
     overflow-y: visible;
   }
-  #screen-wi .detail-dialog .dialog-message {
+  :is(#screen-wi, .wi-reference-layer) .detail-dialog .dialog-message {
     position: static;
     overflow-wrap: anywhere;
   }
@@ -379,41 +379,41 @@
   }
 }
 
-#screen-wi dialog.wi-reference-dialog {
+:is(#screen-wi, .wi-reference-layer) dialog.wi-reference-dialog {
   position: fixed;
   inset: auto;
   max-width: none;
   max-height: none;
   margin: 0;
 }
-#screen-wi .wi-reference-dialog .dialog-frame {
+:is(#screen-wi, .wi-reference-layer) .wi-reference-dialog .dialog-frame {
   height: 100%;
   max-height: none;
 }
-#screen-wi .wi-reference-dialog .dialog-body {
+:is(#screen-wi, .wi-reference-layer) .wi-reference-dialog .dialog-body {
   padding: var(--space-2) var(--space-3);
 }
-#screen-wi .wi-reference-dialog .detail-metadata {
+:is(#screen-wi, .wi-reference-layer) .wi-reference-dialog .detail-metadata {
   gap: var(--space-1) var(--space-3);
 }
-#screen-wi .wi-reference-dialog .metadata-item {
+:is(#screen-wi, .wi-reference-layer) .wi-reference-dialog .metadata-item {
   display: flex;
   flex-wrap: wrap;
   gap: 0 var(--space-2);
 }
-#screen-wi .wi-reference-dialog .metadata-item > * {
+:is(#screen-wi, .wi-reference-layer) .wi-reference-dialog .metadata-item > * {
   min-inline-size: 0;
   max-inline-size: 100%;
 }
-#screen-wi .wi-reference-dialog .detail-body {
+:is(#screen-wi, .wi-reference-layer) .wi-reference-dialog .detail-body {
   margin-top: var(--space-2);
 }
 
-#screen-wi .detail-dialog:modal,
-#screen-wi .detail-dialog .dialog-body,
-#screen-wi .detail-dialog::backdrop {
+:is(#screen-wi, .wi-reference-layer) .detail-dialog:modal,
+:is(#screen-wi, .wi-reference-layer) .detail-dialog .dialog-body,
+:is(#screen-wi, .wi-reference-layer) .detail-dialog::backdrop {
   overscroll-behavior: contain;
 }
-#screen-wi .detail-dialog::backdrop {
+:is(#screen-wi, .wi-reference-layer) .detail-dialog::backdrop {
   overflow: hidden;
 }

@@ -23,6 +23,13 @@ import {
   BASE_PATH
 } from "./common.js";
 
+import {closeWiReferences, configureWiReferences, linkWiReferences, wiLink} from "./wi_reference.js";
+
+configureWiReferences(renderDetailView, entry => {
+  closeDetailDialog();
+  if (!byId("detail-dialog").open) void selectEntry(entry);
+});
+
 function updateCurrentRowSelection() {
   document.querySelectorAll('.entry-select').forEach(button => {
     button.setAttribute('aria-current', String(button.dataset.key === entryKey(wiState.currentEntry)));
@@ -70,126 +77,6 @@ function metadataEntries(entry) {
     }
   }
   return result;
-}
-
-const childDialogs = [];
-
-function wiLink(filename) {
-  const link = document.createElement('a');
-  link.href = entryPageUrl({filename});
-  link.textContent = filename;
-  link.addEventListener('click', event => {
-    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    void openReferencedWi(filename, link);
-  });
-  return link;
-}
-
-function linkWiReferences(container, entry) {
-  const knownNames = (entry.referenced_wi_names ?? []).slice().sort((a, b) => b.length - a.length);
-  const dated = String.raw`\d{8}-\d{6}-\d{3,}\.md`;
-  if (!knownNames.length && !new RegExp(dated).test(container.textContent)) return;
-  const alternatives = [...knownNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), dated];
-  const filenames = new RegExp(
-    String.raw`(?<![A-Za-z0-9_.-])(?:${alternatives.join('|')})(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])`, 'gu'
-  );
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-    acceptNode: node => node.parentElement.closest('a') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
-  });
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  for (const node of nodes) {
-    const fragment = document.createDocumentFragment();
-    let end = 0;
-    for (const match of node.data.matchAll(filenames)) {
-      const filename = match[0];
-      if (filename === entry.filename) continue;
-      fragment.append(node.data.slice(end, match.index), wiLink(filename));
-      end = match.index + filename.length;
-    }
-    if (!end) continue;
-    fragment.append(node.data.slice(end));
-    node.replaceWith(fragment);
-  }
-}
-
-function closeReferencedWi() {
-  const dialog = childDialogs.pop();
-  if (dialog) {
-    dialog.close();
-    dialog.remove();
-  }
-}
-
-async function openReferencedWi(filename, origin) {
-  const parent = origin.closest('dialog');
-  const dialog = document.createElement('dialog');
-  dialog.className = 'dialog-shell detail-dialog wi-reference-dialog';
-  const title = document.createElement('h2');
-  title.id = `wi-reference-title-${childDialogs.length + 1}`;
-  title.textContent = `詳細（${childDialogs.length + 1}段目）`;
-  dialog.setAttribute('aria-labelledby', title.id);
-  const header = document.createElement('header');
-  header.className = 'dialog-header';
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'dialog-close';
-  close.autofocus = true;
-  close.setAttribute('aria-label', '閉じる');
-  close.textContent = '×';
-  close.addEventListener('click', closeReferencedWi);
-  header.append(title, close);
-  const body = document.createElement('div');
-  body.className = 'dialog-body';
-  body.tabIndex = 0;
-  body.textContent = `${filename}を読み込み中…`;
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.textContent = 'このWIを開く';
-  open.hidden = true;
-  const footer = document.createElement('footer');
-  footer.className = 'dialog-footer';
-  footer.append(open);
-  const frame = document.createElement('article');
-  frame.className = 'dialog-frame';
-  frame.append(header, body, footer);
-  dialog.append(frame);
-  dialog.addEventListener('close', () => {
-    const index = childDialogs.indexOf(dialog);
-    if (index !== -1) childDialogs.splice(index, 1);
-    dialog.remove();
-  });
-  parent.after(dialog);
-  const bounds = parent.getBoundingClientRect();
-  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-  const narrow = window.matchMedia('(max-width: 768px)').matches;
-  const shift = !narrow && bounds.width - rem >= 32 * rem && bounds.height - rem >= 20 * rem ? rem : 0;
-  Object.assign(dialog.style, {
-    left: `${bounds.left + shift}px`, top: `${bounds.top + shift}px`,
-    width: `${bounds.width - shift}px`, height: `${bounds.height - shift}px`,
-  });
-  childDialogs.push(dialog);
-  dialog.showModal();
-  try {
-    const {entry} = await api(`/api/entries/${encodeURIComponent(filename)}`);
-    if (!dialog.open) return;
-    const view = byId('detail-view-template').content.cloneNode(true);
-    const parts = new Map();
-    for (const part of view.querySelectorAll('[id]')) {
-      parts.set(part.id, part);
-      part.removeAttribute('id');
-    }
-    renderDetailView(entry, id => parts.get(id));
-    body.replaceChildren(view);
-    open.hidden = false;
-    open.addEventListener('click', () => {
-      closeDetailDialog();
-      if (!byId('detail-dialog').open) void selectEntry(entry);
-    });
-  } catch (error) {
-    body.textContent = error.status === 404 ? 'WIが見つかりません。' : error.message;
-  }
 }
 
 function appendMetadataItem(metadata, label, value, entry) {
@@ -477,7 +364,7 @@ export function closeDetailDialog({updateUrl = true, force = false} = {}) {
       mode.startsWith('decide-') && byId('decision-note').value !== '';
     if (changed && !window.confirm('変更した入力を破棄しますか？')) return;
   }
-  while (childDialogs.length) closeReferencedWi();
+  closeWiReferences();
   const returnTarget = detailReturnTarget();
   wiState.detailRequestGeneration += 1;
   wiState.detailSessionGeneration += 1;

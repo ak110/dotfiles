@@ -394,6 +394,9 @@ class Operations:
         self._storage = wi_sync.Storage(local_only=True, lock_timeout=_WEB_LOCK_TIMEOUT)
         self._entry_index = entry_index.EntryIndex(private_notes, cache_path=index_cache_path)
 
+    def reference_names(self) -> list[str]:
+        return sorted({path.name for path in iter_entry_paths(self.private_notes) if not DATED_NAME.fullmatch(path.name)})
+
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         result: list[dict[str, object]] = []
         waiting = filters.get("view") == "waiting"

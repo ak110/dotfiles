@@ -1,3 +1,4 @@
+import {decorateWiReferences} from "./wi_reference.js";
 import {BASE_PATH, attachScrollEdges, beginOperation, isSelected, setDrawerOpen, timedFetch} from "./common.js";
 
 const KIND_LABELS = {
@@ -151,6 +152,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       formatted.className = "markdown-body event-markdown";
       formatted.innerHTML = event.html;
       block.append(formatted);
+      decorateWiReferences(formatted);
       if (!conversationOnly && !nested && Number.isInteger(event.result_index)) {
         block.append(renderEvent(currentDetail.events[event.result_index], event.result_index, true));
       }
@@ -165,6 +167,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       appendUnavailable(body, "本文は記録に含まれていません");
     }
     block.append(body);
+    decorateWiReferences(body);
     return block;
   }
 

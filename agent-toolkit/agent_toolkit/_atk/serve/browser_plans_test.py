@@ -464,3 +464,50 @@ async def test_plan_collection_failures_show_operation(screen_harness: _ScreenHa
     alert = page.locator("#plans-list-error" if failure == "list" else "#search-status")
     await playwright.async_api.expect(alert).to_contain_text("browser-test")
     await playwright.async_api.expect(alert).to_contain_text("一覧取得" if failure == "list" else "本文条件")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(0.75, reason="Chromiumの2つのタブと計画・WI画面の遷移を実サーバーで確認する")
+async def test_plan_wi_links_open_here_and_support_middle_click(screen_harness: _ScreenHarness) -> None:
+    from agent_toolkit._testing import plan_fixture
+    from agent_toolkit._testing.serve_browser_wi_support import _entry_path
+
+    root = screen_harness.root.parent
+    filename = "20261011-203736-001.md"
+    legacy = "旧式 WI.md"
+    for name, body in ((filename, f"本文から `{legacy}` を参照。"), (legacy, "旧式の本文")):
+        _entry_path(root, name).write_text(f"---\ntype: awi\nstate: inbox\n---\n\n{body}\n", encoding="utf-8")
+    plan = plan_fixture.awi_plan(repo=root, related_wi=((filename, "確認する"),))
+    (screen_harness.root / "01-0000_plan.md").write_text(
+        plan + f"\n本文: `{legacy}`、20261011-203736-1001.md、AGENTS.md、[既存の {filename}](/plans)\n", encoding="utf-8"
+    )
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/plans")
+    await page.locator("#files .pane-item").filter(has_text="01-0000_plan.md").click()
+    expect = playwright.async_api.expect
+    preview = page.locator("#preview")
+    related = preview.get_by_role("link", name=filename, exact=True)
+    await expect(related).to_be_visible()
+    await expect(preview.get_by_role("link", name=legacy, exact=True)).to_be_visible()
+    await expect(preview.get_by_role("link", name="AGENTS.md")).to_have_count(0)
+    await expect(preview.get_by_role("link", name="20261011-203736-1001.md")).to_be_visible()
+    await related.click()
+    first = page.get_by_role("dialog", name="詳細（1段目）")
+    await expect(first.get_by_role("heading", name=filename, exact=True)).to_be_visible()
+    if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
+        await page.screenshot(path=Path(directory) / "005-plan-dialog.png")
+    await first.get_by_role("link", name=legacy).click()
+    await expect(page.get_by_role("dialog", name="詳細（2段目）")).to_contain_text("旧式の本文")
+    await page.keyboard.press("Escape")
+    await page.keyboard.press("Escape")
+    await expect(related).to_be_focused()
+    async with page.context.expect_page() as opened:
+        await related.click(button="middle")
+    tab = await opened.value
+    try:
+        await expect(tab.locator("#detail-filename")).to_have_text(filename)
+    finally:
+        await tab.close()
+    await related.click()
+    await first.get_by_role("button", name="このWIを開く").click()
+    await expect(page.locator("#detail-filename")).to_have_text(filename)

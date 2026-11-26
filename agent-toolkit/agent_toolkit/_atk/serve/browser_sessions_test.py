@@ -3,6 +3,7 @@ import functools
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlencode
 
 import playwright.async_api
 import pytest
@@ -410,3 +411,59 @@ async def test_long_session_can_search_jump_and_link_without_initially_rendering
     await expect(page.locator("#detail .event-linked")).to_contain_text("目印の検索語")
     await page.get_by_label("会話だけ").check()
     assert "view=conversation" in page.url
+    if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
+        await page.screenshot(path=Path(directory) / "002-conversation-search.png")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_sessions_and_agents_share_wi_reference_dialog(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    filename = "question.md"
+    (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
+    records = [
+        {"type": "assistant", "cwd": "/home/aki/proj", "message": {"content": f"Markdownで `{filename}` を確認"}},
+        {"type": "user", "message": {"content": [{"type": "tool_result", "content": f"等幅で {filename} を確認"}]}},
+    ]
+    record.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in records), encoding="utf-8")
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator('#sessions .session-item[data-engine="claude"]').click()
+    await page.locator("#detail .kind-tool_result summary").click()
+    links = page.locator("#detail").get_by_role("link", name=filename)
+    expect = playwright.async_api.expect
+    await expect(links).to_have_count(2)
+    for link in await links.all():
+        await link.click()
+        await expect(page.get_by_role("dialog", name="詳細（1段目）")).to_contain_text(filename)
+        await page.keyboard.press("Escape")
+
+    async def listing(route):
+        await route.fulfill(json={"roots": [{"id": "fixture", "name": filename, "children": []}]})
+
+    await page.route("**/api/agents/list?*", listing)
+    await page.goto(screen_harness.base_url + "/agents")
+    await page.locator("#screen-agents").get_by_role("link", name=filename).click()
+    await expect(page.get_by_role("dialog", name="詳細（1段目）")).to_contain_text(filename)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_links_distinguish_blocks_on_the_same_record_line(screen_harness: _ScreenHarness) -> None:
+    (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
+    entry = {
+        "type": "assistant",
+        "cwd": "/home/aki/proj",
+        "message": {"content": [{"type": "text", "text": "最初のブロック"}, {"type": "text", "text": "二番目のブロック"}]},
+    }
+    record.write_text("not-json\n" + json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+    page = screen_harness.page
+    query = urlencode({"host": "browser-test", "engine": "claude", "path": record.as_posix()})
+    await page.goto(screen_harness.base_url + "/sessions?" + query)
+    entries = page.locator("#detail [data-record-line='2']")
+    expect = playwright.async_api.expect
+    await expect(entries).to_have_count(2)
+    link = await entries.last.get_by_role("link", name="リンク").get_attribute("href")
+    assert link is not None and "ordinal=1" in link
+    await page.goto(link)
+    await expect(page.locator("#detail .event-linked")).to_have_count(1)
+    await expect(page.locator("#detail .event-linked")).to_contain_text("二番目のブロック")
+    await page.goto(link.replace("&ordinal=1", ""))
+    await expect(page.locator("#detail .event-linked")).to_have_count(2)

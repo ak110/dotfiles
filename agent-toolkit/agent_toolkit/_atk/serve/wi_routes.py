@@ -176,6 +176,10 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
     async def branches() -> quart.Response:
         return quart.jsonify(repositories=await workers.run(ops.branch_registry))
 
+    @app.get("/api/wi-reference-names")
+    async def wi_reference_names() -> quart.Response:
+        return quart.jsonify(names=await workers.run(ops.reference_names))
+
     @app.get("/api/entries")
     async def entries() -> quart.Response:
         allowed = {
