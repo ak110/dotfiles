@@ -105,10 +105,11 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 成功の根拠に使うのは、同じHEADで対象のテストが実行され、成功した記録だけとする。
 上限超過ならpushせず、統合先の所有者が先に削減し、公開するHEADで成功を確かめ直す。
 
-1. 公開する担当は、pushするHEADで実行する検証を`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」で選び直す。
-2. 統合差分の配布対象ごとに採番の要否を確定し、レーンからの引き渡しと比べる。
+1. 統合差分の配布対象ごとに採番の要否を確定し、レーンからの引き渡しと比べる。
    `rust/claude-statusline/`に変更があれば、`.claude/skills/release-dotfiles/SKILL.md`「developとmasterのリリース運用」の手順1の採番をpushの前に適用し、最終の検証のpyfltrへ`--enable=statusline-version`を指定する。
    同チェックは通常は無効のまま保ち、他の全体検証の成功と同チェックの成功を分けて扱う。
+2. 採番と生成物の更新を終えてpushするHEADを確定してから、そのHEADで実行する検証を`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」で選び直す。
+   以降の手順の成功だけを受理の根拠とし、HEADが変わったら影響を受けた検証を選び直す。
 3. 本書「push前のチェックとCIだけが実行するチェック」の手順を実行する。
 4. ローカルの全体検証が必要と判定した場合は、`make sync`の後に`uv run --frozen pyfltr run --no-fix --pytest-args='--maxfail=10'`を実行する（打ち切りの件数は[検証コマンドの実行](verification-execution.md#検証コマンドの実行)の手順8）。
 
