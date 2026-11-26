@@ -77,7 +77,7 @@ def delegated_compact_notice(launch: work_contract.DelegatedLaunch | None, own_c
     if own_contract is not None:
         targets.insert(0, f"目的を見返すための自身の作業契約`{own_contract}`（起動依頼と配送済みの追送）")
     if launch is not None and launch.whole_contract is not None:
-        targets.append(f"全体作業契約`{launch.whole_contract}`")
+        targets.append(f"上位の目的と現行の制約を見失わないための全体作業契約`{launch.whole_contract}`")
     if launch is not None and launch.handoff is not None and pathlib.Path(launch.handoff).is_file():
         targets.append(f"自身の引き継ぎ記録`{launch.handoff}`")
     return DELEGATED_COMPACT_NOTICE + "、".join(targets) + "。"
@@ -294,20 +294,21 @@ def _existing_session_temp(session_id: object) -> str | None:
 
 
 def _compaction_notice(session_id: str, transcript_path: object) -> str:
+    purpose = "当初の目的と現行の要求を見失わないよう、"
     scope = "その他の資料は次の操作・判断に該当するときに読んでください。"
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
         arguments = ["run-script", "session-review-evidence", "--", "--claude-session-id", session_id, "--user-events"]
         return (
             f"会話が圧縮された。起動部分へ`{shlex.join(arguments)}`を続けて実行し、"
-            f"作業契約と取得したユーザー発話の原文を読んでください。{scope}"
+            f"{purpose}作業契約と取得したユーザー発話の原文を読んでください。{scope}"
         )
     command = shlex.join(
         ["run-script", "session-review-prepare", "--", "--transcript", resolved, "--conversation-only", "--conversation-digest"]
     )
     return (
         f"会話が圧縮された。起動部分へ`{command}`を続けて実行し、"
-        "作業契約と、出力のconversation_pathが示す要約ファイルを読んでください。"
+        f"{purpose}作業契約と、出力のconversation_pathが示す要約ファイルを読んでください。"
         f"上限超過時はコマンドが示す上限で再実行してください。{scope}"
     )
 
