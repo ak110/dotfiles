@@ -42,8 +42,21 @@
 | --- | --- |
 | `source`が`add-awi-by-user`・`process-user-comments`・`implement`のAWI、詳細化済みの印を持つAWI | 詳細化しない。本文をそのまま基準にする |
 | それ以外のAWI | `atk wi edit <ファイル名> --body-file <原稿> --detail`で本文を置き換え、詳細化済みの印を付ける |
-| 回答済みUWI | UWIは置き換えず一覧に残す。作業を伴う回答は、元のAWIが同じレーンにあればそのAWIへ反映して詳細化する。UWIが元のAWIを持たない時だけ、回答から`atk wi add --detailed --hold`で詳細化済みのAWIを作って一覧へ加え、`plan-check`へ`--added-wi`で渡す。元のAWIが終了済み・回答待ち・別の担当の処理中なら新しいAWIを作らず、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`の扱いに従う |
+| 回答済みUWI | UWIは置き換えず一覧に残す。作業を伴う回答の扱いは表の後の「回答済みUWIの扱い」に従う |
 | WIの無い協調モードの依頼 | add-awi-by-userと同じ粒度のAWIを`atk wi add --detailed --hold`で保存し、一覧に載せる。完了時に`atk wi adopt`で終える |
+
+回答済みUWIの扱い:
+
+- 元のAWIが同じレーンにあり`詳細化あり`なら、回答をそのAWIへ反映して詳細化する。
+- 元のAWIが同じレーンにあり`詳細化なし`（対象外の`source`か印あり）なら、AWIの本文は変えず、回答を要件として、計画と同じstemの実行レビュー指摘管理表へ実装の委譲前に記録する。
+  表が無ければ`atk review-table init`で作り、`atk review-table add`で1行加える。
+- UWIが元のAWIを持たない時だけ、回答から`atk wi add --detailed --hold`で詳細化済みのAWIを作って一覧へ加える。
+  原稿のfrontmatterの`proposal_id`は`answer/<UWIのファイル名>`とし、中断後の再投入では保存済みの1件を使う。
+  加えたAWIは検査の集合へ含める（レーンでは`plan-check`の`--added-wi`、single-laneでは対応表へ加えて`--expected-wi`）。
+- 元のAWIが終了済み・回答待ち・別の担当の処理中なら新しいAWIを作らず、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`の扱いに従う。
+- 回答が独立した新しい作業を明示した時は、元のAWIの状態によらず`agent-toolkit:atk-mode/references/answer-transitions.md`手順2で独立したAWIを起草するかを判定する。
+- 作業を伴わない回答（質問への回答だけ、提案を退ける回答）はAWIを加えない。
+- 統合（single-laneでは終了処理）で、UWIは`agent-toolkit:atk-mode/references/answer-transitions.md`のとおり`adopt`か`reject`で、加えたAWIは`atk wi adopt`で終える。
 
 - 詳細化は、add-awi-by-userの起草と同じ調査と判断（`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の手動作成で具体化を求めた要求の水準）で行う。
   本文の書き方は`agent-toolkit:atk-mode/references/awi-body.md`に従う。

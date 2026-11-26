@@ -80,6 +80,7 @@ CI成功の待機を省く局所公開の手順は撤去し、公開工程は全
 協調モードではユーザーがエージェントへ直接依頼し、`agent-toolkit:atk-mode/playbooks/write-plan.md`の要否をエージェントが判断する。
 
 - リポジトリを変更する作業は、新しく始めるレーンと作業の全てで計画を作り、計画はfrontmatter（`launch_route`、`target_repo`、`related_wis`）とH1だけを持つ（2026年11月26日のユーザー指示「計画ファイルは対象WIのリストだけにする」）。
+  例外は、WIの無い協調モードの小変更で`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」の省略条件に当たる依頼であり、計画もAWIも作らない（同日の承認済みの方針で従来の省略を保った）。
   `source`が`add-awi-by-user`・`process-user-comments`・`implement`のAWIは本文をそのまま実装する。
   それ以外のAWIは、計画を作る時点でadd-awi-by-userと同じ粒度へ詳細化して本文を置き換え（`atk wi edit --detail`）、WIの無い協調モードの依頼は同じ粒度のAWIを保留で保存して一覧に載せる（同日のユーザー指示「WIはWIのまま管理する」）。
   2026年11月24日の決定（他経路の入力ではAWIと同じ書式の計画を作る）は、複数の入力の内容を1つの計画へ書き写して情報が繰り返されたため置き換えた。

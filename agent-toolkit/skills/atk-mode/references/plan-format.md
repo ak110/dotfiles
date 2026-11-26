@@ -28,7 +28,9 @@
 予測補正記録は対象AWIの本文へ保存する（`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「予測補正記録」）。
 WI実装commitの対応は対応記録ファイル（`agent-toolkit:atk-mode/references/commit-wi-records.md`）へ保存する。
 
-`plan-check`を通した後（実装の着手後）は、一覧の全AWIが詳細化済みの印を持つか、詳細化の対象外の`source`（add-awi-by-user、process-user-comments、implement）であり、`atk wi edit`は本文の置換を拒否する（本文の凍結）。
+`plan-check`を通した後（実装の着手後）は、一覧の全AWIが詳細化済みの印を持つか、詳細化の対象外の`source`（add-awi-by-user、process-user-comments、implement）である。
+エージェント環境の`atk wi edit`は、processingの項目と保留中の詳細化済みのAWIの本文の置換を拒否する（本文の凍結）。
+implementが保留で保存したAWI（詳細化の対象外）は道具では凍結されないため、実行レビューの収束までは本文を置き換えず、マージ用への更新（`agent-toolkit:atk-mode/playbooks/implement.md`手順7）だけを行う。
 実装中に確定した要件の変更と、記述の不整合に採った解釈は、実行レビュー指摘管理表へ記録する（基準を直すと実行レビューの指摘になり、不要な往復が生じるため）。
 凍結の後は、既存のレビュー指摘管理表と`review_contract`の原本を保持する。
 

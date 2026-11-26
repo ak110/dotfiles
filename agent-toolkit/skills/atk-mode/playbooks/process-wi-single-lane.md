@@ -37,7 +37,9 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 - メインが作業ツリーの書き込みを所有し、一部の書き込みを委譲先へ分担させる場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従う。
 - 実行レビューは、実装を担当していない独立した担当が行う。
 - 人間由来の変更で不採用とする範囲がある場合は、ユーザーの確認を得てから終える。
-- 処理対象のWIは手順1で固定し、途中の追加はユーザーの明示の追加と、`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で今回追加と判定した正式改善AWIに限る。
+- 処理対象のWIは手順1で固定する。
+  途中の追加は、ユーザーの明示の追加と、`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で今回追加と判定した正式改善AWIに限る。
+  回答済みUWIから`agent-toolkit:atk-mode/playbooks/write-plan.md`「詳細化」で作ったAWIも加えてよい。
 - 同じ対象worktreeに属する全ての項目を1件の実行レビューにまとめ、異なる対象worktreeの項目を同じ計画や実行レビューに混ぜない。
 
 ## 見つけた既存不良の扱い
@@ -79,7 +81,8 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    - 初回の`atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`には、対応表のうち開始前に`inbox`だった全件をworktreeごとに渡し、処理開始済みの項目は重ねて遷移させない。
      中断した実行を再開する場合と、回答済みUWIや依存の解消・`unhold`で`inbox`へ戻った元の項目を加える場合も、作業の再開前に`atk wi show --pull`で対応表の全件の状態を照会し、`inbox`の項目を同じ操作で`processing`へ移す。
      途中で失敗した場合は、CLIの診断と残った状態を同じ対応表に記録し、未完了の工程から再開する。
-   - ユーザーの明示の追加と、本書「見つけた既存不良の扱い」で今回追加とした正式改善AWIは対応表へ反映して比較の基準を更新し、集合の固定後の追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の基準で扱う。
+   - ユーザーの明示の追加、本書「見つけた既存不良の扱い」で今回追加とした正式改善AWI、回答済みUWIから作ったAWIは対応表へ反映して比較の基準を更新する。
+     集合の固定後の追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の基準で扱う。
 2. `atk wi`の`adopt`や`reject`に`--commit`を渡す場合は`--target-repo`に対象worktreeの絶対パスを、それ以外の操作では保存された`target_repo`を使う。
    Gitの起点の比較、実装、検証、commit、レビューには対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
 3. frontmatterに`merge_branch`を持つマージ用AWIは計画・実装・実行レビューを省き、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従って直接取り込んで終了する。

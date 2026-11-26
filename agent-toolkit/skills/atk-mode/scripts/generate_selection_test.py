@@ -15,8 +15,9 @@ import pytest
 import yaml
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
+from agent_toolkit._plan import selection as _selection
 from agent_toolkit._testing import git_repository
-from selection_contract import _detail_requirement
+from selection_contract import _detail_requirement, complete_detail_requirements
 
 
 def _dispatch(*args: str) -> int:
@@ -601,3 +602,26 @@ def test_public_generation_saves_long_single_stage_without_legacy_comparison(env
         _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(selection), "--work-dir", str(repo)) == 0
     ), capsys.readouterr().err
     assert "段階案の完了見込み秒数" not in yaml.safe_load(selection.read_bytes())
+
+
+def test_legacy_plan_requirement_is_recomputed_from_metadata() -> None:
+    legacy: dict[str, Any] = {
+        "選定": [
+            {"WI": "uwi.md", "計画要否": "計画あり"},
+            {"WI": "user.md", "計画要否": "計画あり"},
+            {"WI": "other.md", "計画要否": "計画なし"},
+        ]
+    }
+    metadata = {
+        "uwi.md": {"type": "uwi"},
+        "user.md": {"type": "awi", "source": "add-awi-by-user"},
+        "other.md": {"type": "awi", "source": "human"},
+    }
+    decisions = _selection.decisions(legacy) or []
+    assert all(isinstance(item, dict) and "計画要否" not in item and "詳細化要否" not in item for item in decisions)
+    complete_detail_requirements(legacy, lambda name: metadata[name])
+    assert {item["WI"]: item["詳細化要否"] for item in legacy["選定"]} == {
+        "uwi.md": "詳細化なし",
+        "user.md": "詳細化なし",
+        "other.md": "詳細化あり",
+    }

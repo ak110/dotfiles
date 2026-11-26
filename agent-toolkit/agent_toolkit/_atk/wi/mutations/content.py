@@ -23,6 +23,7 @@ from agent_toolkit._atk.wi.constants import (
     DETAILED_KEY,
     DETAILED_SOURCES,
     WI_EDITABLE_STATES,
+    WI_STATE_HOLD,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
     WI_TYPE_AWI,
@@ -465,7 +466,13 @@ def _apply_cooldown_edit(content: str, value: str, filename: str) -> str:
 
 
 def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False) -> None:
-    if not is_agent_environment() or _wi_entries.entry_state_of(path) != WI_STATE_PROCESSING:
+    if not is_agent_environment():
+        return
+    state = _wi_entries.entry_state_of(path)
+    if state == WI_STATE_HOLD:
+        _reject_detailed_hold_edit(path)
+        return
+    if state != WI_STATE_PROCESSING:
         return
     if detail:
         # 詳細化の保存は、処理中の担当自身による着手前の1回の置換に限って許す。  # pyfltr: allow-comment
@@ -492,6 +499,17 @@ def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False) -
         f"processingの項目はエージェント環境から編集できない: {path.name}。"
         "処理中の要求を書き換えると、処理しているセッションが扱う要求の内容が途中で変わる",
         next_action="書き換えたい内容はatk wi addで新しい項目として投入し、この項目へはatk wi edit --appendで追記する",
+    )
+    sys.exit(2)
+
+
+def _reject_detailed_hold_edit(path: pathlib.Path) -> None:
+    parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    if parsed is None or not is_detailed(parsed[0]):
+        return
+    _outcome.report_failure(
+        f"保留中の詳細化済みのAWIはエージェント環境から本文を置き換えられない: {path.name}",
+        next_action="実装中に確定した要件の変更は実行レビュー指摘管理表へ記録し、この項目へはatk wi edit --appendで追記する",
     )
     sys.exit(2)
 

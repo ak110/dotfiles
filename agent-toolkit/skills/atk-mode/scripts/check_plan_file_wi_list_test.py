@@ -5,6 +5,7 @@ import typing
 
 import check_plan_file
 import pytest
+import yaml
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_file_check_support import fixture_repo as fixture_repo
 
@@ -106,3 +107,61 @@ def test_wi_list_plan_rejects_sections(repo: tuple[pathlib.Path, str], tmp_path:
     )
     errors, _warnings = check_plan_file.check(plan_path, work_dir, private_notes=_notes(tmp_path))
     assert any("見出しをH1だけにする" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("strict", [False, True], ids=["migration-warning", "migration-rejection"])
+def test_cli_checks_legacy_awi_plan(repo: tuple[pathlib.Path, str], capsys: pytest.CaptureFixture[str], strict: bool) -> None:
+    work_dir, _base = repo
+    plan = work_dir / "plan.md"
+    plan.write_text(_plan_fixture.awi_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES), encoding="utf-8")
+    flags = ["--reject-migration-warnings"] if strict else []
+
+    assert check_plan_file.main([str(plan), "--work-dir", str(work_dir), *flags]) == int(strict)
+    diagnostic = capsys.readouterr().err.splitlines()
+    warning = check_plan_file.AWI_FORMAT_MIGRATION_WARNING
+    assert (warning if strict else f"[warn] {warning}") in diagnostic
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "related", "status", "diagnostic"),
+    [
+        (True, (_MARKED, _UWI, _EXEMPT), 0, ""),
+        (True, (_MARKED, _UWI), 1, f"欠落=['{_EXEMPT}']"),
+        (True, (_MARKED, _UWI, _EXEMPT, _UNMARKED), 1, f"余剰=['{_UNMARKED}']"),
+        (False, (_MARKED, _UWI, _EXEMPT), 2, "--added-wiは--selection-file・--laneと組で指定する"),
+    ],
+    ids=["match", "missing", "surplus", "no-selection"],
+)
+def test_cli_compares_added_wi_with_lane_selection(
+    repo: tuple[pathlib.Path, str],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    extra_args: bool,
+    related: tuple[str, ...],
+    status: int,
+    diagnostic: str,
+) -> None:
+    work_dir, _base = repo
+    notes = _notes(tmp_path)
+    extra = notes / "processing" / _UNMARKED
+    extra.write_text("---\ntype: awi\nsource: add-awi-by-user\n---\n# 余分な要求\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    plan = work_dir / "plan.md"
+    plan.write_text(
+        _plan_fixture.wi_list_plan(repo=work_dir.resolve(), related_wi=tuple((name, "") for name in related)),
+        encoding="utf-8",
+    )
+    selection = work_dir / "selection.yaml"
+    selection.write_text(
+        yaml.safe_dump(
+            {"選定": [{"WI": wi, "レーン": "lane-01", "詳細化要否": "詳細化なし"} for wi in (_MARKED, _UWI)]},
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    flags = ["--selection-file", str(selection), "--lane", "lane-01"] if extra_args else []
+
+    assert check_plan_file.main([str(plan), "--work-dir", str(work_dir), "--added-wi", _EXEMPT, *flags]) == status
+    if diagnostic:
+        assert diagnostic in capsys.readouterr().err

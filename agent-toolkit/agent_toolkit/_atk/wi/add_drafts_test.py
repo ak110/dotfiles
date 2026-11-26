@@ -145,3 +145,50 @@ def test_legacy_proposal_can_be_skipped_but_not_used_as_a_key(
     assert add(old, _draft("B", needs="legacy")) == 1
     assert old_file.name in capsys.readouterr().err
     assert set(_saved(notes)) == {"legacy"}
+
+
+def test_cli_rejects_detailed_marker_in_draft(
+    drafts: tuple[pathlib.Path, Callable[..., int]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    notes, add = drafts
+    draft = _draft("A").replace("---\n", "---\ndetailed: true\n", 1)
+
+    assert add(draft) == 1
+    assert "--detailed" in capsys.readouterr().err
+    assert not list(layout.iter_entry_paths(notes))
+
+
+def test_cli_saves_detailed_awi_on_hold(drafts: tuple[pathlib.Path, Callable[..., int]]) -> None:
+    notes, add = drafts
+
+    assert add(_draft("A"), options=("--detailed", "--hold")) == 0
+
+    _, metadata, _ = _saved(notes)["A"]
+    assert metadata["type"] == "awi"
+    assert metadata["state"] == "hold"
+    assert metadata["detailed"] == "true"
+
+
+@pytest.mark.parametrize("proposal", ["answer/20261101-000000-001.md", "implement/plan-list/1"])
+def test_cli_retry_reports_existing_proposal_without_saving_again(
+    drafts: tuple[pathlib.Path, Callable[..., int]],
+    capsys: pytest.CaptureFixture[str],
+    proposal: str,
+) -> None:
+    notes, add = drafts
+    draft = _draft("A", proposal=proposal)
+
+    assert add(draft) == 0
+    (saved,) = list(layout.iter_entry_paths(notes))
+    original = saved.read_bytes()
+    assert _saved(notes)["A"][1]["proposal_id"] == proposal
+    capsys.readouterr()
+
+    assert add(draft) == 0
+
+    output = capsys.readouterr()
+    assert "0件をinboxへ投入した" in output.out
+    assert f"登録済みのため再登録しなかった: {saved.name}" in output.err
+    assert list(layout.iter_entry_paths(notes)) == [saved]
+    assert saved.read_bytes() == original

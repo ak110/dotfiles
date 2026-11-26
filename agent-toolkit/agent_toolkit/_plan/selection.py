@@ -23,10 +23,6 @@ DETAIL_REQUIREMENT_KEY = "詳細化要否"
 DETAIL_REQUIRED = "詳細化あり"
 DETAIL_NOT_REQUIRED = "詳細化なし"
 _LEGACY_PLAN_REQUIREMENT_KEY = "計画要否"
-_LEGACY_PLAN_REQUIREMENT_VALUES: typing.Final[dict[object, str]] = {
-    "計画なし": DETAIL_NOT_REQUIRED,
-    "計画あり": DETAIL_REQUIRED,
-}
 STAGE_KEY = "段階"
 PRIOR_LANES_KEY = "先行レーン"
 START_DEPENDENCIES_KEY = "着手前に必要なレーン"
@@ -145,9 +141,7 @@ def decisions(selection: object) -> list[object] | None:
     for item in normalized:
         if isinstance(item, dict):
             item.setdefault(PUBLIC_WRITE_FILES_KEY, [])
-            legacy = item.pop(_LEGACY_PLAN_REQUIREMENT_KEY, None)
-            if legacy is not None and DETAIL_REQUIREMENT_KEY not in item:
-                item[DETAIL_REQUIREMENT_KEY] = _LEGACY_PLAN_REQUIREMENT_VALUES.get(legacy, legacy)
+            item.pop(_LEGACY_PLAN_REQUIREMENT_KEY, None)
     return normalized
 
 

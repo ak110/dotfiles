@@ -38,7 +38,7 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - 配布物の版数はマージ用ブランチで上げない。
      更新が必要な場合は、更新種別と根拠をAWIへ書く。
 5. 独立文脈の実行レビューを受けて収束させる。
-   - `agent-toolkit:atk-mode/roles/exec-review.parent.md`に従い、実装を担当していない実行レビュー担当を、レビュー基準`WI`で保留中のAWIを渡して起動する。
+   - `agent-toolkit:atk-mode/roles/exec-review.parent.md`に従い、実装を担当していない実行レビュー担当を、レビュー基準`計画`と`WI`で、手順4の計画と保留中のAWIを渡して起動する（指摘管理表は計画と同じstemに解決される）。
    - 指摘を同じ隔離worktreeで修正・再検証してcommitし、未解決の指摘が0件になるまで収束させる。
 6. 一時ブランチをリモートへpushし、対象の完全OIDを確定する。
    - 隔離worktreeがcleanであることを確かめ、`git push origin HEAD:refs/heads/<一時ブランチ名>`でリモートへpushする。

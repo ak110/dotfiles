@@ -106,3 +106,23 @@ def test_body_frontmatter_cannot_set_detailed(agent_env: pathlib.Path, tmp_path:
 
     assert _detail(tmp_path, "---\ndetailed: true\n---\n# 置換\n") != 0
     assert path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("detailed", [True, False])
+def test_detailed_hold_awi_body_is_frozen(agent_env: pathlib.Path, tmp_path: pathlib.Path, detailed: bool) -> None:
+    path = agent_env / "2026" / "10" / "fb-001.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    marker = "detailed: true\n" if detailed else ""
+    path.write_text(
+        f"---\nstate: hold\ntarget_repo: github.com/example/foo\ntype: awi\nsource: implement\n{marker}---\n\n編集前\n",
+        encoding="utf-8",
+    )
+    saved = path.read_text(encoding="utf-8")
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(_edit_body_args(tmp_path, "fb-001.md", "# 置換\n"), home=tmp_path)
+    if detailed:
+        assert exc_info.value.code == 2
+        assert path.read_text(encoding="utf-8") == saved
+    else:
+        assert (exc_info.value.code or 0) == 0
+        assert "置換" in path.read_text(encoding="utf-8")

@@ -20,7 +20,7 @@ frontmatterを持ち、H1の後に見出しも本文も無ければ現行の形�
 ## AWI書式
 
 AWI書式は、2026年11月24日から本形式の廃止までに作った計画である。
-frontmatter（`launch_route`、`target_repo`、`related_wis`、`work_kind`）と、AWIの本文と同じ節（`## 反映内容と反映先`、`## 調査結果と判断根拠`、`## 完成条件`など）を持つ。
+frontmatter（`launch_route`、`target_repo`、`related_wis`、`work_kind`）と、AWIの本文と同じ節（`## 反映内容と反映先`、`## 原因分析`、`## 調査結果と判断根拠`、`## 完成条件`など）を持つ。
 保存済みの計画の読み取り、`plan-check`（`--reject-migration-warnings`なし。移行の警告を出す）、進捗ログへの追記、対応commitの記録で受け付け、作成済みで実装中の計画はこの形式のまま完了できる。
 各節の内容は、現行では詳細化した対象WIの本文の同じ節へ、`work_kind`は対象WIの本文へ書く。
 
