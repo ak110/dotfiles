@@ -343,11 +343,11 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     hydrated = None
     if is_send_to_user_tool(tool_name) and (reference := tool_input.get("body_ref")) is not None:
         if tool_input.get("message") is not None:
-            return Decision(block=_block_notice("messageとbody_refは同時に指定できない。", fix="いずれか一方を指定する。"))
+            return Decision(block=_block_notice("`message`と`body_ref`は同時に指定できない。", fix="いずれか一方を指定する。"))
         try:
             text = load_body_reference(session_id, reference)
         except ValueError as error:
-            return Decision(block=_block_notice(str(error), fix="同じ会話の拒否通知にあるbody_refを指定する。"))
+            return Decision(block=_block_notice(str(error), fix="同じ会話の拒否通知にある`body_ref`を指定する。"))
         hydrated = {key: value for key, value in tool_input.items() if key != "body_ref"} | {"message": text}
         tool_input = hydrated
     if (tool_name == "AskUserQuestion" or tool_name in _SCOPE_REVIEW_MCP_TOOLS) and (
