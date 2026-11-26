@@ -166,7 +166,7 @@ def test_legacy_user_dependency_requires_answer_in_active_or_terminal_entry(
 def test_report_before_ready_entry_does_not_stop_scan(tmp_path: pathlib.Path) -> None:
     repo = "github.com/example/repo"
     snapshot = (
-        (tmp_path / "report.md", repo, "---\nrun_skill_report: true\n---\n\n## 回答\n", "inbox", "uwi"),
+        (tmp_path / "report.md", repo, "---\nquestion_type: report\nrun_skill_report: true\n---\n\n## 回答\n", "inbox", "uwi"),
         (tmp_path / "ready.md", repo, "---\n---\n", "inbox", "awi"),
         (tmp_path / "waiting.md", repo, "---\ndepends_on: [report.md]\n---\n", "inbox", "awi"),
     )
@@ -174,6 +174,7 @@ def test_report_before_ready_entry_does_not_stop_scan(tmp_path: pathlib.Path) ->
     assert result.ready == ("ready.md",)
     assert result.blocked == ("report.md", "waiting.md")
     assert not result.internal_dependency_waits
+    assert not result.unanswered_uwi_waits
 
 
 def test_unanswered_cross_repository_fallback_and_missing_target() -> None:

@@ -18,6 +18,7 @@ from agent_toolkit._atk.wi.constants import (
     WI_TYPE_UWI,
 )
 from agent_toolkit._atk.wi.entry_text import EntryText, EntryTexts, parse_frontmatter
+from agent_toolkit._atk.wi.uwi_scan import is_report as _is_uwi_report
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
 from agent_toolkit._git import remote as _git_remote
 
@@ -551,7 +552,10 @@ def calculate_readiness(
             ready.append(entry.filename)
             continue
         blocked.append(entry.filename)
-        if any(target.kind == WI_TYPE_UWI and target.uwi_answered is False for target in waiting_targets):
+        if any(
+            target.kind == WI_TYPE_UWI and target.uwi_answered is False and not _is_uwi_report(target.text)
+            for target in waiting_targets
+        ):
             unanswered_uwi_waits.add(entry.filename)
         if waiting_targets and all((target.filename, target.target_repo) in target_pairs for target in waiting_targets):
             internal_wait_targets[(entry.filename, entry.target_repo)] = waiting_targets
