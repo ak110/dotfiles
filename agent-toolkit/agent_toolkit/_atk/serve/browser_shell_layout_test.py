@@ -274,3 +274,29 @@ async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _
         await page.evaluate("() => window.scrollTo(0, 0)")
         duration = await menu.evaluate("element => getComputedStyle(element).transitionDuration")
         assert duration == "0s"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_detail_toolbars_use_the_same_tokens(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    observed = {}
+    for screen in ("plans", "sessions"):
+        await page.goto(screen_harness.base_url + "/" + screen)
+        toolbar = page.locator(f"#screen-{screen} .detail-toolbar").first
+        await toolbar.wait_for()
+        observed[screen] = await toolbar.evaluate(
+            """toolbar => {
+                const style = getComputedStyle(toolbar);
+                const button = getComputedStyle([...toolbar.querySelectorAll('button')]
+                    .find(button => button.getClientRects().length));
+                const bounds = toolbar.getBoundingClientRect();
+                return {
+                    gap: style.columnGap, padding: style.padding,
+                    border: style.borderBlockEnd, background: style.backgroundColor,
+                    font: button.fontSize, height: button.minBlockSize,
+                    inset: bounds.left - toolbar.parentElement.getBoundingClientRect().left
+                };
+            }"""
+        )
+        assert float(observed[screen]["font"].removesuffix("px")) >= 16
+    assert observed["plans"] == observed["sessions"]

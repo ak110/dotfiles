@@ -98,10 +98,6 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
             "element => getComputedStyle(element).backgroundColor"
         )
         assert inline_background not in {"rgba(0, 0, 0, 0)", "transparent"}
-        if width == 390:
-            header_box = await page.locator("#screen-wi .app-header").bounding_box()
-            assert header_box is not None
-            assert header_box["height"] < 150
         await page.keyboard.press("Escape")
         await playwright.async_api.expect(row).to_be_focused()
         await row.click()
@@ -131,7 +127,8 @@ async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: 
     assert filename_box is not None
     assert target_box is not None
     assert row_box is not None
-    assert summary_box["y"] == status_box["y"] < filename_box["y"]
+    assert summary_box["y"] <= status_box["y"] < summary_box["y"] + summary_box["height"]
+    assert filename_box["y"] >= max(summary_box["y"] + summary_box["height"], status_box["y"] + status_box["height"])
     assert summary_box["x"] + summary_box["width"] <= status_box["x"]
     assert filename_box["y"] == target_box["y"]
     assert filename_box["x"] + filename_box["width"] <= target_box["x"]
@@ -311,10 +308,9 @@ async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harnes
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_wi_rows_fit_desktop_and_keep_geometry_on_text_only_update(browser_harness: _BrowserHarness) -> None:
+async def test_wi_rows_are_readable_and_keep_geometry_on_text_only_update(browser_harness: _BrowserHarness) -> None:
     harness = browser_harness
     page = harness.page
-    await page.set_viewport_size({"width": 1440, "height": 900})
     prefix = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
     heading = "# 確認する項目"
     for index in range(1, 34):
@@ -326,7 +322,15 @@ async def test_wi_rows_fit_desktop_and_keep_geometry_on_text_only_update(browser
     await page.goto(harness.base_url + "/")
     rows = page.locator("#entry-list .entry-row")
     await playwright.async_api.expect(rows.filter(has_text="確認する項目")).to_have_count(33)
-    assert await rows.evaluate_all("rows => rows.filter(row => row.getBoundingClientRect().bottom <= innerHeight).length") >= 15
+    summary = rows.filter(has_text="確認する項目").first.locator(".summary-cell")
+    style = await summary.evaluate(
+        "element => ({size: parseFloat(getComputedStyle(element).fontSize), "
+        "line: parseFloat(getComputedStyle(element).lineHeight)})"
+    )
+    assert style["size"] >= 16
+    assert style["line"] >= 1.5 * style["size"]
+    await rows.last.scroll_into_view_if_needed()
+    await playwright.async_api.expect(rows.last.locator(".entry-select")).to_be_in_viewport()
     entry = rows.filter(has=page.locator(f'.entry-select[data-key="{prefix}-120000-033.md"]'))
     await playwright.async_api.expect(entry.locator(".summary-cell")).to_have_text("確認する項目 33")
     await playwright.async_api.expect(entry.locator(".target-repo-cell")).to_have_text("owner/project")

@@ -7,6 +7,7 @@
   padding: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-overlay);
   color: var(--color-text);
   background: var(--color-surface);
 }
@@ -44,8 +45,8 @@
   place-items: center;
   border-color: transparent;
   background: transparent;
-  font-size: 1.5rem;
-  line-height: 1;
+  font-size: var(--font-size-icon);
+  line-height: var(--line-height-icon);
 }
 :is(#screen-wi, .wi-reference-layer) .dialog-body {
   min-height: 0;
@@ -272,14 +273,14 @@
   min-width: 2.75rem;
   height: 2.75rem;
   min-height: 2.75rem;
-  margin: -0.35rem -0.55rem -0.35rem 0;
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2)) calc(-1 * var(--space-1)) 0;
   padding: 0;
   place-items: center;
   border-color: transparent;
   color: inherit;
   background: transparent;
-  font-size: 1.5rem;
-  line-height: 1;
+  font-size: var(--font-size-icon);
+  line-height: var(--line-height-icon);
 }
 @keyframes spin {
   to {
@@ -333,7 +334,7 @@
   }
   :is(#screen-wi, .wi-reference-layer) .detail-more > summary {
     display: list-item;
-    padding: 0.65rem var(--space-2);
+    padding: var(--space-2);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-small);
     background: var(--color-normal);

@@ -59,7 +59,6 @@
 #screen-wi #copy-all-button {
   flex-shrink: 0;
   white-space: nowrap;
-  padding: 0.2rem 0.5rem;
 }
 #screen-wi .entry-heading-meta {
   display: flex;
@@ -88,11 +87,6 @@
 }
 #screen-wi .list-warning,
 #screen-wi .dialog-message {
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  color: var(--color-danger);
-  background: var(--color-danger-quiet);
   white-space: pre-wrap;
 }
 /* ダイアログ本文はスクロールするため、結果表示領域を上端へ留め、スクロール位置によらず可視にする。 */
@@ -154,15 +148,7 @@
   }
 }
 #screen-wi .list-warning {
-  margin-top: var(--space-3);
-  color: var(--color-warning);
-  background: var(--color-warning-quiet);
-  border-color: var(--color-border);
-}
-#screen-wi .success-message {
-  color: var(--color-success);
-  background: var(--color-success-quiet);
-  border-color: var(--color-border);
+  margin-block-start: var(--space-3);
 }
 #screen-wi .app-layout {
   display: grid;
@@ -257,10 +243,10 @@
   box-sizing: border-box;
   display: grid;
   grid-template-columns: fit-content(44%) fit-content(50%) minmax(0, 1fr);
-  grid-template-rows: 1.25em 1rem;
+  grid-template-rows: 1.5em 1.5em;
   column-gap: var(--space-1);
   min-inline-size: 0;
-  padding: 3px var(--space-2);
+  padding: var(--space-row) var(--space-3);
   border-inline-start: 2px solid transparent;
   color: var(--color-text);
   text-decoration: none;
@@ -282,6 +268,7 @@
 #screen-wi .target-repo-cell { grid-area: 2 / 3; }
 #screen-wi .status-cell {
   grid-area: 2 / 2;
+  align-self: center;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -300,7 +287,7 @@
   #screen-wi .entry-row { padding-inline-end: 0; }
   #screen-wi .entry-select {
     grid-template-columns: minmax(0, 1fr) fit-content(75%);
-    grid-template-rows: 1.25em auto;
+    grid-template-rows: 1.5em auto;
     padding-inline: var(--space-1);
   }
   #screen-wi .summary-cell { grid-area: 1 / 1; }

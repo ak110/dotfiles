@@ -186,7 +186,6 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
     page = screen_harness.page
     await _observe_screen_requests(page)
-    await page.set_viewport_size({"width": 1280, "height": 600})
     parent = tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl"
     records: list[dict[str, Any]] = [
         {"type": "user", "timestamp": "2026-09-04T00:00:00Z", "cwd": "/home/aki/long", "message": {"content": "開始"}}
@@ -232,6 +231,9 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
         "() => { const main = document.querySelector('#screen-sessions main'); main.scrollTop = 1500; return main.scrollTop; }"
     )
     assert scroll_top > 0
+    summary = events.nth(120).locator(":scope > summary")
+    await playwright.async_api.expect(summary).to_be_focused()
+    old_summary = await summary.element_handle()
     list_requests = _session_list_requests(screen_harness)
 
     _append_jsonl(
@@ -245,7 +247,9 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
         ],
     )
 
-    await playwright.async_api.expect(events).to_have_count(232, timeout=5000)
+    await page.wait_for_function("(summary) => !summary.isConnected", arg=old_summary)
+    await playwright.async_api.expect(summary).to_be_focused()
+    await playwright.async_api.expect(events).to_have_count(231)
     assert not await events.nth(0).evaluate("element => element.open")
     assert not await events.nth(120).evaluate("element => element.open")
     assert await page.evaluate("() => document.querySelector('#screen-sessions main').scrollTop") == scroll_top
@@ -253,6 +257,8 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     await page.wait_for_function("window.__screenRequests.pending === 0")
     assert _session_list_requests(screen_harness) == list_requests
 
+    await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
+    await playwright.async_api.expect(events).to_have_count(232)
     await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
     await playwright.async_api.expect(page.locator("#detail").get_by_text("追記されたイベント")).to_be_in_viewport()
 

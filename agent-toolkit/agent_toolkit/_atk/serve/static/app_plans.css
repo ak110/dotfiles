@@ -17,13 +17,6 @@
   background: var(--color-background);
   padding: 0;
 }
-.pane-sidebar .toolbar {
-  position: sticky;
-  top: 0;
-  background: var(--color-background);
-  padding: 10px;
-  border-bottom: 1px solid var(--color-border);
-}
 .pane-sidebar input { width: 100%; }
 /* セッション画面の項目はbutton要素のため、全体のbutton規則の角丸・枠・背景をここで打ち消す。 */
 .pane-item {
@@ -32,7 +25,7 @@
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-row) var(--space-3);
   border: 0;
   border-bottom: 1px solid var(--color-border);
   border-radius: 0;
@@ -62,12 +55,12 @@
   white-space: nowrap;
 }
 .pane-item-meta {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: var(--font-size-small);
   color: var(--color-secondary-text);
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .pane-item-meta > * {
   min-inline-size: 0;
@@ -89,18 +82,10 @@
 #screen-plans .meta .ctime {
   white-space: nowrap;
 }
-#screen-plans #root-warnings {
-  padding: 8px 12px;
-  color: var(--color-danger);
-  background: var(--color-danger-quiet);
-  border-bottom: 1px solid var(--color-border);
-  font-size: var(--font-size-small);
-}
 #screen-plans #plans-selection-status {
-  padding: 10px 12px;
+  padding: var(--space-row) var(--space-3);
   background: var(--color-primary-quiet);
-  border-bottom: 1px solid var(--color-border);
-  font-size: var(--font-size-small);
+  border-block-end: 1px solid var(--color-border);
   overflow-wrap: anywhere;
 }
 @media (min-width: 769px) {
@@ -111,13 +96,13 @@
 /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
 #screen-plans .host-badge {
   display: none;
-  margin-left: 4px;
-  padding: 0 4px;
+  margin-inline-start: var(--space-1);
+  padding-inline: var(--space-1);
   font-size: var(--font-size-small);
   color: var(--color-secondary-text);
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-small);
   vertical-align: baseline;
 }
 #screen-plans .host-badge.connecting,
@@ -128,18 +113,12 @@
   overflow: auto;
   box-sizing: border-box;
 }
-#screen-plans main .toolbar {
-  display: flex;
+#screen-plans .detail-toolbar {
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
   justify-content: flex-end;
-  padding: 8px 16px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-}
-#screen-plans main .toolbar .spacer {
-  flex: 1;
 }
 #screen-plans main .toolbar button {
   white-space: nowrap;
@@ -155,9 +134,6 @@
 #screen-plans .copy-feedback::after {
   content: attr(data-reserve-wide);
   visibility: hidden;
-}
-#screen-plans main .toolbar .nav-btn {
-  min-width: 36px;
 }
 #screen-plans .short-label {
   display: none;
@@ -175,7 +151,7 @@
 #screen-plans main article {
   max-width: 860px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: var(--space-4);
   box-sizing: border-box;
 }
 /* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
@@ -188,7 +164,7 @@
 }
 #screen-plans .diagram {
   margin: 1.5rem 0;
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface);
@@ -237,7 +213,7 @@
     z-index: 20;
     transform: translateX(-100%);
     transition: transform 0.2s ease-out;
-    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-overlay);
   }
   /* 失効理由がある一覧は、ドロワーを直ちに全幅で表示する。 */
   #screen-plans:has(#plans-selection-status:not([hidden])) aside {
@@ -253,7 +229,7 @@
     left: 0;
     width: 100vw;
     height: 100svh;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--color-backdrop);
     z-index: 10;
   }
   #screen-plans.drawer-open #plans-drawer-backdrop {
@@ -279,7 +255,7 @@
   }
   #screen-plans #meta-mobile {
     display: block;
-    padding: 8px 16px;
+    padding: var(--space-row) var(--space-3);
     font-size: var(--font-size-small);
     color: var(--color-secondary-text);
     background: var(--color-background);
@@ -292,15 +268,13 @@
   }
   #screen-plans #meta-mobile .meta-path {
     display: block;
-    margin-top: 2px;
+    margin-block-start: var(--space-1);
   }
   #screen-plans #meta-mobile .meta-ctime {
     display: inline-block;
-    margin-left: 8px;
+    margin-inline-start: var(--space-2);
   }
   #screen-plans #meta-mobile.empty {
     display: none;
   }
 }
-
-#screen-plans main .toolbar { position: sticky; top: 0; z-index: 2; background: var(--color-surface); }

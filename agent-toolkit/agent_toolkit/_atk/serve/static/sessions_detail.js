@@ -219,7 +219,10 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     for (const block of detailEl.querySelectorAll("details[data-event-index]")) {
       openStates.set(block.dataset.eventIndex, block.open);
     }
-    return {openStates, renderLimit, scrollTop: detailEl.parentElement.scrollTop};
+    const active = document.activeElement;
+    const focusedEvent = active?.matches("summary") && detailEl.contains(active)
+      ? active.parentElement.dataset.eventIndex : undefined;
+    return {openStates, focusedEvent, renderLimit, scrollTop: detailEl.parentElement.scrollTop};
   }
 
   // ローカルの記録は本文の後に費用を別に取得するため、取得中は前回の値か「算出中」を表示する。  // pyfltr: allow-comment
@@ -465,6 +468,10 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     renderLimit = 0;
     document.getElementById("session-reading").hidden = false;
     appendEvents(preserved ? preserved.renderLimit : DETAIL_PAGE_SIZE, preserved);
+    if (preserved?.focusedEvent !== undefined) {
+      const block = detailEl.querySelector(`details[data-event-index="${CSS.escape(preserved.focusedEvent)}"]`);
+      block?.querySelector(":scope > summary")?.focus({preventScroll: true});
+    }
     refreshSearch();
     detailScroller().scrollTop = preserved ? preserved.scrollTop : 0;
     renderEventsNearEnd();

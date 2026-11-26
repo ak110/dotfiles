@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
 <body data-screen="__INITIAL_SCREEN__">
-  <div id="update-status" class="update-status" hidden>
+  <div id="update-status" class="update-status notice notice-warning" hidden>
     <span role="status"></span> <button type="button">再取得</button>
   </div>
   <section id="screen-wi" class="screen" __WI_HIDDEN__>
@@ -124,7 +124,7 @@
       <div id="copy-all-status" class="secondary-text" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
       <!-- 外枠は改行を保持する表示（pre-wrap）のため、タグの間へ空白を入れると余分な行になる。 -->
-      <div id="list-warning-box" class="list-warning" role="alert" hidden><details id="list-warning-details"><summary id="list-warning-summary"></summary><div id="list-warning" hidden></div></details></div>
+      <div id="list-warning-box" class="list-warning notice notice-warning" role="alert" hidden><details id="list-warning-details"><summary id="list-warning-summary"></summary><div id="list-warning" hidden></div></details></div>
       <div class="entry-columns">
         <button id="copy-all-button" class="button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
       </div>
@@ -153,8 +153,8 @@
         <button id="detail-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
       </header>
       <div id="detail-dialog-body" class="dialog-body" tabindex="0">
-        <div id="detail-alert" class="dialog-message error-message" role="alert" hidden></div>
-        <div id="detail-status" class="dialog-message success-message" role="status" hidden></div>
+        <div id="detail-alert" class="dialog-message error-message notice notice-error" role="alert" hidden></div>
+        <div id="detail-status" class="dialog-message success-message notice notice-success" role="status" hidden></div>
         <template id="detail-view-template">
           <section id="detail-view" hidden>
             <div class="detail-title-row">
@@ -236,8 +236,8 @@
         <button id="create-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
       </header>
       <div class="dialog-body" tabindex="0">
-        <div id="create-alert" class="dialog-message error-message" role="alert" hidden></div>
-        <div id="create-status" class="dialog-message success-message" role="status" hidden></div>
+        <div id="create-alert" class="dialog-message error-message notice notice-error" role="alert" hidden></div>
+        <div id="create-status" class="dialog-message success-message notice notice-success" role="status" hidden></div>
         <div class="dialog-form-fields">
           <label for="create-kind">種別（必須）</label>
           <select id="create-kind" name="type">
@@ -289,8 +289,8 @@
         <button id="delete-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
       </header>
       <div class="dialog-body" tabindex="0">
-        <div id="delete-alert" class="dialog-message error-message" role="alert" hidden></div>
-        <div id="delete-status" class="dialog-message success-message" role="status" hidden></div>
+        <div id="delete-alert" class="dialog-message error-message notice notice-error" role="alert" hidden></div>
+        <div id="delete-status" class="dialog-message success-message notice notice-success" role="status" hidden></div>
         <dl class="metadata">
           <dt>対象</dt><dd id="delete-target"></dd>
           <dt>state</dt><dd><span id="delete-state" class="state-badge"></span></dd>
@@ -336,14 +336,14 @@
           <span id="search-status" role="status"></span>
         </div>
         <div id="plans-selection-status" hidden></div>
-        <div id="root-warnings" role="alert" hidden></div>
-        <div id="plans-list-error" role="alert" hidden></div>
+        <div id="root-warnings" class="notice notice-error" role="alert" hidden></div>
+        <div id="plans-list-error" class="notice notice-error" role="alert" hidden></div>
         <div id="plans-empty" class="empty-state" hidden><p>該当する計画ファイルがありません。</p><button id="plans-clear-filter" type="button">検索をクリア</button></div>
         <div id="files"></div>
         <div id="files-sentinel" hidden></div>
       </aside>
       <main>
-        <div class="toolbar">
+        <div class="toolbar detail-toolbar">
           <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="計画一覧" aria-controls="plans-sidebar" aria-expanded="false">一覧</button>
           <span class="spacer"></span>
           <button id="copy-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="本文" type="button" disabled><span class="wide-label">Markdownをコピー</span><span class="short-label">本文</span></button>
@@ -397,15 +397,15 @@
           <input id="sessions-filter" type="search" aria-describedby="sessions-filter-scope">
           <small id="sessions-filter-scope" class="secondary-text">検索対象: ホスト・作業ディレクトリ・識別子・パス・ラベル</small>
         </div>
-        <div id="warnings" role="alert" hidden></div>
-        <div id="sessions-list-error" role="alert" hidden></div>
+        <div id="warnings" class="notice notice-warning" role="alert" hidden></div>
+        <div id="sessions-list-error" class="notice notice-error" role="alert" hidden></div>
         <p id="sessions-search-status" role="status" hidden></p>
         <div id="sessions-empty" class="empty-state" hidden><p>該当するセッションがありません。</p><button id="sessions-clear-filter" type="button">検索をクリア</button></div>
         <div id="sessions"></div>
         <div id="sessions-sentinel" hidden></div>
       </aside>
       <main>
-        <div class="toolbar">
+        <div class="toolbar detail-toolbar">
           <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧" aria-controls="sessions-sidebar" aria-expanded="false">一覧</button>
           <span id="detail-title" class="detail-title"></span>
           <span class="spacer"></span>
@@ -413,7 +413,7 @@
           <button id="sessions-prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のセッション" disabled>&uarr;</button>
           <button id="sessions-next-btn" class="nav-btn button-secondary" type="button" aria-label="次のセッション" disabled>&darr;</button>
         </div>
-        <div id="session-reading" class="toolbar reading-toolbar" hidden>
+        <div id="session-reading" class="toolbar detail-toolbar reading-toolbar" hidden>
           <label><input id="session-conversation" type="checkbox"> 会話だけ</label>
           <label for="session-search">記録内検索</label>
           <input id="session-search" type="search">

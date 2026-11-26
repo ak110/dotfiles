@@ -11,14 +11,6 @@
   flex: 1 1 auto;
   min-height: 0;
 }
-#screen-sessions #warnings {
-  margin: 8px 10px;
-  padding: 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-warning-quiet);
-  font-size: var(--font-size-base);
-}
 /* 区切り線は木構造の行が1本だけ持ち、行内の項目は下線を持たない。 */
 #screen-sessions .session-tree-row {
   display: flex;
@@ -67,17 +59,6 @@
   overflow: auto;
 }
 
-/* 内側の余白は計画ファイル画面のツールバーとそろえる。 */
-#screen-sessions main .toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--color-border);
-}
-#screen-sessions main .spacer {
-  flex: 1;
-}
 /* セッション名は見出しだけが示すため、狭い幅や拡大時も省略せず折り返して全文を表示する。 */
 #screen-sessions .detail-title {
   min-width: 0;
@@ -88,25 +69,20 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-#screen-sessions .secondary-text {
-  color: var(--color-secondary-text);
-  font-size: var(--font-size-secondary);
-}
-
 /* 計画ファイル画面の本文と同じ最大幅と左右余白にそろえる。 */
 #screen-sessions #detail {
   flex: none;
   width: 100%;
   max-width: 860px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: var(--space-4);
   box-sizing: border-box;
 }
 
 /* サブエージェントの記録は左ペインの一覧に現れないため、委譲元へ戻る操作を本文の先頭へ置く。
    配色・境界・角丸・寸法は共通規則が定める。本規則は下の要素との間隔だけを指定する。 */
 #screen-sessions .detail-back {
-  margin-bottom: 10px;
+  margin-block-end: var(--space-2);
 }
 /* 一覧が空のときの案内。対象rootの長いパスも枠内で折り返す。 */
 #screen-sessions #sessions-empty {
@@ -115,14 +91,14 @@
   overflow-wrap: anywhere;
 }
 #screen-sessions .subagents {
-  margin-bottom: 10px;
+  margin-block-end: var(--space-2);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-medium);
   overflow: hidden;
 }
 #screen-sessions .subagents h2 {
   margin: 0;
-  padding: 6px 10px;
+  padding: var(--space-row) var(--space-3);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-background);
   font-size: var(--font-size-base);
@@ -131,10 +107,10 @@
 /* 左余白は`spawn_depth`に応じて描画側が設定する。 */
 #screen-sessions .subagent-item {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: baseline;
   width: 100%;
-  padding: 6px 10px;
+  padding: var(--space-row) var(--space-3);
   border: none;
   border-radius: 0;
   border-bottom: 1px solid var(--color-border);
@@ -164,8 +140,7 @@
 }
 #screen-sessions .event > summary {
   cursor: pointer;
-  min-block-size: 2rem;
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-background);
   display: flex;
   gap: var(--space-2);
@@ -173,6 +148,7 @@
   flex-wrap: wrap;
   overflow-wrap: anywhere;
 }
+#screen-sessions .event > summary:focus-visible { outline-offset: -2px; }
 #screen-sessions .event > summary::before {
   content: "▸";
   color: var(--color-secondary-text);
@@ -193,7 +169,7 @@
 /* 整形しない本文の`<pre>`に限る。整形したアシスタントの発言の中のコードブロックへ及ぼさない。 */
 #screen-sessions .event > pre {
   margin: 0;
-  padding: 10px;
+  padding: var(--space-3);
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -202,7 +178,7 @@
 }
 /* 整形したアシスタントの発言。長いコード行と幅の広い表は本文の中で横スクロールさせ、右ペインの横幅を超えさせない。 */
 .markdown-body.event-markdown {
-  padding: 10px;
+  padding: var(--space-3);
   background: var(--color-surface);
 }
 .markdown-body.event-markdown pre {
@@ -264,7 +240,7 @@
   container: agents / inline-size;
 }
 #agents-app .agent-host-heading {
-  font-size: 1.25rem;
+  font-size: var(--font-size-heading);
   overflow-wrap: anywhere;
 }
 #agents-app .agent-list {
@@ -277,7 +253,7 @@
   grid-template-columns: minmax(0, 1fr) 7rem 5.5rem 6.5rem;
   align-items: center;
   gap: var(--space-1) var(--space-2);
-  padding-block: var(--space-1);
+  padding-block: var(--space-row);
 }
 #agents-app .agent-identity {
   display: grid;
@@ -345,8 +321,6 @@
   gap: var(--space-1);
 }
 #settings-nav button {
-  min-block-size: 2rem;
-  padding: 0.4rem 0.65rem;
   text-align: start;
 }
 #settings-nav [aria-current="page"] {
@@ -364,16 +338,11 @@
 #settings-content [data-editor]:not(section) {
   border-block-start: 1px solid var(--color-border);
   margin-block-start: var(--space-3);
-  padding-block-start: var(--space-2);
+  padding-block-start: var(--space-3);
 }
 :is(#settings-content, #settings-shared) .settings-format {
   color: var(--color-secondary-text);
   font-size: var(--font-size-small);
-}
-#settings-content [data-conflict] {
-  padding: var(--space-2);
-  color: var(--color-warning);
-  background: var(--color-warning-quiet);
 }
 .permission-caption, .permission-actions { margin-block: var(--space-2); }
 .permission-actions {
@@ -399,7 +368,6 @@
 #settings-app :is(input, select) {
   font: inherit;
   box-sizing: border-box;
-  min-block-size: 2rem;
   max-inline-size: 100%;
 }
 #settings-host {

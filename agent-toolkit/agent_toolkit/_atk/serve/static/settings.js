@@ -425,7 +425,7 @@ function renderShared(savedKey) {
       prior.querySelector(".settings-shared-conflict")?.remove();
       if (field.dataset.initialValue !== item.saved) {
         const conflict = element("p", `共有の保存値が変わりました。最新の保存値: ${item.saved}`);
-        conflict.className = "settings-shared-conflict";
+        conflict.className = "settings-shared-conflict notice notice-warning";
         conflict.setAttribute("role", "alert");
         const resolve = keep => {
           field.dataset.initialValue = item.saved;
@@ -768,7 +768,7 @@ function renderConflicts() {
   for (const [slot, {key, latest}] of conflicts) {
     const editor = content.querySelector(`[data-editor="${CSS.escape(slot)}"]`);
     if (!editor) continue;
-    const notice = element("div");
+    const notice = element("div", "", "notice notice-warning");
     notice.dataset.conflict = "";
     notice.id = `settings-conflict-${key}`;
     const latestValue = key === "usage_reset_permissions" ?
