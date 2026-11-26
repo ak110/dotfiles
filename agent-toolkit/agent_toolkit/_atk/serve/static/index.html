@@ -413,6 +413,16 @@
           <button id="sessions-prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のセッション" disabled>&uarr;</button>
           <button id="sessions-next-btn" class="nav-btn button-secondary" type="button" aria-label="次のセッション" disabled>&darr;</button>
         </div>
+        <div id="session-reading" class="toolbar reading-toolbar" hidden>
+          <label><input id="session-conversation" type="checkbox"> 会話だけ</label>
+          <label for="session-search">記録内検索</label>
+          <input id="session-search" type="search">
+          <output id="session-search-count" aria-live="polite"></output>
+          <button id="session-search-prev" type="button" aria-label="前の一致">↑</button>
+          <button id="session-search-next" type="button" aria-label="次の一致">↓</button>
+          <button id="session-user-prev" type="button">前のユーザー発話</button>
+          <button id="session-user-next" type="button">次のユーザー発話</button>
+        </div>
         <article id="detail" class="markdown-body">一覧からセッションを選択してください。</article>
       </main>
       <div id="sessions-drawer-backdrop"></div>

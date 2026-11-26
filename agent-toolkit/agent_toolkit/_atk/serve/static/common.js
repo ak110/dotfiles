@@ -337,3 +337,32 @@ export function notifyDelayMs(event) {
     return undefined;
   }
 }
+
+export function attachScrollEdges(scroller, toolbar, observed, options = {}) {
+  const group = document.createElement("span");
+  group.className = "scroll-edges";
+  group.hidden = true;
+  const move = (label, bottom) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      if (bottom) options.beforeEnd?.();
+      scroller.scrollTop = bottom ? scroller.scrollHeight : 0;
+    });
+    group.append(button);
+  };
+  move("先頭へ", false);
+  move("末尾へ", true);
+  toolbar.append(group);
+  const update = () => {
+    group.hidden = !scroller.clientHeight ||
+      !(options.hasMore?.() || scroller.scrollHeight > scroller.clientHeight + 1);
+  };
+  const resize = new ResizeObserver(update);
+  resize.observe(scroller);
+  resize.observe(observed);
+  const mutation = new MutationObserver(update);
+  mutation.observe(observed, {childList: true, subtree: true, characterData: true});
+  return update;
+}

@@ -88,11 +88,16 @@ class SessionEvent:
     call_id: str | None = None
     message_id: str | None = None
     initial_work: bool = False
+    line: int | None = None
+    ordinal: int | None = None
 
     def to_json(self) -> dict[str, typing.Any]:
         result = dataclasses.asdict(self)
         result.pop("call_id")
         result.pop("message_id")
+        if self.line is None:
+            result.pop("line")
+            result.pop("ordinal")
         if not self.initial_work:
             result.pop("initial_work")
         return result
@@ -119,6 +124,7 @@ def claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list
     startup = True
     totals: dict[str, typing.Any] = {"input_tokens": None, "output_tokens": None}
     for record in records:
+        line = record.get("_serve_line")
         kind = record.get("type")
         timestamp = record.get("timestamp") if isinstance(record.get("timestamp"), str) else None
         if kind == "system" and record.get("subtype") == "compact_boundary":
@@ -126,6 +132,8 @@ def claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list
             events.append(
                 SessionEvent(
                     kind="compact_boundary",
+                    line=line,
+                    ordinal=0,
                     timestamp=timestamp,
                     text=as_text(record.get("content")),
                     detail=dict(metadata) if isinstance(metadata, dict) else None,
@@ -151,8 +159,9 @@ def claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list
             )
             event = SessionEvent(kind=event_kind, timestamp=timestamp, text=text, usage=usage, message_id=message_id)
             event, startup = _record_initial_work(event, startup, from_user=kind == "user")
-            events.append(event)
+            events.append(dataclasses.replace(event, line=line, ordinal=0))
             continue
+        ordinal = 0
         for block in content:
             if not isinstance(block, dict):
                 continue
@@ -160,7 +169,8 @@ def claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list
                 block, kind, timestamp, usage, runtime_generated=runtime_generated, message_id=message_id
             )
             event, startup = _record_initial_work(event, startup, from_user=kind == "user" and block.get("type") == "text")
-            events.append(event)
+            events.append(dataclasses.replace(event, line=line, ordinal=ordinal))
+            ordinal += 1
     return events, totals
 
 
@@ -260,6 +270,7 @@ def codex_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list[
     possible_notices: list[int] = []
     totals: dict[str, typing.Any] = {"input_tokens": None, "output_tokens": None}
     for record in records:
+        line = record.get("_serve_line")
         timestamp = record.get("timestamp") if isinstance(record.get("timestamp"), str) else None
         payload = record.get("payload")
         if not isinstance(payload, dict):
@@ -272,6 +283,8 @@ def codex_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list[
             events.append(
                 SessionEvent(
                     kind="compact_boundary",
+                    line=line,
+                    ordinal=0,
                     timestamp=timestamp,
                     text=as_text(payload.get("message")) or None,
                     detail={"window_number": payload.get("window_number")},
@@ -290,7 +303,7 @@ def codex_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list[
         event, startup = _record_initial_work(event, startup, from_user=payload.get("role") == "user")
         if event.initial_work and event.text:
             delegation_launched |= message_format.delegation_delivery_body(event.text) is not None
-        events.append(event)
+        events.append(dataclasses.replace(event, line=line, ordinal=0))
     if delegation_launched:
         for index in possible_notices:
             events[index] = dataclasses.replace(events[index], kind="injected")
@@ -429,10 +442,10 @@ def codex_session_id(path: pathlib.Path) -> str:
     return _record_paths.codex_session_id(path)
 
 
-def parse_records(text: str) -> tuple[list[dict[str, typing.Any]], int]:
+def parse_records(text: str, *, include_positions: bool = False) -> tuple[list[dict[str, typing.Any]], int]:
     records: list[dict[str, typing.Any]] = []
     broken = 0
-    for line in split_lines(text):
+    for number, line in enumerate(split_lines(text), 1):
         stripped = line.strip()
         if not stripped:
             continue
@@ -442,6 +455,8 @@ def parse_records(text: str) -> tuple[list[dict[str, typing.Any]], int]:
             broken += 1
             continue
         if isinstance(record, dict):
+            if include_positions:
+                record["_serve_line"] = number
             records.append(record)
         else:
             broken += 1

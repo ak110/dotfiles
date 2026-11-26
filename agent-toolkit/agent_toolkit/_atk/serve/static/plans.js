@@ -1,7 +1,7 @@
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs, attachScrollEdges
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -879,6 +879,9 @@ async function init() {
   const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
   ROOT_DIRS = bootstrap.root_dirs;
   bindScreenEvents();
+  const preview = document.getElementById("preview");
+  const main = preview.closest("main");
+  attachScrollEdges(main, main.querySelector(".toolbar"), preview);
   // バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
   // 抑制するため、通知のみに依存するとタブ復帰時に溜まったイベントの処理が数秒遅れる。
   resyncWhenVisible(forceResync);

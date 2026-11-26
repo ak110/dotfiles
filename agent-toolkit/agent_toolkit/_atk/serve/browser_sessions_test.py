@@ -373,3 +373,40 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
     assert scroll_top > 0
     assert after is not None
     assert after["y"] < before["y"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(3.0, reason="Chromiumで4000件以上の表示・検索・リンク復元を操作する")
+async def test_long_session_can_search_jump_and_link_without_initially_rendering_all(screen_harness: _ScreenHarness) -> None:
+    (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
+    entries = [
+        {
+            "type": "user" if index in (0, 4050) else "assistant",
+            "cwd": "/home/aki/proj",
+            "message": {"content": "目印の検索語" if index == 4050 else f"記録の発話 {index}"},
+        }
+        for index in range(4051)
+    ]
+    record.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator('#sessions .session-item[data-engine="claude"]').click()
+    expect = playwright.async_api.expect
+    events = page.locator("#detail > .event")
+    await expect(events.first).to_be_visible()
+    assert await events.count() < len(entries)
+    await page.get_by_role("button", name="次のユーザー発話").click()
+    await expect(events.last).to_contain_text("目印の検索語")
+    await page.get_by_role("button", name="先頭へ", exact=True).click()
+    assert await page.locator("#sessions-app main").evaluate("main => main.scrollTop") == 0
+    await page.get_by_role("button", name="末尾へ", exact=True).click()
+    await expect(events.last).to_be_in_viewport()
+    await page.get_by_label("記録内検索").fill("目印の検索語")
+    await expect(page.locator("#session-search-count")).to_have_text("1 / 1件")
+    await expect(events.last).to_have_class("event kind-user event-search-match")
+    link = await events.last.get_by_role("link", name="リンク").get_attribute("href")
+    assert link is not None
+    await page.goto(link)
+    await expect(page.locator("#detail .event-linked")).to_contain_text("目印の検索語")
+    await page.get_by_label("会話だけ").check()
+    assert "view=conversation" in page.url

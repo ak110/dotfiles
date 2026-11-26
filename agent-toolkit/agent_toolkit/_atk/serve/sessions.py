@@ -205,7 +205,7 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
         logger.warning("リモートのセッション記録を取得できません host=%s path=%s: %s", host, path, error)
         raise SessionNotFoundError(path) from error
     text = base64.b64decode(str(payload["data"])).decode("utf-8", errors="replace")
-    records, broken = session_record_format.parse_records(text)
+    records, broken = session_record_format.parse_records(text, include_positions=True)
     subagents, subagents_unavailable = _remote_subagents(engine, payload)
     detail = build_detail(
         engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=subagents_unavailable

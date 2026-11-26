@@ -239,7 +239,7 @@ def _with_assistant_html(detail: dict[str, typing.Any]) -> dict[str, typing.Any]
     events = []
     for event in detail.get("events", []):
         text = event.get("text") if isinstance(event, dict) else None
-        if isinstance(event, dict) and event.get("kind") == "assistant" and isinstance(text, str) and text:
+        if isinstance(event, dict) and event.get("kind") in {"assistant", "user_report"} and isinstance(text, str) and text:
             event = {**event, "html": _wi_operations.MARKDOWN.render(text)}
         events.append(event)
     return {**detail, "events": events}

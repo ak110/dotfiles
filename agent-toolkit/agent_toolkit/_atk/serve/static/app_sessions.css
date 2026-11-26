@@ -438,3 +438,11 @@
 #settings-comparison td { min-inline-size: 10rem; overflow-wrap: anywhere; padding: var(--space-2); }
 #settings-comparison .settings-different { background: var(--color-warning-quiet); }
 #settings-unsaved:not(:empty) { padding-block: var(--space-2); }
+
+#screen-sessions .reading-toolbar[hidden] { display: none; }
+#screen-sessions .reading-toolbar { position: sticky; top: 0; z-index: 2; flex-wrap: wrap; background: var(--color-surface); }
+#screen-sessions .reading-toolbar input[type="search"] { min-inline-size: 0; }
+#screen-sessions .event { scroll-margin-top: calc(var(--reading-height, 0px) + var(--space-2)); }
+#screen-sessions .event-linked, #screen-sessions .event-search-match { outline: 2px solid var(--color-primary); }
+#screen-sessions .event-link { margin-inline-start: auto; }
+::highlight(session-search) { background-color: Mark; color: MarkText; }

@@ -4,7 +4,7 @@ import {
   isCurrentUserListOperation, loadBranchRegistry, loadEntries, loadTargetRepos, movePage, refreshKnownEntries, syncNotificationButton
 } from "./wi_list.js";
 import {
-  SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible
+  SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible, attachScrollEdges
 } from "./common.js";
 import {
   api, closeDialog, closeOperationNotice, runPending, setGlobalError
@@ -312,6 +312,8 @@ function initializeApp() {
 
 async function init() {
   bindEvents();
+  const detailBody = byId("detail-dialog-body");
+  attachScrollEdges(detailBody, byId("detail-dialog").querySelector(".dialog-header"), detailBody);
   resyncWhenVisible(() => {
     refreshCooldownDisplays();
     return initialization.then(() => reloadFromExternalChange());

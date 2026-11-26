@@ -447,3 +447,50 @@ async def test_remote_failure_warning_names_next_action(tmp_path: pathlib.Path, 
     reason = warnings[0]["reason"]
     assert "次の操作:" in reason
     assert "ssh down-host" in reason
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        ({"ok": True}, "delivered"),
+        ({"next_action": "Codexには会話内modが無く、本文を表示できない。同じ本文を最終応答に書く"}, "unavailable"),
+        ({"ok": False}, "rejected"),
+        (None, "unknown"),
+    ],
+)
+def test_session_reports_use_exact_tool_names_and_correlate_results(result, expected):
+    from agent_toolkit._atk import session_record_format
+    from agent_toolkit._atk.serve import sessions_models
+
+    call = {
+        "type": "response_item",
+        "payload": {
+            "type": "function_call",
+            "name": "mcp__agents_server__send_to_user",
+            "call_id": "report-1",
+            "arguments": json.dumps({"message": "**報告する本文**"}),
+        },
+    }
+    other = {**call, "payload": {**call["payload"], "name": "foreign_send_to_user", "call_id": "not-report"}}
+    result_record = {
+        "type": "response_item",
+        "payload": {"type": "function_call_output", "call_id": "report-1", "output": json.dumps(result, ensure_ascii=False)},
+    }
+    records, broken = session_record_format.parse_records(
+        "\n".join(["not-json", json.dumps(call), json.dumps(other), *([json.dumps(result_record)] if result else [])]),
+        include_positions=True,
+    )
+    detail = sessions_models.build_detail("codex", records, broken_lines=broken, subagents=None, subagents_unavailable=False)
+    report, unrelated, *responses = detail["events"]
+    assert (report["kind"], report["text"], report["delivery_status"], report["line"], report["ordinal"]) == (
+        "user_report",
+        "**報告する本文**",
+        expected,
+        2,
+        0,
+    )
+    assert unrelated["kind"] == "tool_call"
+    assert [row["index"] for row in detail["conversation"]] == [0, 1]
+    if responses:
+        assert responses[0]["report_index"] == 0
+        assert report["result_index"] == 2

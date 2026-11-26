@@ -66,6 +66,7 @@ SCRIPTS = {
         "wi.js",
         "plans.js",
         "sessions.js",
+        "sessions_detail.js",
         "agents.js",
         "settings.js",
         "usage.js",

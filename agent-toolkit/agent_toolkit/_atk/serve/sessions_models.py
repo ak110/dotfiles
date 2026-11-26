@@ -11,7 +11,7 @@ from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import session_costs as _session_costs
 from agent_toolkit._atk.serve import session_watch
-from agent_toolkit._common import session_cost_slim
+from agent_toolkit._common import message_format, session_conversation_rows, session_cost_slim
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._atk.serve.sessions_remote import RemoteSessionClient
@@ -130,6 +130,96 @@ def _isoformat(epoch: float | None) -> str | None:
     return datetime.datetime.fromtimestamp(epoch, tz=tzinfo).isoformat()
 
 
+_REPORT_TOOLS = frozenset(
+    {
+        "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+        "mcp__agents_server__send_to_user",
+    }
+)
+_REPORT_UNAVAILABLE = (
+    "本文は表示されていない。同じ本文を最終応答に書く",
+    "Codexには会話内modが無く、本文を表示できない。同じ本文を最終応答に書く",
+)
+
+
+def _json_object(value: typing.Any) -> dict[str, typing.Any] | None:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
+    return value if isinstance(value, dict) else None
+
+
+def _report_status(event: session_record_format.SessionEvent | None) -> str:
+    if event is None:
+        return "unknown"
+    text = event.text or ""
+    data = _json_object(text)
+    if data is not None and data.get("ok") is True:
+        return "delivered"
+    if any(message in text for message in _REPORT_UNAVAILABLE):
+        return "unavailable"
+    if data is not None or (event.detail or {}).get("is_error") is True or text.startswith("Permission denied"):
+        return "rejected"
+    return "unknown"
+
+
+def _detail_events(
+    events: list[session_record_format.SessionEvent],
+) -> tuple[list[dict[str, typing.Any]], list[dict[str, typing.Any]]]:
+    results = {
+        event.call_id: (index, event) for index, event in enumerate(events) if event.kind == "tool_result" and event.call_id
+    }
+    display = [event.to_json() for event in events]
+    conversation = []
+    delegation = False
+    for index, event in enumerate(events):
+        text, kind = event.text or "", event.kind
+        line = event.line if event.line is not None else index + 1
+        item: dict[str, typing.Any] = {
+            "source_index": index,
+            "record": "record",
+            "line": line,
+            "timestamp": event.timestamp,
+            "kind": kind,
+            "text": text,
+            "call_id": event.call_id,
+        }
+        if kind in {"user", "assistant"}:
+            item.update(kind="utterance", role=kind)
+        elif kind == "injected" and event.initial_work and (request := message_format.delegation_delivery_body(text)):
+            item.update(kind="delegation-request", text=request)
+            delegation = True
+        elif kind == "tool_call":
+            raw = (event.detail or {}).get("input")
+            arguments = _json_object(raw)
+            body = arguments.get("message") if arguments else None
+            if event.name in _REPORT_TOOLS and isinstance(body, str):
+                result_index, result = results.get(event.call_id, (None, None))
+                display[index].update(
+                    kind="user_report", text=body, delivery_status=_report_status(result), result_index=result_index
+                )
+                if result_index is not None:
+                    display[result_index]["report_index"] = index
+                item.update(kind="utterance", role="assistant", text=body, delivery="send_to_user")
+            else:
+                item.update(kind="tool-call", tool=event.name, text=json.dumps(raw, ensure_ascii=False))
+        elif kind == "tool_result":
+            item["kind"] = "tool-failure" if (event.detail or {}).get("is_error") is True else "tool-result"
+        conversation.append(item)
+    selected, _ = session_conversation_rows.compact_assistant_reports(conversation)
+    if delegation and selected:
+        rows = session_conversation_rows.delegate_rows(selected)
+    else:
+        rows = [
+            row
+            for turn in session_conversation_rows.main_turns(selected)
+            for row in session_conversation_rows.main_turn_rows(turn)
+        ]
+    return display, [{"index": row.source_index, "label": row.prefix, "text": row.text, "rank": row.rank} for row in rows]
+
+
 def build_detail(
     engine: str,
     records: list[dict[str, typing.Any]],
@@ -148,9 +238,11 @@ def build_detail(
     events, totals = (
         session_record_format.claude_events(records) if engine == "claude" else session_record_format.codex_events(records)
     )
+    display, conversation = _detail_events(events)
     return {
         "engine": engine,
-        "events": [event.to_json() for event in events],
+        "events": display,
+        "conversation": conversation,
         "usage": totals,
         "subagents": subagents,
         "subagents_unavailable": subagents_unavailable,
