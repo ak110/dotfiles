@@ -1,5 +1,8 @@
 # PYTHON_ARGCOMPLETE_OK
-"""モデルごとに決めた引数を付けてClaude CodeまたはCodexを起動する。"""
+"""モデルごとに決めた引数を付けてClaude CodeまたはCodexを起動する。
+
+公式の claude・codex を置き換えず、独自処理は補助入口に置く（docs/development/concepts-environment.md、pyfltr: allow-comment）。
+"""
 
 import argparse
 import json
