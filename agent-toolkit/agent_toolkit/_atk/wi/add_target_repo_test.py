@@ -522,11 +522,12 @@ def test_add_preserves_remote_entry_and_draft(
     saved = notes / "2024/01" / f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"
     assert draft in saved.read_text(encoding="utf-8")
     deadline = time.monotonic() + 5
-    branch = "refs/heads/main"
-    while git_repository.git_output(notes, "rev-parse", branch) != git_repository.git_output(origin, "rev-parse", branch):
-        assert time.monotonic() < deadline, background_sync.read_status(notes)
+    while (status := background_sync.read_status(notes)).get("state") != "synced":
+        assert time.monotonic() < deadline, status
         time.sleep(0.02)
     assert (notes / "2026/10/remote.md").read_bytes() == (peer / "2026/10/remote.md").read_bytes()
-    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "@{u}")
+    head = git_repository.git_output(notes, "rev-parse", "HEAD")
+    assert head == git_repository.git_output(notes, "rev-parse", "@{u}")
+    assert head == git_repository.git_output(origin, "rev-parse", "refs/heads/main")
     assert draft in git_repository.git_output(origin, "show", f"main:{saved.relative_to(notes).as_posix()}")
     assert git_repository.git_output(notes, "status", "--porcelain") == ""
