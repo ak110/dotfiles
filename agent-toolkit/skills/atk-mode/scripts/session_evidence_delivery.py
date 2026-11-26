@@ -96,6 +96,8 @@ def _response_candidates(
             continue
         if event.get("delivery") == "send_to_user" and _in_period(stamp, since, boundary):
             call_id = event.get("delivery_tool_use_id")
+            if not isinstance(call_id, str):
+                continue
             result_line, status = results[record].get(call_id, (-1, "missing"))
             if status == "succeeded" and line < result_line:
                 sent[record].append((line, result_line))
