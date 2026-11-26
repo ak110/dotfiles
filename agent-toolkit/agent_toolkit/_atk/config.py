@@ -185,6 +185,16 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 def _cmd_config_show(home: pathlib.Path) -> None:
     human = is_human_terminal()
     settings = resolved_settings(home, read_only=True)
+    if _config_migration.has_legacy_settings(_config_settings.load_config_strict()) or (
+        _config_migration.legacy_serve_config_path().exists()
+    ):
+        raise _next_action.ActionableError(
+            "旧設定が未移行のため現在値を一覧できない",
+            next_action=(
+                "`atk config get codex_fast_mode`で旧設定をローカルで移行し、"
+                "旧環境変数で指定していた場合は解除してから一覧を再表示する"
+            ),
+        )
     for key, value in settings.items():
         print(f"{key} {value}")
     if (path := _config_settings.shared_settings_path()) is not None:

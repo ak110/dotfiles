@@ -336,9 +336,7 @@ def _finish_legacy_migration(config: dict[str, str]) -> dict[str, str]:
     return migrated
 
 
-def migrate_legacy_settings() -> None:
-    """旧モデル・接続設定と廃止した設定キーを移行する。環境変数の値は設定JSONへ保存しない。  pyfltr: allow-comment"""
-    config = _config_settings.load_config_strict()
+def has_legacy_settings(config: dict[str, Any]) -> bool:
     legacy_keys = (
         *_config_settings.RETIRED_MODEL_KEYS,
         *_config_settings.RETIRED_CONNECTION_KEYS,
@@ -351,14 +349,17 @@ def migrate_legacy_settings() -> None:
         *_config_settings.RETIRED_SERVE_HOME_KEYS,
     )
     env = runtime_environment.environment()
-    if not (
-        any(key in config for key in legacy_keys)
-        or any(
-            env.get(_config_settings.config_env_name(key))
-            for key in _config_settings.RETIRED_FIXED_KEYS
-            if key != "usage_activity_mode"
-        )
-    ):
+    return any(key in config for key in legacy_keys) or any(
+        env.get(_config_settings.config_env_name(key))
+        for key in _config_settings.RETIRED_FIXED_KEYS
+        if key != "usage_activity_mode"
+    )
+
+
+def migrate_legacy_settings() -> None:
+    """旧モデル・接続設定と廃止した設定キーを移行する。環境変数の値は設定JSONへ保存しない。  pyfltr: allow-comment"""
+    config = _config_settings.load_config_strict()
+    if not has_legacy_settings(config):
         return
     migrated = plan_legacy_migration(config)
     if migrated != config:

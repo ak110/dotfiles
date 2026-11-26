@@ -149,6 +149,38 @@ def test_config_show_auto_fast_without_app_server(tmp_path, monkeypatch, capsys,
     assert capsys.readouterr().out == "auto\n"
 
 
+@pytest.mark.parametrize("arguments", [(), ("show",), ("list",)])
+@pytest.mark.parametrize("legacy", ["model", "connection", "serve"])
+def test_config_listing_withholds_values_until_local_migration(tmp_path, monkeypatch, capsys, arguments, legacy):
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("設定参照でCodex app-serverを起動した")
+
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    monkeypatch.setattr(config_module.codex_models, "with_app_server", unexpected)
+    if legacy == "serve":
+        _write_config(tmp_path, {})
+        path = _config_file(tmp_path).with_name("serve.toml")
+        path.write_text('host = "legacy-review-host"\n', encoding="utf-8")
+        key = "serve_host"
+    elif legacy == "model":
+        path = _write_config(tmp_path, {"base_engine": "claude", "execute_model": "claude:stale"})
+        key = "execute_model"
+    else:
+        path = _write_config(tmp_path, {"codex_model_providers": "openai,custom"})
+        key = "codex_payg_provider"
+    original = path.read_bytes()
+
+    assert _main(tmp_path, "config", *arguments) == 2
+    rejected = capsys.readouterr()
+    assert not rejected.out
+    assert "atk config get codex_fast_mode" in rejected.err
+    assert path.read_bytes() == original
+    assert _main(tmp_path, "config", "get", key) == 0
+    resolved = capsys.readouterr().out.strip()
+    assert _main(tmp_path, "config", *arguments) == 0
+    assert f"{key} {resolved}\n" in capsys.readouterr().out
+
+
 def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     value = "claude:opus/high,codex:sol/medium"
     assert _main(tmp_path, "config", "set", "write_model", value) == 0

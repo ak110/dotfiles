@@ -154,7 +154,7 @@ def test_retired_connection_settings_migrate_once_and_are_removed(tmp_path, caps
             path.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
             old["claude_api_env_file"] = str(path)
     _write_config(tmp_path, {**old, "codex_fast_mode": "true"})
-    assert _main(tmp_path, "config", "show") == 0
+    assert _main(tmp_path, "config", "show") == 2
     assert _saved(tmp_path) == {**old, "codex_fast_mode": "true"}
     capsys.readouterr()
     assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
@@ -227,7 +227,7 @@ def test_fixed_credentials_migrate_without_enabling_payg(tmp_path, capsys):
     credits_file.write_text("ANTHROPIC_API_KEY=credits-for-test\n", encoding="utf-8")
     payg.write_text("ANTHROPIC_API_KEY=payg-for-test\n", encoding="utf-8")
     _write_config(tmp_path, {"claude_credits_env_file": str(credits_file), "claude_payg_env_file": str(payg)})
-    assert _main(tmp_path, "config", "show") == 0
+    assert _main(tmp_path, "config", "show") == 2
     shown = capsys.readouterr()
     assert "claude_credits_env_file" not in shown.out
     assert "claude_payg_env_file" not in shown.out
