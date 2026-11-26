@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import datetime
+import io
 import json
 import pathlib
 import sys
+import threading
 
 import pytest
 
-from agent_toolkit._atk import run_skill_batch, run_skill_batch_evidence, run_skill_batch_test
+from agent_toolkit._atk import run_skill, run_skill_batch, run_skill_batch_evidence, run_skill_batch_test
+from agent_toolkit._atk.run_skill_progress import Progress
 from agent_toolkit._common import session_activity, session_review
 
 
@@ -402,3 +405,36 @@ def test_meta_log_evidence_distinguishes_unavailable_inputs(tmp_path, log_kind, 
     diagnostics = evidence["failure_diagnostics"]
     assert diagnostics["log"]["status"] == status
     assert diagnostics["error"] is None
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_terminal_progress_is_not_reproduced_in_batch_or_meta_failure(tmp_path, monkeypatch, engine):
+    terminal = io.StringIO()
+    monkeypatch.setattr(terminal, "isatty", lambda: True)
+    text = "転載しない発話の先頭\n転載しない発話の続き"
+    event = (
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+        if engine == "claude"
+        else {"type": "item.completed", "item": {"type": "agent_message", "text": text}}
+    )
+    error = {"type": "error", "message": "残す診断"}
+    source = io.BytesIO(("\n".join(json.dumps(row, ensure_ascii=False) for row in (event, error)) + "\n").encode())
+    path = tmp_path / "log.txt"
+    with path.open("w", encoding="utf-8") as log:
+        progress = Progress(log, terminal)
+        run_skill._copy_stream(source, "stdout", log, threading.Lock(), progress, engine)  # pylint: disable=protected-access
+        log.write("終了状態: exit code 3\n")
+    assert text in terminal.getvalue()
+    assert "[progress] 転載しない発話の続き" in path.read_text(encoding="utf-8")
+    details = run_skill_batch_evidence.meta_failure_evidence(
+        run_skill_batch.PLUGIN_ROOT, stage="execution-3", detail=None, log_path=path, report_target=None
+    )
+    bodies = [
+        run_skill_batch_evidence.meta_failure_message({**details, "failure_key": "test", "failure_stage": "execution-3"}),
+        run_skill_batch_evidence.failure_message(
+            "test", "run-skill-exit-3: 失敗", {"targets": [], "log_path": str(path)}, "github.com/example/repo"
+        ),
+    ]
+    for body in bodies:
+        assert "転載しない発話" not in body
+        assert "残す診断" in body and "終了状態: exit code 3" in body

@@ -18,8 +18,9 @@ class Progress:
         self.enabled = stderr.isatty()
         self._seen_tools: set[str] = set()
 
-    def message(self, text: str) -> None:
-        self.log.write(f"{text}\n")
+    def message(self, text: str, *, projected: bool = False) -> None:
+        prefix = "[progress] " if projected else ""
+        self.log.write("".join(f"{prefix}{line}\n" for line in text.split("\n")))
         self.log.flush()
         if self.enabled:
             print(text, file=self.stderr, flush=True)
@@ -41,13 +42,13 @@ class Progress:
             events = _codex_events(record)
         for event in events:
             if event.kind == "assistant" and event.text:
-                self.message(f"assistant: {event.text}")
+                self.message(f"assistant: {event.text}", projected=True)
             elif event.kind == "tool_call" and event.name:
                 if event.call_id is not None:
                     if event.call_id in self._seen_tools:
                         continue
                     self._seen_tools.add(event.call_id)
-                self.message(f"tool: {event.name}")
+                self.message(f"tool: {event.name}", projected=True)
 
 
 def _codex_events(record: dict[str, typing.Any]) -> list[SessionEvent]:

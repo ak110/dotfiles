@@ -175,7 +175,7 @@ def _log_diagnostics(raw: Any, *, missing: str = "実行ログなし（モデル
                     else:
                         omitted += 1
                     continue
-                if not line.strip() or line.startswith(("スキルへ渡す引数: ", "引数: ", "ログ: ")):
+                if not line.strip() or line.startswith(("[progress] ", "スキルへ渡す引数: ", "引数: ", "ログ: ")):
                     continue
                 clipped = ByteDiagnosticLine(_portable_text(line), line_bytes=_LINE_BYTES)
 
