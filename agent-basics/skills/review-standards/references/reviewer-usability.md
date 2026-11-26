@@ -7,7 +7,7 @@
 ## ユーザビリティレビューの判定
 
 1. 提出された成功手順に頼らず、原要求と変更前の通常利用から開始状態と代表作業を選ぶ。
-2. `agent-basics:writing-standards/references/ui-ux.md`「完了前の実描画確認」に従い、Webはブラウザー、ネイティブGUIは対象OSで変更後の画面を描画・操作する。
+2. `agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」に従い、Webはブラウザー、ネイティブGUIは対象OSで変更後の画面を描画・操作する。
    Web画面では`agent-basics:writing-standards/references/ui-ux-web-rules.md`と該当するModern Web Guidanceを使う。
    文言は文章の基準で判定する。
 3. `agent-basics:writing-standards/references/ui-ux.md`「判断の順序」「用途と参考例の調査」「操作と情報」「状態と内容」に照らして判定する。

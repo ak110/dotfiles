@@ -104,10 +104,10 @@ description: >
 | 並行処理と排他、イベントループ上の処理、複数の主体が同じ保存先へ書く構成、非同期ジョブ・再試行・定期実行・常駐プロセスを設計・変更・レビューする時と、再試行を足す・変える時 | `references/design-runtime.md` |
 | インターネットへ公開するサービスを設計・配置する時（コード変更の有無を問わない）と、公開用の証明書・DNS・リバースプロキシを設定する時 | `references/design-runtime.md` |
 | キャッシュ、長時間接続、常駐サービスと配下の停止・再開・切替、負荷制御と外部呼び出し、負荷・データ・外部システムの条件に依存する技術仕様や非機能要件、後の工程が使う前提を変える工程を含む多段の手順を設計・変更・レビューする時 | `references/design-runtime.md` |
-| エンドユーザーが操作する画面（Web以外を含む）の新設・変更、その計画・作業項目の起草、実描画での検証、ユーザビリティのレビュー | `references/ui-ux.md` |
-| 検索・一覧の方式（一致の方式、索引、ページ送り、総件数、並び替え）を設計・変更する時、値に応じて色・状態・通知を切り替える境界値を決める時（画面を伴わない一覧取得のAPIを含む） | `references/ui-ux.md` |
+| エンドユーザーが操作する画面（Web以外を含む）の新設・変更、その計画・作業項目の起草、実描画での検証、ユーザビリティのレビュー | `references/ui-ux.md`、`references/ui-ux-topics.md` |
+| 検索・一覧の方式（一致の方式、索引、ページ送り、総件数、並び替え）を設計・変更する時、値に応じて色・状態・通知を切り替える境界値を決める時（画面を伴わない一覧取得のAPIを含む） | `references/ui-ux.md`、`references/ui-ux-topics.md` |
 | エンドユーザー向けの画面をHTML、CSS、クライアント側JavaScriptで実装・変更・レビューする時、ユーザーへ単体で渡すHTML（レポート、ダッシュボード、可視化など）を作る・直す時 | `references/ui-ux-web-rules.md` |
-| Web性能を改善・設計・レビューする時 | `references/ui-ux.md`、`references/ui-ux-web-rules.md` |
+| Web性能を改善・設計・レビューする時 | `references/ui-ux.md`、`references/ui-ux-topics.md`、`references/ui-ux-web-rules.md` |
 
 ### 実装とテスト
 

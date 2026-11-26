@@ -26,7 +26,7 @@ description: >
      無ければ入口の種類で手段を選ぶ（CLIは実プロセス、HTTPはリクエスト、Web画面は既存のブラウザー操作の手段、ネイティブGUIは対象OSでの描画、OSに固有の動作は対象OSの実行環境）。
      画面の手順では、同じ操作の画像・要素構造・キーボード操作を証拠として対応付ける。
      WebはPlaywrightのrole照会か部分的なARIA snapshot、WindowsネイティブはInspectなどのUI Automationを使う。
-     詳細は`agent-basics:writing-standards/references/ui-ux.md`「完了前の実描画確認」に従う。
+     詳細は`agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」に従う。
      別のテストの枠組みは、既存の手段で操作できない時だけ足す。
    - 観測: 取れる証拠（出力、終了コード、応答、画面、ログ、保存された状態）。
    - 隔離: データ、設定、ホーム、ポート、依存環境の置き場所を、コードと既存のテストの隔離から確かめる。

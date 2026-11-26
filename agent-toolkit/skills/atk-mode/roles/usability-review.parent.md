@@ -42,7 +42,7 @@
 画面ごとの改善と既存品質を渡し、要求か観点が違えばシナリオを分ける。
 通常の開始状態と代表作業は担当が選ぶ。
 機能の正しさと別画面の新機能は対象外とする。
-危険な操作は隔離環境と許す操作を明記するか対象外とする（`agent-basics:writing-standards/references/ui-ux.md`「完了前の実描画確認」）。
+危険な操作は隔離環境と許す操作を明記するか対象外とする（`agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」）。
 レーンの起動だけ`レーン識別子`を渡し、session識別名を`<レーン識別子>-usability-review`とする。
 
 ## 起動
