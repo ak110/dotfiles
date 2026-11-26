@@ -24,6 +24,9 @@ lazy from agent_toolkit._atk.wi import sync as wi_sync
 lazy from agent_toolkit._git import command as git_command
 
 FILENAME = "atk-reset-reservations.json"
+PERMISSIONS = "usage_reset_permissions"
+ISSUED = "_atk_shared_issued"
+RETIRED = "_atk_shared_retired"
 
 type Status = Literal["pending", "success", "closed"]
 
@@ -38,6 +41,79 @@ def shared_notes() -> pathlib.Path | None:
     if path is None or not git_sync.has_remote(path.parent):
         return None
     return path.parent
+
+
+def permission_entries(settings: dict[str, str]) -> list[dict[str, Any]]:
+    return json.loads(settings.get(PERMISSIONS, "[]"))
+
+
+def encode_permissions(entries: list[dict[str, Any]]) -> str:
+    return json.dumps(entries, ensure_ascii=False, sort_keys=True)
+
+
+def public_permissions(value: str) -> str:
+    entries = json.loads(value)
+    if any(ISSUED in item or RETIRED in item for item in entries):
+        return encode_permissions(
+            [
+                {key: val for key, val in item.items() if key not in {ISSUED, RETIRED}}
+                for item in entries
+                if item.get(RETIRED) is not True
+            ]
+        )
+    return value
+
+
+def retire_grant(grant: dict[str, Any]) -> dict[str, Any]:
+    return dict(grant, count=0) | {RETIRED: True}
+
+
+def _with_retirements(current: dict[str, str], entries: list[dict[str, Any]]) -> str:
+    identifiers = {item["id"] for item in entries}
+    for old in permission_entries(current):
+        # 別端末から古い一覧を保存しても、停止した旧許可を新規許可として復活させない。  # pyfltr: allow-comment
+        if old.get(RETIRED) is True and old["id"] in identifiers:
+            raise ValueError("発行し直した旧許可は復元できません。共有の値を使ってください")
+        if old["engine"] == "codex" and old.get(ISSUED) is not True and old["id"] not in identifiers:
+            entries.append(retire_grant(old))
+    return encode_permissions(entries)
+
+
+def migrate_permissions(current: dict[str, str], value: str) -> str:
+    return _with_retirements(current, json.loads(public_permissions(value)))
+
+
+def mark_new_permissions(current: dict[str, str], value: str) -> str:
+    previous = {item["id"]: item.get(ISSUED) is True for item in permission_entries(current)}
+    entries = [{key: val for key, val in item.items() if key not in {ISSUED, RETIRED}} for item in json.loads(value)]
+    for item in entries:
+        if item["engine"] == "codex" and previous.get(item["id"], True):
+            item[ISSUED] = True
+    return _with_retirements(current, entries)
+
+
+def _active_grant(notes: pathlib.Path, permission: dict[str, Any], *, upstream: bool = False) -> dict[str, Any]:
+    path = notes / config_settings.SHARED_SETTINGS_FILENAME
+    if upstream:
+        result = git_command.run(["show", f"@{{u}}:{path.name}"], cwd=notes, capture_output=True, text=True, check=False)
+        current = json.loads(result.stdout) if result.returncode == 0 else {}
+    else:
+        current = config_settings.load_shared_settings(path)
+    for entry in permission_entries(current):
+        if entry.get(RETIRED) is not True and {key: value for key, value in entry.items() if key != ISSUED} == permission:
+            return entry
+    return {}
+
+
+def is_issued(notes: pathlib.Path, permission: dict[str, Any]) -> bool:
+    return _active_grant(notes, permission).get(ISSUED) is True
+
+
+def _legacy_unconfirmed() -> ReservationError:
+    return ReservationError(
+        "旧端末の消費回数を確認できないため、この許可から新しい消費は送らない",
+        next_action="設定画面の利用枠で旧許可を確認し、必要な回数を共有許可として発行し直す",
+    )
 
 
 def _parse(text: str) -> list[dict[str, Any]]:
@@ -79,6 +155,34 @@ def read_used(notes: pathlib.Path, permission_id: str) -> int:
     return used(_read(notes), permission_id)
 
 
+def local_unshared_usage(state_dir: pathlib.Path, permission_id: str) -> int:
+    root = state_dir / "agents-server" / "codex-auto-reset"
+    try:
+        paths = list(root.iterdir())
+    except FileNotFoundError:
+        return 0
+    total = 0
+    for path in paths:
+        if path.suffix != ".json":
+            continue
+        try:
+            attempt = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        if not isinstance(attempt, dict):
+            raise ValueError("端末のCodex reset記録が不正です")
+        carried = attempt.get("carried_permissions", [])
+        used_permissions = attempt.get("used_permissions", {})
+        if not isinstance(carried, list) or not isinstance(used_permissions, dict):
+            raise ValueError("端末のCodex reset記録が不正です")
+        if permission_id not in carried:
+            count = used_permissions.get(permission_id, 0)
+            if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+                raise ValueError("端末のCodex reset記録の使用回数が不正です")
+            total += count
+    return total
+
+
 def _prune(records: list[dict[str, Any]], permissions: list[dict[str, Any]], now: float) -> list[dict[str, Any]]:
     # 許可期間が終わった許可の記録は、回数の判定にも同じ冪等キーの再送にも使わないため整理する。  # pyfltr: allow-comment
     open_ids = {item["id"] for item in permissions if now < deadline(item["until"])}
@@ -93,7 +197,8 @@ def _commit(notes: pathlib.Path, message: str, verify: Any) -> None:
     try:
         wi_sync.commit_guarded(notes, message, [FILENAME], verify)
     except (OSError, subprocess.SubprocessError, ValueError) as error:
-        git_command.run(["checkout", "HEAD", "--", FILENAME], cwd=notes, check=False)
+        if git_command.optional_stdout(["ls-tree", "HEAD", "--", FILENAME], notes):
+            git_command.run(["checkout", "HEAD", "--", FILENAME], cwd=notes, check=False)
         raise ReservationError(
             f"利用枠のreset予約を共有先へ確定できない: {error}",
             next_action=f"{notes}のGit同期を確認する。予約できるまで消費は送らない",
@@ -108,14 +213,14 @@ def _commit(notes: pathlib.Path, message: str, verify: Any) -> None:
 def reserve(
     notes: pathlib.Path,
     *,
-    permission_id: str,
-    limit: int,
+    permission: dict[str, Any],
     key: str,
     account: str,
     resets_at: int,
     carried: int,
     permissions: list[dict[str, Any]],
     now: float | None = None,
+    retry: bool = False,
 ) -> None:
     """共有先で予約を確定する。上限を超える場合と共有先が受理しない場合は`ReservationError`を送出する。  pyfltr: allow-comment
 
@@ -123,7 +228,27 @@ def reserve(
     """
     with wi_sync.repo_lock(notes):
         wi_sync.pull(notes)
+        permission_id, limit = permission["id"], permission["count"]
+
+        def check_grant(*, upstream: bool = False) -> None:
+            grant = _active_grant(notes, permission, upstream=upstream)
+            if not grant or (not retry and grant.get(ISSUED) is not True):
+                raise _legacy_unconfirmed()
+
+        check_grant()
+        upstream_records = _read_upstream(notes)
+        if retry and any(
+            item.get("key") == key
+            and item["permission_id"] == permission_id
+            and item.get("account") == account
+            and item["status"] == "pending"
+            for item in upstream_records
+        ):
+            check_grant(upstream=True)
+            return
         records = _prune(_read(notes), permissions, time.time() if now is None else now)
+        if retry and any(item.get("key") == key for item in records):
+            raise _legacy_unconfirmed()
         additions: list[dict[str, Any]] = []
         if carried:
             additions.append(
@@ -156,7 +281,12 @@ def reserve(
 
         check(records)
         _write(notes, records + additions)
-        _commit(notes, "chore: reserve usage reset", lambda: check(_read_upstream(notes)))
+
+        def verify() -> None:
+            check_grant(upstream=True)
+            check(_read_upstream(notes))
+
+        _commit(notes, "chore: reserve usage reset", verify)
 
 
 def finish(notes: pathlib.Path, key: str, status: Status) -> None:

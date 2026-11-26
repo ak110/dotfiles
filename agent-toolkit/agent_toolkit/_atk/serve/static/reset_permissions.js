@@ -105,7 +105,7 @@ function permissionSummary(entry, model) {
   return `${planLabel(entry.engine, plan)} · ${entry.count}回 · ${dateJst(from)}〜${dateJst(until)} · ${status} · ${entry.id}`;
 }
 
-export function renderResetPermissions(parent, entries, model, save, ui) {
+export function renderResetPermissions(parent, entries, model, save, ui, reissuable = {}, reissue) {
   model ??= {accounts: {}, claude_inventory: [], windows: []};
   const {element, field, form, button, submit, setWriteUnavailable} = ui;
   parent.append(element("p", "Codexは指定した期間と回数の範囲で、エージェントが自動でresetを使えます。Claudeは自動で使わず、在庫と利用枠に応じて公式画面で使うよう案内します。許可が空なら自動のresetは行いません。"));
@@ -116,6 +116,17 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
     summary.className = "permission-caption text-clip";
     summary.title = summary.textContent;
     box.append(summary);
+    if (entry && Object.hasOwn(reissuable, entry.id)) {
+      const remaining = reissuable[entry.id];
+      summary.textContent += " · 消費を停止中";
+      summary.title = summary.textContent;
+      if (remaining === null) {
+        box.append(element("p", "消費を停止中: この端末の消費記録を確認できないため、再発行できません。"));
+      } else {
+        box.append(element("p", "消費を停止中: 旧端末の回数を確認できません。他端末の未共有の消費は残りに含まれません。"));
+        box.append(button(`共有許可を発行（${remaining}回）`, () => reissue(entry.id, remaining)));
+      }
+    }
     const editor = form(box, () => {
       const account = selectedAccount();
       const scope = selectedScope();

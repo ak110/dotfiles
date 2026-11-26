@@ -237,7 +237,8 @@ async function migrateShared(payload, output) {
     if (payload.action !== "apply") return data;
     busy = false;
     await loadHost();
-    revealSettingResult(null, `共有へ移行しました（${data.moved}件）。`, true);
+    const message = Number.isInteger(data.moved) ? `共有へ移行しました（${data.moved}件）。` : "共有へ移行しました。";
+    revealSettingResult(null, message, true);
     return null;
   } catch (error) {
     status.textContent = "";

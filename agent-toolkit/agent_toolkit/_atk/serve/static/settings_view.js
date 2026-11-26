@@ -127,7 +127,8 @@ export function createSettingsView({
     if (key === "usage_reset_permissions") {
       renderResetPermissions(controls, JSON.parse(item.saved), data.reset_editor,
         (entries, editor) => save({action: "set", key, value: JSON.stringify(entries)}, output, editor),
-        {element, field, form, button, submit, setWriteUnavailable});
+        {element, field, form, button, submit, setWriteUnavailable},
+        data.reset_reissue, (id, count) => save({action: "reset-reissue", key, id, count}, output));
     } else if (item.array) {
       const list = element("ul");
       for (const value of JSON.parse(item.saved)) {
@@ -198,12 +199,14 @@ export function createSettingsView({
 
   // 画面の定期更新で描き直しても、確認済みの差と選択を残す。 pyfltr: allow-comment
   const migrationPlans = new Map();
+  const migrationPreviews = new Set();
 
   function migrationPanel(parent, data) {
     const pending = data.shared_migration?.pending ??
       Object.entries(data.settings).filter(([, item]) => item.migration_pending).map(([key]) => key);
     if (!pending.length) {
       migrationPlans.delete(state.host);
+      migrationPreviews.delete(state.host);
       return false;
     }
     const target = element("div");
@@ -226,6 +229,7 @@ export function createSettingsView({
         renderPlan(target, migrationPlans.get(host), output);
       }
     });
+    compare.dataset.migrationPreview = "";
     target.append(compare, output);
     if (migrationPlans.has(host)) renderPlan(target, migrationPlans.get(host), output);
     return true;
@@ -547,6 +551,16 @@ export function createSettingsView({
       else control.removeAttribute("aria-current");
     }
     navigation.hidden = searching || !available.some(Boolean);
+    if (!searching && active === "migration") {
+      const host = state.host;
+      const preview = content.querySelector("[data-migration-preview]");
+      if (!preview || migrationPlans.has(host) || migrationPreviews.has(host)) return;
+      setTimeout(() => {
+        if (host !== state.host || !preview.isConnected || preview.disabled || preview.closest("[hidden]")) return;
+        migrationPreviews.add(host);
+        preview.click();
+      }, 0);
+    }
   }
 
   function renderTemporary(temporary, data) {

@@ -9,7 +9,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Any, Literal
 
-from agent_toolkit._atk import config_repositories
+from agent_toolkit._atk import config_repositories, reset_reservations
 from agent_toolkit._atk import config_settings as _settings
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
@@ -17,7 +17,7 @@ lazy from agent_toolkit._atk import git_sync
 lazy from agent_toolkit._atk.wi import sync as wi_sync
 lazy from agent_toolkit._git import command as git_command
 
-FORMAT = 2
+FORMAT = 3
 
 """比較結果の形式の版。設定画面はこの値が無いSSH先を移行に対応しない旧版として扱う。  pyfltr: allow-comment"""
 
@@ -55,7 +55,8 @@ def _local_value(key: str, value: Any) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{key}の保存値は文字列で指定してください")
     _settings.validate_mutable_setting(key, value)
-    return _settings.normalize_setting(key, value)
+    normalized = _settings.normalize_setting(key, value)
+    return reset_reservations.public_permissions(normalized) if key == reset_reservations.PERMISSIONS else normalized
 
 
 def _items(local: dict[str, Any], shared: dict[str, str], *, initial: bool) -> list[dict[str, Any]]:
@@ -63,6 +64,8 @@ def _items(local: dict[str, Any], shared: dict[str, str], *, initial: bool) -> l
     for key in sorted(local.keys() - {"repositories"}):
         default = _settings.MUTABLE_KEY_DEFAULTS[key]
         shared_value = shared.get(key)
+        if key == reset_reservations.PERMISSIONS and shared_value is not None:
+            shared_value = reset_reservations.public_permissions(shared_value)
         item: dict[str, Any] = {
             "key": key,
             "label": key,
@@ -75,9 +78,7 @@ def _items(local: dict[str, Any], shared: dict[str, str], *, initial: bool) -> l
             item["local"] = _local_value(key, local[key])
         except ValueError as error:
             item["error"] = str(error)
-        if initial and key == "codex_fast_mode":
-            item["kind"] = "not_shared"
-        elif initial or item["local"] == item["shared_effective"]:
+        if initial or item["local"] == item["shared_effective"]:
             item["kind"] = "equal" if item["local"] == item["shared_effective"] else "local_only"
         else:
             item["kind"] = "different"
@@ -178,14 +179,15 @@ def _values(
     for item in items:
         key = item["key"]
         adopt_local = item["kind"] in ("equal", "local_only") or choices.get(key) == "local"
-        if item["kind"] == "not_shared":
-            moved.add(key)
-            continue
         if key.startswith(REPOSITORY_PREFIX):
             if adopt_local:
                 repositories[item["label"]] = item["local"]
         elif adopt_local:
-            values[key] = item["local"]
+            values[key] = (
+                reset_reservations.migrate_permissions(shared, item["local"])
+                if key == reset_reservations.PERMISSIONS
+                else item["local"]
+            )
         moved.add(key)
     if local.get("repositories") or "repositories" in shared:
         values["repositories"] = json.dumps(repositories, ensure_ascii=False, sort_keys=True)

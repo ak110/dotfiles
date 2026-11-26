@@ -6,6 +6,7 @@ from agent_toolkit._atk import config_migration, config_settings
 from agent_toolkit._common import runtime_environment
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.usage_settings import temporary_settings
+lazy from agent_toolkit._atk import reset_reservations
 
 
 def connection_order(engine: str, role: str) -> tuple[str, ...]:
@@ -88,4 +89,5 @@ def resolve_mutable_setting(
             else f"`atk config set {key} <VALUE>`で受理可能書式の値へ直して再実行する"
         )
         raise ActionableError(f"{source}の値が不正です（値: {value}）。{error}", next_action=next_action) from error
-    return config_settings.normalize_setting(key, value)
+    value = config_settings.normalize_setting(key, value)
+    return reset_reservations.public_permissions(value) if key == reset_reservations.PERMISSIONS else value

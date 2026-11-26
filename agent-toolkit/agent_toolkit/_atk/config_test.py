@@ -272,7 +272,7 @@ def test_shared_migration_comparison_has_terminal_and_machine_forms(tmp_path, mo
         assert f"atk config migrate-shared --apply {preview['revision']}" in shown
         assert "codex:sol/medium" in shown and "比較" in shown
         if initial:
-            assert "初回" in shown and "共有へ移さない" in shown
+            assert "初回" in shown and "codex_fast_mode（共有に無い）" in shown
             assert "--keep-" not in shown
         else:
             assert "差あり" in shown and "初期値" in shown
@@ -312,12 +312,13 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
     assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
     preview = json.loads(capsys.readouterr().out)
     assert preview["initial"]
-    assert [item["key"] for item in preview["items"] if item["kind"] == "not_shared"] == ["codex_fast_mode"]
+    assert not preview["required"]
+    assert any(item["key"] == "codex_fast_mode" and item["local"] == "false" for item in preview["items"])
     assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) != 0
     assert _saved(tmp_path) == original
     assert "共有先へ移行できない" in capsys.readouterr().err
     assert git_repository.git_output(notes, "rev-list", "--count", "@{u}..HEAD") == "1"
-    assert json.loads((notes / "atk-config.json").read_text(encoding="utf-8")) == {"review_model": original["review_model"]}
+    assert json.loads((notes / "atk-config.json").read_text(encoding="utf-8")) == original
 
 
 def test_read_only_snapshot_does_not_run_migrations(tmp_path, monkeypatch, capsys):

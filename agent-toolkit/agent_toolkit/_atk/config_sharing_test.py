@@ -7,7 +7,13 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._atk import codex_provider_check, config_repositories, config_settings, config_shared_migration
+from agent_toolkit._atk import (
+    codex_provider_check,
+    config_repositories,
+    config_settings,
+    config_shared_migration,
+    reset_reservations,
+)
 from agent_toolkit._atk import config as config_module
 from agent_toolkit._atk.wi import sync
 from agent_toolkit._testing import git_repository as git
@@ -232,3 +238,61 @@ def test_provider_warnings_only_for_unusable_ids(tmp_path, toml, providers, stat
 def test_shared_repository_file_rejects_paths(tmp_path):
     with pytest.raises(ValueError, match="path"):
         config_repositories.parse_shared(json.dumps({"example.test/team/proj": {"edit": "allow", "path": str(tmp_path)}}))
+
+
+@pytest.mark.parametrize("setting", ["true", "false"])
+@pytest.mark.parametrize("already_shared", [False, True])
+def test_migration_preserves_the_previewed_fast_mode(hosts, setting, already_shared):
+    hosts.use("a")
+    if already_shared:
+        assert _main(hosts.tmp_path, "config", "set", "codex_fast_mode", "auto") == 0
+    hosts.write_local("a", {"codex_fast_mode": setting})
+    plan = config_shared_migration.compare()
+    assert plan["required"] == (["codex_fast_mode"] if already_shared else [])
+    assert plan["items"][0]["local"] == setting
+    choices: dict[str, config_shared_migration.Choice] = {"codex_fast_mode": "local"} if already_shared else {}
+    assert config_shared_migration.apply(plan["revision"], choices) == 1
+    assert config_module.resolve_mutable_setting("codex_fast_mode") == setting
+    hosts.use("b")
+    assert config_module.resolve_mutable_setting("codex_fast_mode") == setting
+
+
+def test_reissue_transfers_only_remaining_known_count(hosts):
+    root = hosts.use("a")
+    state = root / "state" / "agents-server" / "codex-auto-reset"
+    state.mkdir(parents=True)
+    (state / "account.json").write_text('{"used_permissions":{"permitted-period":1}}', encoding="utf-8")
+    permissions = [
+        {
+            "id": "permitted-period",
+            "engine": "codex",
+            "account": "example@example.invalid",
+            "scope": "codex",
+            "count": 2,
+            "from": "2020-01-01T00:00:00Z",
+            "until": "2099-01-01T00:00:00Z",
+        }
+    ]
+    value = json.dumps(permissions)
+    hosts.write_local("a", {reset_reservations.PERMISSIONS: value})
+    plan = config_shared_migration.compare()
+    config_shared_migration.apply(plan["revision"], {})
+    snapshot = config_module.settings_snapshot(hosts.tmp_path, read_only=True)
+    assert snapshot["reset_reissue"] == {"permitted-period": 1}
+    corrupt = state / "invalid.json"
+    corrupt.write_text("{", encoding="utf-8")
+    assert config_module.settings_snapshot(hosts.tmp_path, read_only=True)["reset_reissue"] == {"permitted-period": None}
+    assert _main(hosts.tmp_path, "config", "reissue-reset", "permitted-period") == 2
+    corrupt.unlink()
+    assert _main(hosts.tmp_path, "config", "set", reset_reservations.PERMISSIONS, value) == 0
+    assert config_module.settings_snapshot(hosts.tmp_path, read_only=True)["reset_reissue"] == {"permitted-period": 1}
+    assert _main(hosts.tmp_path, "config", "reissue-reset", "permitted-period", "--count", "2") == 2
+    assert _main(hosts.tmp_path, "config", "reissue-reset", "permitted-period") == 0
+    assert _main(hosts.tmp_path, "config", "reissue-reset", "permitted-period") == 2
+    assert _main(hosts.tmp_path, "config", "set", reset_reservations.PERMISSIONS, value) == 2
+    hosts.use("b")
+    [refreshed] = json.loads(config_module.resolve_mutable_setting(reset_reservations.PERMISSIONS))
+    assert refreshed["id"] != "permitted-period"
+    assert refreshed["count"] == 1
+    assert reset_reservations.ISSUED not in refreshed
+    assert reset_reservations.is_issued(hosts.notes["b"], refreshed)

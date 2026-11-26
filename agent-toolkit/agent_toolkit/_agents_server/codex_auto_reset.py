@@ -165,8 +165,41 @@ def has_permission(
         return False
     identity = hashlib.sha256(email.encode("utf-8")).hexdigest()
     path = state_dir / "agents-server" / "codex-auto-reset" / f"{identity}.json"
+    previous = _read_attempt(path)
+    if shared_notes is not None and (previous is None or previous.status != "pending"):
+        permissions = [permission for permission in permissions if reset_reservations.is_issued(shared_notes, permission)]
     shared_used = _shared_used(shared_notes, permissions)
-    return bool(_permitted(permissions, email, identity, account_id, _read_attempt(path), time.time(), shared_used))
+    return bool(_permitted(permissions, email, identity, account_id, previous, time.time(), shared_used))
+
+
+async def _reserve_shared(
+    notes: Path,
+    permission: dict[str, Any],
+    *,
+    key: str,
+    account: str,
+    resets_at: int,
+    carried: int,
+    permissions: list[dict[str, Any]],
+    now: float,
+    retry: bool = False,
+) -> str | None:
+    try:
+        await asyncio.to_thread(
+            reset_reservations.reserve,
+            notes,
+            permission=permission,
+            key=key,
+            account=account,
+            resets_at=resets_at,
+            carried=carried,
+            permissions=permissions,
+            now=now,
+            retry=retry,
+        )
+    except reset_reservations.ReservationError as error:
+        return f"共有先でreset許可の回数を予約できないため消費を見送った: {error}"
+    return None
 
 
 async def check_auto_reset(
@@ -232,8 +265,28 @@ async def check_auto_reset(
             if not active or seconds <= 300 or not needed or weekly.usedPercent < 90:
                 return AutoResetResult(rate_limits=raw, diagnostic="稼働・自然回復・消費ペースからresetはまだ不要")
 
+        permission = next(item for item in permissions if item["id"] == permission_id)
         if previous is not None and previous.status == "pending":
             attempt = previous
+            if shared_notes is not None:
+                carried = (
+                    0 if permission_id in attempt.carried_permissions else max(0, used_permissions.get(permission_id, 0) - 1)
+                )
+                if diagnostic := await _reserve_shared(
+                    shared_notes,
+                    permission,
+                    key=attempt.idempotency_key,
+                    account=identity,
+                    resets_at=attempt.resets_at,
+                    carried=carried,
+                    permissions=permissions,
+                    now=now,
+                    retry=True,
+                ):
+                    return AutoResetResult(rate_limits=raw, diagnostic=diagnostic)
+                if permission_id not in attempt.carried_permissions:
+                    attempt = attempt.model_copy(update={"carried_permissions": [*attempt.carried_permissions, permission_id]})
+                    await run_file_operation(_write_attempt, path, attempt)
         else:
             reset_credits = selected.reset_credits
             if reset_credits is None or _Credits.model_validate(reset_credits).availableCount == 0:
@@ -242,25 +295,18 @@ async def check_auto_reset(
             carried_permissions = list(previous.carried_permissions) if previous is not None else []
             key = str(uuid.uuid4())
             if shared_notes is not None:
-                limit = next(item["count"] for item in permissions if item["id"] == permission_id)
                 carried = 0 if permission_id in carried_permissions else used_permissions.get(permission_id, 0)
-                try:
-                    await asyncio.to_thread(
-                        reset_reservations.reserve,
-                        shared_notes,
-                        permission_id=permission_id,
-                        limit=limit,
-                        key=key,
-                        account=identity,
-                        resets_at=weekly.resetsAt,
-                        carried=carried,
-                        permissions=permissions,
-                        now=now,
-                    )
-                except reset_reservations.ReservationError as error:
-                    return AutoResetResult(
-                        rate_limits=raw, diagnostic=f"共有先でreset許可の回数を予約できないため消費を見送った: {error}"
-                    )
+                if diagnostic := await _reserve_shared(
+                    shared_notes,
+                    permission,
+                    key=key,
+                    account=identity,
+                    resets_at=weekly.resetsAt,
+                    carried=carried,
+                    permissions=permissions,
+                    now=now,
+                ):
+                    return AutoResetResult(rate_limits=raw, diagnostic=diagnostic)
                 carried_permissions = sorted({*carried_permissions, permission_id})
             used_permissions[permission_id] = used_permissions.get(permission_id, 0) + 1
             attempt = _Attempt(

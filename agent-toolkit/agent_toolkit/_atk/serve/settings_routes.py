@@ -202,7 +202,8 @@ def _shared_migration(host: str, payload: dict[str, typing.Any]) -> dict[str, ty
         snapshot, runner = _remote_snapshot(host, read_only=True)
     except _ReadOnlyUnsupported:
         snapshot, runner = {"legacy": True}, _ssh
-    if snapshot.get("legacy") or not isinstance(snapshot.get("shared_migration"), dict):
+    capability = snapshot.get("shared_migration")
+    if snapshot.get("legacy") or not isinstance(capability, dict) or capability.get("format") != config_shared_migration.FORMAT:
         raise ValueError("SSH先のatkが旧版のため移行できません。SSH先のatkを更新してください")
     if action == "compare":
         result = runner(host, "atk config migrate-shared --json", None)

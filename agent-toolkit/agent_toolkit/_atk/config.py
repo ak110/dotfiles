@@ -5,6 +5,7 @@ import hashlib
 import json
 import pathlib
 import sys
+import uuid
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -46,7 +47,7 @@ from agent_toolkit._common import codex_fast_mode, codex_models, runtime_environ
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
-lazy from agent_toolkit._atk import codex_provider_check, git_sync
+lazy from agent_toolkit._atk import codex_provider_check, git_sync, reset_reservations
 lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._git import remote as git_remote
 
@@ -105,7 +106,67 @@ def save_mutable_settings(updates: dict[str, str]) -> bool:
 
 
 def _save_shared_settings(path: pathlib.Path, updates: dict[str, str]) -> bool:
-    return config_shared_migration.update_shared_settings(path, lambda current: current | updates)
+    def update(current: dict[str, str]) -> dict[str, str]:
+        changed = current | updates
+        key = reset_reservations.PERMISSIONS
+        if key in updates:
+            changed[key] = reset_reservations.mark_new_permissions(current, updates[key])
+        return changed
+
+    return config_shared_migration.update_shared_settings(path, update)
+
+
+def _reissue_remaining(notes: pathlib.Path, grant: dict[str, Any]) -> int:
+    identifier = grant["id"]
+    known = reset_reservations.local_unshared_usage(_state_paths.state_dir(), identifier) + reset_reservations.read_used(
+        notes, identifier
+    )
+    return max(0, int(grant["count"]) - known)
+
+
+def _legacy_reset_grant(grant: dict[str, Any]) -> bool:
+    return (
+        grant["engine"] == "codex"
+        and grant.get(reset_reservations.ISSUED) is not True
+        and grant.get(reset_reservations.RETIRED) is not True
+    )
+
+
+def _reissue_reset(identifier: str, count: int | None) -> None:
+    path = config_shared_migration.write_path()
+
+    def update(current: dict[str, str]) -> dict[str, str]:
+        entries = reset_reservations.permission_entries(current)
+        for index, grant in enumerate(entries):
+            if grant["id"] != identifier or not _legacy_reset_grant(grant):
+                continue
+            try:
+                remaining = _reissue_remaining(path.parent, grant)
+            except (ValueError, OSError) as error:
+                raise _next_action.ActionableError(
+                    "この端末で確認できるreset許可の残りを数えられません",
+                    next_action="端末のCodex reset記録と共有台帳を確認してから発行し直す",
+                ) from error
+            if count is not None and not 0 <= count <= remaining:
+                raise ValueError(f"共有許可は確認できた残りの{remaining}回以内で発行してください")
+            entries[index] = reset_reservations.retire_grant(grant)
+            issued = dict(grant, id=f"codex-{uuid.uuid4()}", count=remaining if count is None else count)
+            entries.append(issued | {reset_reservations.ISSUED: True})
+            return current | {reset_reservations.PERMISSIONS: reset_reservations.encode_permissions(entries)}
+        raise ValueError("共有へ移行した旧Codex許可を指定してください")
+
+    config_shared_migration.update_shared_settings(path, update)
+
+
+def _reset_reissue_options(path: pathlib.Path, shared: dict[str, str]) -> dict[str, int | None]:
+    options: dict[str, int | None] = {}
+    for grant in reset_reservations.permission_entries(shared):
+        if _legacy_reset_grant(grant):
+            try:
+                options[grant["id"]] = _reissue_remaining(path.parent, grant)
+            except ValueError, OSError:
+                options[grant["id"]] = None
+    return options
 
 
 def resolved_settings(home: pathlib.Path, *, read_only: bool = False) -> dict[str, str]:
@@ -244,7 +305,7 @@ def _print_shared_value(key: str, label: str, value: Any) -> None:
 def _print_shared_comparison(plan: dict[str, Any]) -> None:
     print("共有設定の比較")
     print("初回: 共有設定ファイルがない" if plan["initial"] else "既存の共有設定ファイルと比較")
-    labels = {"equal": "一致", "different": "差あり", "local_only": "共有に無い", "not_shared": "共有へ移さない"}
+    labels = {"equal": "一致", "different": "差あり", "local_only": "共有に無い"}
     for item in plan["items"]:
         key = item["key"]
         print(f"\n{item['label']}（{labels[item['kind']]}）")
@@ -341,9 +402,12 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         migration_pending = key in pending
         source = _mutable_source(key, saved, shared, temporary, shared_target=shared_key)
         description = _config_settings.setting_description(key)
+        saved_value = shared.get(key, default) if shared_key else saved.get(key, default)
+        if key == reset_reservations.PERMISSIONS and isinstance(saved_value, str):
+            saved_value = reset_reservations.public_permissions(saved_value)
         settings[key] = {
             "effective": effective.pop(key),
-            "saved": shared.get(key, default) if shared_key else saved.get(key, default),
+            "saved": saved_value,
             "default": default,
             "source": source,
             "shared": shared_key,
@@ -376,6 +440,7 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         "usage": config_usage.cli_windows(windows),
         "can_observe_usage": True,
         "reset_editor": config_usage.reset_editor_snapshot(windows, usage["history"], state),
+        "reset_reissue": _reset_reissue_options(shared_path, shared) if shared_sync and shared_path is not None else {},
         "model_order_policy": config_usage.MODEL_ORDER_POLICY,
     }
 
@@ -399,6 +464,12 @@ def update_settings(payload: dict[str, Any]) -> None:
         _require_shared_migration()
     _config_migration.migrate_serve_settings()
     _config_migration.migrate_legacy_settings()
+    if action == "reset-reissue":
+        identifier, count = operation_text(payload, "id"), payload.get("count")
+        if not identifier or (count is not None and (not isinstance(count, int) or isinstance(count, bool))):
+            raise ValueError("旧許可のIDと発行する回数を指定してください")
+        _reissue_reset(identifier, count)
+        return
     if action == "temporary-clear":
         config_usage.update_temporary(None, None, None)
         return
@@ -516,7 +587,12 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def _verify_saved_setting(key: str, value: str) -> None:
-    if resolve_mutable_setting(key) == value:
+    effective = resolve_mutable_setting(key)
+    if effective == value:
+        return
+    if key == reset_reservations.PERMISSIONS and (
+        json.loads(effective) == json.loads(reset_reservations.public_permissions(value))
+    ):
         return
     local = _config_settings.load_config()
     path = _config_settings.shared_settings_path()
@@ -643,6 +719,9 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     migrate.add_argument("--apply", metavar="REVISION", help="比較で取得した版を指定して適用する。")
     migrate.add_argument("--keep-local", action="append", default=[], metavar="KEY", help="手元の値を全ホストで使う。")
     migrate.add_argument("--keep-shared", action="append", default=[], metavar="KEY", help="共有側の値を使う。")
+    reissue = _atk_help.add_command(sub, "reissue-reset", **_atk_help.HELP["atk config reissue-reset"])
+    reissue.add_argument("permission_id", metavar="ID", help="共有へ移した旧Codex許可のID。")
+    reissue.add_argument("--count", type=int, help="新しい許可の回数。省略するとこの端末で確認できる残りの回数。")
     get = _atk_help.add_command(sub, "get", **_atk_help.HELP["atk config get"])
     get.add_argument("key", metavar="KEY", nargs="+", help="取得する1件以上のキー（config showの出力キーと同一）。")
     set_ = _atk_help.add_command(sub, "set", **_atk_help.HELP["atk config set"])
@@ -688,6 +767,9 @@ def dispatch(
             _outcome.report_success("設定操作を適用した")
         elif sub == "migrate-shared":
             _migrate_shared_settings(args)
+        elif sub == "reissue-reset":
+            _reissue_reset(args.permission_id, args.count)
+            _outcome.report_success("旧Codex許可を共有許可として発行し直した")
         elif sub == "get":
             _cmd_config_get(args, home)
         elif sub == "apply-preset":
