@@ -655,11 +655,13 @@ def test_external_source_url_uses_ascii_uri_characters(line: str, expected: str)
 
 
 @pytest.mark.parametrize("tool", ["AskUserQuestion", "request_user_input", "request_user_input_async"])
-@pytest.mark.cpu_limit(1.0, reason="各ホストの公開hook入口と再承認前後の全操作を通す（Linux CPU実測の最大0.593秒）。")
+@pytest.mark.cpu_limit(1.0, reason="各ホストの公開hook入口と再承認前後の全操作を同一セッションで通す。")
 def test_policy_reapproval_blocks_only_until_new_matching_approval(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tool: str
 ) -> None:
     monkeypatch.setattr(session_state, "state_path", lambda sid: tmp_path / f"{sid}.json")
+    # 再承認と独立した活動記録が実ホストのプロセス祖先をたどる費用を除く。  pyfltr: allow-comment
+    monkeypatch.setattr(hook, "_record_activity", lambda *_args, **_kwargs: None)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     private_notes = tmp_path / "notes"
     dated = private_notes / "2026" / "11"

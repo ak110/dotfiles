@@ -38,6 +38,7 @@ class TestUnifiedCompletionLoop:
             now_fn=now_fn,
             consecutive_failures=0,
             follow_mode=follow_mode,
+            follow_cancelled=False,
             reported=set(),
             save=None,
         )

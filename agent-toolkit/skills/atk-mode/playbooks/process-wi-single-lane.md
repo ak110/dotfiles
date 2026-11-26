@@ -109,6 +109,8 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    - 各WIを`adopt`か`reject`し、`adopt`では`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」のcommitの対応付けを使う。
      採否は公開前に確定し、CIの待機の後へ延ばさない。
    - worktreeごとに`agent-toolkit:atk-mode/playbooks/commit.md`を読み、`agent-toolkit:atk-mode/playbooks/publish.md`に従って公開する。
+     複数群を合わせた場合は、初回の候補push前に対象リポジトリの公開前検証に従い、合わせた最終候補に対応する検証証拠をメインが受理する。
+     証拠が無いか一致しなければ候補を送らず、最終候補で検証する。
    - 複数のリポジトリが対象なら成果物間の依存順を守り、互いに独立したリポジトリのpushを先に全て終えてからCIの監視を並行して始め、全ての実行識別子の終了を待って結果を個別に回収する。
      待機中の操作は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機中の先行実施」で決め、CIの成功を前提とする公開後の操作はその対象の成功後に行う。
    - 開発マシンで動く常時稼働サーバーへの反映は、`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」の条件を満たす場合にCIの待機と並行して始める。

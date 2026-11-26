@@ -151,6 +151,8 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
 
 - 監視で得たrun ID（GitLabではpipeline ID）とjob IDを引き継ぎ、全体の実行状態を確かめてから、失敗ジョブのログを取得する。
   `wait_ci.py`が示す次の操作に、対象に合うログ取得のコマンドがある。
+  終了コード1の診断では、非成功runの打ち切りジョブを失敗ジョブとは別に表示する。
+  ジョブの詳細とログ取得先を示し、GitHubがチェックのURLを返した場合は注釈の取得先も示す。
   `gh`と`glab`の受理形式は、実行の直前にヘルプで確かめる。
 - GitHubでは、ジョブごとに`gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs --allow-escape-sequences`で全てのログをmanaged-tempへ保存する。
   端末のエスケープシーケンスを含む応答は、このオプションが無いと取得を拒否される。

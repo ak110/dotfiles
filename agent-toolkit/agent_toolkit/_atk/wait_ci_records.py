@@ -134,6 +134,20 @@ def _failure_next_action(record: RunRecord | JobRecord, record_type: str, reposi
     )
 
 
+def _emit_cancelled_jobs(runs: list[RunRecord], jobs: list[JobRecord], forge: str, repository: str) -> None:
+    failed_runs = {run["databaseId"] for run in runs if run.get("conclusion") != "success"}
+    for job in jobs:
+        if job.get("runId") not in failed_runs or job.get("conclusion") != "cancelled":
+            continue
+        details = f"打ち切りジョブ: {job.get('name', '?')} (cancelled)"
+        if url := job.get("url"):
+            details += f" 詳細: {url}"
+        if forge == "github" and isinstance(check := job.get("checkRunUrl"), str) and check:
+            details += f" チェック注釈: {check.rstrip('/')}/annotations"
+        print(details, file=sys.stderr, flush=True)
+        print(f"  ステップログ: {_failure_next_action(job, 'job', repository, forge)}", file=sys.stderr, flush=True)
+
+
 class RunListError(RuntimeError):
     """CI実行一覧・ジョブ一覧の取得または応答検証の失敗。呼び出し側でretry判定に使う。"""
 

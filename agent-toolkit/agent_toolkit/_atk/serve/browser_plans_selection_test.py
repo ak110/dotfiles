@@ -10,14 +10,11 @@ import playwright.async_api
 import pytest
 import pytest_asyncio
 
-from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import config
 from agent_toolkit._atk.serve import plans as serve_plans
-from agent_toolkit._atk.serve import sessions as serve_sessions
-from agent_toolkit._atk.serve import state as serve_state
 
 # pytestがテストの引数名で参照するfixtureを、このモジュールへ登録する。
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
+    _browser_app,
     _browser_fixture,
     _BrowserOperations,
     _hold_route,
@@ -62,22 +59,12 @@ async def _multi_root_harness_fixture(
     legacy_plan = legacy_root / "same.md"
     new_plan.write_text("# 新root\n\nnew needle\n", encoding="utf-8")
     legacy_plan.write_text("# 旧root\n\nold needle\n", encoding="utf-8")
-    app = serve_app.create_app(
+    app = _browser_app(
         tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        serve_state.ServeState(tmp_path),
-        operations=_BrowserOperations(tmp_path),
-        plans_context=serve_plans.create_context(
-            hostname="browser-multi",
-            roots=(
-                serve_plans.RootSpec(serve_plans.NEW_SOURCE_ID, new_root, serve_plans.NEW_PORTABLE_ROOT),
-                serve_plans.RootSpec(serve_plans.LEGACY_SOURCE_ID, legacy_root, serve_plans.LEGACY_PORTABLE_ROOT),
-            ),
-        ),
-        sessions_context=serve_sessions.create_context(
-            hostname="browser-multi",
-            claude_home=tmp_path / "claude",
-            codex_home=tmp_path / "codex",
+        hostname="browser-multi",
+        plan_roots=(
+            serve_plans.RootSpec(serve_plans.NEW_SOURCE_ID, new_root, serve_plans.NEW_PORTABLE_ROOT),
+            serve_plans.RootSpec(serve_plans.LEGACY_SOURCE_ID, legacy_root, serve_plans.LEGACY_PORTABLE_ROOT),
         ),
     )
     plans_state: serve_plans.BroadcastState = app.config["PLANS_CONTEXT"].state

@@ -23,15 +23,22 @@ from agent_toolkit._common import runtime_environment, state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 
+def _resolve_forge(repo_id: str, forge: str) -> str:
+    if forge != "auto":
+        return forge
+    return "github" if repo_id.partition("/")[0] == "github.com" else "gitlab"
+
+
 def claim_periodic_check(repo_id: str, forge: str) -> bool:
     environment = runtime_environment.environment()
-    if environment.get(_env.NO_ALERTS_ENV) == "1" or forge not in ("auto", "github"):
+    if environment.get(_env.NO_ALERTS_ENV) == "1":
         return False
-    if _github_submission.canonical_source(repo_id, "issues", 1) is None:
-        return False
-    settings = config_settings.repository_settings(check_paths=False).get(repo_id, {})
-    if settings.get("github_issues") is not True:
-        return False
+    if _resolve_forge(repo_id, forge) == "github":
+        if _github_submission.canonical_source(repo_id, "issues", 1) is None:
+            return False
+        settings = config_settings.repository_settings(check_paths=False).get(repo_id, {})
+        if settings.get("github_issues") is not True:
+            return False
     try:
         interval = _env.positive_alert_interval(environment.get(_env.ALERT_INTERVAL_ENV, ""))
     except ValueError:
@@ -126,8 +133,8 @@ def observe_dependabot_pending(args: argparse.Namespace, target_repo_id: str) ->
 
 def _dependabot_pending(args: argparse.Namespace, target_repo_id: str) -> frozenset[int] | None:
     """GitHubの対象リポジトリで未判定のDependabotアラート番号を返す。取得できない場合は警告してNoneを返す。"""
-    host, _, repo_path = target_repo_id.partition("/")
-    forge = args.alert_forge if args.alert_forge != "auto" else ("github" if host == "github.com" else "gitlab")
+    _, _, repo_path = target_repo_id.partition("/")
+    forge = _resolve_forge(target_repo_id, args.alert_forge)
     if forge != "github" or not repo_path:
         return frozenset()
     try:
@@ -182,7 +189,7 @@ def cmd_check_alerts(args: argparse.Namespace, private_notes: pathlib.Path, now:
         )
         submitted += result.submitted
         failures.extend(result.failures)
-    if periodic:
+    if periodic and _resolve_forge(repo_id, args.forge) == "github":
         imported = _github_submission.check_and_submit(private_notes, repo_id, now=now)
         _outcome.report_success(f"GitHubのIssueとPRの取込: 対象={repo_id} WI投入={imported}件")
     scope = repo_id if settings is None else f"{repo_id}（系統: {', '.join(settings.branches)}）"
