@@ -5,10 +5,25 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import delegated_session, message_format, session_registry
 from agent_toolkit._hooks import work_contract
+
+
+def test_delegated_reread_resolves_the_path_delivered_at_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    path = managed_temp.create_managed_temp("work-contract") / "work-contract.md"
+    path.write_text("## 目的\n\n依頼を終える。\n", encoding="utf-8")
+    notice = message_format.auto_message(
+        f"{delegated_session.OWN_CONTRACT_LINE_PREFIX}{path}", source="agents-server", kind=delegated_session.OWN_CONTRACT_KIND
+    )
+    launch = SimpleNamespace(launch_info=SimpleNamespace(prompt=f"起動依頼\n\n{notice}"))
+    monkeypatch.setenv(delegated_session.DELEGATED_SESSION_ENV, "1")
+    monkeypatch.setattr(session_registry, "resolve", lambda _session: SimpleNamespace(resume_info=launch, handoff_info=None))
+    assert work_contract.record_path("session") == path
 
 
 def test_existing_contract_is_not_a_input_ledger(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

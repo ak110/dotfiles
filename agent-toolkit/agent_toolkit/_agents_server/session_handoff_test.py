@@ -20,7 +20,7 @@ from agent_toolkit._agents_server import (
     state,
 )
 from agent_toolkit._atk import config
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import delegated_session, session_registry
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -237,8 +237,9 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
         successor = manager.sessions[response["session_id"]]
         document = launch_requests.resolve_task_document_path("exec")  # pylint: disable=protected-access
         assert str(document) in successor.prompt
+        original, _notice = delegated_session.split_own_contract_notice(predecessor.prompt)
         assert (
-            predecessor.prompt.replace(
+            original.replace(
                 f"引き継ぎ記録先: {params['引き継ぎ記録先']}",
                 f"引き継ぎ記録先: {params['引き継ぎ記録先']}（継続）",
             )

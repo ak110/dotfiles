@@ -11,8 +11,9 @@ from typing import Any
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools, session_handoff, state, subagent_contract
+from agent_toolkit._agents_server import launch_requests, mcp_tools, session_handoff, state
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import delegated_session
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_mcp_tools_support import _start_exec_review_session, _write_review_plan
 from agent_toolkit._testing.agents_server_support import (
@@ -62,6 +63,13 @@ async def test_new_request_and_handoff_preserve_required_context(
         _complete(manager.sessions[started["session_id"]])
         successor = await mcp_tools.start(handoff_from=started["session_id"])
         received = manager.sessions[successor["session_id"]].prompt
+        root = managed_temp.temp_root_path()
+        previous_prompt = manager.sessions[started["session_id"]].prompt
+        previous_contract = delegated_session.prompt_own_contract_path(previous_prompt, root)
+        successor_contract = delegated_session.prompt_own_contract_path(received, root)
+        assert previous_contract is not None and successor_contract is not None and previous_contract != successor_contract
+        assert successor_contract.read_bytes() == previous_contract.read_bytes()
+        assert str(previous_contract) not in received
         assert "レビュー基準: 計画" in received
         assert "追加要求: 新しい文書の差分も確認する" in received
         await mcp_tools.send_message(successor["session_id"], instruction="再レビューせよ", extra_params={"round": "2"})
@@ -93,14 +101,14 @@ async def test_followup_updates_only_explicit_contract_changes_after_delivery(
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        request = (
-            "## 目的\n\n原稿を整える。\n\n## 完遂事項\n\n- 担当A: 書式確認\n- 担当B: 内容確認\n\n## 守る制約\n\n- 公開しない。"
-        )
+        tasks = "- 担当A: 書式確認\n- 担当B: 内容確認"
+        request = f"## 目的\n\n原稿を整える。\n\n## 完遂事項\n\n{tasks}\n\n## 守る制約\n\n- 公開しない。"
         started = await mcp_tools.start(str(tmp_path), prompt=request, mode="explore")
         session_id = started["session_id"]
-        directory = managed_temp.find_session_temp(session_id)
-        assert directory is not None
-        contract = directory / subagent_contract.RECORD_NAME
+        contract = delegated_session.prompt_own_contract_path(
+            manager.sessions[session_id].prompt, managed_temp.temp_root_path()
+        )
+        assert contract is not None
         before = contract.read_text(encoding="utf-8")
         await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "prompt": "進捗を教えて"})
         assert contract.read_text(encoding="utf-8") == before
@@ -118,6 +126,25 @@ async def test_followup_updates_only_explicit_contract_changes_after_delivery(
         body = contract.read_text(encoding="utf-8")
         assert body.endswith(request.replace("担当B", "担当C").replace("担当A", "担当B") + "\n")
         assert prompt not in body and "進捗を教えて" not in body
+
+
+@pytest.mark.asyncio
+async def test_unclassified_contract_can_be_read_before_first_turn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    request = "原稿を読み、体裁を確かめる。外に公開しない。"
+
+    class FirstTurn:
+        async def start_explore(self, prompt: str, _cwd: str, **_options: object) -> dict[str, str]:
+            path = delegated_session.prompt_own_contract_path(prompt, managed_temp.temp_root_path())
+            assert path is not None
+            assert all(heading in path.read_text(encoding="utf-8") for heading in ("目的", "完遂事項", "守る制約"))
+            assert path.with_name("startup-request.md").read_text(encoding="utf-8") == request + "\n"
+            return {"session_id": "first-turn", "status": "running", "label": "書式の確認"}
+
+    monkeypatch.setattr(mcp_tools, "_MANAGER", FirstTurn())
+    result = await mcp_tools.start(str(tmp_path), mode="explore", prompt=request)
+    assert result["session_id"] == "first-turn"
 
 
 @pytest.mark.asyncio

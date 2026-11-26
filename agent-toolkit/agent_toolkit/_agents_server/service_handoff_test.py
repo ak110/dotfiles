@@ -23,7 +23,7 @@ from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._agents_server.service_context import Conversation
 from agent_toolkit._agents_server.service_force import _pending_launch
 from agent_toolkit._agents_server.service_publication_test import _coordinator
-from agent_toolkit._common import runtime_environment, session_registry
+from agent_toolkit._common import delegated_session, runtime_environment, session_registry
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import _complete, _write_notice
 
@@ -76,12 +76,13 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
     source.manager.sessions[untracked.session_id] = untracked
 
     async def start_explore(self, prompt, cwd, *, label=None, model_type=None):
+        request, _notice = delegated_session.split_own_contract_notice(prompt)
         session = {
             "前任": predecessor,
             "子": child,
             "回収済み": already_collected,
             "起動中に回収": collected_during_launch,
-        }[prompt]
+        }[request]
         assert self is (parent.manager if session is predecessor else source.manager)
         assert cwd == str(tmp_path) and label is None and model_type is None
         self.sessions[session.session_id] = session

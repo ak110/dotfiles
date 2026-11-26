@@ -321,6 +321,15 @@ def exists(session_id: str) -> bool:
 
 
 def record_path(session_id: str) -> pathlib.Path | None:
+    if delegated_session.is_delegated(os.environ):
+        try:
+            resolution = session_registry.resolve(session_id)
+        except OSError, ValueError:
+            resolution = None
+        if resolution is not None and (info := resolution.resume_info or resolution.handoff_info) is not None:
+            path = delegated_session.prompt_own_contract_path(info.launch_info.prompt, managed_temp.temp_root_path())
+            if path is not None:
+                return path
     directory = managed_temp.find_session_temp(session_id)
     return directory / RECORD_NAME if directory is not None else None
 

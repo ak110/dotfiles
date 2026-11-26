@@ -186,7 +186,8 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         delivery_prompt = subagent_contract.mark_contract_update(prompt) if contract_changes else prompt
         response = await self._deliver_message(session_id, delivery_prompt)
         if contract_changes:
-            await subagent_contract.record_followup(response, session_id, contract_changes)
+            launch_prompt = current.prompt if current is not None and current.launch_kind != "shell" else ""
+            await subagent_contract.record_followup(response, session_id, contract_changes, launch_prompt)
         session = self.sessions.get(session_id)
         if session is not None and response["delivery"] != "reply_failed":
             session.followup_prompts += (prompt,)

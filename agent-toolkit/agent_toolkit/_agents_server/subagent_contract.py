@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 import pathlib
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests_inputs import named_input_lines
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import delegated_session
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.message_format import auto_message
 
@@ -50,15 +51,18 @@ def _path(session_id: str) -> pathlib.Path:
     return managed_temp.resolve_session_temp(session_id) / RECORD_NAME
 
 
+def _write_request(path: pathlib.Path, request: str) -> None:
+    request = request.strip()
+    headings = [line for line in request.splitlines() if line.startswith("## ")]
+    if headings != [_PURPOSE, _COMPLETION, _CONSTRAINTS] or not request.startswith(_PURPOSE + "\n"):
+        atomic_write(path.with_name(_STARTUP_REQUEST), request + "\n")
+        request = f"{_PURPOSE}\n\n{_INITIALIZE}\n\n{_COMPLETION}\n\n{_CONSTRAINTS}"
+    atomic_write(path, f"{_HEADER}\n{request}\n")
+
+
 def create(session_id: str, request: str) -> str | None:
     try:
-        path = _path(session_id)
-        request = request.strip()
-        headings = [line for line in request.splitlines() if line.startswith("## ")]
-        if headings != [_PURPOSE, _COMPLETION, _CONSTRAINTS] or not request.startswith(_PURPOSE + "\n"):
-            atomic_write(path.with_name(_STARTUP_REQUEST), request + "\n")
-            request = f"{_PURPOSE}\n\n{_INITIALIZE}\n\n{_COMPLETION}\n\n{_CONSTRAINTS}"
-        atomic_write(path, f"{_HEADER}\n{request}\n")
+        _write_request(_path(session_id), request)
     except (managed_temp.ManagedTempError, OSError) as error:
         _LOG.warning("委譲先の作業契約を作成できない: session_id=%s", session_id, exc_info=True)
         return f"委譲先の作業契約を作成できない（{type(error).__name__}: {error}）。担当は起動済みである。"
@@ -70,14 +74,56 @@ def inherit(predecessor_id: str, session_id: str) -> str | None:
     if source is None or not (source / RECORD_NAME).is_file():
         return None
     try:
-        destination = _path(session_id)
-        if (startup := source / _STARTUP_REQUEST).is_file():
-            atomic_write(destination.with_name(_STARTUP_REQUEST), startup.read_bytes())
-        atomic_write(destination, (source / RECORD_NAME).read_bytes())
+        _copy_request(source / RECORD_NAME, _path(session_id))
     except (managed_temp.ManagedTempError, OSError) as error:
         _LOG.warning("前任の作業契約を引き継げない: %s -> %s", predecessor_id, session_id, exc_info=True)
         return f"前任の作業契約を後任へ引き継げない（{type(error).__name__}: {error}）。"
     return None
+
+
+def _copy_request(source: pathlib.Path, destination: pathlib.Path) -> None:
+    if (startup := source.with_name(_STARTUP_REQUEST)).is_file():
+        atomic_write(destination.with_name(_STARTUP_REQUEST), startup.read_bytes())
+    atomic_write(destination, source.read_bytes())
+
+
+def _read_path(session_id: str, launch_prompt: str) -> pathlib.Path | None:
+    if launch_prompt and (path := delegated_session.prompt_own_contract_path(launch_prompt, managed_temp.temp_root_path())):
+        return path
+    directory = managed_temp.find_session_temp(session_id)
+    return directory / RECORD_NAME if directory is not None else None
+
+
+def _prepare_launch(request: str | pathlib.Path) -> pathlib.Path:
+    path = managed_temp.create_managed_temp("work-contract") / RECORD_NAME
+    if isinstance(request, pathlib.Path):
+        _copy_request(request, path)
+    else:
+        _write_request(path, request)
+    return path
+
+
+async def prepare_launch(prompt: str, request: str | pathlib.Path, warnings: list[dict[str, str]]) -> str:
+    try:
+        path = await run_file_operation(_prepare_launch, request)
+    except (managed_temp.ManagedTempError, OSError) as error:
+        _LOG.warning("委譲先の起動前に作業契約を用意できない", exc_info=True)
+        warnings.append({"scope": "work-contract", "message": f"委譲先の作業契約を用意できない（{error}）。"})
+        return delegated_session.split_own_contract_notice(prompt)[0]
+    notice = auto_message(
+        f"{delegated_session.OWN_CONTRACT_LINE_PREFIX}{path}\n"
+        "着手前にこの記録を読み、目的を確かめてください。雛形だけなら示された起動依頼から一度だけ記入してください。",
+        source="agents-server",
+        kind=delegated_session.OWN_CONTRACT_KIND,
+    )
+    return prompt + "\n\n" + notice
+
+
+async def prepare_handoff(prompt: str, predecessor_id: str, predecessor_prompt: str, warnings: list[dict[str, str]]) -> str:
+    source = await run_file_operation(_read_path, predecessor_id, predecessor_prompt)
+    if source is None or not source.is_file():
+        return prompt
+    return await prepare_launch(prompt, source, warnings)
 
 
 def _edit_request(active: str, changes: Mapping[str, str], *, structured: bool = False) -> str:
@@ -105,14 +151,13 @@ def _edit_request(active: str, changes: Mapping[str, str], *, structured: bool =
     return f"{active.rstrip()}\n\n{addition}"
 
 
-def apply_followup(session_id: str, changes: Mapping[str, str], delivery: str) -> str | None:
+def apply_followup(session_id: str, changes: Mapping[str, str], delivery: str, launch_prompt: str = "") -> str | None:
     if not changes or delivery not in {"steered", "reply_started", "reply_ambiguous"}:
         return None
     try:
-        directory = managed_temp.find_session_temp(session_id)
-        if directory is None:
+        path = _read_path(session_id, launch_prompt)
+        if path is None:
             raise ValueError("担当の一時領域が無い")
-        path = directory / RECORD_NAME
         with _UPDATE_LOCK:
             body = path.read_text(encoding="utf-8")
             if not body.startswith(_HEADER):
@@ -142,21 +187,7 @@ def apply_followup(session_id: str, changes: Mapping[str, str], delivery: str) -
     return None
 
 
-async def _record(response: dict[str, Any], operation: Callable[..., str | None], *args: str) -> None:
-    warning = await run_file_operation(operation, *args)
-    if warning is not None:
-        response.setdefault("warnings", []).append({"scope": "work-contract", "message": warning})
-
-
-async def record_created(response: dict[str, Any], request: str) -> None:
-    await _record(response, create, response["session_id"], request)
-
-
-async def record_inherited(response: dict[str, Any], predecessor_id: str) -> None:
-    await _record(response, inherit, predecessor_id, response["session_id"])
-
-
-async def record_followup(response: dict[str, Any], session_id: str, changes: Mapping[str, str]) -> None:
-    warning = await run_file_operation(apply_followup, session_id, changes, response["delivery"])
+async def record_followup(response: dict[str, Any], session_id: str, changes: Mapping[str, str], launch_prompt: str) -> None:
+    warning = await run_file_operation(apply_followup, session_id, changes, response["delivery"], launch_prompt)
     if warning is not None:
         response.setdefault("warnings", []).append({"scope": "work-contract", "message": warning})

@@ -23,6 +23,7 @@ from agent_toolkit._agents_server import (
     session_identity,
     state,
     status_file,
+    subagent_contract,
     tool_names,
     unavailable_candidates,
     wait_targets,
@@ -525,6 +526,8 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         candidate = state.selected_candidate(predecessor)
         excluded = {candidate: reason} if candidate is not None and reason is not None else {}
         prompt = await run_file_operation(session_handoff.prepare_prompt, predecessor)
+        if predecessor.launch_kind != "shell":
+            prompt = await subagent_contract.prepare_handoff(prompt, predecessor.session_id, predecessor.prompt, warnings)
         with (
             startup_features.selection(predecessor.startup_profile),
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),

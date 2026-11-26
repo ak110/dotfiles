@@ -372,7 +372,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         response = await _manager().start_handoff(
             handoff_from, model_type=model_type, **{key: value for key, value in override_args.items() if value is not None}
         )
-        await subagent_contract.record_inherited(response, handoff_from)
         public = public_start_response(response)
         public["cwd"] = response["cwd"]
         public["model_type"] = response["model_type"]
@@ -427,6 +426,9 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             context = await run_file_operation(_manager().launcher_record_context)
             task_prompt = launch_requests.with_launcher_record(task_prompt, context)
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None)
+            task_prompt = await subagent_contract.prepare_launch(
+                task_prompt, subagent_contract.task_request(subagent_md_path, params), warnings
+            )
             response = await _manager().start(
                 resolved_type,
                 task_prompt,
@@ -437,7 +439,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 explicit_role_model=model_type is not None,
                 startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
             )
-            await subagent_contract.record_created(response, subagent_contract.task_request(subagent_md_path, params))
             if warnings:
                 response.setdefault("warnings", []).extend(warnings)
             if handoff_path is not None:
@@ -453,8 +454,8 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 whole_contract_path=whole_contract_path,
                 launcher_session_id=launcher,
             )
+            delegate_prompt = await subagent_contract.prepare_launch(delegate_prompt, prompt, warnings)
             response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
-            await subagent_contract.record_created(response, prompt)
             if warnings:
                 response.setdefault("warnings", []).extend(warnings)
             public = public_start_response(response)
@@ -462,12 +463,12 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             return public
         elif mode == "explore":
             assert prompt is not None
-            response = await _manager().start_explore(prompt, cwd, label=label, model_type=model_type)
-            await subagent_contract.record_created(response, prompt)
+            delivered = await subagent_contract.prepare_launch(prompt, prompt, warnings)
+            response = await _manager().start_explore(delivered, cwd, label=label, model_type=model_type)
         elif mode == "write":
             assert prompt is not None
-            response = await _manager().start_write(prompt, cwd, label=label, model_type=model_type)
-            await subagent_contract.record_created(response, prompt)
+            delivered = await subagent_contract.prepare_launch(prompt, prompt, warnings)
+            response = await _manager().start_write(delivered, cwd, label=label, model_type=model_type)
         else:
             assert command is not None and summary_policy is not None
             response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)

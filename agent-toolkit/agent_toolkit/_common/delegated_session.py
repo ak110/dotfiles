@@ -113,6 +113,34 @@ WHOLE_CONTRACT_KIND = "work-contract-reference"
 """サーバーが起動本文へ加える、全体作業契約の所在を示す要素の種別。"""
 
 WHOLE_CONTRACT_LINE_PREFIX = "全体作業契約: "
+OWN_CONTRACT_KIND = "own-work-contract"
+OWN_CONTRACT_LINE_PREFIX = "自身の作業契約: "
+
+
+def prompt_own_contract_path(prompt: str, root: pathlib.Path) -> pathlib.Path | None:
+    _, notice = split_own_contract_notice(prompt)
+    if not notice:
+        return None
+    _, _, remainder = notice.partition("\n")
+    line = remainder.partition("\n")[0]
+    if not line.startswith(OWN_CONTRACT_LINE_PREFIX):
+        return None
+    path = pathlib.Path(line.removeprefix(OWN_CONTRACT_LINE_PREFIX))
+    if path.name != "work-contract.md" or not path.parent.name.startswith("work-contract-"):
+        return None
+    try:
+        return path if path.parent.parent == root and path.resolve() == root.resolve() / path.parent.name / path.name else None
+    except OSError, RuntimeError:
+        return None
+
+
+def split_own_contract_notice(prompt: str) -> tuple[str, str]:
+    opening = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "agents-server", "kind": OWN_CONTRACT_KIND})
+    original, separator, notice = prompt.rpartition("\n\n" + opening + "\n")
+    closing = f"</{AUTO_INSERTED_ELEMENT}>"
+    if separator and notice.endswith(closing) and closing not in notice.removesuffix(closing):
+        return original, opening + "\n" + notice
+    return prompt, ""
 
 
 def prompt_whole_contract_path(prompt: str) -> pathlib.Path | None:
