@@ -75,7 +75,7 @@ CWD_DESCRIPTION = parameter_description(
 HANDOFF_MODEL_INPUTS = (
     "前任が候補列で起動した場合は、役割または作業に対応する工程名を`model_type`へ明示する。"
     "候補列の直接指定や役割と異なる工程は、認められた例外に限り`model_override`と`model_override_evidence`を添える。"
-    "後任が`write_model`を使う場合は、省略時も`model_override=user_instruction`と実際の指示の根拠を渡す。"
+    "後任が`write_model`を使う場合は`model_type=write`を明示し、`model_override=user_instruction`と後任を指定した原文・回答の所在を渡す。"
 )
 
 
@@ -193,7 +193,7 @@ SESSION_ID_DESCRIPTION = parameter_description(
 MODEL_TYPE_DESCRIPTION = parameter_description(
     "委譲先のモデルを選ぶ。工程名（`execute`・`review`・`review_fast`・`chores`・`chores_fast`・`orchestrate`・`write`）か、"
     "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`か`opencode:<provider>/<model>[@<effort>]`の候補列"
-    "（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）を指定する。"
+    "を指定する。通常は候補列を直書きせず、画像・画面レビューでもreviewまたはreview_fastを選ぶ。"
     "工程名は対応する`<工程>_model`の候補列を使う。"
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
     "agyの委譲にはGemini APIキー方式の明示選択・APIキー・対応版が必要で、個人ログインへ切り替えない。"
@@ -202,7 +202,7 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "候補列の直接指定と役割の工程の変更にはmodel_overrideとmodel_override_evidenceが必須。handoff_fromでは前任の候補列を継承しない。"
     "自由本文の実装・修正は`mode=delegate, model_type=execute`を使う。レーンと役割の契約が必要なら所定の`exec`を使う。"
     "自由本文では`orchestrate`を、軽量modeでは`execute`も拒否する。"
-    "解決後の工程が`write`の場合は`model_override=user_instruction`と`model_override_evidence`に実際のユーザー指示の根拠が必要。"
+    "本人指示による上書き（writeを含む）は対象、工程、全候補を原文・回答と起動前に照合する。根拠には原文・回答の所在を指定する。"
     "taskで役割文書の工程と異なる値を指定した場合と、候補列を直接指定した場合は、応答の`warnings`へ示す。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
 )
@@ -244,7 +244,7 @@ START_MODE_EXAMPLES = {
     "explore": '`{"cwd": "<絶対パス>", "mode": "explore", "prompt": "<質問と調べる範囲>", "label": "explore-<対象>"}`',
     "write": (
         '`{"cwd": "<絶対パス>", "mode": "write", "prompt": "<起草の依頼>", '
-        '"model_override": "user_instruction", "model_override_evidence": "<実際のユーザー指示の根拠>"}`'
+        '"model_override": "user_instruction", "model_override_evidence": "session:<会話ID>:<行番号>"}`'
     ),
     "shell": (
         '`{"cwd": "<絶対パス>", "mode": "shell", "command": "<コマンド>", "summary_policy": "<要約方針>", '

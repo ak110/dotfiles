@@ -222,7 +222,8 @@ def test_warmup_rechecks_code_and_dependencies(tmp_path: Path, monkeypatch) -> N
     assert len(startup) == 2
     dependency_ok = False
     post_apply_cache.record_path("agents-server-startup").unlink()
-    assert warmup_agents_server.run().failure is None
+    outcome = warmup_agents_server.run()
+    assert outcome.failure and "--check-dependencies" in outcome.failure and "exit 1" in outcome.failure
     assert not post_apply_cache.record_path("agents-server-startup").exists()
 
 

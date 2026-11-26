@@ -152,6 +152,8 @@ Git管理外のデータはGitから戻せず、レビュー工程で失うと�
 
 成果物を判定する最初の合否は、`agent-basics:review-standards/references/reviewer.md`「初回レビュー」に従う。
 原要求の判定に必要な代表操作・実機の証拠を先に確かめ、判定行への対応は`agent-toolkit:atk-mode/references/review-record.md`に従う。
+`agent-basics:review-standards/references/reviewer.md`「指摘内容」と手順書「返却前の処理」で確認を終え、未解決の指摘が0件なら合格として返す。
+任意の改善は未解決数に含めず、それだけを理由に修正や再レビューへ渡さない。
 
 ## 出力
 

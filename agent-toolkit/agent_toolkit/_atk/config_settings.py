@@ -181,7 +181,7 @@ HOST_SETTING_REASONS = {
 
 SPLIT_SETTING_KEYS = frozenset({"repositories"})
 
-"""共有属性と端末側のパスへ分けて保存するキー。  pyfltr: allow-comment"""
+"""共有属性と端末側のパス・巡回設定へ分けて保存するキー。  pyfltr: allow-comment"""
 
 SHARED_SETTING_KEYS = frozenset(MUTABLE_KEY_DEFAULTS) - HOST_SETTING_REASONS.keys() - SPLIT_SETTING_KEYS
 
@@ -615,22 +615,19 @@ def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
         ) from error
 
 
-def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]]:
+def repository_settings(*, check_paths: bool = True, read_only: bool = False) -> dict[str, dict[str, Any]]:
     check_repository_environment()
     data = load_config_strict()
     # repositoryを読む主体にはモデル移行を依存させず、同じ初回読取で旧repository登録だけを移す。
     # config CLIの既存の全設定移行もconfig_repositories.migrateを使い、移行規則は一か所に保つ。
     migrated = config_repositories.migrate(data)
-    if migrated != data:
+    if migrated != data and not read_only:
         save_config(migrated)
     data = migrated
     explicit = runtime_environment.environment().get(config_env_name("repositories"))
     if explicit:
         return config_repositories.parse(explicit, check_paths=check_paths)
-    value = data.get("repositories", "{}")
-    if not isinstance(value, str):
-        raise ValueError("repositoriesの保存値はJSON文字列で指定する")
-    merged = _merged_repositories(value)
+    merged = _merged_repositories(data.get("repositories", "{}"))
     if check_paths:
         for repo_id, item in merged.items():
             if item["process_loop"] and item.get("path"):
@@ -640,12 +637,20 @@ def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]
     return merged
 
 
-def _merged_repositories(local: str) -> dict[str, dict[str, Any]]:
+def persistent_repository_registration(repo_id: str) -> dict[str, Any]:
+    return _merged_repositories(load_config_strict().get("repositories", "{}"), require_complete=repo_id).get(repo_id, {})
+
+
+def _merged_repositories(local: object, *, require_complete: str | None = None) -> dict[str, dict[str, Any]]:
+    if not isinstance(local, str):
+        raise ValueError("repositoriesの保存値はJSON文字列で指定する")
     path = shared_settings_path()
     shared = load_shared_settings(path).get("repositories") if path is not None else None
-    if shared is None:
-        return config_repositories.parse_local(local)
-    return config_repositories.merge(config_repositories.parse_shared(shared), config_repositories.parse_local(local))
+    local_entries = config_repositories.parse_local(local)
+    merged = config_repositories.merge(config_repositories.parse_shared(shared or "{}"), local_entries)
+    if require_complete is not None and require_complete in local_entries and require_complete not in merged:
+        raise ValueError(f"{require_complete} の端末登録に対応する共有登録がありません")
+    return merged
 
 
 def repository_branch_settings() -> dict[str, config_repositories.BranchSettings]:

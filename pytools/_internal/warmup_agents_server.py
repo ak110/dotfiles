@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_toolkit._agents_server import service_forward
-from agent_toolkit._atk import config_repositories, config_settings
+from agent_toolkit._atk import config_settings
 from agent_toolkit._common import dotfiles_mode, process_tree, runtime_environment, windows_security
 from agent_toolkit._git import command as git
 
@@ -59,8 +59,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     try:
         registered = _registered_checkout()
     except (OSError, ValueError) as error:
-        _warn_skip(f"{config_settings.config_file_path()} のリポジトリ登録を読めません: {error}", None, checkout)
-        return post_apply_outcome.PostApplyOutcome()
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"{_REPO_ID} の永続リポジトリ登録を解決できません ({config_settings.config_file_path()}): {error}",
+            next_action=post_apply_outcome.CHECK_UPDATE_LOG,
+        )
     checkout_skip = _checkout_skip(checkout, registered)
     if checkout_skip is not None:
         _warn_skip(checkout_skip, registered, checkout)
@@ -79,12 +81,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             if physical in approved:
                 paths.append(physical)
             elif registered is not None:
-                _warn_skip(f"{candidate}: 通常のプラグイン配布先と一致しません", registered, checkout)
+                logger.warning("共有管理サービスの起動と公開を省略: %s: 通常のプラグイン配布先と一致しません", candidate)
         return paths
 
     prepared = plugin_warmup.prepare_targets(targets, tag=_TAG)
-    if not prepared.commands:
-        return post_apply_outcome.PostApplyOutcome()
+    failures = list(prepared.failures)
     commands = []
     for command in prepared.commands:
         try:
@@ -93,11 +94,14 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             if script not in approved or script != project / _SCRIPT_RELATIVE:
                 raise ValueError("起動対象が登録済みの主checkoutまたは通常のプラグイン配布先と一致しません")
         except (OSError, ValueError, IndexError) as error:
-            _warn_skip(f"{command[-1]}: {error}", registered, checkout)
+            failures.append(f"{command[-1]}: 準備済みの起動対象を検証できません: {error}")
             continue
         commands.append(command)
     if not commands:
-        return post_apply_outcome.PostApplyOutcome()
+        return post_apply_outcome.PostApplyOutcome(
+            failure="; ".join(failures) if failures else None,
+            next_action=post_apply_outcome.CHECK_UPDATE_LOG if failures else None,
+        )
     paths: list[Path] = []
     for command in commands:
         paths.extend((Path(command[0]), Path(command[1])))
@@ -122,19 +126,17 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     else:
         checks = _check_targets(commands)
     outcomes = asyncio.run(checks)
-    failures: list[str] = []
     inherited_job_targets: list[str] = []
-    dependencies_ready = True
     reclaim_errors = [outcome for outcome in outcomes if isinstance(outcome, process_tree.ReclaimError)]
     for command, outcome in zip(commands, outcomes, strict=True):
         if isinstance(outcome, BaseException):
             logger.error("%s の確認に失敗", command[-1], exc_info=outcome, extra=log_format.LOG_ONLY)
-            failures.append(f"{command[-1]}: {_exception_summary(outcome)}")
+            failures.append(f"{command[-1]}: 依存・起動確認に失敗: {_exception_summary(outcome)}")
             continue
         dependency, startup = outcome
         dependency.report(target=log_format.home_short(Path(command[-1])), tag=_TAG)
         if not dependency.ok:
-            dependencies_ready = False
+            failures.append(f"{command[-1]}: 依存確認（--check-dependencies）に失敗: {dependency.failure_reason()}")
         if startup is not None:
             if startup.inherited_job:
                 inherited_job_targets.append(command[-1])
@@ -156,10 +158,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             next_action=post_apply_outcome.CHECK_UPDATE_LOG,
             notices=notices,
         )
-    if dependencies_ready:
-        if not elevated:
-            post_apply_cache.save("agents-server-startup", key)
-        plugin_warmup.cleanup_prepared(prepared, approved_commands=commands)
+    if not elevated:
+        post_apply_cache.save("agents-server-startup", key)
+    plugin_warmup.cleanup_prepared(prepared, approved_commands=commands)
     if elevated:
         return post_apply_outcome.PostApplyOutcome(deferred=True, notices=(*notices, _ELEVATED_NOTICE))
     return post_apply_outcome.PostApplyOutcome(notices=notices)
@@ -303,10 +304,7 @@ def _service_root(command: Sequence[str]) -> Path | None:
 
 
 def _registered_checkout() -> Path | None:
-    raw = config_settings.load_config_strict().get("repositories", "{}")
-    if not isinstance(raw, str):
-        raise ValueError("repositoriesの値がJSON文字列ではありません")
-    path = config_repositories.parse(raw, check_paths=False).get(_REPO_ID, {}).get("path")
+    path = config_settings.persistent_repository_registration(_REPO_ID).get("path")
     return Path(path).resolve(strict=True) if isinstance(path, str) and path else None
 
 

@@ -44,7 +44,7 @@ _llm_notice = _notice_formatter(_HOOK_ID)
 
 ENTRY_START_NOTICE = "作業を始める前に、スキル`agent-toolkit:atk-mode`を起動してください。"
 ENTRY_COMPACT_NOTICE = (
-    "圧縮後に読む資料の限定とは別に、作業を再開する前にスキル`agent-toolkit:atk-mode`を起動し直してください。"
+    "作業を再開する前にスキル`agent-toolkit:atk-mode`を起動し直してください。"
     "進めていた作業の手順書は、入口の表から選び、次に行う操作・判断の条件に該当した時に読み直してください。"
 )
 """入口のスキルの起動を求める案内。起動と読み直しを求める1行だけを持ち、規範の本文を載せない。
@@ -68,7 +68,7 @@ SUBAGENT_PLAYBOOK_PATH = PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks" / "su
 """委譲先の入口。`agents_server`が起動の本文を切り出す原本と同じファイルである。"""
 SUBAGENT_ENTRY_NOTICE = f"委譲を受けた担当である。作業の前に、委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`を全文読んでください。"
 """起動の本文を受け取らない委譲先（ホストの組み込みの委譲機能で起動した担当）へ、入口の所在を示す1行。"""
-DELEGATED_COMPACT_NOTICE = "圧縮後に読む資料の限定とは別に、作業を再開する前に、次を読み直してください: "
+DELEGATED_COMPACT_NOTICE = "作業を再開する前に次を読み直してください: "
 """委譲先の圧縮後に、起動の本文の原本と役割文書、起動の入力が渡した記録の読み直しを求める1行の書き出し。"""
 
 
@@ -217,8 +217,8 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 
 def _compact_recovery_context() -> str:
     return _llm_notice(
-        "会話が圧縮された。圧縮後に読むのは、作業の目的を見返すための作業契約と会話の要約だけである。"
-        "ほかの資料は、次に行う操作・判断の条件に該当した時に読んでください。"
+        "会話が圧縮された。作業契約と会話の要約で、作業の目的と現行の依頼を復元してください。"
+        "再開時に案内された資料を読み、ほかの資料は次に行う操作・判断の条件に該当した時に読んでください。"
     )
 
 

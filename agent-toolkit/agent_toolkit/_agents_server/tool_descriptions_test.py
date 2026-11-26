@@ -16,7 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult
 
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import mcp_tools, state
+from agent_toolkit._agents_server import mcp_tools, model_override, state
 from agent_toolkit._testing.agents_server_support import (
     _manager_with_fake,
     _observed_input_params,
@@ -32,6 +32,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_start_description_selects_mode_and_lists_minimal_calls(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     tool = _start_tool()
     description = tool.description + tool.parameters["properties"]["mode"]["description"]
     examples = dict(re.findall(r"^- ([^:]+): `(\{[^`]+\})`", description, re.MULTILINE))

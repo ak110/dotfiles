@@ -17,6 +17,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     manager,
     mcp_tools,
+    model_override,
     record_paths,
     session_errors,
     shared_layout,
@@ -176,6 +177,8 @@ class UnavailableProbeBackend(agents_server_support.FakeBackend):
 async def test_public_start_keeps_connection_and_mcp_diagnostics(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mcp_diagnostic: str
 ) -> None:
+
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
 
     class DiagnosticBackend(ObservedBackend):
         async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:

@@ -43,7 +43,10 @@ def test_compact_public_notice_uses_current_stage(tmp_path, monkeypatch, capsys,
     )
     output = _output(capsys)
     assert "会話が圧縮された" in output
-    assert "圧縮後に読むのは、作業の目的を見返すための作業契約と会話の要約だけである" in output
+    assert "作業契約と会話の要約で、作業の目的と現行の依頼を復元してください" in output
+    assert "再開時に案内された資料" in output
+    assert "次に行う操作・判断の条件" in output
+    assert "作業契約と会話の要約だけ" not in output
     assert "compaction-recovery.md" not in output
 
 

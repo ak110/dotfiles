@@ -34,7 +34,7 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
-from agent_toolkit._agents_server.manager_start import WRITE_MODEL_USER_EVIDENCE, model_override_warnings
+from agent_toolkit._agents_server.manager_start import WRITE_MODEL_AUTHORIZED, check_model_override
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
 from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response
 from agent_toolkit._agents_server.tool_descriptions import (
@@ -341,7 +341,10 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     model_override_evidence: Annotated[
         str | None,
         Field(
-            description=parameter_description("上書きの根拠。ユーザーの指示の要旨、観測の目的、自動切替の失敗の内容を記す。")
+            description=parameter_description(
+                "本人指定の所在はsession:<会話ID>:<行番号>、wi:<WI名>、answer:<UWI名>。観測・切替失敗はその内容を記す。"
+                "自由本文のdelegateの切替失敗はphase:<失敗した工程名>を渡す。"
+            )
         ),
     ] = None,
     start_observation: Annotated[str | None, Field(description="起動応答を失った場合の回復用。PreToolUseが設定する。")] = None,
@@ -383,29 +386,34 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if cwd is None:
         launch_requests.require_start_cwd()
     assert cwd is not None
-    validate_start_inputs(
-        mode,
-        subagent_md_path=subagent_md_path,
-        extra_params=extra_params,
-        prompt=prompt,
-        command=command,
-        summary_policy=summary_policy,
-        model_type=model_type,
-        whole_contract_path=whole_contract_path,
-    )
+    inputs = {
+        "subagent_md_path": subagent_md_path,
+        "extra_params": extra_params,
+        "prompt": prompt,
+        "command": command,
+        "summary_policy": summary_policy,
+        "whole_contract_path": whole_contract_path,
+    }
+    validate_start_inputs(mode, model_type=model_type, **inputs)
+    launch = {**inputs, "cwd": cwd, "mode": mode, "label": label, "startup_profile": startup_profile}
+    effective_type = model_type or agents_server_tools.START_MODE_MODEL_TYPES.get(mode)
     warnings = (
         []
         if mode == "task"
-        else model_override_warnings(
-            model_type or agents_server_tools.START_MODE_MODEL_TYPES.get(mode),
+        else await check_model_override(
+            _manager(),
+            effective_type,
             reason=model_override,
             evidence=model_override_evidence,
+            launch=launch,
+            launch_kind=mode,
+            fallback_phase=agents_server_tools.START_MODE_MODEL_TYPES.get(mode),
         )
     )
     with (
         startup_features.selection(startup_profile),
         state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
-        WRITE_MODEL_USER_EVIDENCE.set(model_override_evidence if model_override == "user_instruction" else None),
+        WRITE_MODEL_AUTHORIZED.set(effective_type == "write" and bool(warnings)),
         session_launchers.START_OBSERVATION.set(session_launchers.valid_start_observation(start_observation)),
     ):
         if mode == "task":
@@ -420,9 +428,17 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 launcher_session_id=launcher,
             )
             resolved_type = model_type or task_model_type
-            warnings = model_override_warnings(
-                resolved_type, default_type=task_model_type, reason=model_override, evidence=model_override_evidence
+            document = launch_requests.resolve_task_document_path(subagent_md_path).resolve()
+            warnings = await check_model_override(
+                _manager(),
+                resolved_type,
+                default_type=task_model_type,
+                reason=model_override,
+                evidence=model_override_evidence,
+                launch={**launch, "subagent_md_path": str(document)},
+                launch_kind=launch_kind,
             )
+            WRITE_MODEL_AUTHORIZED.set(resolved_type == "write" and bool(warnings))
             context = await run_file_operation(_manager().launcher_record_context)
             task_prompt = launch_requests.with_launcher_record(task_prompt, context)
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None)
@@ -435,7 +451,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 cwd,
                 launch_kind=launch_kind,
                 label=label if label is not None else task_document_label(subagent_md_path, params),
-                startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
+                startup_document=document,
                 explicit_role_model=model_type is not None,
                 startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
             )

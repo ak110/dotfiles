@@ -3,7 +3,7 @@ name: release-dotfiles
 user-invocable: false
 description: >
   dotfilesリポジトリで`develop`から`master`へのリリースPRを作成・マージするとき、
-  日次リリースの判定と実施を`agent-toolkit:atk-mode`の作業`process-wi`または公開まで認可された協調モードで行うとき、
+  リリース周期の判定と実施を`agent-toolkit:atk-mode`の作業`process-wi`または公開まで認可された協調モードで行うとき、
   主checkoutをfast-forwardした後に常時稼働する`atk serve`へ反映するとき、
   `rust/claude-statusline/`の変更に伴う`Cargo.toml`のバージョン更新を判定するときに起動する。
 ---
@@ -13,27 +13,41 @@ description: >
 `develop`で開発した変更を、`master`へのリリースPRで公開する手順書である。
 `master`は必須CIを全て通ったマージコミットだけで更新し、マージ、再試行、ロールバックはいずれも手順の中で明示して1回ずつ行う（auto-mergeと自動の再試行・ロールバックは使わない）。
 公開範囲について明示の指示があれば、それを最優先とする。
-日次リリースの経緯は`docs/development/concepts-workflows.md`「developとmasterのリリース運用」、branchの初期化と保護設定は`docs/development/design-release-branches.md`にある。
+リリース周期の経緯は`docs/development/concepts-workflows.md`「developとmasterのリリース運用」、branchの初期化と保護設定は`docs/development/design-release-branches.md`にある。
 
 ## developとmasterのリリース運用
 
 対象は、`agent-toolkit:atk-mode`の作業`process-wi`の作業と、`operate-ak110-projects`「リリース運用」の恒常的な認可か明示の指定で公開まで担当する協調モードの作業である。
-メインエージェントが次の手順で日次リリースの要否を判定して実施する。
+通常変更をまとめてPR・CI・同期の固定費を抑えながら、公開済みの変更を`master`で待たせすぎないため、3時間を目安にまとめ、6時間以内にマージする。
+メインか対象リポジトリ担当が公開単位のCI成功時と30分点検で判定し、公開を委譲する時は、公開担当にCI成功直後の判定と、必要なPRの作成・マージ・検収を割り当てる。
 この範囲に当たらない作業では、リリースPRを手で作り、マージの後は`merge-pr`の手順でブランチの同期、CI、必要なリリースを検収する。
 
 1. `develop`へpushする前に、`rust/claude-statusline/`配下の差分（テストとテスト入力だけ、`Cargo.lock`だけの変更を含む）があれば、`rust/claude-statusline/Cargo.toml`の`version`を上げる。
    `release-statusline.yaml`は差分のあるマージごとに`statusline-v<version>`タグを作るため、据え置くと既存のタグと衝突する。
    レーン担当は更新の根拠を計画か引き継ぎ記録へ残し、公開担当はその根拠が統合差分にも当てはまることと、版数と`Cargo.lock`の整合を確かめる。
    最終の検証は`.claude/skills/develop-dotfiles/references/verification.md`「公開前の検証」のとおりpyfltrへ`--enable=statusline-version`を渡し、レーンの途中のcommitでは無効のまま保つ。
-2. pushとCIの成功の後、公開する差分を判定する。
-   `agent-toolkit:atk-mode/references/git-identifier.md`で解決した`origin/develop`と`origin/master`が同じcommitなら、その旨を報告してPRの作成を見送る。
-   差分があれば、WIキューの消化状態や変更を使う主体によらず次へ進む。
-3. 同じ最上位セッションでリリースPRを1件マージ済みなら、追加分は`develop`へのpushとCIの成功まで確かめる。
-   長い継続中は`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で追加のリリースPRを作り、セッションの終了を待たない。
-   期限より前にセッションを終える場合は、追加分を次のセッションのPRへまとめる。
-   その場合もdevelopの公開単位は手順6で反映する。
-   マージ済みの`master`の不具合の修正を`develop`へ公開した場合は、不具合を残さないため、同じセッションでも追加のリリースPRを作ってマージする（ユーザー指示、2026年10月28日）。
+2. リリース対象と起点を判定する。
+   `git fetch origin develop master`の成功後、`agent-toolkit:atk-mode/references/git-identifier.md`に従って`origin/develop`と`origin/master`の完全OIDを解決する。
+   `git log --format='%ct %H' "$master..$develop"`（変数は取得した完全OID）で、`master`に含まれない`develop`の全commitからcommitter日時が最古のものを求める。
+   取得に成功して対象が0件なら起点もPRも無い。
+   取得失敗は0件と扱わない。
+   経過時間と6時間のマージ期限はこの日時から求め、セッションや公開担当が変わってもリセットしない。
+3. 次の条件でリリースを開始する。
+   WIキューの消化状態は条件にしない。
+   - `master`にある不具合の修正を含む`develop`のCIが成功したら、不具合を残さないため時間条件を使わず手順4へ進む。
+   - 通常変更は3時間未満ならまとめる。
+     3時間に達してから最初の`develop`公開単位のCI成功で、手順4へ進む。
+   - 次の公開単位が無いか、そこまで待つと期限に間に合わない場合は、新しいpushを待たず、3時間経過後の判定でCI成功を確認した`develop`を手順4へ渡す。
+     待てるかは、次の公開とCIに加え、PRの作成・必須チェック・マージまでの所要見込みと点検間隔を期限までの残り時間と比べて判断する。
+     見込みを立てられない次の公開は待たない。
+   - 対象の完全OIDのCI成功を確認できなければ手順4へ進まない。
+     CI失敗やforgeの待ちで間に合わない見込みか期限を超えた場合は、期限・阻害・次の確認時機と担当を未達として保存し、未完了の工程から再開する。
+   - 点検・公開担当の返却・セッション交代では、対象の両OID、最古のcommitと日時、経過時間、期限、CIの結果、次の動作・時機・担当を既存の進捗・引き継ぎ記録へ渡す。
+     終了前に巡回か引き継ぎで次の判定の担当と時機を確保し、確保できなければ未達の見込みとして報告する。
+   リリースを見送る場合も、CIが成功した`develop`の公開単位は手順6で反映する。
 4. 同じheadとbaseを持つopenなPRを確かめる。
+   照会・作成の直前に手順2の両OIDを確かめ直し、変わっていれば判定し直す。
+   PRのheadの完全OIDが判定に使ったCI成功のOIDと一致することをマージへ渡す前に確認する。
    1件なら再利用し、複数なら候補の番号とURLを報告して停止する。
    0件なら、`agent-basics:writing-standards/references/writing-genres.md`「判断と行動を求める記述」の変更説明の基準でタイトルと本文を書き、一時領域へ保存する。
    - 本文は1分で読める要約にし、詳しい証拠は記録（計画、WI、CIのrun）の所在で示す。
@@ -44,6 +58,7 @@ description: >
 
    作成の直前に`agent-toolkit:atk-mode/playbooks/review-external-writes.md`を読み（タイトルも文面ファイルへ含める）、PRを作る。
 5. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチの同期、CIの確認、必要なリリースの検収まで終える。
+   `merge-pr`が最初に確認したheadの完全OIDが手順4で確認したOIDと異なれば、マージせず手順2から判定し直す。
    ローカル同期は `merge-pr` が共有依存環境を準備した後に行う。
    先に手動でfast-forwardしない。
    共通CIを再利用した場合も、マージした完全OIDのCI結果を`merge-pr`の手順で確かめる。

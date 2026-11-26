@@ -38,7 +38,7 @@
 | `extra_params` | 次の各入力 |
 | `model_type` | 対象WIの該当レーンの`担当モデル.実装担当`（ユーザー由来の場合だけ指定し、それ以外は省く）。指定値と実行値の比較と記録は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う |
 | `model_override` | 上記の指定がある場合は `user_instruction` |
-| `model_override_evidence` | 上記の指定がある場合はWIのファイル名とユーザー由来である根拠 |
+| `model_override_evidence` | 上記の指定がある場合は原文・回答の所在（`agent-toolkit:atk-mode/references/model-settings.md`「本人指定による上書き」） |
 
 - `担当種別`: 通常は`レーン担当`、公開工程のCI失敗の修正では`CI修正担当`、同じthreadを続けられないレビュー修正では`レビュー修正担当`とする。
   統合だけを担う担当を新しく起こす場合も`レーン担当`とする（統合の手順は担当が`agent-toolkit:atk-mode/roles/lane-integration.subagent.md`で読む）。

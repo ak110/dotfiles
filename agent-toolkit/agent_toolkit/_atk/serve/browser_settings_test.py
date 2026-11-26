@@ -11,8 +11,7 @@ import time
 import playwright.async_api
 import pytest
 
-from agent_toolkit._atk import config, config_settings, config_shared_migration, usage_refresh
-from agent_toolkit._atk.config_sharing_test import _Hosts
+from agent_toolkit._atk import config, config_settings, usage_refresh
 from agent_toolkit._atk.serve import settings_routes
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_fixture,
@@ -265,22 +264,18 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     fast = page.locator("#settings-fast-state")
     await expect(fast).to_contain_text("（ローカル）: 記録なし")
     await picker.select_option("old-host")
-    legacy = page.locator('[data-setting="serve_sessions_codex_home"]')
-    await expect(legacy).to_contain_text("読み取り専用")
-    await expect(fast).to_contain_text("（old-host）: このホストからは取得できません")
-    await expect(legacy.get_by_role("button")).to_have_count(0)
-    groups = page.get_by_role("navigation", name="設定の分類")
-    await groups.get_by_text("利用枠", exact=True).click()
-    permissions = page.locator('[data-setting="usage_reset_permissions"]')
-    await expect(permissions).to_contain_text("このホストのatkを更新すると画面で許可を編集できます")
-    await expect(permissions.get_by_text("許可を追加", exact=True)).to_have_count(0)
-    await groups.get_by_text("atk serve", exact=True).click()
+    await expect(page.get_by_text("old-hostの設定を取得できません。", exact=True)).to_be_visible()
+    await expect(page.get_by_text("old-host: 旧版のため自動取得なし", exact=False)).to_have_count(1)
+    old = await page.request.get(screen_harness.base_url + "/api/settings?host=old-host")
+    assert old.status == 400 and (await old.json())["error"] == "SSH先のatkが旧版です"
+    assert ("old-host", "atk config show") not in operations
     response = await page.request.post(
         screen_harness.base_url + "/api/settings?host=old-host",
         data={"action": "set", "key": "serve_sessions_codex_home", "value": "blocked"},
     )
     assert response.status == 400
     await picker.select_option("new-host")
+    await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     port = page.locator('[data-setting="serve_host"]')
     await expect(port).to_contain_text("実効値: remote")
     await expect(fast).to_contain_text("（new-host）: 高速（直前の成功判定）")
@@ -334,7 +329,7 @@ async def test_remote_save_remains_visible_while_editing_elsewhere(
             )
         hosts.update(saved='["second"]', effective='["second"]')
 
-    monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host: (copy.deepcopy(snapshot), None))
+    monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host, **_kwargs: (copy.deepcopy(snapshot), None))
     monkeypatch.setattr(settings_routes, "_remote_update", remote_update)
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
@@ -930,38 +925,3 @@ async def test_remote_settings_retry_clears_the_recovered_hosts_status_everywher
     cached = await page.request.get(api + "?host=cold&background=1")
     assert cached.ok
     assert set((await cached.json())["automatic_errors"]) == {"offline"}
-
-
-@pytest.mark.cpu_limit(1.5, reason="独立2 cloneの作成、実Gitの同期、ブラウザーからの許可再発行を確認する。")
-@pytest.mark.asyncio(loop_scope="session")
-async def test_settings_reissues_a_blocked_legacy_codex_grant(
-    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    hosts = _Hosts(tmp_path, monkeypatch)
-    hosts.use("a")
-    permission = {
-        "id": "permitted-period",
-        "engine": "codex",
-        "account": "example@example.invalid",
-        "scope": "codex",
-        "count": 2,
-        "from": "2020-01-01T00:00:00Z",
-        "until": "2099-01-01T00:00:00Z",
-    }
-    hosts.write_local("a", {"usage_reset_permissions": json.dumps([permission])})
-    plan = config_shared_migration.compare()
-    config_shared_migration.apply(plan["revision"], {})
-
-    page = screen_harness.page
-    await page.goto(screen_harness.base_url + "/settings")
-    nav = page.get_by_role("navigation", name="設定の分類")
-    await nav.get_by_role("button", name="利用枠", exact=True).click()
-    row = page.locator('[data-editor="usage_reset_permissions:permitted-period"]')
-    await row.locator("summary").first.click()
-    await playwright.async_api.expect(row.get_by_text("他端末の未共有の消費", exact=False)).to_be_visible()
-    await row.get_by_role("button", name="共有許可を発行（2回）").click()
-    await playwright.async_api.expect(row).to_have_count(0)
-    hosts.use("b")
-    [issued] = json.loads(config.resolve_mutable_setting("usage_reset_permissions"))
-    assert issued["id"] != permission["id"]
-    assert issued["count"] == permission["count"]

@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._agents_server import manager, record_paths, session_handoff, state
+from agent_toolkit._agents_server import manager, model_override, record_paths, session_handoff, state
 from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import install_backend
@@ -122,6 +122,7 @@ async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path
 @pytest.mark.parametrize("primary", ["openai", "paid-a"])
 @pytest.mark.asyncio
 async def test_opaque_state_switch_collects_result_and_hands_off(monkeypatch, tmp_path, provider_environment, item, primary):
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     del provider_environment
 
     if primary == "openai":

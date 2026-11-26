@@ -1,3 +1,5 @@
+from typing import Literal
+
 import pytest
 
 from agent_toolkit import atk
@@ -5,8 +7,11 @@ from agent_toolkit._atk import config, config_settings
 from agent_toolkit._common import mcp_environment, proxy_environment
 
 
+@pytest.mark.parametrize("group", ["retired-connection", "retired-research", "other-settings"])
 def test_mcp_setting_names_follow_public_config_keys(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    group: Literal["retired-connection", "retired-research", "other-settings"],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def unexpected_app_server(*_args, **_kwargs):
         pytest.fail("設定一覧でCodex app-serverを起動した")
@@ -26,12 +31,21 @@ def test_mcp_setting_names_follow_public_config_keys(
     keys = {line.partition(" ")[0] for line in baseline} - paths
     setting_names = config.config_environment_variable_names()
     names = mcp_environment.environment_variable_names(setting_names)
-    for key in keys:
-        assert f"AGENT_TOOLKIT_CONFIG_{key.upper()}" in names
-        config.resolve_mutable_setting(key)
+    if group == "other-settings":
+        for key in keys:
+            assert f"AGENT_TOOLKIT_CONFIG_{key.upper()}" in names
+            config.resolve_mutable_setting(key)
     for name in setting_names:
         key = name.removeprefix("AGENT_TOOLKIT_CONFIG_").lower()
         if key in config_settings.RETIRED_CONNECTION_KEYS:
+            key_group = "retired-connection"
+        elif key in config_settings.RETIRED_RESEARCH_KEYS or key == "usage_auto_allocation":
+            key_group = "retired-research"
+        else:
+            key_group = "other-settings"
+        if key_group != group:
+            continue
+        if group == "retired-connection":
             assert name in names
             assert key not in keys
             before = saved_settings()
@@ -72,7 +86,7 @@ def test_mcp_setting_names_follow_public_config_keys(
             with pytest.raises(ValueError, match=name):
                 config.resolve_configured_repositories()
             monkeypatch.delenv(name)
-        elif key in config_settings.RETIRED_RESEARCH_KEYS or key == "usage_auto_allocation":
+        elif group == "retired-research":
             assert name in names
             assert key not in keys
             before = saved_settings()

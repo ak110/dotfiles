@@ -133,13 +133,17 @@ def test_missing_definitions_skip(env: _Env, caplog: pytest.LogCaptureFixture) -
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
-def test_shared_launcher_command_starts_with_python(env: _Env, monkeypatch: pytest.MonkeyPatch, host: str) -> None:
+@pytest.mark.parametrize("has_lock", [True, False])
+def test_shared_launcher_command_starts_with_python(
+    env: _Env, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, host: str, has_lock: bool
+) -> None:
     definition = env.claude_definition if host == "claude" else env.codex_definition
     source = _REAL_CLAUDE_DEFINITION if host == "claude" else _REAL_CODEX_DEFINITION
     definition.write_bytes(source.read_bytes())
-    # 共有環境の識別には配布版の依存定義とlockが必要になる。
-    (definition.parent / "scripts").mkdir()
-    (definition.parent / "scripts/launch.py.lock").write_bytes((_PLUGIN_ROOT / "scripts/launch.py.lock").read_bytes())
+    lock = definition.parent / "scripts/launch.py.lock"
+    if has_lock:
+        lock.parent.mkdir()
+        lock.write_bytes((_PLUGIN_ROOT / "scripts/launch.py.lock").read_bytes())
     entry = definition.parent / "agent_toolkit/_common/pyfltr_entry.py"
     entry.parent.mkdir(parents=True)
     entry.touch()
@@ -153,8 +157,14 @@ def test_shared_launcher_command_starts_with_python(env: _Env, monkeypatch: pyte
         return True
 
     monkeypatch.setattr(_warmup.plugin_warmup, "run_command", run_command)
-    _warmup.run()
+    assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
     shared = [command for command in commands if str(entry) in command]
+    if not has_lock:
+        assert not shared
+        assert str(entry) in caplog.text and str(lock) in caplog.text
+        assert "配布物を回復してから`update-dotfiles`を再実行する" in caplog.text
+        assert any(command[0] == "uvx" for command in commands)
+        return
     assert len(shared) == 2
     assert all(command[0] == str(python) for command in shared)
     assert all(pathlib.Path(command[1]).name == "launch.py" for command in shared)

@@ -168,7 +168,8 @@ def test_run_prepares_shared_dependency_environment_once(tmp_path: pathlib.Path,
 @pytest.mark.parametrize("different_keys", [False, True])
 def test_prepare_targets_groups_dependencies_and_preserves_roots(tmp_path, monkeypatch, count, different_keys):
     paths = [_target(tmp_path / str(index)) for index in range(count)]
-    monkeypatch.setattr(_plugin_warmup, "resolve_targets", lambda *_args, **_kwargs: (paths, pathlib.Path(sys.executable)))
+    monkeypatch.setattr(_plugin_warmup, "_resolve_uv", lambda: pathlib.Path("uv"))
+    monkeypatch.setattr(_plugin_warmup, "_find_python", lambda _uv: pathlib.Path(sys.executable))
     monkeypatch.setattr(
         _plugin_warmup.plugin_environment,
         "project_environment",
@@ -178,9 +179,9 @@ def test_prepare_targets_groups_dependencies_and_preserves_roots(tmp_path, monke
 
     def prepare(command, **_kwargs):
         calls.append(command)
-        return True
+        return _FakeResult(returncode=0)
 
-    monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
+    monkeypatch.setattr(_plugin_warmup.common, "run_subprocess", prepare)
     commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test").commands
     assert [command[-1] for command in commands] == list(map(str, paths))
     assert len(calls) == (count if different_keys else min(count, 1))
@@ -190,7 +191,8 @@ def test_prepare_targets_groups_dependencies_and_preserves_roots(tmp_path, monke
 def test_failed_prepare_does_not_retry_same_key_or_skip_other_environment(tmp_path, monkeypatch):
     """共有環境の準備失敗は同じkeyのrootだけを除外し、独立環境は確認できる。"""
     paths = [_target(tmp_path / str(index)) for index in range(3)]
-    monkeypatch.setattr(_plugin_warmup, "resolve_targets", lambda *_args, **_kwargs: (paths, pathlib.Path(sys.executable)))
+    monkeypatch.setattr(_plugin_warmup, "_resolve_uv", lambda: pathlib.Path("uv"))
+    monkeypatch.setattr(_plugin_warmup, "_find_python", lambda _uv: pathlib.Path(sys.executable))
     monkeypatch.setattr(
         _plugin_warmup.plugin_environment,
         "project_environment",
@@ -200,12 +202,15 @@ def test_failed_prepare_does_not_retry_same_key_or_skip_other_environment(tmp_pa
 
     def prepare(command, **_kwargs):
         calls.append(command)
-        return command[-1] == str(paths[-1])
+        return _FakeResult(returncode=0) if command[-1] == str(paths[-1]) else _FakeResult(returncode=9, stderr="lock denied")
 
-    monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
-    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test").commands
+    monkeypatch.setattr(_plugin_warmup.common, "run_subprocess", prepare)
+    prepared = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
     assert len(calls) == 2
-    assert [command[-1] for command in commands] == [str(paths[-1])]
+    assert [command[-1] for command in prepared.commands] == [str(paths[-1])]
+    assert len(prepared.failures) == 2
+    for path, failure in zip(paths[:2], prepared.failures, strict=True):
+        assert str(path) in failure and "--prepare" in failure and "lock denied" in failure
 
 
 def test_async_command_preserves_output_and_failure_diagnostic(caplog):
@@ -305,19 +310,24 @@ def test_codex_candidate_diagnostic_preserves_recovery_context(
 def test_prepare_targets_skips_legacy_root_without_lock_and_prepares_others(tmp_path, monkeypatch, caplog):
     legacy = _target(tmp_path / "legacy")
     current = _target(tmp_path / "current")
-    (legacy.parents[1] / "scripts" / "launch.py.lock").unlink()
+    legacy_root = legacy.parents[1]
+    (legacy_root / "scripts" / "launch.py.lock").unlink()
+    (legacy_root / "pyproject.toml").write_text('[project]\nname = "agent-toolkit"\n', encoding="utf-8")
+    (legacy_root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
     paths = [legacy, current]
-    monkeypatch.setattr(_plugin_warmup, "resolve_targets", lambda *_args, **_kwargs: (paths, pathlib.Path(sys.executable)))
+    monkeypatch.setattr(_plugin_warmup, "_resolve_uv", lambda: pathlib.Path("uv"))
+    monkeypatch.setattr(_plugin_warmup, "_find_python", lambda _uv: pathlib.Path(sys.executable))
     calls = []
 
     def prepare(command, **_kwargs):
         calls.append(command)
-        return True
+        return _FakeResult(returncode=0)
 
-    monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
+    monkeypatch.setattr(_plugin_warmup.common, "run_subprocess", prepare)
     with caplog.at_level(logging.WARNING):
         prepared = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
     assert [command[-1] for command in prepared.commands] == [str(current)]
     assert prepared.legacy == (legacy,)
+    assert not prepared.failures
     assert [command[-1] for command in calls] == [str(current)]
     assert "旧形式の配布root" in caplog.text
