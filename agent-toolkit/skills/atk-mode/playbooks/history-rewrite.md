@@ -98,12 +98,6 @@ push前で1人の担当が専有する作業ツリーでは、本書「プッシ
    実行の直前に、本書「履歴確認の起動形」の`git log`を単独で実行し直す。
    `--no-update-refs`はGit 2.38で加わった引数であり、対応環境のGit 2.34.1は認識しないため使わない（2.38より前のGitには参照を自動で更新する機能が無い）。
 
-挙動の確認記録は`docs/development/audit-records-commit-history.md`の次の節にある。
-
-- 「agent-toolkit/skills/atk-mode/playbooks/history-rewrite.md：fixupの実行上の制約：2026年10月8日」
-- 「agent-toolkit/skills/atk-mode/playbooks/history-rewrite.md：fixupの実行上の制約：2026年10月18日」
-- 「agent-toolkit/skills/atk-mode/playbooks/history-rewrite.md：親だけのGit操作とサブモジュール：2026年10月18日」
-
 ## 失敗時の扱い
 
 `pre_fixup`、`fixup`、`autosquash`、`amend`の各phase名と、続行できない理由を返す形式は、`agent-toolkit:atk-mode/playbooks/review-fix.md`「レビュー修正の履歴統合」の実装担当の契約に従う。

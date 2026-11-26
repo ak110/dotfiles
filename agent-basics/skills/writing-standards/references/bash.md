@@ -8,7 +8,7 @@ shellcheckが導入されている環境では、その診断に従う。
 
 ## 基本
 
-- ASCIIの設定キー・拡張子など機械向けの大小文字変換・比較にだけ`LC_ALL=C`を使う。
+- 機械向けの比較・並べ替え（`sort`、`comm`、`join`）や、ASCIIの設定キー・拡張子などの大小文字変換にだけ`LC_ALL=C`を使う。
   `${var^^}`・`${var,,}`、`declare -u`・`declare -l`、`nocasematch`を使う`[[ ]]`・`case`のほか、`tr`の文字クラス、`awk`の`toupper`・`tolower`、`sed`の大小文字変換、`grep -i`もロケールの影響を受ける。
   外部コマンドは`LC_ALL=C tr ...`、組み込みは関数の`local LC_ALL=C`かサブシェルで範囲を限る。
   スクリプト全体には適用せず、自然言語の表示にはユーザーの設定を使う。

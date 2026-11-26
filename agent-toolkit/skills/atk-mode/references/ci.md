@@ -130,14 +130,17 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
 
 ## 私設GitLabのCLI失敗からの回復
 
-1. `wait_ci.py`がCLIの失敗を示す終了コード3を返した時だけ、状態の照会と証拠の取得のために`curl -k`でAPIを直接呼ぶ。
+1. `wait_ci.py`がCLIの失敗を示す終了コード3を返した時だけ、状態の照会と証拠の取得のために`curl`でAPIを直接呼ぶ。
+   私設CAを使う場合は、`glab`に指定したCAファイルを`GITLAB_CA_CERT`に設定し、`--cacert`で渡す。
+   公開CAを通常どおり検証できる場合はこのオプションを省く。
+   CAファイルを入手できない場合は、TLS検証を省くことの影響を示して認可を得た時だけ`-k`を使い、その実行を報告する。
    待機の対象ホストの設定からAPIのベースURLを確認し、下の例の`API_BASE_URL`に設定する。
    シェルの`GITLAB_HOST`や`GITLAB_TOKEN`をそのまま流用せず、対象API用のトークンであることを確かめる。
 
    ```text
-   curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+   curl --cacert "${GITLAB_CA_CERT}" -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
      "${API_BASE_URL}/api/v4/projects/<project-id>/pipelines?sha=<完全SHA>&per_page=100&page=<page>"
-   curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+   curl --cacert "${GITLAB_CA_CERT}" -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
      "${API_BASE_URL}/api/v4/projects/<project-id>/pipelines/<pipeline-id>/jobs?include_retried=false&per_page=100&page=<page>"
    ```
 
@@ -158,11 +161,6 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
   ログが取れない時とジョブが進行中の時は、アノテーションや失敗したテスト名など取れる証拠で先に分析する。
   失敗ジョブの全体は、`wait_ci.py`を呼び直して全体の完了の結果を受け取ってから確かめる（終了コードごとの扱いは本書「wait_ciの終了コード」）。
 - VRTの差分画像やtest-resultsなどのartifactも取得する。
-
-状態ごとのログの取得を確かめた記録は、`docs/development/audit-records-commit-ci.md`の次の節にある。
-
-- 「agent-toolkit/skills/atk-mode/references/ci.md：GitHubの状態別ログ取得：2026年10月1日」
-- 「agent-toolkit/skills/atk-mode/references/ci.md：GitHubの状態別ログ取得：2026年10月24日」
 
 ## 選択の流れ
 

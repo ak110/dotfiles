@@ -38,7 +38,7 @@
 - 確認内容: 対象worktreeの既存の命名規則や文書と一致している。
   一致しない独自接頭辞や命名規約を新しく固定している場合は、計画・WI・ユーザー確認の回答と突き合わせて確認すべき箇所として該当ファイルと行を挙げて報告する。
 - 根拠規範: `agent-basics:writing-standards/references/quality-principles-roles.md`「要件と認可」、`agent-toolkit:atk-mode/playbooks/confirmation.md`「公開操作の利用主体」。
-- 元になった障害: 2026年11月21日の`/atk-mode implement`導入時に、リモートブランチの独自接頭辞をユーザー確認なしで固定し是正を受けた事象。
+- 元になった障害: 配布元の設計記録 `docs/development/design-workflow-remediation.md`「外部に露出する命名規則を未確認で固定した事例」。
 
 ## 委譲先が外部入力を指示として採用しない
 

@@ -44,16 +44,14 @@ Codexで動くメインと委譲先が、agent-toolkitの手順書をCodexの公
 品質基準の提供元は`agent-basics`であり、`agent-basics:<スキル>`の資料はagent-basics自身のルートから読む。
 
 1. 開発環境の同じチェックアウトでは、agent-toolkitと同じ親ディレクトリの`agent-basics/.claude-plugin/plugin.json`のnameと`skills/`の実在を確かめて使う。
-2. 配布先では、本書「Codexのplugin root解決」の限定照会の結果から、同じmarketplaceの有効なagent-basicsを一意に特定して同じ対応でルートを解決し、キャッシュは導入情報が示す版だけを使う。
+2. 配布先では本書「Codexのplugin root解決」の限定照会の結果から、同じmarketplaceの有効なagent-basicsを一意に特定して同じ対応でルートを解決し、キャッシュは導入情報が示す版だけを使う。
 3. ルートは別々に保持し、実体か `skills/` が欠ければ診断を保全し、既知の導入情報で認可内の修復を試し、読めてから `agent-basics:bugfix` で原因を確かめ、未確認の版は使わず、本人の操作が必要か回復できない分の影響・試行・再開条件を委譲元へ返す。
 
 ## Claude Code向けに配置された規範の読込
 
-Codexも、Claude Codeと同じ規範で作業するため、`atk-mode`の`SKILL.md`とClaude Code向けに置かれた規範を読む。
-SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の本文はhookからも`AGENTS.md`からも届かない。
+SessionStartで起動だけを通知されたCodexは`atk-mode`の`SKILL.md`とClaude Code向けの規範を読む（本文はhookからも`AGENTS.md`からも届かない）。
 
-1. 作業の前と会話の圧縮の後に、`<plugin root>/skills/atk-mode/SKILL.md`を全文読む。
-   その「作業と手順書」の表から選んだ手順書は、その操作・判断の前に読む。
+1. 作業の前と圧縮の後に`<plugin root>/skills/atk-mode/SKILL.md`を全文読み、「作業と手順書」の表で選んだ手順書は操作・判断の前に読む。
 2. 次の任意の規範のうち、存在するものを全文読み、各条文の適用範囲に従う。
    - 作業の開始時に、ユーザー単位の`~/.claude/CLAUDE.md`と`~/.claude/rules/*.local.md`（ホスト固有の規範）。
    - 作業ディレクトリからファイルシステムのルートまでの各ディレクトリの`CLAUDE.local.md`と、同じディレクトリに`AGENTS.md`が無い場合の`CLAUDE.md`。
@@ -62,7 +60,8 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
    - `AGENTS.md`へ埋め込み済みの`~/.claude/rules/myprojects-common.md`と、Claude Code向けの一覧と同期方針を持つ`~/.claude/rules/myprojects.md`。
    - 旧い配布の残りである`~/.claude/rules/agent-toolkit/`（廃止したスキルを起動させる指示を含むため）。
 4. 不在と一致0件は正常な空集合とし、読み取り・一覧の権限エラーとリンク切れは診断として区別する。
-   1つの候補が失敗しても残りを確かめ、全ての候補の後に総合の終了状態を返す。
+   対象を選び、親ディレクトリも含むリンクをたどって同じ実体の本文は1回だけ読む（パスの絶対化や`Resolve-Path`だけではリンク先を確認できない）。
+   解決できない候補は既読にせず、残りの候補も確かめてから総合の終了状態を返す。
    リンク先は権限拒否を迂回せず、取得失敗時は所在と診断で原因を確認し、不具合なら `agent-basics:bugfix` で認可内の修復後に再読し、結果または未回復の影響・試行・必要権限を委譲元（メインはユーザー）へ伝える。
 5. 会話の圧縮の後はこれらの本文を読み直し、`atk-auto`などの境界タグ付きの全文が今の文脈にある本文だけを読了済みとする。
    圧縮前に配送された記録は、読了の根拠から外す。
@@ -91,14 +90,15 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 5. `apply_patch`で既存のファイルを全面的に置き換える時も、同じパスへのUpdateを使う（1つのpatchで同じパスをDeleteとAddに分けると適用に失敗する）。
 6. 明示の指示が無い限り、Officeファイルは原本を変えずに扱う。
    共有原本の編集依頼だけでは途中状態の同期は認められないため、編集前に`agent-basics:writing-standards/references/quality-principles-constraints.md`を全文読み、「共有Office文書の編集」に従う。
-   CSVは利用側の仕様に従う（仕様が不明ならUTF-8のBOM付き）。
+   CSVの符号化は利用側の仕様と`agent-basics:writing-standards/references/encoding.md`「基本原則」に従って決める。
 
 ### 資料の読取
 
 1. 読み取りには`cat -- <絶対パス>`か`sed -n '<開始行>,<終了行>p' -- <絶対パス>`を、JSONには`jq`を使う。
    hookの対象一覧のプラグイン名は起動通知の実在するルートへ、スキル名は`skills/<名前>/SKILL.md`へ、参照資料はルート直下と`skills/`配下の一意な実在パスへ解決する。
-2. シェルを指定しないコマンドがPowerShellで動くなら、全文は`Get-Content -LiteralPath '<絶対パス>' -Encoding utf8 -ErrorAction Stop`で読む。
-   行範囲には`| Select-Object -Skip <開始行-1> -First <行数>`を続ける。
+2. PowerShellでは標準出力も`[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)`でUTF-8にする。
+   同じコマンドで続けて`[Console]::Write((Get-Content -LiteralPath '<絶対パス>' -Raw -Encoding utf8 -ErrorAction Stop))`を実行して全文を読む。
+   行範囲は同じ出力設定で`-Raw`を外し、`Get-Content`の結果を`Select-Object -Skip <開始行-1> -First <行数> | ForEach-Object { [Console]::WriteLine($_) }`に渡す。
 3. 本文の初回の取得では、内側の`exec_command`と外側の`functions.exec`の`max_output_tokens`をともに20000と明示する。
    文章主体ならUTF-8のバイト数÷3の切り上げで見積もり、外側の予算には内側の合計とJSONの包絡を含め、超える見積りなら最初から行範囲かセルを分ける。
    nativeの`original token count`が予算を超えた時は、その値以上の枠を両層で確保できる場合だけ1回取り直し、できなければ行範囲へ分ける。
@@ -138,7 +138,7 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
    範囲の内と確定できない対象は範囲外とし、事前承認は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」で求める（委譲先は委譲元へ報告する）。
 2. 実害が無さそうな設計、禁止規定の不在、代替手段の枯渇、検証用や模擬の環境だという推測は、実行の根拠から外す。
    第三者による拒否は、ユーザーの依頼の認可でも上書きできない。
-3. 承認は、対象と操作を指定して承諾した明示の回答に限る。
+3. 承認は対象と操作を指定して承諾した明示の回答に限る。
    対象の無い継続指示（「続けて」「最善の判断で進めて」）、自動生成の配送・継続のメッセージ、無応答、文脈からの推測は承認に数えない。
 4. 第三者への発信と外部プロジェクトへの貢献は、ユーザーが用意した既存のアカウントと身元で行い、内容と目的を開示する。
    架空の身元、アカウントの無断の作成、なりすまし、本人確認（2FA、CAPTCHAなど）の回避、信頼を得るための事前の貢献や支持表明の投稿は不適合とする。
@@ -146,7 +146,7 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 ## ユーザー確認と終了
 
 1. 確認するかは`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決め、目的と認可の内側で手段だけが残る事項は自分で確定して報告する。
-2. 質問には、公開スキーマ、モードの制限、用途の制限、ホストの命令に合う構造化質問を使う。
+2. 質問には公開スキーマ、モードの制限、用途の制限、ホストの命令に合う構造化質問を使う。
    - Codex CLIの`request_user_input`で推奨案を含む問いは送信直前に「確認要否の判定」による一度の見直しを求められ、方針の承認の質問は`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7の決まった形でないと止められる。
    - Plan modeで同期型の`request_user_input`を使える時は、回答まで待つ。
    - `request_user_input_async`への後続の回答は元の質問へ対応付け、方針承認の`title`・`options`と修正回答の後の改訂版の届け方は`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7に従う。
@@ -157,8 +157,8 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 4. 作業中の質問・状況照会への回答と途中報告は`commentary`で届け、認可済みで実行できる元の作業へ同じターンで戻る。
    `commentary`で送る途中報告は、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の送る対象に限る。
    異型例として、メインが`commentary`で「次にCIを待つ」のような実況を続けて送ると、判断が必要な報告が実況に埋もれる。
-5. 成果作業を終える通常の`final`は、`agent-toolkit:atk-mode/playbooks/report-completion.md`で確定した作業完了報告の本文で届ける。
-   `final`の前に原要求の全体と実行できる残工程を突き合わせ、局所の結果（登録、レビュー、公開、一部の調査、計画）だけで完了と扱う誤りを避ける。
+5. 成果作業を終える通常の`final`は`agent-toolkit:atk-mode/playbooks/report-completion.md`で確定した作業完了報告の本文で届ける。
+   `final`の前に原要求の全体に対して実行できる残工程を確認し、局所の結果（登録、レビュー、公開、一部の調査、計画）だけで完了としない。
    未送達の報告や実行できる残工程があれば`commentary`とツールで続け、全てのツール処理の後に`final`を届けてターンを終える。
    単発の回答だけの依頼、ユーザーの判断や正当な待機、中止・置換、技術的な不成立、委譲先の返却は、それぞれの手順書の形で終える。
 6. `atk agents-exit-session`で自分のCodex本体を止める時は、報告用UWIの保存の検収と必要な`commentary`の送達を先に終え、そのツール呼び出しでセッションを終える。

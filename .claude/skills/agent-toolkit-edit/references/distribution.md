@@ -12,7 +12,9 @@
 ## 判定基準
 
 dotfilesの配布プラグインは、リリースworkflowの有無にかかわらず、版数を提案する時も確認する時も `operate-ak110-projects` の個人プロジェクト共通方針に従う。
-同スキルの `references/release-operations.md`「実施」2を読み、互換性を壊すという理由だけならPATCHかMINORを選ぶ。
+同スキルの `references/release-operations.md`「実施」2を読む。
+プラグインのバージョン付けはSemVerに従わない。
+ほぼ全面的な書き直しや再構築の場合だけMAJORを使い、それ以外は互換性を壊す変更も含めてMINORかPATCHを選ぶ。
 
 プラグインのディレクトリ配下に差分がある変更では、`*_test.py`だけの差分を除き、公開前に版数を上げる。
 `implement` のマージ用ブランチでは版数を上げず、更新種別と根拠をAWIに書く。

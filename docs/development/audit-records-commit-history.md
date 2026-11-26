@@ -2,14 +2,14 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/skills/atk-mode/references/git-identifier.md：Git識別子の扱い：2026年9月14日
+## agent-toolkit/skills/atk-mode/references/git-identifier.md：読み手ごとの識別子：2026年9月14日
 
 2026年9月14日、Git 2.43.0で実際に動かして確かめた。
 公式`git-rev-parse`文書は`--short=<length>`を、少なくとも指定長を持つ一意な接頭辞と定める。
 `core.abbrev`を設定していない対象HEADでは`git rev-parse --short HEAD`が9文字、`git rev-parse --short=7 HEAD`が7文字を返した。
 再検証は`git config --get core.abbrev`の設定有無を記録し、同じHEADに対する`git rev-parse --short HEAD`と`git rev-parse --short=7 HEAD`の文字数を比較し、後者が7文字以上で一意に解決できることを確認する。
 
-## agent-toolkit/skills/atk-mode/references/git-identifier.md：Git識別子の扱い：2026年9月20日
+## agent-toolkit/skills/atk-mode/references/git-identifier.md：読み手ごとの識別子：2026年9月20日
 
 2026年9月20日、Git 2.43.0で`git rev-parse --short=7 HEAD HEAD~1`が標準エラーへ`fatal: Needed a single revision`を書いて終了コード128となることを確認した。
 PowerShell 7.6.0では、未引用の`git rev-parse --verify HEAD^{commit}`が同じエラーと終了コード128を返し、単一引用符で囲んだ`git rev-parse --verify 'HEAD^{commit}'`が完全OIDと終了コード0を返した。
@@ -41,7 +41,7 @@ Git 2.47.3で局所設定のfalseだけを除いた対照は、別branchのOID�
 新しいGitでは通常のPATHで同じテストを実行し、参照更新機能が有効な環境でも局所指定が保護することを確認する。
 サブモジュールの作業状態を保持する局所設定は同じautosquashへ併用でき、履歴比較はGit 2.38以降だけの`patch-id --verbatim`を呼び出さない。
 
-## agent-toolkit/skills/atk-mode/playbooks/history-rewrite.md：親だけのGit操作とサブモジュール：2026年10月18日
+## agent-toolkit/skills/atk-mode/playbooks/history-rewrite.md：操作前後の確認：2026年10月18日
 
 Git 2.34.1での検証担当の記録によると、`agent-toolkit/agent_toolkit/_atk/submodule_state_test.py`の15件が成功した。
 GitはCIと同じUbuntuのdebを一時領域へ展開して使用した。

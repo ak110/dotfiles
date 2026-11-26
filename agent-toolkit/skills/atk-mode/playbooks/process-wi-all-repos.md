@@ -180,8 +180,6 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 予約なしの異常終了で、完了を報告せずに終えた対象は完了扱いにならず、次の統括は残っているレーンの所有登録、準備済みworktree、WIキューの状態から引き継ぐ。
 統括CLIの終了だけで配下の担当の停止を仮定せず、統括が`atk agents list`と実プロセスで配下の担当の生存を確かめ、停止が未確認の担当、未統合のレーン、dirtyなworktreeを保つ。
 利用上限の時の同じ会話の再開と、予告を受けた統括が先に保存する内容は、`agent-toolkit:atk-mode/references/usage-limit.md`「常駐から起動された統括の保存と再開」に従う。
-監査記録は同資料が名指す`docs/development/audit-records-wi.md`にある。
-該当の節は「agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos.md：登録集合：2026年11月12日」である。
 
 ## worktreeと資源
 

@@ -7,7 +7,6 @@
 レビュー指摘管理表は、指摘の追加と応答の記録を全て`atk review-table`で行うヘッダーの無いTSVである（列と出力の形式は`atk review-table --help`）。
 CI対応レビュー指摘管理表は、計画ファイルの無いCI失敗への対応でレビュー指摘を記録する表（`ci-<OID>.exec-review.tsv`）である。
 `atk review-table init`直後の0バイトのファイルは指摘0件の表であり、ヘッダーや仮の行を足さない。
-監査記録は`docs/development/audit-records-wi.md`の「agent-toolkit/skills/atk-mode/references/review-record-table.md：レビュー指摘管理表の共通操作：2026年10月8日」にある。
 
 レビュー担当の指摘でない行を担当が自分で足す時は、指摘箇所を`担当の記録:`で書き始めて対象を続ける。
 対象は、実装中の判断・解釈の記録、既存の指摘行が無い時の完成条件の変更・除外の判断、統合時の競合解消の記録であり、レビュー担当の指摘行への応答には使わない。

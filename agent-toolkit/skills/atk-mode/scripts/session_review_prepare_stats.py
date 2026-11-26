@@ -169,6 +169,8 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         "",
         f"- 経過秒: {total.get('elapsed_seconds', 'unknown')}秒（セッションの最初の記録から準備時点まで）",
     ]
+    for item in by_kind.get("stats-token-peak", []):
+        lines.append(f"- メインのtoken上位: {json.dumps(item, ensure_ascii=False)}")
     quality = list(by_kind["cost-metrics-first-pass"])
     quality.extend(row for week in by_kind["cost-metrics-week"] for row in week.get("first_pass", []))
     lines.extend(["", "## 段階別の初回品質", ""])
@@ -187,7 +189,8 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
                 f"不正・書込途中の行{item['invalid_rows']}件。保存先: bundle/hook-timings.jsonl",
                 "- 保持されている計測だけを対象とする。保持上限で古い計測が除かれるため、セッション全体の網羅は保証しない。"
                 "計測に時刻が無いため、batchの差分期間へ限定できない。",
-                "- totalとhandlerは区間別に示し、重ねて合算しない。並行hookの累積秒数を経過時間の占有率へ変換しない。",
+                "- total・handler・Stopの内訳は区間別に示し、重なる区間を合算しない。"
+                "並行hookの累積秒数を経過時間の占有率へ変換しない。",
             ]
         )
         if item["status"] == "unreadable":
@@ -337,8 +340,6 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         lines.append(f"- 上位一覧の省略: 結果{item['omitted_largest_result_count']}件、反復{item['omitted_repeat_count']}組")
     for item in by_kind.get("stats-resource-summary", []):
         lines.extend(_resource_summary_lines(item))
-    for item in by_kind.get("stats-token-peak", []):
-        lines.append(f"- メインのtoken上位: {json.dumps(item, ensure_ascii=False)}")
     return "\n".join(lines) + "\n"
 
 

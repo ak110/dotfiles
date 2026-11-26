@@ -96,7 +96,7 @@ Codexのシェル実行と統合実行（`exec_command`）はmatcherで`Bash`に
 公式の[JSON output](https://code.claude.com/docs/en/hooks#json-output)は、`additionalContext`、`systemMessage`、`initialUserMessage`の各文字列と通常の標準出力に10,000文字の上限を定める。
 JSONでは欄の値ごと、通常の標準出力では全体で数え、同じイベントの複数のhookも個別に数える。
 超えた全文はセッション内の一時ファイルへ保存されてパスと先頭最大2,000文字のプレビューに置き換わり、モデルへ読取は促されないため、確実に届ける情報は上限内に収める。
-`PreToolUse`が終了コード2で返す標準エラー出力はこの上限の対象外で、44,224文字が接頭辞込みで44,346文字のツール結果として全文届いた観測がある（特定の条件での観測値として扱う）。
+`PreToolUse`が終了コード2で返す標準エラー出力はこの上限の対象外だが、無制限とはみなさない。
 
 ## PermissionRequest
 
@@ -131,7 +131,7 @@ Claude Code 2.1.304以降で`cc-plugin-sec-default`が有効な管理環境（Te
 任意の最適化だけを理由に登録すると、組織の環境では最適化が動かず毎セッションの省略通知も残るため、最適化は任意の処理として扱い組織側の制約を保つ。
 省略される登録を保つ要件がある時は、理由、通知の有無、代替で保証できる範囲を個別に記録する。
 コマンドの`PreCompact`は短い要約への指示を渡すが、要約モデルの呼び出しは残る。
-2.1.325の実機では背景Bashの完了通知が`session.receive`へ届かず`session.append`の`queue`と`delivery`で取得できたため、この版では`session.append`を保ち、省略通知は組織のmodの登録で解消する。
+背景Bashの完了通知を`session.receive`で取得できない版では、`queue`と`delivery`を受け取る`session.append`を保ち、省略通知は組織のmodの登録で解消する。
 
 ## Stop/SubagentStopフック
 

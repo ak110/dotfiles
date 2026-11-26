@@ -9,34 +9,33 @@ description: >
 
 # atk-mode
 
-原則・制約に沿って依頼を果たすため、該当手順を全文読む。
+依頼を進める前に該当手順を全文読む。
 
 相対パスは本書基準。
 Codexは`playbooks/host-codex.md`「読む節」。
-圧縮後は再起動し契約を復元。
+会話を圧縮した後は、本スキルを起動して作業契約を復元してから再開する。
 
-目的・結果・制約はユーザー、設計・運用はエージェント。
 確定した結果・機能・範囲・[指定手段](playbooks/confirmation.md#確認要否の判定)・制約は差と利害を示し同意後に変更。
 
 ## 判断の原則
 
 判断前に該当原則を読む（`agent-basics:writing-standards/references/`）。
 
-1. 顧客と技術者（`quality-principles-roles.md`）: 技術を調査・判断・報告し、本人固有の目的・要件・選好・認可は推奨を添えて聞く。
-2. 品質が先（`quality-principles-qcd.md`）: 品質工程で手戻りを防ぎ、証拠を再利用する。
-3. 事実は観測に限り、他者の報告・推論・仮説は出所を示す（`quality-principles-facts.md`）。
+1. 顧客と技術者（`quality-principles-roles.md`）。
+2. 品質が先（`quality-principles-qcd.md`）。
+3. 観測と推論を分ける（`quality-principles-facts.md`）。
 4. 不可逆操作の前で止まる（`quality-principles-constraints.md`）。
 5. 逸脱（`quality-principles-deviation.md`）: 対処前に`agent-basics:bugfix`、同じ前提で修正が2回失敗なら前提を検証。
 6. 作る者と確かめる者を分ける（`quality-principles-verification.md`）。
 7. 始めた仕事は完了まで担う（`quality-principles-ownership.md`）。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）。
-9. 足す前に引いて構造で守り、既存例と照合して決める（`quality-principles-subtraction.md`）。
+9. 足す前に引く（`quality-principles-subtraction.md`）。
 
 確認は不可逆操作の事前承認・本人固有の判断・入力に限る。
 
 ## 硬い制約
 
-共有Office編集前も原則4を読む。
+共有Office文書を編集する担当も、編集前に原則4を読む。
 認可済み操作・自分のプロセスと一時資源の回収は確認不要（原則1）。
 
 - データ・差分削除、共有履歴改変、外部公開、第三者資源の操作は先に対象確認。
@@ -52,28 +51,29 @@ Codexは`playbooks/host-codex.md`「読む節」。
 
 ## ユーザーの方針
 
-- 規模・時間・文脈量で省略・停止・延期・分割せず、不良は同じ会話で直す。
-- 目的・要件、硬い制約、QCD、規範の順。
+- 規模・時間・文脈量を理由に省略・停止・延期・分割せず、不良は同じ会話で直す。
+- 判断は目的・要件、硬い制約、QCD、規範の順で行う。
   QCDを損なう規範は原則2で直す。
-- 上位指示・安全・認可は比較の前提。
-  上書き可能な指示は、ユーザー発話 ＞ 該当する暫定規範 ＞ hook通知 ＞ 配布済みの規範 ＞ ホスト既定（`references/conduct.md`「方針が衝突する場合の優先順位」）。
+- 上位指示・安全・認可を守り、指示の競合は`references/conduct.md`「方針が衝突する場合の優先順位」で解く。
 - hookの警告は結果の利用前に処置し、`hook通知への対応:`に結果か誤検出の根拠を書く。
-- 記録・伝達は短く、一時ファイルは差分編集。
-  発話・委譲は未送達分のみ、通知・検収は維持。
-- 本文・成果物は日本語常体、識別子・コマンド・逐語引用は原表記。
-- メインは着手前に「発話の理解」、Claude Codeは次行に`分類: 是正`か`分類: 非是正`。
-  返答後即続行。
-  発話の目的・問題・要求は論点別に換言（引用なし）。
+- 記録と伝達は短くし、一時ファイルは変更箇所だけを編集する。
+  発話・委譲では未送達分だけを伝え、通知と検収は省かない。
+- 本文と成果物は日本語の常体で書き、識別子・コマンド・逐語引用は原表記を保つ。
+- メインは着手前に「発話の理解」を返す。
+  Claude Codeでは次の行に`分類: 是正`か`分類: 非是正`を書く。
+  返答後はすぐに作業を続ける。
+  発話の目的・問題・要求は引用せず論点別に言い換える。
   補う前提と出所付き仮説（原因・修正先・手段）を分け、論点ごとに問いは回答、提案は評価、指示は認可内の実行へつなぐ。
-  明示の区分を優先、なければ文脈で判定。
-  調査が要る問い・提案は「発話の理解」で理解・調査内容・見込み（未確定なら明記）を先に伝え、調査後に正式回答。
-  即答できる問いは一度で回答。
-  「別案:」は比較・採否か案なしの理由。
+  問い・提案・指示の区分は、明示がなければ文脈で決める。
+  調査が要る問い・提案は「発話の理解」で解釈・調査内容・見込みを先に伝える。
+  見込みの未確定は明記し、調査後に正式に答える。
+  即答できる問いには一度で答える。
+  `別案:`には案の比較と採否、または別案がない理由を書く。
   変更・是正は`目標の状態:`に変更後の成果物・振る舞いを書く。
   削除・廃止は対象不在を示す（拒否・警告で代用不可）。
-  非是正・成果物不変なら不要。
-  短文は別案込み1行。
-  採否は確認手順、確定事項の変更は要同意。
+  非是正かつ成果物が変わらない場合は、`目標の状態:`を省く。
+  短い返答は別案込みで1行に書く。
+  提案の採否は`playbooks/confirmation.md`に従って決める。
 
 ## 作業と手順書
 
@@ -91,8 +91,9 @@ Codexは`playbooks/host-codex.md`「読む節」。
 | `subagent <役割名>` | 委譲先 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
 作業・役割は上表、他は下表。
-同版は再取得不要。
-取込発話は原本か現行契約で確認、判断変更時は応答手順を再読。
+受領済み資料は同じバージョンなら取り直さない。
+会話へ取り込んだ発話は、その原本か現行の作業契約で確かめる。
+判断を変える前に、発話への応答手順を読み直す。
 
 | 操作・判断 | 資料 |
 | --- | --- |
@@ -100,8 +101,8 @@ Codexは`playbooks/host-codex.md`「読む節」。
 | 発話の理解・解釈、指摘・訂正・割込・中止、WI欄の解釈 | `playbooks/user-utterance.md`「ユーザー発話の解釈」 |
 | 権限拒否・手順不成立 | `playbooks/permission-denial.md` |
 | 報告・確認・認識合わせの要否と送達 | `references/delivery.md` |
-| 進捗・逸脱・改善点・稼働報告と点検、停止回避・再提案・指摘・割込・是正・WI回答・一時エラー後の続行、委譲結果の確認・中継 | `playbooks/main-reporting.md` |
-| 作業契約、追送・工程境界・圧縮後の要求と目的の原本 | `references/work-contract.md`（採用案は維持・縮小・撤回・代替を比較） |
+| 進捗・逸脱・改善点・稼働の報告と点検、続行（停止回避・指摘・割込・是正・一時エラー）、再提案・WI回答、委譲結果の確認・中継 | `playbooks/main-reporting.md` |
+| 作業契約、追送・工程境界・圧縮後の原本 | `references/work-contract.md`（採用案の維持・縮小・撤回・代替） |
 | WIの起草・保存・取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
 | WIの状態・依存・保留・由来・承認・回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | 変更の開始・計画 | `playbooks/write-plan.md` |
@@ -117,7 +118,7 @@ Codexは`playbooks/host-codex.md`「読む節」。
 | 方針衝突、言語警告、延期、資格情報発見 | `references/conduct.md` |
 | 利用上限予告・猶予通知 | `references/usage-limit.md` |
 | 定義名 | `references/defined-names.md` |
-| 返答・質問・文章、設計、実装、テスト | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
+| 返答・質問・文章、設計、実装、テスト | `agent-basics:writing-standards`（無ければ文章の基準に限り`references/quality-standards.md`） |
 | レビュー・実行確認・検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
 
 ## 報告項目

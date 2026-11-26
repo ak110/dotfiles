@@ -50,7 +50,7 @@
    計画の準備、実装の開始、実装の完了の各状態を保存し、同じ担当が処理を続ける。
 3. 実行レビュー: `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`の起動契約に従い、実装を担当していない実行レビュー担当を起動する。
    起動前に`agent-toolkit:atk-mode/playbooks/verification.md`に従い、取得版、入力条件、要求別の観測箇所を同じ検証記録へ対応付ける（レビュー担当はその記録を独立に読み、保存済みの成功の適用可否と、不足か影響差分に限った追加の観測を判断する）。
-   レビュー指摘管理表の作成と完成条件証拠の受領確認は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`と`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`に従う。
+   レビュー指摘管理表の作成と完成条件証拠の受領確認は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`に従う。
    画面差分がある場合は`agent-toolkit:atk-mode/roles/usability-review.parent.md`に従ってユーザビリティレビュー担当も、実装の返却の`同種の既存画面`を渡して起動する。
    各計画のレビュー基準と開始HEADは保つ。
 4. 収束: `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`の手順で指摘を収束させ、修正とGit履歴の統合は自分で行う（管理表の保存は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`）。
@@ -119,7 +119,7 @@
      不具合対策では、`agent-basics:review-standards/references/reviewer.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も比べる（基準は`agent-toolkit:atk-mode/playbooks/exec-review.md`）。
    - `選定`の各項目の`鮮度`が`notice`であることだけを理由に作業を止めない。
      現行の内容との不一致、既存の実装による充足済み、巻き戻しの危険のどれかを確かめた項目に限って関連の履歴を調べ、確認の条件、調べた履歴、採否への影響を`## 調査結果と判断根拠`へ残す。
-   - レーン担当は、レーン数にかかわらず自分のレーン内の分担を`agent-toolkit:atk-mode/playbooks/delegation.md`と`agent-toolkit:atk-mode/playbooks/delegation.md`で検討する。
+   - レーン担当は、レーン数にかかわらず自分のレーン内の分担を`agent-toolkit:atk-mode/playbooks/delegation.md`で検討する。
      直接行う単位と委譲する単位を、理由とともに引き継ぎ記録へ書く。
      計画の起草、設計の判断、原因分析はレーン担当自身が行い、内部の担当には内容が確定した作業を渡す。
      分担の記載には、書き込みの単位ごとに委譲先の工程か自分で行う理由を書く（工程の区分は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。

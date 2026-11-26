@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/skills/atk-mode/references/usage-limit.md：利用上限後の再開：2026年10月14日
+## agent-toolkit/skills/atk-mode/references/usage-limit.md：利用上限の予告・猶予通知への対応：2026年10月14日
 
 - 観測日: 2026年10月14日（起草時の観測報告に基づく記録）
 - 観測した版数: Claude Code 2.1.299

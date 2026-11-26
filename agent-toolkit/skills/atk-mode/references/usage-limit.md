@@ -4,10 +4,6 @@
 利用上限が近いことを示す予告と、到達後の猶予通知を受けたメインエージェントの保存と続行、解除後の再開を定める。
 利用上限やサーバー側の一時的なAPIエラーによる中断の後に自動で始まったターンも、本書で再開情報を取得し、最初の未完了の工程から続ける。
 
-利用上限の通知と解除後の再開に関する観測記録がある。
-詳細は`docs/development/audit-records-usage-limit.md`にある。
-該当節は「agent-toolkit/skills/atk-mode/references/usage-limit.md：利用上限後の再開：2026年10月14日」である。
-
 Claude Codeのメインエージェントでは、agent-toolkitの`hooks/usage_limit_resume.ts`（Function hooks module。[mods API](https://code.claude.com/docs/en/plugins/mods/api)）が、利用上限に当たった時に同じ会話への再開プロンプトを予約し、解除予定時刻の後に投入する。
 Remote Controlの接続中と非接続時のどちらも対象であり、`agents_server`の委譲先と、`agentId`を持つサブエージェントのターンは対象外である。
 別のターンが始まると予約は取り消される。

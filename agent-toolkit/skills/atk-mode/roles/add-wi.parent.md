@@ -36,7 +36,6 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 ### 渡す入力
 
 1. 引用符・改行の解釈を保つため、`投入する要求`をmanaged-temp内のUTF-8ファイルへ全て保存し、絶対パスを渡す。
-   根拠は`docs/development/audit-records-wi.md`「agent-toolkit/skills/atk-mode/roles/add-wi.parent.md：渡す入力：2026年10月7日」にある。
    共通の入力は別ファイルにして、要求ファイルから絶対パスで指す。
 2. 要求ごとの欄は`agent-toolkit:atk-mode/references/add-wi-inputs.md`「投入する要求の欄」と「要求の種類ごとの追加の欄」に従って書く。
 

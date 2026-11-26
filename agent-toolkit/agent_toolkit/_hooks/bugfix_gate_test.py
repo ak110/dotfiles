@@ -549,6 +549,96 @@ def test_ci_failure_is_distinguished_from_waiting_and_missing_runs(tmp_path, cod
     assert bool(notice) is pending
 
 
+@pytest.mark.parametrize(
+    "receipt",
+    [
+        "full",
+        "powershell",
+        "unread",
+        "partial",
+        "truncated",
+        "nonzero",
+        "before",
+        "other-call",
+        "other-turn",
+        "other-actor",
+        "other-file",
+    ],
+)
+def test_codex_ci_failure_requires_completed_outer_read(tmp_path, monkeypatch, receipt):
+    skill = tmp_path / "skills" / "bugfix" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    body = "# バグ対応\n\n失敗を調べる。\n"
+    skill.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(bugfix_gate.plugin_roots, "resolve_plugin_root", lambda *_args: tmp_path)
+    original = {
+        "session_id": "codex-bugfix",
+        "turn_id": "ci-turn",
+        "cwd": str(tmp_path),
+        "tool_use_id": "ci-1",
+        "tool_name": "Bash",
+        "tool_input": {"command": "atk run-script wait-ci -- --baseline baseline.json"},
+        "tool_response": "CIの終了状態を確認した",
+        "hook_event_name": "PostToolUseFailure",
+    }
+    if receipt == "other-actor":
+        original["agent_id"] = "lane"
+    target = skill
+    if receipt == "other-file":
+        target = tmp_path / "old" / "skills" / "bugfix" / "SKILL.md"
+        target.parent.mkdir(parents=True)
+        target.write_text(body, encoding="utf-8")
+    command = f"cat -- '{target}'"
+    if receipt == "powershell":
+        command = (
+            "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); "
+            f"[Console]::Write((Get-Content -LiteralPath '{target}' -Raw -Encoding utf8 -ErrorAction Stop))"
+        )
+    call = {
+        "type": "custom_tool_call",
+        "call_id": "outer-read",
+        "name": "functions.exec",
+        "input": f"text(await tools.exec_command({{cmd: {json.dumps(command)}}}))",
+    }
+    output = json.dumps({"exit_code": 1 if receipt == "nonzero" else 0, "output": body[:9] if receipt == "partial" else body})
+    result = {
+        "type": "custom_tool_call_output",
+        "call_id": "different" if receipt == "other-call" else "outer-read",
+        "output": [
+            {"type": "input_text", "text": "Script completed\nWall time: 1 second\nOutput:\n"},
+            {"type": "input_text", "text": output[:-8] if receipt == "truncated" else output},
+        ],
+    }
+    recorded = [{"type": "response_item", "payload": call}]
+    if receipt == "other-turn":
+        recorded.append({"type": "event_msg", "payload": {"type": "task_started", "turn_id": "next"}})
+    recorded.append({"type": "response_item", "payload": result})
+    failed = codex_execution_payload(original, tmp_path, exit_code=6)
+    rollout = pathlib.Path(failed["transcript_path"])
+    if receipt == "before":
+        lines = rollout.read_text(encoding="utf-8").splitlines()
+        rollout.write_text(
+            "\n".join([*lines[:-1], *(json.dumps(entry) for entry in recorded), lines[-1]]) + "\n", encoding="utf-8"
+        )
+    elif receipt != "unread":
+        with rollout.open("a", encoding="utf-8") as stream:
+            stream.writelines(json.dumps(entry) + "\n" for entry in recorded)
+    posttooluse.main(json.dumps(failed))
+
+    def warning():
+        return bugfix_gate.verification_notice(failed, "Bash", {"command": "git commit -m fix"}, failed["session_id"])
+
+    if receipt not in {"full", "powershell"}:
+        assert "cat --" in warning()
+        return
+    assert not warning()
+    posttooluse.main(json.dumps(failed))
+    assert not warning()
+    new_failure = codex_execution_payload({**failed, "tool_use_id": "ci-2"}, tmp_path, exit_code=1)
+    posttooluse.main(json.dumps(new_failure))
+    assert warning()
+
+
 @pytest.mark.parametrize("field", ["tool_use_id", "turn_id", "session_id"])
 def test_ci_failure_uses_only_the_same_native_execution(tmp_path, field):
     """別の実行・ターン・主体の失敗や本文中の終了コードを、現在のCI失敗に流用しない。"""

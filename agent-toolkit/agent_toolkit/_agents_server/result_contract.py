@@ -35,6 +35,7 @@ _USABILITY_EVIDENCE = (
     "行の揃い",
     "冗長表示",
     "入力負担",
+    "可読性・アクセシビリティ",
     "modern-web-guidanceのガイドと適用結果",
 )
 _USABILITY_VERDICTS = {"合格", "不合格", "未確定"}

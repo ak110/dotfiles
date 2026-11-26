@@ -17,7 +17,6 @@ agent-toolkitの配布物と個人用のhook、`atk`の出力を新設・変更�
 
 [Claude Code公式のhook仕様](https://code.claude.com/docs/en/hooks#run-hooks-in-the-background)では、既定の同期hookは完了まで実行を止める。
 [タイムアウト](https://code.claude.com/docs/en/hooks#timeouts)はhookの種類・イベントで異なり、個々の処理に許容される所要時間の目安ではない。
-圧縮後の要約は、WI `20261123-012545-001.md` に記録された事例では内部の15秒上限に達し、手動では約45秒で成功した。
 入力の量で所要時間が大きく変わる処理は同期hookから外し、必要な結果を得る手動操作か、結果を回収する主体が明確なバックグラウンド処理へ移す。
 
 ## フック実装の配置先（個人フックと配布物）

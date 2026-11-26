@@ -28,7 +28,9 @@ TLS検証を外す設定は原則4（`agent-basics:writing-standards/references/
 
 `glab`が`tls: failed to verify certificate`を返した時は、次を設定してCIの状態を照会する。
 
-- `glab config set skip_tls_verify true --host <host>`で、ホスト単位にTLS検証を外す。
+- 信頼できる経路で取得したCAファイルを`glab config set ca_cert <CAファイル> --host <host>`で指定する。
+  CAファイルを入手できない場合は、TLS検証を省くことの影響を示して認可を得た時に限り、ホスト単位で一時的に`skip_tls_verify`を設定する。
+  使ったことを報告し、照会を終えたら元に戻す。
 - 環境変数`GITLAB_HOST=<host>`と`GITLAB_TOKEN=<token>`を設定する。
 
 この設定は中間者攻撃（MITM）への耐性を下げるため、トークンは環境変数で渡し、シェルやコマンドの実行履歴に残さない。

@@ -24,8 +24,3 @@ revisionのpeel式は全体を1つの引数として渡し、PowerShellでは`gi
 ## 別のリポジトリの操作
 
 現在の作業ディレクトリと異なるリポジトリを操作するGitコマンドは、`git -C <解決済みの絶対パス>`で対象を各コマンドへ明示し、`cd`の移動を後続のコマンドへ引き継がない。
-
-挙動の確認記録は`docs/development/audit-records-commit-history.md`の次の節にある。
-
-- 「agent-toolkit/skills/atk-mode/references/git-identifier.md：Git識別子の扱い：2026年9月14日」
-- 「agent-toolkit/skills/atk-mode/references/git-identifier.md：Git識別子の扱い：2026年9月20日」

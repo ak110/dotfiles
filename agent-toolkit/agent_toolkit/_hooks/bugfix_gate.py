@@ -22,16 +22,19 @@ Stopでは報告の形によらず、同じ発話に対する4項目の記録を
 import json
 import re
 lazy import os
+lazy import pathlib
 
 from agent_toolkit._common.send_to_user import COMPLETION_KIND
 from agent_toolkit._hooks import notice
-lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._atk.session_record_format import parsed_records
+lazy from agent_toolkit._atk.session_records import codex_shell_command, codex_shell_output
+lazy from agent_toolkit._common import plugin_roots, transcript
 lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.prevention_kinds import PREVENTION_KINDS, starts_with_kind
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
-lazy from agent_toolkit._hooks import agent_id
+lazy from agent_toolkit._hooks import agent_id, plugin_resources
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks import pending_async_task_ids
@@ -92,6 +95,12 @@ _failure_notice = notice.formatter("verification-bugfix")
 FAILURE_STATE_KEY = "verification_bugfix"
 _REPL_SKILL_TURN_KEY = "bugfix_repl_human_turn"
 _REPL_SKILL_CALL_KEY = "bugfix_repl_skill_call"
+_CODEX_BUGFIX_CAT = re.compile(r"""cat[ \t]+--[ \t]+(?:"([^"$`\\\r\n]+)"|'([^'\r\n]+)'|([^\s"'`$\\<>|;&()*?\[\]{}]+))""")
+_CODEX_BUGFIX_PS_PREFIX = (
+    "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); [Console]::Write((Get-Content -LiteralPath '"
+)
+_CODEX_BUGFIX_PS_SUFFIX = "' -Raw -Encoding utf8 -ErrorAction Stop))"
+_CODEX_BUGFIX_PS = re.compile(re.escape(_CODEX_BUGFIX_PS_PREFIX) + r"((?:[^'\r\n]|'')+)" + re.escape(_CODEX_BUGFIX_PS_SUFFIX))
 
 
 def _ci_exit_code(payload: dict) -> int | None:
@@ -142,12 +151,16 @@ def _wait_ci_operation(tool_name: str, tool_input: dict) -> bool:
     )
 
 
-def mark_started(session_id: str, actor: str) -> None:
+def mark_started(session_id: str, actor: str, *, failure: str | None = None) -> None:
     """失敗の後に同じ主体が成功させた起動だけで未対処の印を解除する。"""
 
     def clear(state: dict) -> dict | None:
         current = state.get(FAILURE_STATE_KEY, {}).get(actor)
-        if not isinstance(current, dict) or not current.get("pending"):
+        if (
+            not isinstance(current, dict)
+            or not current.get("pending")
+            or (failure is not None and current.get("failure") != failure)
+        ):
             return None
         current["pending"] = False
         return state
@@ -196,8 +209,70 @@ def observe_verification(payload: dict) -> None:
     update_state(session_id, remember)
 
 
+def _codex_skill_body(path: pathlib.Path, output: str | None, cwd: str) -> bool:
+    if not output or not path.is_absolute() or path.parts[-3:] != ("skills", "bugfix", "SKILL.md"):
+        return False
+    root = plugin_roots.resolve_plugin_root("agent-basics", plugin_resources.plugin_root(), "codex", cwd)
+    skill = root / "skills" / "bugfix" / "SKILL.md"
+    return path.samefile(skill) and output.replace("\r\n", "\n") == skill.read_text(encoding="utf-8")
+
+
+def _codex_bugfix_path(item: dict) -> pathlib.Path | None:
+    command = codex_shell_command(item)
+    if command is not None:
+        if match := _CODEX_BUGFIX_CAT.fullmatch(command.strip()):
+            return pathlib.Path(next(group for group in match.groups() if group is not None))
+        if match := _CODEX_BUGFIX_PS.fullmatch(command.strip()):
+            return pathlib.Path(match[1].replace("''", "'"))
+    return None
+
+
+def _codex_read_after_failure(payload: dict, failure: str) -> bool:
+    path = payload.get("transcript_path")
+    if not isinstance(path, str) or not path or resolve_hook_agent_id(payload) != agent_id.MAIN_AGENT_ID:
+        return False
+    session_id = payload["session_id"]
+    after_failure = False
+    turn_id = None
+    reads: dict[str, pathlib.Path] = {}
+    try:
+        for entry in parsed_records(pathlib.Path(path)):
+            item = entry.get("payload")
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("type")
+            if entry.get("type") == "event_msg":
+                if kind in {"task_started", "task_complete", "turn_aborted"}:
+                    reads.clear()
+                    turn_id = item.get("turn_id") if kind == "task_started" else None
+                if kind == "item_completed" and item.get("thread_id") == session_id:
+                    command = item.get("item")
+                    if isinstance(command, dict) and command.get("type") == "CommandExecution" and command.get("id") == failure:
+                        after_failure = True
+                        reads.clear()
+                continue
+            if not after_failure or not turn_id or entry.get("type") != "response_item":
+                continue
+            call = item.get("call_id")
+            if not isinstance(call, str) or not call:
+                continue
+            if kind == "custom_tool_call":
+                if skill := _codex_bugfix_path(item):
+                    reads[call] = skill
+            elif (
+                kind == "custom_tool_call_output"
+                and (skill := reads.pop(call, None)) is not None
+                and _codex_skill_body(skill, codex_shell_output(item), str(payload.get("cwd", "")))
+            ):
+                return True
+    except OSError, ValueError, plugin_roots.PluginRootError:
+        return False
+    return False
+
+
 def verification_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str:
-    current = read_state(session_id).get(FAILURE_STATE_KEY, {}).get(resolve_hook_agent_id(payload), {})
+    actor = resolve_hook_agent_id(payload)
+    current = read_state(session_id).get(FAILURE_STATE_KEY, {}).get(actor, {})
     if not isinstance(current, dict) or not current.get("pending"):
         return ""
     command = tool_input.get("command")
@@ -218,12 +293,22 @@ def verification_notice(payload: dict, tool_name: str, tool_input: dict, session
         or operation_skills.is_body_writing(tool_name, tool_input, str(payload.get("cwd", "")))
     ):
         return ""
+    fix = "`agent-basics:bugfix`を起動してください。"
+    if is_codex_payload(payload):
+        if _codex_read_after_failure(payload, current["failure"]):
+            mark_started(session_id, actor, failure=current["failure"])
+            return ""
+        fix = (
+            'Codexでは `text(await tools.exec_command({cmd: "cat -- <SKILL.mdの絶対パス>"}))` '
+            "の単独呼出しで `agent-basics:bugfix` の入口の全文を取得してください。"
+            "PowerShellでは同じ単独呼出しのcmdに、`host-codex.md`「資料の読取」のUTF-8出力設定と全文読取を指定してください。"
+        )
     return _failure_notice(
         "検証・CIの失敗を観測した後、この主体のbugfix起動成功を確認できない。",
         tag="warn",
         removable_cause=True,
         subject=current["failure"],
-        fix="`agent-basics:bugfix`を起動してください。反復する失敗は同スキルの「書き出す場面」と`references/recurrence.md`に従ってください。",
+        fix=fix + "反復する失敗は同スキルの「書き出す場面」と`references/recurrence.md`に従ってください。",
     )
 
 

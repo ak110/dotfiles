@@ -19,14 +19,12 @@ OpenCodeの記録は読み取り専用で取得され、照会結果の`line`は
 コンパクション（会話圧縮）の記録形式は、実行環境（runtime）によって異なる。
 Claude Codeでは`type`が`system`、`subtype`が`compact_boundary`のレコードとして記録され、`compactMetadata`の中に`trigger`、`preTokens`、`postTokens`、`durationMs`が格納される。
 Codexでは`type`が`compacted`のレコードに、所要時間を除いた情報が記録される。
-監査記録は`docs/development/audit-records-session-records.md`の「agent-toolkit/skills/atk-mode/references/session-records.md：H1直下：2026年9月2日」に記載されている。
 
 ## Claude Codeの記録
 
 会話の要素は、レコードの`type`が`user`か`assistant`のものだけで判定する。
 Claude Code 2.1.301にある`api-request-blob`はAPIリクエストの控え（コピー）であり、同じ形式の`message.content`にツールの入力、実行結果、発話を含むため、形式の一致だけで数えると二重に数える。
 生のレコードの本文や構造を調べる照会では、この控えも表示される。
-監査記録は`docs/development/audit-records-session-records.md`の「セッション記録のAPI要求の写し：2026年10月18日」に記載されている。
 
 - 記録は、メイン記録の深さ2（`<project>/<session-uuid>.jsonl`）と、サブエージェント記録の深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`）にだけある。
   孫エージェントの記録も、祖先のセッションの直下の`subagents/`にフラットに置かれる。
@@ -42,8 +40,6 @@ Claude Code 2.1.301にある`api-request-blob`はAPIリクエストの控え（�
 - ツールが読み取ったファイルの本文は実行結果と同じ領域に入るため、特定の性質を持つ行の抽出では、ツール自身の出力か読み取ったファイルの内容かをレコードの構造で区別する（書式の一致だけでは、ファイル内の例示まで実行時のイベントとして数える）。
 - 文面を持つ`thinking`ブロックは、ツール呼び出しの合間の地の文をサーバー側で要約したもの（ナレーション要約）であり、エージェントが書いた原文とも拡張思考の全文とも別のものである。
   原文の性質（形状、長さ、使う語）を測る集計からは除く。
-  監査記録は`docs/development/audit-records-session-records.md`にある。
-  該当節は「agent-toolkit/skills/atk-mode/references/session-records.md：Claude Codeの記録：2026年10月6日」である。
 
 ## スキル起動の判定
 
@@ -56,8 +52,6 @@ Codexの記録には、スキルの起動を一意に示す専用のレコード
 Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.role`が`user`のレコードの`content`にある`input_text`要素の`text`に、スキルの起動を依頼したプロンプトの本文が含まれることだけを判定の条件とする。
 最初のuserレコードは実行環境が挿入する前置きの文である。
 このプロンプトの本文を経由しない起動は、判定不能として扱う。
-監査記録は`docs/development/audit-records-session-records.md`にある。
-該当節は「agent-toolkit/skills/atk-mode/references/session-records.md：スキル起動の判定：2026年9月10日」である。
 
 ## 暗号化された値
 
@@ -67,14 +61,11 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 - Claude Codeの記録にある`thinking`ブロックの`signature`と、`redacted_thinking`ブロックの`data`
 - Codexの記録で`payload.type`が`reasoning`のレコードの`encrypted_content`
 
-監査記録は`docs/development/audit-records-session-records.md`の「agent-toolkit/skills/atk-mode/references/session-records.md：暗号化された値：2026年10月7日」に記載されている。
-
 ## 進捗更新の判別
 
 公式ドキュメント「Thinking」の「Progress updates between tool calls」節の基準で、ツール呼び出しの間の進捗更新（公式ドキュメントの「progress update」、Claude Code内部の名前は`narration`）を判別する。
 APIリクエストの`display`パラメーターが`"updates"`の応答のうち、本文が空でない`thinking`ブロックを持つものを進捗更新とみなす。
 記録ファイルには`display`の値が残らないため、設定内容やホストの送信条件から値を確かめられた範囲だけを判別済みとし、残りは判別不能として件数を分けて数える。
-この節の観測結果についても、前節と同じ監査記録に記載されている。
 
 ## 集計値の典拠
 
@@ -131,8 +122,6 @@ APIリクエストの`display`パラメーターが`"updates"`の応答のうち
   工程ごとの`stats-tool`の秒数はツール呼び出しごとの実行時間で、親と委譲先が並行した区間は重なって加算されるため、合計が総量を超えることがある。
   比率を示す時は、この基準の違いを併記する。
 - 巡回のレーンの工程時間は、引き継ぎ記録、所有登録、検証記録（旧形式は計画の進捗ログも）の時刻差を使い、セッション統計の値と区別して時刻の出所と区間を残す。
-
-監査記録は`docs/development/audit-records-session-records.md`の「agent-toolkit/skills/atk-mode/references/session-records.md：集計値の典拠：2026年9月3日」に記載されている。
 
 集計値を判断の根拠に使う前に、計測の始点、終点、数え方が判断の観点と一致するかを確かめる。
 過去に不一致を観測した例を次に示す。

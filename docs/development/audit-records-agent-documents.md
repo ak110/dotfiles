@@ -54,7 +54,7 @@ frontmatter、HTMLコメント、フェンス付きコード、見出しと表�
 規範の一括改訂後は`uv run --frozen pyfltr run-for-agent --commands=agent-doc-tone`をパス指定なしで実行し、全対象への到達と密度超過の診断の不在を確認する。
 上記の旧値と比べる場合は数え方と集計単位をそろえる。
 
-## agent-basics/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日
+## agent-basics/skills/writing-standards/references/agent-documents-basics.md：置き場所と配送：2026年10月6日
 
 配送範囲表のAntigravityの2列、作業ディレクトリのプロジェクト規範の行、agent-toolkitのスキルの行、Codexの列の`~/.codex/AGENTS.md`の配置条件の根拠である。
 
