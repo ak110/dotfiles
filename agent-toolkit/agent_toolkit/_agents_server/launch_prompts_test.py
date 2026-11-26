@@ -76,9 +76,11 @@ _SERVER_ROOT = pathlib.Path(__file__).resolve().parents[2]
         ("9999.0.0", False, "caller"),
         ("same", False, None),
         (None, False, "unknown"),
+        ("relative", False, "unknown"),
+        ("missing", False, "unknown"),
         ("2.305.2", True, None),
     ],
-    ids=["older-caller", "newer-caller", "same-version", "old-forwarder", "delegated-caller"],
+    ids=["older-caller", "newer-caller", "same-version", "old-forwarder", "relative-root", "missing-root", "delegated-caller"],
 )
 def test_resource_instructions_name_caller_launcher_on_version_skew(
     tmp_path: pathlib.Path, starting: bool, caller_version: str | None, delegated: bool, expected: str | None
@@ -87,7 +89,11 @@ def test_resource_instructions_name_caller_launcher_on_version_skew(
     assert server_version is not None
     environment = {}
     caller = tmp_path / "caller"
-    if caller_version is not None:
+    if caller_version == "relative":
+        environment[delegated_session.CALLER_PLUGIN_ROOT_ENV] = "caller"
+    elif caller_version == "missing":
+        environment[delegated_session.CALLER_PLUGIN_ROOT_ENV] = str(caller)
+    elif caller_version is not None:
         _toolkit(caller, server_version if caller_version == "same" else caller_version)
         environment[delegated_session.CALLER_PLUGIN_ROOT_ENV] = str(caller)
     if delegated:
@@ -103,9 +109,14 @@ def test_resource_instructions_name_caller_launcher_on_version_skew(
         caller_command, _note = launch_prompts.plugin_environment.launcher_command(caller)
         assert f"版{caller_version}（起動部分: {caller_command}）" in text
         assert f"版{server_version}" in text
+        assert "合否は、委譲元の起動部分で実行した結果で決めよ" in text
     else:
         assert "委譲元のCLIの版は不明" in text
         assert f"版{server_version}、起動部分: {server_command}" in text
+        assert "委譲元が同じ原稿・引数で実行した結果を使え" in text
+        assert "委譲先の起動部分での結果だけで合否を確定したり、原稿を差し戻したりしてはいけない" in text
+        assert "CLIの判定は未確認" in text
+        assert "サブコマンド・引数と原稿の絶対パスを返せ" in text
 
 
 _MARKERS = {

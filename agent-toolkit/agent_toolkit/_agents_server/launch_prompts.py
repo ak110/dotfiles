@@ -277,7 +277,7 @@ def caller_runtime_instructions(toolkit_root: pathlib.Path) -> str | None:
 
     受付中の管理サービスの世代は委譲元のCLIと版が異なる場合がある。委譲元が自分のCLIでやり直す検査を
     委譲先が別の版で行うと結果が一致しないため、その検査に使う起動部分を伝える。
-    接続元の配布物を渡さない旧版の転送側からの接続では委譲元の版が分からないため、検査結果へ自分の版を併記させる。
+    接続元の版を確認できない時も、委譲先のCLIの結果だけでは委譲元の合否を決めさせない。
     委譲先から起動された接続は管理サービスと同じ配布物を案内されるため対象外とし、転送を介さない直接起動は
     接続元と同じ配布物で動くため対象外とする。
     pyfltr: allow-comment
@@ -285,30 +285,35 @@ def caller_runtime_instructions(toolkit_root: pathlib.Path) -> str | None:
     caller = runtime_environment.current()
     if caller is None or delegated_session.is_delegated(caller.environment):
         return None
-    environment = caller.environment
-    value = environment.get(delegated_session.CALLER_PLUGIN_ROOT_ENV)
-    if not value:
-        server_version = _plugin_version(toolkit_root) or "不明"
+    value = caller.environment.get(delegated_session.CALLER_PLUGIN_ROOT_ENV)
+    caller_root = pathlib.Path(value) if value else None
+    caller_version = _plugin_version(caller_root) if caller_root is not None and caller_root.is_absolute() else None
+    server_version = _plugin_version(toolkit_root)
+    if caller_version is None:
         command, _argument_note = plugin_environment.launcher_command(toolkit_root)
         return _normative(
-            f"委譲元のCLIの版は不明であり、この委譲先の配布物（版{server_version}、起動部分: {command}）と異なる場合がある。\n"
-            "委譲元が自分のCLIでやり直す検査（WIの原稿のdry-run、保存時の書式の検査など）の結果を返す時は、"
-            "実行した版と起動部分を併記せよ。",
+            "委譲元のCLIの版は不明であり、"
+            f"この委譲先の配布物（版{server_version or '不明'}、起動部分: {command}）と異なる場合がある。\n"
+            "委譲元がやり直す検査（WI原稿のdry-run、保存時の書式の検査など）は、"
+            "委譲元が当該作業で使うと明示した起動部分で実行するか、委譲元が同じ原稿・引数で実行した結果を使え。"
+            "委譲先の起動部分での結果だけで合否を確定したり、原稿を差し戻したりしてはいけない。\n"
+            "委譲元のCLIでの結果を得られなければ、CLIの判定は未確認とし、"
+            "委譲元へ、当該作業の起動部分で再実行するサブコマンド・引数と原稿の絶対パスを返せ。",
             kind="caller-runtime",
         )
-    caller_root = pathlib.Path(value)
-    if not caller_root.is_absolute():
-        return None
-    caller_version = _plugin_version(caller_root)
-    server_version = _plugin_version(toolkit_root)
-    if caller_version is None or server_version is None or caller_version == server_version:
+    if caller_root is None or caller_version == server_version:
         return None
     command, _argument_note = plugin_environment.launcher_command(caller_root)
+    comparison = (
+        f"この委譲先の配布物（版{server_version}）と版が異なる。"
+        if server_version is not None
+        else "この委譲先の配布物と同じ版か確認できない。"
+    )
     return _normative(
-        f"委譲元のCLIは版{caller_version}（起動部分: {command}）であり、"
-        f"この委譲先の配布物（版{server_version}）と版が異なる。\n"
-        "委譲元が自分のCLIでやり直す検査（WIの原稿のdry-run、保存時の書式の検査など）は、委譲元の起動部分で実行して結果を返せ。"
-        "この委譲先の起動部分で結果が異なった時は、両方の版と結果を返せ。",
+        f"委譲元のCLIは版{caller_version}（起動部分: {command}）であり、{comparison}\n"
+        "委譲元がやり直す検査（WI原稿のdry-run、保存時の書式の検査など）の合否は、委譲元の起動部分で実行した結果で決めよ。"
+        "委譲先の結果は比較にだけ使い、異なった時は両方の版と結果を返せ。"
+        "委譲元の起動部分で実行できなければ、CLIの判定は未確認とし、委譲元へ再実行に必要なサブコマンド・引数を返せ。",
         kind="caller-runtime",
     )
 
