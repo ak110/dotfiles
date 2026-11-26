@@ -206,19 +206,26 @@ def quoted_passages(original: str) -> list[str]:
     return _origin_passages(original, "ユーザー指摘の逐語引用")
 
 
+_CODE_OR_SENTENCE_END = re.compile(
+    r"(?<!`)(?P<ticks>`+)(?!`)[\s\S]*?(?<!`)(?P=ticks)(?!`)"
+    r"|[。！？][」』）】”’]*|[.!?][」』）】”’]*(?=\s|$)"
+)
+
+
 def _requirement_units(passage: str) -> list[str]:
     lines = [re.sub(r"^\s*(?:> *)+", "", line) for line in passage.splitlines()]
     lines = [re.sub(r"^\s*(?:[-+*]|[0-9]+[.)]) +", "\n", line) for line in lines]
-    paragraphs = re.split(r"\n\s*\n", "\n".join(lines).strip())
-    return [
-        match.group().strip()
-        for paragraph in paragraphs
-        for match in re.finditer(
-            r"[\s\S]*?(?:[。！？][」』）】”’]*|[.!?][」』）】”’]*(?=\s|$)|$)",
-            " ".join(paragraph.split()),
-        )
-        if match.group().strip()
-    ]
+    units = []
+    for paragraph in re.split(r"\n\s*\n", "\n".join(lines).strip()):
+        text = " ".join(paragraph.split())
+        start = 0
+        for match in _CODE_OR_SENTENCE_END.finditer(text):
+            if match["ticks"] is None:
+                units.append(text[start : match.end()].strip())
+                start = match.end()
+        if tail := text[start:].strip():
+            units.append(tail)
+    return units
 
 
 _EXCLUSIONS = r"(失効|割当外|投入元で完了|回答済み|背景|重複)"
@@ -238,25 +245,25 @@ def _validate_passage(
         return [f"{label}: {verdict}"]
 
     units = _requirement_units(passage)
-    numbers = re.findall(r"原文要求([1-9][0-9]*)", evidence) if verdict == "達成" else []
-    attributed: set[str] = set()
+    numbers = dict.fromkeys(re.findall(r"原文要求([1-9][0-9]*)", evidence)) if verdict == "達成" else {}
+    pending = {index: unit for index, unit in enumerate(units, 1) if index not in exclusions}
     errors = []
     for number in numbers:
         quote, status = requirements.get(number, ("", ""))
-        if status != "達成" or quote not in units:
+        index = next((index for index, unit in pending.items() if unit == quote), None)
+        if status != "達成" or index is None:
             errors.append(f"{label}: 原文要求{number}の逐語・達成判定を照合できない")
         else:
-            attributed.add(quote)
+            del pending[index]
     if verdict == "達成" and not numbers:
         errors.append(f"{label}: 達成した原文要求行の参照が無い")
     if verdict == "除外" and not exclusions:
         errors.append(f"{label}: 原文単位ごとの除外が無い")
-    for index, unit in enumerate(units, 1):
-        excluded = exclusions.get(index, [])
-        if len(excluded) > 1 or (excluded and unit in attributed):
+    for index, excluded in exclusions.items():
+        if len(excluded) > 1:
             errors.append(f"{label}.{index}: 原文単位の判定が重複している")
-        elif not excluded and unit not in attributed:
-            errors.append(f"{label}.{index}: 原文要求の達成または除外の判定が無い: {unit}")
+    for index, unit in pending.items():
+        errors.append(f"{label}.{index}: 原文要求の達成または除外の判定が無い: {unit}")
     for index in exclusions.keys() - set(range(1, len(units) + 1)):
         errors.append(f"{label}.{index}: 原本にない原文単位を除外している")
     return errors

@@ -155,3 +155,35 @@ def test_two_requests_in_one_passage_are_checked_against_original(heading: str, 
     else:
         with pytest.raises(ValueError, match="引用照合1.2"):
             review_contract.validate_origin_verdicts("\n".join(lines), {_FIRST: original})
+
+
+@pytest.mark.parametrize("unit", ["`続けますか? はい` を表示する。", "``例: `x`。 次。`` を表示する。"])
+@pytest.mark.parametrize("heading", ["ユーザー指摘の逐語引用", "ユーザーコメント", "回答"])
+def test_inline_code_punctuation_is_not_a_requirement_boundary(unit: str, heading: str) -> None:
+    original = f"## {heading}\n\n> {unit}受入時に保存する。\n"
+    result = (
+        f"{_FIRST} 原文要求1「{unit}」: 達成 — 根拠: 表示した\n"
+        f"{_FIRST} 原文要求2「受入時に保存する。」: 達成 — 根拠: 保存した\n"
+        f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1・原文要求2\n"
+    )
+    review_contract.validate_origin_verdicts(result, {_FIRST: original})
+
+
+@pytest.mark.parametrize("same_block", [True, False])
+def test_duplicate_exclusion_applies_only_to_its_occurrence(*, same_block: bool) -> None:
+    unit = "受入時に保存を実行する。"
+    separator = "" if same_block else "\n\n> "
+    original = f"## ユーザー指摘の逐語引用\n\n> {unit}{separator}{unit}\n"
+    result = f"{_FIRST} 原文要求1「{unit}」: 達成 — 根拠: 保存は成功\n{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1\n"
+    if not same_block:
+        result += f"{_FIRST} 引用照合2: 除外 — 根拠: 原文要求1と同一\n"
+    with pytest.raises(ValueError, match=r"原文要求の達成または除外の判定が無い|原文単位ごとの除外が無い"):
+        review_contract.validate_origin_verdicts(result, {_FIRST: original})
+    if same_block:
+        repeated_reference = result.replace("根拠: 原文要求1", "根拠: 原文要求1・原文要求1")
+        with pytest.raises(ValueError, match=r"引用照合1\.2"):
+            review_contract.validate_origin_verdicts(repeated_reference, {_FIRST: original})
+    address = "1.2" if same_block else "2.1"
+    review_contract.validate_origin_verdicts(
+        result + f"{_FIRST} 引用除外{address}: 重複 — 根拠: 原文要求1と同一\n", {_FIRST: original}
+    )
