@@ -168,6 +168,8 @@ class Element {{
     const siblings = this.parentNode?.children || [];
     return siblings[siblings.indexOf(this) + 1] ?? null;
   }}
+  get nextElementSibling() {{ return this.nextSibling; }}
+  after(node) {{ this.parentElement?.insertBefore(node, this.nextElementSibling); }}
   adopt(child) {{
     if (typeof child.remove === 'function') child.remove();
     child.parentNode = this;
@@ -216,6 +218,7 @@ class Element {{
       const value = part.trim();
       if (value === '[role=status]') return child.getAttribute('role') === 'status';
       if (value === 'dialog[open]') return child.tagName === 'DIALOG' && child.open;
+      if (value.startsWith('.')) return child.classList.contains(value.slice(1));
       return child.tagName === value.toUpperCase();
     }});
     return this.children.flatMap(child => [ ...(matches(child) ? [child] : []), ...child.querySelectorAll(selector) ]);
@@ -258,6 +261,7 @@ globalThis.controlGroups = Object.fromEntries(
   Object.entries(elements).map(([id, element]) => [id, element.querySelectorAll('input, select, textarea, button')])
 );
 globalThis.controlGroups['app-header'] = appHeader.querySelectorAll('input, select, textarea, button');
+globalThis.CSS = {{ escape: value => String(value).replace(/[^a-zA-Z0-9_-]/g, char => String.fromCharCode(92) + char) }};
 globalThis.document = {{
   body: nodes.find(node => node.tagName === 'BODY'),
   activeElement: null,
@@ -271,7 +275,13 @@ globalThis.document = {{
     return element;
   }},
   createTextNode(text) {{ const node = new Element('', '#TEXT'); node.textContent = text; return node; }},
-  querySelector(selector) {{ return selector === '.app-header' ? appHeader : null; }},
+  querySelector(selector) {{
+    if (selector.startsWith('#screen-')) {{
+      const [id, descendant] = selector.split(' ');
+      return elements[id.slice(1)]?.querySelector(descendant) ?? null;
+    }}
+    return this.body.querySelector(selector);
+  }},
   querySelectorAll(selector) {{
     if (selector === 'dialog' || selector === 'dialog[open]') return this.body.querySelectorAll(selector);
     if (selector !== '.entry-select') return [];
@@ -284,6 +294,7 @@ elements['serve-bootstrap'].textContent = JSON.stringify({{
   base_path: '/atk', stall_ms: 45000, host_name: 'node-test', wi_root: '/notes'
 }});
 globalThis.window = globalThis;
+globalThis.matchMedia = () => ({{ matches: false, addEventListener() {{}} }});
 globalThis.MutationObserver = class {{ observe() {{}} }};
 globalThis.confirm = () => true;
 const nativeTimeout = globalThis.setTimeout;

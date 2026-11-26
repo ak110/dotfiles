@@ -73,11 +73,11 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {
-        "heading": "uwi / adopted",
+        "heading": "採用",
         "metadata": [
-            "answered:yes",
-            "target_repo:example/repo",
-            "updated_at:—",
+            "回答:回答済み",
+            "対象リポジトリ:example/repo",
+            "最終更新:—",
         ],
         "readonly": False,
         "editHidden": False,
@@ -219,7 +219,7 @@ process.stdout.write(JSON.stringify({
             "state": "processing",
             "focused": "detail-dialog-body",
         },
-        "reopened": {"state": "awi / processing", "forceVisible": True},
+        "reopened": {"state": "処理中", "forceVisible": True},
         "missing": {
             "detailOpen": False,
             "deleteOpen": False,

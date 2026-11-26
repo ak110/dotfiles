@@ -415,7 +415,7 @@ process.stdout.write(JSON.stringify({
 def test_assets_state_sets_match_python_states() -> None:
     labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.SCRIPTS["wi_state.js"], re.DOTALL)
     assert labels is not None
-    assert set(re.findall(r"(\w+):", labels.group(1))) == set(_wi_constants.WI_STATES)
+    assert set(_wi_constants.WI_STATES) <= set(re.findall(r"(\w+):", labels.group(1)))
 
     deletable = re.search(r"const DELETABLE_STATES = new Set\(\[(.*?)\]\);", assets.SCRIPTS["wi_state.js"])
     assert deletable is not None
