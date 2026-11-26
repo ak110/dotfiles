@@ -595,6 +595,13 @@ sys.exit({status})
         ["plugins"],
         ["--bg", "hello"],
         ["--background", "hello"],
+        ["--desktop", "--resume", "session-a"],
+        ["--debug", "hooks", "plugins", "list"],
+        ["--plugin-url", "https://example.invalid/plugin.zip", "mcp", "list"],
+        ["--unknown-launch-mode"],
+        ["--unknown-launch-mode=value", "--continue"],
+        ["--unknown-launch-mode", "value", "mcp", "list"],
+        ["new-management-command"],
         ["--version"],
     ],
 )
@@ -623,7 +630,7 @@ def test_claude_entrypoints_keep_noninteractive_path(
 
 
 @pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
-@pytest.mark.parametrize("args", [["--resume"], ["-r", "session-a"], ["--continue"]])
+@pytest.mark.parametrize("args", [[], ["--resume"], ["-r", "session-a"], ["--continue"], ["two words"], ["--", "hello"]])
 @pytest.mark.parametrize("fds", [{0, 1}, {0}, {1}])
 def test_claude_resume_checks_both_terminal_descriptors(
     entrypoint: Entrypoint,

@@ -161,60 +161,19 @@ def _enable_model_completion(command_name: str) -> None:
 def _interactive_claude(argv: list[str], isatty: TerminalChecker) -> bool:
     if not (isatty(0) and isatty(1)):
         return False
-    management = {
-        "agents",
-        "attach",
-        "auth",
-        "auto-mode",
-        "doctor",
-        "gateway",
-        "import",
-        "install",
-        "kill",
-        "logs",
-        "mcp",
-        "plugin",
-        "plugins",
-        "purge",
-        "respawn",
-        "rm",
-        "setup-token",
-        "stop",
-        "ultrareview",
-        "update",
-        "upgrade",
-    }
-    noninteractive = {
-        "-p",
-        "--print",
-        "-h",
-        "--help",
-        "-v",
-        "--version",
-        "--sdk-url",
-        "--init-only",
-        "--maintenance",
-        "--bg",
-        "--background",
-    }
-    optional_values = {"--resume", "-r", "--teleport", "-w", "--worktree"}
-    first_positional = True
-    index = 0
-    while index < len(argv):
-        token = argv[index]
-        if token == "--":
-            break
-        if token.partition("=")[0] in noninteractive:
+
+    # pyfltr: allow-comment -- 不明な起動は従来経路に任せ、版の更新で増えた引数を自動終了の対象にしない。
+    match argv:
+        case [] | ["--continue" | "-c" | "--resume" | "-r"]:
+            return True
+        case ["--resume" | "-r", session]:
+            return bool(session.strip()) and not session.startswith("-")
+        case [prompt]:
+            return not prompt.startswith("-") and len(prompt.split()) >= 2
+        case ["--", prompt]:
+            return bool(prompt.strip())
+        case _:
             return False
-        if token in (_CLAUDE_VALUE_OPTIONS | {"--model"} | optional_values):
-            if index + 1 < len(argv) and not argv[index + 1].startswith("-"):
-                index += 1
-        elif first_positional and not token.startswith("-"):
-            if token in management:
-                return False
-            first_positional = False
-        index += 1
-    return True
 
 
 def _wait_for_claude(command: list[str], env: dict[str, str]) -> int:
