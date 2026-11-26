@@ -10,6 +10,7 @@ def test_assets_global_error_uses_shared_lifecycle_for_all_generators(
 ) -> None:
     result = _run_node_ui(
         """
+document.body.dataset.screen = 'wi';
 bindEvents();
 elements['refresh-button'].focus();
 setGlobalError('最初のエラー');

@@ -97,6 +97,15 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
                 "wi_feedback.js",
                 "wi_list_render.js",
                 "wi_list.js",
+            )
+        )
+        # wi_reference.jsの内部変数とwi_detail.jsの同名関数を分離する。  # pyfltr: allow-comment
+        + "\nconst {closeWiReferences, configureWiReferences, linkWiReferences, wiLink} = (() => {\n"
+        + _module_body(assets.SCRIPTS["wi_reference.js"])
+        + "\nreturn {closeWiReferences, configureWiReferences, linkWiReferences, wiLink};\n})();\n"
+        + "\n".join(
+            _module_body(assets.SCRIPTS[name])
+            for name in (
                 "wi_detail.js",
                 "wi_waiting.js",
                 "wi_mutations.js",
@@ -245,6 +254,7 @@ globalThis.controlGroups = Object.fromEntries(
 );
 globalThis.controlGroups['app-header'] = appHeader.querySelectorAll('input, select, textarea, button');
 globalThis.document = {{
+  body: nodes.find(node => node.tagName === 'BODY'),
   activeElement: null,
   listeners: {{}},
   getElementById(id) {{ return elements[id] || null; }},

@@ -10,6 +10,7 @@ def test_assets_execute_error_paths_across_binding_and_initialization_code() -> 
     """外部変更の再読込と初期化のどちらで失敗しても、失敗メッセージを操作通知へ表示する。"""
     result = _run_node_ui(
         """
+document.body.dataset.screen = 'wi';
 fetchHandler = async url => {
   if (url.includes('/api/repos?')) {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
