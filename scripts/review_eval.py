@@ -478,7 +478,7 @@ def _prepare_draft_opening(case_dir: pathlib.Path, params: dict[str, str]) -> No
                 next_action="該当するextra_paramsを読めるUTF-8ファイルへ直し、新しい--outで同じ事例をprepareする",
             ) from error
     # 不合格を期待する評価原稿にも、投入の承認を作らず実際の冒頭抽出を当てる。 pyfltr: allow-comment
-    ((_, excerpt),) = add_reports.compare_draft_openings([draft_text], [str(draft)])
+    _, excerpt = add_reports.compare_draft_openings([draft_text], [str(draft)])[0]
     opening = case_dir / "draft-opening.md"
     try:
         opening.write_bytes(excerpt.encode("utf-8"))
