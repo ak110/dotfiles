@@ -295,7 +295,6 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     });
     return url.href;
   }
-
   function detailEvents(detail) {
     if (conversationOnly) return (detail.conversation ?? []).flatMap(row => {
       const source = detail.events[row.index];
@@ -321,6 +320,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       const block = renderEvent(event, index);
       const open = preserved?.openStates.get(String(index));
       if (open !== undefined) block.open = open;
+      const nested = block.querySelector("details[data-event-index]");
+      if (nested) nested.open = preserved?.openStates.get(nested.dataset.eventIndex) ?? nested.open;
       detailEl.append(block);
     }
     renderedCount = Math.min(end, visibleEvents.length);
