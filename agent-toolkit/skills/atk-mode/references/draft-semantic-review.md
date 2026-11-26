@@ -33,7 +33,11 @@ WIの原稿を保存する前に、その意味を確かめる観点である。
    抽出は、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」のdry-runが原稿ごとに保存するファイルである。
    作成主体から受け取った抽出を再利用し、要求の識別子、入力原稿、抽出の保存先、比較資料の対応を保つ。
    基準は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」とし、直接起草するメインの自己判定にも同じ基準を使う。
-   AWIは`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」が定めるH1直下を、UWIは`agent-toolkit:atk-mode/references/uwi-format.md`「構成」の内容を判定する。
+   AWIは`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」が定めるH1直下を判定する。
+   UWIでは、同じ合格基準を使い、冒頭だけで次の行動と答え方が分かるかを確かめる。
+   全文では、指定の環境でコマンドをそのまま使えるか、説明が判断・実行・返信に必要かを確かめる。
+   語彙、選択肢ごとの結果、操作の認可と安全性の確認は保つ。
+   指摘は成立性を変える不足に限り、加筆を既定とせず、削除・統合・コマンド化で解けるものはその処置を短く示す。
    原稿全体の検収では、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runに`--compare-opening-file <受領済みの抽出の絶対パス>`を加えて一致を確かめる。
    新規原稿に`source`があればその値を使う。
    無い場合、専念型のレビュー担当は`--source agent`を指定する。
