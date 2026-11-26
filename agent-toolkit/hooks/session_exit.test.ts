@@ -387,3 +387,25 @@ test("協調の終了要求はcron一覧を取得できなければ取り消す"
   expect(calls).not.toContain("command:exit");
   expect(writes.get(COMPLETION_PATH)).toBe("{}");
 });
+
+test("協調の終了要求は次のturn.startより前でも利用者の入力で取り消す", async ($, on) => {
+  const { calls, writes } = engine(on, { completion: "approved" });
+  const input: string[] = [];
+  on("session.surfaces", () => ({ value: [] }));
+  on("prompt.submit", (_$, e) => { input.push(e.text); return { text: e.text }; });
+  await $.prompt.submit({ text: "作業を続けて", wait: false, origin: { kind: "composer" } });
+  expect(input).toEqual(["作業を続けて"]);
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).not.toContain("command:exit");
+  expect(writes.get(COMPLETION_PATH)).toBe("{}");
+});
+
+for (const command of ["Bash", "agents-server委譲"]) {
+  test(`Stop許可後に${command}の待機を検出したら協調の終了を取り消す`, async ($, on) => {
+    const { calls, writes } = engine(on, { completion: "approved" });
+    on("state.get", { plugin: "agent-toolkit", key: "backgroundWaits" }, () => ({ value: { value: { task: { id: "task", command } }, version: 1 } }));
+    await $.turn.complete(MAIN_TURN);
+    expect(calls).not.toContain("command:exit");
+    expect(writes.get(COMPLETION_PATH)).toBe("{}");
+  });
+}
