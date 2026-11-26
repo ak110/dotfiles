@@ -275,7 +275,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
             quiet_intermission, runtime_reserved = _intermission(payload, session_id, delivery)
         except Exception as exc:  # noqa: BLE001 -- 共通証拠の取得失敗で個別の終了判定を失わない
             append_stop_log(session_id, "check_error", {"check": "intermission", "error": f"{type(exc).__name__}: {exc}"})
-    entries, last_delivery_error = delivery if delivery is not None else ([], None)
+    entries = delivery[0] if delivery is not None else []
     options: dict[str, dict[str, Any]] = {
         "delivered_repost_gate": {"quiet_intermission": quiet_intermission, "delivery": delivery},
         "bugfix_gate": {"quiet_intermission": quiet_intermission},
@@ -387,7 +387,6 @@ def evaluate(payload_text: str) -> dict[str, object]:
         send_steps = (
             [delivered_repost_gate.send_fix()]
             if "delivered_repost_gate" not in blocking_checks
-            and last_delivery_error is not True
             and any(name in blocking_checks for name in ("bugfix_gate", "hook_notice_response_gate"))
             and delivered_repost_gate.send_required(entries)
             else []

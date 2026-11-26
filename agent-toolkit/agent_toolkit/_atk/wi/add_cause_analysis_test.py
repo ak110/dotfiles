@@ -66,25 +66,15 @@ _RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
         f"{_RECORD}\n- 再発: 前回は規範の追記で対処した。",
         "`再発:`の行が区分の語で始まらない",
     ),
-    "recurrence_text_only": (
-        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。")
-        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
-        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
-    ),
-    "recurrence_text_only_with_reason": (
-        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可: 判定に文脈の意味が要る。")
-        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
+    "recurrence_document": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 送付先が逆の例を、実際の受理先を示す例に置き換える。")
+        + "\n- 再発: 誘発入力: 前回の案内は受理されない送付先を示していた。",
         None,
     ),
-    "recurrence_text_only_with_empty_reason": (
-        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可:")
-        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
-        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
-    ),
-    "recurrence_text_only_with_separator_only": (
-        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可：；")
-        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
-        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
+    "recurrence_procedure": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 手順: 検証後の確認を送信前へ移す。")
+        + "\n- 再発: 読込喪失: 前回の確認は送信後に読む手順にあった。",
+        None,
     ),
     "recurrence_kind_without_reason": (f"{_RECORD}\n- 再発: 該当なし", "`再発:`の行が区分の語だけで根拠が無い"),
     "recurrence_structural": (f"{_RECORD}\n- 再発: 範囲不足: 前回は1つの経路だけを検査した。", None),
@@ -93,7 +83,7 @@ _RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
         None,
     ),
 }
-"""再発した事象の記録の区分と、文書・手順だけの再発防止を保存時に止める場合（2026年11月25日の分析）。 pyfltr: allow-comment"""
+"""再発の区分・理由を検査し、文書・手順型の対策も受理する。 pyfltr: allow-comment"""
 _SECTIONS.update(_RECURRENCE_CASES)
 
 
@@ -339,10 +329,9 @@ _REPEATED_QUOTE = "過去に何度もしているという指摘も過去に何�
         ("- 再発: 未適用: 前回は規範の追記で対処した。今回は保存時の検査へ変える。", False),
         ("- 再発: 該当なし: 同じ指摘への前回の対策は無い。", False),
         ("- 再発: 未調査: 前回の対策を調べていない。", True),
-        ("- 再発: 未適用: 前回は規範の追記で対処した。\n- 再発防止: 文書: 実例を載せる。", True),
         (
-            "- 再発: 未適用: 前回は規範の追記で対処した。\n"
-            "- 再発防止: 文書: 実例を載せる。構造化不可: 判定に文脈の意味が要る。",
+            "- 再発: 誘発入力: 前回の案内は受理されない送付先を示していた。\n"
+            "- 再発防止: 文書: 送付先が逆の例を、実際の受理先を示す例に置き換える。",
             False,
         ),
     ],
@@ -374,7 +363,6 @@ def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
             for text in (
                 "反復の候補に当たるのに`再発:`の行が無い",
                 "`再発:`の行が区分の語で始まらない",
-                "`文書`・`手順`だけである",
             )
         )
     else:

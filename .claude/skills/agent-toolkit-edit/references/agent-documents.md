@@ -52,7 +52,7 @@ toolkitのClaudeの依存の配列を、Agent Pluginsのルートのマニフェ
 
 `agent-basics/skills/bugfix/`の`SKILL.md`か確認観点を変える時は、各確認観点の末尾の「この観点が防ぐ失敗例」を変更後の本文へ当てる。
 `SKILL.md`と、その条件が指す確認観点だけを渡した独立した文脈へ失敗例の場面を示し、同じ誤りへ進まないことを確かめる。
-文章を足す変更では、`agent-basics:bugfix/references/prevention.md`「案を比べる順」に従い、同じ変更で消すか統合する文章を示す。
+文章を足す変更では、`agent-basics:bugfix/references/prevention.md`「案を比べる」に従い、同じ変更で消すか統合する文章を示す。
 
 ## エージェント向け文書の技術的条文
 

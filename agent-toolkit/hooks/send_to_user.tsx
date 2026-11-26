@@ -148,7 +148,7 @@ const PREVENTION_WITHOUT_CHANGE_WARNING = automatedMessage(
   "send-to-user",
   "warn",
   "本文は表示済みである。`再発防止:`の行が、変える成果物（ファイル・commit）も採用しない区分名も示していない。" +
-    "担当の心がけは再発防止にならない（`agent-basics:bugfix/references/prevention.md`）。採る場合は誤りを誘った入力の除去・構造・検査のどれかで変えるファイルを、" +
+    "担当の心がけは再発防止にならない（`agent-basics:bugfix/references/prevention.md`）。採る場合は文言・出し方と仕組みを比べ、原因に作用する変更を加えるファイルを、" +
     "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書け。",
 );
 

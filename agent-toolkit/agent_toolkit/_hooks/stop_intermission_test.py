@@ -170,6 +170,13 @@ def test_correction_recovery_sends_once(tmp_path: pathlib.Path, repl: bool, warn
         assert label in reason
     assert ("hook通知への対応:" in reason) is warned
     assert reason.index("起動していない") < reason.index("対策:") < reason.index("1回送達")
+    assert "再送・再掲せず `…` だけ" in reason
+    assert "新しい入力や成果" in reason
+
+    blocked_stop = stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))
+    stop_reason = str(blocked_stop["reason"])
+    assert stop_reason.index("対策:") < stop_reason.index("1回送達")
+    assert "再送・再掲せず `…` だけ" in stop_reason
 
     entries.extend(_BUGFIX)
     report = "## 是正報告\n" + _TYPED_REPORT
@@ -306,6 +313,9 @@ def test_only_successful_report_after_bugfix_is_reusable(
     entries.extend([*_BUGFIX, *report] if started_before_send else [*report, *_BUGFIX])
     result = stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))
     assert (result.get("decision") != "block") is (started_before_send and not failed_receipt)
+    if failed_receipt:
+        assert "診断を解消し" in str(result["reason"])
+        assert "再送・再掲せず `…` だけ" in str(result["reason"])
 
 
 @pytest.mark.parametrize("recheck", [False, True])

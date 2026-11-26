@@ -137,8 +137,9 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
 4. `atk wi grep --state=all --target-repo=all` と `atk wi show` で過去の対策を期間を区切らず読み、`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「原因と対策」で効果を判定する。
    区分は未反映・未適用・範囲不足・適用後の同原因・別原因・効果未確認を使う。
    会話の照会は反復の束の適用証拠を得る箇所だけにし、`session-review-evidence` で必要な位置を得る。
-5. 対策の撤去・単純化、誤りを防ぐ構造か既存のチェック、重複の統合、文面修正の順に比べ、一まとまりごとに1案を選ぶ。
-   文面を変える案では以前の文面対策の失敗理由が当てはまらない根拠を示す。
+5. 同じ害の束ごとに、`agent-basics:bugfix/references/prevention.md`「案を比べる」で対策を選び直す。
+   文言・出し方と仕組みごとに、既存集計と適用証拠から、効果・弊害・費用の見積もりと実績のずれを比べる。
+   効果不足は是正案へつなぐ。
    同じ束に対する未着手の対策AWI（`source`が設定されたもの）を統合候補とする。
    `source`は起票経路だけを示す。
    統合前に、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従って既存の要求・完成条件の出所を項目ごとに確かめる。

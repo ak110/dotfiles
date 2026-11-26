@@ -25,7 +25,7 @@ commitメッセージには計画外の既存不良の修正であることと�
 範囲・時機・完了は同スキルの次の資料に従う。
 
 - `agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」
-- `agent-basics:bugfix/references/prevention.md`「案を比べる順」
+- `agent-basics:bugfix/references/prevention.md`「案を比べる」
 
 AWIを要さず見つけた主体が元の文脈で直す用途には、専用の起動・受領契約を用意する。
 `defect-investigation.subagent.md`を指定して、`agents_server`の`start`で`execute`の調査担当を起動する。
