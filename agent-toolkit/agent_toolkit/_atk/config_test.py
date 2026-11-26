@@ -282,6 +282,9 @@ def test_shared_migration_comparison_has_terminal_and_machine_forms(tmp_path, mo
         else:
             assert "差あり" in shown and "初期値" in shown
             assert "--keep-local review_model" in shown and "--keep-shared review_model" in shown
+        command = next(line.strip().split() for line in shown.splitlines() if line.startswith("  atk config"))
+        expected = [] if initial else ["--keep-shared", "codex_fast_mode", "--keep-shared", "review_model"]
+        assert command[5:] == expected
         _write_config(tmp_path, {})
         assert _main(tmp_path, "config", "migrate-shared") == 0
         assert "適用は不要" in capsys.readouterr().out

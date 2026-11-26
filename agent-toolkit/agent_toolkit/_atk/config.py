@@ -281,6 +281,12 @@ def _migration_local_value(key: str, value: Any) -> str:
     return _config_settings.normalize_setting(key, value)
 
 
+def _print_shared_value(key: str, label: str, value: str) -> None:
+    if key in _config_settings.MODEL_DEFAULTS:
+        value = value.replace(",", ",\n      ")
+    print(f"  {label}: {value}")
+
+
 def _print_shared_comparison(
     revision: str, local: dict[str, Any], shared: dict[str, str], *, initial: bool, force_json: bool
 ) -> None:
@@ -304,10 +310,8 @@ def _print_shared_comparison(
         )
         return
 
-    print("共有設定の比較（未適用）")
+    print("共有設定の比較")
     print("初回: 共有設定ファイルがない" if initial else "既存の共有設定ファイルと比較")
-    if comparison:
-        print("キー | 比較 | ローカル保存値 | 共有保存値 | 移行後の値・選択")
     labels = {"equal": "一致", "different": "差あり", "local_only": "ローカルのみ", "shared_only": "共有のみ"}
     required = _migration_required(initial, local, shared)
     invalid_initial = False
@@ -315,35 +319,46 @@ def _print_shared_comparison(
         here = json.dumps(local[key], ensure_ascii=False) if key in local else "未保存"
         there = json.dumps(shared[key], ensure_ascii=False) if key in shared else "未保存"
         shared_value = there if key in shared else f"初期値 {json.dumps(defaults[key], ensure_ascii=False)}"
+        print(f"\n{key}（{labels[kind]}）")
+        _print_shared_value(key, "ローカル保存値", here)
+        _print_shared_value(key, "共有保存値", there)
         if key in not_shared:
-            after = f"共有へ移さない（初期値 {not_shared[key]}）"
+            print(f"  移行後: 共有へ移さない（初期値 {not_shared[key]}）")
         elif initial or key in required:
             try:
                 adopted = json.dumps(_migration_local_value(key, local[key]), ensure_ascii=False)
             except ValueError as error:
                 invalid_initial |= initial
-                after = f"ローカル値は移行できない: {error}"
-                if not initial:
-                    after += f" / --keep-shared {key}: {shared_value}"
+                print(f"  ローカル値は移行できない: {error}")
             else:
-                after = adopted if initial else f"--keep-local {key}: {adopted} / --keep-shared {key}: {shared_value}"
+                if initial:
+                    _print_shared_value(key, "移行後", adopted)
+                else:
+                    _print_shared_value(key, "ローカル値を採用", adopted)
+                    print(f"    --keep-local {key}")
+            if key in required:
+                _print_shared_value(key, "共有側を採用", shared_value)
+                print(f"    --keep-shared {key}")
         else:
-            after = shared_value
-        print(f"{key} | {labels[kind]} | {here} | {there} | {after}")
+            _print_shared_value(key, "移行後", shared_value)
     if not local:
-        print("移行するローカル共有設定はない。適用は不要。")
+        print("\n移行するローカル共有設定はない。適用は不要。")
         return
     if invalid_initial:
-        print("移行できないローカル値を直してから、もう一度比較する。")
+        print("\n移行できないローカル値を直してから、もう一度比較する。")
         return
-    print("環境変数や一時指定があれば、移行後もその値が優先される。")
+    print("\n環境変数や一時指定があれば、移行後もその値が優先される。")
     print("適用時は共有先と通信し、同期を確認した後に移行元のローカル値を除く。")
+    command = f"atk config migrate-shared --apply {revision}"
     if required:
-        print("--keep-local で選んだ値は他のホストにも同期する。")
-        print("選択が必要なキーごとに上の --keep-local または --keep-shared を1つ選び、次の行の末尾に追加してから実行する。")
+        print("適用例（選択が必要なキーを全て共有側にする場合）:")
+        command += "".join(f" --keep-shared {key}" for key in sorted(required))
     else:
         print("選択は不要。次のコマンドで適用する。")
-    print(f"  atk config migrate-shared --apply {revision}")
+    print(f"  {command}")
+    if required:
+        print("ローカル値を採用するキーだけ --keep-shared を --keep-local に変える。")
+        print("--keep-local で選んだ値は他のホストにも同期する。")
 
 
 def _migration_values(
