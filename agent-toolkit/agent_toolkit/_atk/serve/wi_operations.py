@@ -166,6 +166,10 @@ def _without_source_frontmatter(message: str) -> str:
 def _summary(body: str, kind: str) -> str:
     lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("## ")]
     if kind == wi_constants.WI_TYPE_UWI:
+        for line in body.splitlines():
+            prefix, separator, title = line.strip().partition(" ")
+            if prefix in {"#", "##"} and separator and title not in {"質問", "報告", "回答", "状況", "選択肢"}:
+                return title.strip()[:160]
         lines = [line for line in lines if not line.startswith("<!--")]
     return lines[0][:160] if lines else ""
 

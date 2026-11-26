@@ -303,7 +303,7 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
     ),
 )
 @pytest.mark.asyncio(loop_scope="session")
-@pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
+@pytest.mark.parametrize("width", [1920, 1440, 1280, 900])
 async def test_navigation_links_match_on_all_screens(screen_harness: _ScreenHarness, width: int) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": width, "height": 800})
@@ -332,6 +332,20 @@ async def test_navigation_links_match_on_all_screens(screen_harness: _ScreenHarn
         ).to_have_text(name)
         clicked[path] = await links.evaluate_all(_NAV_LINK_METRICS)
     assert clicked == direct
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_narrow_navigation_select_changes_screen_without_reload(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 390, "height": 800})
+    await page.goto(screen_harness.base_url + "/")
+    await page.evaluate("window.testPageIdentity = 'same-document'")
+    picker = page.get_by_role("combobox", name="画面を切り替える")
+    for name in ("plans", "agents", "sessions", "usage", "settings", "wi"):
+        await picker.select_option(name)
+        await playwright.async_api.expect(picker).to_have_value(name)
+        await playwright.async_api.expect(page.locator(f"#screen-{name}")).to_be_visible()
+        assert await page.evaluate("window.testPageIdentity") == "same-document"
 
 
 @pytest.mark.cpu_limit(

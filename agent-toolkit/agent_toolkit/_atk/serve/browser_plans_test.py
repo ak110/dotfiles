@@ -500,12 +500,12 @@ async def test_plan_wi_links_open_here_and_support_middle_click(screen_harness: 
     await expect(preview.get_by_role("link", name="AGENTS.md")).to_have_count(0)
     await expect(preview.get_by_role("link", name="20261011-203736-1001.md")).to_be_visible()
     await related.click()
-    first = page.get_by_role("dialog", name="詳細（1段目）")
+    first = page.get_by_role("dialog", name="参照先のワークアイテム").first
     await expect(first.get_by_role("heading", name=filename, exact=True)).to_be_visible()
     if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
         await page.screenshot(path=Path(directory) / "005-plan-dialog.png")
     await first.get_by_role("link", name=legacy).click()
-    await expect(page.get_by_role("dialog", name="詳細（2段目）")).to_contain_text("旧式の本文")
+    await expect(page.get_by_role("dialog", name="参照先のワークアイテム").last).to_contain_text("旧式の本文")
     await page.keyboard.press("Escape")
     await page.keyboard.press("Escape")
     await expect(related).to_be_focused()

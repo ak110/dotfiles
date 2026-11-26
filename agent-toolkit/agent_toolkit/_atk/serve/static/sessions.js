@@ -2,7 +2,7 @@ import {readFailure} from "./common.js";
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, setUpdateError, createReadRecovery, setDisplayedReadError
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, recordUpdateSuccess, setUpdateError, createReadRecovery, setDisplayedReadError
 } from "./common.js";
 import {createSessionDetail} from "./sessions_detail.js";
 import {registerScreen} from "./shell.js";
@@ -144,7 +144,6 @@ function renderSessions() {
       item.append(warning);
     }
     // 子の無い行にも同じ幅の開閉欄を置き、子の有無で項目の開始位置がずれないようにする。
-    // 子の無い行の「−」は展開できる子が無いことを示す表示であり、操作対象にしない。
     let toggle = row.querySelector(".session-tree-toggle, .session-tree-leaf");
     if (childCount) {
       if (!toggle || toggle.tagName !== "BUTTON") {
@@ -160,14 +159,13 @@ function renderSessions() {
         });
         row.insertBefore(toggle, row.firstChild);
       }
-      toggle.textContent = expandedKeys.has(key) ? "−" : "+";
+      toggle.textContent = expandedKeys.has(key) ? "▾" : "▸";
       toggle.setAttribute("aria-label", `${entry.session_id}の子セッションを${expandedKeys.has(key) ? "折り畳む" : "展開する"}`);
       toggle.setAttribute("aria-expanded", String(expandedKeys.has(key)));
     } else if (!toggle || toggle.tagName === "BUTTON") {
       toggle?.remove();
       toggle = document.createElement("span");
       toggle.className = "session-tree-leaf";
-      toggle.textContent = "−";
       toggle.setAttribute("aria-hidden", "true");
       row.insertBefore(toggle, row.firstChild);
     }
@@ -251,7 +249,7 @@ function showListWarnings(warnings) {
   for (const host of remoteFailures.keys()) {
     if (!failed.has(host)) {
       remoteFailures.delete(host);
-      setUpdateError("sessions", `host:${host}`);
+      recordUpdateSuccess("sessions", `host:${host}`);
     }
   }
   if (!failed.size) return;
@@ -292,7 +290,7 @@ async function fetchList(timing = {}) {
       if (location.pathname.endsWith("/sessions") && location.search) history.replaceState({atkSession: true}, "", location.pathname);
     }
     sessionRoots = payload.roots || [];
-    setUpdateError("sessions", "list");
+    recordUpdateSuccess("sessions", "list");
     const searched = fullTextMatches !== null || fullTextRequest !== null;
     if (queryText && !hasMetadataMatch && (hadMetadataMatch || (searched && listChanged))
         && queryText === filterEl.value.trim().toLowerCase()) {

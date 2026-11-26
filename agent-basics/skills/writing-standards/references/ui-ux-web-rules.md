@@ -59,6 +59,11 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 - 下線は`text-underline-offset`で文字から離し、表の数値には`font-variant-numeric: tabular-nums`を使う
 - 日付と数値は`Intl`などで地域設定に合わせ、SSRとハイドレーションを併用する場合は日時の描画とイベントハンドラーがサーバーとクライアントで一致するかを確かめる
 
+図、グラフ、進捗、状態バッジは各テーマで文字・線・背景・フォーカスの対比を確認する。
+外部の図を背景色と独立に再着色せず、輪郭を識別できる専用の面か、制御できる素材のテーマ別の対を使う。
+入力のラベルと説明は対応する入力のそばに置く。
+選択肢全体を操作できる場合は、そのまとまりでもフォーカス位置を視認できるようにする。
+
 ## 避けるべき実装
 
 `viewport`は拡大できる設定にし（`user-scalable=no`と`maximum-scale=1`を外す）、操作できる外見の要素は実際に反応させる。

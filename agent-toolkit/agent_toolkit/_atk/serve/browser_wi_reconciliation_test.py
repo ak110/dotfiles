@@ -73,10 +73,10 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     processing_row = page.locator('.entry-select[data-key="processing-same.md"]')
     await processing_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("処理中")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
     harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("処理中")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
 
     await detail.get_by_role("button", name="編集", exact=True).click()
@@ -93,7 +93,7 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     await detail.wait_for(state="visible")
     _set_entry_state(processing_same, "adopted")
     harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("採用")
     await playwright.async_api.expect(detail.locator("#detail-filename")).to_have_text("processing-same.md")
     await page.keyboard.press("Escape")
 
@@ -104,7 +104,7 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     _set_entry_state(moving, "processing")
     harness.current_state.publish()
     await delete_dialog.wait_for(state="hidden")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("処理中")
     await playwright.async_api.expect(detail.locator("#detail-dialog-body")).to_be_focused()
 
     await detail.get_by_role("button", name="削除").click()

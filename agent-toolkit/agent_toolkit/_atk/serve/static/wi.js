@@ -4,7 +4,7 @@ import {
   isCurrentUserListOperation, loadBranchRegistry, loadEntries, loadTargetRepos, movePage, refreshKnownEntries, syncNotificationButton
 } from "./wi_list.js";
 import {
-  SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible, attachScrollEdges, setUpdateError
+  SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible, attachScrollEdges, recordUpdateSuccess, setUpdateError
 } from "./common.js";
 import {
   api, closeDialog, closeOperationNotice, runPending, setGlobalError
@@ -139,6 +139,7 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
   const dialog = byId(dialogId);
   const close = closeHandler || (() => closeDialog(dialog));
   byId(closeButtonId).addEventListener('click', close);
+  dialog.querySelector('[id$="-cancel-button"]')?.addEventListener('click', close);
   dialog.addEventListener('cancel', event => {
     event.preventDefault();
     close();
@@ -280,7 +281,7 @@ function subscribeEvents() {
     },
     'sync-ok': () => {
       syncFailures = 0;
-      setUpdateError('wi', 'sync');
+      recordUpdateSuccess('wi', 'sync');
     },
   });
 }
@@ -311,9 +312,15 @@ async function init() {
     return initialization.then(() => reloadFromExternalChange());
   });
   const compact = window.matchMedia('(max-width: 700px)');
-  const resetDetailActions = () => { byId('detail-more').open = !compact.matches; };
+  const resetDetailActions = () => {
+    const more = byId('detail-more');
+    more.open = more.dataset.answering !== 'true' && !compact.matches;
+  };
   compact.addEventListener('change', resetDetailActions);
-  byId('detail-dialog').addEventListener('close', resetDetailActions);
+  byId('detail-dialog').addEventListener('close', () => {
+    delete byId('detail-more').dataset.answering;
+    resetDetailActions();
+  });
   resetDetailActions();
   if (compact.matches) {
     document.querySelector('#screen-wi .filters details').open = false;

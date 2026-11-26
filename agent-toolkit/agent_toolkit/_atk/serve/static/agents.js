@@ -1,5 +1,5 @@
 import {decorateWiReferences} from "./wi_reference.js";
-import {setUpdateError, setDisplayedReadError, BASE_PATH, recoverRead} from "./common.js";
+import {recordUpdateSuccess, setUpdateError, setDisplayedReadError, BASE_PATH, recoverRead} from "./common.js";
 import {registerScreen} from "./shell.js";
 
 const active = () => document.body.dataset.screen === "agents";
@@ -46,7 +46,7 @@ function agentRow(agent, depth) {
   row.append(identity);
   const state = {"稼働中": "running", "終了": "terminated", "不明": "unknown"}[agent.status] || agent.status;
   for (const [field, label, value] of [
-    ["status", "状態", state], ["elapsed", "経過時間", agent.elapsed], ["usage", "文脈使用量", agent.usage],
+    ["status", "状態", ({running: "稼働中", terminated: "終了", unknown: "不明"})[state] ?? agent.status], ["elapsed", "経過時間", agent.elapsed], ["usage", "文脈使用量", agent.usage],
   ]) {
     const cell = document.createElement("span");
     cell.className = `agent-${field} text-clip`;
@@ -54,7 +54,7 @@ function agentRow(agent, depth) {
       cell.title = value;
       const valueNode = agentText(field === "status" ? "agent-value status-chip" : "agent-value", value);
       if (field === "status") valueNode.dataset.state = state;
-      cell.append(agentText("visually-hidden", `${label}: `), valueNode);
+      cell.append(agentText("agent-field-label secondary-text", `${label}: `), valueNode);
     }
     row.append(cell);
   }
@@ -127,7 +127,7 @@ function watchHost(content, host) {
       if (!active() || token !== generation) return;
       renderRoots(content, payload.roots);
       failed = false;
-      setUpdateError("agents", host);
+      recordUpdateSuccess("agents", host);
     } catch {
       if (!active() || token !== generation) return;
       failed = true;
@@ -160,7 +160,7 @@ async function init() {
   hosts.dataset.initialized = "true";
   try {
     const data = await fetchJson("/api/agents/hosts");
-    setUpdateError("agents", "hosts");
+    recordUpdateSuccess("agents", "hosts");
     for (const hostname of [null, ...data.remote]) {
       const section = document.createElement("section");
       const heading = document.createElement("h2");

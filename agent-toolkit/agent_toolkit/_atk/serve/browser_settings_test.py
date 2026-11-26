@@ -83,7 +83,7 @@ async def test_settings_save_notice_is_visible_at_bottom_of_narrow_screen(
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 360})
     await page.goto(screen_harness.base_url + "/settings")
-    await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
+    await page.get_by_role("combobox", name="分類", exact=True).select_option(label="atk serve")
     port = page.locator('[data-setting="serve_port"]')
     await port.get_by_label("保存値").fill("54002")
     save = port.get_by_role("button", name="保存")
@@ -141,7 +141,8 @@ async def test_settings_temporary_preset_repository_and_array_operations(
     await temporary.get_by_label("期限（このブラウザーの時刻）").fill("2099-01-01T00:00")
     await temporary.get_by_role("button", name="一時指定を保存").click()
     key = page.locator('[data-setting="codex_fast_mode"]')
-    await playwright.async_api.expect(key).to_contain_text("実効値: true（出所: 一時指定）")
+    await playwright.async_api.expect(key).to_contain_text("実効値: true")
+    await playwright.async_api.expect(key).to_contain_text("出所: 一時指定")
     await temporary.get_by_role("button", name="一時指定を全解除").click()
     await playwright.async_api.expect(key).to_contain_text("実効値: auto")
 
@@ -339,8 +340,8 @@ async def test_remote_save_remains_visible_while_editing_elsewhere(
     await page.set_viewport_size({"width": 320, "height": 720})
     await page.goto(screen_harness.base_url + "/settings")
     await page.get_by_label("設定対象ホスト").select_option("demo-host")
-    nav = page.get_by_role("navigation", name="設定の分類")
-    await nav.get_by_text("工程別モデル", exact=True).click()
+    nav = page.get_by_role("combobox", name="分類", exact=True)
+    await nav.select_option(label="工程別モデル")
     preset = page.locator('details[data-editor="preset:claude-primary"]')
     await preset.get_by_text("claude-primary", exact=True).click()
     await preset.get_by_role("button", name="適用").click()
@@ -349,14 +350,14 @@ async def test_remote_save_remains_visible_while_editing_elsewhere(
     hosts_editor = page.locator('[data-setting="remote_hosts"]')
     try:
         if editing == "permission":
-            await nav.get_by_text("利用枠", exact=True).click()
+            await nav.select_option(label="利用枠")
             add = page.locator('details[data-editor="usage_reset_permissions:"]')
             await add.get_by_text("許可を追加", exact=True).click()
             await add.get_by_text("詳細: アカウントの直接入力", exact=True).click()
             draft = add.get_by_label("アカウントを直接入力")
             save = add.get_by_role("button", name="追加", exact=True)
         elif editing == "hosts":
-            await nav.get_by_text("atk serve", exact=True).click()
+            await nav.select_option(label="atk serve")
             await expect(hosts_editor.get_by_role("button", name="firstを削除")).to_be_visible()
             draft = hosts_editor.get_by_label("追加するホスト")
             save = hosts_editor.get_by_role("button", name="追加", exact=True)

@@ -47,9 +47,9 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.locator('#entry-list .entry-select[data-kind="unknown"]').count() == 1
 
     awi_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="awi.md")
-    assert await awi_row.locator(".entry-kind").text_content() == "awi"
-    assert await awi_row.locator(".plan-badge").text_content() == "plan"
-    assert await awi_row.locator(".state-badge").text_content() == "inbox"
+    assert await awi_row.locator(".entry-kind").text_content() == "作業"
+    assert await awi_row.locator(".plan-badge").text_content() == "計画あり"
+    assert await awi_row.locator(".state-badge").text_content() == "受信"
     assert await awi_row.locator(".filename-cell").text_content() == "awi.md"
     assert await awi_row.locator(".summary-cell").text_content() == "編集対象の本文"
 
@@ -98,7 +98,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#state-filter").select_option("active")
     await playwright.async_api.expect(page.locator("#answer-filter")).to_be_enabled()
     assert await page.locator("#answer-filter").input_value() == "all"
-    assert await page.locator("#source-filter option").all_text_contents() == ["all", "未設定", "設定あり"]
+    assert await page.locator("#source-filter option").all_text_contents() == ["すべて", "未設定", "設定あり"]
     async with page.expect_response(
         lambda response: response.url.endswith(
             "/api/entries?type=awi&status=active&answered=all&period=all&source_kind=set&page=1"
@@ -121,7 +121,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#state-filter").select_option("adopted")
     await playwright.async_api.expect(page.locator("#target-filter")).to_have_value("example/repo")
     await playwright.async_api.expect(page.locator("#target-filter option")).to_have_text(
-        ["all", "adopted/repo", "example/repo"]
+        ["すべて", "adopted/repo", "example/repo"]
     )
     await playwright.async_api.expect(page.locator("#empty-state")).to_be_visible()
 
@@ -174,30 +174,28 @@ async def test_work_item_search_modes_preserve_conditions_and_clear(browser_harn
     await playwright.async_api.expect(page.locator("#wi-mode-normal")).to_be_checked()
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
     await _open_filters(page)
-    await playwright.async_api.expect(page.get_by_label("state", exact=True)).to_have_value("all")
-    await playwright.async_api.expect(page.get_by_label("period", exact=True)).to_have_value("all")
+    await playwright.async_api.expect(page.get_by_label("状態", exact=True)).to_have_value("all")
+    await playwright.async_api.expect(page.get_by_label("期間", exact=True)).to_have_value("all")
     await page.get_by_label("検索", exact=True).fill("過去の採用項目")
     await playwright.async_api.expect(page.locator(f'.entry-select[data-key="{old_name}"]')).to_be_visible()
     await playwright.async_api.expect(page.locator("#wi-mode-search")).to_be_checked()
-    await page.get_by_label("state", exact=True).select_option("rejected")
+    await page.get_by_label("状態", exact=True).select_option("rejected")
     await playwright.async_api.expect(page.locator("#empty-state")).to_be_visible()
-    await page.get_by_label("state", exact=True).select_option("adopted")
-    await page.get_by_label("period", exact=True).select_option("8w")
-    await page.get_by_label("target-repo", exact=True).select_option("adopted/repo")
+    await page.get_by_label("状態", exact=True).select_option("adopted")
+    await page.get_by_label("期間", exact=True).select_option("8w")
+    await page.get_by_label("対象リポジトリ", exact=True).select_option("adopted/repo")
     await playwright.async_api.expect(page.locator(f'.entry-select[data-key="{old_name}"]')).to_be_visible()
     await page.locator(".filters summary").click()
     await page.get_by_role("radio", name="通常表示", exact=True).check()
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
-    await playwright.async_api.expect(page.locator("#wi-effective-conditions")).to_have_text(
-        "通常表示: state=active、直近2週間"
-    )
+    await playwright.async_api.expect(page.locator("#wi-effective-conditions")).to_have_text("通常表示: 未完了、直近2週間")
     await page.get_by_role("radio", name="条件検索", exact=True).check()
     await playwright.async_api.expect(page.locator(f'.entry-select[data-key="{old_name}"]')).to_be_visible()
     await page.get_by_role("button", name="今すぐ同期", exact=True).click()
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     await _open_filters(page)
-    await playwright.async_api.expect(page.get_by_label("target-repo", exact=True)).to_have_value("adopted/repo")
-    await playwright.async_api.expect(page.get_by_label("period", exact=True)).to_have_value("8w")
+    await playwright.async_api.expect(page.get_by_label("対象リポジトリ", exact=True)).to_have_value("adopted/repo")
+    await playwright.async_api.expect(page.get_by_label("期間", exact=True)).to_have_value("8w")
     await page.get_by_label("検索", exact=True).fill("")
     await playwright.async_api.expect(page.locator("#wi-mode-search")).to_be_checked()
     await playwright.async_api.expect(page.locator("#pagination-status")).to_contain_text("全2件")
@@ -434,7 +432,7 @@ async def test_work_item_important_toggle_badge_and_filter(
     await playwright.async_api.expect(detail).to_be_hidden()
     await playwright.async_api.expect(page.locator("#operation-notice")).to_contain_text("重要設定しました")
     await _open_filters(page)
-    await page.get_by_label("state", exact=True).select_option("all")
+    await page.get_by_label("状態", exact=True).select_option("all")
     await page.get_by_label("重要", exact=True).select_option("yes")
     row = page.locator(f'.entry-select[data-key="{filename}"]')
     await playwright.async_api.expect(row.locator(".important-badge")).to_have_text("重要")

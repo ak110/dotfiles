@@ -99,6 +99,12 @@
   display: grid;
   gap: var(--space-2);
 }
+#screen-wi .dialog-form-fields { gap: var(--space-3); }
+#screen-wi .dialog-field:not([hidden]) {
+  display: grid;
+  gap: var(--space-1);
+}
+#screen-wi .entry-meta > .target-repo-cell:not(:empty)::before { content: "· "; color: var(--color-control-border); }
 #screen-wi .filters summary {
   cursor: pointer;
   font-weight: var(--weight-label);
@@ -108,7 +114,7 @@
 }
 #screen-wi .wi-display-mode {
   display: grid;
-  gap: var(--space-1);
+  gap: 0;
   margin: 0;
   padding: 0;
   border: 0;
@@ -123,6 +129,7 @@
 #screen-wi .wi-display-mode input { flex: 0 0 auto; }
 #screen-wi #clear-filters-button {
   margin-block: var(--space-2);
+  padding-inline: 0;
 }
 #screen-wi #wi-effective-conditions {
   overflow-wrap: anywhere;
@@ -224,9 +231,15 @@
 #screen-wi .status-cell > .state-badge {
   flex-shrink: 0;
 }
+#screen-wi .wi-display-mode label:has(:focus-visible) {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
 #screen-wi .entry-copy { margin-inline-start: var(--space-1); }
 
 @media (max-width: 48rem) {
+  #screen-wi .filters:not(:has(details[open], #wi-mode-waiting:checked)) #clear-filters-button { display: none; }
+  #screen-wi .wi-display-mode legend { position: absolute; clip-path: inset(50%); }
   #screen-wi .wi-display-mode { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
 }
 @media (max-width: 38rem) {

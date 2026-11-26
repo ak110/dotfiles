@@ -94,7 +94,8 @@ async function openReferencedWi(filename, origin) {
   dialog.className = 'dialog-shell detail-dialog wi-reference-dialog';
   const title = document.createElement('h2');
   title.id = `wi-reference-title-${childDialogs.length + 1}`;
-  title.textContent = `詳細（${childDialogs.length + 1}段目）`;
+  title.textContent = "参照先のワークアイテム";
+  title.className = "page-heading";
   dialog.setAttribute('aria-labelledby', title.id);
   const header = document.createElement('header');
   header.className = 'dialog-header';
@@ -113,6 +114,7 @@ async function openReferencedWi(filename, origin) {
   const open = document.createElement('button');
   open.type = 'button';
   open.textContent = 'このWIを開く';
+  open.className = 'button-primary';
   open.hidden = true;
   const footer = document.createElement('footer');
   footer.className = 'dialog-footer form-actions';

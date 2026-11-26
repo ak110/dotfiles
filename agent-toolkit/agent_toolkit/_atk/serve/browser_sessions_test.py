@@ -261,7 +261,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert any("Bash" in summary and "ls" in summary and "pwd" not in summary for summary in tool_summaries)
     assert any("Read" in summary and "/tmp/input.md" in summary for summary in tool_summaries)
     assert any("Search" in summary and "needle" in summary for summary in tool_summaries)
-    assert "入力: 12" in await harness.page.locator("#detail > .secondary-text").first.inner_text()
+    assert "入力 12" in await harness.page.locator("#detail > .secondary-text").first.inner_text()
 
     assert "解析できない行が1件あります" in detail_text
 
@@ -408,7 +408,7 @@ async def test_long_session_can_search_jump_and_link_without_initially_rendering
     await page.get_by_label("記録内検索").fill("目印の検索語")
     await expect(page.locator("#session-search-count")).to_have_text("1 / 1件")
     await expect(events.last).to_have_class("event kind-user event-search-match")
-    link = await events.last.get_by_role("link", name="リンク").get_attribute("href")
+    link = await events.last.get_by_role("link", name="この発話へのリンク").get_attribute("href")
     assert link is not None
     await page.goto(link)
     await expect(page.locator("#detail .event-linked")).to_contain_text("目印の検索語")
@@ -436,7 +436,7 @@ async def test_sessions_and_agents_share_wi_reference_dialog(screen_harness: _Sc
     await expect(links).to_have_count(2)
     for link in await links.all():
         await link.click()
-        await expect(page.get_by_role("dialog", name="詳細（1段目）")).to_contain_text(filename)
+        await expect(page.get_by_role("dialog", name="参照先のワークアイテム").first).to_contain_text(filename)
         await page.keyboard.press("Escape")
 
     async def listing(route):
@@ -445,7 +445,7 @@ async def test_sessions_and_agents_share_wi_reference_dialog(screen_harness: _Sc
     await page.route("**/api/agents/list?*", listing)
     await page.goto(screen_harness.base_url + "/agents")
     await page.locator("#screen-agents").get_by_role("link", name=filename).click()
-    await expect(page.get_by_role("dialog", name="詳細（1段目）")).to_contain_text(filename)
+    await expect(page.get_by_role("dialog", name="参照先のワークアイテム").first).to_contain_text(filename)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -463,7 +463,7 @@ async def test_session_links_distinguish_blocks_on_the_same_record_line(screen_h
     entries = page.locator("#detail [data-record-line='2']")
     expect = playwright.async_api.expect
     await expect(entries).to_have_count(2)
-    link = await entries.last.get_by_role("link", name="リンク").get_attribute("href")
+    link = await entries.last.get_by_role("link", name="この発話へのリンク").get_attribute("href")
     assert link is not None and "ordinal=1" in link
     await page.goto(link)
     await expect(page.locator("#detail .event-linked")).to_have_count(1)

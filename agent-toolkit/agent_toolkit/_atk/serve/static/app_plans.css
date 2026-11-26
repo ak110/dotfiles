@@ -171,6 +171,8 @@
   text-align: center;
 }
 #screen-plans .svg-output {
+  background: var(--color-diagram-paper);
+  border-radius: var(--radius-small);
   display: block;
   height: auto;
   margin: 0 auto;
@@ -207,13 +209,13 @@
     z-index: 20;
     transform: translateX(-100%);
     transition: transform 0.2s ease-out;
-    box-shadow: var(--shadow-overlay);
   }
   /* 失効理由がある一覧は、ドロワーを直ちに全幅で表示する。 */
   #screen-plans:has(#plans-selection-status:not([hidden])) aside {
     transition: none;
   }
   #screen-plans.drawer-open aside {
+    box-shadow: var(--shadow-overlay);
     transform: translateX(0);
   }
   #screen-plans #plans-drawer-backdrop {

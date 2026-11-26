@@ -1,5 +1,5 @@
 import {decorateWiReferences} from "./wi_reference.js";
-import {BASE_PATH, attachScrollEdges, beginOperation, isSelected, setDrawerOpen, timedFetch, readFailure, setUpdateError, setDisplayedReadError} from "./common.js";
+import {BASE_PATH, attachScrollEdges, beginOperation, isSelected, setDrawerOpen, timedFetch, readFailure, recordUpdateSuccess, setUpdateError, setDisplayedReadError} from "./common.js";
 
 const KIND_LABELS = {
   user: "ユーザー",
@@ -31,9 +31,9 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     const parts = [];
     for (const [key, label] of [["input_tokens", "入力"], ["output_tokens", "出力"]]) {
       const value = usage[key];
-      parts.push(`${label}: ${value === null || value === undefined ? "取得不能" : value.toLocaleString()}`);
+      if (Number.isFinite(value)) parts.push(`${label} ${value.toLocaleString()}`);
     }
-    return parts.join(" / ");
+    return parts.join(" · ");
   }
 
   function detailCost(detail) {
@@ -46,7 +46,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   }
 
   function costText(cost, pending = false) {
-    if (!cost) return pending ? "推定費用: 算出中" : "推定費用: 取得不能";
+    if (!cost) return pending ? "推定費用: 算出中" : "";
     const amount = cost.amount;
     const unknown = amount.unknown_responses || 0;
     const models = Object.entries(amount.unknown_models || {})
@@ -60,7 +60,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     const parts = [`推定${unknown || amount.incomplete ? "（既知分）" : ""} ${value} USD`];
     if (unknown) parts.push(unknownText);
     if (amount.incomplete) parts.push("一部未算出");
-    return parts.join(" / ");
+    return parts.join(" · ");
   }
 
   function appendUnavailable(parent, label) {
@@ -97,7 +97,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     // 発言と本文のある思考・要約は読む対象として開き、ツールの入出力などは要求された時だけ1項目ずつ展開する。  // pyfltr: allow-comment
     const hasThinkingText =
       event.kind === "thinking" && (typeof event.html === "string" || (typeof event.text === "string" && event.text.trim() !== ""));
-    const hasDeveloperText = event.kind === "developer" && typeof event.text === "string" && event.text.trim() !== "";
+    const hasDeveloperText = event.kind === "developer" && typeof event.text === "string" && event.text.trim() !== "" && !event.text.trimStart().startsWith("<atk-auto");
     block.open = event.kind === "user_report" || event.initial_work === true || event.kind === "user" || event.kind === "assistant" || hasDeveloperText || hasThinkingText;
     if (!block.open) {
       block.dataset.exclusiveEvent = "true";
@@ -128,7 +128,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       summary.append(name);
     }
     const preview = event.kind === "tool_call" ? toolInputSummary(event) :
-      !block.open && (event.kind === "tool_result" || event.kind === "injected") ?
+      !block.open && !nested && (event.kind === "tool_result" || event.kind === "injected") ?
         (event.text?.trim().split(/\r?\n/, 1)[0] || (event.detail || event.html ? "本文あり" : "本文なし")) : "";
     if (preview) {
       const excerpt = document.createElement("span");
@@ -141,7 +141,11 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       const link = document.createElement("a");
       link.className = "event-link";
       link.href = eventUrl(event, conversationOnly && event.kind !== "tool_call");
-      link.textContent = event.kind === "tool_call" && conversationOnly ? "全イベントで開く" : "リンク";
+      link.textContent = event.kind === "tool_call" && conversationOnly ? "全イベントで開く" : "↗";
+      if (link.textContent === "↗") {
+        link.title = "この発話へのリンク";
+        link.setAttribute("aria-label", "この発話へのリンク");
+      }
       summary.append(link);
     }
     block.append(summary);
@@ -185,7 +189,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       if (subagent.path) item.dataset.focusKey = subagent.path;
       // 起動の深さを字下げで表す。`parent_agent_id`は深さ2以上の記録にしか現れないため使わない。  // pyfltr: allow-comment
       const depth = Number.isInteger(subagent.spawn_depth) ? subagent.spawn_depth : 0;
-      item.style.paddingLeft = `${10 + depth * 14}px`;
+      item.style.paddingInlineStart = `calc(var(--space-3) + ${Math.max(0, depth - 1)} * var(--space-4))`;
       const type = document.createElement("span");
       type.className = "subagent-type";
       type.textContent = subagent.agent_type || "(種別不明)";
@@ -197,6 +201,10 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
         item.addEventListener("click", () => openSession(detail.host, "claude", subagent.path, [...parentTrail, selected]));
       } else {
         item.disabled = true;
+        const status = document.createElement("span");
+        status.className = "secondary-text";
+        status.textContent = "記録なし";
+        item.append(status);
       }
       container.append(item);
     }
@@ -478,7 +486,20 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
 
     const meta = document.createElement("div");
     meta.className = "secondary-text";
-    meta.textContent = `識別子: ${detail.session_id} / 開始: ${detail.started_at ? formatTime(detail.started_at) : "取得不能"} / ${usageText(detail.usage)}`;
+    meta.classList.add("session-detail-meta");
+    for (const value of [
+      detail.started_at ? `開始: ${formatTime(detail.started_at)}` : "",
+      usageText(detail.usage),
+    ].filter(Boolean)) {
+      const item = document.createElement("span");
+      item.textContent = value;
+      meta.append(item);
+    }
+    const id = document.createElement("details");
+    const title = document.createElement("summary");
+    title.textContent = "記録の識別子";
+    id.append(title, detail.session_id);
+    meta.append(id);
     detailEl.append(meta);
     const pricing = document.createElement("div");
     pricing.className = "secondary-text detail-pricing";
@@ -563,7 +584,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       }
       const detail = await response.json();
       if (generation !== detailGeneration || !isSelected(selected, {host, engine, path})) return;
-      setUpdateError("sessions", "detail");
+      recordUpdateSuccess("sessions", "detail");
       const previousCount = currentDetail ? currentDetail.events.length : detail.events.length;
       const readingTail = isReadingTail();
       // 追記のたびに見出しが「算出中」へ戻らないよう、新しい費用が届くまで前回の値を表示する。  // pyfltr: allow-comment
@@ -654,7 +675,11 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     detailUsageEl = document.getElementById("detail-usage");
     const controls = document.getElementById("session-reading");
     new ResizeObserver(() => detailEl.style.setProperty("--reading-height", `${controls.offsetHeight}px`)).observe(controls);
-    updateScrollEdges = attachScrollEdges(detailScroller(), controls, detailEl, {
+    const disclosure = controls.querySelector(".reading-controls");
+    const compact = matchMedia("(max-width: 48rem)");
+    disclosure.open = !compact.matches;
+    compact.addEventListener("change", event => { disclosure.open = !event.matches; });
+    updateScrollEdges = attachScrollEdges(detailScroller(), controls.querySelector(".reading-navigation"), detailEl, {
       beforeEnd: () => appendEvents(visibleEvents.length),
       hasMore: () => renderLimit < visibleEvents.length,
     });

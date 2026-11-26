@@ -34,14 +34,14 @@ async def test_blocked_badge_tracks_unanswered_uwi_dependency(browser_harness: _
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator('.entry-select[data-key="waiting-awi.md"]')
     await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_text("blocked")
-    await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("inbox")
+    await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("受信")
     question_badges = page.locator('.entry-select[data-key="wait-question.md"] .blocked-badge')
     await playwright.async_api.expect(question_badges).to_have_count(0)
 
     uwi_path.write_text(unanswered + "回答済み\n", encoding="utf-8")
     harness.current_state.publish()
     await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_count(0)
-    await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("inbox")
+    await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("受信")
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -61,7 +61,7 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator('.entry-select[data-key="verify.md"]')
     badge = row.locator(".state-badge")
-    await playwright.async_api.expect(badge).to_have_text("needs-verify")
+    await playwright.async_api.expect(badge).to_have_text("確認待ち")
     assert "inbox" not in await row.locator(".status-cell").inner_text()
     label = await row.get_attribute("aria-label")
     assert label is not None
@@ -73,10 +73,10 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
 
     await row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / needs-verify")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認待ち")
     await detail.locator("#delete-button").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
-    await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text("awi / needs-verify")
+    await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text("確認待ち")
     await delete_dialog.locator("#delete-close-button").click()
     await detail.locator("#detail-close-button").click()
 
@@ -101,13 +101,13 @@ async def test_answered_badge_replaces_inbox_for_answered_uwi(browser_harness: _
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator('.entry-select[data-key="answered.md"]')
     badge = row.locator(".state-badge")
-    await playwright.async_api.expect(badge).to_have_text("answered")
+    await playwright.async_api.expect(badge).to_have_text("回答済み")
     label = await row.get_attribute("aria-label")
     assert label is not None
     assert "answered" in label.split("、")
     assert "inbox" not in label.split("、")
     unanswered_badge = page.locator('.entry-select[data-key="unanswered.md"] .state-badge')
-    await playwright.async_api.expect(unanswered_badge).to_have_text("inbox")
+    await playwright.async_api.expect(unanswered_badge).to_have_text("受信")
     await playwright.async_api.expect(page.locator('.entry-select[data-key="taken.md"] .state-badge')).to_have_text(
         "processing"
     )
@@ -116,10 +116,10 @@ async def test_answered_badge_replaces_inbox_for_answered_uwi(browser_harness: _
 
     await row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / answered")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("回答済み")
     await detail.locator("#delete-button").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
-    await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text("uwi / answered")
+    await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text("回答済み")
     await delete_dialog.locator("#delete-close-button").click()
     await detail.locator("#detail-close-button").click()
 
@@ -156,14 +156,14 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     for filename in ["verify.md", "plain.md"]:
         row = page.locator(f'.entry-select[data-key="{filename}"]')
         badge = row.locator(".state-badge")
-        await playwright.async_api.expect(badge).to_have_text("cooldown")
+        await playwright.async_api.expect(badge).to_have_text("再開待ち")
         assert await badge.count() == 1
         assert await badge.evaluate(style) == await normal.evaluate(style)
         await playwright.async_api.expect(badge).to_have_attribute("title", "解除日時: 2099/01/02 09:00 JST")
         assert "cooldown" in (await row.get_attribute("aria-label") or "").split("、")
         await playwright.async_api.expect(row).to_have_attribute("aria-label", re.compile("解除日時: 2099/01/02 09:00 JST"))
     question = page.locator('.entry-select[data-key="question.md"]')
-    await playwright.async_api.expect(question.locator(".state-badge")).to_have_text("inbox")
+    await playwright.async_api.expect(question.locator(".state-badge")).to_have_text("受信")
     assert await question.locator(".state-badge").get_attribute("title") is None
     question_label = await question.get_attribute("aria-label") or ""
     assert "cooldown" not in question_label.split("、")
@@ -181,28 +181,28 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await question.focus()
     await page.keyboard.press("Enter")
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / inbox")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("受信")
     # 保存済みの期限は詳細のメタデータに保存値のまま残り、解除日時としては示さない。
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text(deadline)
     await playwright.async_api.expect(detail.locator("#detail-metadata")).not_to_contain_text("2099/01/02 09:00 JST")
     await detail.locator("#detail-more > summary").click()
     await detail.locator("#delete-button").click()
     deletion = page.get_by_role("dialog", name="削除の確認")
-    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("uwi / inbox")
+    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("受信")
     await deletion.locator("#delete-close-button").click()
     await detail.locator("#detail-close-button").click()
     await page.locator('.entry-select[data-key="verify.md"]').click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / cooldown")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("再開待ち")
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
     await detail.locator("#detail-more > summary").click()
     await detail.locator("#delete-button").click()
     deletion = page.get_by_role("dialog", name="削除の確認")
-    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("awi / cooldown")
+    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("再開待ち")
     await page.clock.run_for(11000)
     await playwright.async_api.expect(warning).to_have_text(warning_text)
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / needs-verify")
-    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("awi / needs-verify")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認待ち")
+    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("確認待ち")
     for filename, expected in [("verify.md", "needs-verify"), ("plain.md", "inbox"), ("question.md", "inbox")]:
         row = page.locator(f'.entry-select[data-key="{filename}"]')
         await playwright.async_api.expect(row.locator(".state-badge")).to_have_text(expected)
@@ -246,14 +246,14 @@ async def test_cooldown_resyncs_after_changes_and_visibility(browser_harness: _B
         )
     await page.locator("#state-filter").select_option("inbox")
     badge = page.locator('.entry-select[data-key="inbox.md"] .state-badge')
-    await playwright.async_api.expect(badge).to_have_text("cooldown")
+    await playwright.async_api.expect(badge).to_have_text("再開待ち")
     target = _entry_path(harness.root, "inbox.md")
     target.write_text("---\ntype: awi\nstate: inbox\n---\n\n# 件名\n", encoding="utf-8")
     await page.evaluate("window.dispatchEvent(new Event('focus'))")
-    await playwright.async_api.expect(badge).to_have_text("inbox")
+    await playwright.async_api.expect(badge).to_have_text("受信")
     target.write_text(f"---\ntype: awi\nstate: inbox\ncooldown_until: '{future}'\n---\n\n# 件名\n", encoding="utf-8")
     await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    await playwright.async_api.expect(badge).to_have_text("cooldown")
+    await playwright.async_api.expect(badge).to_have_text("再開待ち")
     row_count = await page.locator("#entry-list .entry-select").count()
     # 非表示中のタイマー停止を再現し、時刻だけを期限後へ進めて復帰する。
     await page.evaluate("Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true})")
@@ -262,6 +262,6 @@ async def test_cooldown_resyncs_after_changes_and_visibility(browser_harness: _B
         Object.defineProperty(document, 'visibilityState', {value: 'visible', configurable: true});
         document.dispatchEvent(new Event('visibilitychange'));
     }""")
-    await playwright.async_api.expect(badge).to_have_text("inbox")
+    await playwright.async_api.expect(badge).to_have_text("受信")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(row_count)
     assert target.is_file()

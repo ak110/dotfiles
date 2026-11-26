@@ -123,7 +123,7 @@ async def test_multiple_roots_keep_selection_search_update_and_copy_portable_pat
         current_heading = await heading.inner_text()
         headings.add(current_heading)
         headings_by_index.append(current_heading)
-        await harness.page.get_by_role("button", name="計画ファイルのパスをコピー").click()
+        await harness.page.get_by_role("button", name="パスをコピー").click()
         assert await harness.page.evaluate("navigator.clipboard.readText()") == expected_paths[current_heading]
     assert headings == {"新root", "旧root"}
 

@@ -63,7 +63,7 @@ async def test_waiting_keyboard_save_skip_page_boundary_and_last_item(browser_ha
     await playwright.async_api.expect(page.locator("#waiting-progress")).to_contain_text("101 / 102")
 
     await page.keyboard.press("Escape")
-    await page.get_by_label("判断待ちのtarget-repo", exact=True).select_option("github.com/example/b")
+    await page.get_by_label("判断待ちの対象リポジトリ", exact=True).select_option("github.com/example/b")
     await playwright.async_api.expect(page.locator(".entry-select")).to_have_count(50)
     await page.locator(".entry-select").last.click()
     await page.get_by_role("button", name="保存せず次へ", exact=True).focus()

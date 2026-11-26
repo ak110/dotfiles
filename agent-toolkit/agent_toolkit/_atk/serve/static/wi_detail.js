@@ -85,7 +85,11 @@ function appendMetadataItem(metadata, label, value, entry) {
   const item = document.createElement('div');
   item.className = 'metadata-item';
   const term = document.createElement('dt');
-  term.textContent = label;
+  term.textContent = ({
+    answered: '回答', updated_at: '最終更新', target_repo: '対象リポジトリ', target_branch: '系統',
+    source: '出所', depends_on: '先に必要な項目', cooldown_until: '再開予定', state: '状態',
+    question_type: '回答形式', scope: '確認範囲', choices: '選択肢', important: '重要', plan: '計画',
+  })[label] ?? label;
   const definition = document.createElement('dd');
   if (label === 'depends_on' && Array.isArray(value)) {
     if (!value.length) definition.textContent = 'なし';
@@ -96,7 +100,9 @@ function appendMetadataItem(metadata, label, value, entry) {
       definition.append(line);
     }
   } else {
-    definition.textContent = formatMetadataValue(value);
+    const display = label === 'question_type' ?
+      ({choice: '選択式', 'yes-no': 'はい／いいえ', 'post-approval': '事後承認'})[value] : null;
+    definition.textContent = display ?? formatMetadataValue(value);
     if (entry && label !== 'depends_on') linkWiReferences(definition, entry);
   }
   item.append(term, definition);
@@ -106,7 +112,7 @@ function appendMetadataItem(metadata, label, value, entry) {
 function renderMetadata(entry, metadata) {
   metadata.replaceChildren();
   if (entry.answered === true || entry.answered === false) {
-    appendMetadataItem(metadata, 'answered', entry.answered ? 'yes' : 'no');
+    appendMetadataItem(metadata, 'answered', entry.answered ? '回答済み' : '未回答');
   }
   for (const item of metadataEntries(entry)) {
     const key = item.key;
@@ -114,7 +120,7 @@ function renderMetadata(entry, metadata) {
     if (key?.type === 'str' && key.value === 'cooldown_until' && entry.cooldown_until) {
       const deadline = formatDateParts(entry.cooldown_until);
       appendMetadataItem(metadata, key.value, `${deadline.date} ${deadline.time} JST`);
-    } else appendMetadataItem(metadata, formatMetadataKey(key), item.value, entry);
+    } else appendMetadataItem(metadata, formatMetadataKey(key), key?.value === 'state' ? stateLabel(item.value) : item.value, entry);
   }
   const parts = formatDateParts(entry.updated_at);
   appendMetadataItem(metadata, 'updated_at', parts.time ? `${parts.date} ${parts.time}` : parts.date);
@@ -166,6 +172,13 @@ function renderDetailView(entry, part) {
   state.dataset.state = entry.state;
   const content = part('detail-content');
   content.innerHTML = entry.body_html ?? entry.content_html ?? '';
+  if (entry.kind === 'uwi') {
+    for (const heading of content.querySelectorAll('h1, h2, h3')) {
+      if (heading.textContent.trim() !== '回答') continue;
+      const next = heading.nextElementSibling;
+      if (!next || next.matches('h1, h2, h3')) heading.remove();
+    }
+  }
   renderAttachmentReferences(content, entry);
   linkWiReferences(content, entry);
   renderMetadata(entry, part('detail-metadata'));
@@ -191,7 +204,8 @@ export function setDetailMode(mode) {
   byId('save-next-answer-button').hidden = !waiting;
   byId('skip-answer-button').hidden = !waiting;
   // 連続回答では本文の読取領域を確保する。編集・状態操作は詳細を閉じて通常/検索表示から行える。
-  for (const id of ['adopt-button', 'edit-button']) byId(id).parentElement.hidden = waiting;
+  document.querySelector('.detail-footer-left').hidden = waiting;
+  document.querySelector('.detail-footer-right').hidden = waiting;
   renderWaitingProgress();
   byId('user-comment-panel').hidden = !commenting;
   // 採否のメモは採用・却下の操作モードでだけ表示し、閲覧中の本文とユーザーコメントの欄から分ける。
@@ -214,6 +228,15 @@ export function setDetailMode(mode) {
   byId('confirm-adopt-button').hidden = decisionAction !== 'adopt';
   byId('confirm-reject-button').hidden = decisionAction !== 'reject';
   const more = byId('detail-more');
+  if (more.dataset.answering !== String(answering)) {
+    more.open = !answering && !matchMedia('(max-width: 700px)').matches;
+  }
+  more.dataset.answering = String(answering);
+  const extra = more.querySelector('.detail-more-actions');
+  const edit = byId('edit-button');
+  const adopt = byId('adopt-button');
+  (answering ? extra : document.querySelector('.detail-footer-right')).prepend(edit);
+  (answering ? extra : document.querySelector('.detail-footer-left')).prepend(adopt);
   more.hidden = waiting || !Array.from(more.querySelectorAll('button')).some(button => !button.hidden);
   syncDetailMutationAvailability();
   const adoptPrimary = !answering && !byId('adopt-button').hidden;

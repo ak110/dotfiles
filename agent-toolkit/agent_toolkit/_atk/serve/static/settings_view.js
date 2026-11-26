@@ -1,6 +1,26 @@
 import {BASE_PATH} from "./common.js";
 import {renderResetPermissions} from "./reset_permissions.js";
 
+const SETTING_NAMES = {
+  execute_model: "実装のモデル", review_model: "レビューのモデル", review_fast_model: "一括置換後レビューのモデル",
+  chores_model: "補助作業のモデル", chores_fast_model: "軽量な補助作業のモデル",
+  orchestrate_model: "統括のモデル", write_model: "文書執筆のモデル",
+  codex_fast_mode: "Codexの高速モード", usage_reset_permissions: "利用枠のリセット許可",
+  codex_credits_provider: "Codexの有限クレジットの接続先", codex_payg_provider: "Codexの従量課金の接続先",
+  claude_orchestrator_connections: "Claudeの統括で使う接続順", claude_worker_connections: "Claudeの委譲先で使う接続順",
+  codex_orchestrator_connections: "Codexの統括で使う接続順", codex_worker_connections: "Codexの委譲先で使う接続順",
+  claude_usage_limit_wait: "Claudeの利用枠の待機条件", codex_usage_limit_wait: "Codexの利用枠の待機条件",
+  session_review_auto_start: "会話の振り返りを自動で開始", weekly_research_x_api: "調査で有償のX APIを使用",
+  dotfiles_mode: "dotfilesの配布範囲", agents_concurrency: "委譲先の同時実行数",
+  serve_port: "待受ポート", serve_host: "待受アドレス", remote_hosts: "接続先ホスト",
+  serve_web_push: "ブラウザーを閉じている間の通知", serve_web_push_details: "通知に含める作業情報",
+  serve_plans_root: "計画の保存先",
+};
+
+export function settingName(key) {
+  return SETTING_NAMES[key] ?? key;
+}
+
 export function createSettingsView({
   content, shared, comparison, hostPicker, navigation, state,
   operate, saveShared, migrateShared, selectHost, filterSettings, updateUnsaved, updateWriteControls, setWriteUnavailable,
@@ -36,6 +56,25 @@ export function createSettingsView({
     return result;
   }
 
+  const categoryPicker = document.getElementById("settings-group-picker");
+  const categoryLinks = document.getElementById("settings-group-links");
+
+  const compactCategories = matchMedia("(max-width: 48rem)");
+  compactCategories.addEventListener("change", () => updateCategories());
+  let categoryOptions = [];
+  let currentCategory = "";
+  function updateCategories() {
+    categoryPicker.replaceChildren(...(compactCategories.matches ? categoryOptions : []));
+    categoryPicker.value = currentCategory;
+  }
+  categoryPicker.addEventListener("change", () => chooseGroup(categoryPicker.value));
+
+  function chooseGroup(id) {
+    state.activeGroup = id;
+    showGroup();
+    content.closest("main").scrollTop = 0;
+  }
+
   const FAST_MODE_LABELS = {auto: "自動判定（auto）", true: "高速（true）", false: "通常（false）"};
   function sharedScope(syncs) {
     return syncs
@@ -46,9 +85,10 @@ export function createSettingsView({
   function field(parent, label, value = "", choices, type = "text", labels = {}) {
     const wrapper = element("div");
     wrapper.className = "settings-field";
-    const input = element(choices ? "select" : "input");
+    const input = element(choices ? "select" : type === "multiline" ? "textarea" : "input");
     for (const choice of choices ?? []) input.append(new Option(labels[choice] ?? choice, choice));
-    if (!choices) input.type = type;
+    if (!choices && type !== "multiline") input.type = type;
+    if (type === "multiline") input.rows = 3;
     input.id = `settings-field-${++fieldCount}`;
     const caption = element("label", label);
     caption.htmlFor = input.id;
@@ -77,7 +117,7 @@ export function createSettingsView({
   }
 
   function submit(form, label) {
-    const control = element("button", label, "button-secondary");
+    const control = element("button", label, "button-primary");
     control.type = "submit";
     const actions = element("div", "", "form-actions");
     actions.append(control);
@@ -93,7 +133,10 @@ export function createSettingsView({
     block.dataset.editor = `setting:${key}`;
     block.className = "settings-row";
     const description = element("div");
-    description.append(element("h4", key, "setting-name"));
+    const title = settingName(key);
+    block.dataset.editorLabel = title;
+    description.append(element("h4", title, "setting-name"));
+    if (title !== key) description.append(element("code", key, "secondary-text setting-key"));
     block.append(description);
     const timing = key.startsWith("serve_") || key === "remote_hosts" ? "次回のatk serve起動" :
       key === "dotfiles_mode" ? "次のdotfiles更新" : "";
@@ -101,8 +144,8 @@ export function createSettingsView({
       item.effective || "未指定";
     const value = element("p", "", "setting-effective");
     value.append("実効値: ", element("strong", effective));
-    if (item.source) value.append(element("span", `（出所: ${item.source}）`, "secondary-text"));
     description.append(value);
+    if (item.source) description.append(element("p", `出所: ${item.source}`, "secondary-text"));
     if (item.description) description.append(element("p", item.description, "setting-description"));
     if (item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && state.host)) {
       description.append(element("p", key === "usage_reset_permissions" && state.host
@@ -144,7 +187,7 @@ export function createSettingsView({
       submit(editor, "追加");
     } else if (key !== "repositories") {
       const editor = form(controls, () => save({action: "set", key, value: input.value}, output));
-      const input = field(editor, "保存値", item.saved, item.choices, "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
+      const input = field(editor, "保存値", item.saved, item.choices, !item.choices && item.saved?.length > 48 ? "multiline" : "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
       if (key === "serve_port") input.inputMode = "numeric";
       if (!item.choices && item.format) {
         const hint = element("small", `形式: ${item.format}。${item.default === undefined ? "" : ` 初期値: ${item.default || "未指定"}`}`);
@@ -418,9 +461,8 @@ export function createSettingsView({
     label.scope = "col";
     headers.append(label);
     for (const [name, info] of hosts) {
-      const header = element("th");
+      const header = element("th", name || "ローカル");
       header.scope = "col";
-      header.append(button(name || "ローカル", () => selectHost(name)));
       if (info.state === "legacy") header.append(element("p", "旧版のため自動取得なし"));
       headers.append(header);
     }
@@ -432,16 +474,22 @@ export function createSettingsView({
       });
       if (values.every(value => value == null)) continue;
       const row = body.insertRow();
-      const heading = element("th", key);
+      const heading = element("th", settingName(key));
       heading.scope = "row";
       row.append(heading);
-      for (const value of values) {
+      for (const [index, value] of values.entries()) {
         const cell = row.insertCell();
-        cell.textContent = value == null ? "—" : String(value);
+        cell.append(element("span", hosts[index][0] || "ローカル", "comparison-host"));
+        for (const [part, segment] of String(value ?? "—").split(/(?<=[,/])/u).entries()) {
+          if (part > 0) cell.append(element("wbr"));
+          cell.append(segment);
+        }
         if (value != null && value !== values[0]) cell.className = "settings-different";
       }
     }
-    comparison.replaceChildren(table);
+    const actions = element("div", "", "form-actions");
+    for (const [name] of hosts) actions.append(button(`${name || "ローカル"}の設定を開く`, () => selectHost(name)));
+    comparison.replaceChildren(table, actions);
   }
 
   function renderHost(data) {
@@ -514,19 +562,15 @@ export function createSettingsView({
     }
     content.replaceChildren(root);
     renderShared();
-    navigation.replaceChildren();
+    categoryLinks.replaceChildren();
     for (const [id, group] of Object.entries(groups)) {
       if (!group.parentNode) continue;
       group.id = `settings-group-${id}`;
-      const control = button(group.querySelector("h3").textContent, () => {
-        state.activeGroup = id;
-        showGroup();
-        content.closest("main").scrollTop = 0;
-      });
+      const control = button(group.querySelector("h3").textContent, () => chooseGroup(id));
       control.classList.add("choice-button");
       control.dataset.group = id;
       control.setAttribute("aria-controls", group.id);
-      navigation.append(control);
+      categoryLinks.append(control);
     }
     const options = [new Option("ローカル", ""), ...(data.hosts ?? []).map(name => new Option(name, name))];
     hostPicker.replaceChildren(...options);
@@ -536,7 +580,7 @@ export function createSettingsView({
   }
 
   function showGroup(searching = false) {
-    const controls = [...navigation.querySelectorAll("button")];
+    const controls = [...categoryLinks.querySelectorAll("button")];
     const groups = controls.map(control => document.getElementById(control.getAttribute("aria-controls")));
     for (const target of content.querySelectorAll("[data-scope]")) {
       target.hidden = searching ? !target.querySelector("[data-setting]:not([hidden])") : target.children.length === 1;
@@ -552,6 +596,10 @@ export function createSettingsView({
       if (selected) control.setAttribute("aria-current", "page");
       else control.removeAttribute("aria-current");
     }
+    categoryOptions = controls.flatMap((button, index) =>
+      available[index] ? [new Option(button.textContent, button.dataset.group)] : []);
+    currentCategory = active ?? "";
+    updateCategories();
     navigation.hidden = searching || !available.some(Boolean);
     if (!searching && active === "migration") {
       const host = state.host;

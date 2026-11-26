@@ -55,50 +55,50 @@
         <label><input id="wi-mode-waiting" type="radio" name="wi-display-mode" value="waiting">判断待ち</label>
       </fieldset>
       <div id="waiting-filters" class="filter-grid" hidden>
-        <label for="waiting-target-filter">判断待ちのtarget-repo</label>
-        <select id="waiting-target-filter"><option value="">all</option></select>
+        <label for="waiting-target-filter">判断待ちの対象リポジトリ</label>
+        <select id="waiting-target-filter"><option value="">すべて</option></select>
       </div>
       <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
       <details>
         <summary>条件検索の入力</summary>
         <div class="filters-body">
           <label for="search-input">検索</label>
-          <input id="search-input" type="search" placeholder="本文・ファイル名・target-repo・sourceを検索">
+          <input id="search-input" type="search" placeholder="本文・ファイル名・リポジトリ・出所を検索">
 
           <div class="filter-grid">
-            <label for="kind-filter">type</label>
+            <label for="kind-filter">種別</label>
             <select id="kind-filter">
-              <option value="all">all</option>
-              <option value="awi">awi</option>
-              <option value="uwi">uwi</option>
+              <option value="all">すべて</option>
+              <option value="awi">作業（AWI）</option>
+              <option value="uwi">ユーザー向け（UWI）</option>
             </select>
-            <label for="state-filter">state</label>
+            <label for="state-filter">状態</label>
             <select id="state-filter">
-              <option value="active">active</option>
-              <option value="processable">processable</option>
-              <option value="all" selected>all</option>
-              <option value="inbox">inbox</option>
-              <option value="processing">processing</option>
-              <option value="hold">hold</option>
-              <option value="adopted">adopted</option>
-              <option value="rejected">rejected</option>
+              <option value="active">未完了</option>
+              <option value="processable">受信・処理中</option>
+              <option value="all" selected>すべて</option>
+              <option value="inbox">受信</option>
+              <option value="processing">処理中</option>
+              <option value="hold">保留</option>
+              <option value="adopted">採用</option>
+              <option value="rejected">却下</option>
             </select>
-            <label for="period-filter">period</label>
+            <label for="period-filter">期間</label>
             <select id="period-filter">
               <option value="2w">直近2週間</option>
               <option value="4w">直近4週間</option>
               <option value="8w">直近8週間</option>
               <option value="all" selected>全期間</option>
             </select>
-            <label for="answer-filter">answered</label>
+            <label for="answer-filter">回答</label>
             <select id="answer-filter">
-              <option value="all">all</option>
-              <option value="no">no</option>
-              <option value="yes">yes</option>
+              <option value="all">すべて</option>
+              <option value="no">未回答</option>
+              <option value="yes">回答済み</option>
             </select>
             <label for="important-filter">重要</label>
             <select id="important-filter">
-              <option value="all">all</option>
+              <option value="all">すべて</option>
               <option value="yes">重要</option>
               <option value="no">非重要</option>
             </select>
@@ -106,16 +106,16 @@
 
           <section class="additional-filters" aria-label="追加のフィルター条件">
             <div class="filter-grid">
-              <label for="target-filter">target-repo</label>
-              <select id="target-filter"><option value="">all</option></select>
-              <label for="source-filter">source の設定</label>
+              <label for="target-filter">対象リポジトリ</label>
+              <select id="target-filter"><option value="">すべて</option></select>
+              <label for="source-filter">出所</label>
               <select id="source-filter">
-                <option value="">all</option>
+                <option value="">すべて</option>
                 <option value="unset">未設定</option>
                 <option value="set">設定あり</option>
               </select>
               <label id="target-branch-filter-label" for="target-branch-filter" hidden>系統</label>
-              <select id="target-branch-filter" hidden><option value="">all</option></select>
+              <select id="target-branch-filter" hidden><option value="">すべて</option></select>
             </div>
           </section>
         </div>
@@ -128,7 +128,7 @@
       <div id="list-warning-box" class="list-warning notice notice-warning" role="alert" hidden><details id="list-warning-details"><summary id="list-warning-summary"></summary><div id="list-warning" hidden></div></details></div>
       <div class="entry-columns">
         <div class="list-context">
-          <div id="wi-effective-conditions" class="secondary-text" role="status">通常表示: state=active、直近2週間</div>
+          <div id="wi-effective-conditions" class="secondary-text" role="status">通常表示: 未完了、直近2週間</div>
           <span id="loading-indicator" class="inline-loading" role="status" hidden>読み込み中</span>
         </div>
         <button id="copy-all-button" class="button-text" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
@@ -154,7 +154,7 @@
   <dialog id="detail-dialog" class="dialog-shell detail-dialog" aria-labelledby="detail-heading">
     <article id="detail-shell" class="dialog-frame">
       <header class="dialog-header">
-        <h2 id="detail-heading" class="section-heading">詳細</h2>
+        <h2 id="detail-heading" class="page-heading">詳細</h2>
         <div id="detail-scroll-actions"></div>
         <button id="detail-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
       </header>
@@ -196,6 +196,7 @@
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer form-actions">
         <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="UWIへの回答" hidden>
+          <label class="visually-hidden" for="answer-input">質問への回答</label>
           <p id="waiting-progress" class="secondary-text" role="status" hidden></p>
           <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
           <div class="answer-row">
@@ -219,7 +220,7 @@
           <button id="confirm-adopt-button" class="button-primary" type="button" hidden>採用を確定</button>
           <button id="confirm-reject-button" class="button-danger" type="button" hidden>却下を確定</button>
         </div>
-        <details id="detail-more" class="detail-more" open>
+        <details id="detail-more" class="detail-more">
           <summary>その他の操作</summary>
           <div class="detail-more-actions">
             <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
@@ -245,36 +246,36 @@
         <div id="create-alert" class="dialog-message error-message notice notice-error" role="alert" hidden></div>
         <div id="create-status" class="dialog-message success-message notice notice-success" role="status" hidden></div>
         <div class="dialog-form-fields">
-          <label for="create-kind">種別（必須）</label>
+          <div class="dialog-field"><label for="create-kind">種別（必須）</label>
           <select id="create-kind" name="type">
-            <option value="awi">awi</option>
-            <option value="uwi">uwi</option>
+            <option value="awi">作業（AWI）</option>
+            <option value="uwi">ユーザー向け（UWI）</option>
             <option value="batch">一括登録（show形式）</option>
-          </select>
-          <label id="create-content-label" for="create-content">本文（必須）</label>
+          </select></div>
+          <div class="dialog-field"><label id="create-content-label" for="create-content">本文（必須）</label>
           <textarea id="create-content" name="message" aria-describedby="create-mode-hint create-content-error" required></textarea>
-          <p id="create-mode-hint" role="status" hidden>target-repo、系統、確認範囲、回答形式、選択肢の単件入力欄は使用しません。</p>
-          <p id="create-content-error" class="inline-error" hidden></p>
-          <div id="create-repo-fields" class="dialog-form-fields">
-            <label for="create-target">target-repo（frontmatterに無い場合は必須）</label>
+          <p id="create-mode-hint" role="status" hidden>対象リポジトリ、系統、確認範囲、回答形式、選択肢の単件入力欄は使用しません。</p>
+          <p id="create-content-error" class="inline-error" hidden></p></div>
+          <div id="create-repo-fields" class="dialog-field">
+            <label for="create-target">対象リポジトリ（本文のメタデータに無い場合は必須）</label>
             <input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error">
             <datalist id="repo-options"></datalist>
             <p id="create-target-error" class="inline-error" hidden></p>
           </div>
-          <div id="create-branch-fields" class="dialog-form-fields" hidden>
+          <div id="create-branch-fields" class="dialog-field" hidden>
             <label for="create-branch">系統</label>
             <select id="create-branch" name="target_branch"></select>
           </div>
           <div id="uwi-fields" class="dialog-form-fields" hidden>
-            <label for="create-scope">確認範囲（任意）</label>
-            <input id="create-scope" name="scope">
-            <label for="create-question-type">回答形式（必須）</label>
+            <div class="dialog-field"><label for="create-scope">確認範囲（任意）</label>
+            <input id="create-scope" name="scope"></div>
+            <div class="dialog-field"><label for="create-question-type">回答形式（必須）</label>
             <select id="create-question-type" name="question_type">
               <option value="yes-no">はい／いいえ</option>
               <option value="post-approval">事後承認</option>
               <option value="choice">選択式</option>
-            </select>
-            <div id="choice-fields" class="dialog-form-fields" hidden>
+            </select></div>
+            <div id="choice-fields" class="dialog-field" hidden>
               <label for="create-choices">選択肢（1行1件、2件以上必須）</label>
               <textarea id="create-choices" name="choices" aria-describedby="create-choices-error"></textarea>
               <p id="create-choices-error" class="inline-error" hidden></p>
@@ -283,6 +284,7 @@
         </div>
       </div>
       <footer class="dialog-footer form-actions">
+        <button id="create-cancel-button" class="button-secondary" type="button">キャンセル</button>
         <button id="create-submit-button" class="button-primary" type="submit">追加</button>
       </footer>
     </form>
@@ -299,8 +301,8 @@
         <div id="delete-status" class="dialog-message success-message notice notice-success" role="status" hidden></div>
         <dl class="metadata">
           <dt>対象</dt><dd id="delete-target"></dd>
-          <dt>state</dt><dd><span id="delete-state" class="state-badge"></span></dd>
-          <dt>target-repo</dt><dd id="delete-target-repo"></dd>
+          <dt>状態</dt><dd><span id="delete-state" class="state-badge"></span></dd>
+          <dt>対象リポジトリ</dt><dd id="delete-target-repo"></dd>
           <dt>要約</dt><dd id="delete-summary"></dd>
         </dl>
         <label id="force-delete-row" class="force-confirmation" hidden>
@@ -310,6 +312,7 @@
         <p id="delete-error" class="inline-error" hidden></p>
       </div>
       <footer class="dialog-footer form-actions">
+        <button id="delete-cancel-button" class="button-secondary" type="button">キャンセル</button>
         <button id="delete-submit-button" class="button-danger-confirm" type="submit">削除する</button>
       </footer>
     </form>
@@ -352,8 +355,8 @@
       <main>
         <div class="toolbar detail-toolbar">
           <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="計画一覧" aria-controls="plans-sidebar" aria-expanded="false">一覧</button>
-          <button id="copy-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="本文" type="button" disabled><span class="wide-label">Markdownをコピー</span><span class="short-label">本文</span></button>
-          <button id="copy-path-btn" class="button-secondary copy-feedback" data-reserve-wide="計画ファイルのパスをコピー" data-reserve-short="パス" type="button" disabled><span class="wide-label">計画ファイルのパスをコピー</span><span class="short-label">パス</span></button>
+          <button id="copy-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="本文をコピー" type="button" disabled><span class="wide-label">本文をコピー</span><span class="short-label">本文をコピー</span></button>
+          <button id="copy-path-btn" class="button-secondary copy-feedback" data-reserve-wide="計画ファイルのパスをコピー" data-reserve-short="パスをコピー" type="button" disabled><span class="wide-label">パスをコピー</span><span class="short-label">パスをコピー</span></button>
           <span class="detail-navigation">
             <button id="prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のファイル" disabled>&uarr;</button>
             <button id="next-btn" class="nav-btn button-secondary" type="button" aria-label="次のファイル" disabled>&darr;</button>
@@ -421,24 +424,33 @@
       <main>
         <div class="toolbar detail-toolbar">
           <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧" aria-controls="sessions-sidebar" aria-expanded="false">一覧</button>
-          <span class="detail-navigation">
-            <button id="sessions-prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のセッション" disabled>&uarr;</button>
-            <button id="sessions-next-btn" class="nav-btn button-secondary" type="button" aria-label="次のセッション" disabled>&darr;</button>
+          <span class="detail-navigation" role="group" aria-label="前後のセッション">
+            <button id="sessions-prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のセッション" disabled>前の記録</button>
+            <button id="sessions-next-btn" class="nav-btn button-secondary" type="button" aria-label="次のセッション" disabled>次の記録</button>
           </span>
         </div>
         <div class="session-identity reading-column">
           <h2 id="detail-title" class="page-heading"></h2>
           <p id="detail-usage" class="secondary-text"></p>
         </div>
-        <div id="session-reading" class="toolbar detail-toolbar reading-toolbar" hidden>
-          <label><input id="session-conversation" type="checkbox"> 会話だけ</label>
+        <div id="session-reading" class="reading-column reading-toolbar" hidden>
+          <details class="reading-controls" open>
+          <summary>記録の検索と移動</summary>
+          <div class="reading-tools">
+          <div class="reading-search" role="group" aria-label="検索と一致箇所">
           <label for="session-search">記録内検索</label>
           <input id="session-search" type="search">
           <output id="session-search-count" aria-live="polite"></output>
-          <button id="session-search-prev" class="button-text" type="button" aria-label="前の一致">↑</button>
-          <button id="session-search-next" class="button-text" type="button" aria-label="次の一致">↓</button>
-          <button id="session-user-prev" class="button-text" type="button">前のユーザー発話</button>
-          <button id="session-user-next" class="button-text" type="button">次のユーザー発話</button>
+          <button id="session-search-prev" class="button-secondary" type="button" aria-label="前の一致">前へ</button>
+          <button id="session-search-next" class="button-secondary" type="button" aria-label="次の一致">次へ</button>
+          </div>
+          <div class="reading-navigation" role="group" aria-label="ユーザー発話の移動">
+            <label><input id="session-conversation" type="checkbox"> 会話だけ</label>
+            <button id="session-user-prev" class="button-secondary" type="button">前のユーザー発話</button>
+            <button id="session-user-next" class="button-secondary" type="button">次のユーザー発話</button>
+          </div>
+          </div>
+          </details>
         </div>
         <article id="detail" class="reading-column markdown-body"><p class="empty-state">一覧からセッションを選択してください。</p></article>
       </main>
@@ -468,7 +480,7 @@
           <select id="settings-host" disabled><option value="">ローカル</option></select>
         </div>
         <div class="settings-search">
-          <label for="settings-search" class="visually-hidden">設定を検索</label>
+          <label for="settings-search">設定を検索</label>
           <input id="settings-search" type="search" placeholder="設定を検索">
           <button id="settings-search-clear" class="button-text" type="button" hidden>検索をクリア</button>
         </div>
@@ -480,12 +492,16 @@
           <summary>起動時判定の詳細</summary>
           <p id="settings-fast-reason"></p>
         </details>
-        <details id="settings-compare"><summary>ホスト別の設定を比較</summary><div id="settings-comparison" tabindex="0" role="region" aria-label="ホスト別の設定の比較"></div></details>
+        <details id="settings-compare"><summary>ホスト別の設定を比較</summary><div id="settings-comparison"></div></details>
       </div>
       <div id="settings-shared" class="secondary-text"></div>
       <div id="settings-unsaved"></div>
       <div class="settings-layout">
-        <nav id="settings-nav" aria-label="設定の分類"></nav>
+        <nav id="settings-nav" aria-label="設定の分類">
+          <label for="settings-group-picker">分類</label>
+          <select id="settings-group-picker"></select>
+          <div id="settings-group-links"></div>
+        </nav>
         <div id="settings-content"></div>
       </div>
       </div>

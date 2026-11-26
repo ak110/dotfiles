@@ -201,7 +201,7 @@ async def test_copy_all_work_items_preserves_filters_across_pages(browser_harnes
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await _open_filters(page)
     await page.get_by_label("重要", exact=True).select_option("yes")
-    await page.get_by_label("target-repo", exact=True).select_option("copy/repo")
+    await page.get_by_label("対象リポジトリ", exact=True).select_option("copy/repo")
     await page.get_by_label("検索", exact=True).fill("コピー対象")
     await playwright.async_api.expect(page.locator("#pagination-status")).to_have_text("ページ 1 / 2（全101件）")
     await page.get_by_role("button", name=re.compile("^次のページ")).click()

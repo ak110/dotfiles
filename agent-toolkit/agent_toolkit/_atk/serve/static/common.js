@@ -51,7 +51,7 @@ if (bootstrap.runtime_versions === true) {
 const updateErrors = new Map();
 const updateStatus = document.getElementById("update-status");
 
-const updateHome = updateStatus?.parentElement;
+const updateTimes = new Map();
 let lastFocus;
 let retryFocus;
 
@@ -78,9 +78,10 @@ function renderUpdateStatus() {
   const failures = [...(updateErrors.get(screen)?.values() ?? [])];
   const button = updateStatus.querySelector("button");
   const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
-  const container = dialog ?? updateHome;
+  const header = document.querySelector(`#screen-${CSS.escape(screen)} .app-header`);
   const retryFocused = document.activeElement === button;
-  if (updateStatus.parentElement !== container) container.prepend(updateStatus);
+  if (dialog && updateStatus.parentElement !== dialog) dialog.prepend(updateStatus);
+  if (!dialog && header && header.nextElementSibling !== updateStatus) header.after(updateStatus);
   if (!failures.length && retryFocused) {
     const origin = retryFocus;
     const editor = origin?.slot && [...document.querySelectorAll("[data-editor]")]
@@ -93,7 +94,7 @@ function renderUpdateStatus() {
   }
   updateStatus.hidden = failures.length === 0;
   updateStatus.querySelector("[role=status]").textContent =
-    failures.length > 1 ? "一部の情報を更新できません。" : (failures[0]?.message ?? "");
+    failures.map(({message}) => message).join(" ");
   button.onclick = () => {
     rememberRetryFocus();
     for (const history of readFailures.values()) {
@@ -147,17 +148,32 @@ export function setDisplayedReadError(screen, key, message, retry, manual = retr
 export function setUpdateError(screen, key, message, retry) {
   if (!updateErrors.has(screen)) updateErrors.set(screen, new Map());
   const errors = updateErrors.get(screen);
-  if (message) errors.set(key, {message, retry});
-  else {
+  const historyKey = JSON.stringify([screen, key]);
+  if (message) {
+    const time = updateTimes.get(historyKey);
+    const last = time && new Intl.DateTimeFormat("ja-JP", {dateStyle: "short", timeStyle: "short"}).format(time);
+    errors.set(key, {message: last ? `${message} 前回取得: ${last}。以前の情報を表示しています。` : message, retry});
+  } else {
     stopDisplayedRetry(screen, key);
     errors.delete(key);
+    updateTimes.delete(historyKey);
   }
   renderUpdateStatus();
 }
 
+export function recordUpdateSuccess(screen, key) {
+  setUpdateError(screen, key);
+  const historyKey = JSON.stringify([screen, key]);
+  if (updateTimes.size >= 256) updateTimes.delete(updateTimes.keys().next().value);
+  updateTimes.set(historyKey, Date.now());
+}
+
 document.addEventListener("atk-screen-change", () => {
   for (const {screen, key} of displayedRetries.values()) {
-    if (document.body.dataset.screen !== screen) setUpdateError(screen, key);
+    if (document.body.dataset.screen !== screen) {
+      stopDisplayedRetry(screen, key);
+      updateErrors.get(screen)?.delete(key);
+    }
   }
   renderUpdateStatus();
 });
@@ -304,7 +320,7 @@ export function connectEvents(path, handlers) {
     touch();
     source.addEventListener("heartbeat", touch);
     source.addEventListener("error", disconnected);
-    source.addEventListener("open", () => { failures = 0; if (screen) setUpdateError(screen, "sse"); });
+    source.addEventListener("open", () => { failures = 0; if (screen) recordUpdateSuccess(screen, "sse"); });
     for (const [name, handler] of Object.entries(handlers)) {
       source.addEventListener(name, (event) => {
         if (name !== "error") touch();
@@ -579,6 +595,7 @@ export function attachScrollEdges(scroller, toolbar, observed, options = {}) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = label;
+    button.className = "button-secondary";
     button.addEventListener("click", () => {
       if (bottom) options.beforeEnd?.();
       scroller.scrollTop = bottom ? scroller.scrollHeight : 0;

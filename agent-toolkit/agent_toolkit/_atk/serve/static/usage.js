@@ -1,4 +1,4 @@
-import {setUpdateError, setDisplayedReadError, BASE_PATH} from "./common.js";
+import {recordUpdateSuccess, setDisplayedReadError, BASE_PATH} from "./common.js";
 import {registerScreen} from "./shell.js";
 import {DAY, claudeResetScopeName, dateJst, forecast, quotaName} from "./usage_display.js";
 
@@ -117,6 +117,7 @@ function quota(window, now) {
     marker.style.setProperty("--metric-marker-position", offset);
     marker.title = `期間の${Math.round(100 * elapsed)}%が経過`;
     bar.append(marker);
+    row.append(element("p", `期間の経過: ${Math.round(100 * elapsed)}%`, "secondary-text"));
   }
   row.append(bar);
   const observed = window.usage_observed_at ?? window.observed_at;
@@ -189,11 +190,16 @@ function render(payload, refreshed = false) {
         section.append(element("p", `${name} · ${right.count}回 · ${dateJst(Date.parse(right.until) / 1000)}まで`));
       }
     } else if (settled || Object.keys(metadata).length) {
-      values(section, [
+      const status = [
         ["在庫", metadata.reset_available_count == null ? "未取得" : `${metadata.reset_available_count}回`],
-        ["期限", "取得できない"],
         ...codexUsageStatus(metadata),
-      ]);
+      ];
+      const available = status.filter(([, value]) => value !== "未取得");
+      values(section, available);
+      if (available.length < status.length) {
+        const names = status.filter(([, value]) => value === "未取得").map(([name]) => name).join("・");
+        section.append(element("p", `未取得: ${names}。期限は取得できません。`, "secondary-text"));
+      } else section.append(element("p", "期限は取得できません。", "secondary-text"));
       for (const right of metadata.reset_credit_details ?? []) {
         const kind = namedStatus(right.resetType, {codexRateLimits: "Codexの利用枠"});
         const state = namedStatus(right.status, {used: "使用済み", available: "利用可能"});
@@ -242,7 +248,7 @@ async function update(force) {
         if (visible()) render(data, true);
         if (!data.refresh_failures?.length) {
           refreshButton.hidden = false;
-          setUpdateError("usage", "refresh");
+          recordUpdateSuccess("usage", "refresh");
           return;
         }
       } catch {

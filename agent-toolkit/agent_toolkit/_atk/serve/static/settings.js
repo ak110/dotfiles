@@ -1,8 +1,8 @@
 import {readFailure} from "./common.js";
-import {BASE_PATH, setUpdateError, setDisplayedReadError, recoverRead} from "./common.js";
+import {BASE_PATH, recordUpdateSuccess, setUpdateError, setDisplayedReadError, recoverRead} from "./common.js";
 import {formatLocalMinute} from "./reset_permissions.js";
 import {registerScreen} from "./shell.js";
-import {createSettingsView} from "./settings_view.js";
+import {createSettingsView, settingName} from "./settings_view.js";
 
 const status = document.getElementById("settings-status");
 const content = document.getElementById("settings-content");
@@ -65,7 +65,7 @@ async function request(payload, cached = false, background = false, retry = fals
 }
 
 function editorFields(editor) {
-  return Array.from(editor.querySelectorAll("input, select")).filter(input => input.closest("[data-editor]") === editor);
+  return Array.from(editor.querySelectorAll("input, select, textarea")).filter(input => input.closest("[data-editor]") === editor);
 }
 
 function rememberEditors(savedSlot) {
@@ -91,7 +91,7 @@ function revealSettingResult(output, message, stayedAtOrigin) {
   if (!stayedAtOrigin || !output?.isConnected || output.closest("[hidden], details:not([open])")) {
     const active = document.activeElement;
     const scroller = content.closest("main");
-    const field = content.contains(active) && active.matches("input, select");
+    const field = content.contains(active) && active.matches("input, select, textarea");
     const before = field ? active.getBoundingClientRect() : null;
     const bounds = scroller.getBoundingClientRect();
     status.textContent = message;
@@ -322,12 +322,23 @@ function filterSettings() {
   document.getElementById("settings-no-matches").hidden = !needle || count > 0;
 }
 
+function draftLabel(slot) {
+  if (slot.startsWith("setting:")) return settingName(slot.slice("setting:".length));
+  if (slot.startsWith("preset:")) return `プリセット: ${slot.slice("preset:".length)}`;
+  if (slot.startsWith("repository:")) return `リポジトリ: ${slot.slice("repository:".length)}`;
+  return slot === "temporary" ? "一時指定" : slot;
+}
+
 function updateUnsaved() {
   const list = document.getElementById("settings-unsaved");
   const drafts = [...content.querySelectorAll("[data-editor]")]
     .filter(editor => editorFields(editor).some(input => input.value !== input.dataset.initialValue));
   const other = [...hostDrafts.entries()].filter(([name]) => name !== host).flatMap(([name, {editors}]) =>
     [...editors].filter(([, draft]) => draft.values.some(Boolean)).map(([slot]) => [name, slot]));
+  const changed = new Set(drafts);
+  for (const editor of content.querySelectorAll("[data-editor]")) {
+    editor.toggleAttribute("data-unsaved", changed.has(editor));
+  }
   const count = drafts.length + other.length;
   list.replaceChildren();
   if (!count) {
@@ -336,7 +347,7 @@ function updateUnsaved() {
   }
   window.addEventListener("beforeunload", warnOnUnload);
   list.append(element("p", `未保存の変更: ${count}件`));
-  for (const editor of drafts) list.append(button(editor.dataset.editor, () => {
+  for (const editor of drafts) list.append(button(editor.dataset.editorLabel ?? draftLabel(editor.dataset.editor), () => {
     const group = editor.closest("section[id^=settings-group-]");
     if (group) activeGroup = group.id.replace("settings-group-", "");
     search.value = "";
@@ -344,7 +355,7 @@ function updateUnsaved() {
     if (editor.tagName === "DETAILS") editor.open = true;
     editorFields(editor)[0]?.focus();
   }));
-  for (const [name, slot] of other) list.append(button(`${name || "ローカル"}: ${slot}`, () => selectHost(name)));
+  for (const [name, slot] of other) list.append(button(`${name || "ローカル"}: ${draftLabel(slot)}`, () => selectHost(name)));
   list.append(button("未保存の変更を取り消す", () => {
     for (const editor of drafts) for (const input of editorFields(editor)) input.value = input.dataset.initialValue;
     hostDrafts.clear();
@@ -602,7 +613,7 @@ async function loadHost(background = false, retry = false) {
     staleSnapshotHost = undefined;
     loading = false;
     updateWriteControls();
-    setUpdateError("settings", "refresh");
+    recordUpdateSuccess("settings", "refresh");
     showAutomaticErrors(data);
     status.textContent = data.legacy || data.automatic_unsupported?.includes(host) ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
   } catch (error) {

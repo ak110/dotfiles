@@ -75,8 +75,12 @@
 }
 :is(#screen-wi, .wi-reference-layer) .detail-more > summary {
   display: none;
+  cursor: pointer;
 }
-:is(#screen-wi, .wi-reference-layer) .detail-more-actions > :is(.button-secondary, .button-danger) {
+:is(#screen-wi, .wi-reference-layer) .detail-more[data-answering="true"] > summary {
+  display: list-item;
+}
+:is(#screen-wi, .wi-reference-layer) .detail-more-actions > .button-secondary {
   border-color: transparent;
   background: transparent;
 }

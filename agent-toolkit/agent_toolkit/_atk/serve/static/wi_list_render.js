@@ -32,27 +32,28 @@ export function stateLabel(state) { return STATE_LABELS[state] || state || '不�
 // 反映後の観測だけが残るinboxのawiは、保存状態をinboxのまま、表示だけをneeds-verifyにする。
 // inboxの回答済みuwiは表示だけをansweredにし、色は保存状態inboxのバッジと同じにする。
 // 状態フィルター・件数・操作の可否は保存状態で判定する。
-function displayStateLabel(entry) {
+function displayState(entry) {
   if (entry.state === 'inbox' && Date.parse(entry.cooldown_until) > Date.now()) return 'cooldown';
   if (entry.state === 'inbox' && entry.kind === 'uwi' && entry.answered === true) return 'answered';
-  return entry.needs_verify === true ? 'needs-verify' : STATE_LABELS[entry.state] || 'unknown';
+  return entry.needs_verify === true ? 'needs-verify' : entry.state;
 }
 export function entryStateText(entry) {
-  return `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${displayStateLabel(entry)}`;
+  return STATE_LABELS[displayState(entry)] || STATE_LABELS.unknown;
 }
 
 function updateEntryStateDisplay(entry, button, badge) {
-  const label = displayStateLabel(entry);
+  const state = displayState(entry);
+  const label = entryStateText(entry);
   badge.textContent = label;
-  badge.dataset.cooldown = String(label === 'cooldown');
-  if (label === 'cooldown') {
+  badge.dataset.cooldown = String(state === 'cooldown');
+  if (state === 'cooldown') {
     const parts = formatDateParts(entry.cooldown_until);
     badge.title = `解除日時: ${parts.date} ${parts.time} JST`;
   } else badge.removeAttribute('title');
   button.setAttribute(
     'aria-label',
     [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
-      label, badge.title, entry.plan ? 'plan' : '', entry.target_branch ? `系統 ${entry.target_branch}` : '',
+      label, badge.title, entry.plan ? '計画あり' : '', entry.target_branch ? `系統 ${entry.target_branch}` : '',
       entry.important === true ? '重要' : '',
       entry.kind === 'uwi' && entry.answered === false ? '未回答' : '', entry.summary || '要約なし']
       .filter(Boolean).join('、')
@@ -129,7 +130,7 @@ function renderEntry(entry) {
   const targetRepo = appendTextCell(meta, 'target-repo-cell text-clip', targetRepoDisplay(entry.target_repo));
   if (entry.target_repo) {
     targetRepo.title = entry.target_repo;
-    targetRepo.setAttribute('aria-label', `target-repo: ${entry.target_repo}`);
+    targetRepo.setAttribute('aria-label', `対象リポジトリ: ${entry.target_repo}`);
   }
   const status = appendCell(button, 'status-cell');
   const kind = document.createElement('span');
@@ -140,7 +141,7 @@ function renderEntry(entry) {
   badge.className = 'status-chip state-badge';
   badge.dataset.state = entry.state;
   badge.dataset.needsVerify = String(entry.needs_verify === true);
-  badge.textContent = displayStateLabel(entry);
+  badge.textContent = entryStateText(entry);
   status.append(badge);
   if (entry.important === true) {
     const important = document.createElement('span');
@@ -169,7 +170,7 @@ function renderEntry(entry) {
   if (entry.plan) {
     const plan = document.createElement('span');
     plan.className = 'status-chip plan-badge';
-    plan.textContent = 'plan';
+    plan.textContent = '計画あり';
     status.append(plan);
   }
   if (unanswered) {
@@ -189,7 +190,7 @@ function renderEntry(entry) {
   });
   const copy = document.createElement('button');
   copy.type = 'button';
-  copy.className = 'entry-copy button-icon button-secondary';
+  copy.className = 'entry-copy button-icon button-text';
   const key = entryKey(entry);
   copy.dataset.key = key;
   copy.dataset.copied = String((copiedLabelDeadlines.get(key) ?? 0) > Date.now());
@@ -370,15 +371,19 @@ export async function copyAllEntries() {
 function renderEffectiveConditions() {
   const query = buildQuery();
   if (wiState.displayMode === 'waiting') {
-    byId('wi-effective-conditions').textContent = '判断待ち: 未回答UWI、active、全期間、重要順・作成日時の古い順' +
-      (query.has('target_repo') ? `、target-repo=${query.get('target_repo')}` : '、全リポジトリ');
+    byId('wi-effective-conditions').textContent = '判断待ち: 未回答、未完了、全期間、重要順・作成日時の古い順' +
+      (query.has('target_repo') ? `、対象リポジトリ: ${query.get('target_repo')}` : '、全リポジトリ');
     return;
   }
-  const labels = [`state=${query.get('status')}`, PERIOD_LABELS[query.get('period')] || '全期間'];
-  for (const [key, label] of [['q', '検索'], ['type', 'type'], ['answered', 'answered'],
-    ['important', '重要'], ['target_repo', 'target-repo'], ['target_branch', '系統'], ['source_kind', 'source の設定']]) {
+  const labels = [stateLabel(query.get('status')), PERIOD_LABELS[query.get('period')] || '全期間'];
+  for (const [key, label] of [['q', '検索'], ['type', '種別'], ['answered', '回答'],
+    ['important', '重要'], ['target_repo', '対象リポジトリ'], ['target_branch', '系統'], ['source_kind', '出所']]) {
     const value = query.get(key);
-    if (value && !(value === 'all' && ['type', 'answered'].includes(key))) labels.push(`${label}=${value}`);
+    if (value && !(value === 'all' && ['type', 'answered'].includes(key))) {
+      const option = {type: KIND_LABELS, answered: {yes: '回答済み', no: '未回答'},
+        important: {yes: '重要', no: '非重要'}, source_kind: {set: '設定あり', unset: '未設定'}}[key]?.[value];
+      labels.push(`${label}: ${option ?? value}`);
+    }
   }
   byId('wi-effective-conditions').textContent = `${wiState.displayMode === 'normal' ? '通常表示' : '条件検索'}: ${labels.join('、')}`;
 }

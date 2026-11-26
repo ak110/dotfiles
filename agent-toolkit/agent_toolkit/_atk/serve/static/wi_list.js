@@ -1,5 +1,5 @@
 import {readFailure} from "./common.js";
-import {setUpdateError, setDisplayedReadError} from "./common.js";
+import {recordUpdateSuccess, setUpdateError, setDisplayedReadError} from "./common.js";
 import {pushHandlesNotifications} from "./wi_push.js";
 import {
   ENTRY_PAGE_SIZE, PROCESSABLE_STATES, byId, entryKey, wiState
@@ -141,7 +141,7 @@ export async function loadEntries({announce = false, showLoading = true, timing 
     try {
       const payload = await api(`/api/entries?${query.toString()}`, {timing});
       if (generation !== wiState.listRequestGeneration) return wiState.entries;
-      setUpdateError("wi", "list");
+      recordUpdateSuccess("wi", "list");
       wiState.entries = Array.isArray(payload.entries) ? payload.entries : [];
       applyPagination(payload);
       const selected = wiState.entries.find(item => entryKey(item) === entryKey(wiState.currentEntry));
@@ -247,7 +247,7 @@ function renderBranchFilter() {
   const registered = branches.length > 0;
   byId('target-branch-filter-label').hidden = !registered;
   select.hidden = !registered;
-  replaceOptions(select, registered ? branches : [], 'all');
+  replaceOptions(select, registered ? branches : [], 'すべて');
 }
 
 export async function loadBranchRegistry({timing = {}} = {}) {
@@ -277,12 +277,12 @@ export async function loadTargetRepos({timing = {}} = {}) {
     if (generation !== wiState.targetRepoRequestGeneration ||
         byId('state-filter').value !== requestedState) return false;
     const repos = Array.isArray(payload.repos) ? payload.repos : [];
-    replaceOptions(byId('target-filter'), repos, 'all');
+    replaceOptions(byId('target-filter'), repos, 'すべて');
     // 判断待ちは検索条件のstateに依存せず、activeのrepo候補を別途取得する。
     if (wiState.displayMode === 'waiting') {
       const waiting = await api('/api/repos?status=active', {timing});
       if (generation !== wiState.targetRepoRequestGeneration || wiState.displayMode !== 'waiting') return false;
-      replaceOptions(byId('waiting-target-filter'), waiting.repos, 'all');
+      replaceOptions(byId('waiting-target-filter'), waiting.repos, 'すべて');
     }
     setUpdateError("wi", "repos");
     wiState.repoCandidates = repos;

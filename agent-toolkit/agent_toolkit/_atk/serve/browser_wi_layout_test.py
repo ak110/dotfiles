@@ -373,7 +373,7 @@ async def test_processing_state_remains_readable_with_long_repository_on_narrow_
         await page.goto(browser_harness.base_url + "/")
         row = page.locator("#entry-list .entry-row").filter(has_text=name)
         badge = row.locator(".state-badge")
-        await playwright.async_api.expect(badge).to_have_text("processing")
+        await playwright.async_api.expect(badge).to_have_text("処理中")
         assert await page.evaluate("matchMedia('(any-pointer: coarse)').matches")
         limits = await row.evaluate(
             """row => {

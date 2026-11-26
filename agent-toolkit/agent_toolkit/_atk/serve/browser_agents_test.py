@@ -55,13 +55,15 @@ async def test_agent_record_link_and_independent_remote_failure(
         panel = page.locator("#agents-hosts")
         banner = page.locator("#update-status")
         await playwright.async_api.expect(banner).to_contain_text("old-hostのエージェント一覧を取得できません。")
+        await playwright.async_api.expect(page.locator("#screen-agents > header + #update-status")).to_be_visible()
+        await playwright.async_api.expect(banner).not_to_contain_text("前回取得")
         await playwright.async_api.expect(banner.get_by_role("button", name="再取得")).to_be_visible()
         await playwright.async_api.expect(panel).to_contain_text("セッション画面で扱いません")
         await playwright.async_api.expect(panel).not_to_contain_text(re.compile(r"[\u2500-\u257f]"))
         record = panel.get_by_role("link", name=session_id, exact=True)
         await record.focus()
         exited.set()
-        await playwright.async_api.expect(panel.get_by_text("terminated", exact=True)).to_be_visible()
+        await playwright.async_api.expect(panel.get_by_text("終了", exact=True)).to_be_visible()
         await playwright.async_api.expect(record).to_be_focused()
         await record.press("Enter")
         await playwright.async_api.expect(page.locator("#screen-sessions")).to_be_visible()
@@ -88,7 +90,7 @@ async def test_agent_remote_record_lookup_failure_preserves_agent_rows(
     async with _serve(app, browser) as (_context, page, port):
         await page.goto(f"http://127.0.0.1:{port}/agents")
         row = page.locator('[data-agent-id="remote-agent"]')
-        await playwright.async_api.expect(row).to_contain_text("running")
+        await playwright.async_api.expect(row).to_contain_text("稼働中")
         await playwright.async_api.expect(row).to_contain_text("記録の所在を確認できません")
         await playwright.async_api.expect(row.get_by_role("link")).to_have_count(0)
 
@@ -159,11 +161,11 @@ async def test_agent_activity_records_drive_root_states(
         await playwright.async_api.expect(panel).not_to_contain_text("経過時間は不明")
         await playwright.async_api.expect(panel).not_to_contain_text("行動・文脈使用量は不明")
         for identifier, expected in (
-            ("live", "running"),
-            ("alone", "running"),
-            ("finished", "terminated"),
-            ("missing", "unknown"),
-            ("broken", "unknown"),
+            ("live", "稼働中"),
+            ("alone", "稼働中"),
+            ("finished", "終了"),
+            ("missing", "不明"),
+            ("broken", "不明"),
         ):
             root = page.locator(f'li[data-agent-id="{identifier}"]')
             await playwright.async_api.expect(root.locator(":scope > .agent-row > .agent-status .agent-value")).to_have_text(

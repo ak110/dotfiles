@@ -3,7 +3,7 @@ import {decorateWiReferences} from "./wi_reference.js";
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs, attachScrollEdges, setUpdateError, createReadRecovery, setDisplayedReadError
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs, attachScrollEdges, recordUpdateSuccess, setUpdateError, createReadRecovery, setDisplayedReadError
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -79,7 +79,7 @@ function updateHostState(host, status) {
     }
   } else if (status === "connected") {
     hostFailures.delete(host);
-    setUpdateError("plans", `host:${host}`);
+    recordUpdateSuccess("plans", `host:${host}`);
   }
   hostStatus[host] = status;
 }
@@ -308,7 +308,7 @@ async function refreshFiles(timing = {}) {
     const res = await timedFetch("plans", BASE_PATH + "/api/plans/files", {}, timing);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     files = await res.json();
-    setUpdateError("plans", "list");
+    recordUpdateSuccess("plans", "list");
     renderFiles();
   } catch (error) {
     if (error.name !== "AbortError") setDisplayedReadError("plans", "list", "計画一覧を取得できません。", refreshFiles);
