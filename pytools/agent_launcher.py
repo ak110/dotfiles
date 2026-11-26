@@ -195,6 +195,7 @@ def _interactive_claude(argv: list[str], isatty: TerminalChecker) -> bool:
         "--init-only",
         "--maintenance",
         "--bg",
+        "--background",
     }
     optional_values = {"--resume", "-r", "--teleport", "-w", "--worktree"}
     first_positional = True
@@ -244,7 +245,8 @@ def _run_completion_launcher(command: list[str], wrapper: str, home: pathlib.Pat
                 print(message)
                 resume = f"{wrapper} --resume {session}"
                 setting = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"
-                print(f'再開: cmd /d /c "set {setting}&& {resume}"' if os_name == "nt" else f"再開: {setting} {resume}")
+                print("同じ起動方法で再開:")
+                print(f'cmd /d /c "set {setting}&& {resume}"' if os_name == "nt" else f"{setting} {resume}")
         except OSError:
             pass
     return status if os_name == "nt" or status >= 0 else 128 - status

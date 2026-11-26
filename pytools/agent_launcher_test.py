@@ -465,6 +465,7 @@ def test_argcomplete_writes_claude_options_to_fd8(tmp_path: pathlib.Path) -> Non
     assert "--permission-mode" in candidates
 
 
+@pytest.mark.parametrize("wrapper", ["opus", "sonnet", "fable"])
 @pytest.mark.parametrize(
     ("state", "status", "display"),
     [
@@ -475,15 +476,17 @@ def test_argcomplete_writes_claude_options_to_fd8(tmp_path: pathlib.Path) -> Non
         ("exiting", 17, False),
     ],
 )
-def test_opus_completion_after_child_exit(
+def test_claude_completion_after_child_exit(
+    wrapper: str,
     state: str,
     status: int,
     display: bool,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
+    capfd: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    child_hint = "Resume this session with:\nclaude --resume session-a"
     actual_wait = agent_launcher._wait_for_claude
     events: list[dict] = [
         {
@@ -529,6 +532,7 @@ if state != "missing":
 path = root / "projects" / "test" / "session-a.jsonl"
 path.parent.mkdir(parents=True)
 path.write_text({record!r}, encoding="utf-8")
+print({child_hint!r})
 sys.exit({status})
 """,
         encoding="utf-8",
@@ -540,21 +544,40 @@ sys.exit({status})
 
     monkeypatch.setattr(agent_launcher, "_wait_for_claude", wait)
     with pytest.raises(SystemExit) as error:
-        agent_launcher.main_opus(
+        getattr(agent_launcher, f"main_{wrapper}")(
             ["--resume", "session-a"],
             home=tmp_path,
             resolve=lambda *_: pathlib.Path("claude"),
             isatty=lambda _: True,
         )
     assert error.value.code == status
-    output = capsys.readouterr().out
+    output = capfd.readouterr().out
+    assert output.startswith(child_hint + "\n")
     if display:
         assert "完了報告\n\n本文\n" in output
-        assert "opus --resume session-a" in output
+        assert output.splitlines()[-2] == "同じ起動方法で再開:"
+        command = output.splitlines()[-1]
+        if os.name == "nt":
+            assert command == f'cmd /d /c "set CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1&& {wrapper} --resume session-a"'
+        else:
+            assert command == f"CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 {wrapper} --resume session-a"
+            launcher = tmp_path / wrapper
+            launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$CLAUDE_CODE_EXPERIMENTAL_CODE_MODE" "$@"\n', encoding="utf-8")
+            launcher.chmod(0o755)
+            resumed = subprocess.run(
+                ["/bin/sh", "-c", command],
+                env={**os.environ, "PATH": str(tmp_path)},
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert resumed.stdout.splitlines() == ["1", "--resume", "session-a"]
+            print(output, end="")
+            print(resumed.stdout, end="")
         assert "別の誤った報告" not in output
         assert not list((tmp_path / "agent-toolkit-function-hooks").iterdir())
     else:
-        assert not output
+        assert output == child_hint + "\n"
 
 
 @pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
@@ -571,6 +594,7 @@ sys.exit({status})
         ["auto-mode"],
         ["plugins"],
         ["--bg", "hello"],
+        ["--background", "hello"],
         ["--version"],
     ],
 )
