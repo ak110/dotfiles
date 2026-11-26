@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+import json
 import logging
 import os
 import pathlib
@@ -9,7 +11,7 @@ import typing
 
 from agent_toolkit._atk.managed_temp import paths, permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
-from agent_toolkit._common import plugin_root_leases
+from agent_toolkit._common import file_lock, plugin_root_leases, state_paths
 
 _LOG = logging.getLogger(__name__)
 PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
@@ -135,7 +137,14 @@ def release_stable_plugin_root(root: pathlib.Path) -> None:
     try:
         validate_managed_temp(area)
         plugin_root_leases.release_plugin_root_use(area)
-        cleanup_managed_temp(area)
+        with plugin_root_leases.plugin_root_lock(area, blocking=False):
+            if not area.exists() or plugin_root_leases.plugin_root_in_use(area):
+                return
+            _remove_tree(area)
+        record = {"ts": datetime.datetime.now(datetime.UTC).isoformat(), "pid": os.getpid(), "root": str(root)}
+        file_lock.locked_rotate_and_append(
+            state_paths.state_dir() / "plugin-root-releases.jsonl", json.dumps(record) + "\n", 1024 * 1024
+        )
     except ManagedTempError as exc:
         _LOG.debug("配布物rootを保持します: root=%s error=%s", root, exc)
     except (OSError, ValueError) as exc:

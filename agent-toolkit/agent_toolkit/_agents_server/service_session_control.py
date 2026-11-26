@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult, TextContent
 from pydantic import TypeAdapter
 
-from agent_toolkit._agents_server import manager_start, mcp_tools, service_rpc, service_transport, service_turns
+from agent_toolkit._agents_server import manager_start, mcp_tools, plugin_root, service_rpc, service_transport, service_turns
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.service_force import (
     ServiceForceControl,
@@ -202,6 +202,19 @@ class ServiceSessionControl(ServiceForceControl, ServiceSessionMove):  # pylint:
         if current["generation"] != self.generation:
             value = await _forward_call(current, "public_call", params, {"caller": _caller_payload(caller)})
             return _RESULT.validate_python(value)
+        if params.name in {"start", "send_to_user"}:
+            root = plugin_root.SERVER_PLUGIN_ROOT
+            if not root.is_dir():
+                raise ActionableError(
+                    f"管理サービスの保持配布物が見つかりません: {root}。{params.name}は実行していません",
+                    next_action=(
+                        "update-dotfilesで修正版を導入し、修正版の配布物からagents_serverを接続し直して"
+                        "管理サービスの受付世代を切り替えてから再実行する。"
+                        "同じ版で復旧する場合は、実行中の委譲を確認し、窓口を切断してから"
+                        f"欠落した管理サービス（PID {os.getpid()}）を終了し、実在する配布物から再接続する。"
+                        "窓口だけの再接続では既存の世代は切り替わりません"
+                    ),
+                )
         async with self.managers.scope(params) as manager, contextlib.AsyncExitStack() as scopes:
             parent = next(key for key, item in self.managers.conversations.items() if item.manager is manager)
             arguments = params.arguments or {}

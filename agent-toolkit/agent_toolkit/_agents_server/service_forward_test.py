@@ -258,8 +258,9 @@ with service_transport.listen(address) as listener:
 
 
 @pytest.mark.windows
+@pytest.mark.parametrize("copy_missing", [False, True])
 def test_restart_does_not_mistake_exited_generation_record_for_new_service(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, copy_missing: bool
 ) -> None:
     """同じ世代の前回の記録が残る間に受付を始めた新しいサービスへ、前回の起動単位を期待して接続しない。
 
@@ -278,7 +279,8 @@ def test_restart_does_not_mistake_exited_generation_record_for_new_service(
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
     monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("G1", "1.0.0"))
     monkeypatch.setattr(service_forward.plugin_environment, "prepared_python", lambda *_args: None)
-    GenerationRegistry(directory).reserve("G1", root, "1.0.0")
+    previous_root = tmp_path / "missing-copy" if copy_missing else root
+    GenerationRegistry(directory).reserve("G1", previous_root, "1.0.0")
     exited = "999999999:1"
     endpoint = service_transport.endpoint(directory, "G1")
     (directory / "G1.json").write_text(

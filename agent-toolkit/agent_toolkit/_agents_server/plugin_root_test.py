@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import pathlib
@@ -9,6 +10,7 @@ import typing
 import pytest
 
 from agent_toolkit._agents_server import plugin_root
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import plugin_root_leases, state_paths
 
 
@@ -63,6 +65,9 @@ def test_finished_independent_roots_do_not_accumulate(tmp_path, monkeypatch):
         assert (protected / "content.py").read_text(encoding="utf-8") == "value = 1\n"
     plugin_root.release_stable_plugin_root(protected)
     assert not protected.parent.exists()
+    log = (state_paths.state_dir() / "plugin-root-releases.jsonl").read_text(encoding="utf-8")
+    last = json.loads(log.splitlines()[-1])
+    assert last["root"] == str(protected) and last["pid"] == os.getpid()
 
 
 def test_checkout_resolution_does_not_write_capability_record(tmp_path):
@@ -117,3 +122,42 @@ def test_independent_versioned_source_reuses_the_held_copy(tmp_path):
     assert first == second and first != source
     with plugin_root_leases.plugin_root_lock(first.parent):
         assert plugin_root_leases.plugin_root_in_use(first.parent)
+
+
+@pytest.mark.parametrize("reclaim", ["release", "sweep"])
+@pytest.mark.parametrize("entry", ["launcher", "service"])
+def test_unregistered_service_start_protects_shared_root(tmp_path, monkeypatch, reclaim, entry):
+    root = plugin_root.resolve_stable_plugin_root(_source(tmp_path), independent=True)
+    own = plugin_root_leases.psutil.Process()
+
+    class StartingService:
+        pid = 123
+
+        def cmdline(self):
+            if entry == "launcher":
+                return [
+                    "python",
+                    str(root / "scripts/launch.py"),
+                    "--agents-service",
+                    "agent_toolkit/_agents_server/service.py",
+                ]
+            return ["python", str(root / "agent_toolkit/_agents_server/service.py")]
+
+        def username(self):
+            return own.username()
+
+        def status(self):
+            return plugin_root_leases.psutil.STATUS_RUNNING
+
+        def create_time(self):
+            return 1.0
+
+    monkeypatch.setattr(plugin_root_leases, "_current_processes", lambda: [StartingService()])
+    monkeypatch.setattr(plugin_root_leases.process_identity, "start_id", lambda _process: None)
+    if reclaim == "release":
+        plugin_root.release_stable_plugin_root(root)
+    else:
+        plugin_root_leases.release_plugin_root_use(root.parent)
+        future = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=30)
+        managed_temp.sweep_managed_temp(now=future)
+    assert root.is_dir()

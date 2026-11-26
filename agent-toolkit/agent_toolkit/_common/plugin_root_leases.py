@@ -332,7 +332,10 @@ def _server_may_use_root(area: Path) -> bool:
                 except OSError, ValueError, psutil.Error:
                     arguments = None
                 if arguments is not None and not any(
-                    Path(argument).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py") for argument in arguments
+                    Path(argument).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py")
+                    or Path(argument).parts[-3:] == ("agent_toolkit", "_agents_server", "service.py")
+                    or (Path(argument).parts[-2:] == ("scripts", "launch.py") and "--agents-service" in arguments)
+                    for argument in arguments
                 ):
                     continue
                 if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):

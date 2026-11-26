@@ -17,7 +17,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
-from agent_toolkit._common import file_lock, plugin_environment, runtime_environment, windows_job
+from agent_toolkit._common import file_lock, plugin_environment, plugin_root_leases, runtime_environment, windows_job
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.diagnostic_redaction import read_diagnostic_tail
 from agent_toolkit._common.next_action import report, with_next_action
@@ -160,9 +160,10 @@ def ensure_service(
     """
     publish = caller.environment.get(DEFER_PUBLISH_ENV) != "1"
     directory = service_transport.namespace(caller)
-    generation, version = code_identity(root, directory)
+    source = root
+    requested, version = code_identity(source, directory)
     registry = GenerationRegistry(directory)
-    target = registry.reserve(generation, root, version)
+    target = registry.reserve(requested, source, version)
     generation = target["generation"]
     root = pathlib.Path(target["root"])
     ready = directory / f"{generation}.json"
@@ -178,6 +179,15 @@ def ensure_service(
                 if service_transport.process_alive(record["process"]):
                     return service_rpc.request_sync(record, "publish", {}) if publish else record
                 exited = record["process"]
+            if generation == requested and not root.is_dir():
+                root = source
+            area = root.parent
+            if area.name.startswith(f"{plugin_root_leases.SHARED_PLUGIN_ROOT_PREFIX}-"):
+                # pyfltr: allow-comment -- launcherがleaseを登録するまでは起動要求側が保持する。
+                with plugin_root_leases.plugin_root_lock(area):
+                    if plugin_root_leases.completed_plugin_copy(area) != root:
+                        raise FileNotFoundError(f"管理サービスの起動に使う保持配布物がありません: {root}")
+                    plugin_root_leases.register_plugin_root_use(area)
             python = plugin_environment.prepared_python(root, caller.environment) or python or pathlib.Path(sys.executable)
             env = {
                 key: value
