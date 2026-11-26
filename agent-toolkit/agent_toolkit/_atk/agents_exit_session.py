@@ -490,7 +490,7 @@ def request_completion_exit() -> int:
     except OSError as error:
         print(f"自動終了しない: 読込目印または状態ファイルを処理できない: {error}")
         return 0
-    print("ターンの終了時に自動終了を判定する。追加のツールを呼ばずターンを終えよ。")
+    print("ターンの終了時に自動終了を判定します。追加のツールを呼ばず、通常どおりターンを終えてください。")
     return 0
 
 

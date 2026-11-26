@@ -327,6 +327,7 @@ def test_request_completion_exit_is_fail_closed(
     requested: bool,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     from agent_toolkit._common import completion_exit
 
@@ -388,6 +389,11 @@ def test_request_completion_exit_is_fail_closed(
     record.write_text("".join(json.dumps(event) + "\n" for event in entries), encoding="utf-8")
 
     assert agents_exit_session.request_completion_exit() == 0
+    output = capsys.readouterr().out
+    if requested:
+        assert "追加のツールを呼ばず、通常どおりターンを終えてください。" in output
+    else:
+        assert output.startswith("自動終了しない: ")
     state = completion_exit.state_path(launch, root=tmp_path)
     assert state is not None
     assert state.exists() is requested
