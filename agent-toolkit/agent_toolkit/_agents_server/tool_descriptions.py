@@ -61,7 +61,8 @@ Claude・Codexの実行中turnにはsteerする。Antigravity・OpenCodeの実�
 `reply_started`は終了済みまたは完了待ちで保留中のsessionで新しいturnを開始したことを示す。
 `reply_failed`は新しいturnを開始できなかったこと、`reply_ambiguous`は開始の成否を確定できなかったことを示し、
 いずれも`atk agents wait`で状態を確認してから次の操作を選ぶ。
-sessionの起動後に工程別モデル設定の候補列が変わっても、保持したengine・model・effortで継続する。
+実行中の担当への訂正は保持したengine・model・effortで継続する。
+終了した役割が現在の工程の候補外なら配送せず、`handoff_from`による引き継ぎを案内する。
 相対effort操作を受理した会話は、その変更を次turnから使う。
 採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
 保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。

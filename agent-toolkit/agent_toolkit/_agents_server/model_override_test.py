@@ -10,11 +10,18 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import backends, mcp_tools, session_handoff
+from agent_toolkit._agents_server import backends, launch_requests, mcp_tools, session_handoff, state
 from agent_toolkit._atk.wi import repo
 from agent_toolkit._atk.wi.uwi_body import ANSWER_MARKER
 from agent_toolkit._common.claude_usage_limit import UsageLimitState
-from agent_toolkit._testing.agents_server_support import _complete, _manager_with_fake, _observed_input_params
+from agent_toolkit._common.task_documents import task_prompt_header
+from agent_toolkit._testing.agents_server_support import (
+    FakeBackend,
+    _complete,
+    _manager_with_fake,
+    _observed_input_params,
+    install_backend,
+)
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -219,6 +226,50 @@ async def test_handoff_override_is_bound_to_successor_before_release(
             )
         release.assert_not_awaited()
         assert backend.start_calls == [("explicit", "high", "explore")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["current", "previous", "wrong-candidate", "no-codex"])
+async def test_repository_handoff_rechecks_codex_direction_in_the_latest_human_input(monkeypatch, tmp_path, scope):
+    setting = "claude:sonnet/high" if scope == "no-codex" else "codex:configured/high,claude:sonnet/high"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", setting)
+    monkeypatch.setattr(session_handoff, "prepare_prompt", lambda predecessor: predecessor.prompt)
+    async with _manager_with_fake("codex") as (manager, backend):
+        record = tmp_path / "session.jsonl"
+        _record(monkeypatch, manager, record)
+        records = [_human("あとrepository-processはcodex使えって言ったでしょ")]
+        if scope == "previous":
+            records.append(_human("次はモデルを指定せず、別の依頼を進める"))
+        _save(record, *records)
+        past = FakeBackend(manager.sessions, "claude")
+        install_backend(manager, "claude", past)
+        role = launch_requests.resolve_task_document_path("repository-process")
+        child = state.SessionState(
+            "old-claude",
+            str(tmp_path),
+            engine="claude",
+            model="sonnet",
+            effort="high",
+            model_type="execute",
+            prompt=task_prompt_header(role),
+        )
+        _complete(child, message="前任の成果")
+        manager.sessions[child.session_id] = child
+        alternate = "codex:configured/high" if scope != "wrong-candidate" else _MODEL
+        inputs = {
+            "handoff_from": child.session_id,
+            "model_type": alternate,
+            "model_override": "user_instruction",
+            "model_override_evidence": _PROOF,
+        }
+        if scope == "current":
+            await mcp_tools.mcp.call_tool("start", inputs)
+            assert backend.start_calls == [("configured", "high", "delegate")]
+        else:
+            with pytest.raises(ToolError, match="今回の対象・工程・全候補"):
+                await mcp_tools.mcp.call_tool("start", inputs)
+            assert not backend.start_calls
+        assert not past.start_calls and not past.send_calls
 
 
 @pytest.mark.asyncio

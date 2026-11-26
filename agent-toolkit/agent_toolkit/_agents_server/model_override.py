@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from agent_toolkit._agents_server.launch_requests_materials import exec_review_wi_names
+from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import lane_records
 from agent_toolkit._atk.session_record_format import as_text
 from agent_toolkit._atk.wi import frontmatter, layout, processing_owner, repo, user_comment, uwi_scan
@@ -88,7 +89,9 @@ def _latest_human(context: tuple[str, pathlib.Path]) -> tuple[int, str] | None:
         return _last_input((json.loads(line) if line.strip() else None for line in source), engine)
 
 
-def _matches_record(evidence: str, expected: tuple[str, ...], launcher: Mapping[str, Any], ancestry: tuple[str, ...]) -> bool:
+def _matches_record(
+    evidence: str, expected: tuple[str, ...], launcher: Mapping[str, Any], ancestry: tuple[str, ...], *, repository_codex: bool
+) -> bool:
     match = re.fullmatch(r"session:([0-9A-Za-z_-]+):([1-9][0-9]{0,8})", evidence)
     if match is None or match[1] not in ancestry:
         return False
@@ -98,7 +101,31 @@ def _matches_record(evidence: str, expected: tuple[str, ...], launcher: Mapping[
     if context is None or context[0] == "codex" and session != ancestry[-1]:
         return False
     latest = _latest_human(context)
-    return latest is not None and latest[0] == int(match[2]) and latest[1] in expected
+    return (
+        latest is not None
+        and latest[0] == int(match[2])
+        and (latest[1] in expected or (repository_codex and _REPOSITORY_CODEX.fullmatch(latest[1]) is not None))
+    )
+
+
+_REPOSITORY_CODEX = re.compile(
+    r"(?:あと[、 ]*)?" + r"`?repository-process`?\s*は\s*`?codex`?\s*(?:を\s*)?"
+    r"(?:使え(?:って言ったでしょ)?|使ってください|使う)[。！!]?",
+    re.IGNORECASE,
+)
+
+
+def _repository_codex_selection(model_type: str, phase: str, launch: Mapping[str, Any]) -> bool:
+    if phase != "execute" or pathlib.Path(launch.get("subagent_md_path") or "").name != "repository-process.subagent.md":
+        return False
+    if launch["mode"] not in {"task", "handoff"}:
+        return False
+    try:
+        requested = _atk_config.parse_stage_model_candidates(model_type)
+        codex = [item for item in _atk_config.parse_unresolved_model_candidates("execute") if item[0] == "codex"]
+    except ValueError:
+        return False
+    return bool(codex) and requested == codex
 
 
 _WI_ROLES = {"execute": "実装担当", "review": "実行レビュー担当", "review_fast": "実行レビュー担当"}
@@ -231,9 +258,17 @@ def require(
         direct = (f"{launch['cwd']}で{launch['mode']}の「{raw_prompt}」は{specified}で。",)
     ancestry = _ancestry(launcher.get("launcher_session_id"), state_root)
     try:
+        repository_codex = _repository_codex_selection(model_type, phase, launch)
+        forms = (expected, *direct, directive(scope, phase, "codex")) if repository_codex else (expected, *direct)
         if ancestry and (
-            _matches_record(evidence, (expected, *direct), launcher, ancestry)
+            _matches_record(evidence, forms, launcher, ancestry, repository_codex=repository_codex)
             or _matches_wi(evidence, expected, ancestry, launch=launch, phase=phase, model_type=model_type)
+            or (
+                repository_codex
+                and _matches_wi(
+                    evidence, directive(scope, phase, "codex"), ancestry, launch=launch, phase=phase, model_type="codex"
+                )
+            )
         ):
             return
     except OSError, ValueError, yaml.YAMLError:

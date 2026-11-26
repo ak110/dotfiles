@@ -583,13 +583,14 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         current = await self.resolve_handoff_predecessor(session_id)
         predecessor = SessionResumeState.from_session(current) if isinstance(current, SessionState) else current
         assert predecessor.model_type is not None
+        document = task_documents.launched_task_document(predecessor.prompt)
         role_type = await run_file_operation(launch_requests.current_role_model, predecessor, include_explicit=True)
         previous_phase = predecessor.model_type if predecessor.model_type in _atk_config.MODEL_TYPES else None
         inherited_type = predecessor.model_type
         if inherited_type in _atk_config.MODEL_TYPES and role_type and not launch_requests.role_model_was_explicit(predecessor):
             inherited_type = role_type
         successor_type = model_type if model_type is not None else inherited_type
-        if task_documents.launched_task_document(predecessor.prompt) is None:
+        if document is None:
             launch_requests.validate_model_type_for_mode(predecessor.launch_kind, successor_type)
         warnings = await check_model_override(
             self,
@@ -604,6 +605,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 "cwd": predecessor.cwd,
                 "handoff_from": predecessor.session_id,
                 "label": predecessor.label or None,
+                **({"subagent_md_path": str(document)} if document is not None else {}),
             },
         )
         if isinstance(current, SessionState):

@@ -31,14 +31,34 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("phase", ["active", "completed", "expired", "registry", "registry-explicit", "explicit", "unchanged"])
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "active",
+        "completed",
+        "expired",
+        "registry",
+        "registry-explicit",
+        "explicit",
+        "unchanged",
+        "old-model",
+        "registry-old-model",
+    ],
+)
 async def test_repository_process_reply_after_role_model_change(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, phase: str
 ) -> None:
     role = task_documents.find_role_document(plugin_root.SERVER_PLUGIN_ROOT, "repository-process.subagent.md")
     assert role is not None
+    allowed = phase in {"registry-explicit", "explicit", "unchanged"}
+    monkeypatch.setenv(
+        "AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL",
+        "codex:configured/high,claude:sonnet/medium" if allowed else "codex:configured/high",
+    )
     async with _manager_with_fake("claude") as (manager, backend):
-        session = state.SessionState("thread-1", str(tmp_path), engine="claude", model_type="orchestrate")
+        session = state.SessionState(
+            "thread-1", str(tmp_path), engine="claude", model_type="orchestrate", model="sonnet", effort="medium"
+        )
         original = role.read_text(encoding="utf-8").replace("model_type: execute", "model_type: orchestrate", 1)
         declaration = task_documents.read_declaration(role, original)
         assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
@@ -60,16 +80,18 @@ async def test_repository_process_reply_after_role_model_change(
             _complete(session, message="直前の結果")
         if phase == "explicit":
             session.explicit_role_model = True
-        if phase == "unchanged":
+        if phase in {"unchanged", "old-model", "registry-old-model"}:
             session.model_type = "execute"
             session.explicit_role_model = False
-        if phase in {"registry", "registry-explicit"}:
+        if phase in {"registry", "registry-explicit", "registry-old-model"}:
             monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
             session_registry.publish(
                 session.session_id,
                 state=session_registry.PublicationState.RESULT_COMPLETED,
                 cwd=session.cwd,
                 engine=session.engine,
+                model=session.model,
+                effort=session.effort,
                 model_type=session.model_type,
                 launch_info=session_registry.LaunchInfo.of(session),
             )
@@ -86,11 +108,13 @@ async def test_repository_process_reply_after_role_model_change(
             else:
                 assert backend.send_calls == 1
         else:
-            with pytest.raises(ActionableError, match="orchestrate.*execute") as exc:
+            diagnostic = "現行の工程executeの候補に含まれない" if phase.endswith("old-model") else "orchestrate.*execute"
+            with pytest.raises(ActionableError, match=diagnostic) as exc:
                 await manager.send_message(session.session_id, "続行")
 
             assert "handoff_from" in exc.value.next_action
             assert backend.send_calls == 0
+            assert not backend.resume_calls
 
 
 @pytest.mark.asyncio

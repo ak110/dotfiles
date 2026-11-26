@@ -88,6 +88,9 @@
 
 1. 定型のリポジトリ担当は、agents_serverの`start`をtaskで呼ぶ。
    `model_type`は指定せず、役割文書の`execute`を使う。
+   本人の今回の指定がCodexに限定する場合に限り、`atk config get execute_model`のCodex候補だけを設定順のまま渡す。
+   `model_override=user_instruction`と[本人指定の根拠](../references/model-settings.md#本人指定による上書き)を添え、候補が無ければ起動しない。
+   終了した旧担当へ今回の指定を`send_message`で渡せない時は、同じ指定を`handoff_from`で照合し直し、後任にだけ新しい指示を送る。
 
    | 引数 | 値 |
    | --- | --- |
