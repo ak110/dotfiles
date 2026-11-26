@@ -470,7 +470,7 @@ def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False, m
         return
     state = _wi_entries.entry_state_of(path)
     if state == WI_STATE_HOLD:
-        reject_frozen_hold_edit(path, message)
+        _reject_frozen_hold_edit(path, message)
         return
     if state != WI_STATE_PROCESSING:
         return
@@ -503,7 +503,7 @@ def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False, m
     sys.exit(2)
 
 
-def reject_frozen_hold_edit(path: pathlib.Path, message: str | None) -> None:
+def _reject_frozen_hold_edit(path: pathlib.Path, message: str | None) -> None:
     parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     if parsed is None or _constants.normalized_wi_type(parsed[0].get("type")) != WI_TYPE_AWI:
         return

@@ -4,9 +4,9 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import wait_ci_forge
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
-from agent_toolkit._atk.wi import processing_owner
-from agent_toolkit._atk.wi.mutations import content
+from agent_toolkit._atk.wi import merge_verification, processing_owner
 from agent_toolkit._testing.wi_mutations_content_support import _edit_body_args
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes
 
@@ -140,9 +140,19 @@ def test_hold_awi_body_freeze(agent_env: pathlib.Path, tmp_path: pathlib.Path, h
         assert "置換" in path.read_text(encoding="utf-8")
 
 
-def test_implement_hold_awi_accepts_merge_update(agent_env: pathlib.Path) -> None:
+def test_implement_hold_awi_merge_update_reaches_ci_gate(
+    agent_env: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = _hold_entry(agent_env, "source: implement\n")
+    saved = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(wait_ci_forge, "_default_run_list_fn", lambda *_args: lambda _sha: [])
+    monkeypatch.setattr(wait_ci_forge, "_github_ci_configured", lambda *_args: True)
+    monkeypatch.setattr(merge_verification, "_declared_github_exclusion", lambda *_args: False)
     merge_update = "---\ntype: awi\nmerge_branch: feat/example\nmerge_commit: " + "a" * 40 + "\n---\n\n# 本文\n"
-    content.reject_frozen_hold_edit(path, merge_update)
-    with pytest.raises(SystemExit):
-        content.reject_frozen_hold_edit(path, "---\ntype: awi\n---\n\n# 本文\n")
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(_edit_body_args(tmp_path, "fb-001.md", merge_update), home=tmp_path)
+    assert exc_info.value.code != 0
+    error = capsys.readouterr().err
+    assert "CIが未確認" in error
+    assert "本文を置き換えられない" not in error
+    assert path.read_text(encoding="utf-8") == saved
