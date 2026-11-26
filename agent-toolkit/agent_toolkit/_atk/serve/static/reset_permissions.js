@@ -207,7 +207,7 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
       account.parentElement.hidden = options.length === 0;
       account.replaceChildren(...options);
       if (Array.from(account.options).some(option => option.value === preferred)) account.value = preferred;
-      hints.textContent = selectable ? "" : "このホストで選べるアカウントを確認できません。atk config usage --refresh で取り直すか、詳細から直接入力してください。";
+      hints.textContent = options.length ? "" : "このホストで選べるアカウントを確認できません。atk config usage --refresh で取り直せます。";
       rebuildScope();
     }
 

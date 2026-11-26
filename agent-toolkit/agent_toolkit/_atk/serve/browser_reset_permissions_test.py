@@ -185,6 +185,7 @@ async def test_permission_draft_survives_host_switch_and_remote_unknown_has_no_c
     until = section.get_by_label("終了（このブラウザーの時刻）")
     await expect(account).to_have_value("synthetic-codex")
     await expect(section.get_by_text("詳細: アカウントの直接入力", exact=True)).to_be_hidden()
+    await expect(section).not_to_contain_text("atk config usage --refresh")
     await section.get_by_label("リセット前の猶予").select_option("2")
     await section.get_by_role("button", name="次の週次リセットの2日前まで").click()
     await section.get_by_label("回数").fill("7")
