@@ -23,13 +23,14 @@ def test_finish_validates_batch_without_committing_targets(tmp_path, monkeypatch
         session_review.write(path, value)
     before = path.read_bytes()
     monkeypatch.setenv(session_review.BATCH_ENV, str(path))
+    monkeypatch.setattr(session_review_state.add_reports, "check_run_report_sync", lambda *args, **kwargs: None)
     succeeded = condition in {"running", "failed"}
     assert session_review_state.main(["finish"]) == (0 if succeeded else 2)
     assert session_review.pending() == [target]
     if succeeded:
         assert session_review.read(path)["analysis_succeeded"] is True
         assert session_review.read(path)["status"] == condition
-    else:
+    elif condition in {"completed", "resolved"}:
         assert path.read_bytes() == before
 
 

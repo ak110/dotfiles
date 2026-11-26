@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import dataclasses
 import datetime
 import json
@@ -8,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Generator
 
 from agent_toolkit._atk import managed_temp, research_sources
 from agent_toolkit._atk import outcome as _outcome
@@ -52,6 +54,7 @@ from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, 
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import delegated_session, external_source_review, session_review, skill_modes, weekly_work
+from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_loop_session as _process_loop_session
 from agent_toolkit._common import uwi_watch as _uwi_watch
 from agent_toolkit._common.session_state import read_state
@@ -121,7 +124,7 @@ def _ensure_draft_destinations(
 _WEEKLY_SLOT = weekly_work.SLOT_PATTERN
 
 
-def _active_batch_run_id() -> str | None:
+def _active_batch() -> tuple[session_review.BatchWriter, session_review.ReviewBatch] | None:
     raw = os.environ.get(session_review.BATCH_ENV)
     if not raw:
         return None
@@ -129,30 +132,63 @@ def _active_batch_run_id() -> str | None:
         path = pathlib.Path(raw).resolve()
         if path.parent != (session_review.directory() / "runs").resolve():
             return None
-        batch = session_review.BatchWriter(path).load()
+        writer = session_review.BatchWriter(path)
+        batch = writer.load()
     except OSError, ValueError:
         return None
-    if batch.run_id != path.stem or batch.status != session_review.BatchStatus.RUNNING:
+    if batch.run_id != path.stem or batch.status not in {session_review.BatchStatus.RUNNING, session_review.BatchStatus.FAILED}:
         return None
-    return batch.run_id
+    return writer, batch
+
+
+@contextlib.contextmanager
+def _track_batch_report_save(
+    private_notes: pathlib.Path,
+    entry_type: str,
+    source: str | None,
+    scope: str | None,
+    parsed_messages: list[tuple[dict[str, object], str]],
+) -> Generator[None]:
+    active = _active_batch() if entry_type == WI_TYPE_UWI and scope == session_review.BATCH_SCOPE else None
+    if active is None or not any(
+        data.get("source", source) == "run-skill" and data.get("run_skill_report") == "true" for data, _ in parsed_messages
+    ):
+        yield
+        return
+    writer, batch = active
+    details = {"notes": str(private_notes)}
+    writer.record_report_step("save-start", {**details, "status": "attempted"})
+    status = "failed"
+    try:
+        expected_notes = pathlib.Path(batch.report_notes) if batch.report_notes else _private_notes.default_private_notes()
+        if private_notes.resolve() != expected_notes.resolve():
+            status = "wrong-destination"
+            raise WebInputError(
+                "振り返りの報告は起動元と同じprivate-notesへ保存する",
+                next_action="保存先の上書きを外し、振り返りbatch内で保存し直す",
+            )
+        yield
+        status = "returned"
+    finally:
+        writer.record_report_step("save-result", {**details, "status": status})
 
 
 def run_report_metadata(
     data: dict[str, object], *, question_type: str | None = None, scope: str | None = None, new_report: bool = False
 ) -> dict[str, object]:
-    if data.get("run_skill_run_id"):
-        return data
-    run_id = os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")
     raw_scope = scope if scope is not None else data.get("scope")
     if (
         new_report
-        and not run_id
         and data.get("source") == "run-skill"
         and data.get("run_skill_report") == "true"
         and isinstance(raw_scope, str)
         and skill_modes.canonical_scope(raw_scope) == session_review.BATCH_SCOPE
+        and (active := _active_batch())
     ):
-        run_id = _active_batch_run_id()
+        return {**data, "run_skill_run_id": active[1].run_id}
+    if data.get("run_skill_run_id"):
+        return data
+    run_id = os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")
     if not run_id:
         return data
     if data.get("run_skill_report") == "true":
@@ -424,7 +460,10 @@ def add_entries(
         if target_commit != draft_basis.oid or normalized_target_repo != draft_basis.repo:
             raise WebInputError("起草の基点が保存対象と一致しない", next_action=_DRAFT_NEXT)
         _ensure_draft_destinations(draft_basis, parsed_messages, item_branches, target_commit_branch)
-    with storage.mutation(private_notes) as mutation:
+    with (
+        _track_batch_report_save(private_notes, entry_type, source, scope, parsed_messages),
+        storage.mutation(private_notes) as mutation,
+    ):
         if draft_basis is not None:
             draft_basis.verify(target_commit_branch)
         insertions = None

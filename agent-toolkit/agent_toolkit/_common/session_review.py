@@ -116,6 +116,7 @@ class ReviewBatch(pydantic.BaseModel):
     targets: list[PendingGeneration]
     prepared: list[dict[str, Any]] = pydantic.Field(default_factory=list)
     analysis_succeeded: bool = False
+    report_notes: str | None = None
     report_synced: bool = False
     failure_key: str | None = None
     error: str | None = None
@@ -315,6 +316,13 @@ class BatchWriter:
             if value["status"] == BatchStatus.USAGE_LIMIT_PAUSED:
                 value.pop("usage_resume_at", None)
                 self._save({**value, "status": BatchStatus.RUNNING})
+
+    def record_report_step(self, step: str, details: dict[str, Any]) -> None:
+        with locked():
+            value = self._active()
+            steps = value.get("report_steps", [])
+            entry = {"step": step, "run_id": value["run_id"], **details}
+            self._save({**value, "report_steps": [*steps[-19:], entry]})
 
     def analyze(self) -> dict[str, Any]:
         with locked():

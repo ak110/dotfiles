@@ -750,6 +750,10 @@ def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
         gap = add.check_run_report_sync(
             notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True, local_only=True
         )
+        session_review.BatchWriter(path).record_report_step(
+            "batch-finish",
+            {"notes": str(notes), "status": "report-committed" if gap is None else gap.reason},
+        )
         if gap is not None:
             # ファイル名やOIDを失敗キーに含めると同じ原因のAWIが重複する。  # pyfltr: allow-comment
             diagnostics = {"report_sync": {"reason": gap.reason, **gap.detail}}
@@ -897,6 +901,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         manifest: dict[str, Any] = {
             "run_id": run_id,
             "report_scope": session_review.BATCH_SCOPE,
+            "report_notes": str(private_notes.default_private_notes().resolve()),
             "manifest_path": str(path),
             "status": "running",
             "started_at": session_review.timestamp(),

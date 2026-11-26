@@ -22,7 +22,7 @@ from agent_toolkit._testing import git_repository
 _STOP_SESSION = "36a3ac29-3ce6-48a9-85a7-e59e0bbcf0ab"
 
 
-_SYNTHETIC_CHILD = """
+_SYNTHETIC_CHILD = r"""
 import datetime
 import os
 import pathlib
@@ -36,19 +36,42 @@ script, notes, target_repo, scenario = sys.argv[1:]
 manifest = os.environ[session_review.BATCH_ENV]
 if scenario == "unbound":
     os.environ.pop(session_review.BATCH_ENV)
-add.add_entries(
-    pathlib.Path(notes),
-    messages=["---\\nrun_skill_report: true\\n---\\n# 振り返り結果\\n\\n確認した。"],
-    target_repo=target_repo,
-    source="run-skill",
-    now=datetime.datetime.now(datetime.UTC),
-    entry_type="uwi",
-    scope=session_review.BATCH_SCOPE,
-    question_type="post-approval",
-)
+def save(destination):
+    add.add_entries(
+        pathlib.Path(destination),
+        messages=["---\nrun_skill_report: true\n---\n# 振り返り結果\n\n確認した。"],
+        target_repo=target_repo,
+        source="run-skill",
+        now=datetime.datetime.now(datetime.UTC),
+        entry_type="uwi",
+        scope=session_review.BATCH_SCOPE,
+        question_type="post-approval",
+    )
+
+def finish():
+    sys.argv = [script, "finish"]
+    try:
+        runpy.run_path(script, run_name="__main__")
+    except SystemExit as error:
+        return error.code
+    raise AssertionError("finishが終了状態を返さなかった")
+
+if scenario == "unbound":
+    save(notes)
 os.environ[session_review.BATCH_ENV] = manifest
-sys.argv = [script, "finish"]
-runpy.run_path(script, run_name="__main__")
+if scenario in {"unbound", "retry-after-missing"}:
+    assert finish() == 2
+    if scenario == "unbound":
+        sys.exit(0)
+if scenario == "wrong-destination":
+    try:
+        save(pathlib.Path(notes).with_name("other-notes"))
+    except ValueError as error:
+        assert "同じprivate-notes" in str(error)
+    else:
+        raise AssertionError("異なる保存先を拒否しなかった")
+save(notes)
+sys.exit(finish())
 """
 
 
@@ -63,6 +86,9 @@ def _isolate_session_inputs(monkeypatch):
     ("saved", "reason"),
     [
         ("unbound", "報告用UWIが無い"),
+        ("retry-after-missing", None),
+        ("stale-run-id", None),
+        ("wrong-destination", None),
         ("missing-run-id", None),
         ("uncommitted", None),
         ("unrelated-commit", None),
@@ -111,7 +137,7 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
         if saved in {"missing-run-id", "unbound"}:
             child_env.pop("AGENT_TOOLKIT_RUN_SKILL_ID", None)
         else:
-            child_env["AGENT_TOOLKIT_RUN_SKILL_ID"] = args.run_id
+            child_env["AGENT_TOOLKIT_RUN_SKILL_ID"] = "another-run" if saved == "stale-run-id" else args.run_id
         result = subprocess.run(
             [sys.executable, "-c", _SYNTHETIC_CHILD, str(script), str(notes), args.target_repo, saved],
             env=child_env,
@@ -122,6 +148,9 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
             timeout=30,
         )
         assert result.returncode == 0, result.stderr
+        if saved == "unbound":
+            assert "報告用UWIが無い" in result.stderr
+            return result.returncode
         assert json.loads(result.stdout.splitlines()[-1]) == {"run_id": args.run_id, "analysis_succeeded": True}
         if saved in {"uncommitted", "unrelated-commit", "push-rejected", "push-rejected-then-allowed", "missing-run-id"}:
             (notes / "unrelated.txt").write_text("報告と無関係。", encoding="utf-8")
@@ -149,6 +178,17 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
     assert len(manifests) == 1
     record = session_review.read(manifests[0])
     assert len(record["prepared"]) == 3
+    if saved == "retry-after-missing":
+        assert [(entry["step"], entry["status"]) for entry in record["report_steps"]] == [
+            ("analysis-finish", "報告用UWIが無い"),
+            ("save-start", "attempted"),
+            ("save-result", "returned"),
+            ("analysis-finish", "report-committed"),
+            ("batch-finish", "report-committed"),
+        ]
+        assert all(entry["run_id"] == record["run_id"] and entry["notes"] == str(notes) for entry in record["report_steps"])
+    if saved == "wrong-destination":
+        assert record["report_steps"][1]["status"] == "wrong-destination"
     if reason is None:
         assert record["status"] == "completed"
         assert session_review.pending() == []
