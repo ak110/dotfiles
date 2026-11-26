@@ -342,7 +342,8 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         str | None,
         Field(
             description=parameter_description(
-                "本人指定の所在はsession:<会話ID>:<行番号>、wi:<WI名>、answer:<UWI名>。観測・自動切替失敗はその内容を記す。"
+                "本人指定の所在はsession:<会話ID>:<行番号>、wi:<WI名>、answer:<UWI名>。観測・切替失敗はその内容を記す。"
+                "自由本文のdelegateの切替失敗はphase:<失敗した工程名>を渡す。"
             )
         ),
     ] = None,
@@ -405,6 +406,8 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             reason=model_override,
             evidence=model_override_evidence,
             launch=launch,
+            launch_kind=mode,
+            fallback_phase=agents_server_tools.START_MODE_MODEL_TYPES.get(mode),
         )
     )
     with (
@@ -433,6 +436,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 reason=model_override,
                 evidence=model_override_evidence,
                 launch={**launch, "subagent_md_path": str(document)},
+                launch_kind=launch_kind,
             )
             WRITE_MODEL_AUTHORIZED.set(resolved_type == "write" and bool(warnings))
             context = await run_file_operation(_manager().launcher_record_context)

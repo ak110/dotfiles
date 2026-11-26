@@ -82,6 +82,8 @@ async def check_model_override(
     evidence: str | None = None,
     inherited: bool = False,
     launch: Mapping[str, Any],
+    launch_kind: LaunchKind = "delegate",
+    fallback_phase: str | None = None,
 ) -> list[dict[str, str]]:
     _require_write_model_evidence(model_type, reason == "user_instruction" and bool((evidence or "").strip()) and not inherited)
     if model_type is None or (
@@ -116,6 +118,22 @@ async def check_model_override(
             launcher=launcher,
             state_root=state_root,
         )
+    if reason == "fallback_failure":
+        known_phase = default_type or fallback_phase
+        requested_phase = evidence.removeprefix("phase:") if evidence.startswith("phase:") else None
+        phase = known_phase or requested_phase
+        if (
+            phase not in _atk_config.MODEL_TYPES
+            or phase is None
+            or (requested_phase is not None and requested_phase != phase)
+            or (known_phase is None and phase in {"orchestrate", "write"})
+            or not await manager.has_fallback_failure(phase, launch_kind, launch)
+        ):
+            raise ActionableError(
+                "工程設定の全候補に、今回の起動区分に対応する失敗記録を確認できない。委譲先は起動していない。",
+                next_action=next_action
+                + "自由本文のdelegateで候補を直接指定する回復時は、根拠にphase:<失敗した工程名>を渡す。",
+            )
     if reason == "observation":
         candidates = _atk_config.parse_unresolved_model_candidates(model_type)
         if not candidates or not all(
@@ -138,6 +156,25 @@ async def check_model_override(
 class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancestors  # 責務別のmixinへ分割したため。
     def model_override_context(self) -> tuple[dict[str, Any], pathlib.Path | None]:
         return self.launcher_record_context(), self._state_root()
+
+    async def has_fallback_failure(self, phase: str, launch_kind: LaunchKind, launch: Mapping[str, Any]) -> bool:
+        await self._drain_candidate_records()
+        params = launch.get("extra_params") or {}
+        document = str(launch.get("subagent_md_path") or "")
+        exec_lane = pathlib.Path(document).name == "exec.subagent.md" and params.get("担当種別") == "レーン担当"
+        recorded = await run_file_operation(
+            unavailable_candidates.load_unavailable_candidates,
+            phase,
+            launch_kind,
+            now=datetime.datetime.now(datetime.UTC),
+        )
+        if not recorded:
+            return False
+        try:
+            candidates, excluded = await self._resolve_start_candidates(phase, launch_kind=launch_kind, exec_lane=exec_lane)
+        except ActionableError:
+            return False
+        return bool(candidates) and all(recorded.get(candidate) for candidate in (*candidates, *excluded))
 
     async def _resolve_start_candidates(
         self,
@@ -532,6 +569,8 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             reason=model_override,
             evidence=model_override_evidence,
             inherited=model_type is None,
+            launch_kind=predecessor.launch_kind,
+            fallback_phase=predecessor.model_type if predecessor.model_type in _atk_config.MODEL_TYPES else None,
             launch={
                 "mode": "handoff",
                 "cwd": predecessor.cwd,

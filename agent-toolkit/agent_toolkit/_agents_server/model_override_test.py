@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import mcp_tools
+from agent_toolkit._agents_server import backends, mcp_tools
 from agent_toolkit._atk.wi import repo
 from agent_toolkit._atk.wi.uwi_body import ANSWER_MARKER
 from agent_toolkit._testing.agents_server_support import _complete, _manager_with_fake, _observed_input_params
@@ -227,3 +227,114 @@ async def test_role_override_requires_human_selection_before_the_backend(
         _save(record, _human(approved))
         await mcp_tools.mcp.call_tool("start", override)
         assert backend.start_calls == [("implementation", "high", "delegate"), ("explicit", "high", "delegate")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["delegate", "task", "explore", "handoff"])
+async def test_unrecorded_fallback_does_not_start_or_release(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, route: str
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_MODEL", "codex:configured/high")
+    inputs = {"cwd": str(tmp_path), "mode": "delegate", "prompt": "調査"}
+    phase = {"task": "execute", "explore": "chores_fast"}.get(route, "review")
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        match route:
+            case "task":
+                inputs = {
+                    "cwd": str(tmp_path),
+                    "mode": "task",
+                    "subagent_md_path": "exec",
+                    "extra_params": _observed_input_params("exec.subagent.md", tmp_path),
+                }
+            case "explore":
+                inputs["mode"] = "explore"
+            case "handoff":
+                started = await mcp_tools.start(cwd=str(tmp_path), mode="delegate", prompt="調査", model_type="review")
+                child = manager.sessions[started["session_id"]]
+                _complete(child, message="残作業")
+                inputs = {"handoff_from": child.session_id}
+                backend.start_calls.clear()
+        release = AsyncMock(wraps=backend.release_session)
+        monkeypatch.setattr(backend, "release_session", release)
+        with pytest.raises(ToolError, match="失敗記録.*起動していない"):
+            await mcp_tools.mcp.call_tool(
+                "start",
+                {
+                    **inputs,
+                    "model_type": _MODEL,
+                    "model_override": "fallback_failure",
+                    "model_override_evidence": f"phase:{phase}",
+                },
+            )
+        assert not backend.start_calls
+        release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recorded_start_failure_allows_recovery_only_for_the_failed_phase(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_MODEL", "codex:configured/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_FAST_MODEL", "codex:configured/high")
+    inputs = {"cwd": str(tmp_path), "mode": "delegate", "prompt": "画面の品質を判定する"}
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        original_start = backend.start
+        monkeypatch.setattr(
+            backend, "start", AsyncMock(side_effect=backends.StartCandidateUnavailable("candidateDependencyUnavailable"))
+        )
+        with pytest.raises(ToolError, match="no available model candidates"):
+            await mcp_tools.mcp.call_tool("start", {**inputs, "model_type": "review"})
+        monkeypatch.setattr(backend, "start", original_start)
+        fallback = {**inputs, "model_type": _MODEL, "model_override": "fallback_failure"}
+        with pytest.raises(ToolError, match="失敗記録"):
+            await mcp_tools.mcp.call_tool("start", {**fallback, "model_override_evidence": "phase:review_fast"})
+        assert not backend.start_calls
+        await mcp_tools.mcp.call_tool("start", {**fallback, "model_override_evidence": "phase:review"})
+        assert backend.start_calls == [("explicit", "high", "delegate")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "author,comment",
+    [
+        ("human", '担当モデル: {実装担当: "codex:explicit/high"}'),
+        ("human", "実装担当: `codex:explicit/high`"),
+        ("agent", "実装担当: `codex:explicit/high`"),
+        ("human", "> 実装担当: `codex:explicit/high`"),
+        ("human", '担当モデル: {実装担当: "codex:other/high", 実装担当: "codex:explicit/high"}'),
+    ],
+)
+async def test_existing_wi_model_requires_a_matching_user_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, author: str, comment: str
+) -> None:
+    notes = tmp_path / "notes"
+    entry = notes / "2026" / "11" / _WI
+    entry.parent.mkdir(parents=True)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setattr(repo, "resolve_repo_id_or_raise", lambda *_args, **_kwargs: _REPO)
+    section = "ユーザーコメント" if author == "human" else "実装案"
+    entry.write_text(
+        f"---\nstate: processing\ntarget_repo: {_REPO}\ntype: awi\n"
+        f"processing_owner: {{host: {socket.gethostname()}, session: {_OWNER}}}\n---\n\n## {section}\n\n{comment}\n",
+        encoding="utf-8",
+    )
+    inputs = {
+        "cwd": str(tmp_path),
+        "subagent_md_path": "exec",
+        "label": entry.stem,
+        "extra_params": _observed_input_params("exec.subagent.md", tmp_path),
+        "model_type": _MODEL,
+        "model_override": "user_instruction",
+        "model_override_evidence": f"wi:{_WI}",
+    }
+    async with _manager_with_fake("codex") as (manager, backend):
+        _record(monkeypatch, manager, tmp_path / "session.jsonl")
+        if author != "human" or comment.startswith(">") or "codex:other" in comment:
+            with pytest.raises(ToolError, match="起動していない"):
+                await mcp_tools.mcp.call_tool("start", inputs)
+            assert not backend.start_calls
+        else:
+            await mcp_tools.mcp.call_tool("start", inputs)
+            assert backend.start_calls == [("explicit", "high", "delegate")]
