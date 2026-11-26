@@ -1,5 +1,6 @@
 # 登録全体のAWI処理
 
+目的: 統括が登録リポジトリごとに担当を決めて結果を検収し、ユーザーが対象ごとに起動しなくても全対象の成果を欠かさず受け取れるようにする。
 登録リポジトリの対象別の配分、候補の受け渡し、担当の検収を扱う。
 連続巡回の選定と区切りの運用は `agent-toolkit:atk-mode/playbooks/process-loop.md` が定める。
 手動の `process-wi all-repos` は登録対象を1回処理し、結果の検収と報告で終える。
@@ -71,7 +72,10 @@
 <!-- 生成元: skills/atk-mode/roles/repository-process.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
-通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
+通常起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意する。
+`agents_server.start`に役割文書の`subagent_md_path`と、以下の役割固有の入力をまとめた`extra_params`を渡す。
+`mode`は省略する（明示する場合は`mode: task`）。
+全体作業契約の絶対パスは`extra_params`の外の`whole_contract_path`に渡す。
 
 - 必須入力名: `引き継ぎ記録先`
 - 任意入力名: `repositories`、`target_repo`、`worktree`、`candidate_file`、`snapshot_file`、`readiness`
@@ -188,7 +192,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 
 ## 更新のための本人再開
 
-本体・規範の更新や20時間点検で統括が自分の会話IDを予約して再起動する場合だけ、配下のレーンを稼働させたまま次の手順で再開する。
+dotfilesの公開反映、本体・規範の更新や20時間点検で統括が自分の会話IDを予約して再起動する場合だけ、配下のレーンを稼働させたまま次の手順で再開する。
 プラグインの公開・再読み込みとホスト本体の版の切り替えは別に判定する。
 
 対象は、`atk agents-exit-session` で終了できるClaudeの統括（OSを問わない）と、Linuxの対話端末で動くCodex・Antigravityの統括である。
@@ -196,6 +200,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 従来どおり配下writerへ保存して終えるよう引き継ぎ、終了を観測してからユーザーの操作か既存の手段で終了する。
 
 1. 新しい作業の開始を保留し、統合済み（`phase: finalized`）のレーンの変更だけを、[既存の公開工程](process-wi-publishing.md)の公開単位で公開・CI検収まで進める。
+   dotfilesの公開反映に伴う本人再開では、検収済みの公開を保ち、追加の公開は始めない。
    未統合のレーンの終了を待たない。
 2. 現在の要求・判断・認可、処理対象WI、計画と進捗、公開・検証の結果と残工程、会話ID、稼働版と更新後の版の所在を引き継ぎ記録に保存する。
    受領待ちの各レーンについて、担当の `session_id`、`lane_session_id`、対象worktree、選定結果の所在、次に受領する工程も保存し、読み戻す。
@@ -206,6 +211,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
    状態確認・中断・追送には既存の `show`・`kill`・`send_message` を使う。
    AntigravityとOpenCodeのレーンへの追送はturn終了後に行う。
 5. 稼働版を確認し、成功済みの公開・検証を再利用して残工程を続ける。
+   dotfilesの公開反映からの再開では、記録したOIDに対して[巡回する](process-loop.md#巡回する)の手順5の検収を終えてから次の公開へ進む。
    再開直後の追加候補の確認には「取得済み候補の受領」を使う。
    統括とレーンのmanaged-tempおよびworktreeの分離は変えない。
 

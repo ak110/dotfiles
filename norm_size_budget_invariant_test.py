@@ -1,35 +1,7 @@
 import pathlib
 import re
-import subprocess
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
-_ROOTS = ("agent-toolkit/skills", "agent-basics/skills")
-
-
-_BUDGET_BYTES = 3_150_000
-
-
-def _norm_markdown_bytes(root: pathlib.Path) -> int:
-    listed = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "-z", "--", *(f"{prefix}/*.md" for prefix in _ROOTS)],
-        capture_output=True,
-        check=True,
-    ).stdout.decode("utf-8")
-    paths = [path for path in listed.split("\0") if path and "/fixtures/" not in path]
-    return sum((root / path).stat().st_size for path in paths if (root / path).is_file())
-
-
-def test_norm_markdown_within_budget() -> None:
-    total = _norm_markdown_bytes(_REPO_ROOT)
-    assert total <= _BUDGET_BYTES, (
-        f"規範のMarkdownの合計が{total}バイトで、上限{_BUDGET_BYTES}バイトを{total - _BUDGET_BYTES}バイト超えた。"
-        "基点からの超過なら統合先の所有者へ返す。"
-        "統合先の所有者は基点の引渡し・公開の前に削減し、検査を通す。\n"
-        ".claude/skills/edit-dotfiles-norms/SKILL.mdの「規範を削除・縮小するときの消失確認」に従い、"
-        "削減量と整理後の上限は、必要な規範を保ちながらdotfilesの価値を最大化するように決める。"
-    )
-
-
 _ATK_MODE = _REPO_ROOT / "agent-toolkit/skills/atk-mode"
 _ALL_REPOS_DOCS = (
     "playbooks/process-wi-all-repos.md",

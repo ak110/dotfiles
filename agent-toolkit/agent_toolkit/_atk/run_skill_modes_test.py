@@ -90,7 +90,7 @@ def test_batch_uses_existing_runner_and_report_receipt(
 
 
 @pytest.mark.usefixtures("leaf_git_commands")
-def test_batch_normal_exit_without_report_can_resume_same_analysis(engine_env, tmp_path, monkeypatch, capsys):
+def test_batch_rejects_finish_without_report_and_resumes_prepared_scope(engine_env, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     set_orchestrate_environment(monkeypatch, "claude:test-model/low")
     monkeypatch.setenv("FAKE_REPORT_MODE", "missing")
@@ -109,12 +109,13 @@ def test_batch_normal_exit_without_report_can_resume_same_analysis(engine_env, t
         target_repo="https://example.com/team/repo",
     )
     code, out, err = _run(["--target-repo", str(engine_env.repo), "--args", "batch", "agent-toolkit:review-session"], capsys)
-    assert code == 1 and not out
-    assert "finish: report-unsynced" in err
+    assert code == 2 and not out
+    assert "exit code 2" in err
     (path,) = (session_review.directory() / "runs").glob("*.json")
     failed = session_review.read(path)
-    assert failed["status"] == "failed" and failed["analysis_succeeded"]
-    assert "終了状態: exit code 0" in pathlib.Path(failed["log_path"]).read_text(encoding="utf-8")
+    assert failed["status"] == "failed" and not failed.get("analysis_succeeded")
+    assert failed["report_steps"][-1]["status"] == "報告用UWIが無い"
+    assert "終了状態: exit code 2" in pathlib.Path(failed["log_path"]).read_text(encoding="utf-8")
     assert session_review.previous_scope(failed["targets"][0]) is None
 
     monkeypatch.setenv("FAKE_REPORT_MODE", "saved")

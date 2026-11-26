@@ -58,17 +58,17 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config temporary set": {
         "summary": "1つの一時設定を変更する",
-        "description": "1つの一時設定を変更する。\n\n目的: KEYをVALUEで一時指定する。\n利用場面: 通常設定を保ったまま次の起動へ別の値を適用するとき。\n対象と出力: 上書き集合へ追加し、--untilを集合全体の期限にする。保存値と実効値をJSONで返す。稼働中のturnは切り替えない。\n前提: 値は通常設定と同じ書式。期限は時差付きISO 8601で指定する。\n復元・後始末: temporary clearで解除する。期限の省略時は明示解除まで維持する。",
+        "description": "1つの一時設定を変更する。\n\n目的: KEYをVALUEで一時指定する。\n利用場面: 通常設定を保ったまま次の起動へ別の値を適用するとき。\n対象と出力: 上書き集合へ追加し、--untilを集合全体の期限にする。保存値と期限を表示する。--json、エージェント環境、標準出力が端末でない場合は保存値と実効値をJSONで返す。稼働中のturnは切り替えない。\n前提: 値は通常設定と同じ書式。期限は時差付きISO 8601で指定する。\n復元・後始末: temporary clearで解除する。期限の省略時は明示解除まで維持する。",
         "epilog": "実行例:\n\n  atk config temporary set codex_fast_mode true\n  atk config temporary set claude_worker_connections payg --until 2030-01-01T12:00:00+09:00",
     },
     "atk config temporary clear": {
         "summary": "キーの一時指定、または全ての一時指定を解除する",
-        "description": "キーの一時指定、または全ての一時指定を解除する。\n\n目的: 通常設定の適用へ戻す。\n利用場面: 緊急運用や一時的な変更を終えるとき。\n対象と出力: 指定したキーの一時値を除き、キーを省略した場合は全て除く。保存値と実効値をJSONで返す。通常設定は変更しない。\n前提: なし。\n復元・後始末: 再指定にはtemporary setを使う。",
+        "description": "キーの一時指定、または全ての一時指定を解除する。\n\n目的: 通常設定の適用へ戻す。\n利用場面: 緊急運用や一時的な変更を終えるとき。\n対象と出力: 指定したキーの一時値を除き、キーを省略した場合は全て除く。保存値と期限を表示する。--json、エージェント環境、標準出力が端末でない場合は保存値と実効値をJSONで返す。通常設定は変更しない。\n前提: なし。\n復元・後始末: 再指定にはtemporary setを使う。",
         "epilog": "実行例:\n\n  atk config temporary clear",
     },
     "atk config temporary show": {
         "summary": "一時指定と適用期限を表示する",
-        "description": "一時指定と適用期限を表示する。\n\n目的: 保存値と期限・実効値を確認する。\n利用場面: 通常設定との違いや期限切れを確かめるとき。\n対象と出力: ローカルの一時指定をJSONで表示する。\n前提: なし。\n復元・後始末: 読取だけのため不要。",
+        "description": "一時指定と適用期限を表示する。\n\n目的: 保存値と期限・実効値を確認する。\n利用場面: 通常設定との違いや期限切れを確かめるとき。\n対象と出力: ローカルの一時指定と期限を表示する。--json、エージェント環境、標準出力が端末でない場合はJSONで返す。\n前提: なし。\n復元・後始末: 読取だけのため不要。",
         "epilog": "実行例:\n\n  atk config temporary show",
     },
     "atk lane integrate": {
@@ -197,7 +197,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "エントリの本文とメタデータを編集する。\n\n目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。例外として`--move-user-comment <整理に使ったコメントのファイル>`を指定した場合は、保存済みのコメントがそのファイルの内容と一致し、全行が本文の`## ユーザー指摘の逐語引用`に含まれる時だけコメント節を削除して保存し、満たさない時は保存しない（コメントを本文へ移した後の整理に使う）。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdのAWIへタイムゾーン付きISO 8601日時を渡して期限を設定し、空文字列で期限を解除する。UWIへの日時の指定は拒否し、保存済みの期限は空文字列で解除できる。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したらキューへ保存せず、検証済み入力原稿のH1から最初のフェンス外H2直前までを原文のまま標準出力とmanaged-tempへ出力する。入力パス・冒頭保存先・文字数を返し、差分なしでも抽出する。検証・抽出保存の失敗は非0で終了する。抽出の回収は作成主体が検収・受渡しを終えた後に行い、残したファイルは7日保持後の自動削除に従う。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。AWIでは、本文の`## 反映内容と反映先`と`## 完成条件`にある行のうち、判断を処理工程へ回す言い回しに一致する行を、保存と`--dry-run`のどちらでも`情報:`の行で先送りの候補として行番号つきで標準出力へ示す。候補は投入前レビューが判定する材料であり、成否と終了コードを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "エントリの本文とメタデータを編集する。\n\n目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。例外として`--move-user-comment <整理に使ったコメントのファイル>`を指定した場合は、保存済みのコメントがそのファイルの内容と一致し、全行が本文の`## ユーザー指摘の逐語引用`に含まれる時だけコメント節を削除して保存し、満たさない時は保存しない（コメントを本文へ移した後の整理に使う）。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdのAWIへタイムゾーン付きISO 8601日時を渡して期限を設定し、空文字列で期限を解除する。UWIへの日時の指定は拒否し、保存済みの期限は空文字列で解除できる。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目、holdの詳細化済み（`detailed: true`）のAWI、holdの`source: implement`のAWIの本文置換を拒否する。`source: implement`のAWIは、`merge_branch`と`merge_commit`を持つ本文への置換（マージ用への更新）だけを受け付ける。例外として`--detail`による詳細化の保存は、処理中の担当（processing_owner）と同じ会話からだけ受け付け、frontmatterへ`detailed: true`を付ける。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したらキューへ保存せず、検証済み入力原稿のH1から最初のフェンス外H2直前までを原文のまま標準出力とmanaged-tempへ出力する。入力パス・冒頭保存先・文字数を返し、差分なしでも抽出する。検証・抽出保存の失敗は非0で終了する。抽出の回収は作成主体が検収・受渡しを終えた後に行い、残したファイルは7日保持後の自動削除に従う。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。AWIでは、本文の`## 反映内容と反映先`と`## 完成条件`にある行のうち、判断を処理工程へ回す言い回しに一致する行を、保存と`--dry-run`のどちらでも`情報:`の行で先送りの候補として行番号つきで標準出力へ示す。候補は投入前レビューが判定する材料であり、成否と終了コードを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
     "atk wi effect-check": {
@@ -339,24 +339,35 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config": {
         "summary": "XDG関連パスとモデル設定を確認・変更する",
-        "description": "XDG関連パスとモデル設定を確認・変更する。\n\n目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、モデル設定（工程別の直接候補列）を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。set・プリセット適用時と、旧設定が残る初回の読取時に設定ファイルを更新する。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。旧段位9キーと用途別engine順5キーは、show・getと設定候補解決の初回に6工程へ一括合成し、廃止キーを除去する。共存する古い工程キーより合成値を優先する。旧接続設定キー（`claude_api_env_file`・`claude_orchestrator_api_only`・`claude_worker_api_first`・`claude_api_mode`・`codex_model_providers`）の保存値も同じ時点で接続設定の新キーへ移して削除する。廃止環境変数は対応する新しい環境変数へ置き換える。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。旧設定がある場合はshow・getも移行結果を保存する。",
+        "description": "XDG関連パスとモデル設定を確認・変更する。\n\n目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、モデル設定（工程別の直接候補列）を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。set・プリセット適用時と、旧設定が残る状態でのget実行時に設定ファイルを更新する。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。旧段位9キーと用途別engine順5キーは、getと設定候補解決の初回に6工程へ一括合成し、廃止キーを除去する。共存する古い工程キーより合成値を優先する。旧接続設定キー（`claude_api_env_file`・`claude_orchestrator_api_only`・`claude_worker_api_first`・`claude_api_mode`・`codex_model_providers`）の保存値も同じ時点で接続設定の新キーへ移して削除する。廃止環境変数は対応する新しい環境変数へ置き換える。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。旧設定がある場合はgetも移行結果を保存する。",
         "epilog": "実行例:\n\n  atk config show\n  atk config get private_notes\n\n" + CONNECTION_GUIDE_NOTICE,
     },
     "atk config show": {
         "summary": "XDG関連パスとモデル設定を一覧表示する",
-        "description": "XDG関連パスとモデル設定を一覧表示する。\n\n目的: XDG関連パス、モデル設定、Codexの速度、Claude・Codexの接続設定などを`<キー>: <値>`で1キー1行ずつ表示する。モデル設定はexecute・review・review_fast・chores・chores_fast・orchestrate・writeの7工程の順に並べる。参考一覧外のモデル名・effortも表示する。各キーの受理値と初期値は`atk config set --help`に示す。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧を書く。廃止キーがある場合は移行結果を保存する。旧`serve.toml`がある場合は未保存の値を`serve_*`キーへ移行し、元のファイルを`serve.toml.migrated`へ改名して標準エラーへ警告行を書く。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "XDG関連パスとモデル設定を一覧表示する。\n\n目的: XDG関連パス、モデル設定、Codexの速度、Claude・Codexの接続設定などを`<キー> <値>`で1キー1行ずつ表示する。モデル設定はexecute・review・review_fast・chores・chores_fast・orchestrate・writeの7工程の順に並べる。参考一覧外のモデル名・effortも表示する。各キーの受理値と初期値は`atk config set --help`に示す。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧を書く。通信や設定の移行は行わない。旧設定は移行後の値を読み取りだけで求める。確定できない項目は表示せず、原因と次の操作を標準エラーに示して終了2で返す。端末で表示する場合、Codexの速度がautoなら、このホストでの最後の委譲起動時の判定と時刻を標準エラーに表示する。記録がなければ起動時に判定する旨を示す。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
+    },
+    "atk config reissue-reset": {
+        "summary": "消費を停止した旧Codex許可を共有許可として発行し直す",
+        "description": "共有へ移した旧Codex許可を新しいIDで発行する。\n\n"
+        "目的: 旧端末での消費を確認できない許可を停止した後、確認できる残りの回数を新たに許可する。\n"
+        "利用場面: 共有へ移行した旧許可を引き続き使うとき。\n"
+        "対象と出力: IDで指定した旧許可を置き換える。指定を省いた回数はこの端末で確認できる残り。他端末の未共有の消費は含まれない。\n"
+        "前提: 同期先があるprivate-notesに旧許可を移行済みである。\n"
+        "復元・後始末: 設定画面の利用枠で新しい許可を削除する。",
+        "epilog": "実行例:\n\n  atk config reissue-reset <ID>",
     },
     "atk config migrate-shared": {
         "summary": "ホストのローカル設定と共有設定を比較・移行する",
         "description": "保存値を比較し、採用する値を指定して共有へ移行する。\n\n"
-        "目的: 移行前の値を本人や認可されたエージェントが比較し、同期後にだけローカル値を除く。\n"
+        "目的: 移行前の値を本人や認可されたエージェントが比較し、同期後にだけローカル値を除く。`atk serve`の「設定」の「共有へ移行」と同じ処理である。\n"
         "利用場面: 共有設定の書込みが未移行のローカル値のため止まった時。\n"
-        "対象と出力: 比較だけの実行ではローカル値、共有値、差の種類と版をJSONで返す。"
-        "環境変数や一時設定の値は出力しない。共有ファイルがなく旧速度設定がある場合だけ、initial_not_sharedに移行後の初期値autoを示す。既存の共有ファイルがあれば、別のホストの初回移行でも旧速度設定は比較と選択の対象になる。--applyは指定した版にだけ変更を適用する。\n"
+        "対象と出力: 比較は共有先を取得してから行い、人の端末では項目ごとの差と必要な選択、次のコマンドを表示する。--json、エージェント環境、標準出力が端末でない場合はJSON（format・revision・items・required）を返す。"
+        "リポジトリ登録は`repositories:<ID>`の項目として比較し、共有先に無い登録はそのまま取り込む。移行後の端末にはpathだけが残る。"
+        "環境変数や一時設定の値は出力しない。--applyは指定した版にだけ変更を適用する。\n"
         "前提: private-notesの同期先が必要。--keep-localの値は他のホストにも届く。\n"
         "復元・後始末: 同期を確認できない場合はローカル値を除かない。設定が変わった場合は比較からやり直す。",
-        "epilog": "実行例:\n\n  atk config migrate-shared\n"
+        "epilog": "実行例:\n\n  atk config migrate-shared\n  atk config migrate-shared --json\n"
         "  atk config migrate-shared --apply <REVISION> --keep-shared review_model",
     },
     "atk config get": {
@@ -402,8 +413,9 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config repos set": {
         "summary": "登録済みrepositoryの指定属性を変更する",
-        "description": '登録済みrepositoryの属性を変更する。\n\n目的: 指定した属性だけを更新して他の属性を保持する。\n利用場面: 編集可否・ローカルパス・検証OS・系統を変えるとき。\n対象と出力: config.jsonを更新する。パスはcwd起点の絶対パスへ正規化する。\n前提: 登録済みの識別子を指定する。--no-process-loopで対象から外す。--branches ""で系統の登録（default_branchの系統と取り込み元を含む）を外す。登録から外した系統を宛先に持つWIはblocked_reason=branch-unregisteredで着手不能になる。\n復元・後始末: 同じ操作で以前の値を設定できる。',
-        "epilog": "実行例:\n\n  atk config repos set example.org/team/repo --edit deny --no-process-loop",
+        "description": '登録済みrepositoryの属性を変更する。\n\n目的: 指定した属性だけを更新して他の属性を保持する。\n利用場面: 編集可否・ローカルパス・検証OS・系統を変えるとき。\n対象と出力: private-notesに同期先がある場合、パス以外の属性は共有設定へ、パスはこの端末のconfig.jsonへ保存する。別の端末で登録済みのrepositoryは--pathだけでこの端末のcloneを関連付ける。パスはcwd起点の絶対パスへ正規化し、originが登録と違うcloneは拒否する。\n前提: 登録済みの識別子を指定する。--no-process-loopで対象から外す。--branches ""で系統の登録（default_branchの系統と取り込み元を含む）を外す。登録から外した系統を宛先に持つWIはblocked_reason=branch-unregisteredで着手不能になる。\n復元・後始末: 同じ操作で以前の値を設定できる。',
+        "epilog": "実行例:\n\n  atk config repos set example.org/team/repo --edit deny --no-process-loop\n"
+        "  atk config repos set example.org/team/repo --path ~/repo",
     },
     "atk config repos remove": {
         "summary": "repository登録を削除する",
@@ -411,8 +423,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk config repos remove example.org/team/repo",
     },
     "atk config repos list": {
-        "summary": "repository登録をJSONで一覧表示する",
-        "description": "repository登録をJSONで一覧表示する。\n\n目的: edit・path・process_loop・platformsと、系統を登録したrepositoryのbranches・default_branch・merge_fromを確認する。\n利用場面: 編集や設定変更の前に扱いを確認するとき。\n対象と出力: repositoriesの正規化済みJSON mapを表示する。旧設定がある初回は移行結果を保存する。\n前提: 登録がなければ空のmapを表示する。\n復元・後始末: 一覧表示だけなら不要。",
+        "summary": "リポジトリの登録内容を一覧表示する",
+        "description": "リポジトリの登録内容を一覧表示する。\n\n目的: edit・path・process_loop・platformsと、系統を登録したrepositoryのbranches・default_branch・merge_fromを確認する。\n利用場面: 編集や設定変更の前に扱いを確認するとき。\n対象と出力: 人の端末では編集可否・巡回対象・検証OSと登録属性を表示する。--json、エージェント環境、標準出力が端末でない場合は従来のJSON mapを返す。旧設定がある初回は移行結果を保存する。\n前提: 登録がなければその旨を表示する（JSONでは空のmap）。\n復元・後始末: 一覧表示だけなら不要。",
         "epilog": "実行例:\n\n  atk config repos list",
     },
     "atk config apply-preset": {
@@ -487,7 +499,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
         "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後に現在のセッションを自律終了するとき、または未完了成果を保存して本人IDの再開を予約した後に再起動するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。本人IDの保存済み再開予約がある場合は、ターンの完了を待たず一致した単一PIDへ終了要求を送る。予約は消費せず、完了とも記録しない。それ以外のFunction hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止しない。対話CLIでの終了操作だけを条件付きで案内する。",
-        "epilog": "実行例:\n\n  atk agents-exit-session",
+        "epilog": "実行例:\n\n  atk agents-exit-session\n  atk agents-exit-session --after-completion  # 対象の対話起動で送達済みの完了報告がある場合だけ /exit を要求する",
     },
     "atk lane": {
         "summary": "レーン資源の作成と終了時回収を管理する",

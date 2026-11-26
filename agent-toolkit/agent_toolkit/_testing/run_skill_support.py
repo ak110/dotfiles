@@ -132,7 +132,7 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
         if mode == "other":
             subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
             subprocess.run(["git", "-C", str(notes), "commit", "-qm", "other report"], check=True)
-if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_BATCH"):
+if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_BATCH") and os.environ.get("FAKE_SESSION_EXIT", "0") == "0":
     from argparse import Namespace
     from agent_toolkit._atk import run_script
     finish = run_script.dispatch(Namespace(script_name="session-review-state", script_args=["finish"]))

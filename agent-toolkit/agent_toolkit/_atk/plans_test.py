@@ -15,7 +15,7 @@ from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._plan import locations as _plan_file
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, plan_fixture
 from agent_toolkit._testing.plans_support import (
     _assert_preserved_birth,
     _assert_preserved_times,
@@ -512,3 +512,19 @@ def test_commit_plan_includes_deleted_bundle_when_parent_directory_is_gone(tmp_p
         "plans/2026/08/30-削除計画-d4f9.detail.md",
         "plans/2026/08/30-削除計画-d4f9.md",
     ]
+
+
+def test_commit_preserves_legacy_awi_plan_content(tmp_path: pathlib.Path) -> None:
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    main = _plan_file.working_plans_root(home) / "30-従来のAWI書式-d4f9.md"
+    main.parent.mkdir(parents=True)
+    content = plan_fixture.awi_plan(repo=tmp_path, related_wi=plan_fixture.WI_FILES).encode("utf-8")
+    main.write_bytes(content)
+
+    _atk_plans.commit_plan(notes, main.name, home=home, skip_push=True)
+
+    (saved,) = (notes / "plans").glob(f"*/*/{main.name}")
+    assert saved.read_bytes() == content
+    assert not main.exists()

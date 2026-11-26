@@ -72,7 +72,7 @@ def test_public_stop_keeps_advisor_notice_with_unclassified_turn(tmp_path, monke
         "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
         "input": {"message": "## 発話の理解\n分類: 非是正"},
     }
-    delivered = {"type": "tool_result", "tool_use_id": "understanding", "is_error": False}
+    delivered = {"type": "tool_result", "tool_use_id": "understanding", "is_error": False, "content": '{"ok":true}'}
     payload = {"session_id": "advisor-with-bugfix", "transcript_path": str(path)}
     path.write_text(json.dumps(_HUMAN, ensure_ascii=False), encoding="utf-8")
     blocked = _run_hook_in_process("stop", payload)

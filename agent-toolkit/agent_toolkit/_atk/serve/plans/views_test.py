@@ -328,3 +328,123 @@ async def test_remote_watch_cleanup_collects_all_failures(tmp_path: pathlib.Path
         await views.stop_remote_watchers(context)
     assert [type(error) for error in failed.value.exceptions] == [ValueError, OSError]
     assert not context.state.remote_tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["file", "search"])
+async def test_remote_plan_timeout_is_not_a_confirmed_empty_result(tmp_path: pathlib.Path, route: str) -> None:
+    fail = True
+
+    async def runner(_host: str, operation: str, _args: list[str]) -> str:
+        if fail:
+            raise TimeoutError("SSH timeout")
+        if operation == "read":
+            return json.dumps({"error_type": "not_found"})
+        return json.dumps({"paths": []})
+
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+    app = quart.Quart(__name__)
+    shell_routes.register_plan_routes(app, context)
+    client = app.test_client()
+    query = {"host": "remote-host", "path": "p.md"} if route == "file" else {"q": "keyword"}
+    response = await client.get(f"/api/plans/{route}", query_string=query)
+    if route == "file":
+        assert response.status_code == 503
+    else:
+        assert response.status_code == 200
+        assert await response.get_json() == {"entries": [], "failures": {"remote-host": 503}}
+    fail = False
+    response = await client.get(f"/api/plans/{route}", query_string=query)
+    if route == "file":
+        assert response.status_code == 404
+    else:
+        assert response.status_code == 200
+        assert await response.get_json() == []
+
+
+@pytest.mark.asyncio
+async def test_remote_search_partial_results_and_targeted_recovery(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "local.md").write_text("needle", encoding="utf-8")
+    calls: list[str] = []
+    broken = True
+
+    async def runner(host: str, _operation: str, _args: list[str]) -> str:
+        calls.append(host)
+        if host == "offline" and broken:
+            raise TimeoutError
+        return json.dumps({"paths": [f"{host}.md"]})
+
+    hosts = ["healthy", "offline"]
+    context = _context(tmp_path, remote_hosts=hosts, ssh_runner=runner)
+    for host in hosts:
+        entry = plans_roots.FileEntry(host, f"{host}.md", f"{host}.md", "", "", 0, 0)
+        context.state.remote_files[host] = [entry]
+    app = quart.Quart(__name__)
+    shell_routes.register_plan_routes(app, context)
+    client = app.test_client()
+    answer = await (await client.get("/api/plans/search", query_string={"q": "needle"})).get_json()
+    assert {entry["path"] for entry in answer["entries"]} == {"local.md", "healthy.md"}
+    assert answer["failures"] == {"offline": 503}
+    assert set(calls) == set(hosts)
+    calls.clear()
+    broken = False
+    answer = await (await client.get("/api/plans/search", query_string={"q": "needle", "host": "offline"})).get_json()
+    assert [entry["path"] for entry in answer["entries"]] == ["offline.md"]
+    assert answer["failures"] == {}
+    assert calls == ["offline"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rpc", [False, True])
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    [("permission_denied", 403), ("not_found", 404), ("timeout", 503)],
+)
+async def test_remote_read_error_type_reaches_api(tmp_path: pathlib.Path, rpc: bool, kind: str, status: int) -> None:
+    calls = 0
+    error = {"ok": False, "error_type": kind}
+
+    async def runner(*_args: typing.Any) -> str:
+        nonlocal calls
+        calls += 1
+        return json.dumps(error)
+
+    async def request(*_args: typing.Any) -> dict[str, typing.Any]:
+        return error
+
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+    if rpc:
+        context.state.remote_watchers["remote-host"] = typing.cast(
+            RemoteWatcher, types.SimpleNamespace(is_connected=lambda: True, request=request)
+        )
+    app = quart.Quart(__name__)
+    shell_routes.register_plan_routes(app, context)
+    client = app.test_client()
+    response = await client.get("/api/plans/raw", query_string={"host": "remote-host", "path": "p.md"})
+    assert response.status_code == status
+    assert calls == (0 if rpc else 1)
+
+
+@pytest.mark.parametrize("deleted", ["file", "directory"])
+def test_search_keeps_real_matches_when_a_candidate_disappears(monkeypatch, tmp_path, deleted):
+    root = tmp_path
+    (root / "wanted.md").write_text("match", encoding="utf-8")
+    (root / "vanished.md").write_text("match", encoding="utf-8")
+    original = types.SimpleNamespace(read=pathlib.Path.read_text, walk=pathlib.Path.walk)
+
+    def read(path, **kwargs):
+        if deleted == "file" and path.name == "vanished.md":
+            raise FileNotFoundError("after stat")
+        return original.read(path, **kwargs)
+
+    def walk_with_race(path, *, on_error=None, **kwargs):
+        if deleted == "directory" and path == root and on_error is not None:
+            on_error(FileNotFoundError("deleted child"))
+        yield from original.walk(path, on_error=on_error, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read)
+    monkeypatch.setattr(pathlib.Path, "walk", walk_with_race)
+    result = plan_viewer_files.search_root(root, "match", strict_io=True)
+    assert "wanted.md" in result
+    if deleted == "file":
+        assert "vanished.md" not in result

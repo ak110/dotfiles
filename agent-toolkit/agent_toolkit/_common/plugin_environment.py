@@ -372,7 +372,8 @@ def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> No
         output.write(f'\nexport PATH={scripts}:"$PATH"\nexport {RUNTIME_DATA_ENV}={data}\n')
 
 
-def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
+def launcher_command(root: Path, *, windows: bool | None = None) -> tuple[str, str]:
+    """配布物の`atk`の起動部分と、そのシェルでの引数の注意を返す。pyfltr: allow-comment"""
     is_windows = os.name == "nt" if windows is None else windows
     scripts = root / "scripts"
     argument_note = ""
@@ -386,9 +387,13 @@ def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
         else:
             entry = scripts / shell_tokens.ATK_BATCH
             argument_note = "\ncmd.exeが別のコマンドとして解釈しうるため、|・&・<・>・^を含む引数は渡さない。"
-        command = "& '" + str(entry).replace("'", "''") + "'"
-    else:
-        command = shlex.quote(str(scripts / shell_tokens.ATK_POSIX))
+        return "& '" + str(entry).replace("'", "''") + "'", argument_note
+    return shlex.quote(str(scripts / shell_tokens.ATK_POSIX)), argument_note
+
+
+def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
+    is_windows = os.name == "nt" if windows is None else windows
+    command, argument_note = launcher_command(root, windows=is_windows)
     shell = "Windows PowerShell 5.1で" if is_windows else ""
     return (
         f"起動部分: {command}\n{shell}この起動部分へサブコマンドと引数を続けよ。"

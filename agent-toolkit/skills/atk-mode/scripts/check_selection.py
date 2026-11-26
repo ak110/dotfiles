@@ -110,7 +110,7 @@ from check_selection_lanes import (
 from check_selection_loading import (
     _NEXT_SOURCE_MISMATCH,
     _check_allocation_sources,
-    complete_plan_requirements,
+    complete_detail_requirements,
     load_inline_addition,
     load_selection,
 )
@@ -312,6 +312,21 @@ def summary_lines(
         else:
             lanes.setdefault(lane, []).append(awi)
     lines = [f"WI総数: {len(items)}", f"通常レーン数: {len(lanes)}"]
+    if not history:
+        integrated = _selection.integrated_lanes(selection)
+        ready: list[str] = []
+        waiting: dict[str, list[str]] = {}
+        for lane in lanes:
+            if lane in integrated:
+                continue
+            dependencies = typing.cast(list[str], costs.get(lane, {}).get(_selection.START_DEPENDENCIES_KEY, []))
+            pending = [dependency for dependency in dependencies if dependency not in integrated]
+            if pending:
+                waiting[lane] = pending
+            else:
+                ready.append(lane)
+        lines.append(f"着手条件を満たすレーン: {json.dumps(ready, ensure_ascii=False)}")
+        lines.append(f"着手に必要な成果を待つレーン: {json.dumps(waiting, ensure_ascii=False)}")
     plan = selection.get(_selection.PROCESS_ESTIMATE_KEY)
     correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
     if plan is not None:
@@ -832,7 +847,7 @@ def main(argv: list[str] | None = None) -> int:
             and args.transfer_wi is None
             and args.handoff_observation is None
         ):
-            complete_plan_requirements(selection, private_notes)
+            complete_detail_requirements(selection, private_notes)
         errors = check(
             args.selection_file,
             work_dir,

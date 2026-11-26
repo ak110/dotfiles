@@ -19,6 +19,7 @@ from agent_toolkit._agents_server import (
     retained_results,
     state,
     status_file,
+    subagent_contract,
 )
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
@@ -119,6 +120,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         *,
         instruction: str | None = None,
         extra_params: Mapping[str, str] | None = None,
+        contract_changes: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ActionableError(
@@ -135,7 +137,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         sends.add(task)
         try:
             async with asyncio.timeout(float(timeout)):
-                return await self._send_message_response(session_id, prompt, instruction, extra_params)
+                return await self._send_message_response(session_id, prompt, instruction, extra_params, contract_changes)
         except TimeoutError as exc:
             raise ActionableTimeoutError(
                 f"send_message timed out: {session_id}; delivery is undetermined",
@@ -154,7 +156,12 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
                 self._active_sends.pop(session_id, None)
 
     async def _send_message_response(
-        self, session_id: str, prompt: str | None, instruction: str | None, extra_params: Mapping[str, str] | None
+        self,
+        session_id: str,
+        prompt: str | None,
+        instruction: str | None,
+        extra_params: Mapping[str, str] | None,
+        contract_changes: Mapping[str, str] | None,
     ) -> dict[str, Any]:
         await self._drain_diagnostics()
         pending = self._pending_resumes.get(session_id)
@@ -176,7 +183,11 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             instruction=instruction,
             extra_params=extra_params,
         )
-        response = await self._deliver_message(session_id, prompt)
+        delivery_prompt = subagent_contract.mark_contract_update(prompt) if contract_changes else prompt
+        response = await self._deliver_message(session_id, delivery_prompt)
+        if contract_changes:
+            launch_prompt = current.prompt if current is not None and current.launch_kind != "shell" else ""
+            await subagent_contract.record_followup(response, session_id, contract_changes, launch_prompt)
         session = self.sessions.get(session_id)
         if session is not None and response["delivery"] != "reply_failed":
             session.followup_prompts += (prompt,)

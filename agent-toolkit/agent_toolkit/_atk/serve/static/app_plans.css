@@ -17,13 +17,6 @@
   background: var(--color-background);
   padding: 0;
 }
-.pane-sidebar .toolbar {
-  position: sticky;
-  top: 0;
-  background: var(--color-background);
-  padding: 10px;
-  border-bottom: 1px solid var(--color-border);
-}
 .pane-sidebar input { width: 100%; }
 /* セッション画面の項目はbutton要素のため、全体のbutton規則の角丸・枠・背景をここで打ち消す。 */
 .pane-item {
@@ -32,14 +25,14 @@
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 0;
   border-bottom: 1px solid var(--color-border);
   border-radius: 0;
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   text-decoration: none;
   cursor: pointer;
 }
@@ -55,19 +48,19 @@
   border-color: var(--color-primary);
 }
 .pane-item-title {
-  font-size: var(--font-size-small);
-  font-weight: 600;
+  font-size: var(--font-size-base);
+  font-weight: var(--weight-label);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .pane-item-meta {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: var(--font-size-small);
   color: var(--color-secondary-text);
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .pane-item-meta > * {
   min-inline-size: 0;
@@ -89,18 +82,10 @@
 #screen-plans .meta .ctime {
   white-space: nowrap;
 }
-#screen-plans #root-warnings {
-  padding: 8px 12px;
-  color: var(--color-danger);
-  background: var(--color-danger-quiet);
-  border-bottom: 1px solid var(--color-border);
-  font-size: var(--font-size-small);
-}
 #screen-plans #plans-selection-status {
-  padding: 10px 12px;
+  padding: var(--space-row) var(--space-3);
   background: var(--color-primary-quiet);
-  border-bottom: 1px solid var(--color-border);
-  font-size: var(--font-size-small);
+  border-block-end: 1px solid var(--color-border);
   overflow-wrap: anywhere;
 }
 @media (min-width: 769px) {
@@ -111,13 +96,13 @@
 /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
 #screen-plans .host-badge {
   display: none;
-  margin-left: 4px;
-  padding: 0 4px;
+  margin-inline-start: var(--space-1);
+  padding-inline: var(--space-1);
   font-size: var(--font-size-small);
   color: var(--color-secondary-text);
   background: var(--color-background);
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-small);
   vertical-align: baseline;
 }
 #screen-plans .host-badge.connecting,
@@ -127,25 +112,13 @@
 #screen-plans main {
   overflow: auto;
   box-sizing: border-box;
-}
-#screen-plans main .toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  justify-content: flex-end;
-  padding: 8px 16px;
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
 }
-/* 配色・境界・角丸・無効時表示・寸法は共通規則が定める。本規則は移動ボタンの最小幅だけを指定する。 */
-#screen-plans main .toolbar {
-  flex-wrap: nowrap;
-}
-#screen-plans main .toolbar .spacer {
-  flex: 1;
-}
-#screen-plans main .toolbar button {
-  white-space: nowrap;
+#screen-plans .detail-toolbar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  justify-content: flex-end;
 }
 /* 結果文言を同じ領域へ重ね、コピー後も隣の操作を同じ位置へ保つ。 */
 #screen-plans main .toolbar .copy-feedback {
@@ -158,9 +131,6 @@
 #screen-plans .copy-feedback::after {
   content: attr(data-reserve-wide);
   visibility: hidden;
-}
-#screen-plans main .toolbar .nav-btn {
-  min-width: 36px;
 }
 #screen-plans .short-label {
   display: none;
@@ -176,22 +146,19 @@
   display: none;
 }
 #screen-plans main article {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 1rem;
-  box-sizing: border-box;
+  padding-block: var(--space-6);
 }
 /* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
      通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
 #screen-plans main article:has(> .review-table) {
-  max-width: none;
+  max-inline-size: none;
 }
 #screen-plans .review-table {
   width: 100%;
 }
 #screen-plans .diagram {
   margin: 1.5rem 0;
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface);
@@ -204,6 +171,8 @@
   text-align: center;
 }
 #screen-plans .svg-output {
+  background: var(--color-diagram-paper);
+  border-radius: var(--radius-small);
   display: block;
   height: auto;
   margin: 0 auto;
@@ -214,7 +183,7 @@
 #screen-plans .diagram-source summary {
   color: var(--color-secondary-text);
   cursor: pointer;
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-base);
 }
 #screen-plans .diagram-source pre {
   margin-bottom: 0;
@@ -223,7 +192,7 @@
 #screen-plans .diagram-error {
   margin: 0.75rem 0 0;
   color: var(--color-danger);
-  font-weight: 600;
+  font-weight: var(--weight-label);
 }
 /* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
 @media (max-width: 768px) {
@@ -240,13 +209,13 @@
     z-index: 20;
     transform: translateX(-100%);
     transition: transform 0.2s ease-out;
-    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
   }
   /* 失効理由がある一覧は、ドロワーを直ちに全幅で表示する。 */
   #screen-plans:has(#plans-selection-status:not([hidden])) aside {
     transition: none;
   }
   #screen-plans.drawer-open aside {
+    box-shadow: var(--shadow-overlay);
     transform: translateX(0);
   }
   #screen-plans #plans-drawer-backdrop {
@@ -256,11 +225,14 @@
     left: 0;
     width: 100vw;
     height: 100svh;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--color-backdrop);
     z-index: 10;
   }
   #screen-plans.drawer-open #plans-drawer-backdrop {
     display: block;
+  }
+  #screen-plans main .toolbar {
+    padding-inline: var(--space-2);
   }
   #screen-plans #plans-menu-btn {
     display: inline-flex;
@@ -278,24 +250,23 @@
   }
   #screen-plans #meta-mobile {
     display: block;
-    padding: 8px 16px;
+    padding: var(--space-row) var(--space-3);
     font-size: var(--font-size-small);
     color: var(--color-secondary-text);
     background: var(--color-background);
     border-bottom: 1px solid var(--color-border);
     overflow-wrap: anywhere;
   }
-  #screen-plans #meta-mobile .meta-host {
-    font-weight: 600;
-    color: var(--color-text);
-  }
   #screen-plans #meta-mobile .meta-path {
     display: block;
-    margin-top: 2px;
+    margin-block-end: var(--space-1);
+    color: var(--color-text);
+    font-size: var(--font-size-base);
+    font-weight: var(--weight-label);
   }
   #screen-plans #meta-mobile .meta-ctime {
     display: inline-block;
-    margin-left: 8px;
+    margin-inline-start: var(--space-2);
   }
   #screen-plans #meta-mobile.empty {
     display: none;

@@ -1,7 +1,9 @@
+import {readFailure} from "./common.js";
+import {decorateWiReferences} from "./wi_reference.js";
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs, attachScrollEdges, recordUpdateSuccess, setUpdateError, createReadRecovery, setDisplayedReadError
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -23,7 +25,7 @@ let selectedPath = null;
 // 次の再同期で描画し直す。
 let appliedPreviewHtml = null;
 // ホスト別の接続状態。connected / connecting / disconnected。
-let hostStatus = {};
+const hostStatus = {};
 // ホスト・保存元別のroot警告。source IDは表示せず、エンドユーザーが復旧判断できる本文だけを表示する。
 let rootStatus = {};
 // renderFilesが最後に描画したエントリ列（フィルタ適用後の全件）。
@@ -41,9 +43,12 @@ let previewGeneration = 0;
 let previewLoadingTimer = null;
 // 画面内の描画順序の逆転は`previewGeneration`で判定する。
 let previewObjectUrls = new Set();
-let searchGeneration = 0;
 let searchTimer = null;
 let serverSearchKeys = null;
+let searchComplete = true;
+let lastSearchQuery = "";
+let lastSearchKeys;
+let lastSearchEntries;
 const SEARCH_DEBOUNCE_MS = 300;
 // SSHフォールバック検索の直列化は全クライアント横断で働くため、別クライアント・別タブの検索で
 // 自身の要求が打ち切られて409になることがある。自身にとっては最新世代の要求なので、
@@ -59,10 +64,25 @@ const VISIBLE_FILES_STEP = 100;
 let visibleLimit = VISIBLE_FILES_INITIAL;
 let sentinelObserver = null;
 
-const HOST_BADGE_LABELS = {
-  connecting: "再接続中",
-  disconnected: "切断中",
-};
+const hostFailures = new Map();
+
+function updateHostState(host, status) {
+  if (status === "disconnected" && hostStatus[host] !== status) {
+    const failures = (hostFailures.get(host) ?? 0) + 1;
+    hostFailures.set(host, failures);
+    if (failures >= 2) {
+      setUpdateError("plans", `host:${host}`, `${host}の計画を取得できません。`, () => {
+        void timedFetch("plans", BASE_PATH + "/api/plans/retry-host?" + new URLSearchParams({host}), {
+          method: "POST", signal: AbortSignal.timeout(10_000),
+        }).catch(() => {});
+      });
+    }
+  } else if (status === "connected") {
+    hostFailures.delete(host);
+    recordUpdateSuccess("plans", `host:${host}`);
+  }
+  hostStatus[host] = status;
+}
 
 function fileSource(file) { return file.source_id || file.source || ""; }
 
@@ -150,22 +170,13 @@ function updateMetaMobile() {
   const hostSpan = document.createElement("span");
   hostSpan.className = "meta-host";
   hostSpan.textContent = selectedHost;
-  const status = hostStatus[selectedHost];
-  if (status === "connecting" || status === "disconnected") {
-    const badge = document.createElement("span");
-    badge.className = "host-badge " + status;
-    badge.textContent = HOST_BADGE_LABELS[status];
-    hostSpan.appendChild(badge);
-  }
   const ctimeSpan = document.createElement("span");
   ctimeSpan.className = "meta-ctime";
   ctimeSpan.textContent = selected ? selected.ctime : "";
   const pathSpan = document.createElement("span");
   pathSpan.className = "meta-path";
   pathSpan.textContent = selectedPath;
-  block.appendChild(hostSpan);
-  block.appendChild(ctimeSpan);
-  block.appendChild(pathSpan);
+  block.append(pathSpan, hostSpan, ctimeSpan);
 }
 
 // 遷移先がDOM未描画領域なら、必要分まで表示上限をステップ単位で拡張してから再描画する。
@@ -213,13 +224,7 @@ function updateFileItem(item, file) {
   const hostSpan = item.querySelector(".host");
   if (hostSpan) {
     hostSpan.textContent = file.host;
-    const status = hostStatus[file.host];
-    if (status === "connecting" || status === "disconnected") {
-      const badge = document.createElement("span");
-      badge.className = "host-badge " + status;
-      badge.textContent = HOST_BADGE_LABELS[status];
-      hostSpan.appendChild(badge);
-    }
+
   }
   const ctimeSpan = item.querySelector(".ctime");
   if (ctimeSpan) ctimeSpan.textContent = file.ctime;
@@ -258,7 +263,7 @@ function renderFiles() {
   updateMetaMobile();
   renderRootWarnings();
   const empty = document.getElementById("plans-empty");
-  empty.hidden = visibleFiles.length > 0;
+  empty.hidden = visibleFiles.length > 0 || !searchComplete;
   empty.querySelector("p").textContent = files.length === 0
     ? `計画ファイルがありません。対象root: ${Object.values(ROOT_DIRS).flatMap(value => typeof value === "string" ? [value] : Object.values(value || {})).join("、")}`
     : "一致する計画ファイルはありません。";
@@ -297,73 +302,107 @@ function setupSentinelObserver() {
 }
 
 async function refreshFiles(timing = {}) {
-  const errorBox = document.getElementById("plans-list-error");
   try {
     const res = await timedFetch("plans", BASE_PATH + "/api/plans/files", {}, timing);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     files = await res.json();
-    errorBox.hidden = true;
+    recordUpdateSuccess("plans", "list");
     renderFiles();
   } catch (error) {
-    errorBox.replaceChildren();
-    const message = document.createElement("span");
-    message.textContent = diagnostic("計画", SERVE_HOST, "一覧取得", `計画ファイルの一覧を取得できません: ${error.message} `);
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.textContent = "再読み込み";
-    retry.addEventListener("click", () => { void refreshFiles(); });
-    errorBox.append(message, retry);
-    errorBox.hidden = false;
+    if (error.name !== "AbortError") setDisplayedReadError("plans", "list", "計画一覧を取得できません。", refreshFiles);
   }
 }
 
-async function searchFullText(query, generation) {
-  const status = document.getElementById("search-status");
-  status.textContent = "検索中";
-  try {
-    let res = null;
-    for (let attempt = 0; ; attempt++) {
-      res = await (timedFetch("plans", BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query)));
-      if (generation !== searchGeneration) return;
-      if (res.status !== 409 || attempt >= SEARCH_SUPERSEDED_RETRIES) break;
-      await (new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS)));
-      if (generation !== searchGeneration) return;
-    }
-    if (!res.ok) throw new Error("status " + res.status);
-    const matched = await (res.json());
-    if (generation !== searchGeneration) return;
-    serverSearchKeys = new Set(matched.map(fileKey));
-    status.textContent = "";
-    renderFiles();
-  } catch (error) {
-    if (generation !== searchGeneration) return;
-    serverSearchKeys = new Set();
-    status.textContent = diagnostic("計画", SERVE_HOST, `本文検索: ${query}`, `検索に失敗しました: ${error.message}`);
-    renderFiles();
-  }
-}
+let searchController;
 
 function scheduleFullTextSearch() {
+  searchController?.abort();
   const query = document.getElementById("plans-filter").value.trim();
-  const generation = ++searchGeneration;
+  setUpdateError("plans", "search");
   if (searchTimer !== null) clearTimeout(searchTimer);
-  serverSearchKeys = query ? new Set() : null;
-  document.getElementById("search-status").textContent = "";
+  const status = document.getElementById("search-status");
+  status.textContent = "";
+  searchComplete = !query;
+  serverSearchKeys = query ? (query === lastSearchQuery ? lastSearchKeys : new Set()) : null;
   visibleLimit = VISIBLE_FILES_INITIAL;
   renderFiles();
-  if (!query) return;
-  searchTimer = setTimeout(() => {
-    searchTimer = null;
-    searchFullText(query, generation);
-  }, SEARCH_DEBOUNCE_MS);
+  if (!query || document.body.dataset.screen !== "plans") return;
+  const controller = new AbortController();
+  searchController = controller;
+  const {signal} = controller;
+  let targets = [];
+  const problems = new Map();
+  const matched = new Map(query === lastSearchQuery ? lastSearchEntries : undefined);
+  const run = createReadRecovery(signal, async failures => {
+    if (!failures) status.textContent = "検索中";
+    try {
+      const params = new URLSearchParams({q: query});
+      for (const host of targets) params.append("host", host);
+      let response;
+      for (let attempt = 0; ; attempt++) {
+        response = await timedFetch("plans", BASE_PATH + "/api/plans/search?" + params, {signal});
+        if (response.status !== 409 || attempt >= SEARCH_SUPERSEDED_RETRIES) break;
+        await new Promise(resolve => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS));
+        signal.throwIfAborted();
+      }
+      if (response.status === 409) return true;
+      if (!response.ok) {
+        if (readFailure(response.status) === "temporary") throw new Error();
+        setUpdateError("plans", "search");
+        status.textContent = "計画を検索できません。";
+        return false;
+      }
+      const payload = await response.json();
+      signal.throwIfAborted();
+      const entries = Array.isArray(payload) ? payload : payload.entries;
+      const nextProblems = Object.entries(payload.failures ?? {});
+      for (const host of targets) problems.delete(host);
+      for (const [host, status] of nextProblems) problems.set(host, status);
+      for (const [key, entry] of matched) {
+        if (problems.get(entry.host) !== 503 && (!targets.length || targets.includes(entry.host))) matched.delete(key);
+      }
+      for (const entry of entries) matched.set(fileKey(entry), entry);
+      targets = [...problems].filter(([, code]) => code === 503).map(([host]) => host);
+      const denied = [...problems].filter(([, code]) => code !== 503);
+      serverSearchKeys = new Set(matched.keys());
+      searchComplete = problems.size === 0;
+      if (searchComplete) {
+        lastSearchQuery = query;
+        lastSearchKeys = serverSearchKeys;
+        lastSearchEntries = matched;
+      }
+      status.textContent = denied.length ? "検索できない対象があります。" : "";
+      if (targets.length && failures) setUpdateError("plans", "search", "一部の計画を検索できません。", run);
+      else if (!targets.length) setUpdateError("plans", "search");
+      renderFiles();
+      return targets.length > 0;
+    } catch {
+      if (signal.aborted) return false;
+      status.textContent = "";
+      setUpdateError("plans", "search", "計画を検索できません。", run);
+      renderFiles();
+      return true;
+    }
+  });
+  searchTimer = setTimeout(run, SEARCH_DEBOUNCE_MS);
+}
+
+async function readPlanState(key, retry, fallback) {
+  try {
+    let response = await timedFetch("plans", BASE_PATH + "/api/plans/" + key);
+    if (response.status === 404 && fallback) response = await timedFetch("plans", BASE_PATH + "/api/plans/" + fallback);
+    if (readFailure(response.status) === "temporary") throw new Error();
+    setUpdateError("plans", key);
+    return response.ok ? await response.json() : null;
+  } catch {
+    setDisplayedReadError("plans", key, "計画の取得元を更新できません。", retry);
+    return null;
+  }
 }
 
 async function refreshHostStatus() {
-  // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
-  const res = await (timedFetch("plans", BASE_PATH + "/api/plans/host-status"));
-  if (res.ok) {
-    hostStatus = await (res.json());
-  }
+  const info = await readPlanState("host-status", refreshHostStatus);
+  for (const [host, status] of Object.entries(info ?? {})) updateHostState(host, status);
 }
 
 // fetch中に届いたSSE更新を検出したときに適用を1回見送るだけだと、その更新が別ホストのものでも
@@ -378,10 +417,8 @@ async function refreshHostInfo() {
   // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
   for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
     const counterBefore = hostInfoEventCounter;
-    let res = await (timedFetch("plans", BASE_PATH + "/api/plans/root-info"));
-    if (!res.ok) res = await (timedFetch("plans", BASE_PATH + "/api/plans/host-info"));
-    if (!res.ok) return;
-    const info = await (res.json());
+    const info = await readPlanState("root-info", refreshHostInfo, "host-info");
+    if (!info) return;
     if (hostInfoEventCounter !== counterBefore) continue;
     for (const host of Object.keys(ROOT_DIRS)) {
       if (!(host in info)) delete ROOT_DIRS[host];
@@ -393,9 +430,9 @@ async function refreshHostInfo() {
 }
 
 async function refreshRootStatus() {
-  const res = await (timedFetch("plans", BASE_PATH + "/api/plans/root-status"));
-  if (res.ok) {
-    rootStatus = await (res.json());
+  const info = await readPlanState("root-status", refreshRootStatus);
+  if (info) {
+    rootStatus = info;
     renderRootWarnings();
   }
 }
@@ -405,6 +442,7 @@ async function applyPreviewHtml(html, scrollTop, generation) {
   revokePreviewObjectUrls();
   const preview = document.getElementById("preview");
   preview.innerHTML = html;
+  decorateWiReferences(preview);
   appliedPreviewHtml = null;
   for (const link of preview.querySelectorAll("a[data-plan-path]")) {
     link.href = filePageUrl(selectedHost, link.dataset.planPath, selectedSource);
@@ -544,19 +582,21 @@ function endPreviewLoading(generation) {
   document.getElementById("preview").setAttribute("aria-busy", "false");
 }
 
-function showPreviewError(message, retry) {
-  const preview = document.getElementById("preview");
-  preview.replaceChildren();
+function showPreviewError(retry, code = 503) {
+  if (readFailure(code) === "temporary") {
+    setDisplayedReadError("plans", "preview", "計画の本文を取得できません。", retry);
+    return;
+  }
+  setUpdateError("plans", "preview");
+  document.getElementById("preview").replaceChildren();
   appliedPreviewHtml = null;
-  const alert = document.createElement("div");
-  alert.setAttribute("role", "alert");
-  alert.textContent = planDiagnostic(`計画ファイルの本文を取得できません: ${message} `);
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = "再読み込み";
-  button.addEventListener("click", retry);
-  alert.append(button);
-  preview.append(alert);
+  const status = document.getElementById("plans-selection-status");
+  status.textContent = code === 403 ? "計画の本文を読む権限がありません。" : "計画の本文を取得できません。";
+  status.hidden = false;
+  const alert = document.createElement("p");
+  alert.setAttribute("role", "status");
+  alert.textContent = status.textContent;
+  document.getElementById("preview").append(alert);
 }
 
 function showCopyError(message) {
@@ -573,6 +613,7 @@ function showCopyError(message) {
 
 // 一覧の項目は外部操作（計画の保存による別rootへの移動や削除）で消え得る。同じ対象へは再試行しない。
 function showMissingSelection() {
+  setUpdateError("plans", "preview");
   const message = planDiagnostic(MISSING_SELECTION_MESSAGE);
   selectedHost = null;
   selectedSource = "";
@@ -602,19 +643,25 @@ async function updatePreview(timing = {}) {
   beginPreviewLoading(generation);
   try {
     const res = await timedFetch(
-      "plans", BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource), {}, timing
+      "plans", BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource), {fresh: true}, timing
     );
     if (generation !== previewGeneration) return;
+    if (res.status === 404) {
+      showMissingSelection();
+      return;
+    }
     if (!res.ok) {
-      showPreviewError(`HTTP ${res.status}`, () => { void updatePreview(); });
+      showPreviewError(updatePreview, res.status);
       return;
     }
     const html = await (res.text());
     if (generation !== previewGeneration) return;
+    setUpdateError("plans", "preview");
+    document.getElementById("plans-selection-status").hidden = true;
     if (html === appliedPreviewHtml) return;
     await (applyPreviewHtml(html, scrollTop, generation));
   } catch (error) {
-    if (generation === previewGeneration) showPreviewError(error.message, () => { void updatePreview(); });
+    if (generation === previewGeneration) showPreviewError(updatePreview);
   } finally {
     endPreviewLoading(generation);
   }
@@ -623,6 +670,11 @@ async function updatePreview(timing = {}) {
 async function openFile(host, path, source, closeDrawer = true) {
   // ファイル一覧はSSE経由で常時同期されているため、選択操作のたびに/api/filesを再取得する必要はない。
   // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
+  if (host !== selectedHost || path !== selectedPath || (source || "") !== selectedSource) {
+    setUpdateError("plans", "preview");
+    document.getElementById("preview").replaceChildren();
+    appliedPreviewHtml = null;
+  }
   selectedHost = host;
   selectedSource = source || "";
   selectedPath = path;
@@ -660,7 +712,7 @@ async function openFile(host, path, source, closeDrawer = true) {
       return;
     }
     if (!res.ok) {
-      showPreviewError(`HTTP ${res.status}`, () => { void openFile(host, path, source); });
+      showPreviewError(updatePreview, res.status);
       if (main) main.scrollTop = 0;
       return;
     }
@@ -669,11 +721,12 @@ async function openFile(host, path, source, closeDrawer = true) {
       outcome = "superseded";
       return;
     }
+    setUpdateError("plans", "preview");
     await (applyPreviewHtml(html, 0, generation));
     if (generation !== previewGeneration) outcome = "superseded";
   } catch (error) {
     outcome = "error";
-    if (generation === previewGeneration) showPreviewError(error.message, () => { void openFile(host, path, source); });
+    if (generation === previewGeneration) showPreviewError(updatePreview);
   } finally {
     endPreviewLoading(generation);
     operation.end(outcome);
@@ -686,7 +739,7 @@ async function resyncFromServer({trigger = "resync", event = null, receivedAt} =
     startedAt: receivedAt, trigger, ...(event ? {notify_delay_ms: notifyDelayMs(event)} : {}),
   });
   try {
-    await (refreshFiles(operation.timing));
+    await refreshFiles(operation.timing);
     if (!selectedPath || !selectedHost) return;
     // 更新時刻は同じ時刻刻み内の連続した書き換えで変わらないため、本文の変化の判定には使わない。
     // 本文を毎回取り直し、変化の有無は`updatePreview`が適用済みHTMLとの比較で判定する。
@@ -782,7 +835,7 @@ function applyRootInfoUpdate(payload) {
 // JSONとして解析できない本文は、取りこぼしを避けるため再同期する。
 const SSE_MESSAGE_HANDLERS = {
   "host-status": (payload) => {
-    hostStatus[payload.host] = payload.status;
+    updateHostState(payload.host, payload.status);
     renderFiles();
   },
   host_info_update: applyRootInfoUpdate,
@@ -827,6 +880,14 @@ async function forceResync() {
 }
 
 function bindScreenEvents() {
+  document.addEventListener("atk-screen-change", () => {
+    if (document.body.dataset.screen !== "plans") {
+      searchController?.abort();
+      document.getElementById("search-status").textContent = "";
+      clearTimeout(searchTimer);
+      setUpdateError("plans", "search");
+    } else if (!searchComplete) scheduleFullTextSearch();
+  });
   document.getElementById("plans-filter").addEventListener("input", () => {
     // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
     // 段階展開で伸びた上限を保ったままにすると、フィルタ後の結果が少なくても無駄な走査が残るため。
@@ -879,6 +940,9 @@ async function init() {
   const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
   ROOT_DIRS = bootstrap.root_dirs;
   bindScreenEvents();
+  const preview = document.getElementById("preview");
+  const main = preview.closest("main");
+  attachScrollEdges(main, main.querySelector(".toolbar"), preview);
   // バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
   // 抑制するため、通知のみに依存するとタブ復帰時に溜まったイベントの処理が数秒遅れる。
   resyncWhenVisible(forceResync);

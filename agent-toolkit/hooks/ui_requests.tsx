@@ -5,7 +5,7 @@ import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
 import { mountPeriodicRecheck } from "./periodic_recheck.ts";
 
-type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; targets?: unknown; resume?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
+type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; misdetection_checks?: unknown; targets?: unknown; resume?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
 import type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 export type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 
@@ -75,7 +75,9 @@ export function register(on: On): void {
         let reason = "未対応の会話操作";
         let resend: boolean | undefined;
         let warnings: string[] | undefined;
-        if (request.operation === "send_to_user" && typeof request.input?.message === "string" && missingPreventionLine(request.input.message)) {
+        const skipped = Array.isArray(request.input.misdetection_checks) ? request.input.misdetection_checks : [];
+        if (request.operation === "send_to_user" && typeof request.input?.message === "string" &&
+            !skipped.includes("missing-prevention") && missingPreventionLine(request.input.message)) {
           reason = missingPreventionRejection;
           resend = true;
         } else if (request.operation === "send_to_user" && typeof request.input?.message === "string") {
@@ -88,10 +90,12 @@ export function register(on: On): void {
             // 呼出しを識別できる時は、警告を送信結果の本文（データとして読まれる）に入れず応答の別欄で返す。 pyfltr: allow-comment
             // MCPが呼出しごとに預け、PostToolUseのhookが結果の外の添付として届ける（`_hooks/posttooluse.py`）。 pyfltr: allow-comment
             // `tool.call`への登録はCode Modeの結果待ちを無効にするため使わない（design-hooks-send-to-user.md）。 pyfltr: allow-comment
-            const found = reportWarnings(request.input.message);
-            const relayed = typeof request.input.tool_use_id === "string" && found.length > 0;
-            if (relayed) warnings = found;
-            reason = [deliveryGuidance(sendGuidanceDelivered), ...(relayed ? [] : found)].join("\n");
+            const found = reportWarnings(request.input.message, request.id, skipped);
+            if (found.length > 0) warnings = found;
+            reason = [
+              deliveryGuidance(sendGuidanceDelivered),
+              ...(typeof request.input.tool_use_id === "string" ? [] : found),
+            ].join("\n");
           }
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
           else if (typeof request.input.tool_use_id === "string") {

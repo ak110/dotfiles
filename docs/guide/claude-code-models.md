@@ -33,6 +33,9 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 
 ### 利用枠とreset許可
 
+利用枠は画面の裏で取り直す。
+前回取得できた値は表示に残り、取得できない状態が続いたら「再取得」で取り直せる。
+
 `atk config usage`はClaudeとCodexの残量・回復時刻・最終観測、resetの在庫と案内を表示する。
 `--refresh`で利用枠を取り直し、`--json`で詳細を表示する。
 取得できない枠は不明とし、取得済みの観測は時刻とともに表示する。
@@ -80,10 +83,16 @@ atk config set review_model agy:gemini-4-argon/medium
 atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonnet/medium
 ```
 
-`atk config show`は現在値を一覧し、`atk config get <キー>`は指定キーの値を返す。
+`atk config show`は通信や設定の移行をせず、現在値を一覧する。
+旧設定からも読み取りだけで移行後の値を求め、確定できない項目だけを省いて原因と次の操作を示す。
+`atk config get <キー>`は値を返す前に、旧キーの置換と保存や旧`serve.toml`の改名など、必要な設定ファイルを移行する。
+端末で `codex_fast_mode` が `auto` の場合、`atk config show` はこのホストでの最後の委譲起動時の速度、時刻、理由、判定の出所を標準エラーに表示する。
+`atk serve` の設定画面でも、選んだホストの起動時判定を現在の設定値と分けて表示する。
+記録がなければその旨を表示する。
+自動判定は契約の取得に失敗すると再試行し、同じワークスペースと接続を確認できる短時間に限って直前の成功判定を使う。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数を設定すると保存値より優先する。
 保存済みのモデル候補は初期値を変えても書き換えない。
-以前の設定キー`usage_auto_allocation`は`atk config`で読み込むと削除する。
+以前の設定キー`usage_auto_allocation`は`atk config get`での移行時に削除する。
 環境変数で指定している場合は解除する。
 
 一時指定は通常設定に1つの上書きを重ねる。
@@ -139,6 +148,11 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 委譲元は委譲先の会話の抜粋（省略時は16,000バイトまで）だけを読んで助言を返すため、会話全体を読むadvisorより追加の使用量が小さく、Codexなどの委譲先でも使える。
 設定は不要で、対象になる組み合わせでは自動で有効になる。
 
+自由本文で割り当て済みの実装・修正を委譲する場合は、`start(mode=delegate, model_type=execute)` が `execute_model` を使う。
+レーンの実装は所定の `exec` の役割で起動する。
+`write_model` はユーザーが指定した場合だけ使い、起動時には `model_override=user_instruction` と `model_override_evidence` に実際の指示の根拠を渡す。
+後任を起動する場合も同じ指定が必要になる。
+
 `atk config apply-preset <名前>`は`write_model`を除く6工程を一括で設定する。
 引数を省くか`show`を指定すると、各プリセットの内容を保存せずに表示する。
 
@@ -161,10 +175,11 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 未設定の環境では、executeを`codex:sol/medium,claude:opus[1m]/medium`の順に試す。
 以前に保存した候補列はそのまま使う。
 
-工程別モデルと`codex_fast_mode`は、同じprivate-notesを同期する環境で共有する。
+同じprivate-notesを同期する環境では、工程別モデル、`codex_fast_mode`、`usage_reset_permissions`を共有する。
+reset許可の回数は、共有先の予約台帳で全端末の合計として数える。
 ファイルの場所と共有設定から解決したキーは`atk config show`の標準エラーで確認できる。
 特定のホストだけ変える場合は`atk config temporary`か`AGENT_TOOLKIT_CONFIG_<KEY>`を使う。
-共有するキーのローカル値が残っている場合は、[共有設定への移行](claude-code-connections.md#共有設定への移行)を先に行う。
+共有するキーのローカル値が残っている場合は、[共有設定への移行](claude-code-settings.md#共有設定への移行)を先に行う。
 `set`で保存済みでも上書き元の案内が出たときは、その設定を解除して`get`で確かめる。
 
 初期設定ではCodexの5時間枠の解除を待つ。

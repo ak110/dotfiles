@@ -21,6 +21,7 @@ from mcp.types import CallToolRequestParams, CallToolResult
 
 from agent_toolkit._agents_server import (
     mcp_tools,
+    plugin_root,
     service_context,
     service_forward,
     service_io,
@@ -449,3 +450,23 @@ def test_connect_distinguishes_expired_generation_from_account_denial(
     monkeypatch.setattr(service_transport, "process_alive", lambda _identity: alive)
     with pytest.raises(expected), service_transport.connect("endpoint", "42:1"):
         pytest.fail("操作を実行してはならない")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool", ["start", "send_to_user"])
+async def test_missing_service_copy_returns_recovery_steps(tmp_path, monkeypatch, tool):
+    coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
+    missing = tmp_path / "removed-copy"
+    monkeypatch.setattr(plugin_root, "SERVER_PLUGIN_ROOT", missing)
+    scope = Mock(side_effect=AssertionError("欠落時にツールを実行した"))
+    monkeypatch.setattr(coordinator.managers, "scope", scope)
+
+    with runtime_environment.bind(runtime_environment.CallerContext({}, tmp_path)):
+        result = await coordinator.call_tool(None, CallToolRequestParams(name=tool, arguments={}))
+
+    assert result.is_error
+    message = result.content[0].text
+    assert str(missing) in message
+    assert "update-dotfiles" in message
+    assert "受付世代を切り替え" in message
+    scope.assert_not_called()

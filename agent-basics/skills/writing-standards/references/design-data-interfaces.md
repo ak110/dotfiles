@@ -22,7 +22,7 @@
 自コードベースの外に利用元がある公開APIに適用し、内部APIは`agent-basics:writing-standards/references/design-heuristics.md`「設計の判定順」の内部の構造を整理する方針に従う。
 
 - 既存の呼び出し元が自身のコードを変えずに使い続けられる互換性を保ち、エラー時は完全な失敗と部分的な失敗を判別できる応答にする。
-- 一覧を返すエンドポイントのページネーションは、`agent-basics:writing-standards/references/ui-ux.md`「検索・一覧画面の設計」の観点を使う。
+- 一覧を返すエンドポイントのページネーションは、`agent-basics:writing-standards/references/ui-ux-topics.md`「検索・一覧画面の設計」の観点を使う。
 - 長時間の接続（SSEなど）は、中継する各層のアイドルタイムアウトとバッファ、切断・再接続・欠落を利用形態と負荷から評価する。
 
 ## Webhook受信設計

@@ -6,6 +6,8 @@ WIの共通処理のモジュール（`sync.py`・`entries.py`など）と`uwi_s
 pyfltr: allow-comment
 """
 
+import typing
+
 from agent_toolkit._common.next_action import recover_from_failure
 
 PROCESS_WI_GOAL_BODY = "`agent-toolkit:process-wi`を完遂してください。"
@@ -145,6 +147,23 @@ def bulk_source_states(action: str, *, actor_is_agent: bool) -> tuple[str, ...]:
 WI_TYPE_AWI = "awi"
 """frontmatterの`type`がエージェントワークアイテムであることを示す値。"""
 
+DETAILED_KEY = "detailed"
+"""計画を作る時点の詳細化を終えたAWIを示すfrontmatterのキー。  pyfltr: allow-comment
+
+`atk wi add --detailed`と`atk wi edit --detail`だけが付ける。
+"""
+
+
+def is_detailed(data: typing.Mapping[str, object]) -> bool:
+    return data.get(DETAILED_KEY) in (True, "true")
+
+
+DETAILED_SOURCES = ("add-awi-by-user", "process-user-comments", "implement")
+"""投入前レビューを経た本文を保存する起票経路。  pyfltr: allow-comment
+
+この経路のAWIは計画を作る時点で詳細化せず、本文の置換も受け付けない。
+"""
+
 WI_TYPE_UWI = "uwi"
 """frontmatterの`type`がユーザーワークアイテムであることを示す値。"""
 
@@ -196,7 +215,13 @@ QUESTION_TYPE_POST_APPROVAL = "post-approval"
 POST_APPROVAL_CHOICES = ("その対応で問題無い", "問題がある")
 """事後承認の表示と肯定完全一致の判定が共有する選択肢。"""
 
-NEW_QUESTION_TYPES = (QUESTION_TYPE_CHOICE, QUESTION_TYPE_YES_NO, QUESTION_TYPE_POST_APPROVAL)
+QUESTION_TYPE_REPORT = "report"
+"""回答を求めない作業結果の報告。保存した時点で`adopted`とし、未回答の一覧と選定の対象に入れない。  pyfltr: allow-comment"""
+
+REPORT_TITLE_PREFIX = "# 報告: "
+"""報告の1行目の接頭辞。質問のUWIと一覧で見分けるために必須とする。  pyfltr: allow-comment"""
+
+NEW_QUESTION_TYPES = (QUESTION_TYPE_CHOICE, QUESTION_TYPE_YES_NO, QUESTION_TYPE_POST_APPROVAL, QUESTION_TYPE_REPORT)
 """UWIを新規作成するときと、回答形式を変える本文編集で受理する回答形式。"""
 
 STORED_QUESTION_TYPES = (*NEW_QUESTION_TYPES, QUESTION_TYPE_FREE_FORM)

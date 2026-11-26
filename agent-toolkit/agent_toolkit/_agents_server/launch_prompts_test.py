@@ -21,7 +21,7 @@ from agent_toolkit._agents_server import (
     session_errors,
 )
 from agent_toolkit._agents_server.state import LaunchKind
-from agent_toolkit._common import delegated_session, plugin_roots
+from agent_toolkit._common import delegated_session, plugin_roots, runtime_environment
 from agent_toolkit._testing.agents_server_claude_support import _capture_options
 
 
@@ -55,6 +55,68 @@ def test_plugin_resource_instructions_reject_invalid_toolkit_root(tmp_path: path
         root.mkdir()
     with pytest.raises(plugin_roots.PluginRootError, match="agent-toolkitの実在するskills"):
         launch_prompts.plugin_resource_instructions(root, "codex", str(tmp_path))
+
+
+def _toolkit(root: pathlib.Path, version: str) -> pathlib.Path:
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin" / "plugin.json").write_text(
+        f'{{"name": "agent-toolkit", "version": "{version}"}}', encoding="utf-8"
+    )
+    return root
+
+
+_SERVER_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize("starting", [True, False], ids=["start", "continue"])
+@pytest.mark.parametrize(
+    ("caller_version", "delegated", "expected"),
+    [
+        ("2.305.2", False, "caller"),
+        ("9999.0.0", False, "caller"),
+        ("same", False, None),
+        (None, False, "unknown"),
+        ("relative", False, "unknown"),
+        ("missing", False, "unknown"),
+        ("2.305.2", True, None),
+    ],
+    ids=["older-caller", "newer-caller", "same-version", "old-forwarder", "relative-root", "missing-root", "delegated-caller"],
+)
+def test_resource_instructions_name_caller_launcher_on_version_skew(
+    tmp_path: pathlib.Path, starting: bool, caller_version: str | None, delegated: bool, expected: str | None
+) -> None:
+    server_version = launch_prompts._plugin_version(_SERVER_ROOT)
+    assert server_version is not None
+    environment = {}
+    caller = tmp_path / "caller"
+    if caller_version == "relative":
+        environment[delegated_session.CALLER_PLUGIN_ROOT_ENV] = "caller"
+    elif caller_version == "missing":
+        environment[delegated_session.CALLER_PLUGIN_ROOT_ENV] = str(caller)
+    elif caller_version is not None:
+        _toolkit(caller, server_version if caller_version == "same" else caller_version)
+        environment[delegated_session.CALLER_PLUGIN_ROOT_ENV] = str(caller)
+    if delegated:
+        environment[delegated_session.OWNER_SESSION_ENV] = "parent"
+    with runtime_environment.bind(runtime_environment.CallerContext(environment, tmp_path)):
+        text = launch_prompts.plugin_resource_instructions(_SERVER_ROOT, "claude", str(tmp_path), starting=starting)
+    if expected is None:
+        assert 'kind="caller-runtime"' not in text
+        return
+    assert 'kind="caller-runtime"' in text
+    server_command, _note = launch_prompts.plugin_environment.launcher_command(_SERVER_ROOT)
+    if expected == "caller":
+        caller_command, _note = launch_prompts.plugin_environment.launcher_command(caller)
+        assert f"版{caller_version}（起動部分: {caller_command}）" in text
+        assert f"版{server_version}" in text
+        assert "合否は、委譲元の起動部分で実行した結果で決めよ" in text
+    else:
+        assert "委譲元のCLIの版は不明" in text
+        assert f"版{server_version}、起動部分: {server_command}" in text
+        assert "委譲元が同じ原稿・引数で実行した結果を使え" in text
+        assert "委譲先の起動部分での結果だけで合否を確定したり、原稿を差し戻したりしてはいけない" in text
+        assert "CLIの判定は未確認" in text
+        assert "サブコマンド・引数と原稿の絶対パスを返せ" in text
 
 
 _MARKERS = {

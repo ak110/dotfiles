@@ -409,6 +409,35 @@ def test_public_command_prints_lane_summary_on_success(
     result = capsys.readouterr()
     assert result.err == ""
     assert _parse_summary(result.out) == _expected_summary(selection)
+    if layout == "staged":
+        assert '着手条件を満たすレーン: ["lane-01", "lane-02"]' in result.out
+
+
+@pytest.mark.parametrize(
+    ("dependency", "integrated", "ready", "waiting"),
+    [
+        (None, False, '["lane-01", "lane-02"]', "{}"),
+        ([], False, '["lane-01", "lane-02"]', "{}"),
+        (["lane-01"], False, '["lane-01"]', '{"lane-02": ["lane-01"]}'),
+        (["lane-01"], True, '["lane-02"]', "{}"),
+    ],
+)
+def test_start_summary_distinguishes_start_dependencies_from_integration_order(dependency, integrated, ready, waiting):
+    first = {"レーン": "lane-01"}
+    if integrated:
+        first["統合状態"] = contract.INTEGRATED
+    second = {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"]}
+    if dependency is not None:
+        second["着手前に必要なレーン"] = dependency
+    selection: dict[str, object] = {
+        "選定": [{"WI": "a.md", "レーン": "lane-01"}, {"WI": "b.md", "レーン": "lane-02"}],
+        "レーンの所要時間": [first, second],
+    }
+    lines = check_selection.summary_lines(selection)
+    assert f"着手条件を満たすレーン: {ready}" in lines
+    assert f"着手に必要な成果を待つレーン: {waiting}" in lines
+    history = check_selection.summary_lines(selection, history=True)
+    assert not any(line.startswith("着手") for line in history)
 
 
 @pytest.mark.parametrize("failure", ["content", "input", "norm-spec"])

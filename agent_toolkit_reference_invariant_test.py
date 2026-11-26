@@ -6,32 +6,17 @@ import json
 import pathlib
 import re
 import subprocess
-import tomllib
 
 import pytest
 from agent_toolkit._common import skill_modes
 
 from _test_helpers import _PLUGIN_PREFIX, _tracked_source_paths
+from pytools._internal import repository_references
 
-_REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
-
-
-_SKILL_INVOCATION_PATTERN = re.compile(rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:([A-Za-z0-9][A-Za-z0-9_-]*)")
-
-
-_SKILL_PATH_PATTERN = re.compile(
-    rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/skills/[A-Za-z0-9][A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*/?"
-)
-
-_QUALIFIED_RESOURCE_PATTERN = re.compile(
-    rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:(/?[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+\.md)(?![A-Za-z0-9_./-])"
-)
-
-
-_PYTHON_PATH_PATTERN = re.compile(
-    rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/(?:scripts|agent_toolkit)/"
-    r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.py"
-)
+_SKILL_INVOCATION_PATTERN = repository_references.SKILL_INVOCATION_PATTERN
+_SKILL_PATH_PATTERN = repository_references.SKILL_PATH_PATTERN
+_QUALIFIED_RESOURCE_PATTERN = repository_references.QUALIFIED_RESOURCE_PATTERN
+_PYTHON_PATH_PATTERN = repository_references.PYTHON_PATH_PATTERN
 
 
 _ATK_MODE_RETIRED_SKILLS = (
@@ -229,15 +214,8 @@ def _reference_diagnostic(root: pathlib.Path, source: pathlib.Path, reference: s
 
 
 def _missing_pyright_paths(root: pathlib.Path) -> list[str]:
-    config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8")).get("tool", {}).get("pyright", {})
-    missing: list[tuple[str, str]] = []
-    for key in ("exclude", "ignore"):
-        for value in config.get(key, []):
-            path = pathlib.PurePosixPath(value)
-            if path.is_absolute() or ".." in path.parts or any(mark in value for mark in "*?[]{}\\:"):
-                continue
-            if not (root / path).exists():
-                missing.append((key, value))
+    literal = repository_references.pyright_literal_paths((root / "pyproject.toml").read_text(encoding="utf-8"))
+    missing = [(key, value) for key, value in literal if not (root / value).exists()]
     if not missing:
         return []
     ignored = subprocess.run(

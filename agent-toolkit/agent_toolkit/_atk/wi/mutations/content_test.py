@@ -16,6 +16,7 @@ from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencie
 from agent_toolkit._atk.wi.mutations import result_commits, targets
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.wi_add_support import _write_origin_review
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit._testing.wi_mutations_content_support import _USER_COMMENT_ERROR, _edit_body_args
@@ -426,8 +427,9 @@ def test_agent_environment_edit_preserves_saved_user_comment(
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
+    review = _write_origin_review(tmp_path, "編集後", "保持する")
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(_edit_body_args(tmp_path, "fb.md", "編集後"), home=tmp_path)
+        atk.main([*_edit_body_args(tmp_path, "fb.md", "編集後"), "--origin-review", review], home=tmp_path)
 
     assert exc_info.value.code == 0
     assert path.read_text(encoding="utf-8").endswith("編集後\n\n## ユーザーコメント\n\n保持する\n")

@@ -599,7 +599,7 @@ def _weekly_failed(definition: weekly_work.WeeklyWork, record: dict[str, Any], s
                 private_notes.default_private_notes(),
                 messages=[
                     "---\nrun_skill_report: true\n---\n\n"
-                    f"# {definition.title}（{record['slot']}）が{failures}回続けて失敗した\n\n"
+                    f"# 報告: {definition.title}（{record['slot']}）が{failures}回続けて失敗した\n\n"
                     f"最後の失敗は段階 `{stage}`、終了{code}である。"
                     "提案はまだ届いておらず、次の判定で同じ回を再実行する。この報告は同じ回で1回だけ届く。"
                     "起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログで原因を確かめる。"
@@ -609,7 +609,7 @@ def _weekly_failed(definition: weekly_work.WeeklyWork, record: dict[str, Any], s
                 source="run-skill",
                 scope=definition.scope,
                 entry_type=WI_TYPE_UWI,
-                question_type="post-approval",
+                question_type="report",
                 now=datetime.datetime.now(datetime.UTC),
             )
             record["failure_reported"] = True
@@ -746,9 +746,13 @@ def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
     """保存済み範囲の分析と報告のローカルcommitを確認して、同じbatchだけを確定する。  pyfltr: allow-comment"""
     diagnostics: dict[str, Any] | None = None
     try:
-        notes = private_notes.default_private_notes()
+        notes = session_review.resolve_report_notes(manifest.get("report_notes"))
         gap = add.check_run_report_sync(
             notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True, local_only=True
+        )
+        session_review.BatchWriter(path).record_report_step(
+            "batch-finish",
+            {"notes": str(notes), "status": "report-committed" if gap is None else gap.reason},
         )
         if gap is not None:
             # ファイル名やOIDを失敗キーに含めると同じ原因のAWIが重複する。  # pyfltr: allow-comment
@@ -897,6 +901,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         manifest: dict[str, Any] = {
             "run_id": run_id,
             "report_scope": session_review.BATCH_SCOPE,
+            "report_notes": str(private_notes.default_private_notes().resolve()),
             "manifest_path": str(path),
             "status": "running",
             "started_at": session_review.timestamp(),

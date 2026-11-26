@@ -354,7 +354,7 @@ async def _saved_mutation_commit_failure(
             await playwright.async_api.expect(page.locator("#important-button")).to_contain_text("重要解除")
         else:
             assert case is not None
-            await playwright.async_api.expect(page.locator("#detail-state")).to_have_text(f"awi / {case.final_state}")
+            await playwright.async_api.expect(page.locator("#detail-state")).to_have_attribute("data-state", case.final_state)
     await playwright.async_api.expect(alert).to_contain_text("他ホストへは反映していない")
     await playwright.async_api.expect(alert).to_contain_text("atk wi commit")
     assert await page.evaluate("window.__selfWriteWarnings") == []

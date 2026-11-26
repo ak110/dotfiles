@@ -77,7 +77,7 @@ lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
 lazy from agent_toolkit._hooks.host import is_codex_payload
-lazy from agent_toolkit._hooks.pretooluse import operation_skills
+lazy from agent_toolkit._hooks.pretooluse import operation_skills, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse.large_reads import session_record_reference_warning
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
@@ -138,10 +138,10 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
 
 
 UTTERANCE_UNDERSTANDING_NOTICE_BODY = (
-    "調査より先に、`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」を伝える。"
-    "送達指定のあるメインでは、作業前の最初の`send_to_user`の`message`に置く。"
-    "送達指定がない場合は応答の冒頭に置き、送達に失敗した場合は通常本文で伝えられる。"
+    "調査より先に、`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」を伝えてください。"
+    "送達は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従ってください。"
 )
+
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 _FREE_TEXT_ANSWER_PROCEDURE = "自由記述の回答も同節に従ってください。"
@@ -404,7 +404,9 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
         _record_background_task_id(session_id, task_id)
         if is_main_agent_context(payload):
             function_hook_requests.enqueue(session_id, "background_task", {"id": task_id, "command": command})
-    _agents_server_observations.record_wait_observation_attempt(session_id, command, resolve_hook_agent_id(payload))
+    response = payload.get("tool_response")
+    if not isinstance(response, dict) or not (response.get("exit_code", 0) != 0 or response.get("interrupted")):
+        _agents_server_observations.record_wait_observation_attempt(session_id, command, resolve_hook_agent_id(payload))
     _record_bash_response_state(session_id, command, payload.get("tool_response"))
 
 
@@ -450,6 +452,8 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     session_id, "background_task", {"id": failed_task_id, "command": tool_input["command"]}
                 )
         return notices
+    if event_name == "PostToolUse":
+        user_facing_checks.observe_policy_result(payload, session_id, tool_name, tool_input)
     if (
         tool_name.endswith(SEND_TO_USER_TOOL_SUFFIX)
         and isinstance(tool_use_id := payload.get("tool_use_id"), str)

@@ -166,6 +166,10 @@ def _without_source_frontmatter(message: str) -> str:
 def _summary(body: str, kind: str) -> str:
     lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("## ")]
     if kind == wi_constants.WI_TYPE_UWI:
+        for line in body.splitlines():
+            prefix, separator, title = line.strip().partition(" ")
+            if prefix in {"#", "##"} and separator and title not in {"質問", "報告", "回答", "状況", "選択肢"}:
+                return title.strip()[:160]
         lines = [line for line in lines if not line.startswith("<!--")]
     return lines[0][:160] if lines else ""
 
@@ -193,7 +197,9 @@ def _entry(
     body: str,
     updated_at: str | None = None,
 ) -> dict[str, object]:
-    answered = wi_uwi_scan.is_uwi_answered(text) if kind == wi_constants.WI_TYPE_UWI else None
+    answered = (
+        wi_uwi_scan.is_uwi_answered(text) if kind == wi_constants.WI_TYPE_UWI and not wi_uwi_scan.is_report(text) else None
+    )
     # 画面用の期限は着手可否判定と同じ適用条件で返す。保存値は詳細の`frontmatter_entries`が別に返す。
     cooldown = wi_readiness.applicable_cooldown_until(kind, metadata.get("cooldown_until"))
     return {
@@ -393,6 +399,9 @@ class Operations:
         self.private_notes = private_notes
         self._storage = wi_sync.Storage(local_only=True, lock_timeout=_WEB_LOCK_TIMEOUT)
         self._entry_index = entry_index.EntryIndex(private_notes, cache_path=index_cache_path)
+
+    def reference_names(self) -> list[str]:
+        return sorted({path.name for path in iter_entry_paths(self.private_notes) if not DATED_NAME.fullmatch(path.name)})
 
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         result: list[dict[str, object]] = []

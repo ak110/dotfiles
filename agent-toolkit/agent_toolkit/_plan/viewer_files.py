@@ -13,6 +13,7 @@ import dataclasses
 import logging
 import os
 import pathlib
+import stat
 import typing
 from collections.abc import Callable, Iterable, Iterator
 
@@ -275,46 +276,80 @@ def _iter_files(root: pathlib.Path) -> Iterator[tuple[pathlib.Path, bool]]:
                     yield pathlib.Path(entry.path), False
 
 
+def _raise_unless_deleted(error: OSError) -> None:
+    if not isinstance(error, FileNotFoundError):
+        raise error
+
+
+def _search_paths(root: pathlib.Path, *, strict_io: bool) -> Iterator[pathlib.Path]:
+    if strict_io:
+        for directory, _, names in root.walk(on_error=_raise_unless_deleted):
+            yield from (directory / name for name in names)
+    else:
+        yield from root.rglob("*")
+
+
 def search_root(
     root: pathlib.Path,
     query: str,
     source_id: str = "",
     *,
     check_stop: Callable[[], None] | None = None,
+    strict_io: bool = False,
 ) -> set[str]:
     needle = query.casefold()
-    if not root.is_dir():
+    if strict_io:
+        try:
+            if not stat.S_ISDIR(root.stat().st_mode):
+                return set()
+        except FileNotFoundError:
+            return set()
+    elif not root.is_dir():
         return set()
     matched: set[str] = set()
     resolved_root = root.resolve()
     try:
-        for path in root.rglob("*"):
+        for path in _search_paths(root, strict_io=strict_io):
             if check_stop is not None:
                 check_stop()
-            if not path.is_file() or not is_target_path(path, root, source_id, resolved_root=resolved_root):
+            try:
+                regular = stat.S_ISREG(path.stat().st_mode) if strict_io else path.is_file()
+            except FileNotFoundError:
+                continue
+            if not regular or not is_target_path(path, root, source_id, resolved_root=resolved_root):
                 continue
             if not needle:
                 matched.add(path.relative_to(root).as_posix())
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
+            except FileNotFoundError:
+                continue
             except OSError:
+                if strict_io:
+                    raise
                 continue
             if needle in text.casefold():
                 matched.add(path.relative_to(root).as_posix())
     except OSError:
+        if strict_io:
+            raise
         # 空の検索語は全件の一致を返すため、走査の失敗では途中までの結果を返さない。
         return matched if needle else set()
     return matched
 
 
-def resolve_under_root(root: pathlib.Path, rel: str, source_id: str = "") -> pathlib.Path | None:
+def resolve_under_root(root: pathlib.Path, rel: str, source_id: str = "", *, strict_io: bool = False) -> pathlib.Path | None:
 
     target = (root / rel).resolve()
     try:
         target.relative_to(root.resolve())
     except ValueError:
         return None
-    if not target.is_file() or not is_target_path(target, root, source_id):
+    try:
+        regular = stat.S_ISREG(target.stat().st_mode) if strict_io else target.is_file()
+    except FileNotFoundError:
+        return None
+    if not regular or not is_target_path(target, root, source_id):
         return None
     return target

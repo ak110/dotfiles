@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import hashlib
 import json
 import pathlib
-import subprocess
 import sys
+import uuid
 from collections.abc import Callable
 from typing import Any, cast
 
 lazy import platformdirs
 
 from agent_toolkit._atk import config_migration as _config_migration
-from agent_toolkit._atk import config_repositories_cli, config_usage
+from agent_toolkit._atk import config_repositories_cli, config_shared_migration, config_usage
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
@@ -48,9 +47,9 @@ from agent_toolkit._common import codex_fast_mode, codex_models, runtime_environ
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
-lazy from agent_toolkit._atk import git_sync
-lazy from agent_toolkit._atk.wi import sync as wi_sync
+lazy from agent_toolkit._atk import codex_provider_check, git_sync, reset_reservations
 lazy from agent_toolkit._git import command as git_command
+lazy from agent_toolkit._git import remote as git_remote
 
 __all__ = [
     "CONNECTION_KINDS",
@@ -107,54 +106,88 @@ def save_mutable_settings(updates: dict[str, str]) -> bool:
 
 
 def _save_shared_settings(path: pathlib.Path, updates: dict[str, str]) -> bool:
-    notes = path.parent
-    next_action = f"{notes}のGit同期の状態を確認し、未同期の変更を解消してから再実行する"
-    try:
-        with wi_sync.DEFAULT_STORAGE.mutation(notes):
-            _require_shared_migration()
-            if git_command.output(["status", "--porcelain", "--ignored=matching", "--", path.name], notes):
-                raise _next_action.ActionableError(f"{path}に未保存の変更がある", next_action=next_action)
-            current = _config_settings.load_shared_settings(path)
-            changed = current | updates
-            if changed != current:
-                _commit_shared_settings(path, changed, "chore: update shared agent settings")
-            wi_sync.push_pending_commits(notes)
-            if git_sync.push_was_deferred(notes):
+    def update(current: dict[str, str]) -> dict[str, str]:
+        changed = current | updates
+        key = reset_reservations.PERMISSIONS
+        if key in updates:
+            changed[key] = reset_reservations.mark_new_permissions(current, updates[key])
+        return changed
+
+    return config_shared_migration.update_shared_settings(path, update)
+
+
+def _reissue_remaining(notes: pathlib.Path, grant: dict[str, Any]) -> int:
+    identifier = grant["id"]
+    known = reset_reservations.local_unshared_usage(_state_paths.state_dir(), identifier) + reset_reservations.read_used(
+        notes, identifier
+    )
+    return max(0, int(grant["count"]) - known)
+
+
+def _legacy_reset_grant(grant: dict[str, Any]) -> bool:
+    return (
+        grant["engine"] == "codex"
+        and grant.get(reset_reservations.ISSUED) is not True
+        and grant.get(reset_reservations.RETIRED) is not True
+    )
+
+
+def _reissue_reset(identifier: str, count: int | None) -> None:
+    path = config_shared_migration.write_path()
+
+    def update(current: dict[str, str]) -> dict[str, str]:
+        entries = reset_reservations.permission_entries(current)
+        for index, grant in enumerate(entries):
+            if grant["id"] != identifier or not _legacy_reset_grant(grant):
+                continue
+            try:
+                remaining = _reissue_remaining(path.parent, grant)
+            except (ValueError, OSError) as error:
                 raise _next_action.ActionableError(
-                    f"{path}はローカルに保存したが共有先へ同期できていない", next_action=next_action
-                )
-    except subprocess.SubprocessError as error:
-        raise _next_action.ActionableError(f"{path}の保存・同期に失敗した: {error}", next_action=next_action) from error
-    return changed != current
+                    "この端末で確認できるreset許可の残りを数えられません",
+                    next_action="端末のCodex reset記録と共有台帳を確認してから発行し直す",
+                ) from error
+            if count is not None and not 0 <= count <= remaining:
+                raise ValueError(f"共有許可は確認できた残りの{remaining}回以内で発行してください")
+            entries[index] = reset_reservations.retire_grant(grant)
+            issued = dict(grant, id=f"codex-{uuid.uuid4()}", count=remaining if count is None else count)
+            entries.append(issued | {reset_reservations.ISSUED: True})
+            return current | {reset_reservations.PERMISSIONS: reset_reservations.encode_permissions(entries)}
+        raise ValueError("共有へ移行した旧Codex許可を指定してください")
+
+    config_shared_migration.update_shared_settings(path, update)
 
 
-def _commit_shared_settings(path: pathlib.Path, values: dict[str, str], message: str) -> None:
-    existed = path.exists()
-    atomic_write(path, json.dumps(values, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
-    try:
-        wi_sync.commit_and_push(path.parent, message, [path.name], skip_push=True)
-    except OSError, subprocess.SubprocessError:
-        git_command.run(["reset", "--", path.name], cwd=path.parent, check=True)
-        if existed:
-            git_command.run(["restore", "--worktree", "--", path.name], cwd=path.parent, check=True)
-        else:
-            path.unlink()
-        raise
+def _reset_reissue_options(path: pathlib.Path, shared: dict[str, str]) -> dict[str, int | None]:
+    options: dict[str, int | None] = {}
+    for grant in reset_reservations.permission_entries(shared):
+        if _legacy_reset_grant(grant):
+            try:
+                options[grant["id"]] = _reissue_remaining(path.parent, grant)
+            except ValueError, OSError:
+                options[grant["id"]] = None
+    return options
 
 
-def resolved_settings(home: pathlib.Path) -> dict[str, str]:
+def resolved_settings(home: pathlib.Path, *, read_only: bool = False) -> dict[str, str]:
     _config_migration.check_legacy_environment()
-    _config_migration.migrate_legacy_settings()
-    _config_migration.migrate_serve_settings()
+    if not read_only:
+        _config_migration.migrate_legacy_settings()
+        _config_migration.migrate_serve_settings()
+    return {
+        **_setting_paths(home),
+        **{key: resolve_mutable_setting(key, read_only=True) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
+    }
+
+
+def _setting_paths(home: pathlib.Path) -> dict[str, str]:
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
-    settings = {
+    return {
         "config_dir": str(_config_settings.config_dir()),
         "state_dir": str(_state_paths.state_dir()),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes.default_private_notes(home)),
-        **{key: resolve_mutable_setting(key) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
     }
-    return settings
 
 
 _UNKNOWN_CANDIDATE_NEXT_ACTION = "意図した名前か確認し、誤記なら同じキーへ`atk config set <KEY> <VALUE>`で設定し直す"
@@ -181,169 +214,144 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
     return warnings
 
 
-def _cmd_config_show(home: pathlib.Path) -> None:
+def _cmd_config_show(home: pathlib.Path) -> int:
     human = is_human_terminal()
-    settings = resolved_settings(home)
+    stored = _config_settings.load_config_strict()
+    local, errors = _config_migration.preview_local_settings(stored)
+    settings = _setting_paths(home)
+    incomplete = False
+    for key in _MUTABLE_KEY_DEFAULTS:
+        try:
+            settings[key] = resolve_mutable_setting(key, read_only=True, local=local, local_error=errors.get(key))
+        except ValueError as error:
+            incomplete = True
+            action = (
+                error.next_action
+                if isinstance(error, _next_action.ActionableError)
+                else f"設定ファイルで{key}に関係する値を直して一覧を再表示する"
+            )
+            if error is errors.get(key) and isinstance(error, _next_action.ActionableError):
+                action += "。設定を変更するコマンドは、旧キーの置換と設定の保存を行うことがある"
+            _outcome.report_warning(f"{key}の実効値を表示できない: {error}", next_action=action)
+    for error in dict.fromkeys(error for key, error in errors.items() if key not in _MUTABLE_KEY_DEFAULTS):
+        incomplete = True
+        action = (
+            error.next_action if isinstance(error, _next_action.ActionableError) else "該当する旧環境変数を解除して再実行する"
+        )
+        _outcome.report_warning(str(error), next_action=action)
     for key, value in settings.items():
         print(f"{key} {value}")
     if (path := _config_settings.shared_settings_path()) is not None:
         shared = _config_settings.load_shared_settings(path)
-        local = _config_settings.load_config()
         temporary = usage_settings.temporary_settings()
         active = [
             key
             for key in sorted(shared)
-            if key not in local and key not in temporary and not runtime_environment.environment().get(_config_env_name(key))
+            if key in settings
+            and key not in local
+            and key not in temporary
+            and not runtime_environment.environment().get(_config_env_name(key))
         ]
         print(f"共有設定ファイル: {path}", file=sys.stderr)
         if active:
             print("共有設定から解決したキー: " + "、".join(active), file=sys.stderr)
-        if git_sync.has_remote(path.parent) and _pending_shared(local):
+        if git_sync.has_remote(path.parent) and _pending_shared(stored):
             print(f"未移行の共有設定がある。{_MIGRATION_NEXT_ACTION}。", file=sys.stderr)
-    if human and settings["codex_fast_mode"] == "auto":
+    if human and settings.get("codex_fast_mode") == "auto":
         print(_auto_fast_report(), file=sys.stderr)
+    return 2 if incomplete else 0
+
+
+def _fast_start_snapshot() -> dict[str, str] | None:
+    previous = codex_fast_mode.latest_start_decision()
+    if previous is None:
+        return None
+    instant, decision = previous
+    return {
+        "at": instant,
+        "speed": "高速" if decision.tier == "priority" else "通常",
+        "reason": decision.explanation,
+        "source": {"current": "今回確認", "previous": "直前の成功判定", "unavailable": "確認不能", "legacy": "出所の記録なし"}[
+            decision.source
+        ],
+    }
 
 
 def _auto_fast_report() -> str:
-    managed = connections_configured("codex")
-    if managed and not any("subscription" in connection_order("codex", role) for role in ("orchestrator", "worker")):
-        return "Codex自動速度: 通常（使用順にサブスクリプション接続がない）"
-
-    async def report() -> str:
-        cwd = str(pathlib.Path.cwd())
-
-        async def query(request):
-            return await codex_fast_mode.auto_service_tier(request, cwd, subscription=True if managed else None)
-
-        async with asyncio.timeout(5):
-            decision = await codex_models.with_app_server(query, cwd=cwd)
-        speed = "高速" if decision.tier == "priority" else "通常"
-        if managed:
-            return f"Codex自動速度: 接続ごとに判定（サブスクリプションは{speed}: {decision.explanation}、APIは通常）"
-        return f"Codex自動速度: {speed}（{decision.explanation}）"
-
-    try:
-        return asyncio.run(report())
-    except OSError, ValueError, TimeoutError:
-        return "Codex自動速度: 通常（判定に必要な接続情報を取得できない）"
+    start = _fast_start_snapshot()
+    if start is None:
+        return "Codex自動速度: 起動時判定の記録なし"
+    return f"Codex自動速度: 最後の起動時判定 {start['speed']}（{start['source']}） — {start['at']}、{start['reason']}"
 
 
 def _pending_shared(local: dict[str, Any]) -> dict[str, Any]:
-    return {key: local[key] for key in _config_settings.SHARED_SETTING_KEYS if key in local}
+    return config_shared_migration.pending(local)
 
 
-_MIGRATION_NEXT_ACTION = "atk config migrate-sharedで差を確認し、表示された版を--applyに指定して移行する"
+_MIGRATION_NEXT_ACTION = config_shared_migration.NEXT_ACTION
 
 
 def _require_shared_migration() -> None:
-    if pending := _pending_shared(_config_settings.load_config_strict()):
-        raise _next_action.ActionableError(
-            "ローカルに移行していない共有設定がある: " + "、".join(sorted(pending)),
-            next_action=_MIGRATION_NEXT_ACTION,
-        )
+    config_shared_migration.require_migrated()
 
 
-def _migration_shared_defaults(local: dict[str, Any], shared: dict[str, str]) -> dict[str, str]:
-    return {key: _MUTABLE_KEY_DEFAULTS[key] for key in local if key not in shared}
+def _print_shared_value(key: str, label: str, value: Any) -> None:
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    if key in _config_settings.MODEL_DEFAULTS:
+        text = text.replace(",", ",\n      ")
+    print(f"  {label}: {text}")
 
 
-def _migration_revision(path: pathlib.Path, local: dict[str, Any], shared: dict[str, str]) -> str:
-    snapshot = [
-        str(_config_file_path().resolve()),
-        path.exists(),
-        local,
-        shared,
-        _migration_shared_defaults(local, shared),
-    ]
-    return hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-
-
-def _migration_values(
-    path: pathlib.Path, local: dict[str, Any], shared: dict[str, str], choices: dict[str, str]
-) -> dict[str, str]:
-    if not path.exists():
-        selected = {key: value for key, value in local.items() if key != "codex_fast_mode"}
-        required: set[str] = set()
-    else:
-        required = {key for key, value in local.items() if value != shared.get(key, _MUTABLE_KEY_DEFAULTS[key])}
-        selected = {key: local[key] for key in required if choices.get(key) == "local"}
-    if required != choices.keys():
-        raise _next_action.ActionableError(
-            "異なる設定ごとに選択が必要: " + "、".join(sorted(required)),
-            next_action=f"{_MIGRATION_NEXT_ACTION}。残す値を--keep-local KEYまたは--keep-shared KEYで指定する",
-        )
-    normalized = {}
-    for key, value in selected.items():
-        if not isinstance(value, str):
-            raise ValueError(f"{key}の保存値は文字列で指定してください")
-        _config_settings.validate_mutable_setting(key, value)
-        normalized[key] = _config_settings.normalize_setting(key, value)
-    return shared | normalized
+def _print_shared_comparison(plan: dict[str, Any]) -> None:
+    print("共有設定の比較")
+    print("初回: 共有設定ファイルがない" if plan["initial"] else "既存の共有設定ファイルと比較")
+    labels = {"equal": "一致", "different": "差あり", "local_only": "共有に無い"}
+    for item in plan["items"]:
+        key = item["key"]
+        print(f"\n{item['label']}（{labels[item['kind']]}）")
+        _print_shared_value(key, "この端末の値", item["local"])
+        shared = item["shared"]
+        if shared is None:
+            shared = "未保存" if item["shared_effective"] is None else f"未保存（初期値 {item['shared_effective']}）"
+        _print_shared_value(key, "共有の値", shared)
+        if item["error"]:
+            print(f"  この端末の値は移行できない: {item['error']}")
+        if item["kind"] == "different":
+            print(f"    --keep-local {key} / --keep-shared {key}")
+    if not plan["pending"]:
+        print("\n移行するローカル共有設定はない。適用は不要。")
+        return
+    if plan["invalid"]:
+        print("\n移行できないローカル値を直してから、もう一度比較する。")
+        return
+    print("\n環境変数や一時指定があれば、移行後もその値が優先される。")
+    command = f"atk config migrate-shared --apply {plan['revision']}"
+    command += "".join(f" --keep-shared {key}" for key in plan["required"])
+    print("設定画面の「共有へ移行」でも同じ移行を行える。CLIでは次のコマンドで適用する。")
+    print(f"  {command}")
+    if plan["required"]:
+        print("この端末の値を残すキーだけ --keep-shared を --keep-local に変える。選んだ値は他の端末にも同期する。")
 
 
 def _migrate_shared_settings(args: argparse.Namespace) -> None:
-    path = _shared_write_path()
-    if path is None:
-        raise _next_action.ActionableError("共有設定の同期先がない", next_action="private-notesの同期先を設定してから移行する")
+    if args.json and args.apply is not None:
+        raise ValueError("--jsonは比較だけの実行で指定する")
     keep_local, keep_shared = args.keep_local, args.keep_shared
     choices = dict.fromkeys(keep_local, "local") | dict.fromkeys(keep_shared, "shared")
     if len(choices) != len(keep_local) + len(keep_shared) or (choices and args.apply is None):
         raise ValueError("選択は重複させず、--applyと併用してください")
-    notes = path.parent
-    try:
-        with wi_sync.repo_lock(notes):
-            wi_sync.ensure_mutation_allowed(notes)
-            wi_sync.run_git(["fetch"], notes)
-            git_sync.keep_remote_initial_file(notes, path.name, _config_settings.SHARED_SETTINGS_MIGRATION_MESSAGE)
-            wi_sync.run_git(["merge", "--ff-only", "@{u}"], notes)
-            if git_command.output(["status", "--porcelain", "--ignored=matching", "--", path.name], notes):
-                raise _next_action.ActionableError(f"{path}に未保存の変更がある", next_action=_MIGRATION_NEXT_ACTION)
-            local = _pending_shared(_config_settings.load_config_strict())
-            shared = _config_settings.load_shared_settings(path)
-            revision = _migration_revision(path, local, shared)
-            if args.apply is None:
-                print(
-                    json.dumps(
-                        {
-                            "revision": revision,
-                            "local": local,
-                            "shared": shared,
-                            "comparison": _config_migration.compare_shared_values(local, shared),
-                            "shared_defaults": _migration_shared_defaults(local, shared),
-                            "initial_not_shared": (
-                                {"codex_fast_mode": _MUTABLE_KEY_DEFAULTS["codex_fast_mode"]}
-                                if not path.exists() and "codex_fast_mode" in local
-                                else {}
-                            ),
-                            "initial": not path.exists(),
-                        },
-                        ensure_ascii=False,
-                    )
-                )
-                return
-            if revision != args.apply:
-                raise _next_action.ActionableError("比較後にローカルか共有の設定が変わった", next_action=_MIGRATION_NEXT_ACTION)
-            values = _migration_values(path, local, shared, choices)
-            if not local:
-                _outcome.report_success("移行するローカル共有設定はない")
-                return
-            if _pending_shared(_config_settings.load_config_strict()) != local:
-                raise _next_action.ActionableError("移行中にローカル設定が変わった", next_action=_MIGRATION_NEXT_ACTION)
-            if not path.exists() or values != shared:
-                _commit_shared_settings(path, values, _config_settings.SHARED_SETTINGS_MIGRATION_MESSAGE)
-            wi_sync.run_git(["push"], notes)
-            wi_sync.run_git(["fetch"], notes)
-            if (
-                not git_sync.remote_contains_head(notes)
-                or json.loads(git_command.output(["show", f"@{{u}}:{path.name}"], notes)) != values
-            ):
-                raise _next_action.ActionableError("移行した共有値が同期先で確認できない", next_action=_MIGRATION_NEXT_ACTION)
-            _config_settings.drop_migrated_local_settings(local)
-    except subprocess.SubprocessError as error:
-        raise _next_action.ActionableError(
-            f"{path}を共有先へ移行できない: {error}", next_action=_MIGRATION_NEXT_ACTION
-        ) from error
-    _outcome.report_success(f"共有設定への移行を確認した: {len(local)}件")
+    if args.apply is None:
+        plan = config_shared_migration.compare()
+        if args.json or not is_human_terminal(sys.stdout):
+            print(json.dumps(plan, ensure_ascii=False))
+        else:
+            _print_shared_comparison(plan)
+        return
+    moved = config_shared_migration.apply(args.apply, cast(dict[str, config_shared_migration.Choice], choices))
+    if not moved:
+        _outcome.report_success("移行するローカル共有設定はない")
+        return
+    _outcome.report_success(f"共有設定への移行を確認した: {moved}件")
 
 
 def _report_candidate_warnings(warnings: list[str]) -> None:
@@ -352,46 +360,87 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
         _outcome.report_warning(message, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
 
 
-def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
-    effective = resolved_settings(home)
+def _shared_settings_identity(path: pathlib.Path) -> str | None:
+    directory = path.parent
+    branch = git_command.optional_stdout(["symbolic-ref", "-q", "HEAD"], directory)
+    if not branch:
+        return None
+    upstream = git_command.optional_stdout(
+        ["for-each-ref", "--format=%(upstream:remotename)%00%(upstream:remoteref)", branch.strip()], directory
+    )
+    if not upstream:
+        return None
+    remote, _, ref = upstream.rstrip("\n").partition("\0")
+    if not remote or remote == "." or not ref:
+        return None
+    url = git_command.optional_stdout(["remote", "get-url", "--push", "--", remote], directory)
+    if not url:
+        return None
+    try:
+        location = git_remote.parse_remote_location(url)
+    except ValueError:
+        return None
+    if not location.hostname or location.protocol not in (None, "http", "https", "ssh"):
+        return None
+    default_port = {None: 22, "ssh": 22, "http": 80, "https": 443}[location.protocol]
+    endpoint = None if location.port in (None, default_port) else (location.protocol, location.port)
+    identity = (location.hostname.lower(), endpoint, location.project_path, ref, path.name)
+    return hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+
+
+def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[str, Any]:
+    effective = resolved_settings(home, read_only=read_only)
     saved = _config_settings.load_config()
     shared_path = _config_settings.shared_settings_path()
     shared = _config_settings.load_shared_settings(shared_path) if shared_path is not None else {}
     shared_sync = shared_path is not None and git_sync.has_remote(shared_path.parent)
     temporary = usage_settings.temporary_settings()
+    pending = config_shared_migration.pending(saved) if shared_sync else {}
     settings = {}
     for key, default in _config_settings.MUTABLE_KEY_DEFAULTS.items():
         shared_key = shared_sync and key in _config_settings.SHARED_SETTING_KEYS
-        migration_pending = shared_key and key in saved
+        migration_pending = key in pending
         source = _mutable_source(key, saved, shared, temporary, shared_target=shared_key)
         description = _config_settings.setting_description(key)
-        if migration_pending:
-            description += "\n共有の保存値を使うには、atk config migrate-shared で差を確認し、適用してください。"
+        saved_value = shared.get(key, default) if shared_key else saved.get(key, default)
+        if key == reset_reservations.PERMISSIONS and isinstance(saved_value, str):
+            saved_value = reset_reservations.public_permissions(saved_value)
         settings[key] = {
             "effective": effective.pop(key),
-            "saved": shared.get(key, default) if shared_key else saved.get(key, default),
+            "saved": saved_value,
             "default": default,
             "source": source,
             "shared": shared_key,
             "shared_sync": shared_key and shared_sync,
+            "migration_pending": migration_pending,
             "description": description,
             "format": _config_settings.setting_format(key),
             "choices": _config_settings.SETTING_CHOICES.get(key),
             "array": key in _config_settings.ARRAY_KEYS,
             "temporary": config_usage.allowed_temporary_key(key),
+            "host_reason": _config_settings.HOST_SETTING_REASONS.get(key),
         }
     usage = usage_observation.snapshot(include_history=True)
     state = usage_settings.read_settings()
     windows = config_usage.profile_windows(usage)
     return {
         "settings": settings,
+        "codex_fast_start": _fast_start_snapshot(),
+        "shared_identity": _shared_settings_identity(shared_path) if shared_path is not None and shared_sync else None,
         "paths": effective,
         "presets": _config_settings.PRESET_MODELS,
         "temporary": {"values": temporary, "until": state.get("until")},
-        "repositories": json.loads(config_repositories_cli.update_repositories(argparse.Namespace(repos_subcommand="list"))),
+        "repositories": _config_settings.repository_settings(check_paths=False),
+        "shared_migration": {"format": config_shared_migration.FORMAT, "pending": sorted(pending)},
+        "provider_warnings": codex_provider_check.provider_warnings(
+            {key: str(settings[key]["effective"]) for key in sorted(_config_settings.PROVIDER_KEYS)},
+            runtime_environment.environment(),
+        ),
         "model_candidates": {engine: sorted(names) for engine, names in _config_settings.KNOWN_MODELS.items()},
         "usage": config_usage.cli_windows(windows),
+        "can_observe_usage": True,
         "reset_editor": config_usage.reset_editor_snapshot(windows, usage["history"], state),
+        "reset_reissue": _reset_reissue_options(shared_path, shared) if shared_sync and shared_path is not None else {},
         "model_order_policy": config_usage.MODEL_ORDER_POLICY,
     }
 
@@ -415,6 +464,12 @@ def update_settings(payload: dict[str, Any]) -> None:
         _require_shared_migration()
     _config_migration.migrate_serve_settings()
     _config_migration.migrate_legacy_settings()
+    if action == "reset-reissue":
+        identifier, count = operation_text(payload, "id"), payload.get("count")
+        if not identifier or (count is not None and (not isinstance(count, int) or isinstance(count, bool))):
+            raise ValueError("旧許可のIDと発行する回数を指定してください")
+        _reissue_reset(identifier, count)
+        return
     if action == "temporary-clear":
         config_usage.update_temporary(None, None, None)
         return
@@ -532,7 +587,12 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def _verify_saved_setting(key: str, value: str) -> None:
-    if resolve_mutable_setting(key) == value:
+    effective = resolve_mutable_setting(key)
+    if effective == value:
+        return
+    if key == reset_reservations.PERMISSIONS and (
+        json.loads(effective) == json.loads(reset_reservations.public_permissions(value))
+    ):
         return
     local = _config_settings.load_config()
     path = _config_settings.shared_settings_path()
@@ -645,16 +705,23 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     _atk_help.add_command(sub, "show", **_atk_help.HELP["atk config show"])
     _atk_help.add_command(sub, "list", **_atk_help.HELP["atk config list"])
     for name in ("snapshot", "update"):
-        _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
+        parser = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
+        if name == "snapshot":
+            parser.add_argument("--read-only", action="store_true", help="設定を移行または保存せずに読み取る。")
+            parser.add_argument("--observe-usage", action="store_true", help="読み取り専用で利用枠の観測も更新する。")
     for name in ("add", "remove"):
         array = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
         array.add_argument("key", metavar="KEY", help="JSON配列型の設定キー。")
         array.add_argument("value", metavar="VALUE", help="追加・削除する要素1件。")
     config_repositories_cli.build_parser(sub)
     migrate = _atk_help.add_command(sub, "migrate-shared", **_atk_help.HELP["atk config migrate-shared"])
+    migrate.add_argument("--json", action="store_true", help="比較の結果をJSONで表示する")
     migrate.add_argument("--apply", metavar="REVISION", help="比較で取得した版を指定して適用する。")
     migrate.add_argument("--keep-local", action="append", default=[], metavar="KEY", help="手元の値を全ホストで使う。")
     migrate.add_argument("--keep-shared", action="append", default=[], metavar="KEY", help="共有側の値を使う。")
+    reissue = _atk_help.add_command(sub, "reissue-reset", **_atk_help.HELP["atk config reissue-reset"])
+    reissue.add_argument("permission_id", metavar="ID", help="共有へ移した旧Codex許可のID。")
+    reissue.add_argument("--count", type=int, help="新しい許可の回数。省略するとこの端末で確認できる残りの回数。")
     get = _atk_help.add_command(sub, "get", **_atk_help.HELP["atk config get"])
     get.add_argument("key", metavar="KEY", nargs="+", help="取得する1件以上のキー（config showの出力キーと同一）。")
     set_ = _atk_help.add_command(sub, "set", **_atk_help.HELP["atk config set"])
@@ -669,7 +736,13 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     )
 
 
-def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[..., None] | None = None) -> int:
+def dispatch(
+    args: argparse.Namespace,
+    home: pathlib.Path,
+    *,
+    refresh: Callable[..., None] | None = None,
+    observe_usage: Callable[[], Any] | None = None,
+) -> int:
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
         if sub in {"usage", "temporary"}:
@@ -677,9 +750,15 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
             _config_migration.migrate_legacy_settings()
             config_usage.dispatch(args, resolve=resolve_mutable_setting, refresh=refresh)
         elif sub in {"show", "list"}:
-            _cmd_config_show(home)
+            return _cmd_config_show(home)
         elif sub == "snapshot":
-            print(json.dumps(settings_snapshot(home)))
+            read_only = getattr(args, "read_only", False)
+            if getattr(args, "observe_usage", False):
+                if not read_only:
+                    raise ValueError("--observe-usageには--read-onlyが必要です")
+                if observe_usage is not None:
+                    observe_usage()
+            print(json.dumps(settings_snapshot(home, read_only=read_only)))
         elif sub == "update":
             payload = json.load(sys.stdin.buffer)
             if not isinstance(payload, dict):
@@ -688,6 +767,9 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
             _outcome.report_success("設定操作を適用した")
         elif sub == "migrate-shared":
             _migrate_shared_settings(args)
+        elif sub == "reissue-reset":
+            _reissue_reset(args.permission_id, args.count)
+            _outcome.report_success("旧Codex許可を共有許可として発行し直した")
         elif sub == "get":
             _cmd_config_get(args, home)
         elif sub == "apply-preset":

@@ -1,5 +1,6 @@
 """MCP中継が、接続先世代の停止中の要求を有限時間で配送未確定として返す契約と、管理サービスの起動・公開を確かめる。"""
 
+import asyncio
 import contextlib
 import hashlib
 import json
@@ -8,14 +9,25 @@ import pathlib
 import sys
 import threading
 import time
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+import anyio
+import mcp.types
 import pytest
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from agent_toolkit._agents_server import service_forward, service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import plugin_environment, runtime_environment, windows_job
+from agent_toolkit._testing.codex_plugin_support import (
+    _REAL_MCP_PREPARE_TIMEOUT,
+    _real_mcp_environment,
+    _stop_mcp_services,
+)
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 
 def test_plugin_from_any_checkout_reaches_forwarding_with_shared_state(tmp_path, monkeypatch):
@@ -258,8 +270,9 @@ with service_transport.listen(address) as listener:
 
 
 @pytest.mark.windows
+@pytest.mark.parametrize("copy_missing", [False, True])
 def test_restart_does_not_mistake_exited_generation_record_for_new_service(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, copy_missing: bool
 ) -> None:
     """同じ世代の前回の記録が残る間に受付を始めた新しいサービスへ、前回の起動単位を期待して接続しない。
 
@@ -278,7 +291,8 @@ def test_restart_does_not_mistake_exited_generation_record_for_new_service(
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
     monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("G1", "1.0.0"))
     monkeypatch.setattr(service_forward.plugin_environment, "prepared_python", lambda *_args: None)
-    GenerationRegistry(directory).reserve("G1", root, "1.0.0")
+    previous_root = tmp_path / "missing-copy" if copy_missing else root
+    GenerationRegistry(directory).reserve("G1", previous_root, "1.0.0")
     exited = "999999999:1"
     endpoint = service_transport.endpoint(directory, "G1")
     (directory / "G1.json").write_text(
@@ -505,3 +519,63 @@ def test_ensure_service_does_not_kill_candidate_when_publication_is_uncertain(
         service_forward.ensure_service(caller, tmp_path)
     assert not killed
     assert (registry.current() is not None) == accepted
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="稼働中の配布物を一時的に改名して欠落を再現する")
+@pytest.mark.timeout(180)
+@pytest.mark.usefixtures("share_package_caches")
+@pytest.mark.cpu_limit(3.0, reason="公開MCP入口から独立した管理サービスを起動し、欠落の応答をstdioで受け取る。")
+def test_public_mcp_without_site_packages_reports_missing_service_copy(
+    tmp_path: pathlib.Path, tmp_path_factory: pytest.TempPathFactory, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    plugin = pathlib.Path(__file__).resolve().parents[2]
+    environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
+    prepare_plugin_environment(plugin, environment, timeout=_REAL_MCP_PREPARE_TIMEOUT)
+    registry = GenerationRegistry(service_transport.namespace(runtime_environment.CallerContext(environment, tmp_path)))
+    parameters = StdioServerParameters(
+        command=sys.executable,
+        args=["-S", str(plugin / "scripts/launch.py"), "agent_toolkit/agents_server_mcp.py"],
+        env=environment,
+        cwd=str(tmp_path),
+    )
+
+    async def probe() -> None:
+        with (tmp_path / "public-mcp.stderr").open("w", encoding="utf-8") as stderr:
+            async with (
+                stdio_client(parameters, errlog=stderr) as (read, write),
+                ClientSession(read, write) as client,
+            ):
+                with anyio.fail_after(45):
+                    await client.initialize()
+                    assert {"start", "send_to_user"} <= {tool.name for tool in (await client.list_tools()).tools}
+                original = registry.current()
+                assert original is not None
+                root = pathlib.Path(original["root"])
+                assert root != plugin and root.is_relative_to(pathlib.Path(environment["XDG_CACHE_HOME"]))
+            async with (
+                stdio_client(parameters, errlog=stderr) as (read, write),
+                ClientSession(read, write) as client,
+            ):
+                with anyio.fail_after(45):
+                    await client.initialize()
+                    assert registry.current() == original
+                    displaced = root.with_name("displaced")
+                    root.rename(displaced)
+                    try:
+                        for name, arguments in (
+                            ("start", {"mode": "explore", "prompt": "実行してはいけない"}),
+                            ("send_to_user", {"message": "配送してはいけない"}),
+                        ):
+                            result = await client.call_tool(name, arguments)
+                            assert result.is_error
+                            message = "\n".join(item.text for item in result.content if isinstance(item, mcp.types.TextContent))
+                            assert str(root) in message and f"{name}は実行していません" in message
+                            assert "保全" in message and "原因" in message and "認可の範囲" in message
+                            assert "停止を保留" in message
+                    finally:
+                        displaced.rename(root)
+
+    try:
+        asyncio.run(probe())
+    finally:
+        _stop_mcp_services(pathlib.Path(environment["XDG_STATE_HOME"]))

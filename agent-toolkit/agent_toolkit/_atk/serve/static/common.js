@@ -19,6 +19,261 @@ function readBootstrap() {
   return element ? JSON.parse(element.textContent) : {};
 }
 
+if (bootstrap.runtime_versions === true) {
+  const notice = document.getElementById("runtime-version-status");
+  const button = notice.querySelector("button");
+  const status = notice.querySelector("[role=status]");
+  let pending = false;
+  async function checkRuntimeVersions() {
+    if (pending) return;
+    pending = true;
+    try {
+      const response = await fetch(`${BASE_PATH}/api/runtime-versions`, {signal: AbortSignal.timeout(35000)});
+      const warnings = response.ok ? await response.json() : null;
+      if (!Array.isArray(warnings)) throw new Error("runtime versions unavailable");
+      status.textContent = warnings.join(" / ");
+      if (!warnings.length && document.activeElement === button) {
+        document.querySelector(`#screen-${CSS.escape(document.body.dataset.screen)} h1`)?.focus();
+      }
+      notice.hidden = warnings.length === 0;
+    } catch {
+      notice.hidden = false;
+      status.textContent = "サービスの稼働版と公開版を取得できません。";
+    } finally {
+      pending = false;
+    }
+  }
+  button.addEventListener("click", checkRuntimeVersions);
+  void checkRuntimeVersions();
+  setInterval(checkRuntimeVersions, 30 * 60 * 1000);
+}
+
+const updateErrors = new Map();
+const updateStatus = document.getElementById("update-status");
+
+const updateTimes = new Map();
+let lastFocus;
+let retryFocus;
+
+function rememberRetryFocus() {
+  const editor = lastFocus?.closest("[data-editor]");
+  retryFocus = lastFocus && {node: lastFocus, id: lastFocus.id, slot: editor?.dataset.editor,
+    index: editor ? [...editor.querySelectorAll("input, select, textarea, button, summary")].indexOf(lastFocus) : -1};
+}
+
+document.addEventListener("focusin", event => {
+  if (updateStatus?.contains(event.target)) rememberRetryFocus();
+  else lastFocus = event.target;
+});
+
+export function readFailure(status) {
+  if (status === 404) return "missing";
+  if (!status || status >= 500 || [408, 429].includes(status)) return "temporary";
+  return "restricted";
+}
+
+function renderUpdateStatus() {
+  if (!updateStatus) return;
+  const screen = document.body.dataset.screen;
+  const failures = [...(updateErrors.get(screen)?.values() ?? [])];
+  const button = updateStatus.querySelector("button");
+  const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
+  const header = document.querySelector(`#screen-${CSS.escape(screen)} .app-header`);
+  const retryFocused = document.activeElement === button;
+  if (dialog && updateStatus.parentElement !== dialog) dialog.prepend(updateStatus);
+  if (!dialog && header && header.nextElementSibling !== updateStatus) header.after(updateStatus);
+  if (!failures.length && retryFocused) {
+    const origin = retryFocus;
+    const editor = origin?.slot && [...document.querySelectorAll("[data-editor]")]
+      .find(node => node.dataset.editor === origin.slot);
+    const target = origin?.node.isConnected ? origin.node :
+      (origin?.id && document.getElementById(origin.id)) ??
+      editor?.querySelectorAll("input, select, textarea, button, summary")[origin.index];
+    if (target && !target.closest("[hidden]") && !target.disabled) target.focus();
+    else document.querySelector(`#screen-${CSS.escape(screen)} h1`)?.focus();
+  }
+  updateStatus.hidden = failures.length === 0;
+  updateStatus.querySelector("[role=status]").textContent =
+    failures.length > 1 && !failures.some(item => item.stale) ? "一部の情報を更新できません。" :
+      failures.map(({message}) => message).join(" ");
+  button.onclick = () => {
+    rememberRetryFocus();
+    for (const history of readFailures.values()) {
+      if (history.screen === screen) history.next = Date.now();
+    }
+    new Set(failures.map(item => item.retry)).forEach(retry => retry());
+  };
+}
+
+if (updateStatus) {
+  const observer = new MutationObserver(renderUpdateStatus);
+  for (const dialog of document.querySelectorAll("dialog")) observer.observe(dialog, {attributes: true, attributeFilter: ["open"]});
+}
+
+function recoveryDelay(failures) {
+  return Math.min(30_000, 1500 * 2 ** Math.min(5, failures - 1));
+}
+
+const displayedRetries = new Map();
+
+function stopDisplayedRetry(screen, key) {
+  const id = JSON.stringify([screen, key]);
+  clearTimeout(displayedRetries.get(id)?.timer);
+  displayedRetries.delete(id);
+}
+
+export function setDisplayedReadError(screen, key, message, retry, manual = retry) {
+  if (document.body.dataset.screen !== screen) return;
+  const id = JSON.stringify([screen, key]);
+  const count = (displayedRetries.get(id)?.count ?? 0) + 1;
+  stopDisplayedRetry(screen, key);
+  async function run(retrieve = retry) {
+    if (displayedRetries.get(id) !== entry || entry.pending || document.body.dataset.screen !== screen) return;
+    clearTimeout(entry.timer);
+    entry.pending = true;
+    try {
+      await retrieve();
+    } finally {
+      if (displayedRetries.get(id) === entry) {
+        entry.pending = false;
+        entry.timer = setTimeout(run, delay);
+      }
+    }
+  }
+  const delay = recoveryDelay(count);
+  const entry = {screen, key, count, pending: false, timer: setTimeout(run, delay)};
+  displayedRetries.set(id, entry);
+  setUpdateError(screen, key, message, () => run(manual));
+}
+
+export function setUpdateError(screen, key, message, retry) {
+  if (!updateErrors.has(screen)) updateErrors.set(screen, new Map());
+  const errors = updateErrors.get(screen);
+  const historyKey = JSON.stringify([screen, key]);
+  if (message) {
+    const time = updateTimes.get(historyKey);
+    const last = time && new Intl.DateTimeFormat("ja-JP", {dateStyle: "short", timeStyle: "short"}).format(time);
+    errors.set(key, {message: last ? `${message} 前回取得: ${last}。以前の情報を表示しています。` : message, retry, stale: Boolean(last)});
+  } else {
+    stopDisplayedRetry(screen, key);
+    errors.delete(key);
+    updateTimes.delete(historyKey);
+  }
+  renderUpdateStatus();
+}
+
+export function recordUpdateSuccess(screen, key) {
+  setUpdateError(screen, key);
+  const historyKey = JSON.stringify([screen, key]);
+  if (updateTimes.size >= 256) updateTimes.delete(updateTimes.keys().next().value);
+  updateTimes.set(historyKey, Date.now());
+}
+
+document.addEventListener("atk-screen-change", () => {
+  for (const {screen, key} of displayedRetries.values()) {
+    if (document.body.dataset.screen !== screen) {
+      stopDisplayedRetry(screen, key);
+      updateErrors.get(screen)?.delete(key);
+    }
+  }
+  renderUpdateStatus();
+});
+
+const reads = new Map();
+const readFailures = new Map();
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// pyfltr: allow-comment 共有する利用側が残っている間は、個別の中止で通信を止めない。
+export function recoverRead(screen, url, options = {}, timeoutMs = 45_000) {
+  const {signal, fresh, ...requestOptions} = options;
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  const headers = new Headers(options.headers);
+  headers.delete("X-Atk-Request-Id");
+  const key = JSON.stringify([screen, url, options.method ?? "GET", options.body, [...headers], timeoutMs]);
+  let read = reads.get(key);
+  // 変更通知を受けた読み取りは、進行中の応答を共有せず完了後の1回を共有する。  // pyfltr: allow-comment
+  if (read && fresh) {
+    return read.finished.then(() => recoverRead(screen, url, {...requestOptions, signal}, timeoutMs));
+  }
+  if (!read) {
+    read = {clients: new Set(), controller: new AbortController()};
+    reads.set(key, read);
+    const deliver = (error, response) => {
+      if (reads.get(key) === read) reads.delete(key);
+      const waiting = [...read.clients];
+      const responses = response && waiting.map((_, index) => index ? response.clone() : response);
+      waiting.forEach((client, index) => client(error, responses?.[index]));
+    };
+    const perform = async () => {
+      let failure;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const history = readFailures.get(key);
+        if (history) {
+          await pause(Math.max(0, history.next - Date.now()));
+        }
+        read.controller.signal.throwIfAborted();
+        try {
+          const timeout = AbortSignal.timeout(timeoutMs);
+          const response = await fetch(url, {...requestOptions, signal: AbortSignal.any([timeout, read.controller.signal])});
+          if (response.ok || readFailure(response.status) !== "temporary") {
+            readFailures.delete(key);
+            return response;
+          }
+          failure = {response};
+          if (!attempt) void response.text().catch(() => {});
+        } catch (error) {
+          read.controller.signal.throwIfAborted();
+          failure = {error};
+        }
+        const count = Math.min(6, (history?.count ?? 0) + 1);
+        if (readFailures.size >= 256 && !readFailures.has(key)) readFailures.delete(readFailures.keys().next().value);
+        readFailures.set(key, {screen, count, next: Date.now() + recoveryDelay(count)});
+      }
+      if (failure.response) return failure.response;
+      throw failure.error;
+    };
+    read.finished = perform().then(response => deliver(null, response), error => deliver(error));
+  }
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      read.clients.delete(settle);
+      if (!read.clients.size) {
+        if (reads.get(key) === read) reads.delete(key);
+        read.controller.abort();
+      }
+      reject(signal.reason);
+    };
+    const settle = (error, response) => {
+      signal?.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolve(response);
+    };
+    read.clients.add(settle);
+    signal?.addEventListener("abort", abort, {once: true});
+  });
+}
+
+export function createReadRecovery(signal, attempt) {
+  let timer;
+  let pending = false;
+  let failures = 0;
+  const stopTimer = () => clearTimeout(timer);
+  signal.addEventListener("abort", stopTimer, {once: true});
+  async function run() {
+    if (pending || signal.aborted) return;
+    stopTimer();
+    pending = true;
+    try {
+      if (!await attempt(failures) || signal.aborted) return;
+      failures += 1;
+      timer = setTimeout(run, recoveryDelay(failures));
+    } finally {
+      pending = false;
+    }
+  }
+  return run;
+}
+
 const DEFAULT_STALL_MS = 45000;
 
 // SSEの無通信を判定する時間。サーバーがheartbeat間隔の3回分として埋め込む。
@@ -40,12 +295,33 @@ export function connectEvents(path, handlers) {
   let source = null;
   let lastSeen = 0;
   let timer = null;
+  let retryTimer;
+  let failures = 0;
   const touch = () => { lastSeen = Date.now(); };
+
+  const screen = {"/api/events": "wi", "/api/plans/events": "plans", "/api/sessions/events": "sessions"}[path];
+
+  function reconnect() {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+    source?.close();
+    open();
+  }
+
+  function disconnected() {
+    if (retryTimer !== undefined) return;
+    failures += 1;
+    if (screen && failures >= 2) setUpdateError(screen, "sse", "更新情報を取得できません。", reconnect);
+    source?.close();
+    retryTimer = setTimeout(reconnect, recoveryDelay(failures));
+  }
 
   function open() {
     source = new EventSource(url);
     touch();
     source.addEventListener("heartbeat", touch);
+    source.addEventListener("error", disconnected);
+    source.addEventListener("open", () => { failures = 0; if (screen) recordUpdateSuccess(screen, "sse"); });
     for (const [name, handler] of Object.entries(handlers)) {
       source.addEventListener(name, (event) => {
         if (name !== "error") touch();
@@ -57,12 +333,15 @@ export function connectEvents(path, handlers) {
   function check() {
     if (!source) return;
     if (source.readyState === EventSource.CLOSED || Date.now() - lastSeen > limit) {
-      source.close();
-      open();
+      disconnected();
     }
   }
 
   function close() {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+    failures = 0;
+    if (screen) setUpdateError(screen, "sse");
     clearInterval(timer);
     timer = null;
     if (source) source.close();
@@ -70,12 +349,16 @@ export function connectEvents(path, handlers) {
   }
 
   function start() {
-    if (source) return;
+    if (source || (screen && document.body.dataset.screen !== screen)) return;
     open();
     timer = setInterval(check, Math.max(100, Math.min(5000, limit / 3)));
   }
 
   start();
+  document.addEventListener("atk-screen-change", () => {
+    if (screen && document.body.dataset.screen !== screen) close();
+    else start();
+  });
   globalThis.addEventListener?.("pagehide", close);
   globalThis.addEventListener?.("pageshow", (event) => { if (event.persisted) start(); });
   return {close, reopen: start};
@@ -258,7 +541,8 @@ export async function timedFetch(screen, url, options = {}, timing = {}) {
   };
   let response;
   try {
-    response = await fetch(url, {...options, headers});
+    const read = !options.method || options.method === "GET" || path === "/api/sessions/search";
+    response = await (read ? recoverRead(screen, url, {...options, headers}) : fetch(url, {...options, headers}));
   } catch (error) {
     // 画面が不要になった要求を中止した場合は、通信の失敗と区別して記録する。
     const outcome = error?.name === "AbortError" ? "aborted" : "network-error";
@@ -302,4 +586,34 @@ export function notifyDelayMs(event) {
   } catch (_) {
     return undefined;
   }
+}
+
+export function attachScrollEdges(scroller, toolbar, observed, options = {}) {
+  const group = document.createElement("span");
+  group.className = "scroll-edges";
+  group.hidden = true;
+  const move = (label, bottom) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.className = "button-secondary";
+    button.addEventListener("click", () => {
+      if (bottom) options.beforeEnd?.();
+      scroller.scrollTop = bottom ? scroller.scrollHeight : 0;
+    });
+    group.append(button);
+  };
+  move("先頭へ", false);
+  move("末尾へ", true);
+  toolbar.append(group);
+  const update = () => {
+    group.hidden = !scroller.clientHeight ||
+      !(options.hasMore?.() || scroller.scrollHeight > scroller.clientHeight + 1);
+  };
+  const resize = new ResizeObserver(update);
+  resize.observe(scroller);
+  resize.observe(observed);
+  const mutation = new MutationObserver(update);
+  mutation.observe(observed, {childList: true, subtree: true, characterData: true});
+  return update;
 }

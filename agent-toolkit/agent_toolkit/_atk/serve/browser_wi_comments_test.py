@@ -38,6 +38,9 @@ async def test_user_comment_ui_empty_save_removes_section(browser_harness: _Brow
     comment_input = detail.locator("#user-comment-input")
     await playwright.async_api.expect(comment_input).to_have_value("削除対象のコメント")
     await playwright.async_api.expect(detail.locator("#user-comment-input-hint")).to_be_visible()
+    await playwright.async_api.expect(comment_input).to_have_accessible_description(
+        "空にして保存すると、ユーザーコメント節を削除する。"
+    )
     await comment_input.fill("")
     await detail.get_by_role("button", name="コメントを保存").click()
     await _wait_and_close_operation_notice(page, "ユーザーコメントを削除しました")
@@ -179,7 +182,7 @@ async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_processing(
     _set_entry_state(path, "processing")
     harness.current_state.publish()
 
-    await detail.get_by_role("alert").filter(has_text="processingへ移動したため").wait_for(state="visible")
+    await detail.get_by_role("alert").filter(has_text="処理中へ移動したため").wait_for(state="visible")
     await playwright.async_api.expect(detail).to_be_visible()
     await playwright.async_api.expect(comment_input).to_have_value("processing移動後も保持する入力")
     await playwright.async_api.expect(comment_input).to_be_focused()

@@ -38,7 +38,7 @@ def test_accepts_canonical_plan(repo: tuple[pathlib.Path, str], *, bug: bool, ex
         else []
     )
     if bug:
-        expected.append("バグ調査結果が旧形式の本文内表である。新規作成・改訂では計画本体の`## 原因分析`へ移行する")
+        expected.append("バグ調査結果が旧形式の本文内表である。新規作成・改訂では対象WIの`## 原因分析`へ移行する")
     expected.append("`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連WI`へ移行する")
     assert warnings == expected
 

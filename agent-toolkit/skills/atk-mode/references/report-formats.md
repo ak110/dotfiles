@@ -103,14 +103,10 @@
 
 ## 報告用UWIのフォーマット
 
-報告用UWI（`agent-toolkit:atk-mode/playbooks/report-completion.md`の手順6）の`## 選択肢と帰結`は、`agent-toolkit:atk-mode/references/uwi-format.md`「承認型ごとの内容」の事後承認型の2択とする。
-冒頭の問いには次の1文を使う。
-
-```text
-<実行日>の<対象リポジトリ名>の作業結果について、この対応で問題ありませんか？
-```
-
-問いに続けて、成果の要点と、回答の前に確かめてほしい項目（未達・持ち越し、自ら確定した判断の有無）を1〜2文で書く。
+報告用UWI（`agent-toolkit:atk-mode/playbooks/report-completion.md`の手順6）は`--question-type=report`で保存し、問い、選択肢、答え方を書かない。
+表題（H1）は`# 報告: <実行日>の<対象リポジトリ名>の作業結果`の形にする。
+冒頭には、成果の要点と、残る事項（未達・持ち越し、個別UWIで尋ねる事項）の有無を1〜2文で書く。
+操作を依頼しない報告にコマンドは不要であり、別のUWIで操作を案内する場合は手順を重ねない。
 冒頭の語句は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」で選ぶ。
 
 `## 判断材料`には、該当する項目がある場合だけ、次の順でH3を置く。
@@ -138,19 +134,19 @@
 ## 報告用UWIの確認と保存
 
 本節は`agent-toolkit:atk-mode/playbooks/report-completion.md`が定める報告用UWIに適用する。
-通常の事後承認型UWIには共通の起草手順を適用し、`--question-type=post-approval`だけでは報告用と判定しない。
+報告用UWIは`--question-type=report`で識別し、本人の判断を求める個別UWIには共通の起草手順を適用する。
 通常WIの共通起草の3資料は、報告用だけの保存のためには取得しない。
 由来、認可、保存先、回答済みUWIとの整合は、`agent-toolkit:atk-mode/playbooks/wi-saving.md`の該当する操作の契約に従う。
 
 1. 元の要求と実施結果・根拠を比べ、未達、未確認、持ち越しを成果と分ける。
    事実、他者の報告、推測、自分の判断を分け、未確定のユーザー固有の判断は確認の手順へ渡す。
 2. 原稿をファイルへ保存し、dry-runで検証する。
-   新規は`atk wi add --type=uwi --question-type=post-approval --dry-run --body-file <原稿の絶対パス> --source <起動スキルに対応するsource>`を使う。
+   新規は`atk wi add --type=uwi --question-type=report --dry-run --body-file <原稿の絶対パス> --source <起動スキルに対応するsource>`を使う。
    更新は`atk wi edit <UWI名> --dry-run --body-file <原稿の絶対パス>`を使う。
    sourceは`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」に従い、原稿のfrontmatterで指定済みなら`--source`を省ける。
    入力の原稿、抽出の保存先、終了状態、両出力を対応付け、検証か抽出の保存に失敗した結果は使わない。
-3. dry-runの抽出を先に読み、問い、成果の要点、確かめてほしい項目が冒頭だけで分かるかを、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」で判定する。
-   次に全文を読み、`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」の自己完結、節の間の重複、原稿と抽出の一致を確かめる。
+3. dry-runの抽出を先に読み、成果の要点と残る事項の有無が冒頭だけで分かるかを、`agent-toolkit:atk-mode/references/uwi-format.md`「構成」で判定する。
+   次に全文を読み、同書「載せる情報」「ユーザーへ操作を依頼する場合」のうち該当する基準と、`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」の自己完結、節の間の重複を確かめる。
    一致は同じdry-runに`--compare-opening-file <抽出の絶対パス>`を付けて、改行、前後の空白、末尾の空行を含む完全一致で判定する。
    原稿を変えたら手順2へ戻り、新しい抽出で確かめる。
    本保存へ同じ指定を付けると、一致した時だけ保存する。

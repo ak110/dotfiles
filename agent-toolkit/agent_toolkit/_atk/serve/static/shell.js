@@ -41,12 +41,16 @@ function screenNameFromUrl(url) {
   return "wi";
 }
 
+let currentScreenUrl = location.href;
+
 function showScreen(name, focusHeading = false) {
+  currentScreenUrl = location.href;
   document.body.dataset.screen = name;
   document.title = `${{wi: "ワークアイテム", plans: "計画ファイル", sessions: "セッション", agents: "エージェント", settings: "設定", usage: "利用枠"}[name]} - atk serve`;
   for (const screen of document.querySelectorAll(".screen")) {
     screen.hidden = screen.id !== `screen-${name}`;
   }
+  for (const picker of document.querySelectorAll(".app-nav-picker")) picker.value = name;
   for (const link of document.querySelectorAll("nav.app-nav a[href]")) {
     const current = screenNameFromUrl(link.href) === name;
     if (current) link.setAttribute("aria-current", "page");
@@ -68,17 +72,48 @@ document.addEventListener("click", (event) => {
   const link = event.target.closest("nav.app-nav a[href]");
   if (!link || !isSameOriginNavigation(link, event)) return;
   event.preventDefault();
-  const url = new URL(link.href, location.href);
+  navigateTo(link.href);
+});
+
+function navigateTo(href) {
+  const url = new URL(href, location.href);
   const name = screenNameFromUrl(url);
-  if (name === document.body.dataset.screen) return;
+  if (name === document.body.dataset.screen || !canSwitchScreen(name)) return;
   history.pushState({atkShell: true}, "", url);
+  showScreen(name, true);
+}
+
+function canSwitchScreen(name) {
+  return document.dispatchEvent(new CustomEvent("atk-screen-will-change", {detail: name, cancelable: true}));
+}
+
+window.addEventListener("popstate", () => {
+  const name = screenNameFromUrl(location.href);
+  if (name !== document.body.dataset.screen && !canSwitchScreen(name)) {
+    history.pushState({atkShell: true}, "", currentScreenUrl);
+    return;
+  }
   showScreen(name, true);
 });
 
-window.addEventListener("popstate", () => showScreen(screenNameFromUrl(location.href), true));
-
 document.addEventListener("DOMContentLoaded", () => {
   const initialName = document.body.dataset.screen;
+  for (const nav of document.querySelectorAll(".app-nav")) {
+    const picker = document.createElement("select");
+    picker.className = "app-nav-picker";
+    picker.setAttribute("aria-label", "画面を切り替える");
+    const links = new Map();
+    for (const link of nav.querySelectorAll("a[href]")) {
+      const name = screenNameFromUrl(link.href);
+      links.set(name, link.href);
+      picker.add(new Option(link.textContent, name));
+    }
+    picker.addEventListener("change", () => {
+      navigateTo(links.get(picker.value));
+      picker.value = document.body.dataset.screen;
+    });
+    nav.after(picker);
+  }
   showScreen(initialName);
   for (const screen of screens.values()) void screen.init();
 });

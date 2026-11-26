@@ -1,5 +1,7 @@
 # CIの判定・待機・失敗の扱い
 
+公開を担当するエージェントが、CIの結果を観測して失敗を直してから完了とし、壊れた変更が公開されたまま残らないようにする。
+
 公開先のCI定義の有無の判定、`wait_ci.py`（`atk run-script wait-ci`）による待機、CIの失敗の証拠の取得と修正の公開を定める。
 `agent-toolkit:atk-mode/playbooks/publish.md`の「push前」「pushと監視」の段から使う。
 CIの失敗を認識したら`agent-basics:bugfix`を起動し、失敗の分類と対処は同スキルの`references/ci-failures.md`に従う。
@@ -103,6 +105,7 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
 - 全ての監視対象が終了コード0で終わった時だけ「CI通過」とする。
   出力が空の時と、成功の完了を示す表示が無い時は、未判定として状態を直接確かめる。
 - 判定の対象はbaselineに保存したcommit SHAのrunであり、push後に送信元のブランチが進んでも同じSHAで判定する。
+- 試験自身の不良で結果が揺れると確かめた試験が同じSHAの再実行だけで成功した時は、「CI通過」とせず本書「選択の流れ」の手順7で直す。
 - 成功した時も、対象プロジェクトが定める段階別と全体の所要時間の基準を読んで実際の所要時間と比べ、既存のCIの検証記録へ残す。
   比べ方と超過した時の改善の判断は`agent-basics:check-execution/references/diagnostics.md`「読む出力」に従う。
   所要時間の基準と監視の`--timeout`は別のものであり、所要時間の超過は改善の判断に使い、公開の停止と検証の省略の理由から外す。
@@ -178,7 +181,9 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
    失敗の全体を取得できない時は、先にその原因を除く。
 6. 再pushのたびに新しいbaselineで監視し、前回失敗したジョブが新しいpushの監視の対象に含まれることを確かめる。
    含まれない場合は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正commitが必要なCI失敗を修正するエージェント」の修正系列の定めに従う。
-7. 原因の調査でCIのジョブを手動で再実行した場合も、同じbaselineで`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を呼び直し、baselineに基づく判定を再現できるこのスクリプトに監視を任せる。
+7. 原因の調査でCIのジョブを手動で再実行した場合も、同じbaselineで`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を呼び直して監視させる。
+   再実行の成功は診断の結果であり、試験自身が原因で結果が揺れると確かめた時は、同じ公開系列の次の候補へ進む前に原因を直し、元の発生条件と保つべき保証で対象の試験を通す。
+   一時障害か原因が未確定なら、この扱いにせず再実行の診断を続ける。
    許された再実行でも失敗が解消しない場合は最終状態を「CI未通過」とし、その事実と帰属の判定を、完了の報告、採否の記録、`atk run-script plan-progress -- <記録先> --handoff`で引き継ぎ記録に記す。
 
 ### 原因commitへ取り込む区分

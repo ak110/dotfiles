@@ -15,7 +15,7 @@ import psutil
 from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.codex_protocol import AppServerError, JsonRpcResponseError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import codex_fast_mode, process_tree
 
 _LOG = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ class CodexResource:
     ) -> None:
         self.resource = resource
         self._notification, self._server_request, self._failure = notification, server_request, failure
-        self._sent: dict[str, Callable[[], None]] = {}
+        self._sent: dict[str, Callable[[str | None], None]] = {}
         self._requests = 0
         self._sequence = 0
         self._dispatch = asyncio.Lock()
@@ -132,6 +132,7 @@ class CodexResource:
         self._task: asyncio.Task[None] | None = None
         self.process: Any = None
         self.parent_environment: dict[str, str] | None = None
+        self._supports_outgoing_speed = False
 
     @classmethod
     def create(
@@ -164,18 +165,34 @@ class CodexResource:
             await raw.start()
             return {"pid": raw.process.pid, "environment": raw.parent_environment}
 
-        async def request(method: str, params: dict | None, ticket: str | None) -> dict:
+        async def request(method: str, params: dict | None, ticket: str | None, outgoing_speed: dict | None = None) -> dict:
+            outgoing_params = params if params is not None else {}
+
+            def sent_tier() -> str | None:
+                return outgoing_params.get("serviceTier") if outgoing_speed is not None else None
+
             async def publish_sent() -> None:
                 if ticket is None:
                     return
                 if controller is not None and not controller.transferred:
-                    controller.record_sent(ticket)
+                    controller.record_sent(ticket, sent_tier())
 
             try:
-                value = await raw.request(method, params, on_sent_async=publish_sent)
-                return {"result": value}
+                if outgoing_speed is None:
+                    value = await raw.request(method, params, on_sent_async=publish_sent)
+                else:
+                    value = await raw.request(
+                        method,
+                        outgoing_params,
+                        on_sent_async=publish_sent,
+                        before_send=lambda: codex_fast_mode.apply_outgoing_metadata(outgoing_params, outgoing_speed),
+                    )
+                return {"result": value, "service_tier": sent_tier()}
             except JsonRpcResponseError as error:
-                return {"response_error": {"method": method, "code": error.code, "message": str(error), "data": error.data}}
+                return {
+                    "response_error": {"method": method, "code": error.code, "message": str(error), "data": error.data},
+                    "service_tier": sent_tier(),
+                }
 
         async def send(message: dict) -> None:
             await raw.send(message)
@@ -207,6 +224,7 @@ class CodexResource:
             }
         )
         controller = cls(Resource(runtime, identifier, runtime.target), notification, server_request, failure)
+        controller._supports_outgoing_speed = True
         return controller
 
     @property
@@ -242,24 +260,37 @@ class CodexResource:
         self.process = types.SimpleNamespace(pid=metadata["pid"])
         self.parent_environment = metadata["environment"]
 
-    async def request(self, method: str, params: dict | None = None, *, on_sent: Callable[[], None] | None = None) -> dict:
+    async def request(
+        self,
+        method: str,
+        params: dict | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+        outgoing_speed: dict | None = None,
+    ) -> dict:
+        if outgoing_speed is not None and not self._supports_outgoing_speed:
+            if params is None:
+                params = {}
+            with codex_fast_mode.apply_legacy_outgoing_metadata(params, outgoing_speed):
+                pass
+            outgoing_speed = None
         ticket = str(uuid.uuid4()) if on_sent is not None else None
         self._requests += 1
         if ticket is not None and on_sent is not None:
-            self._sent[ticket] = on_sent
-        try:
-            response = await self.resource.operation(
-                "call",
-                operation="request",
-                arguments={
-                    "method": method,
-                    "params": params,
-                    "ticket": ticket,
-                },
-            )
 
+            def sent(tier: str | None) -> None:
+                if tier is not None and params is not None:
+                    params["serviceTier"] = tier
+                on_sent()
+
+            self._sent[ticket] = sent
+        arguments = {"method": method, "params": params, "ticket": ticket}
+        if outgoing_speed is not None:
+            arguments["outgoing_speed"] = outgoing_speed
+        try:
+            response = await self.resource.operation("call", operation="request", arguments=arguments)
             if ticket is not None:
-                self.record_sent(ticket)
+                self.record_sent(ticket, response.get("service_tier"))
             if error := response.get("response_error"):
                 raise JsonRpcResponseError(error["method"], error["code"], error["message"], error["data"])
             return response["result"]
@@ -268,10 +299,10 @@ class CodexResource:
                 self._sent.pop(ticket, None)
             self._requests -= 1
 
-    def record_sent(self, ticket: str) -> None:
+    def record_sent(self, ticket: str, tier: str | None = None) -> None:
         callback = self._sent.pop(ticket, None)
         if callback is not None:
-            callback()
+            callback(tier)
 
     async def notify(self, method: str, params: dict | None = None) -> None:
         await self.resource.operation("call", operation="notify", arguments={"method": method, "params": params})
@@ -361,6 +392,7 @@ class CodexResource:
         return {
             **self.resource.descriptor(),
             "sequence": self._sequence,
+            "supports_outgoing_speed": self._supports_outgoing_speed,
             "environment": self.parent_environment,
             "pid": self.process.pid if self.process is not None else None,
         }
@@ -375,6 +407,7 @@ class CodexResource:
         failure: Callable[[BaseException], Awaitable[None]],
     ) -> CodexResource:
         client = cls(Resource.attach(runtime, descriptor), notification, server_request, failure)
+        client._supports_outgoing_speed = descriptor.get("supports_outgoing_speed") is True
         client._sequence = descriptor["sequence"]
         client.parent_environment = descriptor["environment"]
         client.process = types.SimpleNamespace(pid=descriptor["pid"])

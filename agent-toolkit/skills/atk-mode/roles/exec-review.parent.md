@@ -4,6 +4,7 @@
 起動対象: exec-review.subagent.md
 ```
 
+実装を担当したレーン担当が、変更を独立したレビューで確かめて指摘を収束させ、欠陥を含む変更をユーザーへ届けないようにするための文書である。
 実装を終えた変更差分の実行レビューを起動し、返却を受領して、修正と収束を管理する起動側の文書である。
 起動するのは実装を担当したレーン担当（single-laneではメイン）自身であり、`write-plan`ではメイン、CI修正の系列では`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`が定める担当である。
 起動から収束までは「条件と行動」の該当資料を全文読み、示された節を適用する。
@@ -16,12 +17,15 @@
 <!-- 生成元: skills/atk-mode/roles/exec-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
-通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
+通常起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意する。
+`agents_server.start`に役割文書の`subagent_md_path`と、以下の役割固有の入力をまとめた`extra_params`を渡す。
+`mode`は省略する（明示する場合は`mode: task`）。
+全体作業契約の絶対パスは`extra_params`の外の`whole_contract_path`に渡す。
 
 - 必須入力名: `レビュー基準`、`引き継ぎ記録先`
 - 任意入力名: `計画`、`CI記録`、`WI記録`、`review_contract`、`評価用WI原本`、`修正系列の開始時のHEAD`、`原因commitOID`、`開始時のHEAD`
 - 任意入力名: `対象HEAD`、`レーン識別子`、`レビュー種別`、`round`、`対象ファイル限定`、`Git管理外の変更`、`前回確認版`、`担当モデル`、`rewrite_map`
-- 任意入力名: `受理済みの完成条件証拠`
+- 任意入力名: `受理済みの完成条件証拠`、`検証結果の返却原本`
 
 <!-- input-contract:exec-review:end -->
 
@@ -112,6 +116,8 @@
 再レビュー: <要（範囲・失われる前提・理由）|不要（評価前提の所在）>
 <WI> 完成条件<N>: 達成|未達|根拠不足 — 根拠: <実行結果またはパス:行>
 <WI> 原文要求<N>「<要求単位の逐語>」: 達成|未達|根拠不足 — 根拠: <実行結果またはパス:行>
+<WI> 引用照合<N>: 達成|未達|根拠不足|除外 — 根拠: <原文要求行への対応または除外の分類と根拠>
+<WI> 引用除外<N>.<K>: <除外区分> — 根拠: <原文単位の出所と理由>
 ```
 
 `達成`行の`根拠:`には`agent-toolkit:atk-mode/references/review-record.md`「根拠の書き方」の所在と観測内容の組を書き、この組を示せない条件は`根拠不足`とする。

@@ -92,3 +92,61 @@ def _write_transcript(directory: pathlib.Path, entries: list[dict]) -> pathlib.P
         encoding="utf-8",
     )
     return transcript
+
+
+def repl_send_to_user_entries(call: str, args: dict, *, ok: bool) -> list[dict]:
+    """Claude CodeのREPLからMCPのsend_to_userを呼んだ実記録の構造を再現する。
+
+    応答は別IDのPollの結果と、同じIDの仮想tool_resultのエントリーのtoolUseResultにだけ現れる。pyfltr: allow-comment
+    """
+    response = json.dumps({"id": "x", "ok": ok, "reason": "理由"})
+    return [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "tool_use", "id": "repl-call", "name": "REPL", "input": {"code": "await send({})"}}]
+            },
+        },
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "poll-call", "name": "Poll", "input": {}}]}},
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "repl-call", "content": "(dispatched #3)", "is_error": False}
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "poll-call",
+                        "content": f"<event><result>{response}</result></event>",
+                    }
+                ]
+            },
+        },
+        {
+            "type": "assistant",
+            "isVirtual": True,
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": call,
+                        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                        "input": args,
+                    }
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "isVirtual": True,
+            "turnCompanion": True,
+            "message": {"content": [{"type": "tool_result", "tool_use_id": call, "content": "", "is_error": False}]},
+            "toolUseResult": response,
+        },
+    ]

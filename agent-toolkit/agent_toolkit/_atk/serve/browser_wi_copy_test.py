@@ -85,20 +85,13 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
           return {
             width: summaryRect.width,
             prefixWidth: context.measureText(summary.textContent.slice(0, 6) + '…').width,
-            summaryTop: summaryRect.top,
             summaryBottom: summaryRect.bottom,
-            summaryRight: summaryRect.right,
-            statusTop: statusRect.top,
-            statusLeft: statusRect.left
+            statusTop: statusRect.top
           };
         }""")
         assert metrics["width"] >= metrics["prefixWidth"], metrics
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-        if width <= 500:
-            assert metrics["summaryTop"] == metrics["statusTop"], metrics
-            assert metrics["summaryRight"] <= metrics["statusLeft"], metrics
-        else:
-            assert metrics["summaryBottom"] <= metrics["statusTop"], metrics
+        assert metrics["summaryBottom"] <= metrics["statusTop"], metrics
 
     await assert_readable()
 
@@ -208,7 +201,7 @@ async def test_copy_all_work_items_preserves_filters_across_pages(browser_harnes
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await _open_filters(page)
     await page.get_by_label("重要", exact=True).select_option("yes")
-    await page.get_by_label("target-repo", exact=True).select_option("copy/repo")
+    await page.get_by_label("対象リポジトリ", exact=True).select_option("copy/repo")
     await page.get_by_label("検索", exact=True).fill("コピー対象")
     await playwright.async_api.expect(page.locator("#pagination-status")).to_have_text("ページ 1 / 2（全101件）")
     await page.get_by_role("button", name=re.compile("^次のページ")).click()

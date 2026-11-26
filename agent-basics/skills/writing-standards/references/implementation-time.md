@@ -1,5 +1,6 @@
 # 実装時のコーディング品質
 
+コードを実装する担当が既存の構造と契約を読んで必要な範囲を変更し、ユーザーが現在の機能を保った保守しやすい成果を得られるようにする。
 コードを編集する時の読解、書き方、データ、資源、セキュリティとエラー処理、コメント、lintの基準を定める。
 主に原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）を実装へ適用する。
 セキュリティ、資源、エラー処理の節は原則4（`agent-basics:writing-standards/references/quality-principles-constraints.md`）の適用である。

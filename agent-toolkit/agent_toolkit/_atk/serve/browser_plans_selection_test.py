@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import dataclasses
 import os
 import urllib.parse
@@ -122,7 +123,7 @@ async def test_multiple_roots_keep_selection_search_update_and_copy_portable_pat
         current_heading = await heading.inner_text()
         headings.add(current_heading)
         headings_by_index.append(current_heading)
-        await harness.page.get_by_role("button", name="計画ファイルのパスをコピー").click()
+        await harness.page.get_by_role("button", name="パスをコピー").click()
         assert await harness.page.evaluate("navigator.clipboard.readText()") == expected_paths[current_heading]
     assert headings == {"新root", "旧root"}
 
@@ -160,10 +161,16 @@ async def test_initial_plan_restore_preserves_earlier_selection(
         response = await route.fetch()
         started.set()
         await release.wait()
-        await route.fulfill(response=response)
+        if not select_during_initial_fetch:
+            await route.fulfill(response=response)
+        else:
+            # 選択変更で中断した初回本文はブラウザーへ再配信できない場合がある。 pyfltr: allow-comment
+            with contextlib.suppress(playwright.async_api.Error):
+                await route.fulfill(response=response)
         fulfilled.set()
 
-    await page.route("**/api/plans/files", hold_initial_list, times=1)
+    endpoint = "**/api/plans/file?*path=plan.md*" if select_during_initial_fetch else "**/api/plans/files"
+    await page.route(endpoint, hold_initial_list, times=1)
     initial_path = "plan.md" if select_during_initial_fetch else "second.md"
     try:
         await page.goto(
@@ -172,7 +179,6 @@ async def test_initial_plan_restore_preserves_earlier_selection(
         )
         await asyncio.wait_for(started.wait(), timeout=10)
         if select_during_initial_fetch:
-            await page.evaluate("window.dispatchEvent(new Event('focus'))")
             await page.locator("#files").get_by_text("second.md", exact=True).click()
             await playwright.async_api.expect(page.locator("#preview h1")).to_have_text("後の計画")
             await playwright.async_api.expect(page.locator("#preview")).to_have_attribute("aria-busy", "false")
@@ -287,10 +293,12 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
     stat = second_path.stat()
     os.utime(second_path, (stat.st_atime, stat.st_mtime + 1))
     # ウィンドウのフォーカス復帰時と同じ処理で強制再同期を起動する。
-    await harness.page.evaluate("() => window.dispatchEvent(new Event('focus'))")
-    await harness.page.get_by_role("heading", name="再同期後").wait_for(state="visible")
+    async with harness.page.expect_response("**/api/plans/files"):
+        await harness.page.evaluate("() => window.dispatchEvent(new Event('focus'))")
+    assert second_request_count == 1
     release_first.set()
     await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
+    await harness.page.get_by_role("heading", name="再同期後").wait_for(state="visible")
     await harness.page.evaluate(
         "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     )

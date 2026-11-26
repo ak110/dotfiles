@@ -1,5 +1,6 @@
 # WIの選定：調査とレーン分け
 
+目的: 選定メインが時間目標を目安に配分を比べ、依存関係とレーン数の上限を守り、書込競合を避けて処理可能な候補を全件進められるようにする。
 選定メインが、候補の規模と書込対象を調べ、今回の集合とレーン分けと所要時間の見込みを決める手順書である。
 `agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の後に上から実行し、終えたら同書「集合確定直後の処理開始」へ戻る。
 欄の書式は`agent-toolkit:atk-mode/references/process-wi-selection-format.md`、見込みの補正は`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`が定める。

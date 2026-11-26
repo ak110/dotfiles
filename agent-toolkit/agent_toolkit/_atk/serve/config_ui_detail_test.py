@@ -361,7 +361,7 @@ process.stdout.write(JSON.stringify({
 def test_assets_preserve_user_announcement_across_user_and_sse_request_orders() -> None:
     result = _run_node_ui(
         """
-async function runCase(startOrder, completionOrder) {
+async function runCase(startOrder) {
   const resolvers = {};
   let currentKind = '';
   fetchHandler = async url => new Promise(resolve => {
@@ -374,16 +374,16 @@ async function runCase(startOrder, completionOrder) {
     requests[kind] = loadEntries({announce: kind === 'user'});
     await Promise.resolve();
   }
-  for (const kind of completionOrder) {
-    resolvers[kind].resolve({
-      ok: true, status: 200, statusText: 'OK',
-      json: async () => ({
-        entries: [{kind: 'awi', state: 'inbox', filename: `${kind}.md`, summary: kind}],
-        warnings: []
-      })
-    });
-    await requests[kind];
-  }
+  const [kind] = startOrder;
+  if (Object.keys(resolvers).length !== 1) throw new Error('同じ一覧の取得は共有する');
+  resolvers[kind].resolve({
+    ok: true, status: 200, statusText: 'OK',
+    json: async () => ({
+      entries: [{kind: 'awi', state: 'inbox', filename: `${kind}.md`, summary: kind}],
+      warnings: []
+    })
+  });
+  await Promise.all(Object.values(requests));
   return {
     status: elements['result-status'].textContent,
     rows: entries.map(entry => entry.filename),
@@ -391,10 +391,8 @@ async function runCase(startOrder, completionOrder) {
   };
 }
 
-const userThenSseUserFirst = await runCase(['user', 'sse'], ['user', 'sse']);
-const userThenSseSseFirst = await runCase(['user', 'sse'], ['sse', 'user']);
-const sseThenUserSseFirst = await runCase(['sse', 'user'], ['sse', 'user']);
-const sseThenUserUserFirst = await runCase(['sse', 'user'], ['user', 'sse']);
+const userThenSse = await runCase(['user', 'sse']);
+const sseThenUser = await runCase(['sse', 'user']);
 
 elements['result-status'].textContent = 'SSE前の通知';
 fetchHandler = async () => ({
@@ -403,23 +401,21 @@ fetchHandler = async () => ({
 });
 await loadEntries({announce: false});
 process.stdout.write(JSON.stringify({
-  cases: [userThenSseUserFirst, userThenSseSseFirst, sseThenUserSseFirst, sseThenUserUserFirst],
+  cases: [userThenSse, sseThenUser],
   sseOnlyStatus: elements['result-status'].textContent
 }));
 """
     )
-    assert [case["status"] for case in result["cases"]] == ["1件を表示"] * 4
-    assert result["cases"][0]["rows"] == ["sse.md"]
+    assert [case["status"] for case in result["cases"]] == ["1件を表示"] * 2
+    assert result["cases"][0]["rows"] == ["user.md"]
     assert result["cases"][1]["rows"] == ["sse.md"]
-    assert result["cases"][2]["rows"] == ["user.md"]
-    assert result["cases"][3]["rows"] == ["user.md"]
     assert result["sseOnlyStatus"] == "SSE前の通知"
 
 
 def test_assets_state_sets_match_python_states() -> None:
     labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.SCRIPTS["wi_state.js"], re.DOTALL)
     assert labels is not None
-    assert set(re.findall(r"(\w+):", labels.group(1))) == set(_wi_constants.WI_STATES)
+    assert set(_wi_constants.WI_STATES) <= set(re.findall(r"(\w+):", labels.group(1)))
 
     deletable = re.search(r"const DELETABLE_STATES = new Set\(\[(.*?)\]\);", assets.SCRIPTS["wi_state.js"])
     assert deletable is not None

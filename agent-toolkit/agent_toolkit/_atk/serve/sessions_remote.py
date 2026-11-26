@@ -190,6 +190,8 @@ async def _remote_call(context: SessionsContext, host: str, op: str, args: dict[
         else:
             if response.get("ok"):
                 return response
+            if (status := response.get("read_failure")) in (403, 404, 503):
+                _atk_serve_remote.raise_read_failure(status)
             logger.warning(
                 "セッション記録のRPCがエラーを返した host=%s op=%s: %s（単発SSHへ）",
                 host,
@@ -198,10 +200,14 @@ async def _remote_call(context: SessionsContext, host: str, op: str, args: dict[
             )
     argument = {"read": "path", "search": "query"}.get(op)
     argv = [str(args[argument])] if argument is not None else []
+    if op == "search" and "paths" in args:
+        argv.append(str(args["paths"]))
     raw = await context.runner(host, op, argv)
     payload = json.loads(raw)
     if not isinstance(payload, dict):
         raise ValueError(f"リモート応答の形式が不正です: host={host}")
+    if (status := payload.get("read_failure")) in (403, 404, 503):
+        _atk_serve_remote.raise_read_failure(status)
     return payload
 
 
@@ -211,8 +217,8 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
         payload = await _remote_call(context, host, "list", {})
     except Exception as error:  # noqa: BLE001
         logger.warning("リモートのセッション一覧を取得できません host=%s: %s", host, error)
-        next_action = f"`ssh {host}`で接続できるかと、接続先で`uv --version`を実行できるかを確かめてから一覧を再読み込みする"
-        return [], {"host": host, "reason": f"記録を取得できません: {error}。次の操作: {next_action}"}
+        retryable = _atk_serve_remote.read_failure_status(error) == 503
+        return [], {"host": host, "reason": f"記録を取得できません: {error}", "retryable": str(retryable).lower()}
     entries: list[SessionSummary] = []
     for item in payload.get("entries", []):
         if not isinstance(item, dict) or not isinstance(item.get("path"), str):

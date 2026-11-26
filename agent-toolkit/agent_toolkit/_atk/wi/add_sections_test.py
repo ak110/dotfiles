@@ -14,7 +14,12 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._testing import git_repository
-from agent_toolkit._testing.wi_add_support import _cmd_add_args, _patch_cmd_add_operations, _run_public_add
+from agent_toolkit._testing.wi_add_support import (
+    _cmd_add_args,
+    _patch_cmd_add_operations,
+    _run_public_add,
+    _write_origin_review,
+)
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_SECTIONS as _AGENT_AWI_SECTIONS
@@ -228,7 +233,9 @@ def test_add_accepts_optional_sections_in_order(
         f"{_AGENT_AWI_BODY}\n\n## 原因分析\n原因\n\n## 調査結果と判断根拠\n根拠"
         "\n\n## 完成条件\n結果\n\n## ユーザー指摘の逐語引用\n原文"
     )
-    _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    args = _cmd_add_args(tmp_path, message, source="test", dry_run=True)
+    args.origin_review = [_write_origin_review(tmp_path, message, "原文")]
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
     assert capsys.readouterr().err == ""
 
 

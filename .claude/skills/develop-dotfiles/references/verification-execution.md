@@ -9,6 +9,10 @@
 枠はホスト全体で2つ（pyfltr 3.30.0以降）で、pytestと統合の検証は開始からworker・子孫の回収まで枠を持ち、入れ子の実行は祖先の所有を継ぎ、収集だけのpytest（`--collect-only`）は枠を取らない。
 シェルからの起動は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の形式と3分類に従う。
 
+方式や性能を比べるための全量計測（全ファイルのPylintを方式ごとに比べる実行など）は、変更の受入に必要な検証と分けて扱う。
+まず既存の実行記録の再利用と代表対象での比較を選び、全量でしか判断できない比較だけを、自分の巡回の必須検証と重ならない時間帯に置き、比較を繰り返す場合はその時間帯で直列に実行する。
+受入に必要な検証は直列化せず、枠の数・検査対象・成否条件は変えない。
+
 1. 対象を[verification.md](verification.md#変更範囲の検証の値)「変更範囲の検証の値」で確定する。
    `.venv`を作り直しうるチェック（`uv run --python`や依存の更新など）は同じ仮想環境のパスでは直列に実行し、並行する場合は別の仮想環境のパスを指定する。
 2. 修正の条件を選ぶ。
@@ -32,6 +36,7 @@
    全量は統合後のdevelop CIで実行する。
    `uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で、文書を読む横断試験やhookの入口を経由する試験を含む、根拠付きの候補のJSONを取得する。
    `required=true`の直接importのテストを引数へ加え、残る候補は実際の利用関係から採否を決める。
+   参照を含むファイル（`.json`・`.md`・`.py`）か参照検査の定義を変えた時は、参照検査`agent_toolkit_reference_invariant_test.py`が`reference_contracts`として必須集合に入り、曖昧候補の判定の対象から外れる。
    元のJSONを保持し、曖昧な候補ごとに`source`・`test`・`include`（真偽値）・`reason`（空でない文字列）を持つ`decisions`配列を足して検証の証拠へ保存する（手順7の`--consumer-review`へ渡す判定JSON）。
    候補に出ない不変条件試験、動的な呼び出し、設定の移行、通知の旧期待値、CLI全体の一覧は、[verification.md](verification.md#変更範囲の検証の値)「変更範囲の検証の値」の探索で補う。
 5. 失敗の確かめ直しには次の形を使う。
@@ -59,7 +64,7 @@
    - 起動の前に`uv run --frozen python scripts/pyfltr_precommit.py --check-argv '<予定argvのJSON配列>' --consumer-review <判定JSONの絶対パス>`で引数と必須の範囲を確かめる。
      argvは`["run", "--no-fix", "--no-always-targets", "--commands=...", "<対象パス>"]`の形とし、曖昧な候補が無ければ`--consumer-review`を省く。
    - 合成版の検証では、最新の統合先をmergeした後、同じ統合先の完全OIDを候補列挙、`--check-argv`、`--verify-run`の`--against`へ渡す。
-     候補の`cross_contracts`にある必須試験を実行し、規範の容量は合成後のファイルで判定する。
+     合成後のファイルに対して、候補の`cross_contracts`にある必須試験を実行する。
      統合先が進んだ場合は新しい組で対象を確かめ、入力が変わった証拠だけを取り直す。
      `atk lane integrate`は`pyproject.toml`の`[tool.agent-toolkit.lane-integration]`から必須の横断試験の検証を呼ぶ。
      合成候補で必要な試験の成功を再利用できなければ該当試験を実行し、失敗ならfast-forwardしない。

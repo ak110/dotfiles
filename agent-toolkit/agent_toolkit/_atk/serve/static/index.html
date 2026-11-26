@@ -9,6 +9,12 @@
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
 <body data-screen="__INITIAL_SCREEN__">
+  <div id="update-status" class="update-status notice notice-warning" hidden>
+    <span role="status"></span> <button type="button">再取得</button>
+  </div>
+  <div id="runtime-version-status" class="update-status notice notice-warning" hidden>
+    <span role="status"></span> <button type="button">版を再確認</button>
+  </div>
   <section id="screen-wi" class="screen" __WI_HIDDEN__>
   <header class="app-header">
     <div class="header-title">
@@ -22,19 +28,25 @@
         <a href="__BASE_PATH_HTML__/sessions">セッション</a>
         <a href="__BASE_PATH_HTML__/usage">利用枠</a>
         <a href="__BASE_PATH_HTML__/settings">設定</a>
-      <span class="nav-loading-slot"><span id="loading-indicator" class="nav-loading" role="status" hidden><span class="visually-hidden">読み込み中</span></span></span>
     </nav>
-    <div class="header-actions">
+  </header>
+
+  <div class="wi-screen-scroll">
+  <main class="workspace app-layout">
+    <div id="wi-page-toolbar" class="page-toolbar wi-page-toolbar">
+      <div class="page-identity">
+        <h2 id="entry-heading" class="page-heading">ワークアイテム</h2>
+        <div class="entry-heading-meta">
+          <span id="entry-count" class="secondary-text">0件（未回答の質問 0件）</span>
+          <span id="entry-period" class="secondary-text">直近2週間に作成</span>
+        </div>
+      </div>
       <button id="notification-button" class="button-secondary" type="button" hidden>通知を有効化</button>
       <button id="push-subscribe-button" class="button-secondary" type="button" hidden>閉じていても通知する</button>
       <button id="push-unsubscribe-button" class="button-secondary" type="button" hidden>Web Pushを解除</button>
       <button id="refresh-button" class="button-secondary" type="button">今すぐ同期</button>
       <button id="create-button" class="button-primary" type="button">新規追加</button>
     </div>
-  </header>
-
-  <div class="wi-screen-scroll">
-  <main class="app-layout">
     <aside class="filters card" aria-label="フィルター条件">
       <fieldset class="wi-display-mode">
         <legend>表示モード</legend>
@@ -43,50 +55,50 @@
         <label><input id="wi-mode-waiting" type="radio" name="wi-display-mode" value="waiting">判断待ち</label>
       </fieldset>
       <div id="waiting-filters" class="filter-grid" hidden>
-        <label for="waiting-target-filter">判断待ちのtarget-repo</label>
-        <select id="waiting-target-filter"><option value="">all</option></select>
+        <label for="waiting-target-filter">判断待ちの対象リポジトリ</label>
+        <select id="waiting-target-filter"><option value="">すべて</option></select>
       </div>
       <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
-      <details open>
+      <details>
         <summary>条件検索の入力</summary>
         <div class="filters-body">
           <label for="search-input">検索</label>
-          <input id="search-input" type="search" placeholder="本文・ファイル名・target-repo・sourceを検索">
+          <input id="search-input" type="search" placeholder="本文・ファイル名・リポジトリ・出所を検索">
 
           <div class="filter-grid">
-            <label for="kind-filter">type</label>
+            <label for="kind-filter">種別</label>
             <select id="kind-filter">
-              <option value="all">all</option>
-              <option value="awi">awi</option>
-              <option value="uwi">uwi</option>
+              <option value="all">すべて</option>
+              <option value="awi">作業（AWI）</option>
+              <option value="uwi">ユーザー向け（UWI）</option>
             </select>
-            <label for="state-filter">state</label>
+            <label for="state-filter">状態</label>
             <select id="state-filter">
-              <option value="active">active</option>
-              <option value="processable">processable</option>
-              <option value="all" selected>all</option>
-              <option value="inbox">inbox</option>
-              <option value="processing">processing</option>
-              <option value="hold">hold</option>
-              <option value="adopted">adopted</option>
-              <option value="rejected">rejected</option>
+              <option value="active">未完了</option>
+              <option value="processable">受信・処理中</option>
+              <option value="all" selected>すべて</option>
+              <option value="inbox">受信</option>
+              <option value="processing">処理中</option>
+              <option value="hold">保留</option>
+              <option value="adopted">採用</option>
+              <option value="rejected">却下</option>
             </select>
-            <label for="period-filter">period</label>
+            <label for="period-filter">期間</label>
             <select id="period-filter">
               <option value="2w">直近2週間</option>
               <option value="4w">直近4週間</option>
               <option value="8w">直近8週間</option>
               <option value="all" selected>全期間</option>
             </select>
-            <label for="answer-filter">answered</label>
+            <label for="answer-filter">回答</label>
             <select id="answer-filter">
-              <option value="all">all</option>
-              <option value="no">no</option>
-              <option value="yes">yes</option>
+              <option value="all">すべて</option>
+              <option value="no">未回答</option>
+              <option value="yes">回答済み</option>
             </select>
             <label for="important-filter">重要</label>
             <select id="important-filter">
-              <option value="all">all</option>
+              <option value="all">すべて</option>
               <option value="yes">重要</option>
               <option value="no">非重要</option>
             </select>
@@ -94,36 +106,32 @@
 
           <section class="additional-filters" aria-label="追加のフィルター条件">
             <div class="filter-grid">
-              <label for="target-filter">target-repo</label>
-              <select id="target-filter"><option value="">all</option></select>
-              <label for="source-filter">source の設定</label>
+              <label for="target-filter">対象リポジトリ</label>
+              <select id="target-filter"><option value="">すべて</option></select>
+              <label for="source-filter">出所</label>
               <select id="source-filter">
-                <option value="">all</option>
+                <option value="">すべて</option>
                 <option value="unset">未設定</option>
                 <option value="set">設定あり</option>
               </select>
               <label id="target-branch-filter-label" for="target-branch-filter" hidden>系統</label>
-              <select id="target-branch-filter" hidden><option value="">all</option></select>
+              <select id="target-branch-filter" hidden><option value="">すべて</option></select>
             </div>
           </section>
         </div>
       </details>
     </aside>
     <section class="entry-pane card" aria-labelledby="entry-heading">
-      <div class="pane-heading">
-        <h2 id="entry-heading" class="page-heading">ワークアイテム</h2>
-        <div class="entry-heading-meta">
-          <span id="entry-count" class="secondary-text">0件（未回答UWI 0件）</span>
-          <span id="entry-period" class="secondary-text">直近2週間に作成</span>
-        </div>
-      </div>
-      <div id="wi-effective-conditions" class="secondary-text" role="status">通常表示: state=active、直近2週間</div>
       <div id="copy-all-status" class="secondary-text" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
       <!-- 外枠は改行を保持する表示（pre-wrap）のため、タグの間へ空白を入れると余分な行になる。 -->
-      <div id="list-warning-box" class="list-warning" role="alert" hidden><details id="list-warning-details"><summary id="list-warning-summary"></summary><div id="list-warning" hidden></div></details></div>
+      <div id="list-warning-box" class="list-warning notice notice-warning" role="alert" hidden><details id="list-warning-details"><summary id="list-warning-summary"></summary><div id="list-warning" hidden></div></details></div>
       <div class="entry-columns">
-        <button id="copy-all-button" class="button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
+        <div class="list-context">
+          <div id="wi-effective-conditions" class="secondary-text" role="status">通常表示: 未完了、直近2週間</div>
+          <span id="loading-indicator" class="inline-loading" role="status" hidden>読み込み中</span>
+        </div>
+        <button id="copy-all-button" class="button-text" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
       <nav id="pagination" class="pagination" aria-label="一覧ページ">
@@ -146,30 +154,30 @@
   <dialog id="detail-dialog" class="dialog-shell detail-dialog" aria-labelledby="detail-heading">
     <article id="detail-shell" class="dialog-frame">
       <header class="dialog-header">
-        <h2 id="detail-heading">詳細</h2>
+        <h2 id="detail-heading" class="page-heading">詳細</h2>
+        <div id="detail-scroll-actions"></div>
         <button id="detail-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
       </header>
       <div id="detail-dialog-body" class="dialog-body" tabindex="0">
-        <div id="detail-alert" class="dialog-message error-message" role="alert" hidden></div>
-        <div id="detail-status" class="dialog-message success-message" role="status" hidden></div>
+        <div id="detail-alert" class="dialog-message error-message notice notice-error" role="alert" hidden></div>
+        <div id="detail-status" class="dialog-message success-message notice notice-success" role="status" hidden></div>
         <template id="detail-view-template">
           <section id="detail-view" hidden>
             <div class="detail-title-row">
               <h3 id="detail-filename"></h3>
               <span id="detail-state" class="state-badge"></span>
             </div>
-            <dl id="detail-metadata" class="metadata detail-metadata"></dl>
             <p id="readonly-notice" class="readonly-notice" hidden>この項目は編集と回答の対象外です。</p>
             <section class="detail-body">
               <h3>本文</h3>
               <div id="detail-content" class="entry-content markdown-body"></div>
             </section>
+            <dl id="detail-metadata" class="metadata detail-metadata"></dl>
           </section>
         </template>
         <section id="edit-panel" class="edit-panel" hidden>
           <h3>ファイル全体を編集</h3>
           <label for="edit-content">ファイル全体（メタデータを含む、必須）</label>
-          <p class="field-hint">frontmatterを含むMarkdownファイル全体を編集する。</p>
           <textarea id="edit-content" aria-describedby="edit-content-error" required></textarea>
           <p id="edit-content-error" class="inline-error" hidden></p>
         </section>
@@ -186,13 +194,13 @@
           <textarea id="decision-note"></textarea>
         </section>
       </div>
-      <footer id="detail-footer" class="dialog-footer detail-footer">
-        <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="UWIへの回答" hidden>
+      <footer id="detail-footer" class="dialog-footer detail-footer form-actions">
+        <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="質問への回答" hidden>
           <p id="waiting-progress" class="secondary-text" role="status" hidden></p>
           <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
           <div class="answer-row">
-            <label for="answer-input" class="visually-hidden">UWIへの回答（必須）</label>
-            <textarea id="answer-input" rows="1" placeholder="回答を入力（選択肢を押すと入力される）" aria-describedby="answer-input-error" required></textarea>
+            <label for="answer-input" class="visually-hidden">質問への回答（必須）</label>
+            <textarea id="answer-input" rows="1" placeholder="回答を入力" aria-describedby="answer-input-error" required></textarea>
             <button id="save-answer-button" class="button-primary" type="button">回答を保存</button>
           </div>
           <div class="answer-choices">
@@ -211,7 +219,7 @@
           <button id="confirm-adopt-button" class="button-primary" type="button" hidden>採用を確定</button>
           <button id="confirm-reject-button" class="button-danger" type="button" hidden>却下を確定</button>
         </div>
-        <details id="detail-more" class="detail-more" open>
+        <details id="detail-more" class="detail-more">
           <summary>その他の操作</summary>
           <div class="detail-more-actions">
             <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
@@ -219,7 +227,7 @@
             <button id="hold-button" class="button-secondary" type="button" hidden>保留</button>
             <button id="unhold-button" class="button-secondary" type="button" hidden>保留を解除</button>
             <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>受信へ戻す</button>
-            <button id="reject-button" class="button-danger" type="button" hidden>却下</button>
+            <button id="reject-button" class="button-secondary" type="button" hidden>却下</button>
             <button id="delete-button" class="button-danger" type="button">削除</button>
           </div>
         </details>
@@ -230,43 +238,43 @@
   <dialog id="create-dialog" class="dialog-shell create-dialog" aria-labelledby="create-dialog-heading">
     <form id="create-form" class="dialog-frame" novalidate>
       <header class="dialog-header">
-        <h2 id="create-dialog-heading">新規追加</h2>
+        <h2 id="create-dialog-heading" class="page-heading">新規追加</h2>
         <button id="create-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
       </header>
       <div class="dialog-body" tabindex="0">
-        <div id="create-alert" class="dialog-message error-message" role="alert" hidden></div>
-        <div id="create-status" class="dialog-message success-message" role="status" hidden></div>
+        <div id="create-alert" class="dialog-message error-message notice notice-error" role="alert" hidden></div>
+        <div id="create-status" class="dialog-message success-message notice notice-success" role="status" hidden></div>
         <div class="dialog-form-fields">
-          <label for="create-kind">種別（必須）</label>
+          <div class="dialog-field"><label for="create-kind">種別（必須）</label>
           <select id="create-kind" name="type">
-            <option value="awi">awi</option>
-            <option value="uwi">uwi</option>
+            <option value="awi">作業（AWI）</option>
+            <option value="uwi">ユーザー向け（UWI）</option>
             <option value="batch">一括登録（show形式）</option>
-          </select>
-          <label id="create-content-label" for="create-content">本文（必須）</label>
+          </select></div>
+          <div class="dialog-field"><label id="create-content-label" for="create-content">本文（必須）</label>
           <textarea id="create-content" name="message" aria-describedby="create-mode-hint create-content-error" required></textarea>
-          <p id="create-mode-hint" role="status" hidden>show形式の本文として一括取り込みします。target-repo、確認範囲、回答形式、選択肢の単件入力欄は使用しません。</p>
-          <p id="create-content-error" class="inline-error" hidden></p>
-          <div id="create-repo-fields" class="dialog-form-fields">
-            <label for="create-target">target-repo（frontmatterに無い場合は必須）</label>
+          <p id="create-mode-hint" role="status" hidden>対象リポジトリ、系統、確認範囲、回答形式、選択肢の単件入力欄は使用しません。</p>
+          <p id="create-content-error" class="inline-error" hidden></p></div>
+          <div id="create-repo-fields" class="dialog-field">
+            <label for="create-target">対象リポジトリ（本文のメタデータに無い場合は必須）</label>
             <input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error">
             <datalist id="repo-options"></datalist>
             <p id="create-target-error" class="inline-error" hidden></p>
           </div>
-          <div id="create-branch-fields" class="dialog-form-fields" hidden>
-            <label for="create-branch">系統（登録した系統の1つを選ぶ）</label>
+          <div id="create-branch-fields" class="dialog-field" hidden>
+            <label for="create-branch">系統</label>
             <select id="create-branch" name="target_branch"></select>
           </div>
           <div id="uwi-fields" class="dialog-form-fields" hidden>
-            <label for="create-scope">確認範囲（任意）</label>
-            <input id="create-scope" name="scope">
-            <label for="create-question-type">回答形式（必須）</label>
+            <div class="dialog-field"><label for="create-scope">確認範囲（任意）</label>
+            <input id="create-scope" name="scope"></div>
+            <div class="dialog-field"><label for="create-question-type">回答形式（必須）</label>
             <select id="create-question-type" name="question_type">
               <option value="yes-no">はい／いいえ</option>
               <option value="post-approval">事後承認</option>
               <option value="choice">選択式</option>
-            </select>
-            <div id="choice-fields" class="dialog-form-fields" hidden>
+            </select></div>
+            <div id="choice-fields" class="dialog-field" hidden>
               <label for="create-choices">選択肢（1行1件、2件以上必須）</label>
               <textarea id="create-choices" name="choices" aria-describedby="create-choices-error"></textarea>
               <p id="create-choices-error" class="inline-error" hidden></p>
@@ -274,7 +282,8 @@
           </div>
         </div>
       </div>
-      <footer class="dialog-footer">
+      <footer class="dialog-footer form-actions">
+        <button id="create-cancel-button" class="button-secondary" type="button">キャンセル</button>
         <button id="create-submit-button" class="button-primary" type="submit">追加</button>
       </footer>
     </form>
@@ -283,16 +292,16 @@
   <dialog id="delete-dialog" class="dialog-shell" aria-labelledby="delete-dialog-heading">
     <form id="delete-form" class="dialog-frame">
       <header class="dialog-header">
-        <h2 id="delete-dialog-heading">削除の確認</h2>
+        <h2 id="delete-dialog-heading" class="page-heading">削除の確認</h2>
         <button id="delete-close-button" class="dialog-close" type="button" aria-label="閉じる">×</button>
       </header>
       <div class="dialog-body" tabindex="0">
-        <div id="delete-alert" class="dialog-message error-message" role="alert" hidden></div>
-        <div id="delete-status" class="dialog-message success-message" role="status" hidden></div>
+        <div id="delete-alert" class="dialog-message error-message notice notice-error" role="alert" hidden></div>
+        <div id="delete-status" class="dialog-message success-message notice notice-success" role="status" hidden></div>
         <dl class="metadata">
           <dt>対象</dt><dd id="delete-target"></dd>
-          <dt>state</dt><dd><span id="delete-state" class="state-badge"></span></dd>
-          <dt>target-repo</dt><dd id="delete-target-repo"></dd>
+          <dt>状態</dt><dd><span id="delete-state" class="state-badge"></span></dd>
+          <dt>対象リポジトリ</dt><dd id="delete-target-repo"></dd>
           <dt>要約</dt><dd id="delete-summary"></dd>
         </dl>
         <label id="force-delete-row" class="force-confirmation" hidden>
@@ -301,7 +310,8 @@
         </label>
         <p id="delete-error" class="inline-error" hidden></p>
       </div>
-      <footer class="dialog-footer">
+      <footer class="dialog-footer form-actions">
+        <button id="delete-cancel-button" class="button-secondary" type="button">キャンセル</button>
         <button id="delete-submit-button" class="button-danger-confirm" type="submit">削除する</button>
       </footer>
     </form>
@@ -329,29 +339,31 @@
     <div id="plans-app" class="two-pane">
       <aside id="plans-sidebar" class="pane-sidebar">
         <div class="toolbar">
-          <label class="visually-hidden" for="plans-filter">計画ファイルを検索</label>
-          <input id="plans-filter" type="search" placeholder="検索...">
+          <h2 class="section-heading">計画ファイル</h2>
+          <label for="plans-filter">計画ファイルを検索</label>
+          <input id="plans-filter" type="search">
           <span id="search-status" role="status"></span>
         </div>
         <div id="plans-selection-status" hidden></div>
-        <div id="root-warnings" role="alert" hidden></div>
-        <div id="plans-list-error" role="alert" hidden></div>
+        <div id="root-warnings" class="notice notice-error" role="alert" hidden></div>
+        <div id="plans-list-error" class="notice notice-error" role="alert" hidden></div>
         <div id="plans-empty" class="empty-state" hidden><p>該当する計画ファイルがありません。</p><button id="plans-clear-filter" type="button">検索をクリア</button></div>
         <div id="files"></div>
         <div id="files-sentinel" hidden></div>
       </aside>
       <main>
-        <div class="toolbar">
-          <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="ファイル一覧を開く" aria-controls="plans-sidebar" aria-expanded="false">&#9776;</button>
-          <span class="spacer"></span>
-          <button id="copy-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="本文" type="button" disabled><span class="wide-label">Markdownをコピー</span><span class="short-label">本文</span></button>
-          <button id="copy-path-btn" class="button-secondary copy-feedback" data-reserve-wide="計画ファイルのパスをコピー" data-reserve-short="パス" type="button" disabled><span class="wide-label">計画ファイルのパスをコピー</span><span class="short-label">パス</span></button>
-          <button id="prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のファイル" disabled>&uarr;</button>
-          <button id="next-btn" class="nav-btn button-secondary" type="button" aria-label="次のファイル" disabled>&darr;</button>
+        <div class="toolbar detail-toolbar">
+          <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="計画一覧" aria-controls="plans-sidebar" aria-expanded="false">一覧</button>
+          <button id="copy-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="本文をコピー" type="button" disabled><span class="wide-label">本文をコピー</span><span class="short-label">本文をコピー</span></button>
+          <button id="copy-path-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="パスをコピー" type="button" disabled><span class="wide-label">パスをコピー</span><span class="short-label">パスをコピー</span></button>
+          <span class="detail-navigation">
+            <button id="prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のファイル" disabled>&uarr;</button>
+            <button id="next-btn" class="nav-btn button-secondary" type="button" aria-label="次のファイル" disabled>&darr;</button>
+          </span>
         </div>
         <div id="meta-mobile" class="empty"></div>
         <div id="plans-loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
-        <article id="preview" class="markdown-body">一覧から計画ファイルを選択してください。</article>
+        <article id="preview" class="reading-column markdown-body"><p class="empty-state">一覧から計画ファイルを選択してください。</p></article>
       </main>
       <div id="plans-drawer-backdrop"></div>
     </div>
@@ -370,9 +382,14 @@
       </nav>
     </header>
     <main id="agents-app">
-      <label><input id="agents-terminated" type="checkbox">結果のない終了済みの委譲先も表示</label>
+      <div class="workspace">
+      <div class="page-toolbar">
+        <h2 class="page-heading">エージェント</h2>
+        <label class="display-option"><input id="agents-terminated" type="checkbox">結果のない終了済みの委譲先も表示</label>
+      </div>
       <p id="agents-error" role="status" hidden></p>
       <div id="agents-hosts"></div>
+      </div>
     </main>
   </section>
 
@@ -391,26 +408,50 @@
     <div id="sessions-app" class="two-pane">
       <aside id="sessions-sidebar" class="pane-sidebar">
         <div class="toolbar">
-          <label class="visually-hidden" for="sessions-filter">セッションを検索</label>
-          <input id="sessions-filter" type="search" placeholder="ホスト・作業ディレクトリ・識別子・パス・ラベルを検索">
+          <h2 class="section-heading">セッション</h2>
+          <label for="sessions-filter">セッションを検索</label>
+          <input id="sessions-filter" type="search" aria-describedby="sessions-filter-scope">
+          <small id="sessions-filter-scope" class="secondary-text">検索対象: ホスト・作業ディレクトリ・識別子・パス・ラベル</small>
         </div>
-        <div id="warnings" role="alert" hidden></div>
-        <div id="sessions-list-error" role="alert" hidden></div>
+        <div id="warnings" class="notice notice-warning" role="alert" hidden></div>
+        <div id="sessions-list-error" class="notice notice-error" role="alert" hidden></div>
         <p id="sessions-search-status" role="status" hidden></p>
         <div id="sessions-empty" class="empty-state" hidden><p>該当するセッションがありません。</p><button id="sessions-clear-filter" type="button">検索をクリア</button></div>
         <div id="sessions"></div>
         <div id="sessions-sentinel" hidden></div>
       </aside>
       <main>
-        <div class="toolbar">
-          <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧を開く" aria-controls="sessions-sidebar" aria-expanded="false">&#9776;</button>
-          <span id="detail-title" class="detail-title"></span>
-          <span class="spacer"></span>
-          <span id="detail-usage" class="secondary-text"></span>
-          <button id="sessions-prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のセッション" disabled>&uarr;</button>
-          <button id="sessions-next-btn" class="nav-btn button-secondary" type="button" aria-label="次のセッション" disabled>&darr;</button>
+        <div class="toolbar detail-toolbar">
+          <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧" aria-controls="sessions-sidebar" aria-expanded="false">一覧</button>
+          <span class="detail-navigation" role="group" aria-label="前後のセッション">
+            <button id="sessions-prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のセッション" disabled>前の記録</button>
+            <button id="sessions-next-btn" class="nav-btn button-secondary" type="button" aria-label="次のセッション" disabled>次の記録</button>
+          </span>
         </div>
-        <article id="detail" class="markdown-body">一覧からセッションを選択してください。</article>
+        <div class="session-identity reading-column">
+          <h2 id="detail-title" class="page-heading"></h2>
+          <p id="detail-usage" class="secondary-text"></p>
+        </div>
+        <div id="session-reading" class="reading-column reading-toolbar" hidden>
+          <details class="reading-controls" open>
+          <summary>記録の検索と移動</summary>
+          <div class="reading-tools">
+          <div class="reading-search" role="group" aria-label="検索と一致箇所">
+          <label for="session-search">記録内検索</label>
+          <input id="session-search" type="search">
+          <output id="session-search-count" aria-live="polite"></output>
+          <button id="session-search-prev" class="button-secondary" type="button" aria-label="前の一致">前の一致</button>
+          <button id="session-search-next" class="button-secondary" type="button" aria-label="次の一致">次の一致</button>
+          </div>
+          <div class="reading-navigation" role="group" aria-label="ユーザー発話の移動">
+            <label><input id="session-conversation" type="checkbox"> 会話だけ</label>
+            <button id="session-user-prev" class="button-secondary" type="button">前のユーザー発話</button>
+            <button id="session-user-next" class="button-secondary" type="button">次のユーザー発話</button>
+          </div>
+          </div>
+          </details>
+        </div>
+        <article id="detail" class="reading-column markdown-body"><p class="empty-state">一覧からセッションを選択してください。</p></article>
       </main>
       <div id="sessions-drawer-backdrop"></div>
     </div>
@@ -428,15 +469,42 @@
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
-    <div class="settings-toolbar">
-      <label for="settings-host">設定対象ホスト</label>
-      <select id="settings-host" disabled><option value="">ローカル</option></select>
-      <p id="settings-status" role="status"></p>
-    </div>
-    <main id="settings-app">
+    <p id="settings-status" class="notice" role="status"></p>
+    <main id="settings-app" aria-labelledby="settings-heading">
+      <div class="workspace">
+      <div class="page-toolbar settings-page-toolbar">
+        <h2 id="settings-heading" class="page-heading">設定</h2>
+        <div class="settings-toolbar">
+          <label for="settings-host">設定対象ホスト</label>
+          <select id="settings-host" disabled><option value="">ローカル</option></select>
+        </div>
+        <div class="settings-search">
+          <label for="settings-search">設定を検索</label>
+          <input id="settings-search" type="search">
+          <button id="settings-search-clear" class="button-text" type="button" hidden>検索をクリア</button>
+        </div>
+      </div>
+      <p id="settings-no-matches" class="empty-state" role="status" hidden>一致する設定はありません。</p>
+      <div class="settings-host-details">
+        <p id="settings-fast-state" class="secondary-text"></p>
+        <details id="settings-fast-detail">
+          <summary>起動時判定の詳細</summary>
+          <p id="settings-fast-reason"></p>
+        </details>
+        <details id="settings-compare"><summary>ホスト別の設定を比較</summary><div id="settings-comparison"></div></details>
+      </div>
+      <div id="settings-shared" class="secondary-text"></div>
       <div class="settings-layout">
-        <nav id="settings-nav" aria-label="設定の分類"></nav>
-        <div id="settings-content"></div>
+        <nav id="settings-nav" aria-label="設定の分類">
+          <label for="settings-group-picker">分類</label>
+          <select id="settings-group-picker"></select>
+          <div id="settings-group-links"></div>
+        </nav>
+        <div class="settings-work">
+          <div id="settings-unsaved" class="form-actions"></div>
+          <div id="settings-content"></div>
+        </div>
+      </div>
       </div>
     </main>
   </section>
@@ -454,13 +522,15 @@
       </nav>
     </header>
     <main class="metric-page" aria-labelledby="usage-heading">
+      <div class="workspace">
       <div class="page-toolbar">
         <h2 id="usage-heading" class="page-heading">利用枠</h2>
         <a href="__BASE_PATH_HTML__/settings?group=usage&amp;host=">リセットの許可を設定</a>
-        <button id="usage-refresh" class="button-primary" type="button">再取得</button>
+        <button id="usage-refresh" class="button-secondary" type="button">再取得</button>
       </div>
-      <p id="usage-status" role="status"></p>
+      <p id="usage-loading" class="inline-loading" role="status" hidden>利用枠を読み込み中</p>
       <div id="usage-content" class="metric-columns"></div>
+      </div>
     </main>
   </section>
 

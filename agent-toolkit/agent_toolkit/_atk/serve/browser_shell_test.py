@@ -11,11 +11,11 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _hold_route,
     _screen_harness_fixture,
     _ScreenHarness,
-    _wait_screen_requests_consumed,
 )
 from agent_toolkit._testing.serve_browser_shell_support import (
     _SCREEN_STREAMS,
-    _open_all_screens,
+    _assert_other_streams_unrequested,
+    _open_screen,
     _request_count,
     _resynchronize_visible,
 )
@@ -49,23 +49,17 @@ async def test_initial_screen_acquisition_is_consumed_before_observation(
             await _hold_route(route, started=started, release=release)
 
     await page.route(lambda url: urllib.parse.urlsplit(url).path == delayed_path, delay_first)
-    ready = asyncio.create_task(_open_all_screens(screen_harness))
+    ready = asyncio.create_task(_open_screen(screen_harness, "wi"))
     try:
         await asyncio.wait_for(started.wait(), timeout=5)
-        await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(2)
-        await page.wait_for_function(
-            """delayed => {
-              const probe = window.__screenRequests;
-              return probe.opened['/api/plans/events'] > 0 && probe.opened['/api/sessions/events'] > 0 &&
-                (delayed === '/api/events' ? probe.completed['/api/entries'] > 0 : probe.opened['/api/events'] > 0);
-            }""",
-            arg=delayed_path,
-        )
+        if delayed_path == "/api/entries":
+            await page.wait_for_function("window.__screenRequests.opened['/api/events'] > 0")
+        _assert_other_streams_unrequested(screen_harness, "wi")
         assert not ready.done(), "初期処理の消費前に観測区間へ進んだ"
     finally:
         release.set()
         await ready
-    await _resynchronize_visible(page)
+    await _resynchronize_visible(page, "wi")
 
 
 @pytest.mark.cpu_limit(
@@ -76,7 +70,7 @@ async def test_initial_screen_acquisition_is_consumed_before_observation(
     ),
 )
 @pytest.mark.asyncio(loop_scope="session")
-@pytest.mark.parametrize("screen", ["wi", "sessions"])
+@pytest.mark.parametrize("screen", tuple(_SCREEN_STREAMS))
 async def test_visibility_observation_rejects_a_disabled_update_path(
     screen_harness: _ScreenHarness,
     screen: str,
@@ -91,29 +85,41 @@ async def test_visibility_observation_rejects_a_disabled_update_path(
         await route.fulfill(response=response, body=source.replace(marker, "  (() => {})("))
 
     await page.route(f"**/static/{screen}.js", disable_visibility)
-    await _open_all_screens(screen_harness)
+    await _open_screen(screen_harness, screen)
     with pytest.raises(playwright.async_api.TimeoutError):
-        await _resynchronize_visible(page, timeout=1_000)
+        await _resynchronize_visible(page, screen, timeout=1_000)
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harness: _ScreenHarness) -> None:
-    """初期化済みの画面へ再訪しても、同期と一覧の初期要求を繰り返さない。"""
+async def test_revisiting_screens_resubscribes_without_repeating_initial_sync(screen_harness: _ScreenHarness) -> None:
     harness = screen_harness
     page = harness.page
-    await _open_all_screens(harness)
-
+    await _open_screen(harness, "wi")
     await page.wait_for_function("window.__screenRequests.completed['/api/plans/files'] >= 1")
-    await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
-    tracked_suffixes = ("/api/sync", "/api/plans/files", "/api/sessions/list")
-    before = {suffix: sum(url.endswith(suffix) for url in harness.requests) for suffix in tracked_suffixes}
+    before_sync = _request_count(harness, "/api/sync")
+    for screen, label in (
+        ("plans", "計画ファイル"),
+        ("sessions", "セッション"),
+        ("wi", "ワークアイテム"),
+        ("plans", "計画ファイル"),
+        ("sessions", "セッション"),
+    ):
+        events, listing = _SCREEN_STREAMS[screen]
+        before = await page.evaluate(
+            "([events, listing]) => [window.__screenRequests.subscribed[events] || 0, "
+            "window.__screenRequests.completed[listing] || 0]",
+            [events, listing],
+        )
+        inactive = {path: _request_count(harness, path) for path, _ in _SCREEN_STREAMS.values() if path != events}
+        await page.locator("nav.app-nav").get_by_role("link", name=label).click()
+        await page.wait_for_function(
+            "([events, listing, opens, completed]) => window.__screenRequests.subscribed[events] > opens "
+            "&& window.__screenRequests.completed[listing] > completed",
+            arg=[events, listing, *before],
+        )
+        assert {path: _request_count(harness, path) for path in inactive} == inactive
 
-    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
-    await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
-
-    assert {suffix: sum(url.endswith(suffix) for url in harness.requests) for suffix in tracked_suffixes} == before
+    assert _request_count(harness, "/api/sync") == before_sync
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -160,70 +166,104 @@ async def test_initial_screen_request_does_not_block_other_screen_prefetch(
     ),
 )
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("screen", tuple(_SCREEN_STREAMS))
 async def test_silent_sse_is_reconnected_and_lists_are_refetched(
-    screen_harness: _ScreenHarness,
-    monkeypatch: pytest.MonkeyPatch,
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch, screen: str
 ) -> None:
     monkeypatch.setattr(serve_runtime, "SSE_HEARTBEAT_SEC", 3600.0)
     monkeypatch.setattr(serve_runtime, "SSE_STALL_SEC", 1.0)
-    await _open_all_screens(screen_harness)
-    before = {
-        name: (_request_count(screen_harness, stream), _request_count(screen_harness, listing))
-        for name, (stream, listing) in _SCREEN_STREAMS.items()
-    }
-
-    for name, (events, listing) in _SCREEN_STREAMS.items():
-        await screen_harness.page.wait_for_function(
-            """expected => {
-                const probe = window.__screenRequests;
-                return probe.opened[expected.events] > expected.opened &&
-                  probe.completed[expected.listing] > expected.completed;
-            }""",
-            arg={"events": events, "listing": listing, "opened": before[name][0], "completed": before[name][1]},
-        )
+    await _open_screen(screen_harness, screen)
+    events, listing = _SCREEN_STREAMS[screen]
+    page = screen_harness.page
+    before = await page.evaluate(
+        "([events, listing]) => [window.__screenRequests.subscribed[events], window.__screenRequests.completed[listing]]",
+        [events, listing],
+    )
+    await page.wait_for_function(
+        "([events, listing, subscribed, completed]) => window.__screenRequests.subscribed[events] > subscribed "
+        "&& window.__screenRequests.completed[listing] > completed",
+        arg=[events, listing, *before],
+    )
+    _assert_other_streams_unrequested(screen_harness, screen)
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("screen", tuple(_SCREEN_STREAMS))
 async def test_regular_heartbeat_keeps_sse_without_refetching(
-    screen_harness: _ScreenHarness,
-    monkeypatch: pytest.MonkeyPatch,
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch, screen: str
 ) -> None:
     monkeypatch.setattr(serve_runtime, "SSE_HEARTBEAT_SEC", 0.2)
     monkeypatch.setattr(serve_runtime, "SSE_STALL_SEC", 1.0)
-    await _open_all_screens(screen_harness)
-    before = {path: _request_count(screen_harness, path) for pair in _SCREEN_STREAMS.values() for path in pair}
-    heartbeats = await screen_harness.page.evaluate("window.__screenRequests.heartbeats")
-    await screen_harness.page.wait_for_function(
-        "expected => Object.keys(expected).every(path => window.__screenRequests.heartbeats[path] >= expected[path] + 15)",
-        arg={stream: heartbeats.get(stream, 0) for stream, _ in _SCREEN_STREAMS.values()},
-    )
-
-    assert {path: _request_count(screen_harness, path) for path in before} == before
-
-
-@pytest.mark.cpu_limit(
-    1.5,
-    reason=(
-        "タブが表示へ戻るとWI画面とセッション画面が一覧を取り直し、bfcacheからの復帰では再接続す"
-        "る。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.563秒）。"
-    ),
-)
-@pytest.mark.asyncio(loop_scope="session")
-async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harness: _ScreenHarness) -> None:
+    await _open_screen(screen_harness, screen)
+    events, listing = _SCREEN_STREAMS[screen]
     page = screen_harness.page
-    await _open_all_screens(screen_harness)
-    await _resynchronize_visible(page)
-    await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
-    before = await page.evaluate("window.__screenRequests.opened")
+    before = {path: _request_count(screen_harness, path) for path in (events, listing)}
+    beats = await page.evaluate("path => window.__screenRequests.heartbeats[path] || 0", events)
+    await page.wait_for_function(
+        "([path, beats]) => window.__screenRequests.heartbeats[path] >= beats + 15",
+        arg=[events, beats],
+    )
+    assert {path: _request_count(screen_harness, path) for path in before} == before
+    _assert_other_streams_unrequested(screen_harness, screen)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("screen", tuple(_SCREEN_STREAMS))
+async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harness: _ScreenHarness, screen: str) -> None:
+    page = screen_harness.page
+    await _open_screen(screen_harness, screen)
+    await _resynchronize_visible(page, screen)
+    events, listing = _SCREEN_STREAMS[screen]
+    before = await page.evaluate(
+        "([events, listing]) => [window.__screenRequests.subscribed[events], window.__screenRequests.completed[listing]]",
+        [events, listing],
+    )
     await page.evaluate(
         """() => {
             window.dispatchEvent(new PageTransitionEvent("pagehide", {persisted: true}));
             window.dispatchEvent(new PageTransitionEvent("pageshow", {persisted: true}));
         }"""
     )
-
     await page.wait_for_function(
-        "expected => Object.entries(expected).every(([path, count]) => window.__screenRequests.opened[path] > count)",
-        arg=before,
+        "([events, listing, subscribed, completed]) => window.__screenRequests.subscribed[events] > subscribed "
+        "&& window.__screenRequests.completed[listing] > completed",
+        arg=[events, listing, *before],
     )
-    await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
+    _assert_other_streams_unrequested(screen_harness, screen)
+
+
+@pytest.mark.parametrize(
+    ("screen", "endpoint", "resolved"),
+    [
+        ("plans", "**/api/plans/files", "#files .file"),
+        ("sessions", "**/api/sessions/list", "#sessions .session-item"),
+        ("wi", "**/api/entries?*", "#entry-list .entry-select"),
+        ("settings", "**/api/settings*", "#settings-nav button"),
+        ("agents", "**/api/agents/hosts", "#agents-hosts section"),
+    ],
+)
+@pytest.mark.asyncio(loop_scope="session")
+async def test_read_recovery_does_not_offer_an_action_after_one_failure(
+    screen_harness: _ScreenHarness, screen: str, endpoint: str, resolved: str
+) -> None:
+    page = screen_harness.page
+    first = asyncio.Event()
+    attempts = 0
+
+    async def fail_first(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            await route.fulfill(status=503, json={"error": "一時失敗"})
+            first.set()
+        else:
+            await route.continue_()
+
+    await page.route(endpoint, fail_first)
+    await page.goto(screen_harness.base_url + ("/" if screen == "wi" else f"/{screen}"))
+    await asyncio.wait_for(first.wait(), 5)
+    status = page.locator("#update-status")
+    await playwright.async_api.expect(status).to_be_hidden()
+    await playwright.async_api.expect(page.locator(resolved).first).to_be_visible()
+    assert attempts >= 2
+    await playwright.async_api.expect(status).to_be_hidden()

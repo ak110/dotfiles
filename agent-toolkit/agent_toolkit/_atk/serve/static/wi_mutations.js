@@ -280,7 +280,7 @@ export function openDeleteDialog() {
   byId('delete-state').textContent = entryStateText(wiState.currentEntry);
   byId('delete-state').dataset.state = wiState.currentEntry.state;
   byId('delete-target-repo').textContent = wiState.currentEntry.target_repo || '—';
-  byId('delete-summary').textContent = wiState.currentEntry.summary || '—';
+  byId('delete-summary').textContent = wiState.currentEntry.summary?.replace(/^#{1,6}\s+/, '') || '—';
   byId('force-delete-row').hidden = wiState.currentEntry.state !== 'processing';
   byId('force-delete-confirmation').checked = false;
   setFieldError(byId('force-delete-confirmation'), byId('delete-error'), '');

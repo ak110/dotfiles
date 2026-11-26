@@ -14,6 +14,10 @@ _TABLE = f"""
 | {_SECOND} | 1 | 補足条件 | 比較する。 | 完成条件 1 |
 | {_SECOND} | 2 | 主要完成状態 | 変更する。 | 反映内容1 |
 """
+_DESIGN_QUOTE = (
+    "atk serveの画面、さっき言ったラベルの話だけじゃなく、余白の統一感とか"
+    "その他もろもろデザインの基本が全然できてない気がする。もろもろ全体的にちゃんとやれるように改善して。"
+)
 _REQUIRED = {_FIRST: (1, 1), _SECOND: (1, 1)}
 _ORIGINALS = {
     _FIRST: "## 完成条件\n\n1. 先頭の文。\n   末尾も保つ。\n",
@@ -97,3 +101,89 @@ def test_preserve_the_start_number_of_a_markdown_ordered_list(second_marker: str
     review_contract.validate(table, required, originals=originals)
     with pytest.raises(ValueError, match="補足条件 4 が原本の全文と一致しない"):
         review_contract.validate(table.replace("第四の条件。", "省略。"), required, originals=originals)
+
+
+def test_original_request_cannot_be_replaced_by_the_completion_conditions() -> None:
+    originals = {
+        **_ORIGINALS,
+        _FIRST: _ORIGINALS[_FIRST] + f"\n## ユーザー指摘の逐語引用\n\n> {_DESIGN_QUOTE}\n",
+    }
+    with pytest.raises(ValueError, match="引用1"):
+        review_contract.validate(_TABLE, _REQUIRED, originals=originals)
+
+
+@pytest.mark.parametrize(
+    ("evidence", "valid"),
+    [
+        ("", False),
+        (f"{_FIRST} 引用照合1: 未達 — 根拠: 一覧以外の画面が小さく読みにくい", False),
+        (f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1・原文要求2", False),
+        (f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1", False),
+        (f"{_FIRST} 引用照合1: 除外 — 根拠: 割当外 — 20261125-030100-002.md#反映内容と反映先", False),
+    ],
+)
+def test_quote_receipt_requires_live_original_requirement(evidence: str, valid: bool) -> None:
+    originals = {_FIRST: f"## ユーザー指摘の逐語引用\n\n> {_DESIGN_QUOTE}\n"}
+    result = (
+        f"{_FIRST} 完成条件1: 達成 — 根拠: 画面はすべて共通部品を使っている\n"
+        f"{_FIRST} 原文要求1「もろもろ全体的にちゃんとやれるように改善して。」: 達成 — 根拠: 実機で全画面が読めた\n"
+        f"{evidence}\n"
+    )
+    if valid:
+        review_contract.validate_origin_verdicts(result, originals)
+    else:
+        with pytest.raises(ValueError, match="引用照合1"):
+            review_contract.validate_origin_verdicts(result, originals)
+
+
+@pytest.mark.parametrize("heading", ["ユーザー指摘の逐語引用", "ユーザーコメント", "回答"])
+@pytest.mark.parametrize("second", ["達成", "未達", "根拠不足", "欠落", "割当外"])
+def test_two_requests_in_one_passage_are_checked_against_original(heading: str, second: str) -> None:
+    original = f"## {heading}\n\n> 受入時に保存を実行する。受入時に再読込を実行する。\n"
+    first = f"{_FIRST} 原文要求1「受入時に保存を実行する。」: 達成 — 根拠: 保存は成功"
+    lines = [f"{_FIRST} 完成条件1: 達成 — 根拠: 保存済み", first]
+    cited = "原文要求1"
+    if second == "割当外":
+        lines.append(f"{_FIRST} 引用除外1.2: 割当外 — 根拠: {_SECOND}#反映内容と反映先")
+    elif second != "欠落":
+        lines.append(f"{_FIRST} 原文要求2「受入時に再読込を実行する。」: {second} — 根拠: 再読込の観測")
+        if second == "達成":
+            cited += "・原文要求2"
+    lines.append(f"{_FIRST} 引用照合1: 達成 — 根拠: {cited}")
+    if second in {"達成", "割当外"}:
+        review_contract.validate_origin_verdicts("\n".join(lines), {_FIRST: original})
+    else:
+        with pytest.raises(ValueError, match="引用照合1.2"):
+            review_contract.validate_origin_verdicts("\n".join(lines), {_FIRST: original})
+
+
+@pytest.mark.parametrize("unit", ["`続けますか? はい` を表示する。", "``例: `x`。 次。`` を表示する。"])
+@pytest.mark.parametrize("heading", ["ユーザー指摘の逐語引用", "ユーザーコメント", "回答"])
+def test_inline_code_punctuation_is_not_a_requirement_boundary(unit: str, heading: str) -> None:
+    original = f"## {heading}\n\n> {unit}受入時に保存する。\n"
+    result = (
+        f"{_FIRST} 原文要求1「{unit}」: 達成 — 根拠: 表示した\n"
+        f"{_FIRST} 原文要求2「受入時に保存する。」: 達成 — 根拠: 保存した\n"
+        f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1・原文要求2\n"
+    )
+    review_contract.validate_origin_verdicts(result, {_FIRST: original})
+
+
+@pytest.mark.parametrize("same_block", [True, False])
+def test_duplicate_exclusion_applies_only_to_its_occurrence(*, same_block: bool) -> None:
+    unit = "受入時に保存を実行する。"
+    separator = "" if same_block else "\n\n> "
+    original = f"## ユーザー指摘の逐語引用\n\n> {unit}{separator}{unit}\n"
+    result = f"{_FIRST} 原文要求1「{unit}」: 達成 — 根拠: 保存は成功\n{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1\n"
+    if not same_block:
+        result += f"{_FIRST} 引用照合2: 除外 — 根拠: 原文要求1と同一\n"
+    with pytest.raises(ValueError, match=r"原文要求の達成または除外の判定が無い|原文単位ごとの除外が無い"):
+        review_contract.validate_origin_verdicts(result, {_FIRST: original})
+    if same_block:
+        repeated_reference = result.replace("根拠: 原文要求1", "根拠: 原文要求1・原文要求1")
+        with pytest.raises(ValueError, match=r"引用照合1\.2"):
+            review_contract.validate_origin_verdicts(repeated_reference, {_FIRST: original})
+    address = "1.2" if same_block else "2.1"
+    review_contract.validate_origin_verdicts(
+        result + f"{_FIRST} 引用除外{address}: 重複 — 根拠: 原文要求1と同一\n", {_FIRST: original}
+    )

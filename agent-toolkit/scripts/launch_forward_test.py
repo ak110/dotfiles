@@ -9,8 +9,11 @@ import sys
 import types
 import typing
 
+import psutil
 import pytest
-from agent_toolkit._agents_server import service_forward
+from agent_toolkit._agents_server import plugin_root, service_forward
+from agent_toolkit._atk.wi import submit
+from agent_toolkit._common import plugin_root_leases, process_identity, state_paths
 
 _LAUNCH_PATH = pathlib.Path(__file__).resolve().with_name("launch.py")
 
@@ -226,3 +229,58 @@ def test_prepare_does_not_publish_changed_environment(monkeypatch, tmp_path, cap
     assert launch._prepare(tmp_path, "uv", {}) == 1  # pylint: disable=protected-access
     assert syncs == ([] if changes_before_sync else [str(target)])
     assert "依存の固定内容が変更された" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("entry", ["launcher", "bootstrap", "submit"])
+@pytest.mark.parametrize("registered", [False, True])
+def test_exit_paths_release_own_lease_and_keep_services_copy(tmp_path, monkeypatch, entry, registered):
+    source = tmp_path / "1.0.0"
+    (source / ".claude-plugin").mkdir(parents=True)
+    (source / ".claude-plugin/plugin.json").write_text('{"version":"1.0.0"}', encoding="utf-8")
+    path = source / "agent_toolkit/_agents_server/service.py"
+    path.parent.mkdir(parents=True)
+    path.touch()
+    root = plugin_root.resolve_stable_plugin_root(source, independent=True)
+    leases = state_paths.state_dir() / "plugin-root-leases"
+    (own,) = leases.glob(f"*-{os.getpid()}.json")
+    if registered:
+        other = psutil.Process(os.getppid())
+        record = json.loads(own.read_text(encoding="utf-8"))
+        record.update(pid=other.pid, created_at=other.create_time(), start_id=process_identity.start_id(other))
+        other_record = own.with_name(f"{own.stem.rsplit('-', 1)[0]}-{other.pid}.json")
+        with plugin_root_leases.plugin_root_lock(root.parent):
+            other_record.write_text(json.dumps(record), encoding="utf-8")
+        monkeypatch.setattr(plugin_root_leases, "_current_processes", lambda: [])
+    else:
+        service = psutil.Process()
+        monkeypatch.setattr(service, "cmdline", lambda: ["python", str(root / path.relative_to(source))])
+        monkeypatch.setattr(plugin_root_leases, "_current_processes", lambda: [service])
+
+    if entry == "launcher":
+        launch = _load_launch()
+        monkeypatch.setattr(plugin_root, "SERVER_PLUGIN_ROOT", root)
+        monkeypatch.setattr(launch.environment_usage, "lock", contextlib.nullcontext)
+        monkeypatch.setattr(launch.shutil, "which", lambda _name: "uv")
+        monkeypatch.setattr(launch.plugin_environment, "project_environment", lambda *_args: tmp_path)
+        monkeypatch.setattr(
+            launch.plugin_environment, "prepared_environment_python", lambda *_args: pathlib.Path(sys.executable)
+        )
+        monkeypatch.setattr(launch.plugin_environment, "direct_environment", lambda *_args, **_kwargs: {})
+        monkeypatch.setattr(launch, "_run_agents_server", lambda *_args, **_kwargs: 17)
+        monkeypatch.setattr(
+            sys, "argv", ["launch.py", "--project", str(source), "--agents-service", str(path), str(tmp_path), "G1"]
+        )
+        assert launch.main() == 17
+    elif entry == "bootstrap":
+        monkeypatch.setattr(plugin_root, "resolve_stable_plugin_root", lambda **_kwargs: root)
+        monkeypatch.setattr(plugin_root.plugin_environment, "prepared_python", lambda *_args: pathlib.Path(sys.executable))
+        monkeypatch.setattr(plugin_root, "os", types.SimpleNamespace(name="nt", environ=os.environ))
+        monkeypatch.setattr(plugin_root.subprocess, "run", lambda *_args, **_kwargs: types.SimpleNamespace(returncode=17))
+        assert plugin_root.main(["--wi-submit-worker", "test"]) == 17
+    else:
+        monkeypatch.setattr(submit, "__file__", str(root / "agent_toolkit/_atk/wi/submit.py"))
+        monkeypatch.setattr(submit, "worker", lambda _target: 17)
+        assert submit._main(["worker", "test"]) == 17  # pylint: disable=protected-access
+
+    assert not own.exists()
+    assert (root / path.relative_to(source)).is_file()

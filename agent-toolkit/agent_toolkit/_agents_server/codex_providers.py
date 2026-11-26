@@ -8,15 +8,17 @@ Codex CLI 0.162.0のconfig/read・account/read・account/rateLimits/readの
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from agent_toolkit._agents_server import api_credits, codex_auto_reset, engine_availability
+from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._atk import codex_connection, usage_refresh
+from agent_toolkit._atk import codex_connection, reset_reservations, usage_refresh
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._common import codex_usage_limit, runtime_environment, state_paths
+from agent_toolkit._common import codex_fast_mode, codex_usage_limit, runtime_environment, state_paths
 
 CONTINUE_PROMPT = "以前の会話と実行結果を確認し、完了済みの操作を繰り返さず、未完了の作業を続けて所定の返却形式を返せ。"
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -38,6 +40,9 @@ class ProviderSelection:
     diagnostics: tuple[str, ...] = ()
     usage_limit_resets_at: int | None = None
     auto_reset_permitted: bool = False
+    auth: dict[str, Any] | None = dataclasses.field(default=None, repr=False, compare=False)
+    quota_workspace: str | None = dataclasses.field(default=None, repr=False, compare=False)
+    auth_observed_at: datetime.datetime | None = dataclasses.field(default=None, repr=False, compare=False)
 
 
 def has_provider_configuration() -> bool:
@@ -84,22 +89,55 @@ async def select(
     新規の会話の開始順と、失敗した会話が次に試す後続候補の順を同じ実効順序にそろえ、
     並べ替えで後ろへ回した`credits`を後続候補で先に再試行しないようにする。
     """
-    response = await request("config/read", {"cwd": cwd, "includeLayers": False})
+    response = await codex_fast_mode.read_with_retry(request, "config/read", {"cwd": cwd, "includeLayers": False})
     effective = response.get("config")
     if not isinstance(effective, dict):
         raise ValueError("Codexの実効接続先設定を取得できません")
     providers = effective.get("model_providers", {})
     providers = providers if isinstance(providers, dict) else {}
-    auth = await request("account/read", {"refreshToken": False})
+    quota_workspace = None
+    usage = None
+    auth_error = None
+
+    async def read_account(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        result = await request(method, params)
+        value = result.get("account")
+        if "account" not in result or (value is not None and not isinstance(value, dict)):
+            raise ValueError("Codexの認証応答にアカウントがありません")
+        return result
+
+    try:
+        auth = await codex_fast_mode.read_with_retry(read_account, "account/read", {"refreshToken": False})
+    except (OSError, RuntimeError, ValueError) as error:
+        usage = await codex_fast_mode.read_workspace_quota(request)
+        quota_workspace = codex_fast_mode.quota_workspace_id(usage)
+        auth_error = error
+        auth = {}
+    auth_observed_at = datetime.datetime.now(datetime.UTC)
     account = auth.get("account")
-    account_type = account.get("type") if isinstance(account, dict) else None
+    account_type = "chatgpt" if quota_workspace is not None else account.get("type") if isinstance(account, dict) else None
     entries = codex_connection.provider_entries(role)
     if role == "delegate":
         entries = api_credits.order(entries, _entry_kind, engine="codex")
     diagnostics: list[str] = []
 
-    def usable(kind: str, candidate: str) -> bool:
+    def requires_subscription(candidate: str) -> bool:
+        definition = providers.get(candidate, {})
+        return isinstance(definition, dict) and bool(definition.get("requires_openai_auth", candidate == "openai"))
+
+    if auth_error is None:
+        await codex_fast_mode.observe_selection_auth(
+            tuple(candidate for kind, candidate in entries if kind == "subscription" and requires_subscription(candidate)),
+            auth,
+            auth_observed_at,
+        )
+
+    def usable(kind: str, candidate: str) -> bool | None:
         if kind == "subscription":
+            if not requires_subscription(candidate):
+                return False
+            if auth_error is not None:
+                return True if quota_workspace is not None else None
             if account_type != "chatgpt":
                 if account_type is not None and codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC not in diagnostics:
                     diagnostics.append(codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC)
@@ -107,14 +145,24 @@ async def select(
                 return False
             return True
         definition = providers.get(candidate)
-        if candidate == "openai" and account_type == "apiKey":
-            return True
         if isinstance(definition, dict) and independent_api_auth(definition):
             return True
+        if candidate == "openai":
+            return None if auth_error is not None and quota_workspace is None else account_type == "apiKey"
         _LOG.info("Codex接続先を除外しました: provider=%s reason=undefined_or_no_independent_api_auth", candidate)
         return False
 
-    available = [candidate for kind, candidate in entries if usable(kind, candidate)]
+    available: list[str] = []
+    for kind, candidate in entries:
+        if candidate == primary:
+            continue
+        state = usable(kind, candidate)
+        if state is None:
+            if primary is None and not available:
+                raise AppServerError("現在のCodex認証を確認できないため、接続先を選べない") from auth_error
+            break
+        if state:
+            available.append(candidate)
     if primary is None:
         if not available:
             key = atk_config.connection_order_key("codex", role)
@@ -128,24 +176,22 @@ async def select(
     else:
         selected = primary
         remainder = [candidate for candidate in available if candidate != primary]
-    definition = providers.get(selected, {})
-    requires_auth = definition.get("requires_openai_auth", selected == "openai") if isinstance(definition, dict) else False
-    subscription = bool(requires_auth and account_type == "chatgpt")
+    subscription = requires_subscription(selected) and account_type == "chatgpt"
     allowed = None
     usage_limit_type = None
     usage_limit_resets_at = None
     auto_reset_permitted = False
     if subscription:
-        try:
-            usage = await request("account/rateLimits/read", {})
-        except RuntimeError, OSError, TimeoutError:
-            usage = {}
+        if usage is None:
+            try:
+                usage = await request("account/rateLimits/read", {})
+            except RuntimeError, OSError:
+                usage = {}
 
-        routing = auth.get("workspaceRouting")
-        active_id = routing.get("chatgptAccountId") if isinstance(routing, dict) else None
+        active_id = quota_workspace or codex_fast_mode.workspace_id(auth)
         snapshot_id = usage.get("accountId")
         if snapshot_id is None or active_id is not None and snapshot_id == active_id:
-            if usage_refresh.enabled():
+            if quota_workspace is None and usage_refresh.enabled():
                 await run_file_operation(
                     usage_refresh.record_codex,
                     usage,
@@ -157,13 +203,18 @@ async def select(
             allowed = value if isinstance(value, bool) else None
             limit = codex_usage_limit.from_rate_limits(usage.get("rateLimits"))
             usage_limit_type, usage_limit_resets_at = limit.limit_type, limit.resets_at
-            if allowed is False and primary is None:
+            if allowed is False and primary is None and quota_workspace is None:
                 try:
                     permissions = await run_file_operation(codex_auto_reset.active_permissions)
                     if permissions:
                         root = await run_file_operation(state_paths.state_dir)
                         auto_reset_permitted = await run_file_operation(
-                            codex_auto_reset.has_permission, permissions, account, snapshot_id, state_dir=root
+                            codex_auto_reset.has_permission,
+                            permissions,
+                            account,
+                            snapshot_id,
+                            state_dir=root,
+                            shared_notes=await run_file_operation(reset_reservations.shared_notes),
                         )
                 except OSError, ValueError:
                     _LOG.exception("Codex自動resetの許可を確認できません。設定と台帳を確認してください")
@@ -176,6 +227,9 @@ async def select(
         tuple(diagnostics),
         usage_limit_resets_at,
         auto_reset_permitted,
+        auth,
+        quota_workspace,
+        auth_observed_at,
     )
 
 

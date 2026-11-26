@@ -141,6 +141,7 @@ async def test_search_stays_busy_during_debounce_and_entries(browser_harness: _B
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await _open_filters(page)
     entries_started = asyncio.Event()
     release_entries = asyncio.Event()
 

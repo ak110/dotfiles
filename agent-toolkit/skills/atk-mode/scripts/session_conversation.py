@@ -5,107 +5,13 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
-import re
 import shlex
 from typing import Any
 
-_WAIT_ONLY = re.compile(
-    r"(?:待機中: [A-Za-z0-9_-]+|(?:結果|完了|応答|連絡)を待ちます[。.]?|"
-    r"(?:作業を)?(?:続けます|継続します)[。.]?)"
-)
+# pylint: disable-next=useless-import-alias  # 呼び出し元へ互換名を再公開するため。
+from agent_toolkit._common.session_conversation_rows import compact_assistant_reports as compact_assistant_reports
+
 _MIN_RECLAIMED_EXCERPT_BYTES = 96
-
-_STATUS_LINE = re.compile(
-    r"(状態|進捗|検証結果|再発防止|次の操作|次の区切り|残作業|別案|処置|原因|残している分|"
-    r"問い|要求|上位の対象|lane-[0-9]+(?:（[^）]+）)?)[：:] *[^\s].*"
-)
-
-
-def _compact_status_lines(text: str) -> tuple[str, int]:
-    if any(mark in text for mark in ("```", "~~~", "<atk-auto")):
-        return text.strip(), 0
-    kept: list[str] = []
-    removed = 0
-    for line in text.splitlines(keepends=True):
-        message = line.strip().removeprefix("- ")
-        if (
-            kept
-            and kept[-1].strip().removeprefix("- ") == message
-            and not line.startswith(("    ", "\t"))
-            and not kept[-1].startswith(("    ", "\t"))
-            and _STATUS_LINE.fullmatch(message)
-        ):
-            removed += 1
-            continue
-        kept.append(line)
-    return "".join(kept).strip(), removed
-
-
-_COMPACT_UNDERSTANDING = re.compile(r"発話の理解: ([^\n]+。)補う前提: ([^\n]+)\n別案: ([^\n]+)\n分類: (是正|非是正)")
-_LISTED_UNDERSTANDING = re.compile(r"発話の理解\n分類: (是正|非是正)\n- ([^\n]+)\n- 補う前提: ([^\n]+)\n- 別案: ([^\n]+)")
-
-
-def _report_identity(text: str) -> str | tuple[str, ...]:
-    stripped = text.strip()
-    if compact := _COMPACT_UNDERSTANDING.fullmatch(stripped):
-        return compact.groups()
-    if listed := _LISTED_UNDERSTANDING.fullmatch(stripped):
-        return listed[2], listed[3], listed[4], listed[1]
-    return _compact_status_lines(stripped)[0]
-
-
-def compact_assistant_reports(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    reported: dict[str, tuple[str | tuple[str, ...], int]] = {}
-    kept: list[dict[str, Any] | None] = []
-    omitted = 0
-    for event in events:
-        kind = event.get("kind")
-        role = event.get("role")
-        record = event.get("record")
-        if not isinstance(record, str) or kind != "utterance" or role != "assistant":
-            if isinstance(record, str) and (kind == "delegation-request" or kind == "utterance" and role == "user"):
-                reported.pop(record, None)
-            kept.append(event)
-            continue
-        text = event.get("text")
-        if not isinstance(text, str) or not text.strip() or event.get("text_truncated"):
-            reported.pop(record, None)
-            kept.append(event)
-            continue
-        if _WAIT_ONLY.fullmatch(text.strip()):
-            omitted += 1
-            continue
-        delivered = event.get("delivery") == "send_to_user"
-        identity = _report_identity(text)
-        previous_report = reported.get(record)
-        if previous_report is not None and previous_report[0] == identity:
-            old_position = previous_report[1]
-            previous = kept[old_position]
-            omitted += 1
-            if not delivered or (previous is not None and previous.get("delivery") == "send_to_user"):
-                continue
-            kept[old_position] = None
-        reported[record] = (identity, len(kept))
-        kept.append(event)
-    compacted: list[dict[str, Any]] = []
-    repeated = 0
-    for event in kept:
-        if event is None:
-            continue
-        if (
-            event.get("kind") == "utterance"
-            and event.get("role") == "assistant"
-            and event.get("delivery") != "send_to_user"
-            and not event.get("text_truncated")
-        ):
-            text = event.get("text")
-            if isinstance(text, str):
-                body, removed = _compact_status_lines(text)
-                if removed:
-                    event = {**event, "text": body}
-                    repeated += removed
-        compacted.append(event)
-    return compacted, {"redundant_assistant_count": omitted, "redundant_status_line_count": repeated}
 
 
 def positive_integer(value: str) -> int:

@@ -162,3 +162,14 @@ pyfltr 3.33.2にそろえた [別runのPylint](https://github.com/ak110/dotfiles
   CIは作業ツリー、コミット時はGit indexを対象とする
 - 参照先: `github.com/ak110/pyfltr` の `docs/guide/usage.md`「サブコマンド: verification-sync」と `docs/guide/recommended.md`「形式検証の記録」
 - 適用済みの見分け方: 記録を変えず対象だけ変更すると既存のCI・コミット検査の入口から失敗し、検証を再実行して記録と対象をそろえると成功する
+
+## PRで依存の既知の脆弱性を検知する
+
+- 項目ID: pr-dependency-review
+- 実施日: 2026年11月
+- 内容: PRで`GitHub Dependency Review`を実行し、依存定義の変更が持ち込む既知の脆弱性を検知する
+- 理由: 依存の脆弱性を定期監査より前の、取り込みの時点で見つける
+- 当てはまる条件: 依存グラフが認識する依存定義を持つ公開リポジトリ（pyfltr、glatasks、gv、lc）
+- 適用方法: [PRの依存差分チェック](ci-and-tooling.md#prの依存差分チェック)の共通方式とリポジトリ別の対象に沿って検知のみを導入し、ルールセットは新設しない
+- 参照先: [PRの依存差分チェック](ci-and-tooling.md#prの依存差分チェック)
+- 適用済みの見分け方: 対象の依存定義を変えたPRで比較結果に変更が現れ、比較データを取得できない場合にジョブが成功しない

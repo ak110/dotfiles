@@ -125,6 +125,9 @@ update-dotfiles logs
 
 ## ドキュメント
 
+- [アクセシビリティ](ACCESSIBILITY.md)
+- [貢献案内](https://github.com/ak110/.github/blob/master/CONTRIBUTING.md)
+- [脆弱性の報告](https://github.com/ak110/.github/blob/master/SECURITY.md)
 - [docs/index.md](docs/index.md): ドキュメントの総合案内
 - [docs/guide/index.md](docs/guide/index.md): 利用者向け（Claude Code/Codex設定・SSH・セキュリティ）
 - [docs/development/index.md](docs/development/index.md): 開発者向け

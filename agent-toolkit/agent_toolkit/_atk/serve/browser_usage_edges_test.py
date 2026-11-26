@@ -120,8 +120,10 @@ async def test_reset_inventory_distinguishes_zero_and_missing(
         await expect(field.locator("dd")).to_have_text(value)
     monkeypatch.setattr(usage_refresh, "refresh", refresh)
     await page.get_by_role("button", name="再取得").click()
-    await expect(inventory.locator("dd")).to_have_text("未取得")
-    await expect(balance.locator("dd")).to_have_text("未取得")
+    await expect(inventory).to_have_count(0)
+    await expect(balance).to_have_count(0)
+    missing = page.get_by_text("未取得: 在庫", exact=False)
+    await expect(missing).to_contain_text("クレジット残高")
 
 
 async def test_model_quota_displays_names_and_claude_states_after_refresh(
@@ -235,19 +237,19 @@ async def test_failed_refresh_displays_newer_independent_observation(
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/usage")
     expect = playwright.async_api.expect
-    status = page.locator("#usage-status")
-    await expect(status).to_contain_text("最終取得")
+    status = page.locator("#update-status")
+    await expect(status).to_be_hidden()
     await expect(page.get_by_role("progressbar")).to_have_attribute("value", "20")
     monkeypatch.setattr(usage_refresh, "refresh", refresh)
     try:
         await page.get_by_role("button", name="再取得").click()
-        await expect(status).to_contain_text("取得中")
+        await expect(page.get_by_role("button", name="再取得")).to_be_disabled()
         observe(45, now)
     finally:
         release.set()
-    await expect(status).to_contain_text("取得に失敗した項目")
+    await expect(status).to_contain_text("利用枠を取得できません。")
     await expect(page.get_by_role("progressbar")).to_have_attribute("value", "45")
-    await expect(page.get_by_text("取得失敗: Codex:", exact=False)).to_contain_text("最後の観測")
+    await expect(page.get_by_text("取得失敗: Codex:", exact=False)).to_have_count(0)
     await expect(page.locator(".metric-row")).not_to_contain_text("1時間以上前")
 
 

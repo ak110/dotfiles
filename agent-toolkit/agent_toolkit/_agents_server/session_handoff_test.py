@@ -20,7 +20,7 @@ from agent_toolkit._agents_server import (
     state,
 )
 from agent_toolkit._atk import config
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import delegated_session, session_registry
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -64,6 +64,7 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
     """公開start1回から、期限切れの除外記録を参照せず後続候補へ条件と全文を渡す。"""
     del record_extractor
     requested: list[str] = []
+    stage = "execute" if launch_kind == "delegate" else "chores_fast"
 
     def candidates(model_type: str, **_kwargs: Any) -> list[state.ModelCandidate]:
         requested.append(model_type)
@@ -75,7 +76,7 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
         _install_backend(manager, "claude", second)
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         started = await manager.start(
-            "execute",
+            stage,
             "元の作業",
             str(tmp_path),
             launch_kind=launch_kind,
@@ -94,8 +95,8 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
         assert response["label"] == "担当"
         assert successor.engine == "claude"
         assert successor.launch_kind == launch_kind
-        assert successor.model_type == predecessor.model_type == "execute"
-        assert requested == ["execute"] * 2
+        assert successor.model_type == predecessor.model_type == stage
+        assert requested == [stage] * 2
         assert not any(item["scope"] == "model-override" for item in response.get("warnings", []))
         assert len(first.start_calls) == 1
         assert len(second.start_calls) == 1
@@ -236,8 +237,9 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
         successor = manager.sessions[response["session_id"]]
         document = launch_requests.resolve_task_document_path("exec")  # pylint: disable=protected-access
         assert str(document) in successor.prompt
+        original, _notice = delegated_session.split_own_contract_notice(predecessor.prompt)
         assert (
-            predecessor.prompt.replace(
+            original.replace(
                 f"引き継ぎ記録先: {params['引き継ぎ記録先']}",
                 f"引き継ぎ記録先: {params['引き継ぎ記録先']}（継続）",
             )
@@ -508,3 +510,33 @@ async def test_handoff_guidance_after_direct_model_availability_failure(
             await mcp_tools.start(handoff_from=predecessor.session_id)
         response = await mcp_tools.start(handoff_from=predecessor.session_id, model_type="chores")
         assert manager.sessions[response["session_id"]].model == "after"
+
+
+@pytest.mark.asyncio
+async def test_handoff_requires_user_instruction_for_write_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path
+) -> None:
+    del record_extractor
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:drafting/medium")
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        original = await mcp_tools.start(
+            str(tmp_path),
+            mode="write",
+            prompt="見出しの文案を作る",
+            model_override="user_instruction",
+            model_override_evidence="ユーザーが前任と後任に write_model を指定",
+        )
+        session_id = original["session_id"]
+        _complete(manager.sessions[session_id], message="文案の進捗")
+        for override in ({}, {"model_override": "fallback_failure", "model_override_evidence": "切替失敗"}):
+            with pytest.raises(ToolError, match="user_instruction"):
+                await mcp_tools.mcp.call_tool("start", {"handoff_from": session_id, **override})
+            assert backend.start_calls == [("drafting", "medium", "write")]
+        response = await mcp_tools.start(
+            handoff_from=session_id,
+            model_override="user_instruction",
+            model_override_evidence="ユーザーが前任と後任に write_model を指定",
+        )
+        assert response["model_type"] == "write"
+        assert backend.start_calls == [("drafting", "medium", "write")] * 2

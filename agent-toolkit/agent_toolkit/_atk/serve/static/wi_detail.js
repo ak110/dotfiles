@@ -1,3 +1,4 @@
+import {readFailure} from "./common.js";
 // WI詳細の表示・選択と外部更新時の入力保護。
 import {
   DELETABLE_STATES, EDITABLE_STATES, FRONTMATTER_EXCLUDED_KEYS, MUTABLE_STATES, PROCESSABLE_STATES,
@@ -20,8 +21,15 @@ import {
   loadEntries, renderListLoading
 } from "./wi_list.js";
 import {
-  BASE_PATH
+  BASE_PATH, setUpdateError, setDisplayedReadError
 } from "./common.js";
+
+import {closeWiReferences, configureWiReferences, linkWiReferences, wiLink} from "./wi_reference.js";
+
+configureWiReferences(renderDetailView, entry => {
+  closeDetailDialog();
+  if (!byId("detail-dialog").open) void selectEntry(entry);
+});
 
 function updateCurrentRowSelection() {
   document.querySelectorAll('.entry-select').forEach(button => {
@@ -72,132 +80,16 @@ function metadataEntries(entry) {
   return result;
 }
 
-const childDialogs = [];
-
-function wiLink(filename) {
-  const link = document.createElement('a');
-  link.href = entryPageUrl({filename});
-  link.textContent = filename;
-  link.addEventListener('click', event => {
-    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    void openReferencedWi(filename, link);
-  });
-  return link;
-}
-
-function linkWiReferences(container, entry) {
-  const knownNames = (entry.referenced_wi_names ?? []).slice().sort((a, b) => b.length - a.length);
-  const dated = String.raw`\d{8}-\d{6}-\d{3,}\.md`;
-  if (!knownNames.length && !new RegExp(dated).test(container.textContent)) return;
-  const alternatives = [...knownNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), dated];
-  const filenames = new RegExp(
-    String.raw`(?<![A-Za-z0-9_.-])(?:${alternatives.join('|')})(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])`, 'gu'
-  );
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-    acceptNode: node => node.parentElement.closest('a') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
-  });
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  for (const node of nodes) {
-    const fragment = document.createDocumentFragment();
-    let end = 0;
-    for (const match of node.data.matchAll(filenames)) {
-      const filename = match[0];
-      if (filename === entry.filename) continue;
-      fragment.append(node.data.slice(end, match.index), wiLink(filename));
-      end = match.index + filename.length;
-    }
-    if (!end) continue;
-    fragment.append(node.data.slice(end));
-    node.replaceWith(fragment);
-  }
-}
-
-function closeReferencedWi() {
-  const dialog = childDialogs.pop();
-  if (dialog) {
-    dialog.close();
-    dialog.remove();
-  }
-}
-
-async function openReferencedWi(filename, origin) {
-  const parent = origin.closest('dialog');
-  const dialog = document.createElement('dialog');
-  dialog.className = 'dialog-shell detail-dialog wi-reference-dialog';
-  const title = document.createElement('h2');
-  title.id = `wi-reference-title-${childDialogs.length + 1}`;
-  title.textContent = `詳細（${childDialogs.length + 1}段目）`;
-  dialog.setAttribute('aria-labelledby', title.id);
-  const header = document.createElement('header');
-  header.className = 'dialog-header';
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'dialog-close';
-  close.autofocus = true;
-  close.setAttribute('aria-label', '閉じる');
-  close.textContent = '×';
-  close.addEventListener('click', closeReferencedWi);
-  header.append(title, close);
-  const body = document.createElement('div');
-  body.className = 'dialog-body';
-  body.tabIndex = 0;
-  body.textContent = `${filename}を読み込み中…`;
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.textContent = 'このWIを開く';
-  open.hidden = true;
-  const footer = document.createElement('footer');
-  footer.className = 'dialog-footer';
-  footer.append(open);
-  const frame = document.createElement('article');
-  frame.className = 'dialog-frame';
-  frame.append(header, body, footer);
-  dialog.append(frame);
-  dialog.addEventListener('close', () => {
-    const index = childDialogs.indexOf(dialog);
-    if (index !== -1) childDialogs.splice(index, 1);
-    dialog.remove();
-  });
-  parent.after(dialog);
-  const bounds = parent.getBoundingClientRect();
-  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-  const narrow = window.matchMedia('(max-width: 768px)').matches;
-  const shift = !narrow && bounds.width - rem >= 32 * rem && bounds.height - rem >= 20 * rem ? rem : 0;
-  Object.assign(dialog.style, {
-    left: `${bounds.left + shift}px`, top: `${bounds.top + shift}px`,
-    width: `${bounds.width - shift}px`, height: `${bounds.height - shift}px`,
-  });
-  childDialogs.push(dialog);
-  dialog.showModal();
-  try {
-    const {entry} = await api(`/api/entries/${encodeURIComponent(filename)}`);
-    if (!dialog.open) return;
-    const view = byId('detail-view-template').content.cloneNode(true);
-    const parts = new Map();
-    for (const part of view.querySelectorAll('[id]')) {
-      parts.set(part.id, part);
-      part.removeAttribute('id');
-    }
-    renderDetailView(entry, id => parts.get(id));
-    body.replaceChildren(view);
-    open.hidden = false;
-    open.addEventListener('click', () => {
-      closeDetailDialog();
-      if (!byId('detail-dialog').open) void selectEntry(entry);
-    });
-  } catch (error) {
-    body.textContent = error.status === 404 ? 'WIが見つかりません。' : error.message;
-  }
-}
-
 function appendMetadataItem(metadata, label, value, entry) {
   if (value === undefined) return;
   const item = document.createElement('div');
   item.className = 'metadata-item';
   const term = document.createElement('dt');
-  term.textContent = label;
+  term.textContent = ({
+    answered: '回答', updated_at: '最終更新', target_repo: '対象リポジトリ', target_branch: '系統',
+    source: '出所', depends_on: '先に必要な項目', cooldown_until: '再開予定', state: '状態',
+    question_type: '回答形式', scope: '確認範囲', choices: '選択肢', important: '重要', plan: '計画',
+  })[label] ?? label;
   const definition = document.createElement('dd');
   if (label === 'depends_on' && Array.isArray(value)) {
     if (!value.length) definition.textContent = 'なし';
@@ -208,7 +100,9 @@ function appendMetadataItem(metadata, label, value, entry) {
       definition.append(line);
     }
   } else {
-    definition.textContent = formatMetadataValue(value);
+    const display = label === 'question_type' ?
+      ({choice: '選択式', 'yes-no': 'はい／いいえ', 'post-approval': '事後承認'})[value] : null;
+    definition.textContent = display ?? formatMetadataValue(value);
     if (entry && label !== 'depends_on') linkWiReferences(definition, entry);
   }
   item.append(term, definition);
@@ -218,7 +112,7 @@ function appendMetadataItem(metadata, label, value, entry) {
 function renderMetadata(entry, metadata) {
   metadata.replaceChildren();
   if (entry.answered === true || entry.answered === false) {
-    appendMetadataItem(metadata, 'answered', entry.answered ? 'yes' : 'no');
+    appendMetadataItem(metadata, 'answered', entry.answered ? '回答済み' : '未回答');
   }
   for (const item of metadataEntries(entry)) {
     const key = item.key;
@@ -226,7 +120,7 @@ function renderMetadata(entry, metadata) {
     if (key?.type === 'str' && key.value === 'cooldown_until' && entry.cooldown_until) {
       const deadline = formatDateParts(entry.cooldown_until);
       appendMetadataItem(metadata, key.value, `${deadline.date} ${deadline.time} JST`);
-    } else appendMetadataItem(metadata, formatMetadataKey(key), item.value, entry);
+    } else appendMetadataItem(metadata, formatMetadataKey(key), key?.value === 'state' ? stateLabel(item.value) : item.value, entry);
   }
   const parts = formatDateParts(entry.updated_at);
   appendMetadataItem(metadata, 'updated_at', parts.time ? `${parts.date} ${parts.time}` : parts.date);
@@ -278,6 +172,13 @@ function renderDetailView(entry, part) {
   state.dataset.state = entry.state;
   const content = part('detail-content');
   content.innerHTML = entry.body_html ?? entry.content_html ?? '';
+  if (entry.kind === 'uwi') {
+    for (const heading of content.querySelectorAll('h1, h2, h3')) {
+      if (heading.textContent.trim() !== '回答') continue;
+      const next = heading.nextElementSibling;
+      if (!next || next.matches('h1, h2, h3')) heading.remove();
+    }
+  }
   renderAttachmentReferences(content, entry);
   linkWiReferences(content, entry);
   renderMetadata(entry, part('detail-metadata'));
@@ -303,7 +204,8 @@ export function setDetailMode(mode) {
   byId('save-next-answer-button').hidden = !waiting;
   byId('skip-answer-button').hidden = !waiting;
   // 連続回答では本文の読取領域を確保する。編集・状態操作は詳細を閉じて通常/検索表示から行える。
-  for (const id of ['adopt-button', 'edit-button']) byId(id).parentElement.hidden = waiting;
+  document.querySelector('.detail-footer-left').hidden = waiting;
+  document.querySelector('.detail-footer-right').hidden = waiting;
   renderWaitingProgress();
   byId('user-comment-panel').hidden = !commenting;
   // 採否のメモは採用・却下の操作モードでだけ表示し、閲覧中の本文とユーザーコメントの欄から分ける。
@@ -326,6 +228,17 @@ export function setDetailMode(mode) {
   byId('confirm-adopt-button').hidden = decisionAction !== 'adopt';
   byId('confirm-reject-button').hidden = decisionAction !== 'reject';
   const more = byId('detail-more');
+  if (more.dataset.answering !== String(answering)) {
+    more.open = !answering && !matchMedia('(max-width: 700px)').matches;
+  }
+  more.dataset.answering = String(answering);
+  const extra = more.querySelector('.detail-more-actions');
+  const edit = byId('edit-button');
+  const adopt = byId('adopt-button');
+  const editLocation = answering ? extra : document.querySelector('.detail-footer-right');
+  const adoptLocation = answering ? extra : document.querySelector('.detail-footer-left');
+  if (edit.parentElement !== editLocation) editLocation.prepend(edit);
+  if (adopt.parentElement !== adoptLocation) adoptLocation.prepend(adopt);
   more.hidden = waiting || !Array.from(more.querySelectorAll('button')).some(button => !button.hidden);
   syncDetailMutationAvailability();
   const adoptPrimary = !answering && !byId('adopt-button').hidden;
@@ -399,7 +312,8 @@ function reportDeletedEntry(filename, {reloadList = true} = {}) {
   if (reloadList) void reloadFromExternalChange();
 }
 
-export async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) {
+export async function selectEntry(entry, origin = null, {ignoreNotFound = false, recovering = false} = {}) {
+  if (!recovering) setUpdateError('wi', 'detail');
   const requestGeneration = ++wiState.detailRequestGeneration;
   const sessionGeneration = ++wiState.detailSessionGeneration;
   const requestIsCurrent = () => requestGeneration === wiState.detailRequestGeneration &&
@@ -416,16 +330,22 @@ export async function selectEntry(entry, origin = null, {ignoreNotFound = false}
   try {
     const payload = await api(`/api/entries/${encodeURIComponent(entry.filename)}`);
     if (!requestIsCurrent()) return;
+    setUpdateError('wi', 'detail');
     displayEntry(payload.entry);
     openDetailDialog(wiState.detailOrigin);
     if (payload.entry.state !== entry.state) void loadEntries({showLoading: false});
   } catch (error) {
     if (!requestIsCurrent()) return;
     if (error.status === 404) {
+      setUpdateError('wi', 'detail');
       if (!ignoreNotFound) reportDeletedEntry(entry.filename);
       return;
     }
-    setGlobalError(error.message);
+    if (readFailure(error.status) !== "temporary") {
+      setUpdateError('wi', 'detail');
+      setGlobalError(error.message);
+    }
+    else setDisplayedReadError('wi', 'detail', 'WIの詳細を取得できません。', () => selectEntry(entry, origin, {ignoreNotFound, recovering: true}));
   } finally {
     if (pendingRow) {
       pendingRow.removeAttribute('aria-busy');
@@ -477,7 +397,8 @@ export function closeDetailDialog({updateUrl = true, force = false} = {}) {
       mode.startsWith('decide-') && byId('decision-note').value !== '';
     if (changed && !window.confirm('変更した入力を破棄しますか？')) return;
   }
-  while (childDialogs.length) closeReferencedWi();
+  setUpdateError('wi', 'detail');
+  closeWiReferences();
   const returnTarget = detailReturnTarget();
   wiState.detailRequestGeneration += 1;
   wiState.detailSessionGeneration += 1;
@@ -555,12 +476,21 @@ export async function reloadOpenDetailFromExternalChange({timing = {}} = {}) {
     const payload = await api(`/api/entries/${encodeURIComponent(filename)}`, {timing});
     if (!requestIsCurrent()) return;
     resolvedEntry = payload.entry;
+    setUpdateError('wi', 'detail');
   } catch (error) {
     if (!requestIsCurrent()) return;
     if (error.status !== 404) {
-      reportExternalDetailFailure(error, deleteConfirmationInvalidated);
+      if (readFailure(error.status) !== "temporary") {
+        setUpdateError('wi', 'detail');
+        reportExternalDetailFailure(error, deleteConfirmationInvalidated);
+      } else {
+        const invalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
+        if (invalidated && byId('detail-alert').hidden) setTextMessage('detail-alert', DELETE_RECONFIRM_MESSAGE);
+        setDisplayedReadError('wi', 'detail', 'WIの詳細を取得できません。', reloadOpenDetailFromExternalChange);
+      }
       return;
     }
+    setUpdateError('wi', 'detail');
     deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
   }
   if (!resolvedEntry) {

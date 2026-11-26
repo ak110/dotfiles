@@ -4,6 +4,7 @@
 起動対象: add-wi.subagent.md
 ```
 
+委譲元が、WIの起草を独立した担当へ任せても、ユーザーの要求の意味を保った原稿だけを検収して登録させるための文書である。
 AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ委ねる委譲元が、起動、入力の受け渡し、返却の検収に使う。
 `agent-toolkit:atk-mode`の作業`process-wi`のレーン工程で上流リポジトリへの投入を要する項目も、この委譲で扱う。
 担当の手順と返却形式は`agent-toolkit:atk-mode/roles/add-wi.subagent.md`が定める。
@@ -20,7 +21,10 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 <!-- 生成元: skills/atk-mode/roles/add-wi.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
-通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
+通常起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意する。
+`agents_server.start`に役割文書の`subagent_md_path`と、以下の役割固有の入力をまとめた`extra_params`を渡す。
+`mode`は省略する（明示する場合は`mode: task`）。
+全体作業契約の絶対パスは`extra_params`の外の`whole_contract_path`に渡す。
 
 - 必須入力名: `投入する要求`、`引き継ぎ記録先`
 - 任意入力名: `投入経路`
@@ -155,7 +159,11 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 
 1. 原稿と成立性の証拠は、既存の原稿、作業記録、CLIの保存出力を直接読む。
    出所、採否、検証、冒頭抽出の対応がそろっていればそこから検収し、不足する情報だけを既存記録へ補わせる。
-2. `agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runに`--compare-opening-file <抽出の絶対パス>`を加え、受領済みの抽出と現行原稿の一致を確かめる。
+2. 起草者から独立に`agent-toolkit:atk-mode/references/draft-semantic-review.md`「最初の判定」を行う。
+   不合格なら細部の判定と保存指示へ進まない。
+   合格したユーザー起点AWIでは`agent-toolkit:atk-mode/playbooks/wi-saving.md`「原要求の検収結果」の所在を保存指示と一緒に渡す。
+   `agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runに、受領済みの抽出があれば`--compare-opening-file <抽出の絶対パス>`を加えて一致を確かめる。
+   先行の抽出がない原稿は、原要求の合格後に`--origin-review`を付けて抽出する。
    本保存に同じ指定を付けると、一致した場合だけ保存される。
    新規では原稿のfrontmatterに`source`があればその値を使い、無ければ`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決めた値を`--source`へ渡す。
    その際は原稿ごとに、成立性の証拠にあるdry-runの入力原稿と抽出保存先の対応を使う。
@@ -171,6 +179,8 @@ AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ
 5. 「WI投入担当の返却契約」の形式・省略規則と検収結果を確かめ、合格した要求識別子へ直ちに保存を指示する。
    他の担当の返却や別AWIの確定は待たずに進め、同じ担当の中の依存順だけを守る。
    指示は`send_message`の`instruction`に`保存開始`、`extra_params`の`要求識別子`に合格した対象を渡す（初回の要求本文は担当が保持している）。
+   原要求の検収対象も保存する場合は、`extra_params`の`原要求検収`に、要求識別子をキー、`検収結果`と`冒頭抽出`の絶対パスを持つ辞書を値とするJSONファイルの絶対パスを渡す。
+   対象が無ければ`原要求検収`は指定せず、不在は「検収対象なし」を表す。
    組み込み委譲では`agent-toolkit:atk-mode/references/delegation-prompt.md`の生成CLIを使う。
    不合格は「修正と再開」へ戻す。
 

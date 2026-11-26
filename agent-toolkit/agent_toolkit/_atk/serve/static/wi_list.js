@@ -1,3 +1,5 @@
+import {readFailure} from "./common.js";
+import {recordUpdateSuccess, setUpdateError, setDisplayedReadError} from "./common.js";
 import {pushHandlesNotifications} from "./wi_push.js";
 import {
   ENTRY_PAGE_SIZE, PROCESSABLE_STATES, byId, entryKey, wiState
@@ -124,9 +126,14 @@ export function applyPagination(payload) {
   };
 }
 
+let listScope;
+let repoScope;
+
 export async function loadEntries({announce = false, showLoading = true, timing = {}} = {}) {
   wiState.pendingListAnnouncement = wiState.pendingListAnnouncement || announce;
   const query = buildQuery(wiState.currentPage);
+  if (listScope !== query.toString()) setUpdateError("wi", "list");
+  listScope = query.toString();
   const generation = ++wiState.listRequestGeneration;
   const loadingView = captureListLoadingView();
   beginListRequest(loadingView, showLoading);
@@ -134,6 +141,7 @@ export async function loadEntries({announce = false, showLoading = true, timing 
     try {
       const payload = await api(`/api/entries?${query.toString()}`, {timing});
       if (generation !== wiState.listRequestGeneration) return wiState.entries;
+      recordUpdateSuccess("wi", "list");
       wiState.entries = Array.isArray(payload.entries) ? payload.entries : [];
       applyPagination(payload);
       const selected = wiState.entries.find(item => entryKey(item) === entryKey(wiState.currentEntry));
@@ -149,7 +157,8 @@ export async function loadEntries({announce = false, showLoading = true, timing 
     } catch (error) {
       if (generation === wiState.listRequestGeneration) {
         wiState.pendingListAnnouncement = false;
-        setGlobalError(error.message);
+        if (readFailure(error.status) !== "temporary") setGlobalError(error.message);
+        else setDisplayedReadError("wi", "list", "WI一覧を取得できません。", () => loadEntries({announce: true}));
       }
       return wiState.entries;
     }
@@ -238,19 +247,20 @@ function renderBranchFilter() {
   const registered = branches.length > 0;
   byId('target-branch-filter-label').hidden = !registered;
   select.hidden = !registered;
-  replaceOptions(select, registered ? branches : [], 'all');
+  replaceOptions(select, registered ? branches : [], 'すべて');
 }
 
 export async function loadBranchRegistry({timing = {}} = {}) {
   try {
     const payload = await api('/api/branches', {timing});
+    setUpdateError("wi", "branches");
     wiState.branchRegistry = payload.repositories ?? {};
     renderBranchFilter();
     renderRepoOptions();
     updateCreateBranchChoices();
     return true;
   } catch (error) {
-    setGlobalError(error.message);
+    setDisplayedReadError("wi", "branches", "ブランチ候補を取得できません。", loadBranchRegistry);
     return false;
   }
 }
@@ -258,26 +268,30 @@ export async function loadBranchRegistry({timing = {}} = {}) {
 export async function loadTargetRepos({timing = {}} = {}) {
   const generation = ++wiState.targetRepoRequestGeneration;
   const requestedState = byId('state-filter').value;
+  const scope = JSON.stringify([requestedState, wiState.displayMode]);
+  if (repoScope !== scope) setUpdateError("wi", "repos");
+  repoScope = scope;
   try {
     const status = encodeURIComponent(requestedState);
     const payload = await (api(`/api/repos?status=${status}`, {timing}));
     if (generation !== wiState.targetRepoRequestGeneration ||
         byId('state-filter').value !== requestedState) return false;
     const repos = Array.isArray(payload.repos) ? payload.repos : [];
-    replaceOptions(byId('target-filter'), repos, 'all');
+    replaceOptions(byId('target-filter'), repos, 'すべて');
     // 判断待ちは検索条件のstateに依存せず、activeのrepo候補を別途取得する。
     if (wiState.displayMode === 'waiting') {
       const waiting = await api('/api/repos?status=active', {timing});
       if (generation !== wiState.targetRepoRequestGeneration || wiState.displayMode !== 'waiting') return false;
-      replaceOptions(byId('waiting-target-filter'), waiting.repos, 'all');
+      replaceOptions(byId('waiting-target-filter'), waiting.repos, 'すべて');
     }
+    setUpdateError("wi", "repos");
     wiState.repoCandidates = repos;
     renderRepoOptions();
     return true;
   } catch (error) {
     const isCurrent = generation === wiState.targetRepoRequestGeneration &&
       byId('state-filter').value === requestedState;
-    if (isCurrent) setGlobalError(error.message);
+    if (isCurrent) setDisplayedReadError("wi", "repos", "リポジトリ候補を取得できません。", loadTargetRepos);
     return isCurrent;
   }
 }

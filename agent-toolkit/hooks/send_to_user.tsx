@@ -67,12 +67,12 @@ const CUE_PATTERNS = (Object.keys(REPORT_CUES) as Cue[]).map((cue) => [cue, new 
 const RECORD_LINE_CHECKS: readonly { cues: readonly Cue[]; head: string; warning: string }[] = [
   {
     cues: ["deviation"],
-    head: "処置",
+    head: "対策",
     warning: automatedMessage(
       "send-to-user",
       "warn",
-      "本文は表示済みである。逸脱を示す語を含む報告に`処置:`の行が無い。" +
-        "以後の報告では、今回の是正と残る影響を`処置:`の行に書け。bugfixの起動の記録は、今回の事象へ5つの問いを適用したことを示さない。逸脱の報告に当たらないと判断した時は、根拠を`hook通知への対応:`の行に書け。",
+      "本文は表示済みである。逸脱を示す語を含む報告に`対策:`の行が無い。" +
+        "以後の報告では、今回の是正と残る影響を`対策:`の行に書け。bugfixの起動の記録は、今回の事象へ7つの問いを適用したことを示さない。",
     ),
   },
   {
@@ -82,7 +82,7 @@ const RECORD_LINE_CHECKS: readonly { cues: readonly Cue[]; head: string; warning
       "send-to-user",
       "warn",
       "本文は表示済みである。再発防止を検討する条件（ユーザーの指摘、同じ害の繰り返し、大きな害）を示す語を含む逸脱の報告に`再発防止:`の行が無い。" +
-        "以後の報告では、再発防止の採否を`再発防止:`の行に書け。採らない場合は区分名と理由を書く。条件に当たらないと判断した時は、根拠を`hook通知への対応:`の行に書け。",
+        "以後の報告では、再発防止の採否を`再発防止:`の行に書け。採らない場合は区分名と理由を書く。",
     ),
   },
 ];
@@ -148,16 +148,17 @@ const PREVENTION_WITHOUT_CHANGE_WARNING = automatedMessage(
   "send-to-user",
   "warn",
   "本文は表示済みである。`再発防止:`の行が、変える成果物（ファイル・commit）も採用しない区分名も示していない。" +
-    "担当の心がけは再発防止にならない（`agent-basics:bugfix/references/prevention.md`）。採る場合は誤りを誘った入力の除去・構造・検査のどれかで変えるファイルを、" +
+    "担当の心がけは再発防止にならない（`agent-basics:bugfix/references/prevention.md`）。採る場合は文言・出し方と仕組みを比べ、原因に作用する変更を加えるファイルを、" +
     "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書け。",
 );
 
-const BUGFIX_RECORD_HEADS = ["期待", "原因", "処置"] as const;
+const BUGFIX_RECORD_HEADS = ["期待", "原因", "対策"] as const;
 export const missingPreventionRejection = automatedMessage(
   "send-to-user",
   "block",
-  "報告は未送信である。bugfixの記録（`期待:`・`原因:`・`処置:`）に`再発防止:`の行が無い。" +
-    "採用する策と変える成果物、採らない区分名と理由、または未解決で調査へ引き継ぐ場合の観測した事象・次に確かめる問い・引継先（`agent-basics:bugfix/references/prevention.md`「`再発防止:`の行」）を`再発防止:`の行に書き、同じ報告をsend_to_userで送り直せ。",
+  "報告は未送信である。bugfixの記録（`期待:`・`原因:`・`対策:`）に`再発防止:`の行が無い。" +
+    "採用する策と変える成果物、採らない区分名と理由、または未解決で調査へ引き継ぐ場合の観測した事象・次に確かめる問い・引継先（`agent-basics:bugfix/references/prevention.md`「`再発防止:`の行」）を`再発防止:`の行に書き、同じ報告をsend_to_userで送り直せ。" +
+    '判定名は `missing-prevention`。',
 );
 
 export function missingPreventionLine(message: string): boolean {
@@ -180,11 +181,25 @@ export function missingPreventionLine(message: string): boolean {
   return records.some((record) => BUGFIX_RECORD_HEADS.every((head) => record.get(head)) && !record.get("再発防止"));
 }
 
-export function reportWarnings(message: string): string[] {
+export function reportWarnings(message: string, deliveryId?: string, skipped: readonly string[] = []): string[] {
   const warnings = new Set<string>();
+  function warn(check: string, warning: string): void {
+    if (skipped.includes(check)) return;
+    if (deliveryId === undefined) {
+      warnings.add(warning);
+      return;
+    }
+    const claim = JSON.stringify([{ check, reason: "誤検出と判断した理由", delivery_id: deliveryId }]);
+    const guidance =
+      `次の操作: 誤検出なら表示済みの本文は再掲せず、次のsend_to_userに \`misdetection=${claim}\` を付ける。` +
+      "同じ送達に誤検出が複数あれば、それぞれの判定名と送達IDの組を1つのmisdetection配列にまとめる。" +
+      '次が質問だけなら、質問の前に `message: "…"` とその申告を付けたsend_to_userを1回呼ぶ。';
+    warnings.add(warning.replace('kind="warn">', `kind="warn" check="${check}" delivery_id="${deliveryId}">`)
+      .replace("</atk-auto>", `${guidance}\n</atk-auto>`));
+  }
   const clockClaims = reportBodyLines(message).map((line) => line.replace(/`[^`\n]+`/g, ""));
   if (clockClaims.some((line) => /(?:^|[^0-9A-Za-z_])(?:(?:[01]?\d|2[0-3]):(?:[0-5][xX]|[xX][0-9xX])|(?:[012][xX]|[xX][0-9xX]):(?:[0-5][0-9xX]|[xX][0-9xX]))(?![0-9A-Za-z_])/.test(line))) {
-    warnings.add(automatedMessage("send-to-user", "warn",
+    warn("clock-claim", automatedMessage("send-to-user", "warn",
       "本文は表示済みである。時刻の一部が伏せ字になっている。観測値か、推定と分かる時間帯を示す。"));
   }
   for (const line of reportedLines(message)) {
@@ -192,17 +207,17 @@ export function reportWarnings(message: string): string[] {
       const check = STATUS_CHECKS.find((candidate) => candidate.value === matched[1])!;
       const rest = line.slice((matched.index ?? 0) + matched[0].length);
       const category = check.categories.find((name) => rest.startsWith(name));
-      if (category === undefined) warnings.add(check.warning);
+      if (category === undefined) warn(check.value === "不要" ? "status-unnecessary-kind" : "status-planned-kind", check.warning);
       const reason = rest.slice(category?.length ?? 0).replace(/^[ \t、,]+/, "");
-      if (check.value === "不要" && UNINVESTIGATED_REASON.test(reason)) warnings.add(UNINVESTIGATED_WARNING);
+      if (check.value === "不要" && UNINVESTIGATED_REASON.test(reason)) warn("uninvestigated-reason", UNINVESTIGATED_WARNING);
       if (check.value === "不要" && category === "見送り") {
         const report = rest.split("AWI化ステータス:", 1)[0]!;
         const values = new Map([...report.matchAll(DEFERRAL_FIELD)].map((field) => [field[1], field[2]!.replace(/[\s。）」)]+$/g, "")]));
         const missing = DEFERRAL_FIELDS.filter((name) => !values.get(name));
-        if (missing.length > 0) warnings.add(automatedMessage(
+        if (missing.length > 0) warn("deferral-comparison", automatedMessage(
           "send-to-user", "warn",
           `見送り報告の比較項目が空または欠落している: ${missing.join("、")}。` +
-            "同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、セミコロンで区切って記録せよ。見送り報告に当たらないと判断した時は、根拠を`hook通知への対応:`の行に書け。",
+            "同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、セミコロンで区切って記録せよ。",
         ));
       }
     }
@@ -212,12 +227,12 @@ export function reportWarnings(message: string): string[] {
   const cues = new Set(CUE_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([cue]) => cue));
   const heads = new Set(body.map((line) => line.replaceAll("：", ":")).filter((line) => line.includes(":")).map((line) => line.split(":", 1)[0]));
   for (const check of RECORD_LINE_CHECKS) {
-    if (check.cues.every((cue) => cues.has(cue)) && !heads.has(check.head)) warnings.add(check.warning);
+    if (check.cues.every((cue) => cues.has(cue)) && !heads.has(check.head)) warn(check.head === "対策" ? "missing-disposition" : "missing-prevention", check.warning);
   }
   for (const line of body.map((item) => item.replaceAll("：", ":"))) {
     if (!line.startsWith("再発防止:")) continue;
     const content = line.slice("再発防止:".length).trim();
-    if (!PREVENTION_CATEGORY.test(content) && !CHANGED_ARTIFACT.test(content)) warnings.add(PREVENTION_WITHOUT_CHANGE_WARNING);
+    if (!PREVENTION_CATEGORY.test(content) && !CHANGED_ARTIFACT.test(content)) warn("prevention-artifact", PREVENTION_WITHOUT_CHANGE_WARNING);
   }
   return [...warnings];
 }

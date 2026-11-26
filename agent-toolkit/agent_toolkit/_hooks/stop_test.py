@@ -6,13 +6,13 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._common import session_state
+from agent_toolkit._common import completion_exit, session_state
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import stop
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
-from agent_toolkit._testing.helpers import _write_transcript
+from agent_toolkit._testing.helpers import _write_transcript, repl_send_to_user_entries
 
 _HOOKS_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
 
@@ -439,3 +439,78 @@ def test_queued_notifications_yield_without_overriding_block(
         state = _read_state(tmp_path, "queued-stop")
         assert not state.get("queued_notification_notified_ids")
         assert not state.get("warn_notice_counts")
+
+
+@pytest.mark.parametrize(
+    ("case", "approved"),
+    [("clear", True), ("blocked", False), ("background", False), ("unrelated", False), ("repl", True), ("repl-error", False)],
+)
+def test_stop_completion_exit_verdict(case, approved, monkeypatch, tmp_path):
+    _set_state_directory(monkeypatch, tmp_path)
+    launch = "a" * 32
+    monkeypatch.setenv(completion_exit.LAUNCH_ENV, launch)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    if case == "blocked":
+        _replace_checks(monkeypatch, {"run_skill_report_gate": ("block", "作業が残っている")})
+    state = completion_exit.state_path(launch, root=tmp_path)
+    assert state is not None
+    state.parent.mkdir()
+    completion_exit.write_state(state, {"session": "stop-completion", "call": "call-a", "status": "requested"})
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call-a",
+                            "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                            "input": {"kind": "completion", "message": "完了しました。"},
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-a" if case != "unrelated" else "call-b",
+                            "content": '{"ok":true}',
+                        }
+                    ]
+                },
+            },
+        ],
+    )
+    if case.startswith("repl"):
+        transcript = _write_transcript(
+            tmp_path,
+            repl_send_to_user_entries("call-a", {"kind": "completion", "message": "完了しました。"}, ok=case == "repl"),
+        )
+    stop.evaluate(
+        json.dumps(
+            {
+                "session_id": "stop-completion",
+                "transcript_path": str(transcript),
+                "background_tasks": [{"id": "held", "type": "local_bash", "status": "running"}] if case == "background" else [],
+            }
+        )
+    )
+    assert completion_exit.read_state(state).get("status") == ("approved" if approved else None)
+
+
+@pytest.mark.parametrize(("ok", "expected"), [(True, "完了しました。"), (False, None)])
+def test_completion_report_text_accepts_repl_delivery(ok, expected, tmp_path):
+    session = "repl-report"
+    record = tmp_path / "projects" / "repo" / f"{session}.jsonl"
+    record.parent.mkdir(parents=True)
+    entries = repl_send_to_user_entries("call-a", {"kind": "completion", "message": "完了しました。"}, ok=ok)
+    record.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
+
+    state = {"session": session, "call": "call-a", "status": "exiting"}
+    assert completion_exit.report_text(state, root=tmp_path) == expected

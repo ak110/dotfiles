@@ -5,7 +5,7 @@
 ## Codexの起動管理とdaemon復旧
 
 自動復旧を使うTUIの起動管理は`pytools/codex_launcher.py`が所有し、`dotfiles-codex`とモデル・effortの補助入口で使う。
-通常の`codex`名は公式実行体用に保つ。
+公式名の扱いは[公式の Claude Code・Codex 起動コマンド](concepts-environment.md#公式の-claude-codecodex-起動コマンド)に従う。
 Codexの起動中は依存関係を導入せず、post-applyと同じpytools環境を使う。
 Windows公式インストーラーの可視binはpackageのbinへのjunctionであり、内容と既存のPATH順を変更しない。
 POSIXでは配布済みの旧置換リンクだけを確認済みの公式実行体へのリンクへ戻す。

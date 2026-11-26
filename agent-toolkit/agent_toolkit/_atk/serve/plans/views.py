@@ -13,6 +13,7 @@ import pathlib
 import socket
 import threading
 import typing
+import urllib.parse
 
 import markdown_it
 import markdown_it.renderer
@@ -42,13 +43,15 @@ from agent_toolkit._atk.serve.plans.roots import (
     deliver_root_status,
     logger,
 )
+from agent_toolkit._atk.serve.remote import read_failure_status
 from agent_toolkit._common import watch_observer as _watch_observer
 from agent_toolkit._common.async_operations import run_sync_operation
 from agent_toolkit._common.frontmatter import normalize_newlines, parse_frontmatter
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
+from agent_toolkit._plan import locations as _plan_locations
 from agent_toolkit._plan.creation_times import cleanup_creation_time_temporaries
 from agent_toolkit._plan.structure import parse_plan_metadata
-from agent_toolkit._plan.structure.parsing import is_awi_plan
+from agent_toolkit._plan.structure.parsing import BOM, is_awi_plan, is_wi_list_plan
 from agent_toolkit._plan.viewer_files import (
     LEGACY_SOURCE_ID,
     NEW_SOURCE_ID,
@@ -200,31 +203,38 @@ def listed_plan_path(rel: str) -> str:
     return rel if main_name is None else str(path.with_name(main_name))
 
 
-async def search_entries(context: PlansContext, query: str) -> list[FileEntry] | None:
+async def search_entries(
+    context: PlansContext, query: str, *, failures: dict[str, int] | None = None, targets: tuple[str, ...] = ()
+) -> list[FileEntry] | None:
     entries = await all_entries(context)
     if not query:
         return entries
+    local_roots = () if targets else context.roots
     local_results = await asyncio.gather(
         *(
             asyncio.to_thread(search_files, spec.path, query, spec.source_id, stop=context.state.stop_requested)
-            for spec in context.roots
+            for spec in local_roots
         )
     )
     local_matches = {
         candidate
-        for spec, paths in zip(context.roots, local_results, strict=True)
+        for spec, paths in zip(local_roots, local_results, strict=True)
         for path in paths
         for candidate in ((spec.source_id, path), (spec.source_id, listed_plan_path(path)))
     }
 
+    hosts = targets or tuple(context.remote_hosts)
     results = await asyncio.gather(
-        *(_search_remote(context, host, query) for host in context.remote_hosts),
+        *(_search_remote(context, host, query) for host in hosts),
         return_exceptions=True,
     )
     remote_matches: dict[str, set[tuple[str, str]]] = {}
-    for result in results:
+    for host, result in zip(hosts, results, strict=True):
         if isinstance(result, RemoteSearchSuperseded):
             return None
+        if isinstance(result, PlanFileError) and failures is not None:
+            failures[host] = result.status
+            continue
         if isinstance(result, BaseException):
             raise result
         matched_host, matched_paths = result
@@ -255,7 +265,7 @@ async def _search_remote(context: PlansContext, host: str, query: str) -> tuple[
         raise
     except Exception as error:  # noqa: BLE001
         logger.warning("リモート本文検索失敗 host=%s: %s", host, error)
-        raw_paths = set()
+        raise _remote_read_error(error) from error
     source_ids = set(context.state.root_info.get(host, {}))
     fallback_source = next(iter(source_ids)) if len(source_ids) == 1 else ""
     paths: set[tuple[str, str]] = set()
@@ -369,6 +379,11 @@ class PlanFileError(Exception):
         self.message = message
 
 
+def _remote_read_error(error: Exception) -> PlanFileError:
+    status = read_failure_status(error)
+    return PlanFileError(status, {403: "remote read failed", 404: "not found", 503: "remote read unavailable"}[status])
+
+
 async def resolve_text(
     context: PlansContext,
     host: str,
@@ -386,9 +401,14 @@ async def resolve_text(
     watcher = context.state.remote_watchers.get(host)
     try:
         return await fetch_remote_file(host, rel, context.runner, watcher, source_id=source_id)
-    except Exception as error:  # noqa: BLE001
+    except FileNotFoundError as error:
         logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, error)
         raise PlanFileError(404, "not found") from error
+    except PermissionError as error:
+        raise PlanFileError(403, "permission denied") from error
+    except Exception as error:  # noqa: BLE001
+        logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, error)
+        raise _remote_read_error(error) from error
 
 
 def _read_text(path: pathlib.Path) -> str:
@@ -399,21 +419,68 @@ def _awi_plan_html(text: str, body_html: str) -> str:
     metadata, _errors = parse_plan_metadata(text)
     if metadata is None:
         return body_html
-    related = "、".join(name for name, _summary in metadata.related_wi) or "なし"
-    values = metadata.values | {"関連WI": related}
-    fields = "".join(f"<dt>{html_lib.escape(name)}</dt><dd>{html_lib.escape(value)}</dd>" for name, value in values.items())
+    related = (
+        "、".join(
+            f'<span data-wi-reference="{html_lib.escape(name)}">{html_lib.escape(name)}</span>'
+            for name, _summary in metadata.related_wi
+        )
+        or "なし"
+    )
+    fields = "".join(
+        f"<dt>{html_lib.escape(name)}</dt><dd>{html_lib.escape(value)}</dd>"
+        for name, value in metadata.values.items()
+        if name != "関連WI"
+    )
+    fields += f"<dt>関連WI</dt><dd>{related}</dd>"
     return f"<dl>{fields}</dl>{body_html}"
+
+
+def _listed_wi_texts(text: str) -> list[tuple[str, str | None]]:
+    metadata, _errors = parse_plan_metadata(text)
+    if metadata is None:
+        return []
+    try:
+        root = _plan_locations.private_notes_root()
+    except OSError, ValueError:
+        return [(name, None) for name, _summary in metadata.related_wi]
+    results: list[tuple[str, str | None]] = []
+    for name, _summary in metadata.related_wi:
+        try:
+            source = _plan_locations.find_wi_source(name, root)
+            results.append((name, source.read_text(encoding="utf-8", errors="replace") if source is not None else None))
+        except OSError, ValueError:
+            results.append((name, None))
+    return results
+
+
+def _wi_list_plan_html(text: str, wis: list[tuple[str, str | None]], renderer: markdown_it.MarkdownIt) -> str:
+    parts = [_awi_plan_html(text, "")]
+    for name, wi_text in wis:
+        escaped = html_lib.escape(name)
+        query = html_lib.escape(urllib.parse.urlencode({"filename": name}), quote=True)
+        link = f'<a href="./?{query}">{escaped}</a>'
+        if wi_text is None:
+            parts.append(f'<section class="plan-wi"><h2>{link}</h2><p>このWIの本文を取得できない。</p></section>')
+            continue
+        parsed = parse_frontmatter(normalize_newlines(wi_text.lstrip(BOM)))
+        body = parsed[1] if parsed is not None else wi_text
+        parts.append(f'<section class="plan-wi"><h2>{link}</h2>{markdown_to_html(body, renderer)}</section>')
+    return "".join(parts)
 
 
 async def render_file_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:
     text = await resolve_text(context, host, source_id, rel)
 
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    wis = await asyncio.to_thread(_listed_wi_texts, text) if is_wi_list_plan(text) else []
+    digest_source = text + "".join(f"\0{name}\0{wi_text}" for name, wi_text in wis)
+    digest = hashlib.sha256(digest_source.encode("utf-8")).hexdigest()
     cache_key: MarkdownCacheKey = (host, source_id, rel, digest)
     rendered = context.markdown_cache.get(cache_key)
     if rendered is None:
         if is_review_table_path(rel):
             rendered = review_table_html(text)
+        elif is_wi_list_plan(text):
+            rendered = _wi_list_plan_html(text, wis, context.renderer)
         elif is_awi_plan(text):
             parsed = parse_frontmatter(normalize_newlines(text.lstrip("\ufeff")))
             assert parsed is not None

@@ -136,3 +136,24 @@ async def test_awi_plan_renders_metadata_and_body(tmp_path: pathlib.Path) -> Non
     assert plan_fixture.WI_FILES[0][0] in html
     assert "反映内容と反映先" in html
     assert "<pre>" in html
+
+
+@pytest.mark.asyncio
+async def test_wi_list_plan_renders_wi_body_link_and_missing_entry(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    notes = tmp_path / "notes"
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    present = "20261101-000000-001.md"
+    missing = "20261101-000000-002.md"
+    _plan(notes, f"processing/{present}", "---\ntype: awi\n---\n# 対象WIの要求\n\n対象の本文を表示する。\n")
+    root = tmp_path / "plans"
+    content = plan_fixture.wi_list_plan(repo=tmp_path, related_wi=((present, ""), (missing, "")))
+    path = _plan(root, "01-0000_plan.md", content)
+    context = _context(root)
+
+    html = await plans_views.render_file_html(context, context.hostname, context.roots[0].source_id, path.name)
+
+    assert "対象の本文を表示する。" in html
+    assert f'<a href="./?filename={present}">{present}</a>' in html
+    assert f"{missing}</a></h2><p>このWIの本文を取得できない。" in html

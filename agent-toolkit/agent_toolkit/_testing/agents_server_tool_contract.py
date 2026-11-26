@@ -61,6 +61,10 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "annotations": {"destructive_hint": False},
         "input_schema": {
             "properties": {
+                "contract_changes": {
+                    "anyOf": [{"additionalProperties": {"type": "string"}, "type": "object"}, {"type": "null"}],
+                    "default": None,
+                },
                 "extra_params": {
                     "anyOf": [{"additionalProperties": {"type": "string"}, "type": "object"}, {"type": "null"}],
                     "default": None,
@@ -82,6 +86,13 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "properties": {
                 "message": {"type": "string"},
                 "kind": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "misdetection": {
+                    "anyOf": [
+                        {"items": {"additionalProperties": {"type": "string"}, "type": "object"}, "type": "array"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
             },
             "required": ["message"],
             "type": "object",

@@ -35,6 +35,34 @@ def shell_prompt(command: str, summary_policy: str) -> str:
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
 
 
+SEND_MESSAGE_PROMPT_DESCRIPTION = parameter_description(
+    "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終了済みsessionへは新しい依頼として届く。"
+    "instructionと排他的に指定する。"
+)
+
+SEND_MESSAGE_TIMEOUT_DESCRIPTION = parameter_description(
+    "継続要求の配送結果が確定するまでの待機上限秒数。省略時は270秒。委譲先の応答生成の完了は待たない。0以下は受理しない。"
+)
+
+SEND_MESSAGE_INSTRUCTION_DESCRIPTION = parameter_description(
+    "役割文書が宣言する定型継続指示。extra_paramsと組み合わせ、promptと排他的に指定する。"
+)
+
+SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION = parameter_description(
+    'instructionの宣言済み入力だけを渡す。例: instruction=再レビューせよ、extra_params={"round":"2"}。'
+)
+
+SEND_MESSAGE_MESSAGE_DESCRIPTION = parameter_description(
+    "promptの別名。send_to_userのmessageと同じ名前で本文を渡す取り違えを受け付けるためにあり、promptと同時には指定しない。"
+)
+
+SEND_MESSAGE_CONTRACT_CHANGES_DESCRIPTION = parameter_description(
+    "作業契約に残す実際の要求変更だけを指定する。現在の依頼に一意にある原文をキー、"
+    "新しい文を値とする。値が空なら取消、キーが空なら追加。状況照会では省略する。"
+    "追送本文でも同じ変更を伝える。配送に失敗した場合は契約を変更しない。"
+)
+
+
 StartMode = Literal["task", "delegate", "explore", "write", "shell"]
 """`start`の`mode`が受理する値。`tool_names.START_MODES`と同じ集合を保つ。"""
 
@@ -47,6 +75,7 @@ CWD_DESCRIPTION = parameter_description(
 HANDOFF_MODEL_INPUTS = (
     "前任が候補列で起動した場合は、役割または作業に対応する工程名を`model_type`へ明示する。"
     "候補列の直接指定や役割と異なる工程は、認められた例外に限り`model_override`と`model_override_evidence`を添える。"
+    "後任が`write_model`を使う場合は、省略時も`model_override=user_instruction`と実際の指示の根拠を渡す。"
 )
 
 
@@ -171,7 +200,9 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
     "候補列の直接指定と役割の工程の変更にはmodel_overrideとmodel_override_evidenceが必須。handoff_fromでは前任の候補列を継承しない。"
-    "自由本文のdelegate・explore・write・shellで`execute`か`orchestrate`を指定すると、委譲先を起動せずに拒否する。"
+    "自由本文の実装・修正は`mode=delegate, model_type=execute`を使う。レーンと役割の契約が必要なら所定の`exec`を使う。"
+    "自由本文では`orchestrate`を、軽量modeでは`execute`も拒否する。"
+    "解決後の工程が`write`の場合は`model_override=user_instruction`と`model_override_evidence`に実際のユーザー指示の根拠が必要。"
     "taskで役割文書の工程と異なる値を指定した場合と、候補列を直接指定した場合は、応答の`warnings`へ示す。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
 )
@@ -211,7 +242,10 @@ START_MODE_EXAMPLES = {
         '"whole_contract_path": "<全体作業契約の絶対パス>"}`'
     ),
     "explore": '`{"cwd": "<絶対パス>", "mode": "explore", "prompt": "<質問と調べる範囲>", "label": "explore-<対象>"}`',
-    "write": '`{"cwd": "<絶対パス>", "mode": "write", "prompt": "<起草の依頼>", "label": "write-<対象>"}`',
+    "write": (
+        '`{"cwd": "<絶対パス>", "mode": "write", "prompt": "<起草の依頼>", '
+        '"model_override": "user_instruction", "model_override_evidence": "<実際のユーザー指示の根拠>"}`'
+    ),
     "shell": (
         '`{"cwd": "<絶対パス>", "mode": "shell", "command": "<コマンド>", "summary_policy": "<要約方針>", '
         '"label": "shell-<コマンド名>"}`'
@@ -237,7 +271,7 @@ START_DESCRIPTION = "\n".join(
         "`subagent_md_path`・`extra_params`・`whole_contract_path` | `<役割名>.subagent.md`の`mode:`、対応する工程別設定 |",
         "| `delegate` | 自由本文の単発作業 | `prompt`・`model_type`・`whole_contract_path` | 通常起動、省略不可 |",
         "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`chores_fast` |",
-        "| `write` | 確定した文章の起草と小規模な定型書込 | `prompt` | 軽量起動、`write` |",
+        "| `write` | 確定した文章の起草と小規模な定型書込 | `prompt` | 軽量起動、ユーザー指示がある場合に`write` |",
         "| `shell` | コマンド実行と結果の要約 | `command`・`summary_policy` | 軽量起動、`chores_fast` |",
         "",
         "modeを省き、役割文書なしでpromptとwhole_contract_pathを渡すと`delegate`、それ以外は`task`。",
@@ -255,7 +289,7 @@ START_DESCRIPTION = "\n".join(
         '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "chores", '
         '"whole_contract_path": "/abs/work-contract.md"}`',
         '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と範囲>"}`',
-        '- write: `{"cwd": "/repo", "mode": "write", "prompt": "<確定した書込依頼>"}`',
+        f"- write: {START_MODE_EXAMPLES['write']}。ユーザー指示がある場合のみ。",
         '- shell: `{"cwd": "/repo", "mode": "shell", "command": "make test", '
         '"summary_policy": "終了コードと失敗したテスト名"}`',
         "",

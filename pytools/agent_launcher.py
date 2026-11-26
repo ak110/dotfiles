@@ -1,5 +1,8 @@
 # PYTHON_ARGCOMPLETE_OK
-"""モデルごとに決めた引数を付けてClaude CodeまたはCodexを起動する。"""
+"""モデルごとに決めた引数を付けてClaude CodeまたはCodexを起動する。
+
+公式の claude・codex を置き換えず、独自処理は補助入口に置く（docs/development/concepts-environment.md、pyfltr: allow-comment）。
+"""
 
 import argparse
 import json
@@ -9,11 +12,12 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from collections.abc import Callable
 from typing import NoReturn
 
 from agent_toolkit._common import startup_features
-lazy from agent_toolkit._common import codex_models
+lazy from agent_toolkit._common import codex_models, completion_exit, host_homes
 
 from pytools._internal import common
 from pytools._internal.cli import enable_completion
@@ -27,13 +31,15 @@ type CommandRunner = Callable[[list[str]], int]
 type HelpRunner = Callable[[list[str]], subprocess.CompletedProcess[str] | None]
 type TerminalChecker = Callable[[int], bool]
 
+# pyfltr: allow-comment -- 2.1.332のヘルプ本文では [-file] と略記される。値付きでmcp --helpへ渡して解釈を確認した。
+_CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS = {"--append-system-prompt-file", "--system-prompt-file"}
 _CLAUDE_VALUE_OPTIONS = frozenset(
     {
+        *_CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS,
         "--add-dir",
         "--agent",
         "--agents",
         "--append-system-prompt",
-        "--append-system-prompt-file",
         "--betas",
         "--debug-file",
         "--disallowedTools",
@@ -55,7 +61,6 @@ _CLAUDE_VALUE_OPTIONS = frozenset(
         "--setting-sources",
         "--settings",
         "--system-prompt",
-        "--system-prompt-file",
         "--tools",
         "--allowedTools",
         "--allowed-tools",
@@ -154,6 +159,154 @@ def _enable_model_completion(command_name: str) -> None:
     enable_completion(parser)
 
 
+# pyfltr: allow-comment -- Claude Code 2.1.332 の claude --help にある値付きのオプションと管理サブコマンド。
+_CLAUDE_LAUNCH_VALUE_OPTIONS = {
+    "--agent",
+    "--agents",
+    "--append-system-prompt",
+    "--autocompact",
+    "--cloud",
+    "-d",
+    "--debug",
+    "--debug-file",
+    "--effort",
+    "--environment",
+    "--fallback-model",
+    "--from-pr",
+    "--input-format",
+    "--json-schema",
+    "--max-budget-usd",
+    "--model",
+    "-n",
+    "--name",
+    "--output-format",
+    "--permission-mode",
+    "--permission-prompts",
+    "--plugin-dir",
+    "--plugin-url",
+    "--prompt-suggestions",
+    "--remote-control",
+    "--remote-control-session-name-prefix",
+    "-r",
+    "--resume",
+    "--session-id",
+    "--setting-sources",
+    "--settings",
+    "--system-prompt",
+    "--system-prompt-snapshot",
+    "--teleport",
+    "-w",
+    "--worktree",
+}
+_CLAUDE_LAUNCH_VARIADIC_OPTIONS = {
+    "--add-dir",
+    "--allowedTools",
+    "--allowed-tools",
+    "--betas",
+    "--disallowedTools",
+    "--disallowed-tools",
+    "--file",
+    "--mcp-config",
+    "--tools",
+}
+_CLAUDE_MANAGEMENT_COMMANDS = {
+    "agents",
+    "attach",
+    "auth",
+    "auto-mode",
+    "doctor",
+    "gateway",
+    "import",
+    "install",
+    "kill",
+    "logs",
+    "mcp",
+    "plugin",
+    "plugins",
+    "purge",
+    "respawn",
+    "rm",
+    "setup-token",
+    "stop",
+    "ultrareview",
+    "update",
+    "upgrade",
+}
+_CLAUDE_NONTERMINAL_OPTIONS = {
+    "-p",
+    "--print",
+    "-v",
+    "--version",
+    "-h",
+    "--help",
+    "--desktop",
+    "--bg",
+    "--background",
+    "--cloud",
+    "--environment",
+}
+
+
+def _can_retain_claude_output(argv: list[str], isatty: TerminalChecker) -> bool:
+    if not (isatty(0) and isatty(1)):
+        return False
+    separator = argv.index("--") if "--" in argv else len(argv)
+    options = argv[:separator]
+    if any(token.partition("=")[0] in _CLAUDE_NONTERMINAL_OPTIONS for token in options):
+        return False
+
+    index = 0
+    while index < len(options):
+        token = options[index]
+        if not token.startswith("-"):
+            return token not in _CLAUDE_MANAGEMENT_COMMANDS
+        index += 1
+        if (
+            token in (_CLAUDE_LAUNCH_VALUE_OPTIONS | _CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS)
+            and index < len(options)
+            and not options[index].startswith("-")
+        ):
+            index += 1
+        elif token in _CLAUDE_LAUNCH_VARIADIC_OPTIONS:
+            while index < len(options) and not options[index].startswith("-"):
+                index += 1
+    # pyfltr: allow-comment -- Claude CLIは -- の直後の位置引数も管理コマンド名として解釈する。
+    return separator + 1 >= len(argv) or argv[separator + 1] not in _CLAUDE_MANAGEMENT_COMMANDS
+
+
+def _wait_for_claude(command: list[str], env: dict[str, str]) -> int:
+    with subprocess.Popen(command, env=env) as child:
+        while True:
+            try:
+                return child.wait()
+            except KeyboardInterrupt:
+                # pyfltr: allow-comment -- 同じ端末の子にもCtrl+Cは届く。親から送り直さず、子の終了を待つ。
+                continue
+
+
+def _run_completion_launcher(command: list[str], wrapper: str, home: pathlib.Path, os_name: str) -> int:
+    launch = uuid.uuid4().hex
+    env = {**os.environ, completion_exit.LAUNCH_ENV: launch}
+    root = host_homes.claude_config_dir(env, home=home)
+    status = _wait_for_claude(command, env)
+    path = completion_exit.state_path(launch, root=root)
+    if path is not None and status == 0:
+        try:
+            state = completion_exit.read_state(path)
+            message = completion_exit.report_text(state, root=root)
+            if message is not None:
+                path.unlink()
+                session = state["session"]
+                print(message)
+                resume = f"{wrapper} --resume {session}"
+                setting = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"
+                print("同じ起動方法で再開:")
+                print(f'cmd /d /c "set {setting}&& {resume}"' if os_name == "nt" else f"{setting} {resume}")
+        except OSError:
+            pass
+    return status if os_name == "nt" or status >= 0 else 128 - status
+
+
 def _run_model(
     command_name: str,
     model_args: tuple[str, ...],
@@ -167,6 +320,7 @@ def _run_model(
     isatty: TerminalChecker,
     family: str | None = None,
     full: bool = True,
+    wrapper: str | None = None,
 ) -> int:
     command_bin = _resolve_command(command_name, home, resolve)
     if command_bin is None:
@@ -194,6 +348,12 @@ def _run_model(
             return codex_launcher.run_interactive(pathlib.Path(command_bin), [*model_args, *argv], full=full)
         if not full and codex_launcher.uses_startup_features(argv):
             model_args = (*startup_features.codex_arguments(), *model_args)
+    if wrapper in {"opus", "sonnet", "fable"} and _can_retain_claude_output(argv, isatty):
+        assert wrapper is not None
+        try:
+            return _run_completion_launcher([command_bin, *model_args, *argv], wrapper, home, os_name)
+        except FileNotFoundError:
+            return 127
     if os_name != "nt":
         try:
             os.execv(command_bin, [command_name, *model_args, *argv])
@@ -272,6 +432,7 @@ def _main(
             isatty=isatty,
             family=family,
             full=full,
+            wrapper=wrapper,
         )
     )
 

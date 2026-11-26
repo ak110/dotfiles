@@ -46,13 +46,13 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 
 ## ターンの終え方
 
-- 作業完了報告の確定と、通常本文で報告した後の固定文の扱いは`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」に従う。
+- 作業完了報告の確定、対象作業での自動終了の要求、通常本文で報告した後の固定文の扱いは`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」に従う。
 - 確認の前置きを送っただけでターンを閉じず、質問は本書「ユーザー確認（AskUserQuestion）」の手段で尋ねる。
 - `send_to_user`で送達済みなら、新しい結果・訂正だけを追加で送り、`…`だけで終える（送った内容の言い換え、翻訳、要約、抜粋は不要）。
   空の応答は再生成を求められるため、未送達でも伝える内容の無い待機は`…`を返し、ホストの無発話の注意を受けた時も同じ終え方を保つ。
 - process-loopの統括と`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`process-loop`か`run-skill`）では、担当の工程を終えた時だけ`…`を完了の1文に替え、報告の抜粋や補足は含めない。
-- 未配送の完了通知は、同じセッションの再開が保証され、他のStopの遮断要因が無ければ、ターンを終えて次のターンで受け取り、保存された出力と終了状態を回収する。
-  再開が保証されない非対話の起動は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機区間の構成」のフォアグラウンドの回収を使う。
+- 完了通知を待つ区切りは`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「完了通知を待ってターンを終える場合」に従う。
+  反映予約の受付は成果完了とせずターンを区切り、次のターンで反映結果を確かめて作業を続ける。
 - process-loopの統括と`atk run-skill`が起動したセッションは、全ての待機対象を回収した後、最終のターンを閉じる前に、共通のpromptと一致する非durableの定期再確認タスクを`CronList`で特定して`CronDelete`で消す。
   経過時間の義務を足したタスク、durableなタスク、無関係なcronタスクは残し、他のセッションはmodの自動回収に任せる。
 - 計画はどのモードでも直接作成し、Plan modeの承認待ちへ移るかはユーザーの操作に委ねる。

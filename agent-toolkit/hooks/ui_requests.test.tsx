@@ -129,7 +129,7 @@ test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに�
   queue(on, "ui-session", id);
   let placements = 0;
   const responses: string[] = [];
-  const message = "期待: 一覧が表示される。\n原因: 設定の読み違い。\n処置: 直した。\n確認: 再実行した。";
+  const message = "期待: 一覧が表示される。\n原因: 設定の読み違い。\n対策: 直した。\n確認: 再実行した。";
   on("session.id", () => ({ value: "ui-session" }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message }, expires: 99999999999 }) }));
@@ -166,30 +166,72 @@ test("MCP圧縮要求を表示要求と分けて予約受付する", async ($, o
   expect(result.reason).toContain("完了ではない");
 });
 
+type RuntimeStopEvidence = {
+  receipt: { id: string; ok: boolean; reason: string };
+  prompt: string;
+  answer: string;
+  output: object;
+};
+
+const runtimeStopEvidence = JSON.parse("null") as RuntimeStopEvidence | null;
+
 test("反映予約はターン後に公開コマンドを一度実行し結果を通知する", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);
-  queue(on, "runtime-ui-session", "c".repeat(32));
+  const reservation = "c".repeat(32);
+  const wait = "d".repeat(32);
+  on("fs.list", () => ({ value: [reservation, wait].map((id) => ({ name: `ui-request-runtime-ui-session-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false })) }));
+  on("fs.exists", () => ({ value: true }));
   const commands: string[] = [];
   const prompts: string[] = [];
+  let waits: string[] = [];
+  const receipts = new Map<string, { ok: boolean; reason: string }>();
   on("session.id", () => ({ value: "runtime-ui-session" }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", () => ({ text: "" }));
-  on("fs.read", () => ({ value: JSON.stringify({ id: "c".repeat(32), operation: "apply_runtime_changes", input: { targets: ["plugins", "agents_server", "pyfltr"] }, expires: 99999999999 }) }));
-  on("fs.write", () => ({ value: undefined }));
+  on("state.set", { plugin: "agent-toolkit", key: "backgroundWaits" }, async (_$, e, next) => {
+    const result = await next(e);
+    waits = Object.keys(e.value ?? {});
+    return result;
+  });
+  on("fs.read", (_$, e) => ({ value: JSON.stringify(e.path.endsWith(`-${wait}.txt`)
+    ? { id: wait, operation: "background_task", input: { id: "owned-wait", command: "atk agents wait" }, expires: 99999999999 }
+    : { id: reservation, operation: "apply_runtime_changes", input: { targets: ["plugins", "agents_server", "pyfltr"] }, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => {
+    if (e.path.includes("ui-response-")) {
+      const receipt = JSON.parse(e.text);
+      receipts.set(receipt.id, receipt);
+    }
+    return { value: undefined };
+  });
   on("command.run", (_$, e) => { commands.push(`${e.command} ${e.args}`.trim()); return { text: "反映コマンドの応答", context: ["確認用の文脈"] }; });
   on("prompt.submit", (_$, e) => { prompts.push(e.text); return { text: "" }; });
   await $.turn.start({ text: "反映", turnId: "runtime-ui-turn" });
   await clock.advance(100);
+  expect(receipts.get(reservation)?.ok).toBe(true);
+  expect(receipts.get(reservation)?.reason).toContain("まだ反映完了ではない");
   expect(commands).toEqual([]);
-  const completed = { answer: "", durationMs: 0, isAborted: false, turnId: "runtime-ui-turn", reason: "answer" as const };
+  if (runtimeStopEvidence) {
+    const receipt = receipts.get(reservation);
+    expect({ id: reservation, ok: receipt?.ok, reason: receipt?.reason }).toEqual(runtimeStopEvidence.receipt);
+    await $.turn.start({ text: runtimeStopEvidence.prompt, turnId: "runtime-ui-recheck" });
+    expect(runtimeStopEvidence.output).toEqual({});
+  }
+  const completed = { answer: runtimeStopEvidence?.answer ?? "…", durationMs: 0, isAborted: false, turnId: runtimeStopEvidence ? "runtime-ui-recheck" : "runtime-ui-turn", reason: "answer" as const };
   await $.turn.complete(completed);
   await clock.advance(0);
   await $.turn.complete(completed);
   await clock.advance(0);
   expect(commands).toEqual(["mcp reconnect plugin:agent-toolkit:agents_server", "mcp reconnect plugin:agent-toolkit:pyfltr", "reload-plugins"]);
   expect(prompts.length).toBe(1);
+  expect(prompts[0]).toContain('source="runtime-changes"');
   expect(prompts[0]).toContain("確認用の文脈");
+  expect(waits).toEqual(["owned-wait"]);
+  await $.session.append({
+    door: "delivery", origin: { kind: "composer" }, uuid: "5a19a2af-394f-4123-8c40-72e5e53e2d34",
+    message: { type: "user", content: [{ type: "text", text: "<task-notification><task-id>owned-wait</task-id><status>completed</status></task-notification>" }] },
+  });
+  expect(waits).toEqual([]);
 });
 
 for (const expired of [false, true]) {
@@ -315,3 +357,38 @@ for (const [label, stored, text] of [
     expect(rendered).not.toContain("送達時刻");
   });
 }
+
+test("未送達の本文に申告した判定だけを外して一度配置する", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  let id = "1".repeat(32);
+  const session = "misdetection";
+  const message = "期待: 一覧を表示する。\n原因: 引用である。\n対策: 引用はそのままにする。\n終了時刻の例は15:2x。";
+  let skipped: string[] = [];
+  const responses: { ok: boolean; warnings?: string[] }[] = [];
+  let placements = 0;
+  on("session.id", () => ({ value: session }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.exists", () => ({ value: true }));
+  on("fs.list", () => ({ value: [{ name: `ui-request-${session}-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false }] }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: {
+    message, tool_use_id: "call", misdetection_checks: skipped,
+  }, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => { if (e.path.includes("/ui-response-")) responses.push(JSON.parse(e.text)); return { value: undefined }; });
+  on("ui.place", () => { placements++; return { value: { isPlaced: true, requestId: "placed-row" } }; });
+  await $.turn.start({ text: "操作", turnId: "misdetection-turn" });
+  await clock.advance(100);
+  expect(responses[0]?.ok).toBe(false);
+  expect(placements).toBe(0);
+  id = "2".repeat(32);
+  skipped = ["missing-prevention"];
+  await clock.advance(100);
+  await clock.advance(100);
+  expect(responses[1]?.ok).toBe(true);
+  expect(placements).toBe(1);
+  expect(responses[1]?.warnings?.join("\n")).toContain('check="clock-claim"');
+  expect(responses[1]?.warnings?.join("\n")).not.toContain('check="missing-prevention"');
+  const rendered = JSON.stringify(await $.ui.render({ surface: "terminal", component: "Placed", requestId: "placed-row",
+    props: { plugin: "agent-toolkit", id } }));
+  expect(rendered).toContain(JSON.stringify(message));
+});

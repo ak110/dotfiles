@@ -47,6 +47,8 @@ from agent_toolkit._plan.structure.markdown import (
 )
 from agent_toolkit._plan.structure.materials import _STRICT_INTERNAL_PLAN_ID_PATTERN
 
+BOM = chr(0xFEFF)
+
 
 def canonical_metadata_field(field: str) -> str:
     return _PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS.get(field, field)
@@ -113,6 +115,17 @@ def is_awi_plan(content: str) -> bool:
     return parsed is not None and any(key in parsed[0] for key in ("launch_route", "related_wis", "work_kind"))
 
 
+def is_wi_list_plan(content: str) -> bool:
+    """対象WIの一覧だけを持つ現行のWIリスト形式の計画かを返す。  pyfltr: allow-comment
+
+    frontmatterの計画のうち`work_kind`を持つものは、本文にAWIと同じ節を置いた前回のAWI書式として区別する。
+    """
+    if not is_awi_plan(content):
+        return False
+    parsed = parse_frontmatter(normalize_newlines(content.lstrip(BOM)))
+    return parsed is not None and "work_kind" not in parsed[0]
+
+
 def _awi_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     parsed = parse_frontmatter(normalize_newlines(content.lstrip("\ufeff")))
     assert parsed is not None
@@ -123,7 +136,7 @@ def _awi_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
         errors.append("launch_routeは空でない文字列にする")
     if not isinstance(repo, str) or not pathlib.Path(repo).is_absolute():
         errors.append("target_repoは対象リポジトリの絶対パスにする")
-    if kind not in ("通常変更", "バグ対応"):
+    if kind is not None and kind not in ("通常変更", "バグ対応"):
         errors.append("work_kindは通常変更またはバグ対応にする")
     if (
         not isinstance(wis, list)
@@ -133,15 +146,17 @@ def _awi_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
         errors.append("related_wisは重複のないWIファイル名のリストにする")
     if errors:
         return None, errors
-    assert isinstance(route, str) and isinstance(repo, str) and isinstance(kind, str) and isinstance(wis, list)
-    values = {"起動経路": route, "対象リポジトリ": repo, "作業種別": kind}
+    assert isinstance(route, str) and isinstance(repo, str) and isinstance(wis, list)
+    values = {"起動経路": route, "対象リポジトリ": repo}
+    if isinstance(kind, str):
+        values["作業種別"] = kind
     return PlanMetadata("", tuple(values.items()), values, tuple((name, "") for name in wis), ()), []
 
 
 def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     """計画メタ情報を正規配置優先で解析し、(解析結果, 曖昧性エラー)を返す。 pyfltr: allow-comment
 
-    AWI書式の計画はfrontmatterを読む。旧形式の計画は`## 概要`直下かH1直下の`### 計画メタ情報`を読む。
+    WIリスト形式とAWI書式の計画はfrontmatterを読む。旧形式の計画は`## 概要`直下かH1直下の`### 計画メタ情報`を読む。
     どちらも無い既存計画に限り`PLAN_METADATA_FALLBACK_H2`の旧配置を読み取り互換として使う。
     同一親に複数の`### 計画メタ情報`がある場合と、旧配置の候補が複数の親に散在する場合は
     曖昧として解析結果を返さない。

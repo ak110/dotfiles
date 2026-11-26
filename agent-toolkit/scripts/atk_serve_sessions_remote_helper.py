@@ -33,6 +33,7 @@ from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-im
     session_watch,
     sessions_models,
 )
+from agent_toolkit._atk.serve.remote import read_failure_status  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position
     host_homes,
     session_cost_records,  # noqa: E402  # pylint: disable=wrong-import-position
@@ -177,24 +178,41 @@ def _search_payload(
     query_b64: str,
     tracker: session_watch.RecordChangeTracker | None = None,
     index: session_watch.RecordSummaryIndex | None = None,
+    paths_b64: str = "",
 ) -> dict[str, typing.Any]:
     query = base64.b64decode(query_b64, validate=True).decode("utf-8").strip().casefold()
     if not 0 < len(query) <= 1024:
         raise ValueError("検索語は1〜1024文字で指定してください")
     paths = []
-    incomplete = False
+    selected = json.loads(base64.b64decode(paths_b64, validate=True)) if paths_b64 else None
+    if selected is not None and (not isinstance(selected, list) or not all(isinstance(path, str) for path in selected)):
+        raise ValueError("検索対象が不正です")
+    targets = set(selected) if selected is not None else None
+    unavailable = False
+    retry_paths = []
     deadline = time.monotonic() + sessions_models.OPERATION_TIMEOUT_SEC["search"]
     for entry in _list_payload(tracker, index)["entries"]:
         raw = entry.get("path")
         if not isinstance(raw, str) or not _is_safe_record_path(raw):
-            incomplete = True
+            unavailable = True
+            continue
+        if targets is not None and raw not in targets:
             continue
         try:
             if sessions_models.record_matches(pathlib.Path(raw), entry["engine"], query, deadline=deadline):
                 paths.append(raw)
-        except OSError, ValueError:
-            incomplete = True
-    return {"paths": paths, "incomplete": incomplete}
+        except (OSError, ValueError) as error:
+            status = read_failure_status(error)
+            if status == 503:
+                retry_paths.append(raw)
+            elif status == 403:
+                unavailable = True
+    return {
+        "paths": paths,
+        "incomplete": bool(unavailable or retry_paths),
+        "unavailable": unavailable,
+        "retry_paths": retry_paths,
+    }
 
 
 def _read_payload(path_b64: str) -> dict[str, typing.Any]:
@@ -273,12 +291,19 @@ def _handle_request(
         if op in {"agents-list", "agents-list-all"}:
             return {"type": "response", "id": req_id, "ok": True, **_agents_payload(op)}
         if op == "search":
-            return {"type": "response", "id": req_id, "ok": True, **_search_payload(str(req.get("query", "")), tracker, index)}
+            payload = _search_payload(str(req.get("query", "")), tracker, index, str(req.get("paths", "")))
+            return {"type": "response", "id": req_id, "ok": True, **payload}
         if op == "read":
             return {"type": "response", "id": req_id, "ok": True, **_read_payload(str(req.get("path", "")))}
         return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
     except Exception as error:  # noqa: BLE001  pylint: disable=broad-exception-caught
-        return {"type": "response", "id": req_id, "ok": False, "error": f"{type(error).__name__}: {error}"}
+        return {
+            "type": "response",
+            "id": req_id,
+            "ok": False,
+            "read_failure": read_failure_status(error),
+            "error": f"{type(error).__name__}: {error}",
+        }
 
 
 def _start_watch() -> tuple[session_watch.RecordWatch | None, session_watch.RecordChangeTracker]:
@@ -353,14 +378,19 @@ def main() -> int:
     if op == "list":
         json.dump(_list_payload(), sys.stdout, ensure_ascii=False)
         return 0
-    if op == "search" and len(sys.argv) == 3:
-        json.dump(_search_payload(sys.argv[2]), sys.stdout, ensure_ascii=False)
+    if op == "search" and len(sys.argv) in {3, 4}:
+        paths = sys.argv[3] if len(sys.argv) == 4 else ""
+        json.dump(_search_payload(sys.argv[2], paths_b64=paths), sys.stdout, ensure_ascii=False)
         return 0
     if op == "read":
         if len(sys.argv) < 3:
             sys.stderr.write("missing path\n")
             return 2
-        json.dump(_read_payload(sys.argv[2]), sys.stdout, ensure_ascii=False)
+        try:
+            payload = _read_payload(sys.argv[2])
+        except (OSError, ValueError) as error:
+            payload = {"read_failure": read_failure_status(error)}
+        json.dump(payload, sys.stdout, ensure_ascii=False)
         return 0
     if op in {"agents-list", "agents-list-all"}:
         json.dump(_agents_payload(op), sys.stdout, ensure_ascii=False)

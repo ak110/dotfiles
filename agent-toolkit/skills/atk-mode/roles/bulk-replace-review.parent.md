@@ -4,13 +4,14 @@
 起動対象: bulk-replace-review.subagent.md
 ```
 
+一括置換を適用したエージェントが、全ての変更箇所を独立した担当に読ませ、置換で意味の変わった箇所をユーザーの文書へ残さないための文書である。
 `agent-basics:writing-standards/references/notation-rules.md`「表記の一括置換」で置換を適用したエージェントが、変更箇所の全件レビューをこの担当へ渡す時の起動と受領である。
 置換の手順、誤置換時のやり直し、書き直しと検査の実行は同節に従う。
 
 ## 運用条件
 
 - 指摘を受けたら、採否と修正の前に`agent-basics:bugfix`を起動する。
-- 害が大きく、広がりの走査（`agent-basics:bugfix/references/spread.md`「害が大きい時」）を独立した担当へ渡す時は、`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動する。
+- 害が大きく、類似見直しの走査（`agent-basics:bugfix/references/similar-review.md`「害が大きい時」）を独立した担当へ渡す時は、`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動する。
   結果の採否は委譲元が確定する。
 
 ## 入力

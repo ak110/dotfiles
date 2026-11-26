@@ -1,5 +1,6 @@
 # 役割文書とサブエージェント定義
 
+委譲の文書を書く担当が役割ごとの入力と返却を定め、受け取る担当がユーザーの要求を満たす成果か判断できるようにする。
 本書は、サブエージェント定義（`agents/`）と、委譲元の契約文書・委譲先の手順書（役割文書）を作る時と改める時の基準である。
 Claude Codeの`agents/`のfrontmatterの項目名と値は、公式ドキュメント（`https://code.claude.com/docs/ja/sub-agents.md`）の定義に従う。
 主に原則8（`agent-basics:writing-standards/references/quality-principles-readers.md`）の適用である。

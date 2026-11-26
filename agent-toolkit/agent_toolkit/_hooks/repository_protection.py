@@ -9,6 +9,7 @@ import subprocess
 from agent_toolkit._common import private_notes, shell_cwd
 from agent_toolkit._common.bash_invocations import is_unknown_word
 from agent_toolkit._common.shell_tokens import is_atk_command
+from agent_toolkit._git import remote
 from agent_toolkit._hooks import tool_input
 from agent_toolkit._hooks.notice import block_formatter
 from agent_toolkit._hooks.pretooluse.shell_checks_git import _GLOBAL_OPTIONS_WITH_VALUE, git_subcommand_tokens
@@ -61,15 +62,13 @@ def path_restriction(
         parent = candidate
         while not parent.is_dir() and parent != parent.parent:
             parent = parent.parent
-        location = config_repositories.locate(parent, git_options=git_options)
-
-        if location is None:
+        storage = config_repositories.git_storage(parent, git_options=git_options)
+        if storage is None:
             continue
         found = True
-        if (git_options or git_commit) and any(
-            location.worktree.is_relative_to(root) and location.common_dir.is_relative_to(root) for root in exempt_roots
-        ):
+        if (git_options or git_commit) and any(_isolated_within(storage, root) for root in exempt_roots):
             continue
+        location = config_repositories.location_of(storage)
         if repositories is None:
             repositories = config_settings.repository_settings(check_paths=False)
         item = repositories.get(location.repo_id)
@@ -86,6 +85,21 @@ def path_restriction(
             "対象が実在するGit作業ツリーであることを確認して再実行してください。",
         )
     return None
+
+
+def _isolated_within(storage: config_repositories.GitStorage, root: pathlib.Path) -> bool:
+    if not (storage.worktree.is_relative_to(root) and storage.common_dir.is_relative_to(root)):
+        return False
+    if storage.origin is None:
+        return True
+    if pathlib.PurePosixPath(storage.origin).is_absolute() or pathlib.PureWindowsPath(storage.origin).is_absolute():
+        origin_dir = config_repositories.local_bare_repository(storage.origin)
+        return origin_dir is not None and origin_dir.is_relative_to(root)
+    try:
+        remote.normalize_remote_url(storage.origin)
+    except ValueError:
+        return False
+    return True
 
 
 def _fixed_git_base(options: tuple[str, ...]) -> pathlib.Path | None:

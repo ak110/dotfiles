@@ -1,10 +1,15 @@
+import json
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable
 
 import pytest
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._testing import git_repository as git
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _SCRIPT = pathlib.Path(__file__).with_name("atk-sandbox.sh")
 
@@ -112,3 +117,21 @@ def test_run_reports_only_matching_home(
     if matching_home:
         assert lines[0].startswith("注意: 前景コマンドの終了後も隔離HOMEで動くプロセスが残っている。")
     assert lines[1 if matching_home else 0 :] == expected_pids
+
+
+def test_setup_queue_commit_passes_repository_protection(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    script = _SCRIPT.read_text(encoding="utf-8")
+    assert 'git init --quiet --bare --initial-branch=main "${scratch}/notes-remote.git"' in script
+    assert 'remote add origin "${scratch}/notes-remote.git"' in script
+    scratch = managed_temp.temp_root_path() / f"sandbox-{tmp_path.name}"
+    git.init_bare_repository(scratch / "notes-remote.git")
+    notes = git.init_repository(scratch / "private-notes", initial_branch="main", origin=str(scratch / "notes-remote.git"))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", "{}")
+    payload = {
+        "tool_name": "Bash",
+        "cwd": str(tmp_path),
+        "tool_input": {"command": f"git -C {shlex.quote(str(notes))} commit --quiet --allow-empty -m init"},
+    }
+    result = _run_hook_in_process("pretooluse", payload)
+    assert result.returncode == 0 and not result.stderr
+    assert json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision") != "deny"

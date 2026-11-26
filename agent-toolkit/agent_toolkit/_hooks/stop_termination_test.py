@@ -301,19 +301,26 @@ def test_block_limit_below_does_not_terminate(monkeypatch: pytest.MonkeyPatch, t
         "codex-previous-log",
         "codex-previous-state",
         "codex-wrong-turn",
+        "guidance-only",
+        "codex-guidance",
     ],
 )
 def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, boundary: str) -> None:
     # 実例の行12、9866～9867、9950～9959を匿名化して縮約した。  # pyfltr: allow-comment
-    command = "cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type=post-approval --body-file /report.md"
-    opening = tmp_path / "opening.md"
-    opening.write_text(
-        "設定を変更しました。この対応で問題ありませんか？\n"
-        if boundary in {"ordinary-save", "other-uwi", "codex-ordinary"}
-        else "\n2026年11月23日のdotfilesの作業結果について、この対応で問題ありませんか？\n",
-        encoding="utf-8",
+    ordinary = boundary in {"ordinary-save", "other-uwi", "codex-ordinary"}
+    question_type = "post-approval" if ordinary else "report"
+    report_body = tmp_path / "report.md"
+    marker = "" if ordinary or boundary in {"guidance-only", "codex-guidance"} else "completion_report: true\n"
+    # 判定は保存済みのWIを読み、原稿は保存後に消えていても結果を変えない。  # pyfltr: allow-comment
+    saved_entry = tmp_path / "notes" / "20000101-010101-001.md"
+    saved_entry.parent.mkdir()
+    saved_entry.write_text(f"---\ntype: uwi\n{marker}question_type: report\n---\n\n# 報告: 作業結果\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    command = (
+        f"cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type={question_type} --body-file {report_body}"
     )
-    command += f' --compare-opening-file "{opening}"'
+    saved = "1件をinboxへ投入した" if ordinary else "1件を報告として保存した"
     if boundary == "dry-run":
         command += " --dry-run"
     records: list[dict[str, object]] = [
@@ -326,7 +333,7 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
             "type": "user",
             "message": {"content": [{"type": "tool_result", "tool_use_id": "save", "is_error": False, "content": ""}]},
             "toolUseResult": {
-                "stdout": "警告: 表記を確認する\n成功: 1件をinboxへ投入した\n  ~/notes/inbox/20000101-010101-001.md",
+                "stdout": f"警告: 表記を確認する\n成功: {saved}\n  ~/notes/20000101-010101-001.md",
                 "interrupted": False,
             },
         },
@@ -422,7 +429,7 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     )
     if boundary.startswith("codex"):
         records = [{"type": "event_msg", "payload": {"type": "user_message", "message": "巡回"}}]
-        commands = [("save", command, "成功: 1件をinboxへ投入した\n  ~/notes/inbox/20000101-010101-001.md")]
+        commands = [("save", command, f"成功: {saved}\n  ~/notes/20000101-010101-001.md")]
         if boundary.endswith("-exit"):
             commands.append(("exit", "atk agents-exit-session", '{"exit_session_invoked":true}'))
         for call_id, cmd, stdout in commands:
@@ -456,7 +463,7 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
                 },
             },
         ]
-        success = json.dumps({"exit_code": 0, "output": "成功: 1件をinboxへ投入した\n  ~/notes/20000101-010101-001.md"})
+        success = json.dumps({"exit_code": 0, "output": f"成功: {saved}\n  ~/notes/20000101-010101-001.md"})
         if boundary == "codex-multi-save":
             records[1] = {
                 "type": "response_item",

@@ -17,6 +17,7 @@ writes_worktree: true
 
 # レーン統合タスク
 
+レーンの採否によらず統合と終端の操作を同じ担当がそろえて行い、委譲元がpushと公開へ取り違えなく進めるようにする。
 計画の起草と実装を担当したレーン担当のthreadが、専用branchの統合と作成した計画の最終化を行い、AWIの採否を確定する。
 リモートへのpushは委譲元が担う。
 入力の意味、`atk lane integrate`の引数とmanifest、計画の最終化、AWI行の終了は`agent-toolkit:atk-mode/references/lane-integration-format.md`にあり、統合の前に全文を読む。
@@ -50,7 +51,7 @@ writes_worktree: true
 ```text
 統合完了
 統合後のHEAD: <7文字以上の一意な短縮OID>
-保存した計画ファイル: <["計画ファイル名",...]形式のJSON配列。計画なしは[]。入力と同じ順序で重複なし>
+保存した計画ファイル: <["計画ファイル名",...]形式のJSON配列。公開の時点で計画なしで進行中のレーンは[]。入力と同じ順序で重複なし>
 adoptしたWI: <ファイル名のASCIIカンマ区切り。無い場合は「なし」>
 rejectしたWI: <ファイル名のASCIIカンマ区切り。無い場合は「なし」>
 adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文字以上の一意な短縮OIDまたは実装差分が無い場合の空文字列"}]形式のJSON配列。無い場合は[]>

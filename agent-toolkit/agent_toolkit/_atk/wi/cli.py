@@ -192,6 +192,8 @@ def _validate_add_args(args: argparse.Namespace) -> None:
             args.subparser.error(f"{'・'.join(conflicting)}は--batchと併用できません。")
     if args.type is None:
         args.type = _wi_constants.WI_TYPE_AWI
+    if getattr(args, "detailed", False) and (args.batch or args.type != _wi_constants.WI_TYPE_AWI):
+        args.subparser.error("--detailedは--type=awiの通常の投入でのみ指定できます。--batch・UWIとは併用できません。")
     if args.hold and args.type != _wi_constants.WI_TYPE_AWI:
         args.subparser.error("--holdは--type=awiでのみ指定できます。UWIは--holdを外して投入してください。")
     if args.hold and args.process_wi_timing is not None:

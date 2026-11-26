@@ -26,6 +26,7 @@ from agent_toolkit._common import (
     delegated_session,
     mcp_environment,
     next_action,
+    private_notes,
     session_activity,
     session_family,
     session_launchers,
@@ -116,6 +117,7 @@ class ReviewBatch(pydantic.BaseModel):
     targets: list[PendingGeneration]
     prepared: list[dict[str, Any]] = pydantic.Field(default_factory=list)
     analysis_succeeded: bool = False
+    report_notes: str | None = None
     report_synced: bool = False
     failure_key: str | None = None
     error: str | None = None
@@ -129,6 +131,10 @@ class ReviewBatch(pydantic.BaseModel):
         if self.status == BatchStatus.USAGE_LIMIT_PAUSED and self.usage_resume_at is None:
             raise ValueError("利用上限で中断したbatchに再開予定時刻が無い")
         return self
+
+
+def resolve_report_notes(saved: str | None) -> pathlib.Path:
+    return pathlib.Path(saved) if saved else private_notes.default_private_notes()
 
 
 class ScopeEntry(pydantic.BaseModel):
@@ -315,6 +321,13 @@ class BatchWriter:
             if value["status"] == BatchStatus.USAGE_LIMIT_PAUSED:
                 value.pop("usage_resume_at", None)
                 self._save({**value, "status": BatchStatus.RUNNING})
+
+    def record_report_step(self, step: str, details: dict[str, Any]) -> None:
+        with locked():
+            value = self._active()
+            steps = value.get("report_steps", [])
+            entry = {"step": step, "run_id": value["run_id"], **details}
+            self._save({**value, "report_steps": [*steps[-19:], entry]})
 
     def analyze(self) -> dict[str, Any]:
         with locked():

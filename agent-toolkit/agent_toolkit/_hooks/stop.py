@@ -1,7 +1,6 @@
-"""Stopイベントの共通のエントリーポイントとして、判定を順に実行し単一の応答へ集約する。
+"""Stopイベントの共通のエントリーポイントとして、判定を順に実行し単一の応答へ集約する。 pyfltr: allow-comment
 
-各判定の例外は判定単位で隔離し、残りの判定を継続する。遮断理由内と通知内ではそれぞれ
-判定順を保つ。遮断が1件以上ある場合は全ての遮断理由の後に通知を空行で連結して`reason`へ含め、
+各判定の例外は判定単位で隔離し、残りの判定を継続する。報告の遮断は是正・警告への対応・送達の順に案内し、他の遮断理由内と通知内では判定順を保つ。遮断が1件以上ある場合は全ての遮断理由の後に通知を空行で連結して`reason`へ含め、
 遮断が無い場合だけ通知を`hookSpecificOutput.additionalContext`へ集約する。
 
 判定が`notify_user`を返した本文はエンドユーザー向けの`systemMessage`へ集約し、遮断の有無によらず同じ応答へ添える。
@@ -30,18 +29,28 @@ import sys
 from typing import Any
 lazy import asyncio
 
+from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
+lazy from agent_toolkit._common import completion_exit, function_hook_requests
 lazy from agent_toolkit._common import delegated_session as _delegated_session
-lazy from agent_toolkit._common import function_hook_requests
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.function_hook_requests import cleanup, enqueue
-lazy from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
+lazy from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, opening_tag
+lazy from agent_toolkit._common.periodic_recheck import (
+    LEGACY_PERIODIC_RECHECK_MARKER,
+    PERIODIC_RECHECK_MARKER,
+    PERIODIC_RECHECK_PROMPT,
+)
+lazy from agent_toolkit._common.send_to_user import is_completion
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
+lazy from agent_toolkit._hooks import agents_server_observations, delivered_repost_gate
 lazy from agent_toolkit._hooks import busy_loop_guard as _busy_loop_guard
 lazy from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, pending_async_status
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.background_tasks_notifications import queued_task_notification_contents
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt
 
 CHECK_MODULE_NAMES = (
     "delivered_repost_gate",
@@ -76,6 +85,8 @@ _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"
 
 
 _RECHECK_COLLECT_WAIT_SECONDS = 20
+_RUNTIME_TOOLS = frozenset(prefix + "apply_runtime_changes" for prefix in MCP_NAMESPACES)
+_RUNTIME_RESULT_MARKER = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "runtime-changes", "kind": "notice"})
 
 
 def _set_consecutive_block_count(state: dict, count: int) -> dict:
@@ -128,6 +139,32 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
         _collect_recheck_before_idle(session_id)
 
 
+def _completion_verdict(session_id: str, payload: dict, *, allowed: bool) -> None:
+    path = completion_exit.state_path(os.environ.get(completion_exit.LAUNCH_ENV, ""))
+    if path is None or not session_id or payload.get("agent_id") or is_codex_payload(payload):
+        return
+    state = completion_exit.read_state(path)
+    if state.get("session") != session_id or state.get("status") not in ("requested", "approved"):
+        return
+    try:
+        source = payload.get("transcript_path")
+        if (
+            allowed
+            and state.get("status") == "requested"
+            and isinstance(source, str)
+            and state.get("call") in completion_exit.current_reports(_transcript.read_transcript_entries(source))
+            and pending_async_status(
+                source, session_id, background_tasks=payload.get("background_tasks"), session_state=read_state(session_id)
+            )
+            == "complete"
+        ):
+            completion_exit.write_state(path, {**state, "status": "approved"})
+        else:
+            path.unlink(missing_ok=True)
+    except (OSError, ValueError) as error:
+        append_stop_log(session_id, "completion_exit_error", {"error": str(error)})
+
+
 def _holds_common_recheck_task(crons: object) -> bool:
     return isinstance(crons, list) and any(
         isinstance(cron, dict) and cron.get("prompt") == PERIODIC_RECHECK_PROMPT for cron in crons
@@ -150,6 +187,77 @@ def _collect_recheck_before_idle(session_id: str) -> None:
         append_stop_log(session_id, "periodic_recheck_collect_error", {"error": f"{type(exc).__name__}: {exc}"})
 
 
+def _runtime_reserved(entries: list[dict]) -> bool:
+    result_index = next(
+        (
+            index
+            for index in range(len(entries) - 1, -1, -1)
+            if (text := delivered_repost_gate.turn_prompt(entries[index])) and text.lstrip().startswith(_RUNTIME_RESULT_MARKER)
+        ),
+        -1,
+    )
+    calls: set[str] = set()
+    for entry, block in completion_exit.conversation_tool_blocks(entries[result_index + 1 :]):
+        if (
+            block.get("type") == "tool_use"
+            and isinstance(name := block.get("name"), str)
+            and name in _RUNTIME_TOOLS
+            and isinstance(call := block.get("id"), str)
+        ):
+            calls.add(call)
+        elif (
+            block.get("type") == "tool_result"
+            and isinstance(call := block.get("tool_use_id"), str)
+            and call in calls
+            and completion_exit.ui_receipt(entry, block) is not None
+        ):
+            return True
+    return False
+
+
+def _intermission(payload: dict, session_id: str, delivery: tuple[list[dict], bool | None]) -> tuple[bool, bool]:
+    """報告なしで区切る根拠と、予約済み反映で同じ作業が再開する根拠を返す。 pyfltr: allow-comment"""
+    last = payload.get("last_assistant_message")
+    if isinstance(last, str) and last.strip() not in ("", "…"):
+        return False, False
+    entries, _ = delivery
+    turn_start = 0
+    prompt = ""
+    for index in range(len(entries) - 1, -1, -1):
+        entry = entries[index]
+        if delivered_repost_gate.turn_boundary(entry):
+            turn_start = index + 1
+            text = delivered_repost_gate.turn_prompt(entry)
+            if text is not None and _human_prompt(entry, text) is None:
+                prompt = text.lstrip()
+            break
+    turn = entries[turn_start:]
+    if completion_exit.reports(turn) or any(
+        is_completion(text, None) for _, _, text in delivered_repost_gate.delivered_messages(turn)
+    ):
+        return False, False
+    if _runtime_reserved(entries):
+        return bool(prompt) and delivery[1] is None, True
+    if delivery[1] is not None:
+        return False, False
+    if queued_task_notification_contents(entries) and prompt:
+        return True, False
+    if not prompt.startswith((PERIODIC_RECHECK_MARKER, LEGACY_PERIODIC_RECHECK_MARKER, "<task-notification>")):
+        return False, False
+    source = payload.get("transcript_path")
+    if not isinstance(source, str):
+        return False, False
+    state = read_state(session_id)
+    if (
+        pending_async_status(source, session_id, background_tasks=payload.get("background_tasks"), session_state=state)
+        == "pending-background"
+    ):
+        return True, False
+    pending = agents_server_observations.pending_session_ids(state, "main")
+    retained = agents_server_observations.retained_running_session_ids(state, "main")
+    return bool(agents_server_observations.own_waited_session_ids([*pending, *retained])), False
+
+
 def evaluate(payload_text: str) -> dict[str, object]:
     resolved = _parse_stop_session(payload_text, lambda: None)
     session_id = ""
@@ -157,6 +265,23 @@ def evaluate(payload_text: str) -> dict[str, object]:
     if resolved is not None:
         session_id, payload = resolved
     _write_recheck_verdict(session_id, payload, may_collect=False)
+
+    source = payload.get("transcript_path")
+    delivery = None
+    quiet_intermission = runtime_reserved = False
+    if isinstance(source, str) and source and not (is_codex_payload(payload) or is_antigravity_payload(payload)):
+        try:
+            delivery = delivered_repost_gate.current_turn_delivery(source)
+            quiet_intermission, runtime_reserved = _intermission(payload, session_id, delivery)
+        except Exception as exc:  # noqa: BLE001 -- 共通証拠の取得失敗で個別の終了判定を失わない
+            append_stop_log(session_id, "check_error", {"check": "intermission", "error": f"{type(exc).__name__}: {exc}"})
+    entries = delivery[0] if delivery is not None else []
+    options: dict[str, dict[str, Any]] = {
+        "delivered_repost_gate": {"quiet_intermission": quiet_intermission, "delivery": delivery},
+        "bugfix_gate": {"quiet_intermission": quiet_intermission},
+        "agents_server_session_advisor": {"entries": entries},
+        "termination_order_advisor": {"runtime_reserved": runtime_reserved},
+    }
 
     block_reasons: list[str] = []
     blocking_checks: list[str] = []
@@ -172,7 +297,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
             decision, body = (
                 module.evaluate(payload_text, allow_delivery=not block_reasons)
                 if module_name == "queued_notification_advisor"
-                else module.evaluate(payload_text)
+                else module.evaluate(payload_text, **options.get(module_name, {}))
             )
         except Exception as exc:  # noqa: BLE001 -- 1判定の故障で他の終了判定を失わないため広範に捕捉
             append_stop_log(session_id, "check_error", {"check": module_name, "error": f"{type(exc).__name__}: {exc}"})
@@ -192,6 +317,11 @@ def evaluate(payload_text: str) -> dict[str, object]:
     def _finalize(result: dict[str, object]) -> dict[str, object]:
         if is_codex_payload(payload):
             return {key: value for key, value in result.items() if key in {"decision", "reason"}}
+        _completion_verdict(
+            session_id,
+            payload,
+            allowed=not block_reasons and not yield_for_delivery and halt_request is None,
+        )
         _write_recheck_verdict(
             session_id,
             payload,
@@ -248,9 +378,21 @@ def evaluate(payload_text: str) -> dict[str, object]:
                 update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
                 return _finalize({})
             update_state(session_id, lambda item: _set_consecutive_block_count(item, block_count + 1))
-        return _finalize(
-            {"decision": "block", "reason": "\n\n".join([*block_reasons, *notifications, *_continuation_notice()])}
+        reports = dict(zip(blocking_checks, block_reasons, strict=True))
+        ordered = [
+            reports.pop(name)
+            for name in ("bugfix_gate", "hook_notice_response_gate", "delivered_repost_gate")
+            if name in reports
+        ]
+        send_steps = (
+            [delivered_repost_gate.send_fix()]
+            if "delivered_repost_gate" not in blocking_checks
+            and any(name in blocking_checks for name in ("bugfix_gate", "hook_notice_response_gate"))
+            and delivered_repost_gate.send_required(entries)
+            else []
         )
+        reason = "\n\n".join([*ordered, *reports.values(), *notifications, *send_steps, *_continuation_notice()])
+        return _finalize({"decision": "block", "reason": reason})
     if session_id:
         update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
     result: dict[str, object] = {"continue": False} if yield_for_delivery else {}

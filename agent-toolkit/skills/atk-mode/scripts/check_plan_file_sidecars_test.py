@@ -137,7 +137,7 @@ def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], 
     assert any("廃止した表か表以前の形式で書いたバグ単位がある" in error for error in errors), errors
 
 
-@pytest.mark.parametrize("label", ["期待", "広がり"])
+@pytest.mark.parametrize("label", ["期待", "類似見直し"])
 def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str], label: str) -> None:
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
@@ -181,7 +181,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
         )
     errors, warnings = _check_new(work_dir, main_content, detail_content)
     assert not errors, errors
-    expected = ["バグ調査結果が旧形式の本文内表である。新規作成・改訂では計画本体の`## 原因分析`へ移行する"]
+    expected = ["バグ調査結果が旧形式の本文内表である。新規作成・改訂では対象WIの`## 原因分析`へ移行する"]
     if _plan_format.has_legacy_action_table(main_content):
         expected.append("実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")
     expected.extend(

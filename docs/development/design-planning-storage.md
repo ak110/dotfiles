@@ -18,6 +18,7 @@
 修正系列を始めた時点のHEADの7文字以上の一意な短縮OIDを`修正系列の開始時のHEAD`とし、同じ再帰的CI失敗処理では原因commitが変わっても同じCI対応レビュー指摘管理表を継続する。
 
 保存済み計画へ追記する手段は、`atk plans checkout`で`~/.claude/plans`へ取得して更新し、`atk plans commit`で保存し直す手順に限る。
+現行の計画は進捗ログを持たず工程は引き継ぎ記録へ書くため、計画の進捗ログへの追記は旧形式の計画に限る。
 書き込み先が`private-notes/plans/`（`new_plans_root()`）の配下にある場合、`plan-progress`と`atk review-table`の`init`・`add`・`respond`はファイルを変更せず非0で終了し、この手順を案内する。
 これらの補助処理は指定されたファイルを書き換えるだけでcommitしないため、`private-notes/plans/`へ直接書き込むとprivate-notesに所有者のいない未コミット差分が残る。
 公開工程のCI修正担当が保存済み計画へ進捗ログを追記し、その差分が2日間残った事例がある。

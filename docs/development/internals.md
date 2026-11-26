@@ -44,7 +44,7 @@ hook間で共有する状態ファイルの設計、生存期間、排他制御�
 | hookの診断計測、通知の反復抑止・配送状態 | `docs/development/internals-session-state-notifications.md` |
 | agents_serverの呼び出し・所有・待機の観測状態 | `docs/development/internals-session-state-agents-server.md` |
 | バックグラウンドタスクの所有・通知・停止の状態 | `docs/development/internals-session-state-background-tasks.md` |
-| UWI回答の検出状態 | `docs/development/internals-session-state-user-responses.md` |
+| UWI回答の検出状態、方針の再承認待ち | `docs/development/internals-session-state-user-responses.md` |
 | Antigravityのイベント間状態 | `docs/development/internals-session-state-antigravity.md` |
 
 ## 委譲先の調査

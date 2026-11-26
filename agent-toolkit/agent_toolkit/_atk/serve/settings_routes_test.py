@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import re
@@ -164,3 +165,68 @@ def test_remote_settings_limit_covers_shared_git_update_without_extending_reads(
         assert calls[1] > git_sync.LOCK_WAIT_TIMEOUT_SECONDS + git_sync.LOCK_HOLD_TIMEOUT_SECONDS
     else:
         assert calls[1] == calls[0]
+
+
+@pytest.mark.parametrize("supported", [True, False])
+def test_background_snapshot_never_falls_back_to_legacy_reads(monkeypatch, supported):
+    calls = []
+
+    def run(command, **_kwargs):
+        operation = command[-1]
+        calls.append(operation)
+        if operation == "uname -s":
+            return subprocess.CompletedProcess(command, 0, b"Linux\n", b"")
+        if operation == "atk config snapshot --help":
+            return subprocess.CompletedProcess(command, 0, b"usage: atk config snapshot", b"")
+        assert operation == "atk config snapshot --read-only"
+        return subprocess.CompletedProcess(command, 0 if supported else 2, b'{"settings":{}}', b"")
+
+    monkeypatch.setattr(settings_routes, "run_with_timeout", run)
+    if supported:
+        snapshot, _runner = settings_routes._remote_snapshot("host", read_only=True)  # noqa: SLF001  # pylint: disable=protected-access
+        assert snapshot == {"settings": {}}
+    else:
+        with pytest.raises(settings_routes._ReadOnlyUnsupported):  # noqa: SLF001  # pylint: disable=protected-access
+            settings_routes._remote_snapshot("host", read_only=True)  # noqa: SLF001  # pylint: disable=protected-access
+    assert calls == ["uname -s", "atk config snapshot --read-only"] + ([] if supported else ["atk config snapshot --help"])
+
+
+@pytest.mark.asyncio
+async def test_opening_settings_prefetches_unselected_hosts_without_migrating_them(monkeypatch):
+    calls = []
+    monkeypatch.setattr(settings_routes, "_remote_hosts", lambda *, read_only=False: ("current", "legacy"))
+    monkeypatch.setattr(settings_routes.config, "settings_snapshot", lambda *_args, **_kwargs: {"settings": {}})
+
+    def run(command, **_kwargs):
+        host, operation = command[-2:]
+        calls.append((host, operation))
+        if operation == "uname -s":
+            return subprocess.CompletedProcess(command, 0, b"Linux\n", b"")
+        if operation == "atk config snapshot --help":
+            return subprocess.CompletedProcess(command, 0, b"usage: atk config snapshot", b"")
+        assert operation == "atk config snapshot --read-only"
+        return subprocess.CompletedProcess(command, 0 if host == "current" else 2, b'{"settings":{}}', b"")
+
+    monkeypatch.setattr(settings_routes, "run_with_timeout", run)
+    app = quart.Quart(__name__)
+    shell_routes.register_error_handlers(app)
+    settings_routes.register_settings_routes(app, ServeConfig("127.0.0.1", 8080))
+    await app.startup()
+    try:
+        client = app.test_client()
+        assert (await client.get("/api/settings")).status_code == 200
+        async with asyncio.timeout(3):
+            while True:
+                listing = await (await client.get("/api/settings?background=1")).get_json()
+                states = {name: peer["state"] for name, peer in listing["comparison"].items()}
+                if states == {"current": "ready", "legacy": "legacy"}:
+                    break
+                await asyncio.sleep(0.01)
+        assert listing["automatic_unsupported"] == ["legacy"]
+        cached = await (await client.get("/api/settings?host=current&background=1")).get_json()
+        assert cached["settings"] == {}
+        assert set(calls) == {
+            (host, operation) for host in ("current", "legacy") for operation in ("uname -s", "atk config snapshot --read-only")
+        } | {("legacy", "atk config snapshot --help")}
+    finally:
+        await app.shutdown()

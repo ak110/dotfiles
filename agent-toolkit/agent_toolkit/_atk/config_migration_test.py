@@ -8,8 +8,10 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config as config_module
+from agent_toolkit._atk import config_migration, research_subscriptions
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.config_support import (
     _DEFAULTS,
     _config_file,
@@ -22,6 +24,79 @@ from agent_toolkit._testing.config_support import (
 )
 
 __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
+
+
+_PROJECTION_CASES = {
+    "connection": {"claude_api_mode": "pay-as-you-go", "codex_model_providers": "openai,custom"},
+    "process-loop-repositories": {},
+    "research-repositories": {
+        "weekly_research_repos": '["github.com/example/known","github.com/example/other"]',
+        "repositories": '{"github.com/example/known":{"edit":"allow"}}',
+        "weekly_research_x_accounts": '["Alice"]',
+    },
+    "model": {"base_engine": "claude", "execute_model": "invalid"},
+    "remote-hosts": {"serve_plans_remote_hosts": '["one"]', "serve_sessions_remote_hosts": '["two"]'},
+    "retired": {"codex_auto_reset": "true", "usage_auto_allocation": "true", "serve_sessions_codex_home": "/obsolete"},
+    "fixed-state": {"weekly_research_x_max_posts": "3"},
+    "research-subscriptions": {"weekly_research_x_accounts": '["Alice"]', "weekly_research_x_queries": '["example"]'},
+    "serve-toml": {"serve_host": "saved-host"},
+}
+
+
+def test_projection_cases_cover_migration_groups():
+    assert set(_PROJECTION_CASES) == {*config_migration.LEGACY_SETTING_GROUPS, "serve-toml"}
+
+
+@pytest.mark.parametrize("group", _PROJECTION_CASES)
+def test_listing_matches_persistent_migration_for_each_group(tmp_path, monkeypatch, capsys, group):
+    config = dict(_PROJECTION_CASES[group])
+    if group == "process-loop-repositories":
+        repository = git_repository.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+        config["process_loop_repositories"] = json.dumps([str(repository)])
+    source = tmp_path / "legacy-credits.env"
+    if group == "fixed-state":
+        source.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
+        config["claude_credits_env_file"] = str(source)
+    path = _write_config(tmp_path, config)
+    if group == "serve-toml":
+        path.with_name("serve.toml").write_text('host = "old-host"\nport = 3412\n', encoding="utf-8")
+    effects: list[research_subscriptions.Subscriptions] = []
+    monkeypatch.setattr(research_subscriptions, "migrate", effects.append)
+    original = {file.name: file.read_bytes() for file in path.parent.iterdir()}
+    assert _main(tmp_path, "config", "show") == 0
+    before = capsys.readouterr().out
+    assert not effects
+    if group == "fixed-state":
+        assert source.is_file()
+    assert {file.name: file.read_bytes() for file in path.parent.iterdir()} == original
+    assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
+    if "weekly_research_x_accounts" in config:
+        assert effects and effects[0]["accounts"] == ("Alice",)
+    if group == "fixed-state":
+        assert not source.exists() and path.with_name("claude-credits.env").is_file()
+    capsys.readouterr()
+    assert _main(tmp_path, "config", "show") == 0
+    assert capsys.readouterr().out == before
+
+
+@pytest.mark.parametrize("arguments", [(), ("show",), ("list",)])
+@pytest.mark.parametrize("legacy", ['["github.com/example/other"]', "invalid"])
+def test_research_repository_projection_without_subscription_effects(tmp_path, monkeypatch, capsys, arguments, legacy):
+    path = _write_config(tmp_path, {"weekly_research_repos": legacy, "weekly_research_x_accounts": '["Alice"]'})
+    before = path.read_bytes()
+
+    def unexpected(_subscriptions):
+        pytest.fail("設定一覧で旧購読を移行した")
+
+    monkeypatch.setattr(research_subscriptions, "migrate", unexpected)
+    assert _main(tmp_path, "config", *arguments) == (2 if legacy == "invalid" else 0)
+    shown = capsys.readouterr()
+    assert "codex_fast_mode auto\n" in shown.out
+    if legacy == "invalid":
+        assert "repositories " not in shown.out and "旧調査リポジトリを移行できない" in shown.err
+    else:
+        assert '"github.com/example/other"' in shown.out and '"edit": "awi"' in shown.out
+    assert path.read_bytes() == before
 
 
 def test_missing_legacy_x_file_does_not_block_config_use(tmp_path, capsys):
@@ -162,7 +237,7 @@ def test_config_recovery_invalid_explicit_value_never_changes_legacy_file(tmp_pa
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize("entry", ["show", "get", "resolve"])
+@pytest.mark.parametrize("entry", ["get", "resolve"])
 def test_migration_overwrites_stale_stage_values_and_removes_retired_keys(tmp_path, capsys, entry):
     old = {
         "base_engine": "claude,codex",

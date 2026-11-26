@@ -24,15 +24,17 @@ from agent_toolkit._agents_server import (
     lifetime,
     logging_config,
     result_projection,
+    send_retry,
     shared_roots,
     state,
     status_file,
+    subagent_contract,
 )
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
-from agent_toolkit._agents_server.manager_start import model_override_warnings
+from agent_toolkit._agents_server.manager_start import WRITE_MODEL_USER_EVIDENCE, model_override_warnings
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
 from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response
 from agent_toolkit._agents_server.tool_descriptions import (
@@ -45,6 +47,12 @@ from agent_toolkit._agents_server.tool_descriptions import (
     MODE_DESCRIPTION,
     MODEL_TYPE_DESCRIPTION,
     PROMPT_DESCRIPTION,
+    SEND_MESSAGE_CONTRACT_CHANGES_DESCRIPTION,
+    SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION,
+    SEND_MESSAGE_INSTRUCTION_DESCRIPTION,
+    SEND_MESSAGE_MESSAGE_DESCRIPTION,
+    SEND_MESSAGE_PROMPT_DESCRIPTION,
+    SEND_MESSAGE_TIMEOUT_DESCRIPTION,
     SESSION_ID_DESCRIPTION,
     START_DESCRIPTION,
     SUBAGENT_MD_PATH_DESCRIPTION,
@@ -71,7 +79,7 @@ from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.send_to_user import CLAUDE_TOOL_NAME
 lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
-lazy from agent_toolkit._common import sent_warnings
+lazy from agent_toolkit._common import send_misdetection, sent_warnings
 lazy from agent_toolkit._common.operation_approvals import request_display
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -135,6 +143,7 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
                 tool_name=CLAUDE_TOOL_NAME,
                 tool_use_id=inputs.get("tool_use_id"),
                 kind=inputs.get("kind"),
+                check=send_misdetection.rejection_check(str(error)),
             )
         elif operation == "send_to_user":
             next_action = _UI_UNAVAILABLE_NEXT_ACTIONS[operation]["claude"]
@@ -385,11 +394,18 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         whole_contract_path=whole_contract_path,
     )
     warnings = (
-        [] if mode == "task" else model_override_warnings(model_type, reason=model_override, evidence=model_override_evidence)
+        []
+        if mode == "task"
+        else model_override_warnings(
+            model_type or agents_server_tools.START_MODE_MODEL_TYPES.get(mode),
+            reason=model_override,
+            evidence=model_override_evidence,
+        )
     )
     with (
         startup_features.selection(startup_profile),
         state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
+        WRITE_MODEL_USER_EVIDENCE.set(model_override_evidence if model_override == "user_instruction" else None),
         session_launchers.START_OBSERVATION.set(session_launchers.valid_start_observation(start_observation)),
     ):
         if mode == "task":
@@ -403,14 +419,18 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 whole_contract_path=whole_contract_path,
                 launcher_session_id=launcher,
             )
+            resolved_type = model_type or task_model_type
+            warnings = model_override_warnings(
+                resolved_type, default_type=task_model_type, reason=model_override, evidence=model_override_evidence
+            )
             context = await run_file_operation(_manager().launcher_record_context)
             task_prompt = launch_requests.with_launcher_record(task_prompt, context)
-            warnings = model_override_warnings(
-                model_type, default_type=task_model_type, reason=model_override, evidence=model_override_evidence
-            )
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None)
+            task_prompt = await subagent_contract.prepare_launch(
+                task_prompt, subagent_contract.task_request(subagent_md_path, params), warnings
+            )
             response = await _manager().start(
-                model_type or task_model_type,
+                resolved_type,
                 task_prompt,
                 cwd,
                 launch_kind=launch_kind,
@@ -434,6 +454,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 whole_contract_path=whole_contract_path,
                 launcher_session_id=launcher,
             )
+            delegate_prompt = await subagent_contract.prepare_launch(delegate_prompt, prompt, warnings)
             response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
             if warnings:
                 response.setdefault("warnings", []).extend(warnings)
@@ -442,10 +463,12 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             return public
         elif mode == "explore":
             assert prompt is not None
-            response = await _manager().start_explore(prompt, cwd, label=label, model_type=model_type)
+            delivered = await subagent_contract.prepare_launch(prompt, prompt, warnings)
+            response = await _manager().start_explore(delivered, cwd, label=label, model_type=model_type)
         elif mode == "write":
             assert prompt is not None
-            response = await _manager().start_write(prompt, cwd, label=label, model_type=model_type)
+            delivered = await subagent_contract.prepare_launch(prompt, prompt, warnings)
+            response = await _manager().start_write(delivered, cwd, label=label, model_type=model_type)
         else:
             assert command is not None and summary_policy is not None
             response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
@@ -462,48 +485,12 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
 )
 async def send_message(
     session_id: Annotated[str, Field(description=SESSION_ID_DESCRIPTION)],
-    prompt: Annotated[
-        str | None,
-        Field(
-            description=parameter_description(
-                "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終了済みsessionへは新しい依頼として届く。"
-                "instructionと排他的に指定する。"
-            )
-        ),
-    ] = None,
-    timeout: Annotated[
-        float,
-        Field(
-            description=parameter_description(
-                "継続要求の配送結果が確定するまでの待機上限秒数。省略時は270秒。"
-                "委譲先の応答生成の完了は待たない。0以下は受理しない。"
-            )
-        ),
-    ] = DEFAULT_SEND_MESSAGE_TIMEOUT,
-    instruction: Annotated[
-        str | None,
-        Field(
-            description=parameter_description(
-                "役割文書が宣言する定型継続指示。extra_paramsと組み合わせ、promptと排他的に指定する。"
-            )
-        ),
-    ] = None,
-    extra_params: Annotated[
-        dict[str, str] | None,
-        Field(
-            description=parameter_description(
-                'instructionの宣言済み入力だけを渡す。例: instruction=再レビューせよ、extra_params={"round":"2"}。'
-            )
-        ),
-    ] = None,
-    message: Annotated[
-        str | None,
-        Field(
-            description=parameter_description(
-                "promptの別名。send_to_userのmessageと同じ名前で本文を渡す取り違えを受け付けるためにあり、promptと同時には指定しない。"
-            )
-        ),
-    ] = None,
+    prompt: Annotated[str | None, Field(description=SEND_MESSAGE_PROMPT_DESCRIPTION)] = None,
+    timeout: Annotated[float, Field(description=SEND_MESSAGE_TIMEOUT_DESCRIPTION)] = DEFAULT_SEND_MESSAGE_TIMEOUT,
+    instruction: Annotated[str | None, Field(description=SEND_MESSAGE_INSTRUCTION_DESCRIPTION)] = None,
+    extra_params: Annotated[dict[str, str] | None, Field(description=SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION)] = None,
+    message: Annotated[str | None, Field(description=SEND_MESSAGE_MESSAGE_DESCRIPTION)] = None,
+    contract_changes: Annotated[dict[str, str] | None, Field(description=SEND_MESSAGE_CONTRACT_CHANGES_DESCRIPTION)] = None,
 ) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終了済みなら同じsessionでreplyを開始する。
 
@@ -544,11 +531,16 @@ async def send_message(
                 next_action="本文をpromptだけに入れて同じsession_idのsend_messageを再実行する",
             )
         prompt = message
-    if instruction is None and extra_params is None:
+    if instruction is None and extra_params is None and contract_changes is None:
         response = await _manager().send_message(session_id, prompt, timeout)
     else:
         response = await _manager().send_message(
-            session_id, prompt, timeout, instruction=instruction, extra_params=extra_params
+            session_id,
+            prompt,
+            timeout,
+            instruction=instruction,
+            extra_params=extra_params,
+            **({"contract_changes": contract_changes} if contract_changes is not None else {}),
         )
     return public_send_message_response(response)
 
@@ -782,13 +774,25 @@ async def show_session(
 async def send_to_user(
     message: Annotated[str, Field(description="画面へそのまま表示する日本語のMarkdown本文")],
     kind: Annotated[str | None, Field(description="最終の完了報告では completion。途中の報告では省略する")] = None,
+    misdetection: Annotated[
+        list[dict[str, str]] | None,
+        Field(description="誤検出のときだけcheckとreasonを指定する。表示済みの警告にはさらにdelivery_idを指定する。"),
+    ] = None,
 ) -> dict[str, Any]:
     """メイン専用。会話内modが表示を確認した場合だけ成功を返す。表示後の本文は再掲しない。"""
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
     tool_use_id = _TOOL_USE_ID.get()
-    if response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN:
+    claims, error = send_misdetection.parse(misdetection)
+    session_id = _manager().launcher_session_id()
+    if error or (claims and session_id and (error := send_misdetection.validate_displayed(session_id, claims))):
+        raise ValueError(error)
+    retry = send_misdetection.retry_checks(claims)
+    if (
+        "response-language" not in retry
+        and response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN
+    ):
         action = await run_file_operation(
             resend_guidance,
             _manager().launcher_session_id(),
@@ -796,8 +800,12 @@ async def send_to_user(
             tool_name=CLAUDE_TOOL_NAME,
             tool_use_id=tool_use_id,
             kind=kind,
+            check="response-language",
         )
-        raise ActionableError("本文を日本語で書き直すまで画面へ表示していない。", next_action=action)
+        raise ActionableError(
+            "本文を日本語で書き直すまで画面へ表示していない。" + send_misdetection.retry_hint("response-language"),
+            next_action=action,
+        )
     try:
         guidance = ""
         if runtime_inserted.reported_improvement_lines(message):
@@ -829,9 +837,21 @@ async def send_to_user(
         inputs["kind"] = kind
     if tool_use_id:
         inputs["tool_use_id"] = tool_use_id
-    result = await _ui_request("send_to_user", inputs)
+    if retry:
+        inputs["misdetection_checks"] = sorted(retry)
+    result, sources = await send_retry.deliver(_ui_request, inputs, session_id, retry, message)
+    if (
+        claims
+        and session_id
+        and not await run_file_operation(
+            send_misdetection.record, session_id, claims, result.get("id") or tool_use_id, sources=sources
+        )
+    ):
+        guidance += "\n本文は表示済みだが、誤検出の申告は記録できなかった。本文は再掲しない。"
     relayed = result.pop("warnings", None)
     warnings = [text for text in [*(relayed if isinstance(relayed, list) else []), guidance] if isinstance(text, str) and text]
+    if warnings and (warning_session := _manager().launcher_session_id()):
+        await run_file_operation(send_misdetection.remember_warnings, warning_session, warnings)
     if (
         warnings
         and tool_use_id
@@ -842,7 +862,10 @@ async def send_to_user(
         # pyfltr: allow-comment -- PostToolUseのhookが同じ呼出しの添付として届ける。預けられなければ結果に残す。
         pass
     elif warnings:
-        result["guidance"] = "\n".join(warnings)
+        reason = result.get("reason")
+        unrelayed = [warning for warning in warnings if not isinstance(reason, str) or warning not in reason]
+        if unrelayed:
+            result["guidance"] = "\n".join(unrelayed)
     return result
 
 

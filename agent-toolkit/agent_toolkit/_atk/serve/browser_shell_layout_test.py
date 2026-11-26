@@ -28,10 +28,18 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    await page.locator("#plans-filter").fill("計画条件")
+    await page.get_by_text("計画ファイルを検索", exact=True).wait_for(state="visible")
+    await page.get_by_role("searchbox", name="計画ファイルを検索").fill("計画条件")
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await page.locator("#sessions .session-item").first.wait_for(state="visible")
-    await page.locator("#sessions-filter").fill("セッション条件")
+    session_search = page.get_by_role("searchbox", name="セッションを検索")
+    scope = page.locator("#sessions-filter-scope")
+    await scope.wait_for(state="visible")
+    await playwright.async_api.expect(session_search).to_have_accessible_description(
+        "検索対象: ホスト・作業ディレクトリ・識別子・パス・ラベル"
+    )
+    await session_search.fill("セッション条件")
+    await scope.wait_for(state="visible")
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     assert await page.locator("#plans-filter").input_value() == "計画条件"
@@ -172,15 +180,22 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
             assert await page.locator("#plans-menu-btn").get_attribute("aria-expanded") == "true"
             assert await page.locator("#copy-btn .short-label").is_visible()
             assert not await page.locator("#copy-btn .wide-label").is_visible()
-            assert (
-                await page.locator("#screen-plans main .toolbar").evaluate("element => getComputedStyle(element).flexWrap")
-                == "nowrap"
-            )
             await page.locator("#files .file").first.click()
             await page.locator("#preview h1").wait_for(state="visible")
             assert not await page.locator("#screen-plans").evaluate("element => element.classList.contains('drawer-open')")
         else:
             await page.locator("#preview h1").wait_for(state="visible")
+
+        toolbar = page.locator("#screen-plans .detail-toolbar")
+        for control in ("#copy-btn", "#copy-path-btn", "#prev-btn", "#next-btn"):
+            assert await toolbar.evaluate(
+                """(toolbar, selector) => {
+                    const available = toolbar.getBoundingClientRect();
+                    const button = toolbar.querySelector(selector).getBoundingClientRect();
+                    return button.width > 0 && button.left >= available.left && button.right <= available.right;
+                }""",
+                control,
+            )
 
         await page.goto(screen_harness.base_url + "/sessions")
         await page.locator("#sessions .session-item").first.wait_for(state="visible")
@@ -193,6 +208,53 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("width", [320, 768, 769, 900, 1000, 1280])
+async def test_plan_toolbar_keeps_actions_in_view_while_scrolling(screen_harness: _ScreenHarness, width: int) -> None:
+    page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 800})
+    screen_harness.plan_path.write_text("# 先頭\n\n" + "計画の段落\n\n" * 100 + "最後の段落\n", encoding="utf-8")
+    await page.goto(screen_harness.base_url + "/plans")
+    main = page.locator("#screen-plans main")
+    toolbar = main.locator(".toolbar")
+    first = toolbar.get_by_role("button", name="先頭へ", exact=True)
+    last = toolbar.get_by_role("button", name="末尾へ", exact=True)
+    controls = [toolbar.locator(f"#{name}") for name in ("copy-btn", "copy-path-btn", "prev-btn", "next-btn")]
+    if width <= 768:
+        menu = toolbar.locator("#plans-menu-btn")
+        await menu.click()
+        await page.locator("#files .file").first.click()
+        controls.append(menu)
+    controls.extend((first, last))
+    expect = playwright.async_api.expect
+    await expect(last).to_be_enabled()
+    await expect(controls[0]).to_be_enabled()
+    await expect(controls[1]).to_be_enabled()
+
+    async def check_toolbar() -> float:
+        pane = await main.bounding_box()
+        toolbar_box = await toolbar.bounding_box()
+        assert pane is not None and toolbar_box is not None
+        assert await toolbar.evaluate("element => getComputedStyle(element).position") == "sticky"
+        rows = []
+        for control in controls:
+            box = await control.bounding_box()
+            assert box is not None, control
+            assert pane["x"] <= box["x"] and box["x"] + box["width"] <= pane["x"] + pane["width"], (control, box, pane)
+            assert toolbar_box["y"] <= box["y"] < box["y"] + box["height"] <= min(toolbar_box["y"] + toolbar_box["height"], 800)
+            rows.append(box["y"])
+        if width == 1280:
+            assert max(rows) - min(rows) <= 1, rows
+        return toolbar_box["y"]
+
+    toolbar_top = await check_toolbar()
+    await last.click()
+    await expect(main.get_by_text("最後の段落")).to_be_in_viewport()
+    assert await check_toolbar() == pytest.approx(toolbar_top, abs=1)
+    await first.click()
+    assert await main.evaluate("element => element.scrollTop") == 0
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
@@ -200,7 +262,7 @@ async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _
     await page.goto(screen_harness.base_url + "/plans")
     for name, heading in (("plans", "計画ファイル"), ("sessions", "セッション")):
         if name == "sessions":
-            await page.locator('#screen-plans nav.app-nav a[href$="/sessions"]').click()
+            await page.get_by_role("combobox", name="画面を切り替える").select_option("sessions")
             await playwright.async_api.expect(page.locator("#screen-sessions h1")).to_be_focused()
         assert await page.title() == f"{heading} - atk serve"
         sidebar = page.locator(f"#{name}-sidebar")
@@ -219,3 +281,63 @@ async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _
         await page.evaluate("() => window.scrollTo(0, 0)")
         duration = await menu.evaluate("element => getComputedStyle(element).transitionDuration")
         assert duration == "0s"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_detail_toolbars_use_the_same_tokens(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    observed = {}
+    for screen in ("plans", "sessions"):
+        await page.goto(screen_harness.base_url + "/" + screen)
+        toolbar = page.locator(f"#screen-{screen} .detail-toolbar").first
+        await toolbar.wait_for()
+        observed[screen] = await toolbar.evaluate(
+            """toolbar => {
+                const style = getComputedStyle(toolbar);
+                const button = getComputedStyle([...toolbar.querySelectorAll('button')]
+                    .find(button => button.getClientRects().length));
+                const bounds = toolbar.getBoundingClientRect();
+                return {
+                    gap: style.columnGap, background: style.backgroundColor,
+                    font: button.fontSize, height: button.minBlockSize,
+                    contentStart: bounds.left + parseFloat(style.paddingLeft)
+                };
+            }"""
+        )
+        assert float(observed[screen]["font"].removesuffix("px")) >= 16
+    session_start = observed["sessions"].pop("contentStart")
+    observed["plans"].pop("contentStart")
+    assert observed["plans"] == observed["sessions"]
+    title = page.locator("#detail-title")
+    await title.wait_for()
+    title_start = await title.evaluate("element => element.getBoundingClientRect().left")
+    assert session_start == pytest.approx(title_start, abs=1)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_workspace_headings_use_the_same_hierarchy(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.route("**/api/usage**", lambda route: route.abort())
+    observed = []
+    for screen, heading in (
+        ("/", "#entry-heading"),
+        ("/agents", "#agents-app .page-heading"),
+        ("/usage", "#usage-heading"),
+        ("/settings", "#settings-heading"),
+    ):
+        await page.goto(screen_harness.base_url + screen)
+        observed.append(
+            await page.locator(heading).evaluate(
+                """element => {
+                    const heading = getComputedStyle(element);
+                    const body = getComputedStyle(document.body);
+                    return {
+                        larger: parseFloat(heading.fontSize) > parseFloat(body.fontSize),
+                        size: heading.fontSize,
+                        weight: heading.fontWeight,
+                        line: heading.lineHeight
+                    };
+                }"""
+            )
+        )
+    assert all(item == observed[0] and item["larger"] for item in observed)

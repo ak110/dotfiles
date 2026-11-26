@@ -43,6 +43,18 @@ dotfilesユーザーは`chezmoi apply`で同じプラグインを設定する。
 モデル別ランチャーは、手動で導入した開発機能を保ちながら、claude.aiの自動連携とChrome連携を止める。
 引数の先頭に`--full`を置くと、追加で機能を止めずに起動する。
 
+対話端末で `opus`、`sonnet`、`fable` を使い、`/agent-toolkit:atk-mode` の `add-awi-by-user`、`implement`、`process-user-comments` が終わると、完了報告の表示後にClaude Codeが自動で終了する。
+端末に完了報告の本文と再開コマンドが残る。
+会話を続けるには、表示されたコマンドを実行する。
+無効にするには起動前に環境変数 `AGENT_TOOLKIT_KEEP_SESSION` を設定する（値は任意）。
+
+モデルを明示した場合や会話を再開した場合も、端末だけに対話画面があり、その作業の完了報告が送達された時は自動終了する。
+管理コマンド、Claude Desktopへ開く起動、背景起動では自動終了せず、報告も追記しない。
+
+公式の `claude` を直接起動した時、`poteto-mode` や非対話起動、Function hooksを読み込めない場合は対象外。
+ユーザーの回答・承認を待つ場合や、未回収の作業や別のセッション内cronが残る場合も終了しない。
+手動で `/exit` した時は報告を追加表示しない。
+
 ## 詳細設定と操作
 
 - [環境別の導入](claude-code-installation.md)
@@ -90,13 +102,16 @@ Modは実行中のOSアカウントの権限で動くため、信頼できるも
 スキル・フック・MCPの役割は[READMEの構成と機能](../../agent-toolkit/README.md#構成と機能)を参照。
 各フックの判定条件とCodexでの対応範囲は[design-hooks-host-support.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)、Codexでの信頼操作は[Codex利用ガイド](codex-guide.md#フックの信頼確認)を参照。
 
+会話内の表示を担う `send_to_user` では、エージェントが本文検査の誤検出を申告できる。
+未送達なら同じ本文で再送し、表示済みなら本文を二重に表示せず、対象の警告だけを処置する。
+
 ### 手動で起動する主なスキル
 
 最初に使う登録・処理の操作は[READMEの最初の操作](../../agent-toolkit/README.md#最初の操作)、運用ごとの例は[推奨ワークフロー](claude-code-workflows.md#推奨ワークフロー)を参照。
 Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 
 - `agent-toolkit:atk-mode <作業> [入力]`: 作業の入口。
-  `add-awi-by-user`、`implement`、`process-user-comments`、`process-wi`、`review-session`、`export-session`を作業の名前として渡せる。
+  作業名と選び方は[入口の作業表](../../agent-toolkit/skills/atk-mode/SKILL.md#作業と手順書)を参照する。
   AWIの登録は`/agent-toolkit:atk-mode add-awi-by-user <要求>`、AWIの処理は`/agent-toolkit:atk-mode process-wi [single-lane|all-repos]`で起動する
 - `agent-toolkit:atk-mode review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。
   後ろに着眼点を追加できる

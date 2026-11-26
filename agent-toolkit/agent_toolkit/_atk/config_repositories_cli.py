@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
+import sys
 from typing import Any
 
-from agent_toolkit._atk import config_migration, config_repositories, config_settings, help_text, outcome
+from agent_toolkit._atk import (
+    config_migration,
+    config_repositories,
+    config_settings,
+    config_shared_migration,
+    help_text,
+    outcome,
+)
+from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._git import command as git
 
 
@@ -14,6 +24,7 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
     for name in ("add", "set", "remove", "list"):
         command = help_text.add_command(commands, name, **help_text.HELP[f"atk config repos {name}"])
         if name == "list":
+            command.add_argument("--json", action="store_true", help="登録をJSONで表示する")
             continue
         command.add_argument("repo", metavar="REPO", help="originのURL・host/owner/repository・ローカルworktreeのパス。")
         if name == "remove":
@@ -48,33 +59,32 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
         )
 
 
-def update_repositories(args: argparse.Namespace) -> str:
+def update_repositories(args: argparse.Namespace) -> str | dict[str, Any]:
     config_migration.check_legacy_environment()
     config_migration.migrate_legacy_settings()
     stored = config_settings.load_config_strict()
     raw = stored.get("repositories", "{}")
     if not isinstance(raw, str):
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
-
-    repositories = config_repositories.parse(raw, check_paths=False)
     if args.repos_subcommand == "list":
-        return json.dumps(repositories, ensure_ascii=False, indent=2)
-    repo_id, local = config_repositories.identifier(args.repo)
+        return config_settings.repository_settings(check_paths=False)
+    local = config_repositories.parse_local(raw)
+    repositories = config_repositories.merge(_shared_repositories(), local)
+    repo_id, located = config_repositories.identifier(args.repo)
     exists = repo_id in repositories
     if args.repos_subcommand == "add" and exists:
         raise ValueError(f"登録済み: {repo_id}。`atk config repos set`で属性を変更する")
     if args.repos_subcommand != "add" and not exists:
         raise ValueError(f"未登録: {repo_id}。現在の登録: {', '.join(repositories) or 'なし'}")
-    if args.repos_subcommand == "remove":
-        del repositories[repo_id]
-    else:
+    item: dict[str, Any] | None = None
+    if args.repos_subcommand != "remove":
         item = dict(repositories.get(repo_id, {"process_loop": False, "platforms": ["linux", "windows"]}))
         if args.edit is not None:
             item["edit"] = args.edit
         if args.path is not None:
             item["path"] = args.path
-        elif args.repos_subcommand == "add" and local:
-            item["path"] = local
+        elif args.repos_subcommand == "add" and located:
+            item["path"] = located
         if args.process_loop is not None:
             item["process_loop"] = args.process_loop
         if args.platforms is not None:
@@ -87,20 +97,96 @@ def update_repositories(args: argparse.Namespace) -> str:
                 None if authors == "@default" else [name.strip() for name in authors.split(",")] if authors else []
             )
         _apply_branch_arguments(args, item)
-        repositories[repo_id] = item
-    value = config_settings.normalize_setting("repositories", json.dumps(repositories, ensure_ascii=False))
-    if args.repos_subcommand != "remove" and args.branches is not None:
-        _require_remote_branches(repo_id, json.loads(value)[repo_id])
-    config_settings.save_config({**stored, "repositories": value})
+        if not item.get("path"):
+            item.pop("path", None)
+        normalized = json.loads(config_settings.normalize_setting("repositories", json.dumps({repo_id: item})))
+        validated: dict[str, Any] = normalized[next(iter(normalized))]
+        _require_matching_origin(repo_id, validated.get("path"))
+        if args.branches is not None:
+            _require_remote_branches(repo_id, validated)
+        item = validated
+    shared_path = config_shared_migration.shared_write_path() if config_repositories.is_shared_id(repo_id) else None
+    current = local.get(repo_id)
+    if shared_path is None or (current is not None and not config_repositories.is_link(current)):
+        # 同期先の無い環境、共有できない登録、移行前の登録は端末側の登録全体を書き換える。  # pyfltr: allow-comment
+        if item is None:
+            local.pop(repo_id, None)
+        else:
+            local[repo_id] = item
+    else:
+        attributes = None if item is None else {key: value for key, value in item.items() if key != "path"}
+        before = repositories.get(repo_id)
+        if before is None or attributes != {key: value for key, value in before.items() if key != "path"}:
+            config_shared_migration.update_shared_settings(
+                shared_path, lambda shared: _with_shared_entry(shared, repo_id, attributes)
+            )
+        if item is not None and item.get("path"):
+            local[repo_id] = {"path": item["path"]}
+        else:
+            local.pop(repo_id, None)
+    value = json.dumps(local, ensure_ascii=False)
+    with config_settings.local_config_lock(config_settings.config_file_path()):
+        latest = config_settings.load_config_strict()
+        config_settings.write_config_locked(config_settings.config_file_path(), {**latest, "repositories": value})
     return repo_id
+
+
+def _shared_repositories() -> dict[str, dict[str, Any]]:
+    path = config_settings.shared_settings_path()
+    shared = config_settings.load_shared_settings(path).get("repositories") if path is not None else None
+    return config_repositories.parse_shared(shared) if shared is not None else {}
+
+
+def _with_shared_entry(shared: dict[str, str], repo_id: str, attributes: dict[str, Any] | None) -> dict[str, str]:
+    """共有先の最新の登録のうち、対象の1件だけを置き換える。他の端末が加えた登録は保つ。  pyfltr: allow-comment"""
+    repositories = config_repositories.parse_shared(shared.get("repositories", "{}"))
+    if attributes is None:
+        repositories.pop(repo_id, None)
+    else:
+        repositories[repo_id] = attributes
+    return {**shared, "repositories": json.dumps(repositories, ensure_ascii=False, sort_keys=True)}
+
+
+def _require_matching_origin(repo_id: str, path: str | None) -> None:
+    if not path or not config_repositories.is_shared_id(repo_id):
+        return
+    location = config_repositories.locate(pathlib.Path(path))
+    if location is None or location.repo_id != repo_id:
+        found = "Git作業ツリーではない" if location is None else f"originは{location.repo_id}"
+        raise ValueError(f"{path}は{repo_id}のcloneではない（{found}）。同じoriginのcloneを指定する")
 
 
 def dispatch(args: argparse.Namespace) -> None:
     result = update_repositories(args)
-    if args.repos_subcommand == "list":
-        print(result)
+    if isinstance(result, dict):
+        if args.json or not is_human_terminal(sys.stdout):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif result:
+            _print_repositories(result)
+        else:
+            print("登録済みのリポジトリはない。")
     else:
         outcome.report_success(f"repository登録を更新した: {result}")
+
+
+def _print_repositories(repositories: dict[str, Any]) -> None:
+    edit = {"allow": "可", "awi": "AWIのみ", "deny": "不可"}
+    for repo, entry in sorted(repositories.items()):
+        print(repo)
+        print(f"  編集: {edit[entry['edit']]} / 巡回: {'対象' if entry['process_loop'] else '対象外'}")
+        print(f"  検証OS: {', '.join(entry['platforms'])}")
+        if path := entry.get("path"):
+            print(f"  作業ツリー: {path}")
+        else:
+            print(f"  この端末には未登録: atk config repos set {repo} --path <clone>")
+        if branches := entry.get("branches"):
+            print(f"  系統: {', '.join(branches)}（省略時: {entry['default_branch']}）")
+        for target, source in entry.get("merge_from", {}).items():
+            print(f"  リリース前の取込: {source} → {target}")
+        if entry.get("github_issues"):
+            print("  GitHub Issue・PRの取込: 有効")
+        if (authors := entry.get("github_issue_trusted_authors")) is not None:
+            print(f"  Issueの自動投入を許す投稿者: {', '.join(authors) or 'なし'}")
 
 
 def _apply_branch_arguments(args: argparse.Namespace, item: dict[str, Any]) -> None:

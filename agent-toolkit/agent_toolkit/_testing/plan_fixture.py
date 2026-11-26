@@ -259,6 +259,22 @@ def awi_plan(
     )
 
 
+def wi_list_plan(
+    *,
+    repo: str | pathlib.Path = REPOSITORY,
+    related_wi: tuple[tuple[str, str], ...] = (),
+    title: str = "計画の主題",
+) -> str:
+    return serialize_frontmatter(
+        {
+            "launch_route": "write-plan",
+            "target_repo": str(repo),
+            "related_wis": [name for name, _summary in related_wi],
+        },
+        f"# {title}\n",
+    )
+
+
 def eight_section_plan(
     *,
     repo: str | pathlib.Path = REPOSITORY,

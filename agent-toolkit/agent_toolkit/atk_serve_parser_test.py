@@ -11,6 +11,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.serve.agent_routes import AgentListing
+from agent_toolkit._atk.serve.versions import AgentsVersion
 from agent_toolkit._testing.atk_support import _isolate_agent_and_managed_temp_environment
 
 __all__ = ["_isolate_agent_and_managed_temp_environment"]
@@ -34,8 +35,17 @@ class TestServeParser:
     def test_dispatches_resolved_arguments(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         calls: list[dict[str, object]] = []
 
-        def run(*, host: str | None, port: int | None, home: pathlib.Path, agent_listing: AgentListing) -> None:
-            calls.append({"host": host, "port": port, "home": home, "agent_listing": agent_listing})
+        def run(
+            *,
+            host: str | None,
+            port: int | None,
+            home: pathlib.Path,
+            agent_listing: AgentListing,
+            agents_version: AgentsVersion,
+        ) -> None:
+            calls.append(
+                {"host": host, "port": port, "home": home, "agent_listing": agent_listing, "agents_version": agents_version}
+            )
 
         serve = types.ModuleType("agent_toolkit._atk.serve.cli")
         serve.__dict__["run"] = run
@@ -43,7 +53,15 @@ class TestServeParser:
         with pytest.raises(SystemExit) as error:
             atk.main(["serve", "--host", "127.0.0.2", "--port", "28766"], home=tmp_path)
         assert error.value.code == 0
-        assert calls == [{"host": "127.0.0.2", "port": 28766, "home": tmp_path, "agent_listing": atk.serve_agent_listing}]
+        assert calls == [
+            {
+                "host": "127.0.0.2",
+                "port": 28766,
+                "home": tmp_path,
+                "agent_listing": atk.serve_agent_listing,
+                "agents_version": atk.serve_agents_version,
+            }
+        ]
 
     def test_non_serve_import_does_not_load_serve_dependencies(self) -> None:
         script_dir = pathlib.Path(atk.__file__).resolve().parent

@@ -76,7 +76,7 @@ lazy import dataclasses
 lazy from agent_toolkit._atk.config_settings import APPLY_PRESET_SHOW, CONNECTION_ORDER_KEYS, MODEL_DEFAULTS
 lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
-lazy from agent_toolkit._common import delegated_session, send_to_user
+lazy from agent_toolkit._common import delegated_session, send_misdetection, send_to_user
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
 lazy from agent_toolkit._common.session_state import read_state
@@ -103,9 +103,9 @@ lazy from agent_toolkit._hooks import (
 )
 lazy from agent_toolkit._hooks.agents_server_observations import start_observation_input
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
-lazy from agent_toolkit._hooks.pretooluse import commit_identity, publication_gate, user_facing_checks
+lazy from agent_toolkit._hooks.pretooluse import commit_identity, intake_edit, publication_gate, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
@@ -217,6 +217,12 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
             pending_notices.append(warning)
         if decision.block is None:
             pending_notices.extend(_operation_skills.notices(payload, tool_name, tool_input, session_id))
+            if (
+                not is_codex
+                and not is_antigravity_payload(payload)
+                and (boundary := intake_edit.notice(payload, tool_name, tool_input, session_id))
+            ):
+                pending_notices.append(boundary)
         contract_update = work_contract.delegated_notice(session_id, agent=_agent_id.resolve_hook_agent_id(payload))
         if contract_update:
             pending_notices.append(
@@ -229,6 +235,7 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 )
             )
         if decision.block is None:
+            user_facing_checks.record_policy_question(payload, session_id, tool_name, tool_input)
             command_timing.start(payload)
             if not is_codex and tool_name == "Skill":
                 bugfix_gate.observe_repl_skill_start(payload, session_id)
@@ -284,15 +291,24 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
     return [text for text in notices if text]
 
 
-def _send_understanding_block(message: object) -> str | None:
-    if isinstance(message, str) and user_facing_checks.has_original_text_label_in_understanding(message):
+def _send_understanding_block(message: object, retry: set[str] | None = None) -> str | None:
+    retry = retry or set()
+    if (
+        "understanding-original" not in retry
+        and isinstance(message, str)
+        and user_facing_checks.has_original_text_label_in_understanding(message)
+    ):
         return _block_notice(
-            "「発話の理解」に「原文」の見出しがある。",
+            "「発話の理解」に「原文」の見出しがある。" + send_misdetection.retry_hint("understanding-original"),
             fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送してください。",
         )
-    if isinstance(message, str) and user_facing_checks.missing_alternative(message):
+    if (
+        "understanding-alternative" not in retry
+        and isinstance(message, str)
+        and user_facing_checks.missing_alternative(message)
+    ):
         return _block_notice(
-            "「発話の理解」に「別案」の項目がない。",
+            "「発話の理解」に「別案」の項目がない。" + send_misdetection.retry_hint("understanding-alternative"),
             fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
         )
     return None
@@ -308,8 +324,9 @@ def _retry_send(
         tool_use_id=payload.get("tool_use_id"),
         kind=tool_input.get("kind"),
         edit_body=edit_body,
+        check=send_misdetection.rejection_check(reason),
     )
-    return Decision(block=f"{reason}\n\n{guidance}")
+    return Decision(block=f"{reason}\n\n次の操作: {guidance}")
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
@@ -338,14 +355,18 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         if isinstance(reason, str) and is_send_to_user_tool(tool_name):
             return _retry_send(payload, tool_name, tool_input, session_id, reason)
         return Decision(block=reason)
-    question_tool = "request_user_input" if is_codex else "AskUserQuestion"
-    if tool_name == question_tool and _agent_id.is_main_agent_context(payload):
-        if user_facing_checks.policy_approval_form_invalid(tool_input):
+    question_tools = {"request_user_input", "request_user_input_async"} if is_codex else {"AskUserQuestion"}
+    if tool_name in question_tools and _agent_id.is_main_agent_context(payload):
+        if user_facing_checks.policy_approval_form_invalid(user_facing_checks.normalize_policy_question(tool_name, tool_input)):
             return Decision(
                 block=_block_notice(
                     "方針の承認の質問が決まった形でないため、まだ送っていない。再発行しても同じ形では送れない。",
                     fix=(
-                        "質問は1つだけにし、見出し「方針の承認」、問い「送った方針で進めてよいですか？」、"
+                        "非同期の質問は1つだけにし、titleを「方針の承認：送った方針で進めてよいですか？」、"
+                        'optionsを["この方針で進める", "修正して進める"]の文字列配列にしてください。'
+                        "修飾を使う場合は「送った」と「方針」の間に「2件目の」などを入れてください。"
+                        if tool_name == "request_user_input_async"
+                        else "質問は1つだけにし、見出し「方針の承認」、問い「送った方針で進めてよいですか？」、"
                         "選択肢「この方針で進める」（説明「送った方針のとおりに着手する」）と"
                         "「修正して進める」（説明「修正点を自由記述で伝える」）の2つにしてください（推奨の付記は付けない）。"
                         f"方針の識別に修飾が必要なら、「2件目の」など{user_facing_checks.POLICY_APPROVAL_MODIFIER_LIMIT}文字以内にしてください。"
@@ -381,10 +402,24 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                     ),
                 )
             )
-    if (is_send_to_user_tool(tool_name) or tool_name == "AskUserQuestion") and (
-        notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input)
+    claims, error = send_misdetection.parse(tool_input.get("misdetection")) if is_send_to_user_tool(tool_name) else ([], None)
+    if error or (claims and (error := send_misdetection.validate_displayed(session_id, claims))):
+        return Decision(
+            block=_block_notice(error or "申告を確認できない。", fix="判定名・理由・送達識別子を確かめてください。")
+        )
+    retry = send_misdetection.retry_checks(claims) if claims else set()
+    if retry and retry - send_misdetection.rejection_sources(session_id, retry, tool_input.get("message")).keys():
+        return Decision(
+            block=_block_notice(
+                "同じ本文と判定の未送達記録を確認できない。", fix="未送達の通知と同じ本文・判定かを確かめてください。"
+            )
+        )
+    if tool_name == "AskUserQuestion" and (
+        notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
     ):
         return Decision(block=notice_block)
+    if reapproval_block := user_facing_checks.policy_reapproval_block(payload, tool_name, tool_input, session_id):
+        return Decision(block=reapproval_block)
     if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
         return Decision(block=_block_notice(publication_block[0], fix=publication_block[1]))
     if tool_name == "ExitPlanMode":
@@ -401,7 +436,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
 
         message = tool_input.get("message")
         kind = tool_input.get("kind")
-        reason = _send_understanding_block(message)
+        reason = _send_understanding_block(message, retry)
         edit_body = True
         if reason is None and session_id and send_to_user.is_completion(message, kind):
             if pending := outstanding_before_completion(session_id, _agent_id.resolve_hook_agent_id(payload)):
@@ -420,16 +455,22 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                     ),
                 )
             edit_body = reason is None
+        bugfix_block = None
         if reason is None:
-            reason = bugfix_gate.send_block(payload, message, kind=kind, warnings=send_warnings) or (
-                norm_excuse_gate.text_block(payload, message, "ユーザーへの送達")
-            )
-        if reason is not None:
-            return _retry_send(payload, tool_name, tool_input, session_id, reason, edit_body=edit_body)
+            bugfix_block = bugfix_gate.send_block(payload, message, kind=kind, warnings=send_warnings)
+            reason = bugfix_block or norm_excuse_gate.text_block(payload, message, "ユーザーへの送達", retry=retry)
+        notice_block = hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
+        if notice_block is not None or reason is not None:
+            combined = "\n\n".join(item for item in (reason, notice_block) if item)
+            if notice_block is not None or bugfix_block is not None:
+                combined += "\n\n" + delivered_repost_gate.send_fix()
+            return _retry_send(payload, tool_name, tool_input, session_id, combined, edit_body=edit_body)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (
-            clock_claims.warning([message], payload) if is_send_to_user_tool(tool_name) and isinstance(message, str) else None
+            clock_claims.warning([message], payload, skip_masked=True)
+            if is_send_to_user_tool(tool_name) and isinstance(message, str)
+            else None
         )
         return Decision(allow=True, context=timing, notices=tuple(send_warnings))
     if tool_name == "Skill":

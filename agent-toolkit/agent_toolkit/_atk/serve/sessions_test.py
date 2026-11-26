@@ -9,8 +9,9 @@ import typing
 
 import pytest
 
+from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._atk.serve import sessions
+from agent_toolkit._atk.serve import sessions, sessions_models
 from agent_toolkit._testing import serve_remote_support
 from agent_toolkit._testing.serve_sessions_support import (
     _claude_record,
@@ -438,12 +439,106 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
 
 
 @pytest.mark.asyncio
-async def test_remote_failure_warning_names_next_action(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_remote_helper_failure_does_not_offer_ssh_as_normal_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(2, b"helper not found\n"))
     context = _context(tmp_path, remote_hosts=["down-host"])
 
     _, warnings = await sessions.list_sessions(context)
 
-    reason = warnings[0]["reason"]
-    assert "次の操作:" in reason
-    assert "ssh down-host" in reason
+    warning = warnings[0]
+    assert warning["retryable"] == "false"
+    assert "次の操作:" not in warning["reason"]
+    assert "ssh down-host" not in warning["reason"]
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        ({"ok": True}, "delivered"),
+        ({"next_action": "Codexには会話内modが無く、本文を表示できない。同じ本文を最終応答に書く"}, "unavailable"),
+        ({"ok": False}, "rejected"),
+        (None, "unknown"),
+    ],
+)
+def test_session_reports_use_exact_tool_names_and_correlate_results(engine, result, expected):
+    payload = {
+        "type": "function_call",
+        "name": "mcp__agents_server__send_to_user",
+        "call_id": "report-1",
+        "arguments": json.dumps({"message": "**報告する本文**"}),
+    }
+    call = {"type": "response_item", "payload": payload}
+    other = {**call, "payload": {**payload, "name": "foreign_send_to_user", "call_id": "not-report"}}
+    result_record = {
+        "type": "response_item",
+        "payload": {"type": "function_call_output", "call_id": "report-1", "output": json.dumps(result, ensure_ascii=False)},
+    }
+    if engine == "claude":
+        call = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "report-1",
+                        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                        "input": {"message": "**報告する本文**"},
+                    }
+                ]
+            },
+        }
+        other = {
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "id": "not-report", "name": "foreign_send_to_user"}]},
+        }
+        result_record = {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "report-1",
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                ]
+            },
+        }
+    records, broken = session_record_format.parse_records(
+        "\n".join(["not-json", json.dumps(call), json.dumps(other), *([json.dumps(result_record)] if result else [])]),
+        include_positions=True,
+    )
+    detail = sessions_models.build_detail(engine, records, broken_lines=broken, subagents=None, subagents_unavailable=False)
+    report, unrelated, *responses = detail["events"]
+    assert (report["kind"], report["text"], report["delivery_status"], report["line"], report["ordinal"]) == (
+        "user_report",
+        "**報告する本文**",
+        expected,
+        2,
+        0,
+    )
+    assert unrelated["kind"] == "tool_call"
+    assert [row["index"] for row in detail["conversation"]] == [0, 1]
+    if responses:
+        assert responses[0]["report_index"] == 0
+        assert report["result_index"] == 2
+
+
+def test_delegate_view_contains_only_request_and_last_assistant():
+    messages = [
+        ("user", "委譲元の依頼"),
+        ("assistant", "中間の発話"),
+        ("user", "委譲元の追送"),
+        ("assistant", "最終の発話"),
+    ]
+    text = "\n".join(
+        json.dumps({"type": role, "isSidechain": True, "message": {"role": role, "content": body}}) for role, body in messages
+    )
+    records, broken = session_record_format.parse_records(text, include_positions=True)
+    detail = sessions_models.build_detail("claude", records, broken_lines=broken, subagents=None, subagents_unavailable=False)
+    assert [(detail["events"][row["index"]]["line"], row["text"]) for row in detail["conversation"]] == [
+        (1, "委譲元の依頼"),
+        (4, "最終の発話"),
+    ]

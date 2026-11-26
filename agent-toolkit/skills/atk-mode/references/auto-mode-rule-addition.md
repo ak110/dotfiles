@@ -1,5 +1,7 @@
 # auto modeのカスタムルールを追加する手順
 
+auto modeのルールを足すエージェントが、許可の範囲と信頼境界を広げずに偽陽性の拒否を減らし、ユーザーの作業が不要に止まらないようにする。
+
 Claude Codeのauto modeの`autoMode.allow`へカスタムルールを追加・編集する手順を定める。
 ルールの区分と書き方の基準は`agent-basics:writing-standards/references/claude-hooks.md`が定義元であり、文面を作る前に同書を全文読む。
 拒否を受けた時の処置は`agent-toolkit:atk-mode/playbooks/permission-denial.md`が定め、偽陽性として許可した後のルールの追加は同書「偽陽性と判断できる拒否への対応」の手順6から本書へ進む。

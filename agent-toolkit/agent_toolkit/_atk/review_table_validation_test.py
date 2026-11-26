@@ -188,6 +188,7 @@ def test_respond_rejects_body_without_required_labels_and_keeps_table(
     assert error.startswith("失敗: ")
     assert f"{option}の本文に必須ラベルが無いか、ラベルの後の記述が空である: {missing}\n" in error
     assert "`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」" in error
+    assert ("修正漏れを減らす" in error) is ("類似見直し完了件数:" in missing)
     assert path.read_text(encoding="utf-8") == before
 
 

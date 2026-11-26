@@ -19,6 +19,7 @@ from agent_toolkit._atk.serve import runtime as _runtime
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.serve import wi_operations as _wi_operations
+from agent_toolkit._atk.serve.remote import read_failure_status
 from agent_toolkit._atk.wi import web_input as wi_web_input
 from agent_toolkit._common.session_record_paths import codex_record_roots
 
@@ -60,6 +61,12 @@ def register_error_handlers(app: quart.Quart) -> None:
     @app.errorhandler(FileNotFoundError)
     async def not_found(error: FileNotFoundError) -> tuple[quart.Response, int]:
         return quart.jsonify(error=f"見つかりません: {error}"), 404
+
+    @app.errorhandler(PermissionError)
+    @app.errorhandler(TimeoutError)
+    async def read_failed(error: Exception) -> tuple[quart.Response, int]:
+        status = read_failure_status(error)
+        return quart.jsonify(error="読み取り権限がありません。" if status == 403 else "一時的に取得できません。"), status
 
     @app.errorhandler(filelock.Timeout)
     async def lock_conflict(error: filelock.Timeout) -> tuple[quart.Response, int]:
@@ -125,6 +132,7 @@ def render_index(
     # 使う値は`plans-bootstrap`へ置く。資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけを埋め込む。
     serve_bootstrap = {
         "base_path": base_path,
+        "runtime_versions": "runtime_versions" in quart.current_app.view_functions,
         "stall_ms": int(_runtime.SSE_STALL_SEC * 1000),
         "host_name": plans_context.hostname,
         "wi_root": str(quart.current_app.config["SERVE_STATE"].root),
@@ -239,7 +247,7 @@ def _with_assistant_html(detail: dict[str, typing.Any]) -> dict[str, typing.Any]
     events = []
     for event in detail.get("events", []):
         text = event.get("text") if isinstance(event, dict) else None
-        if isinstance(event, dict) and event.get("kind") == "assistant" and isinstance(text, str) and text:
+        if isinstance(event, dict) and event.get("kind") in {"assistant", "user_report"} and isinstance(text, str) and text:
             event = {**event, "html": _wi_operations.MARKDOWN.render(text)}
         events.append(event)
     return {**detail, "events": events}
@@ -262,6 +270,15 @@ def register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) ->
         async with context.state.lock:
             snapshot = dict(context.state.host_status)
         return json_no_store(snapshot)
+
+    @app.post("/api/plans/retry-host")
+    async def plans_retry_host() -> quart.Response:
+        host = quart.request.args.get("host", "")
+        watcher = context.state.remote_watchers.get(host)
+        if watcher is None or host not in context.allowed_remote_hosts:
+            return no_store("", "text/plain", status=404)
+        watcher.retry()
+        return no_store("", "text/plain", status=204)
 
     @app.get("/api/plans/host-info")
     async def plans_host_info() -> quart.Response:
@@ -288,10 +305,17 @@ def register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) ->
 
     @app.get("/api/plans/search")
     async def plans_search() -> quart.Response:
-        matched = await serve_plans.search_entries(context, quart.request.args.get("q", ""))
+        targets = tuple(dict.fromkeys(quart.request.args.getlist("host")))
+        if any(host not in context.allowed_remote_hosts for host in targets):
+            return no_store("invalid host", "text/plain; charset=utf-8", status=400)
+        failures: dict[str, int] = {}
+        matched = await serve_plans.search_entries(context, quart.request.args.get("q", ""), failures=failures, targets=targets)
         if matched is None:
-            return no_store("search superseded", "text/plain; charset=utf-8")
-        return json_no_store([dataclasses.asdict(entry) for entry in matched])
+            return no_store("search superseded", "text/plain; charset=utf-8", status=409)
+        entries = [dataclasses.asdict(entry) for entry in matched]
+        if failures or targets:
+            return json_no_store({"entries": entries, "failures": failures})
+        return json_no_store(entries)
 
     @app.get("/api/plans/file")
     async def plans_file() -> quart.Response:
@@ -389,15 +413,34 @@ def register_session_routes(
     @app.post("/api/sessions/search")
     async def sessions_search() -> quart.Response:
         payload = await quart.request.get_json(silent=True)
-        raw = payload.get("query") if isinstance(payload, dict) and set(payload) == {"query"} else None
+        raw = payload.get("query") if isinstance(payload, dict) and set(payload) <= {"query", "retry"} else None
         query = raw.strip().casefold() if isinstance(raw, str) else ""
         if not 0 < len(query) <= 1024:
             raise _wi_operations.WebApiInputError("検索語はqueryに1〜1024文字で指定してください")
-        matches, incomplete = await serve_sessions.search_sessions(context, query)
+        targets = payload.get("retry")
+        if targets is not None and (
+            not isinstance(targets, dict)
+            or any(
+                host not in (context.hostname, *context.remote_hosts)
+                or (
+                    paths is not None
+                    and (
+                        not isinstance(paths, list)
+                        or len(paths) > 2000
+                        or any(not isinstance(path, str) or len(path) > 1024 for path in paths)
+                    )
+                )
+                for host, paths in targets.items()
+            )
+        ):
+            raise _wi_operations.WebApiInputError("検索の再取得対象が不正です")
+        matches, unavailable, retry = await serve_sessions.search_sessions(context, query, targets)
         return json_no_store(
             {
                 "matches": [[entry.host, entry.engine, entry.path] for entry in matches],
-                "incomplete": incomplete,
+                "incomplete": bool(unavailable or retry),
+                "unavailable": unavailable,
+                "retry": retry,
             }
         )
 
@@ -417,12 +460,15 @@ def register_session_routes(
         return quart.request.args.get("host") or context.hostname, engine, path
 
     @app.get("/api/sessions/detail")
-    async def sessions_detail() -> quart.Response:
+    async def sessions_detail() -> quart.Response | tuple[quart.Response, int]:
         host, engine, path = session_target()
         try:
             detail = await serve_sessions.session_detail(context, engine, host, path)
         except serve_sessions.SessionNotFoundError as error:
             raise FileNotFoundError(str(error)) from error
+        except Exception as error:  # noqa: BLE001
+            status = read_failure_status(error)
+            return quart.jsonify(error="セッションの詳細を取得できません。"), status
         return json_no_store(_with_assistant_html(detail))
 
     @app.get("/api/sessions/cost")

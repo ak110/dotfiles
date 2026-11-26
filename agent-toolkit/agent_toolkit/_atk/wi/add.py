@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import dataclasses
 import datetime
 import json
@@ -8,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Generator
 
 from agent_toolkit._atk import managed_temp, research_sources
 from agent_toolkit._atk import outcome as _outcome
@@ -45,7 +47,15 @@ from agent_toolkit._atk.wi.add_validation import (
     require_cause_analysis_format,
     require_confirmed_cause,
 )
-from agent_toolkit._atk.wi.constants import WI_STATE_HOLD, WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import (
+    DETAILED_KEY,
+    QUESTION_TYPE_REPORT,
+    WI_STATE_ADOPTED,
+    WI_STATE_HOLD,
+    WI_STATE_INBOX,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
+)
 from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
@@ -121,7 +131,7 @@ def _ensure_draft_destinations(
 _WEEKLY_SLOT = weekly_work.SLOT_PATTERN
 
 
-def _active_batch_run_id() -> str | None:
+def _active_batch() -> tuple[session_review.BatchWriter, session_review.ReviewBatch] | None:
     raw = os.environ.get(session_review.BATCH_ENV)
     if not raw:
         return None
@@ -129,30 +139,67 @@ def _active_batch_run_id() -> str | None:
         path = pathlib.Path(raw).resolve()
         if path.parent != (session_review.directory() / "runs").resolve():
             return None
-        batch = session_review.BatchWriter(path).load()
+        writer = session_review.BatchWriter(path)
+        batch = writer.load()
     except OSError, ValueError:
         return None
-    if batch.run_id != path.stem or batch.status != session_review.BatchStatus.RUNNING:
+    if batch.run_id != path.stem or batch.status not in {session_review.BatchStatus.RUNNING, session_review.BatchStatus.FAILED}:
         return None
-    return batch.run_id
+    return writer, batch
+
+
+def _active_report_batch(scope: object) -> tuple[session_review.BatchWriter, session_review.ReviewBatch] | None:
+    if isinstance(scope, str) and skill_modes.canonical_scope(scope) == session_review.BATCH_SCOPE:
+        return _active_batch()
+    return None
+
+
+@contextlib.contextmanager
+def _track_batch_report_save(
+    private_notes: pathlib.Path,
+    entry_type: str,
+    source: str | None,
+    scope: str | None,
+    parsed_messages: list[tuple[dict[str, object], str]],
+) -> Generator[None]:
+    active = _active_report_batch(scope) if entry_type == WI_TYPE_UWI else None
+    if active is None or not any(
+        data.get("source", source) == "run-skill" and data.get("run_skill_report") == "true" for data, _ in parsed_messages
+    ):
+        yield
+        return
+    writer, batch = active
+    details = {"notes": str(private_notes)}
+    writer.record_report_step("save-start", {**details, "status": "attempted"})
+    status = "failed"
+    try:
+        expected_notes = session_review.resolve_report_notes(batch.report_notes)
+        if private_notes.resolve() != expected_notes.resolve():
+            status = "wrong-destination"
+            raise WebInputError(
+                "振り返りの報告は起動元と同じprivate-notesへ保存する",
+                next_action="保存先の上書きを外し、振り返りbatch内で保存し直す",
+            )
+        yield
+        status = "returned"
+    finally:
+        writer.record_report_step("save-result", {**details, "status": status})
 
 
 def run_report_metadata(
     data: dict[str, object], *, question_type: str | None = None, scope: str | None = None, new_report: bool = False
 ) -> dict[str, object]:
-    if data.get("run_skill_run_id"):
-        return data
-    run_id = os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")
     raw_scope = scope if scope is not None else data.get("scope")
     if (
         new_report
-        and not run_id
         and data.get("source") == "run-skill"
         and data.get("run_skill_report") == "true"
-        and isinstance(raw_scope, str)
-        and skill_modes.canonical_scope(raw_scope) == session_review.BATCH_SCOPE
+        and (active := _active_report_batch(raw_scope))
     ):
-        run_id = _active_batch_run_id()
+        return {**data, "run_skill_run_id": active[1].run_id}
+    if data.get("run_skill_run_id"):
+        return data
+    run_id = os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")
     if not run_id:
         return data
     if data.get("run_skill_report") == "true":
@@ -278,6 +325,7 @@ def add_entries_locked(
     target_commit_branch: str | None = None,
     initial_state: str = WI_STATE_INBOX,
     insertions: list[_add_drafts.Insertion] | None = None,
+    detailed: bool = False,
 ) -> list[tuple[str, str]]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
 
@@ -352,18 +400,24 @@ def add_entries_locked(
                 frontmatter_data["repair_kind"] = repair_kind
             if submitter_session is not None:
                 frontmatter_data["submitter_session"] = submitter_session
-            logical_body = f"\n{_uwi.QUESTION_HEADING}\n\n{body}\n\n{_uwi.ANSWER_HEADING}\n\n{_uwi.ANSWER_MARKER}\n"
+            logical_body = (
+                f"\n{body.rstrip()}\n"
+                if question_type == QUESTION_TYPE_REPORT
+                else f"\n{_uwi.QUESTION_HEADING}\n\n{body}\n\n{_uwi.ANSWER_HEADING}\n\n{_uwi.ANSWER_MARKER}\n"
+            )
         else:
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
             if item_dependencies:
                 frontmatter_data["depends_on"] = list(item_dependencies)
             if cooldown_until is not None:
                 frontmatter_data["cooldown_until"] = cooldown_until
+            if detailed:
+                frontmatter_data[DETAILED_KEY] = True
         content = _frontmatter.normalize_newlines(_frontmatter.serialize_frontmatter(frontmatter_data, logical_body))
         path = _wi_entries.entry_path(private_notes, filename)
         path.parent.mkdir(parents=True, exist_ok=True)
         _frontmatter.write_entry_text(path, content)
-        if entry_type != WI_TYPE_AWI:
+        if entry_type != WI_TYPE_AWI and question_type != QUESTION_TYPE_REPORT:
             _uwi.warn_question_quality(filename, body, question_type)
         generated.append((filename, content))
         counter += 1
@@ -392,8 +446,10 @@ def add_entries(
     draft_basis: DraftBasis | None = None,
     draft_namespace: str | None = None,
     resolve_draft_links: bool = True,
+    detailed: bool = False,
+    origin_reviews: tuple[str, ...] = (),
 ) -> list[str]:
-    """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
+    """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。  pyfltr: allow-comment
 
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
     UWI種別では、`parse_entry_message`が保存形式の未回答外枠を取り除いた本文を保存する。
@@ -404,9 +460,13 @@ def add_entries(
     `target_branch`はfrontmatterに`target_branch`の無い`target_repo`宛ての項目の宛先の系統とする。
     系統を登録したrepository宛てで省略した項目はdefault_branchの系統で保存し、登録に無い系統は保存前に拒否する。
     `initial_state`は保存する状態で、`WI_STATE_HOLD`なら保存した時点から自動処理の対象に入れない。
+    回答を求めない報告（`QUESTION_TYPE_REPORT`）は、`WI_STATE_INBOX`の指定を`WI_STATE_ADOPTED`へ読み替える。
     `target_commit`は`target_repo`と`target_branch`の解決結果が一致する項目にだけ記録する。
+    `detailed`はAWIへ詳細化済みの印（`detailed: true`）を付け、計画を作る時点の詳細化の対象から外す。
     """
     started_at = time.time()
+    if question_type == QUESTION_TYPE_REPORT and initial_state == WI_STATE_INBOX:
+        initial_state = WI_STATE_ADOPTED
     choices = normalize_choices(choices)
     parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
         messages=messages,
@@ -418,13 +478,17 @@ def add_entries(
         target_commit=target_commit,
         source=source,
         cooldown_until=cooldown_until,
+        origin_reviews=origin_reviews,
     )
     item_branches, target_commit_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
     if draft_basis is not None:
         if target_commit != draft_basis.oid or normalized_target_repo != draft_basis.repo:
             raise WebInputError("起草の基点が保存対象と一致しない", next_action=_DRAFT_NEXT)
         _ensure_draft_destinations(draft_basis, parsed_messages, item_branches, target_commit_branch)
-    with storage.mutation(private_notes) as mutation:
+    with (
+        _track_batch_report_save(private_notes, entry_type, source, scope, parsed_messages),
+        storage.mutation(private_notes) as mutation,
+    ):
         if draft_basis is not None:
             draft_basis.verify(target_commit_branch)
         insertions = None
@@ -465,6 +529,7 @@ def add_entries(
             target_commit_branch=target_commit_branch,
             initial_state=initial_state,
             insertions=insertions,
+            detailed=detailed,
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
@@ -484,16 +549,20 @@ def add_entries(
         submitter_session is not None
         and submitter_session == os.environ.get("CODEX_THREAD_ID")
         and entry_type == WI_TYPE_UWI
-        and question_type == "post-approval"
-        and initial_state == WI_STATE_INBOX
-        and any(_process_loop_session.is_report_opening(body) for _, body in parsed_messages)
+        and question_type == QUESTION_TYPE_REPORT
+        and any(str(data.get("completion_report")).lower() == "true" for data, _ in parsed_messages)
         and not _process_loop_session.record_codex_report_save(submitter_session, started_at, os.environ)
     ):
         _outcome.report_warning(
             "巡回の終了判定に使う報告用UWIの保存記録を残せなかった",
             next_action="保存を検収してから、送達と終了操作を行う",
         )
-    if submitter_session is not None and entry_type != WI_TYPE_AWI and not _uwi_watch.add(submitter_session, generated):
+    if (
+        submitter_session is not None
+        and entry_type != WI_TYPE_AWI
+        and question_type != QUESTION_TYPE_REPORT
+        and not _uwi_watch.add(submitter_session, generated)
+    ):
         _outcome.report_warning(
             f"回答の通知先を記録できなかった: {'、'.join(generated)}",
             next_action="回答の有無は`atk wi show <ファイル名>`で確かめる",
@@ -647,6 +716,7 @@ def cmd_add(
     """
     body_files = getattr(args, "body_file", None)
     hold = bool(getattr(args, "hold", False))
+    report = args.question_type == QUESTION_TYPE_REPORT
     if body_files:
         try:
             messages = read_body_files(body_files)
@@ -777,6 +847,7 @@ def cmd_add(
                 target_commit=target_commit,
                 source=args.source,
                 cooldown_until=getattr(args, "cooldown_until", None),
+                origin_reviews=tuple(getattr(args, "origin_review", None) or ()),
             )
             item_branches, resolved_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
             if draft_basis is not None:
@@ -832,6 +903,8 @@ def cmd_add(
             initial_state=WI_STATE_HOLD if hold else WI_STATE_INBOX,
             draft_basis=draft_basis,
             draft_namespace=namespace,
+            detailed=bool(getattr(args, "detailed", False)),
+            origin_reviews=tuple(getattr(args, "origin_review", None) or ()),
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
@@ -849,7 +922,9 @@ def cmd_add(
     inbox_dir = private_notes
     for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
-    _outcome.report_success(f"{count}件をholdへ保存した" if hold else f"{count}件をinboxへ投入した")
+    _outcome.report_success(
+        f"{count}件をholdへ保存した" if hold else f"{count}件を報告として保存した" if report else f"{count}件をinboxへ投入した"
+    )
     for filename in generated:
         print(f"  {shorten_home(_wi_entries.entry_path(private_notes, filename), home)}")
         print_entry_details(saved_details[filename])

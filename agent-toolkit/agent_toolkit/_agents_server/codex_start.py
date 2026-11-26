@@ -10,7 +10,11 @@ from typing import Any
 
 from agent_toolkit._agents_server import codex_providers, codex_resume_state, session_identity, shared_roots
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._agents_server.codex_instructions import _current_service_tier, codex_instruction_fields
+from agent_toolkit._agents_server.codex_instructions import (
+    _current_service_tier,
+    _send_with_service_tier,
+    codex_instruction_fields,
+)
 from agent_toolkit._agents_server.codex_protocol import (
     AppServerError,
     JsonRpcResponseError,
@@ -94,7 +98,17 @@ class CodexStartMixin:
         session.status = "starting"
         session.touch()
         try:
-            await self._start_turn(session, prompt, client)
+            if selection is None or selection.auth is None:
+                await self._start_turn(session, prompt, client)
+            else:
+                await self._start_turn(
+                    session,
+                    prompt,
+                    client,
+                    auth=selection.auth,
+                    quota_workspace=selection.quota_workspace,
+                    auth_observed_at=selection.auth_observed_at,
+                )
         except Exception as exc:
             if self._turn_start_response_is_ambiguous(client, exc):
                 await self._mark_turn_start_ambiguous(session, exc)
@@ -114,11 +128,6 @@ class CodexStartMixin:
         *,
         role: str = "delegate",
     ) -> tuple[dict[str, Any], codex_providers.ProviderSelection | None, set[str], str | None, str | None]:
-        selection = None
-        if codex_providers.has_provider_configuration():
-            selection = await codex_providers.select(client.request, cwd, role=role)
-            if not codex_providers.has_provider_configuration():
-                selection = None
         params: dict[str, Any] = {
             "cwd": cwd,
             # Codexが承認を要すると判定するコマンドは拒否され、PermissionRequest hookは呼ばれない。
@@ -139,6 +148,11 @@ class CodexStartMixin:
         attempted: set[str] = set()
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                selection = None
+                if codex_providers.has_provider_configuration():
+                    selection = await codex_providers.select(client.request, cwd, role=role)
+                    if not codex_providers.has_provider_configuration():
+                        selection = None
                 thread_response = None
                 if selection is not None and (selection.primary or selection.candidates):
                     order = (selection.primary, *selection.candidates)
@@ -177,12 +191,21 @@ class CodexStartMixin:
                             tier = await _current_service_tier(
                                 client.request,
                                 cwd,
+                                provider=candidate,
+                                auth=selection.auth,
+                                quota_workspace=selection.quota_workspace,
+                                auth_observed_at=selection.auth_observed_at,
                                 subscription=(
                                     await run_file_operation(codex_connection.subscription_provider_for, candidate) is not None
                                 ),
                             )
-                            thread_response = await client.request(
-                                "thread/start", {**params, "modelProvider": candidate, "serviceTier": tier}
+                            thread_response = await _send_with_service_tier(
+                                client,
+                                "thread/start",
+                                {**params, "modelProvider": candidate},
+                                tier,
+                                provider=candidate,
+                                record_start=True,
                             )
                         except JsonRpcResponseError as exc:
                             detail, logged = exc.diagnostic()
@@ -199,7 +222,9 @@ class CodexStartMixin:
                         raise AppServerError("Codex connection candidates were rejected: " + "; ".join(failures))
                 else:
                     tier = await _current_service_tier(client.request, cwd, subscription=None)
-                    thread_response = await client.request("thread/start", {**params, "serviceTier": tier})
+                    thread_response = await _send_with_service_tier(
+                        client, "thread/start", params, tier, provider=None, record_start=True
+                    )
         except TimeoutError as exc:
             diagnostic_method = getattr(client, "initialization_diagnostic", None)
             diagnostic = (

@@ -1,5 +1,6 @@
 # Rust記述スタイル
 
+Rustで実装する担当が型、エラー処理、テストの規定を適用し、ユーザーが安全性の前提を確かめてコードを保守できるようにする。
 Rustのコードとテストを書く時とレビューする時の、採用するライブラリと`unsafe`の根拠の書き方を示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用として、Rustに固有の決まりだけを置く。
 

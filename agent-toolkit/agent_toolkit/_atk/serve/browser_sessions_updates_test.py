@@ -186,7 +186,6 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
     page = screen_harness.page
     await _observe_screen_requests(page)
-    await page.set_viewport_size({"width": 1280, "height": 600})
     parent = tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl"
     records: list[dict[str, Any]] = [
         {"type": "user", "timestamp": "2026-09-04T00:00:00Z", "cwd": "/home/aki/long", "message": {"content": "開始"}}
@@ -232,6 +231,9 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
         "() => { const main = document.querySelector('#screen-sessions main'); main.scrollTop = 1500; return main.scrollTop; }"
     )
     assert scroll_top > 0
+    summary = events.nth(120).locator(":scope > summary")
+    await playwright.async_api.expect(summary).to_be_focused()
+    old_summary = await summary.element_handle()
     list_requests = _session_list_requests(screen_harness)
 
     _append_jsonl(
@@ -245,7 +247,9 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
         ],
     )
 
-    await playwright.async_api.expect(events).to_have_count(232, timeout=5000)
+    await page.wait_for_function("(summary) => !summary.isConnected", arg=old_summary)
+    await playwright.async_api.expect(summary).to_be_focused()
+    await playwright.async_api.expect(events).to_have_count(232)
     assert not await events.nth(0).evaluate("element => element.open")
     assert not await events.nth(120).evaluate("element => element.open")
     assert await page.evaluate("() => document.querySelector('#screen-sessions main').scrollTop") == scroll_top
@@ -350,8 +354,8 @@ async def test_session_failures_preserve_host_engine_and_record(screen_harness: 
         await page.route("**/api/sessions/detail?*", lambda route: route.fulfill(status=503, json={"error": "同じ失敗"}))
     await page.goto(harness.base_url + "/sessions")
     if failure == "list":
-        alert = page.locator("#sessions-list-error")
-        await playwright.async_api.expect(alert).to_contain_text("browser-test / 一覧取得")
+        alert = page.locator("#update-status")
+        await playwright.async_api.expect(alert).to_contain_text("セッション一覧を取得できません。")
         return
     item = page.locator('#sessions .session-item[data-engine="claude"]').first
     path = await item.get_attribute("data-path")
@@ -363,7 +367,116 @@ async def test_session_failures_preserve_host_engine_and_record(screen_harness: 
             "**/api/sessions/list", lambda route: route.fulfill(json={"sessions": [], "warnings": [], "roots": []})
         )
         await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    if failure == "detail":
+        await playwright.async_api.expect(page.locator("#update-status")).to_contain_text("セッションの詳細を取得できません。")
+        return
     alert = page.locator("#detail")
     await playwright.async_api.expect(alert).to_contain_text("セッション / browser-test / Claude")
     await playwright.async_api.expect(alert).to_contain_text(path)
     await playwright.async_api.expect(alert).to_contain_text("見つかりません" if failure == "disappeared" else "取得できません")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_connection_failure_uses_shared_status_and_recovers(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.add_init_script("""
+        const NativeSource = window.EventSource;
+        window.EventSource = class extends NativeSource {
+          constructor(url) {
+            super(url);
+            if (url.endsWith("/api/sessions/events")) window.sessionSource = this;
+          }
+        };
+    """)
+    await page.goto(screen_harness.base_url + "/sessions")
+    await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(2)
+    await page.evaluate("""() => {
+        window.sessionSource.close();
+        window.sessionSource.dispatchEvent(new Event("error"));
+    }""")
+    banner = page.locator("#update-status")
+    await playwright.async_api.expect(banner).to_be_hidden()
+    await page.wait_for_function("window.sessionSource.readyState === EventSource.OPEN")
+    await playwright.async_api.expect(banner).to_be_hidden()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(2, reason="隔離したserveをブラウザーで操作して再描画のフォーカスを観測する")
+@pytest.mark.parametrize("control", ["back", "link", "subagent-item", "body-link"])
+async def test_focused_session_control_survives_append(screen_harness: _ScreenHarness, tmp_path: Path, control: str) -> None:
+    parent = tmp_path / "claude" / "projects" / "-home-aki-long" / "parent.jsonl"
+    records = [{"type": "user", "timestamp": "2026-09-04T00:00:00Z", "cwd": "/home/aki/long", "message": {"content": "開始"}}]
+    records.append(
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-04T00:00:01Z",
+            "message": {"content": [{"type": "text", "text": "[本文のリンク](https://example.invalid/fixture)"}]},
+        }
+    )
+    subagents = parent.with_suffix("") / "subagents"
+    subagents.mkdir(parents=True, exist_ok=True)
+    (subagents / "agent-long.meta.json").write_text(
+        json.dumps({"agentType": "Explore", "description": "長い調査", "spawnDepth": 1}, ensure_ascii=False), encoding="utf-8"
+    )
+    path = subagents / "agent-long.jsonl"
+    queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
+    _append_jsonl(parent, records)
+    _append_jsonl(path, records)
+    await _wait_record_notification(screen_harness, queue, path)
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
+    if control == "subagent-item":
+        button = page.locator(".subagent-item", has_text="長い調査")
+        changed_path = parent
+    else:
+        await page.locator(".subagent-item", has_text="長い調査").click()
+        button = (
+            page.get_by_role("button", name="委譲元の記録へ戻る") if control == "back" else page.locator("a.event-link").first
+        )
+        if control == "body-link":
+            button = page.get_by_role("link", name="本文のリンク", exact=True)
+        changed_path = path
+    await button.focus()
+    await playwright.async_api.expect(button).to_be_focused()
+    old = await button.element_handle()
+    _append_jsonl(
+        changed_path,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-04T00:00:02Z",
+                "message": {"content": [{"type": "text", "text": "追記されたイベント"}]},
+            }
+        ],
+    )
+    await page.wait_for_function("(el) => !el.isConnected", arg=old)
+    await playwright.async_api.expect(button).to_be_focused()
+
+
+@pytest.mark.parametrize("terminal", [403, 404])
+@pytest.mark.parametrize("warm", [False, True])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_retry_reports_terminal_failure(screen_harness: _ScreenHarness, terminal: int, warm: bool) -> None:
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    item = page.locator("#sessions .session-item").first
+    if warm:
+        await item.click()
+        await page.locator("#detail .event").first.wait_for(state="visible")
+    calls = 0
+
+    async def inject(route):
+        nonlocal calls
+        calls += 1
+        await route.fulfill(status=503 if calls <= 2 else terminal, json={})
+
+    await page.route("**/api/sessions/detail?*", inject)
+    if warm:
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    else:
+        await item.click()
+    expected = "見つかりません" if terminal == 404 else "取得できません"
+    await playwright.async_api.expect(page.locator("#detail")).to_contain_text(expected, timeout=15000)
+    await playwright.async_api.expect(page.locator("#update-status")).to_be_hidden()
+    assert calls == 3

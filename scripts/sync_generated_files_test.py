@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 import sync_generated_files as subject
-from agent_toolkit._common import task_documents
+from agent_toolkit._agents_server.launch_requests import validate_start_inputs
+from agent_toolkit._common import agents_server_tools, task_documents
 from agent_toolkit._testing.delegation_contract_support import _generated_input_errors
 
 
@@ -122,6 +123,37 @@ def test_input_contract_names_whole_contract_only_for_normal_launch(tmp_path: Pa
     body = task_documents.input_contract_body(source)
     assert ("whole_contract_path" in body) == (mode == "delegate")
     assert "準備はこの契約の入力一覧で完結する" not in body
+
+
+def test_wi_draft_review_generated_arguments_match_start() -> None:
+    roles = subject.REPO_ROOT / "agent-toolkit/skills/atk-mode/roles"
+    role = "wi-draft-review"
+    document = (roles / f"{role}.parent.md").read_text(encoding="utf-8")
+    section = document.split(f"<!-- input-contract:{role}:start -->", 1)[1].split(f"<!-- input-contract:{role}:end -->", 1)[0]
+    preparation = section.split("通常起動", 1)[1].split("\n\n", 1)[0]
+    role_inputs = {
+        name: "値"
+        for line in section.splitlines()
+        if line.startswith("- 必須入力名: ")
+        for name in re.findall(r"`([^`]+)`", line)
+    }
+    keys = list(dict.fromkeys(re.findall(r"`([a-z_]+)`", preparation)))
+    assert "`agents_server.start`" in preparation
+    assert keys == ["subagent_md_path", "extra_params", "mode", "whole_contract_path"]
+    assert "`mode`は省略" in preparation
+    explicit = re.search(r"`mode: (\w+)`", preparation)
+    assert explicit is not None
+    arguments = {
+        keys[0]: str(roles / f"{role}.subagent.md"),
+        keys[1]: role_inputs,
+        keys[3]: str(roles / "whole-contract.md"),
+    }
+    implicit = agents_server_tools.start_mode("start", arguments)
+    assert implicit is not None
+    validate_start_inputs(implicit, **arguments)
+    validate_start_inputs(explicit[1], **arguments)
+    with pytest.raises(ValueError, match="受理しない.*extra_params.*subagent_md_path"):
+        validate_start_inputs("delegate", prompt="依頼", **arguments)
 
 
 def test_input_sync_checks_all_boundaries_before_writing(tmp_path: Path) -> None:

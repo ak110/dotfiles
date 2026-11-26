@@ -28,16 +28,16 @@ const items = elements['detail-metadata'].children.map(item => ({
 process.stdout.write(JSON.stringify({items, heading: elements['detail-state'].textContent}));
 """
     )
-    assert result["heading"] == "awi / inbox"
+    assert result["heading"] == "受信"
     assert [item["label"] for item in result["items"]] == [
-        "target_repo",
-        "source",
+        "対象リポジトリ",
+        "出所",
         "priority",
         "int: 1",
         "1",
         "nested",
         "values",
-        "updated_at",
+        "最終更新",
     ]
     assert [item["className"] for item in result["items"]] == ["metadata-item"] * 8
     assert result["items"][0]["value"] == "example/repo"

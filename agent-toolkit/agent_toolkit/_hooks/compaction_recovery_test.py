@@ -94,6 +94,7 @@ def test_compact_extracts_original_user_events(
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert output.count("session-review-prepare") == 1 and "conversation_path" in output
+    assert "当初の目的と現行の要求を見失わないよう、作業契約と" in output
     assert not (tmp_path / "compaction-digest").exists()
     body = _prepare_from_notice(output, tmp_path / "manual", capsys).read_text(encoding="utf-8")
     assert "- ユーザー: 最初の要求を全部保持する\n- ユーザー: 範囲を狭めず例も確認する\n" in body
@@ -262,5 +263,5 @@ def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkey
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "unresolved"}))
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "run-script session-review-evidence -- --claude-session-id unresolved --user-events`" in output
-    assert "作業契約と取得したユーザー発話の原文を読んでください" in output
+    assert "当初の目的と現行の要求を見失わないよう、作業契約と取得したユーザー発話の原文を読んでください" in output
     assert "conversation_path" not in output

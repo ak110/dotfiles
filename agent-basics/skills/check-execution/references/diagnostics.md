@@ -1,5 +1,6 @@
 # 検証結果の診断と警告の判定
 
+検証結果を読む担当が終了状態と診断を基準版と照らし、ユーザーが変更で生じた失敗と既存の問題を区別できるようにする。
 検証の結果を読み、合否、警告の帰属、所要時間の妥当性を判定して、検証の依頼元へ返す基準である。
 成功の主張を観測の範囲に限る点は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）の適用である。
 所要時間の比較は原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）の適用である。

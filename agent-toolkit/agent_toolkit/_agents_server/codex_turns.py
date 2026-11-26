@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
 import typing
 from typing import Any
 
 from agent_toolkit._agents_server import codex_providers, codex_resume_state, configured_model
-from agent_toolkit._agents_server.codex_instructions import _current_service_tier
+from agent_toolkit._agents_server.codex_instructions import _current_service_tier, _send_with_service_tier
 from agent_toolkit._agents_server.codex_protocol import (
     JsonRpcResponseError,
     StartCandidateUnavailable,
@@ -116,7 +117,16 @@ class CodexTurnsMixin:
         session.touch()
         await self._notify_waiters()
 
-    async def _start_turn(self: CodexManager, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None:
+    async def _start_turn(
+        self: CodexManager,
+        session: SessionState,
+        prompt: str,
+        client: JsonRpcProcess | None = None,
+        *,
+        auth: dict[str, Any] | None = None,
+        quota_workspace: str | None = None,
+        auth_observed_at: datetime.datetime | None = None,
+    ) -> None:
         if client is None:
             client = await self._acquire_owned_client(session.session_id, session.launch_kind)
         self._start_auto_reset_monitor(session, client)
@@ -125,22 +135,33 @@ class CodexTurnsMixin:
         provider = session.codex_model_provider or session.codex_state_provider
         subscription: bool | None = await run_file_operation(codex_connection.subscription_provider_for, provider) is not None
         if not codex_providers.has_provider_configuration() and provider in (None, "openai"):
-            subscription = None
+            subscription = provider == "openai" if provider is not None else None
         params: dict[str, Any] = {
             "threadId": session.session_id,
             "input": [{"type": "text", "text": prompt}],
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandboxPolicy": {"type": "dangerFullAccess"},
-            "serviceTier": await _current_service_tier(client.request, session.cwd, subscription=subscription),
         }
+        decision = await _current_service_tier(
+            client.request,
+            session.cwd,
+            subscription=subscription,
+            provider=provider,
+            auth=auth,
+            quota_workspace=quota_workspace,
+            auth_observed_at=auth_observed_at,
+        )
         if session.model is not None:
             params["model"] = session.model
         if session.effort is not None:
             params["effort"] = session.effort
-        response = await client.request(
+        response = await _send_with_service_tier(
+            client,
             "turn/start",
             params,
+            decision,
+            provider=provider,
             on_sent=lambda: self._mark_turn_start_sent(session, fast_mode=params["serviceTier"] == "priority"),
         )
         turn = response.get("turn")

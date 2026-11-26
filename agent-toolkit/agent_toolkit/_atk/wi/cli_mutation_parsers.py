@@ -29,6 +29,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         ),
     )
     add.add_argument("--source-contract", metavar="PATH", help="原本のURLを記した作業契約の絶対パス。")
+    add.add_argument("--origin-review", metavar="PATH", action="append", help="原要求の独立検収結果JSONの絶対パス。")
     placement = add.add_mutually_exclusive_group()
     placement.add_argument(
         "--batch",
@@ -82,6 +83,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "UWIの回答形式。`--type=uwi`では必須とし、`--type=uwi`でのみ指定できる。"
             "選択肢から選ぶ問いは`choice`（`--choices`も指定する）、2択の可否を問う問いは`yes-no`とする。"
             "実施済みの対応への事後承認は`post-approval`とし、固定二択を使う。"
+            "回答を求めない作業結果の報告は`report`とし、保存した時点で`adopted`にする。"
             "選択肢に無い回答は回答欄で受ける。"
         ),
     )
@@ -119,6 +121,15 @@ def _add_wi_add_parser(sub: Any) -> None:
             "AWIをinboxでなくholdへ保存し、保存した時点から自動処理の対象に入れない。"
             "保存後に本文を仕上げてから`atk wi unhold`で戻す場合に使う。"
             "UWI・--batch・--process-wi-timingとは併用できない。"
+        ),
+    )
+    add.add_argument(
+        "--detailed",
+        action="store_true",
+        help=(
+            "AWIへ詳細化済みの印（frontmatterのdetailed: true）を付ける。"
+            "計画を作る時点でadd-awi-by-userと同じ水準へ詳細化した本文を新規に保存する場合に使い、"
+            "次の巡回の選定で詳細化の対象から外す。UWI・--batchとは併用できない。"
         ),
     )
     add.add_argument(
@@ -339,6 +350,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     effect.add_argument("--corrective-awi", help="効果不足の是正先AWIの保存済みファイル名")
     effect.add_argument("--reason", help="判定の理由（pending・not_requiredでは必須）")
     edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk wi edit"])
+    edit.add_argument("--origin-review", metavar="PATH", action="append", help="原要求の独立検収結果JSONの絶対パス。")
     edit.add_argument(
         "filename",
         metavar="FILENAME",
@@ -383,6 +395,15 @@ def _add_mq_edit_parsers(sub: Any) -> None:
             "`## ユーザー指摘の逐語引用`に連続して含まれる時だけ、コメント節を削除して保存する。エージェント環境でも使える。"
             "満たさない時は保存しない。比較では改行の種類、コメントの前後の空行、本文側の行頭の引用記号（`>`と空白1つ）だけを無視する。"
             "--body-fileとの併用が必須で、--appendとは併用できない。"
+        ),
+    )
+    edit.add_argument(
+        "--detail",
+        action="store_true",
+        help=(
+            "計画を作る時点で詳細化したAWIの本文を保存し、詳細化済みの印（frontmatterのdetailed: true）を付ける。"
+            "processingの項目では、エージェント環境でも、処理中の担当（processing_owner）と同じ会話からの置換だけを受け付ける。"
+            "--body-fileとの併用が必須で、--append・--cooldown-untilとは併用できない。UWIには指定できない。"
         ),
     )
     edit.add_argument(

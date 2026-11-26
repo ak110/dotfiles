@@ -206,7 +206,7 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
     source = notes / "processing" / "c.md"
     source.write_text(source.read_text(encoding="utf-8").replace("source: test", "source: add-awi-by-user"), encoding="utf-8")
     before = yaml.safe_load(path.read_text(encoding="utf-8"))
-    before["選定"][1]["計画要否"] = "計画なし"
+    before["選定"][1]["詳細化要否"] = "詳細化なし"
     old_plan = str(tmp_path / "removed-worktree" / "old-plan.md")
     for item in before["選定"][:2]:
         item["再開位置"] = old_plan
@@ -226,7 +226,7 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
     assert after["選定"][1]["再開位置"] == old_plan
     assert [row["統合状態"] for row in after["レーンの所要時間"]] == ["未統合", "統合済み"]
     assert [row["統合状態"] for row in after["選定"]] == ["未統合", "統合済み", "統合済み"]
-    assert [row["計画要否"] for row in after["選定"]] == ["計画あり", "計画なし", "計画なし"]
+    assert [row["詳細化要否"] for row in after["選定"]] == ["詳細化あり", "詳細化なし", "詳細化なし"]
     saved = path.read_bytes()
     assert _dispatch(str(path), "--reopen-wi", "missing.md", "--output", str(path), "--work-dir", str(repo)) == 2
     assert path.read_bytes() == saved
@@ -835,7 +835,7 @@ def test_merge_derives_order_after_applying_new_write_target(
     }
 
 
-def test_revalidation_cannot_save_missing_plan_requirement_without_source(env, tmp_path, capsys):
+def test_revalidation_cannot_save_missing_detail_requirement_without_source(env, tmp_path, capsys):
     repo, _notes = env
     selection = _write_selection(
         tmp_path / "selection.yaml",
@@ -844,5 +844,5 @@ def test_revalidation_cannot_save_missing_plan_requirement_without_source(env, t
     original = selection.read_bytes()
     assert _dispatch(str(selection), "--output", str(selection), "--work-dir", str(repo)) != 0
     diagnostic = capsys.readouterr().err
-    assert "missing.md" in diagnostic and "計画要否" in diagnostic and "次の操作:" in diagnostic
+    assert "missing.md" in diagnostic and "詳細化要否" in diagnostic and "次の操作:" in diagnostic
     assert selection.read_bytes() == original

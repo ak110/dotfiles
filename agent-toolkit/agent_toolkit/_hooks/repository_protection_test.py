@@ -183,6 +183,49 @@ def test_repository_environment_does_not_taint_independent_commit(monkeypatch: p
     assert json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
 
 
+@pytest.mark.parametrize(
+    "layout, expected",
+    [
+        ("isolated", None),
+        ("bare-outside", "リポジトリの編集可否を確認できない"),
+        ("missing-origin", "リポジトリの編集可否を確認できない"),
+        ("worktree-outside", "リポジトリの編集可否を確認できない"),
+        ("origin-not-bare", "リポジトリの編集可否を確認できない"),
+        ("origin-inside-bare", "リポジトリの編集可否を確認できない"),
+        ("windows-slash", "直接編集できない"),
+        ("windows-backslash", "リポジトリの編集可否を確認できない"),
+    ],
+)
+def test_isolated_queue_with_local_bare_origin(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, layout: str, expected: str | None
+) -> None:
+    area = managed_temp.temp_root_path() / f"sandbox-{tmp_path.name}"
+    bare_root = tmp_path if layout == "bare-outside" else area
+    bare = bare_root / "notes-remote.git"
+    if layout == "origin-not-bare":
+        bare = git.init_repository(area / "notes-remote", initial_branch="main")
+    elif layout == "origin-inside-bare":
+        git.init_bare_repository(bare)
+        bare = bare / "hooks"
+    elif layout != "missing-origin":
+        git.init_bare_repository(bare)
+    clone_root = tmp_path if layout == "worktree-outside" else area
+    origin = {"windows-slash": "C:/verify/notes-remote", "windows-backslash": "C:\\verify\\notes-remote"}.get(layout, str(bare))
+    clone = git.init_repository(clone_root / "private-notes", initial_branch="main", origin=origin)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", "{}")
+    payload = {
+        "tool_name": "Bash",
+        "cwd": str(tmp_path),
+        "tool_input": {"command": f"git -C {shlex.quote(str(clone))} commit --quiet --allow-empty -m init"},
+    }
+    result = _run_hook_in_process("pretooluse", payload)
+    if expected:
+        assert expected in denial_reason(result)
+    else:
+        assert result.returncode == 0 and not result.stderr
+        assert json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
+
+
 def test_exempt_worktree_does_not_exempt_external_repository_storage(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

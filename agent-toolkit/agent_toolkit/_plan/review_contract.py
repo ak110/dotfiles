@@ -144,6 +144,10 @@ def validate(
         if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
             errors.append(f"{name}: 条件番号が不正または重複")
         original = (originals or {}).get(name, "")
+        for index, _ in enumerate(quoted_passages(original), 1):
+            reference = f"引用{index}"
+            if sum(row[2] == "原文照合" and bool(row[3]) and row[4] == reference for row in own) != 1:
+                errors.append(f"{name}: {reference} に対応する原文照合行が無いか重複している")
         numbered = _numbered_conditions(original)
         excluded = excluded_reflections(original)
         for row in own:
@@ -184,6 +188,118 @@ def validate(
             errors.append(
                 f"{name}: 出典に対応する行が無い項目: {'、'.join(uncovered)}。"
                 "各項目の主要完成状態または除外理由を記した行を追加し、出典へ`反映内容N`を記す"
+            )
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
+def _origin_passages(original: str, heading: str) -> list[str]:
+    lines = last_h2_section_lines(original, heading) or []
+    return [
+        token.content.rstrip("\n") if token.type == "fence" else "\n".join(lines[token.map[0] : token.map[1]])
+        for token in MarkdownIt().parse("\n".join(lines))
+        if token.level == 0 and token.map is not None
+    ]
+
+
+def quoted_passages(original: str) -> list[str]:
+    return _origin_passages(original, "ユーザー指摘の逐語引用")
+
+
+_CODE_OR_SENTENCE_END = re.compile(
+    r"(?<!`)(?P<ticks>`+)(?!`)[\s\S]*?(?<!`)(?P=ticks)(?!`)"
+    r"|[。！？][」』）】”’]*|[.!?][」』）】”’]*(?=\s|$)"
+)
+
+
+def _requirement_units(passage: str) -> list[str]:
+    lines = [re.sub(r"^\s*(?:> *)+", "", line) for line in passage.splitlines()]
+    lines = [re.sub(r"^\s*(?:[-+*]|[0-9]+[.)]) +", "\n", line) for line in lines]
+    units = []
+    for paragraph in re.split(r"\n\s*\n", "\n".join(lines).strip()):
+        text = " ".join(paragraph.split())
+        start = 0
+        for match in _CODE_OR_SENTENCE_END.finditer(text):
+            if match["ticks"] is None:
+                units.append(text[start : match.end()].strip())
+                start = match.end()
+        if tail := text[start:].strip():
+            units.append(tail)
+    return units
+
+
+_EXCLUSIONS = r"(失効|割当外|投入元で完了|回答済み|背景|重複)"
+
+
+def _validate_passage(
+    label: str,
+    passage: str,
+    matching: list[tuple[str, str]],
+    exclusions: dict[int, list[str]],
+    requirements: Mapping[str, tuple[str, str]],
+) -> list[str]:
+    if len(matching) != 1:
+        return [f"{label}: 判定が無いか重複している"]
+    verdict, evidence = matching[0]
+    if verdict in {"未達", "根拠不足"}:
+        return [f"{label}: {verdict}"]
+
+    units = _requirement_units(passage)
+    numbers = dict.fromkeys(re.findall(r"原文要求([1-9][0-9]*)", evidence)) if verdict == "達成" else {}
+    pending = {index: unit for index, unit in enumerate(units, 1) if index not in exclusions}
+    errors = []
+    for number in numbers:
+        quote, status = requirements.get(number, ("", ""))
+        index = next((index for index, unit in pending.items() if unit == quote), None)
+        if status != "達成" or index is None:
+            errors.append(f"{label}: 原文要求{number}の逐語・達成判定を照合できない")
+        else:
+            del pending[index]
+    if verdict == "達成" and not numbers:
+        errors.append(f"{label}: 達成した原文要求行の参照が無い")
+    if verdict == "除外" and not exclusions:
+        errors.append(f"{label}: 原文単位ごとの除外が無い")
+    for index, excluded in exclusions.items():
+        if len(excluded) > 1:
+            errors.append(f"{label}.{index}: 原文単位の判定が重複している")
+    for index, unit in pending.items():
+        errors.append(f"{label}.{index}: 原文要求の達成または除外の判定が無い: {unit}")
+    for index in exclusions.keys() - set(range(1, len(units) + 1)):
+        errors.append(f"{label}.{index}: 原本にない原文単位を除外している")
+    return errors
+
+
+def validate_origin_verdicts(result: str, originals: Mapping[str, str]) -> None:
+    quotes: dict[str, dict[int, list[tuple[str, str]]]] = {}
+    requirements: dict[str, dict[str, tuple[str, str]]] = {}
+    exclusions: dict[str, dict[int, dict[int, list[str]]]] = {}
+    errors = []
+    for line in result.splitlines():
+        if match := re.fullmatch(r"(\S+) 引用照合([1-9][0-9]*): (達成|未達|根拠不足|除外) — 根拠: (\S.*)", line):
+            name, index, verdict, evidence = match.groups()
+            quotes.setdefault(name, {}).setdefault(int(index), []).append((verdict, evidence))
+        if match := re.fullmatch(rf"(\S+) 引用除外([1-9][0-9]*)\.([1-9][0-9]*): {_EXCLUSIONS} — 根拠: (\S.*)", line):
+            name, block, unit, _, evidence = match.groups()
+            exclusions.setdefault(name, {}).setdefault(int(block), {}).setdefault(int(unit), []).append(evidence)
+        if match := re.fullmatch(r"(\S+) 原文要求([1-9][0-9]*)「(.+)」: (達成|未達|根拠不足) — 根拠: \S.*", line):
+            name, index, quote, verdict = match.groups()
+            rows = requirements.setdefault(name, {})
+            if name in originals and (index in rows or verdict != "達成"):
+                errors.append(f"{name} 原文要求{index}: 重複または{verdict}")
+            rows[index] = (" ".join(quote.split()), verdict)
+    for name, original in originals.items():
+        passages = (
+            quoted_passages(original) + _origin_passages(original, "ユーザーコメント") + _origin_passages(original, "回答")
+        )
+        for index, passage in enumerate(passages, 1):
+            errors.extend(
+                _validate_passage(
+                    f"{name} 引用照合{index}",
+                    passage,
+                    quotes.get(name, {}).get(index, []),
+                    exclusions.get(name, {}).get(index, {}),
+                    requirements.get(name, {}),
+                )
             )
     if errors:
         raise ValueError("\n".join(errors))

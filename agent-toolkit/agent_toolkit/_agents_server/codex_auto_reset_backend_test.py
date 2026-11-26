@@ -72,12 +72,15 @@ class _MemoryAppServer(codex.JsonRpcProcess):
         self.process = cast(Process, SimpleNamespace(stdin=object(), stdout=self.stream, pid=None))
         self._reader_task = asyncio.create_task(self._read_stdout())
 
-    async def _send(self, message: dict[str, Any]) -> None:
+    async def _send(
+        self, message: dict[str, Any], *, before_send: Callable[[], contextlib.AbstractContextManager[None]] | None = None
+    ) -> None:
         method = message.get("method")
         if not isinstance(method, str):
             return
         params = message.get("params", {})
-        self.requests.append((method, params))
+        with before_send() if before_send is not None else contextlib.nullcontext():
+            self.requests.append((method, params))
         if method in self.silent:
             return
         if method in {"thread/start", "thread/resume"}:

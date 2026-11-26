@@ -1,5 +1,6 @@
 # GitLab CIの使い方
 
+GitLab CIを編集する担当が現在の仕様とlintで設定を確かめ、ユーザーが対象のGitLabで意図どおりに動くパイプラインを使えるようにする。
 `.gitlab-ci.yml`を編集・確認する時と、GitLab CIのキーワードの仕様やlintの実行方法を参照する時の、公式資料と本体のlintで確かめる手順と外れやすい仕様を示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用である。
 TLS検証を外す設定は原則4（`agent-basics:writing-standards/references/quality-principles-constraints.md`）の適用である。

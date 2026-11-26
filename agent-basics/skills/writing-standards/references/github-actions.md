@@ -1,5 +1,6 @@
 # GitHub Actionsワークフロー記述スタイル
 
+GitHub Actionsのワークフローを書く担当が権限を絞り、検証と公開の順序を定め、ユーザーが検証済みの成果を公開できるようにする。
 GitHub Actionsのワークフローを書く時とレビューする時の、外部actionの固定、権限、公開を伴うステップの順序などの決まりを示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用である。
 公開を伴うステップの規定は原則4（`agent-basics:writing-standards/references/quality-principles-constraints.md`）の適用である。

@@ -228,7 +228,7 @@ async def test_session_tree_aligns_rows_without_children(screen_harness: _Screen
     await playwright.async_api.expect(parent).to_have_count(1)
     await playwright.async_api.expect(leaf).to_have_count(1)
     marker = leaf.locator(".session-tree-leaf")
-    await playwright.async_api.expect(marker).to_have_text("−")
+    await playwright.async_api.expect(marker).to_be_empty()
     await playwright.async_api.expect(marker).to_have_attribute("aria-hidden", "true")
     assert await marker.evaluate("(element) => element.tagName") == "SPAN"
     assert await leaf.locator("button.session-tree-toggle").count() == 0

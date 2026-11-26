@@ -72,10 +72,12 @@ DELEGATED_COMPACT_NOTICE = "圧縮後に読む資料の限定とは別に、作�
 """委譲先の圧縮後に、起動の本文の原本と役割文書、起動の入力が渡した記録の読み直しを求める1行の書き出し。"""
 
 
-def delegated_compact_notice(launch: work_contract.DelegatedLaunch | None) -> str:
+def delegated_compact_notice(launch: work_contract.DelegatedLaunch | None, own_contract: pathlib.Path | None = None) -> str:
     targets = [f"委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`", "起動の入力が示した役割文書"]
+    if own_contract is not None:
+        targets.insert(0, f"目的を見返すための自身の作業契約`{own_contract}`（現在の依頼）")
     if launch is not None and launch.whole_contract is not None:
-        targets.append(f"全体作業契約`{launch.whole_contract}`")
+        targets.append(f"上位の目的と現行の制約を見失わないための全体作業契約`{launch.whole_contract}`")
     if launch is not None and launch.handoff is not None and pathlib.Path(launch.handoff).is_file():
         targets.append(f"自身の引き継ぎ記録`{launch.handoff}`")
     return DELEGATED_COMPACT_NOTICE + "、".join(targets) + "。"
@@ -109,7 +111,12 @@ def _launch_input_process_wi(data: dict[str, Any], session_id: str) -> tuple[boo
 
 
 def compose_session_start(
-    source: str, *, delegated: bool, host: str, launch: work_contract.DelegatedLaunch | None = None
+    source: str,
+    *,
+    delegated: bool,
+    host: str,
+    launch: work_contract.DelegatedLaunch | None = None,
+    own_contract: pathlib.Path | None = None,
 ) -> str | None:
     parts: list[str] = []
     if not delegated:
@@ -187,7 +194,7 @@ def compose_session_start(
             )
     if delegated:
         if source == "compact":
-            parts.append(_llm_notice(delegated_compact_notice(launch)))
+            parts.append(_llm_notice(delegated_compact_notice(launch, own_contract)))
     elif source in _CONTEXT_LOSING_SOURCES:
         parts.append(_llm_notice(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE))
     if host == "claude" and not delegated:
@@ -210,7 +217,7 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 
 def _compact_recovery_context() -> str:
     return _llm_notice(
-        "会話が圧縮された。圧縮後に読むのは作業契約と会話の要約だけである。"
+        "会話が圧縮された。圧縮後に読むのは、作業の目的を見返すための作業契約と会話の要約だけである。"
         "ほかの資料は、次に行う操作・判断の条件に該当した時に読んでください。"
     )
 
@@ -287,20 +294,21 @@ def _existing_session_temp(session_id: object) -> str | None:
 
 
 def _compaction_notice(session_id: str, transcript_path: object) -> str:
+    purpose = "当初の目的と現行の要求を見失わないよう、"
     scope = "その他の資料は次の操作・判断に該当するときに読んでください。"
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
         arguments = ["run-script", "session-review-evidence", "--", "--claude-session-id", session_id, "--user-events"]
         return (
             f"会話が圧縮された。起動部分へ`{shlex.join(arguments)}`を続けて実行し、"
-            f"作業契約と取得したユーザー発話の原文を読んでください。{scope}"
+            f"{purpose}作業契約と取得したユーザー発話の原文を読んでください。{scope}"
         )
     command = shlex.join(
         ["run-script", "session-review-prepare", "--", "--transcript", resolved, "--conversation-only", "--conversation-digest"]
     )
     return (
         f"会話が圧縮された。起動部分へ`{command}`を続けて実行し、"
-        "作業契約と、出力のconversation_pathが示す要約ファイルを読んでください。"
+        f"{purpose}作業契約と、出力のconversation_pathが示す要約ファイルを読んでください。"
         f"上限超過時はコマンドが示す上限で再実行してください。{scope}"
     )
 
@@ -375,7 +383,16 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             else None
         )
         started = time.monotonic()
-        content = compose_session_start(source, delegated=delegated, host=host, launch=launch)
+        own_contract = (
+            work_contract.record_path(session_id)
+            if source == "compact"
+            and isinstance(session_id, str)
+            and not payload.get("agent_id")
+            and delegated_session.is_delegated(os.environ)
+            and work_contract.exists(session_id)
+            else None
+        )
+        content = compose_session_start(source, delegated=delegated, host=host, launch=launch, own_contract=own_contract)
         timing.record(payload, "rules_context", started, "ok", stage="normative-content")
         if (
             not delegated

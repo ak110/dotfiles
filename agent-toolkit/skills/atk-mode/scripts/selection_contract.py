@@ -9,6 +9,7 @@ from collections.abc import Callable, Mapping
 
 from agent_toolkit._atk import config as _model_config
 from agent_toolkit._atk.wi import priority as _wi_priority
+from agent_toolkit._atk.wi.constants import DETAILED_SOURCES, is_detailed
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import selection_estimate as _estimate
@@ -31,7 +32,7 @@ _DECISION_KEYS = frozenset(
         _selection.PUBLIC_WRITE_FILES_KEY,
         _selection.PUBLIC_WRITE_RATIONALES_KEY,
         _selection.MODEL_TYPES_KEY,
-        _selection.PLAN_REQUIREMENT_KEY,
+        _selection.DETAIL_REQUIREMENT_KEY,
         _selection.EXCLUDED_PATHS_KEY,
         _selection.DERIVED_NEW_PATHS_KEY,
         _selection.INTEGRATION_STATE_KEY,
@@ -158,20 +159,21 @@ def _check_ready_selection(facts: Mapping[str, Mapping[str, typing.Any]], select
         raise ValueError(f"処理可能な候補が選定にない: {', '.join(missing)}。処理可否の判定を確かめて全件を扱う")
 
 
-def _plan_requirement(metadata: dict[str, typing.Any]) -> str:
-    if metadata.get("type") == "awi" and metadata.get("source") in ("add-awi-by-user", "process-user-comments", "implement"):
-        return "計画なし"
-    return "計画あり"
+def _detail_requirement(metadata: dict[str, typing.Any]) -> str:
+    # UWIは本文を置き換えず、回答の反映先のAWIか回答から作るAWIで詳細化する。  # pyfltr: allow-comment
+    if metadata.get("type") == "uwi" or metadata.get("source") in DETAILED_SOURCES or is_detailed(metadata):
+        return _selection.DETAIL_NOT_REQUIRED
+    return _selection.DETAIL_REQUIRED
 
 
-def complete_plan_requirements(selection: dict[str, object], read_metadata: Callable[[str], dict[str, typing.Any]]) -> None:
-    """元WIの取得が要るのは計画要否を持たない行だけ。明示値を保持する。  pyfltr: allow-comment"""
+def complete_detail_requirements(selection: dict[str, object], read_metadata: Callable[[str], dict[str, typing.Any]]) -> None:
+    """元WIの取得が要るのは詳細化要否を持たない行だけ。明示値を保持する。  pyfltr: allow-comment"""
     items = typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
-    if all(_selection.PLAN_REQUIREMENT_KEY in item for item in items):
+    if all(_selection.DETAIL_REQUIREMENT_KEY in item for item in items):
         return
     for item in items:
-        if _selection.PLAN_REQUIREMENT_KEY not in item:
-            item[_selection.PLAN_REQUIREMENT_KEY] = _plan_requirement(read_metadata(item[_selection.WI_KEY]))
+        if _selection.DETAIL_REQUIREMENT_KEY not in item:
+            item[_selection.DETAIL_REQUIREMENT_KEY] = _detail_requirement(read_metadata(item[_selection.WI_KEY]))
     selection.pop("decisions", None)
     selection[_selection.DECISIONS_KEY] = items
 
@@ -225,7 +227,7 @@ def generate_selection(
                 copy.deepcopy(item),
                 **{
                     _STALENESS_KEY: copy.deepcopy(candidate["staleness"]),
-                    _selection.PLAN_REQUIREMENT_KEY: _plan_requirement(candidate),
+                    _selection.DETAIL_REQUIREMENT_KEY: _detail_requirement(candidate),
                 },
             )
         )
@@ -373,8 +375,11 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
             for key in (_selection.WI_KEY, _selection.LANE_KEY, *_DECISION_STRING_KEYS)
             if key in item and not isinstance(item[key], str)
         )
-        if _selection.PLAN_REQUIREMENT_KEY in item and item[_selection.PLAN_REQUIREMENT_KEY] not in ("計画なし", "計画あり"):
-            errors.append(f"{label}: 計画要否は計画なしまたは計画ありを指定する")
+        if _selection.DETAIL_REQUIREMENT_KEY in item and item[_selection.DETAIL_REQUIREMENT_KEY] not in (
+            _selection.DETAIL_NOT_REQUIRED,
+            _selection.DETAIL_REQUIRED,
+        ):
+            errors.append(f"{label}: 詳細化要否は詳細化なしまたは詳細化ありを指定する")
         state = item.get(_selection.INTEGRATION_STATE_KEY, _selection.NOT_INTEGRATED)
         if state not in (_selection.NOT_INTEGRATED, _selection.INTEGRATED):
             errors.append(f"{label}: 統合状態は未統合か統合済みを指定する: {state!r}")

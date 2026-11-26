@@ -9,6 +9,7 @@ from typing import Any
 
 from agent_toolkit._git import command as git_command
 
+from pytools._internal import repository_references
 from pytools._internal.common import format_cli_error
 
 _HELP_TEST = "agent-toolkit/agent_toolkit/atk_help_test.py"
@@ -16,6 +17,8 @@ _SIZE_TEST = "norm_size_budget_invariant_test.py"
 _LINK_TEST = "markdown_link_anchor_invariant_test.py"
 _TERM_TEST = "retired_terms_invariant_test.py"
 _STOP_TEST = "subprocess_stop_invariant_test.py"
+_REFERENCE_TEST = "agent_toolkit_reference_invariant_test.py"
+_REFERENCE_DEFINITIONS = frozenset({"_test_helpers.py", "pytools/_internal/repository_references.py", "pyproject.toml"})
 _HELP_CHANGE = re.compile(r"\b(add_parser|add_subparsers|register_subcommand|help_text)\b|\bhelp\s*=|--help")
 _STOP_CHANGE = re.compile(r"\.(?:kill|terminate|stop_owned_process|reclaim_processes|reclaim_unreaped)\b|\btimeout\s*=")
 
@@ -42,12 +45,15 @@ def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
     changes = re.split(r"^diff --git ", patch, flags=re.MULTILINE)[1:]
     if len(names) != len(changes):
         raise ValueError("統合候補の変更ファイルと差分の対応を確定できない")
+    pyproject = root / "pyproject.toml"
+    pyright_paths = (
+        repository_references.pyright_literal_paths(pyproject.read_text(encoding="utf-8")) if pyproject.is_file() else []
+    )
     found: set[tuple[str, str]] = set()
     for name, change in zip(names, changes, strict=True):
         path = pathlib.PurePosixPath(name)
-        text = "\n".join(
-            line[1:] for line in change.splitlines() if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
-        )
+        _, hunk_start, hunks = change.partition("\n@@")
+        text = "\n".join(line[1:] for line in (hunk_start + hunks).splitlines() if line.startswith(("+", "-")))
         if path.suffix == ".md":
             found.add((_LINK_TEST, "markdown-links"))
             found.add((_TERM_TEST, "tracked-terminology"))
@@ -63,8 +69,16 @@ def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
             found.add((_LINK_TEST, "cli-help-links"))
         if path.suffix == ".py" and not _is_test(path) and _STOP_CHANGE.search(text):
             found.add((_STOP_TEST, "subprocess-stop"))
-        if name in {_LINK_TEST, _TERM_TEST, _SIZE_TEST, _STOP_TEST, _HELP_TEST}:
+        if name in {_LINK_TEST, _TERM_TEST, _SIZE_TEST, _STOP_TEST, _HELP_TEST, _REFERENCE_TEST}:
             found.add((name, "cross-contract-definition"))
+        if name in _REFERENCE_DEFINITIONS:
+            found.add((_REFERENCE_TEST, "reference-check-definition"))
+        if repository_references.is_reference_source(path) and repository_references.mentions_reference(text):
+            found.add((_REFERENCE_TEST, "repository-references"))
+        if re.search(r"^deleted file mode ", change, flags=re.MULTILINE) and repository_references.is_reference_target(
+            name, pyright_paths
+        ):
+            found.add((_REFERENCE_TEST, "reference-target-removed"))
         if path.suffix in {".py", ".js", ".ts", ".ps1", ".sh"} and re.search(r"[^\x00-\x7f]", text):
             found.add((_TERM_TEST, "tracked-terminology"))
     return [{"test": test, "reason": reason} for test, reason in sorted(found)]
@@ -78,10 +92,12 @@ def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = N
     """
     root = root.resolve()
     changed: set[pathlib.Path] = set()
+    relative_files: list[str] = []
     for name in files:
         path = (root / name).resolve()
         if not path.is_relative_to(root) or not path.is_file():
             raise ValueError(f"リポジトリ内のファイルでない: {name}")
+        relative_files.append(path.relative_to(root).as_posix())
         if not _is_test(path):
             changed.add(path)
     listed = git_command.run(["-C", str(root), "ls-files", "-z", "--", "*.py"], capture_output=True, timeout=60)
@@ -138,6 +154,7 @@ def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = N
                         "reasons": reasons,
                     }
                 )
+    reference_contracts = _reference_contracts(root, relative_files)
     head = git_command.run(["-C", str(root), "rev-parse", "--verify", "HEAD"], capture_output=True, text=True, timeout=60)
     if head.returncode:
         raise ValueError(f"HEADを取得できない: {format_cli_error(head)}")
@@ -145,6 +162,7 @@ def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = N
         "head": head.stdout.strip(),
         **({"base": base, "cross_contracts": cross_contracts(root, base)} if base is not None else {}),
         "sources": sorted(source.relative_to(root).as_posix() for source in changed),
+        "reference_contracts": reference_contracts,
         "candidates": candidates,
         "source_hashes": {
             source.relative_to(root).as_posix(): hashlib.sha256(source.read_bytes()).hexdigest() for source in sorted(changed)
@@ -154,6 +172,20 @@ def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = N
             for name in sorted({item["test"] for item in candidates})
         },
     }
+
+
+def _reference_contracts(root: pathlib.Path, files: list[str]) -> list[dict[str, str]]:
+    sources = [
+        name
+        for name in sorted(set(files))
+        if name in _REFERENCE_DEFINITIONS
+        or name == _REFERENCE_TEST
+        or (
+            repository_references.is_reference_source(pathlib.PurePosixPath(name))
+            and repository_references.mentions_reference((root / name).read_text(encoding="utf-8"))
+        )
+    ]
+    return [{"test": _REFERENCE_TEST, "reason": "repository-references", "source": name} for name in sources]
 
 
 def _is_test(path: pathlib.PurePath) -> bool:
@@ -240,11 +272,17 @@ def _imported_modules(tree: ast.AST, path: pathlib.Path) -> set[str]:
 def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]:
     candidates = snapshot["candidates"]
     assert isinstance(candidates, list)
-    ambiguous = {(item["source"], item["test"]) for item in candidates if not item["required"]}
+    contracts = {item["test"] for item in snapshot.get("reference_contracts", [])}
+    ambiguous = {
+        (item["source"], item["test"]) for item in candidates if not item["required"] and item["test"] not in contracts
+    }
     decisions: dict[tuple[str, str], bool] = {}
     if review is not None:
+        # 参照契約は検証対象に加えた試験からも生じるため、判定の対象と一致の比較から外す。  pyfltr: allow-comment
         if not isinstance(review, dict) or any(
-            json.dumps(review.get(key), sort_keys=True) != json.dumps(value, sort_keys=True) for key, value in snapshot.items()
+            json.dumps(review.get(key), sort_keys=True) != json.dumps(value, sort_keys=True)
+            for key, value in snapshot.items()
+            if key != "reference_contracts"
         ):
             raise ValueError("利用試験の意味判定が現在のHEAD・ソース・候補集合と一致しない")
         rows = review.get("decisions")
@@ -254,6 +292,8 @@ def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]
             if not isinstance(row, dict) or not isinstance(row.get("source"), str) or not isinstance(row.get("test"), str):
                 raise ValueError("意味判定のsourceとtestは文字列で指定する")
             key = (row["source"], row["test"])
+            if row["test"] in contracts:
+                continue
             if key in decisions or key not in ambiguous:
                 raise ValueError("意味判定に重複または余剰の候補がある")
             if not isinstance(row.get("include"), bool) or not isinstance(row.get("reason"), str) or not row["reason"].strip():
@@ -264,6 +304,7 @@ def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]
     return sorted(
         {item["test"] for item in candidates if item["required"] or decisions.get((item["source"], item["test"]), False)}
         | {item["test"] for item in snapshot.get("cross_contracts", [])}
+        | contracts
     )
 
 

@@ -34,14 +34,14 @@ Claude Codeは`additionalContext`を10,000文字で保存先とプレビュー�
 """
 
 RETURN_CRITERION = (
-    "要求・制約・訂正を含む発話を受けたら、成果物を編集する前に作業契約の「現在有効な要求・制約」へ反映してください。"
+    "要求・制約・訂正を含む発話を受けたら、成果物を編集する前に、作業が長引いても目的を見失わないよう、作業契約の「目的」「完遂事項」「守る制約」の該当箇所へ反映してください。"
     "質問、状況照会、継続だけなら更新しない。"
     "要求の統合・回答後の再開・完了判断は、`agent-toolkit/skills/atk-mode/references/work-contract.md`"
     "「追加入力の統合」「更新する時点」「工程境界での要求と成果の確認」に従ってください。"
 )
 
 
-SHORT_NOTICE = "現行の作業契約を取得してください: "
+SHORT_NOTICE = "作業の目的と現行の要求を見失わないよう、作業契約の原本を読んでください: "
 """通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
 
 _RECORD_REFERENCE = re.compile(r"`([^\n`]+):([1-9][0-9]{0,7})`")
@@ -321,6 +321,15 @@ def exists(session_id: str) -> bool:
 
 
 def record_path(session_id: str) -> pathlib.Path | None:
+    if delegated_session.is_delegated(os.environ):
+        try:
+            resolution = session_registry.resolve(session_id)
+        except OSError, ValueError:
+            resolution = None
+        if resolution is not None and (info := resolution.resume_info or resolution.handoff_info) is not None:
+            path = delegated_session.prompt_own_contract_path(info.launch_info.prompt, managed_temp.temp_root_path())
+            if path is not None:
+                return path
     directory = managed_temp.find_session_temp(session_id)
     return directory / RECORD_NAME if directory is not None else None
 
@@ -454,7 +463,7 @@ def delegated_notice(session_id: str, *, agent: str = "main") -> tuple[str, str]
         return None
     text = f"全体作業契約が起動後に更新された。原本: `{path}`。"
     notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, current)
-    return text, "原本を全文読み、現行要求と「即時対応で確定した暫定規則」を確かめて続行へ適用してください。"
+    return text, "原本を全文読み、現行要求と「暫定規範」を確かめて続行へ適用してください。"
 
 
 def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
@@ -479,7 +488,8 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     if len(body) > budget:
         return (
             f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめてください。"
-            "発話の転記、時刻、経緯、完了した要求が残っていれば、現在の目的・要件だけに書き直してください。"
+            "発話の転記、時刻、経緯、完了した要求、保存済みのAWIへ移した要求が残っていれば、"
+            "`agent-toolkit:atk-mode/references/work-contract.md`「更新する時点」に従って現在の目的・要件だけに書き直してください。"
             f"{RETURN_CRITERION}"
         )
     return f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"

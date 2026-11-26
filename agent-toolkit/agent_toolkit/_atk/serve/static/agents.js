@@ -1,13 +1,13 @@
-import {BASE_PATH} from "./common.js";
+import {decorateWiReferences} from "./wi_reference.js";
+import {recordUpdateSuccess, setUpdateError, setDisplayedReadError, BASE_PATH, recoverRead} from "./common.js";
 import {registerScreen} from "./shell.js";
 
 const active = () => document.body.dataset.screen === "agents";
 const checkbox = document.getElementById("agents-terminated");
 const hosts = document.getElementById("agents-hosts");
-const error = document.getElementById("agents-error");
 
-async function fetchJson(url) {
-  const response = await fetch(BASE_PATH + url);
+async function fetchJson(url, signal) {
+  const response = await recoverRead("agents", BASE_PATH + url, {signal});
   if (!response.ok) throw new Error(`一覧の取得に失敗しました（HTTP ${response.status}）。`);
   return response.json();
 }
@@ -33,19 +33,20 @@ function agentRow(agent, depth) {
   const name = agent.name || agent.engine;
   const caption = agentText("text-clip", "");
   caption.title = [agent.id, name].filter(Boolean).join(" · ");
+  target.classList.add("agent-name");
   caption.append(target);
-  if (name) caption.append(` · ${name}`);
+  if (name) caption.append(" ", agentText("secondary-text", name));
   const action = agent.action?.startsWith("commandExecution:")
     ? agent.action.match(/(?:^|\s)command=([\s\S]*)$/)?.[1] || "コマンドを実行中"
     : agent.action;
   const subline = [action, agent.retry_detail, agent.retry_count, agent.record_error].filter(Boolean).join(" · ");
-  const actionText = agentText("agent-action text-clip", subline);
+  const actionText = agentText("agent-action secondary-text text-clip", subline);
   actionText.title = subline;
   identity.append(caption, actionText);
   row.append(identity);
   const state = {"稼働中": "running", "終了": "terminated", "不明": "unknown"}[agent.status] || agent.status;
   for (const [field, label, value] of [
-    ["status", "状態", state], ["elapsed", "経過時間", agent.elapsed], ["usage", "文脈使用量", agent.usage],
+    ["status", "状態", ({running: "稼働中", terminated: "終了", unknown: "不明"})[state] ?? agent.status], ["elapsed", "経過時間", agent.elapsed], ["usage", "文脈使用量", agent.usage],
   ]) {
     const cell = document.createElement("span");
     cell.className = `agent-${field} text-clip`;
@@ -53,11 +54,12 @@ function agentRow(agent, depth) {
       cell.title = value;
       const valueNode = agentText(field === "status" ? "agent-value status-chip" : "agent-value", value);
       if (field === "status") valueNode.dataset.state = state;
-      cell.append(agentText("visually-hidden", `${label}: `), valueNode);
+      cell.append(agentText("agent-field-label secondary-text", `${label}: `), valueNode);
     }
     row.append(cell);
   }
   item.append(row);
+  decorateWiReferences(row);
   return item;
 }
 
@@ -90,7 +92,7 @@ function appendRoot(list, root) {
 function renderRoots(content, roots) {
   const focused = content.contains(document.activeElement) ? document.activeElement.closest("[data-agent-id]") : null;
   if (!roots.length) {
-    content.replaceChildren("稼働中の会話・委譲先はありません。");
+    content.replaceChildren(agentText("empty-state", "稼働中の会話・委譲先はありません。"));
     if (focused) checkbox.focus({preventScroll: true});
     return;
   }
@@ -107,26 +109,54 @@ function renderRoots(content, roots) {
 function watchHost(content, host) {
   let pending = false;
   let timer;
+  let failed = false;
+  let hasSnapshot = false;
+  let generation = 0;
+  let current;
+  let controller;
   async function refresh() {
     clearTimeout(timer);
     if (pending || !active()) return;
     pending = true;
+    const token = generation;
+    controller = new AbortController();
     const params = new URLSearchParams({terminated: checkbox.checked ? "1" : "0"});
     if (host !== null) params.set("host", host);
     try {
-      const payload = await fetchJson("/api/agents/list?" + params);
-      if (payload.error) content.textContent = payload.error;
-      else renderRoots(content, payload.roots);
-    } catch (cause) {
-      content.textContent = cause.message;
+      const payload = await fetchJson("/api/agents/list?" + params, controller.signal);
+      if (payload.error) throw new Error(payload.error);
+      if (!active() || token !== generation) return;
+      hasSnapshot = true;
+      renderRoots(content, payload.roots);
+      content.parentElement.hidden = false;
+      failed = false;
+      recordUpdateSuccess("agents", host);
+    } catch {
+      if (!active() || token !== generation) return;
+      failed = true;
+      content.querySelector(".inline-loading")?.remove();
+      content.parentElement.hidden = !hasSnapshot;
+      setDisplayedReadError("agents", host, `${host ?? "ローカル"}のエージェント一覧を取得できません。`, refresh);
     } finally {
       pending = false;
-      if (active()) timer = setTimeout(refresh, 2000);
+      if (active() && token !== generation) void refresh();
+      else if (active() && !failed) timer = setTimeout(refresh, 2000);
     }
   }
-  checkbox.addEventListener("change", refresh);
-  document.addEventListener("atk-screen-change", refresh);
-  void refresh();
+  function change() {
+    const selection = active() ? checkbox.checked : null;
+    if (selection !== current) {
+      current = selection;
+      generation += 1;
+      controller?.abort();
+      failed = false;
+      setUpdateError("agents", host);
+    }
+    void refresh();
+  }
+  checkbox.addEventListener("change", change);
+  document.addEventListener("atk-screen-change", change);
+  change();
 }
 
 async function init() {
@@ -134,21 +164,22 @@ async function init() {
   hosts.dataset.initialized = "true";
   try {
     const data = await fetchJson("/api/agents/hosts");
-    error.hidden = true;
+    recordUpdateSuccess("agents", "hosts");
     for (const hostname of [null, ...data.remote]) {
       const section = document.createElement("section");
       const heading = document.createElement("h2");
-      heading.className = "agent-host-heading";
+      heading.className = "agent-host-heading section-heading";
       heading.textContent = hostname ?? `${data.local}（ローカル）`;
       const content = document.createElement("div");
-      content.textContent = "読み込み中…";
+      const loading = agentText("inline-loading", "読み込み中");
+      loading.setAttribute("role", "status");
+      content.append(loading);
       section.append(heading, content);
       hosts.append(section);
       watchHost(content, hostname);
     }
   } catch (cause) {
-    error.textContent = cause.message;
-    error.hidden = false;
+    setDisplayedReadError("agents", "hosts", cause.message, init);
     delete hosts.dataset.initialized;
   }
 }

@@ -44,13 +44,13 @@ process.stdout.write(JSON.stringify({
         "keys": ["u.md", "x.md", "f.md"],
         "unanswered": "true",
         "unknownKind": "unknown",
-        "count": "3件（未回答UWI 1件）",
+        "count": "3件（未回答の質問 1件）",
         "warning": "［WI / node-test / /notes / inbox/bad.md］一覧から除外したファイル: UTF-8として読み取れません",
         "announced": "3件を表示",
-        "kindState": ["awi", "inbox", "plan"],
+        "kindState": ["作業", "受信", "計画あり"],
         "targetLabel": "example/a-very-long-repository-name",
-        "targetAria": "target-repo: github.com/example/a-very-long-repository-name",
-        "rowAria": "f.md、github.com/example/a-very-long-repository-name、awi、inbox、plan、本文",
+        "targetAria": "対象リポジトリ: github.com/example/a-very-long-repository-name",
+        "rowAria": "f.md、github.com/example/a-very-long-repository-name、作業、受信、計画あり、本文",
         "summary": "本文",
         "sseStatus": "変更しない",
     }
@@ -98,7 +98,7 @@ process.stdout.write(JSON.stringify({warning, folded, cleared, messages}));
     )
     assert result == {
         "folded": {
-            "summary": "一覧から除外したファイルの警告: 2件（開くと理由と次の操作を表示）",
+            "summary": "一覧から除外したファイルの警告: 2件",
             "boxHidden": False,
             "open": True,
             "inside": True,
@@ -137,7 +137,7 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result["filterValues"] == ["", "github.com/x/alpha", "github.com/x/beta"]
-    assert result["filterLabels"][0] == "all"
+    assert result["filterLabels"][0] == "すべて"
     assert result["datalistValues"] == ["github.com/x/alpha", "github.com/x/beta"]
 
 
@@ -165,14 +165,14 @@ await handleFilterChange({reloadRepos: true});
 process.stdout.write(JSON.stringify({
   listUrls,
   rows: entries.map(entry => entry.filename),
-  error: elements['operation-notice-message'].textContent
+  error: elements['update-status'].querySelector('[role=status]').textContent
 }));
 """
     )
     assert result == {
         "listUrls": ["/atk/api/entries?type=all&status=adopted&answered=all&period=all&page=1"],
         "rows": ["entry.md"],
-        "error": "［WI / node-test / /notes / 対象リポジトリ一覧取得］候補取得失敗",
+        "error": "リポジトリ候補を取得できません。",
     }
 
 
@@ -293,7 +293,7 @@ process.stdout.write(JSON.stringify({results}));
         assert item["page"] == 1
         assert item["values"] == values
         assert item["answeredDisabled"] is False
-        assert "検索=all" in item["conditions"]
+        assert "検索: all" in item["conditions"]
         assert item["query"] == (
             "/atk/api/entries?type=awi&status=adopted&answered=yes&period=4w&important=no"
             "&target_repo=chosen%2Frepo&source_kind=unset&q=all&page=1"

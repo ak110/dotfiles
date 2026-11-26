@@ -103,8 +103,8 @@ async def test_post_approval_fixed_choices_show_saved_state(
     assert choice + addition in saved
     if saved_state == "inbox":
         await page.locator(f'.entry-select[data-key="{filename}"]').click()
-        await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("answered")
-        await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("yes")
+        await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("回答")
+        await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("回答済み")
         await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text(choice + addition)
         await playwright.async_api.expect(detail.locator("#detail-content")).not_to_contain_text(
             "ユーザーはこの行以降に回答を追記する"
@@ -131,9 +131,10 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
     await playwright.async_api.expect(detail).to_be_hidden()
     await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
     await page.locator(f'.entry-select[data-key="{filename}"]').click()
-    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("answered")
-    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("yes")
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("回答")
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("回答済み")
     await playwright.async_api.expect(detail.locator("#decision-panel")).to_be_hidden()
+    await detail.locator("#detail-more summary").click()
     await detail.get_by_role("button", name="採用", exact=True).click()
     note = detail.get_by_label("メモ（任意）")
     await playwright.async_api.expect(note).to_be_focused()
@@ -158,13 +159,13 @@ async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harne
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
 
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / answered")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("回答済み")
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
     await page.keyboard.press("Escape")
 
     await page.locator("#state-filter").select_option("all")
     await page.locator('.entry-select[data-key="adopted.md"]').click()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("採用")
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_hidden()
     await detail.locator("#edit-button").click()
     editor = detail.locator("#edit-content")
@@ -173,7 +174,7 @@ async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harne
     await detail.locator("#save-entry-button").click()
     await playwright.async_api.expect(detail).to_be_hidden()
     await page.locator('.entry-select[data-key="adopted.md"]').click()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("採用")
     assert "終了後の追記" in _entry_path(harness.root, "adopted.md").read_text(encoding="utf-8")
     await playwright.async_api.expect(detail.locator("#answer-panel")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#delete-button")).to_be_visible()
@@ -208,6 +209,8 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
 
     await page.locator('.entry-select[data-key="held-question.md"]').click()
     await playwright.async_api.expect(detail.locator("#answer-panel")).to_be_visible()
+    await playwright.async_api.expect(detail.get_by_role("button", name="採用", exact=True)).to_be_hidden()
+    await detail.locator("#detail-more summary").click()
     await playwright.async_api.expect(detail.get_by_role("button", name="採用", exact=True)).to_be_visible()
     await playwright.async_api.expect(detail.locator("#reject-button")).to_be_hidden()
     await page.keyboard.press("Escape")
@@ -249,7 +252,7 @@ async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harne
         row = page.locator(f'.entry-select[data-key="{path.name}"]')
         await row.click()
         await detail.get_by_role("button", name="削除", exact=True).click()
-        await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text(f"awi / {state}")
+        await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_attribute("data-state", state)
         async with page.expect_request("**/api/entries/remove") as request_info:
             await delete_dialog.get_by_role("button", name="削除する").click()
         payload = (await request_info.value).post_data_json
@@ -440,12 +443,12 @@ async def test_work_item_url_and_selection_survive_state_change(
     assert response.ok
     assert wi_entries.entry_state_of(_entry_path(harness.root, "awi.md")) == "hold"
     harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / hold")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("保留")
     assert page.url == stable_url
     await playwright.async_api.expect(row).to_have_attribute("aria-current", "true")
     await page.reload()
     await playwright.async_api.expect(detail.locator("#detail-filename")).to_have_text("awi.md")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / hold")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("保留")
     assert page.url == stable_url
 
 
@@ -466,8 +469,13 @@ async def test_uwi_detail_offers_answer_and_other_operations_at_once(browser_har
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
 
     footer = detail.locator("#detail-footer")
-    for selector in ("#answer-input", "#save-answer-button", "#adopt-button", "#edit-button", "#delete-button"):
+    for selector in ("#answer-input", "#save-answer-button"):
         await playwright.async_api.expect(footer.locator(selector)).to_be_visible()
+    for selector in ("#adopt-button", "#edit-button", "#delete-button"):
+        await playwright.async_api.expect(footer.locator(selector)).to_be_hidden()
+    await playwright.async_api.expect(footer.get_by_role("textbox", name="質問への回答（必須）")).to_have_attribute(
+        "placeholder", "回答を入力"
+    )
     choices = footer.locator("#answer-choices button")
     assert await choices.count() >= 1
     input_box = await footer.locator("#answer-input").bounding_box()
@@ -506,11 +514,11 @@ async def test_wi_references_open_nested_readonly_dialogs(browser_harness: _Brow
     await playwright.async_api.expect(links).to_have_count(2)
     await playwright.async_api.expect(detail.locator("#detail-metadata")).not_to_contain_text('["child.md"')
     await links.last.click()
-    missing = page.get_by_role("dialog", name="詳細（1段目）")
+    missing = page.get_by_role("dialog", name="参照先のワークアイテム").first
     await playwright.async_api.expect(missing).to_contain_text("WIが見つかりません。")
     await page.keyboard.press("Escape")
     await links.first.click()
-    child = page.get_by_role("dialog", name="詳細（1段目）")
+    child = page.get_by_role("dialog", name="参照先のワークアイテム").first
     await playwright.async_api.expect(child.get_by_role("button")).to_have_count(2)
     await playwright.async_api.expect(child.get_by_role("heading", name="本文", exact=True)).to_be_visible()
     preview_metadata = child.locator(".detail-metadata")
@@ -528,7 +536,8 @@ async def test_wi_references_open_nested_readonly_dialogs(browser_harness: _Brow
         assert child_rect["y"] > parent_rect["y"]
     grandchild_link = child.get_by_role("link", name="20261011-203736-1000.md")
     await grandchild_link.click()
-    grandchild = page.get_by_role("dialog", name="詳細（2段目）")
+    grandchild = page.locator('dialog[aria-labelledby="wi-reference-title-2"]')
+    await playwright.async_api.expect(grandchild).to_have_accessible_name("参照先のワークアイテム")
     await playwright.async_api.expect(grandchild).to_contain_text("孫の本文")
     await page.keyboard.press("Escape")
     await playwright.async_api.expect(grandchild).to_have_count(0)
@@ -558,7 +567,7 @@ async def test_wi_detail_keeps_reading_space_and_discloses_secondary_actions(bro
     await disclosure.focus()
     await disclosure.press("Enter")
     await delete.click()
-    await page.get_by_role("dialog", name="削除の確認").get_by_role("button", name="閉じる").click()
+    await page.get_by_role("dialog", name="削除の確認").get_by_role("button", name="キャンセル").click()
     await playwright.async_api.expect(delete).to_be_focused()
     await disclosure.press("Enter")
     await playwright.async_api.expect(delete).to_be_hidden()
@@ -595,14 +604,14 @@ async def test_wi_reference_stops_offset_at_readable_boundary(
     )
     opened_from = parent.get_by_role("link", name="legacy child.md")
     await opened_from.click()
-    child = page.get_by_role("dialog", name="詳細（1段目）")
+    child = page.get_by_role("dialog", name="参照先のワークアイテム").first
     parent_bounds, child_bounds = await parent.bounding_box(), await child.bounding_box()
     assert parent_bounds is not None and child_bounds is not None
     assert child_bounds["x"] > parent_bounds["x"]
     assert child_bounds["y"] > parent_bounds["y"]
     next_link = child.get_by_role("link", name="grandchild.md")
     await next_link.click()
-    last = page.get_by_role("dialog", name="詳細（2段目）")
+    last = page.get_by_role("dialog", name="参照先のワークアイテム").last
     assert await last.bounding_box() == child_bounds
     await page.keyboard.press("Escape")
     await playwright.async_api.expect(next_link).to_be_focused()

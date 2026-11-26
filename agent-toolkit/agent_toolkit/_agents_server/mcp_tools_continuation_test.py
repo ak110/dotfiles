@@ -12,6 +12,8 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from agent_toolkit._agents_server import launch_requests, mcp_tools, session_handoff, state
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import delegated_session
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_mcp_tools_support import _start_exec_review_session, _write_review_plan
 from agent_toolkit._testing.agents_server_support import (
@@ -61,6 +63,13 @@ async def test_new_request_and_handoff_preserve_required_context(
         _complete(manager.sessions[started["session_id"]])
         successor = await mcp_tools.start(handoff_from=started["session_id"])
         received = manager.sessions[successor["session_id"]].prompt
+        root = managed_temp.temp_root_path()
+        previous_prompt = manager.sessions[started["session_id"]].prompt
+        previous_contract = delegated_session.prompt_own_contract_path(previous_prompt, root)
+        successor_contract = delegated_session.prompt_own_contract_path(received, root)
+        assert previous_contract is not None and successor_contract is not None and previous_contract != successor_contract
+        assert successor_contract.read_bytes() == previous_contract.read_bytes()
+        assert str(previous_contract) not in received
         assert "レビュー基準: 計画" in received
         assert "追加要求: 新しい文書の差分も確認する" in received
         await mcp_tools.send_message(successor["session_id"], instruction="再レビューせよ", extra_params={"round": "2"})
@@ -82,6 +91,60 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
             "label": "",
             "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
         }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reverse_order", [False, True])
+async def test_followup_updates_only_explicit_contract_changes_after_delivery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, reverse_order: bool
+) -> None:
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        tasks = "- 担当A: 書式確認\n- 担当B: 内容確認"
+        request = f"## 目的\n\n原稿を整える。\n\n## 完遂事項\n\n{tasks}\n\n## 守る制約\n\n- 公開しない。"
+        started = await mcp_tools.start(str(tmp_path), prompt=request, mode="explore")
+        session_id = started["session_id"]
+        contract = delegated_session.prompt_own_contract_path(
+            manager.sessions[session_id].prompt, managed_temp.temp_root_path()
+        )
+        assert contract is not None
+        before = contract.read_text(encoding="utf-8")
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "prompt": "進捗を教えて"})
+        assert contract.read_text(encoding="utf-8") == before
+        assert delivery_payload(backend.prompts[-1]) == "進捗を教えて"
+
+        _complete(manager.sessions[session_id])
+        edits = [("担当A", "担当B"), ("担当B", "担当C")]
+        prompt = "担当Aを担当Bへ、担当Bを担当Cへ訂正する。"
+        await mcp_tools.mcp.call_tool(
+            "send_message",
+            {"session_id": session_id, "prompt": prompt, "contract_changes": dict(edits[::-1] if reverse_order else edits)},
+        )
+        delivered = delivery_payload(backend.prompts[-1])
+        assert prompt in delivered and 'kind="work-contract-update"' in delivered
+        body = contract.read_text(encoding="utf-8")
+        assert body.endswith(request.replace("担当B", "担当C").replace("担当A", "担当B") + "\n")
+        assert prompt not in body and "進捗を教えて" not in body
+
+
+@pytest.mark.asyncio
+async def test_unclassified_contract_can_be_read_before_first_turn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    request = "原稿を読み、体裁を確かめる。外に公開しない。"
+
+    class FirstTurn:
+        async def start_explore(self, prompt: str, _cwd: str, **_options: object) -> dict[str, str]:
+            path = delegated_session.prompt_own_contract_path(prompt, managed_temp.temp_root_path())
+            assert path is not None
+            assert all(heading in path.read_text(encoding="utf-8") for heading in ("目的", "完遂事項", "守る制約"))
+            assert path.with_name("startup-request.md").read_text(encoding="utf-8") == request + "\n"
+            return {"session_id": "first-turn", "status": "running", "label": "書式の確認"}
+
+    monkeypatch.setattr(mcp_tools, "_MANAGER", FirstTurn())
+    result = await mcp_tools.start(str(tmp_path), mode="explore", prompt=request)
+    assert result["session_id"] == "first-turn"
 
 
 @pytest.mark.asyncio
@@ -154,6 +217,33 @@ async def test_continuation_input_errors_return_reason_and_next_action(
         await manager.close()
 
 
+@pytest.mark.parametrize("rereview", [False, True])
+@pytest.mark.asyncio
+async def test_exec_review_start_delivers_verification_return_without_handoff_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, rereview: bool
+) -> None:
+    _write_review_plan(tmp_path)
+    _recording_candidates(monkeypatch)
+    target_head = "a" * 40
+    return_path = tmp_path / "実装の返却.md"
+    return_path.write_text(f"検証結果: {target_head} 終了0\n", encoding="utf-8")
+    params = {
+        **_observed_input_params("exec-review.subagent.md", tmp_path),
+        "対象HEAD": target_head,
+        "検証結果の返却原本": str(return_path),
+    }
+    if rereview:
+        params.update({"レビュー種別": "引き継ぎ再レビュー", "round": "2", "前回確認版": str(tmp_path / "previous.md")})
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(str(tmp_path), subagent_md_path="exec-review", extra_params=params)
+        prompt = manager.sessions[started["session_id"]].prompt
+        assert f"対象HEAD: {target_head}" in prompt
+        assert f"検証結果の返却原本: {return_path}" in prompt
+        assert return_path.read_text(encoding="utf-8").strip() not in prompt
+        assert not (tmp_path / "handoff.md").exists()
+
+
 @pytest.mark.asyncio
 async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
@@ -188,11 +278,31 @@ async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytes
         assert delivery_payload(backend.prompts[-1]) == expected
         await mcp_tools.send_message(started["session_id"], expected.replace("round: 6", "round: 7"))
         assert delivery_payload(backend.prompts[-1]) == expected.replace("round: 6", "round: 7")
+        return_paths = []
+        target_head = "b" * 40
+        for name in ("修正の返却.md", "別計画の返却.md"):
+            path = tmp_path / name
+            path.write_text(f"検証結果: {target_head} 終了0\n", encoding="utf-8")
+            return_paths.append(str(path))
+        references = json.dumps(return_paths, ensure_ascii=False)
+        await mcp_tools.send_message(
+            started["session_id"],
+            instruction="再レビューせよ",
+            extra_params={"round": "8", "対象HEAD": target_head, "検証結果の返却原本": references},
+        )
+        payload = delivery_payload(backend.prompts[-1])
+        assert f"対象HEAD: {target_head}" in payload
+        assert f"検証結果の返却原本: {references}" in payload
+        await mcp_tools.send_message(started["session_id"], instruction="再レビューせよ", extra_params={"round": "9"})
+        assert delivery_payload(backend.prompts[-1]) == "再レビューせよ\nround: 9"
+        assert not (tmp_path / "handoff.md").exists()
         before = backend.send_calls
         for params in (
             {},
             {"round": "8", "rewrite_map": str(contract) + " 説明"},
             {"round": "8", "review_contract": str(contract) + " 説明"},
+            {"round": "8", "対象HEAD": target_head, "検証結果の返却原本": "relative.md"},
+            {"round": "8", "対象HEAD": target_head, "検証結果の返却原本": str(tmp_path / "missing.md")},
         ):
             with pytest.raises(ToolError):
                 await mcp_tools.mcp.call_tool(

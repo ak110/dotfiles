@@ -33,7 +33,7 @@ def test_lane_selection_checks_related_wi_set(
     )
     selection_path = work_dir / "selection.yaml"
     selection_path.write_text(
-        yaml.safe_dump({"decisions": [{"awi": name, "lane": "lane-01", "計画要否": "計画あり"} for name in selected]}),
+        yaml.safe_dump({"decisions": [{"awi": name, "lane": "lane-01", "詳細化要否": "詳細化あり"} for name in selected]}),
         encoding="utf-8",
     )
 
@@ -75,7 +75,7 @@ def test_lane_selection_combines_prior_plans(
     selection_path = work_dir / "selection.yaml"
     selected = (*names[:prior_count], current_name, *selected_extra)
     selection_path.write_text(
-        yaml.safe_dump({"decisions": [{"awi": name, "lane": "lane-01", "計画要否": "計画あり"} for name in selected]}),
+        yaml.safe_dump({"decisions": [{"awi": name, "lane": "lane-01", "詳細化要否": "詳細化あり"} for name in selected]}),
         encoding="utf-8",
     )
 
@@ -102,7 +102,7 @@ def test_lane_selection_reads_current_field_names(repo: tuple[pathlib.Path, str]
         yaml.safe_dump(
             {
                 "選定": [
-                    {"WI": filename, "レーン": "lane-01", "計画要否": "計画あり"},
+                    {"WI": filename, "レーン": "lane-01", "詳細化要否": "詳細化あり"},
                     {"WI": other, "レーン": "lane-01", "再開位置": "/tmp/plan.md 実装"},
                     {"WI": "20260831-000000-003.md", "レーン": "lane-02"},
                 ]
@@ -137,20 +137,19 @@ _NEW_AWI = _plan_fixture.WI_FILES[0][0]
 _UNPLANNED_RESUMED_DECISION = {**_RESUMED_DECISION, "再開位置": _OBSERVATION_RESUME.format(plan="計画なし")}
 
 
-def test_lane_selection_guides_revalidation_for_missing_plan_requirement(
+def test_lane_selection_requires_all_lane_wis_regardless_of_detail_requirement(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     work_dir, _base = repo
-    legacy = "20260831-000000-009.md"
+    other = "20260831-000000-009.md"
     code, stderr = _run_lane_check_with_resumed(
         work_dir,
         monkeypatch,
         (_NEW_AWI,),
-        [{"WI": _NEW_AWI, "レーン": "lane-01", "計画要否": "計画あり"}, {"WI": legacy, "レーン": "lane-01"}],
+        [{"WI": _NEW_AWI, "レーン": "lane-01", "詳細化要否": "詳細化あり"}, {"WI": other, "レーン": "lane-01"}],
     )
     assert code != 0
-    assert legacy in stderr and "pick-wi-check" in stderr and "--output" in stderr
-    assert "欠落=" not in stderr
+    assert f"欠落=['{other}']" in stderr
 
 
 @pytest.mark.parametrize("resumed", [_RESUMED_DECISION, _UNPLANNED_RESUMED_DECISION], ids=["planned", "unplanned"])
@@ -162,7 +161,7 @@ def test_lane_selection_excludes_resumed_decisions(
     resumed: dict[str, str],
 ) -> None:
     work_dir, _base = repo
-    new_decision = {"awi": _NEW_AWI, "lane": "lane-01", "計画要否": "計画あり"}
+    new_decision = {"awi": _NEW_AWI, "lane": "lane-01", "詳細化要否": "詳細化あり"}
     if new_resume_value is not None:
         new_decision["再開位置"] = new_resume_value
     code, stderr = _run_lane_check_with_resumed(work_dir, monkeypatch, (_NEW_AWI,), [new_decision, resumed])
@@ -178,7 +177,7 @@ def test_lane_selection_rejects_resumed_awi_in_new_plan(
         work_dir,
         monkeypatch,
         (_NEW_AWI, _RESUMED_AWI),
-        [{"awi": _NEW_AWI, "lane": "lane-01", "計画要否": "計画あり"}, _RESUMED_DECISION],
+        [{"awi": _NEW_AWI, "lane": "lane-01", "詳細化要否": "詳細化あり"}, _RESUMED_DECISION],
     )
     assert code == 1
     assert f"余剰=['{_RESUMED_AWI}']" in stderr
@@ -203,7 +202,7 @@ def test_lane_selection_rejects_duplicate_wi_across_plans(repo: tuple[pathlib.Pa
     prior_path.write_text(content, encoding="utf-8")
     selection_path = work_dir / "selection.yaml"
     selection_path.write_text(
-        yaml.safe_dump({"decisions": [{"awi": filename, "lane": "lane-01", "計画要否": "計画あり"}]}), encoding="utf-8"
+        yaml.safe_dump({"decisions": [{"awi": filename, "lane": "lane-01", "詳細化要否": "詳細化あり"}]}), encoding="utf-8"
     )
 
     errors, _warnings = check_plan_file.check(
@@ -228,7 +227,7 @@ def test_cli_accepts_prior_plan_for_added_lane_wi(repo: tuple[pathlib.Path, str]
     selection_path = work_dir / "selection.yaml"
     selection_path.write_text(
         yaml.safe_dump(
-            {"decisions": [{"awi": name, "lane": "lane-01", "計画要否": "計画あり"} for name in (prior_name, current_name)]}
+            {"decisions": [{"awi": name, "lane": "lane-01", "詳細化要否": "詳細化あり"} for name in (prior_name, current_name)]}
         ),
         encoding="utf-8",
     )
@@ -262,7 +261,7 @@ def test_lane_selection_rejects_missing_human_reason(repo: tuple[pathlib.Path, s
     plan_path.write_text(content, encoding="utf-8")
     selection_path = work_dir / "selection.yaml"
     selection_path.write_text(
-        yaml.safe_dump({"decisions": [{"awi": filename, "lane": "lane-01", "計画要否": "計画あり"}]}), encoding="utf-8"
+        yaml.safe_dump({"decisions": [{"awi": filename, "lane": "lane-01", "詳細化要否": "詳細化あり"}]}), encoding="utf-8"
     )
 
     errors, _warnings = check_plan_file.check(plan_path, work_dir, selection_file=selection_path, lane="lane-01")
@@ -273,25 +272,24 @@ def test_lane_selection_rejects_missing_human_reason(repo: tuple[pathlib.Path, s
 __all__ = ["fixture_repo"]
 
 
-def test_lane_with_only_planless_wis_reports_planless_next_action(repo: tuple[pathlib.Path, str]) -> None:
+def test_lane_with_only_undetailed_wis_matches_plan(repo: tuple[pathlib.Path, str]) -> None:
     work_dir, _base = repo
     wi = _plan_fixture.WI_FILES[0]
     plan_path = work_dir / "plan.md"
     plan_path.write_text(_plan_fixture.awi_plan(repo=work_dir, related_wi=(wi,)), encoding="utf-8")
     selection = work_dir / "selection.yaml"
     selection.write_text(
-        yaml.safe_dump({"選定": [{"WI": wi[0], "レーン": "lane-01", "計画要否": "計画なし"}]}, allow_unicode=True),
+        yaml.safe_dump({"選定": [{"WI": wi[0], "レーン": "lane-01", "詳細化要否": "詳細化なし"}]}, allow_unicode=True),
         encoding="utf-8",
     )
 
     errors, _warnings = check_plan_file.check(plan_path, work_dir, selection_file=selection, lane="lane-01")
 
-    assert any("全て計画なし" in error and "--expected-wi" in error for error in errors), errors
-    assert not any("既存計画で続ける" in error for error in errors), errors
+    assert not any("一致しない" in error or "既存計画で続ける" in error for error in errors), errors
 
 
 @pytest.mark.parametrize("include_optional", [False, True])
-def test_awi_plan_matches_planned_wis_and_rejects_planless_wi(repo: tuple[pathlib.Path, str], include_optional: bool) -> None:
+def test_plan_must_list_wis_without_detail_requirement(repo: tuple[pathlib.Path, str], include_optional: bool) -> None:
     work_dir, _base = repo
     required, optional = _plan_fixture.WI_FILES[:2]
     plan_path = work_dir / "plan.md"
@@ -302,8 +300,8 @@ def test_awi_plan_matches_planned_wis_and_rejects_planless_wi(repo: tuple[pathli
         yaml.safe_dump(
             {
                 "選定": [
-                    {"WI": required[0], "レーン": "lane-01", "計画要否": "計画あり"},
-                    {"WI": optional[0], "レーン": "lane-01", "計画要否": "計画なし"},
+                    {"WI": required[0], "レーン": "lane-01", "詳細化要否": "詳細化あり"},
+                    {"WI": optional[0], "レーン": "lane-01", "詳細化要否": "詳細化なし"},
                 ],
             },
             allow_unicode=True,
@@ -314,9 +312,9 @@ def test_awi_plan_matches_planned_wis_and_rejects_planless_wi(repo: tuple[pathli
     errors, _warnings = check_plan_file.check(plan_path, work_dir, selection_file=selection, lane="lane-01")
 
     if include_optional:
-        assert any("余剰" in error and optional[0] in error for error in errors), errors
+        assert not any("一致しない" in error for error in errors), errors
     else:
-        assert not errors, errors
+        assert any("欠落" in error and optional[0] in error for error in errors), errors
 
 
 @pytest.mark.parametrize("include_required", [False, True])
@@ -341,7 +339,7 @@ def test_revalidated_legacy_selection_drives_plan_check(repo, tmp_path, monkeypa
             {
                 "WI": required[0],
                 "レーン": "lane-01",
-                "計画要否": "計画あり",
+                "詳細化要否": "詳細化あり",
                 "書込対象": paths[:1],
                 "公開工程の書込対象": [],
             },
@@ -361,7 +359,7 @@ def test_revalidated_legacy_selection_drives_plan_check(repo, tmp_path, monkeypa
     )
     saved = yaml.safe_load(selection.read_bytes())
     assert saved["初回配分"] == before["初回配分"]
-    assert saved["選定"] == [before["選定"][0], {**before["選定"][1], "計画要否": "計画なし"}]
+    assert saved["選定"] == [before["選定"][0], {**before["選定"][1], "詳細化要否": "詳細化なし"}]
 
     plan_path = work_dir / "plan.md"
     related = (required,) if include_required else (optional,)

@@ -57,10 +57,10 @@ def _visible_lines(text: str) -> Iterable[str]:
             yield re.sub(r"`[^`\n]+`", "", line)
 
 
-def warning(texts: Iterable[str], payload: dict | None = None) -> str | None:
+def warning(texts: Iterable[str], payload: dict | None = None, *, skip_masked: bool = False) -> str | None:
     for text in texts:
         for line in _visible_lines(text):
-            if _MASKED.search(line):
+            if not skip_masked and _MASKED.search(line):
                 return _llm_notice(
                     "時刻の一部が伏せ字になっている。観測値か推定と分かる時間帯を示す。",
                     tag="warn",

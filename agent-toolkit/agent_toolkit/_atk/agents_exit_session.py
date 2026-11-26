@@ -17,6 +17,7 @@ from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import process_identity
+lazy from agent_toolkit._common import completion_exit, transcript
 
 _NO_VALUE = frozenset(
     {
@@ -320,6 +321,7 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
     )
     threshold = time.time() - _STATE_MAX_AGE_SECONDS
     for pattern in (
+        "completion-exit-*.txt",
         "marker-*.txt",
         "request-*.txt",
         "recheck-*.txt",
@@ -457,11 +459,43 @@ def main() -> int:
     return 0
 
 
+def request_completion_exit() -> int:
+    launch = os.environ.get(completion_exit.LAUNCH_ENV, "")
+    session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    path = completion_exit.state_path(launch)
+    if path is None:
+        print("自動終了しない: 対象のランチャーから起動していない")
+        return 0
+    if completion_exit.DISABLE_ENV in os.environ or "AGENT_TOOLKIT_DELEGATED_SESSION" in os.environ:
+        print("自動終了しない: 無効化設定があるか、委譲セッションである")
+        return 0
+    target = identify_current_host()
+    paths = function_hook_paths(session)
+    try:
+        if target is None or target.host != "claude" or paths is None:
+            print("自動終了しない: 対象のClaude Code会話を識別できない")
+            return 0
+        marker, _ = paths
+        if marker.read_text(encoding="utf-8") != "ready" or marker.stat().st_mtime <= target.create_time:
+            print("自動終了しない: 現在の会話にFunction hooksの読込目印がない")
+            return 0
+        record = completion_exit.record_path(session)
+        entries = transcript.read_transcript_entries(str(record)) if record is not None else []
+        delivered = completion_exit.current_reports(entries)
+        if not delivered:
+            print("自動終了しない: このターンに送達済みの完了報告がない")
+            return 0
+        completion_exit.write_state(path, {"status": "requested", "session": session, "call": next(reversed(delivered))})
+    except OSError as error:
+        print(f"自動終了しない: 読込目印または状態ファイルを処理できない: {error}")
+        return 0
+    print("ターンの終了時に自動終了を判定します。追加のツールを呼ばず、通常どおりターンを終えてください。")
+    return 0
+
+
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """`atk agents-exit-session`は引数を持たない。登録表の形をそろえるために置く。"""
-    del parser
+    parser.add_argument("--after-completion", action="store_true", help="送達済みの完了報告と結び付けて自動終了を求める")
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    del args
-    return main()
+    return request_completion_exit() if args.after_completion else main()

@@ -1,7 +1,7 @@
 import {DAY, claudeResetScopeName, dateJst, forecast, quotaName} from "./usage_display.js";
 
 const ENGINES = {codex: "Codex", claude: "Claude"};
-const INVENTORY_HELP = "このアカウントに在庫がありません。公式画面でリセット権を確認し、atk config usage --set-claude-reset-inventory で登録してください。";
+const INVENTORY_HELP = "このアカウントのリセット権は未登録です。";
 const finite = Number.isFinite;
 const seconds = instant => Date.parse(instant) / 1000;
 
@@ -41,9 +41,10 @@ function knownAccount(account) {
 }
 
 function weeklyWindow(engine, scope, model) {
+  if (model.failed_engines?.includes(engine)) return null;
   if (engine === "codex") {
     const weekly = model.codex_weekly;
-    if (!weekly) return null;
+    if (!weekly || scope !== "codex") return null;
     const observed = model.windows.find(window => window.engine === "codex" &&
       window.window_id === weekly.window_id && window.resets_at === weekly.resets_at);
     return {...observed, ...weekly, engine, duration_seconds: 7 * DAY};
@@ -55,7 +56,7 @@ function weeklyWindow(engine, scope, model) {
 }
 
 function cutoff(window, grace, now, from) {
-  if (!window) return {reason: "対象の週次の枠を観測していません。"};
+  if (!window) return {reason: ""};
   const reset = window.resets_at;
   if (!finite(reset) || reset <= now || reset <= from) return {reason: "開始より後の次回リセット日時を確認できません。"};
   const until = reset - grace * DAY;
@@ -65,7 +66,7 @@ function cutoff(window, grace, now, from) {
 
 function recommendation(engine, account, scope, model, entries, grace, now) {
   if (model.accounts[engine]?.account !== account || !knownAccount(account)) {
-    return {reason: "判断に使える観測が足りません。"};
+    return {reason: ""};
   }
   const inventory = model.claude_inventory.filter(right => right.account === account && right.count > 0 &&
     seconds(right.until) > now && ["all", "weekly_all"].includes(right.scope));
@@ -77,7 +78,7 @@ function recommendation(engine, account, scope, model, entries, grace, now) {
   const reset = window?.resets_at;
   if (reached && !(reset > now)) return {reason: "上限に到達していますがリセット日時が分からないため提案できません。"};
   if (estimate.kind === "sufficient") return {reason: "今週は許可不要です。リセットまでもつ見込みです。"};
-  if (!reached && estimate.kind !== "exhausted") return {reason: "判断に使える観測が足りません。"};
+  if (!reached && estimate.kind !== "exhausted") return {reason: ""};
   const stopped = reset - estimate.at;
   const cause = reached ? "既に上限に到達" : `このペースでは${dateJst(estimate.at)}に上限に達する見込み`;
   const evidence = `${cause}。リセットまで約${(stopped / DAY).toFixed(1)}日止まる見込みです。`;
@@ -104,7 +105,7 @@ function permissionSummary(entry, model) {
   return `${planLabel(entry.engine, plan)} · ${entry.count}回 · ${dateJst(from)}〜${dateJst(until)} · ${status} · ${entry.id}`;
 }
 
-export function renderResetPermissions(parent, entries, model, save, ui) {
+export function renderResetPermissions(parent, entries, model, save, ui, reissuable = {}, reissue) {
   model ??= {accounts: {}, claude_inventory: [], windows: []};
   const {element, field, form, button, submit, setWriteUnavailable} = ui;
   parent.append(element("p", "Codexは指定した期間と回数の範囲で、エージェントが自動でresetを使えます。Claudeは自動で使わず、在庫と利用枠に応じて公式画面で使うよう案内します。許可が空なら自動のresetは行いません。"));
@@ -115,6 +116,17 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
     summary.className = "permission-caption text-clip";
     summary.title = summary.textContent;
     box.append(summary);
+    if (entry && Object.hasOwn(reissuable, entry.id)) {
+      const remaining = reissuable[entry.id];
+      summary.textContent += " · 消費を停止中";
+      summary.title = summary.textContent;
+      if (remaining === null) {
+        box.append(element("p", "消費を停止中: この端末の消費記録を確認できないため、再発行できません。"));
+      } else {
+        box.append(element("p", "消費を停止中: 旧端末の回数を確認できません。他端末の未共有の消費は残りに含まれません。"));
+        box.append(button(`共有許可を発行（${remaining}回）`, () => reissue(entry.id, remaining)));
+      }
+    }
     const editor = form(box, () => {
       const account = selectedAccount();
       const scope = selectedScope();
@@ -133,12 +145,12 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
     });
 
     const engine = field(editor, "エンジン", entry?.engine ?? "codex", Object.keys(ENGINES), "text", ENGINES);
-    const hints = element("p");
-    editor.append(hints);
     const account = field(editor, "アカウント", "", []);
+    account.dataset.permissionAccount = "";
     const accountDetails = element("details");
     accountDetails.append(element("summary", "詳細: アカウントの直接入力"));
     const direct = field(accountDetails, "アカウントを直接入力", "");
+    direct.dataset.permissionDirect = "";
     editor.append(accountDetails);
     const scope = field(editor, "範囲", "", []);
     const scopeNotice = element("p");
@@ -160,6 +172,7 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
     until.required = true;
     const grace = field(editor, "リセット前の猶予", "1", ["1", "2", "3"], "text", {"1": "1日", "2": "2日", "3": "3日"});
     const weekly = localButton(button, "", () => fillInstant(until, selectedCutoff().until));
+    weekly.dataset.observedDeadline = "";
     const explanation = element("p");
     explanation.id = `${until.id}-weekly`;
     weekly.setAttribute("aria-describedby", explanation.id);
@@ -179,6 +192,7 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
       fillInstant(until, proposal.until);
       recalculate();
     });
+    apply.dataset.observedDeadline = "";
     const invalid = element("p");
     invalid.setAttribute("role", "alert");
     editor.append(weekly, explanation, duration, advice, apply, invalid);
@@ -203,11 +217,10 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
       const selectable = knownAccount(available) &&
         (name === "codex" || model.claude_inventory.some(right => right.account === available));
       const options = selectable ? [new Option(planLabel(name, profile), available)] : [];
-      if (original && original.account !== available) options.unshift(new Option("このホストでは観測していないアカウント", original.account));
+      if (original && (!selectable || original.account !== available)) options.unshift(new Option("このホストでは観測していないアカウント", original.account));
       account.parentElement.hidden = options.length === 0;
       account.replaceChildren(...options);
       if (Array.from(account.options).some(option => option.value === preferred)) account.value = preferred;
-      hints.textContent = selectable ? "" : "このホストで選べるアカウントを確認できません。atk config usage --refresh で取り直すか、詳細から直接入力してください。";
       rebuildScope();
     }
 
@@ -233,15 +246,15 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
     }
 
     function selectedCutoff() {
-      return cutoff(weeklyWindow(engine.value, selectedScope(), model), Number(grace.value), Date.now() / 1000, seconds(takeInstant(from)));
+      return cutoff(model.accounts[engine.value]?.account === selectedAccount() ? weeklyWindow(engine.value, selectedScope(), model) : null, Number(grace.value), Date.now() / 1000, seconds(takeInstant(from)));
     }
 
     function recalculate() {
       const window = weeklyWindow(engine.value, selectedScope(), model);
       const {until: automatic, reason} = selectedCutoff();
       weekly.textContent = `次の週次リセットの${grace.value}日前まで`;
-      weekly.disabled = !automatic;
-      explanation.textContent = reason || `${quotaName(window)}: ${dateJst(window.resets_at)}にリセット予定。`;
+      setWriteUnavailable(weekly, !automatic);
+      explanation.textContent = reason || (automatic ? `${quotaName(window)}: ${dateJst(window.resets_at)}にリセット予定。` : "");
       const proposal = recommendation(engine.value, selectedAccount(), selectedScope(), model, entries, Number(grace.value), Date.now() / 1000);
       advice.textContent = proposal.reason;
       apply.hidden = !proposal.until;

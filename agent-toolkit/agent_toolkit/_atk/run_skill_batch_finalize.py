@@ -7,7 +7,7 @@ import filelock
 
 from agent_toolkit._atk import outcome, run_skill_state
 from agent_toolkit._atk.wi import add
-from agent_toolkit._common import private_notes, session_review
+from agent_toolkit._common import session_review
 
 
 def finish_deferred(manifest: dict[str, Any], path: pathlib.Path, error: filelock.Timeout) -> int:
@@ -31,7 +31,7 @@ def resume_finished_analysis(manifest: dict[str, Any], path: pathlib.Path) -> in
         return None
     try:
         if not add.has_committed_run_report(
-            private_notes.default_private_notes(),
+            session_review.resolve_report_notes(manifest.get("report_notes")),
             run_id=manifest["run_id"],
             scope=manifest.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
         ):

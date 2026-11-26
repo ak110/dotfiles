@@ -90,6 +90,9 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
         "(() => {\n"
         + _module_body(assets.SCRIPTS["common.js"])
         + "\nfunction registerScreen() {}\n"
+        + "const {closeWiReferences, configureWiReferences, linkWiReferences, wiLink} = (() => {\n"
+        + _module_body(assets.SCRIPTS["wi_reference.js"])
+        + "\nreturn {closeWiReferences, configureWiReferences, linkWiReferences, wiLink};\n})();\n"
         + "\n".join(
             _module_body(assets.SCRIPTS[name])
             for name in (
@@ -97,6 +100,11 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
                 "wi_feedback.js",
                 "wi_list_render.js",
                 "wi_list.js",
+            )
+        )
+        + "\n".join(
+            _module_body(assets.SCRIPTS[name])
+            for name in (
                 "wi_detail.js",
                 "wi_waiting.js",
                 "wi_mutations.js",
@@ -108,7 +116,8 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
         + "\nwith (wiState) {\n"
         + "\n(async () => {\n"
         + scenario
-        + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });\n"
+        + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; })"
+        + ".finally(() => clearScenarioDeadline());\n"
         + "}\n})();\n"
     )
     dom = _HtmlDom()
@@ -159,6 +168,8 @@ class Element {{
     const siblings = this.parentNode?.children || [];
     return siblings[siblings.indexOf(this) + 1] ?? null;
   }}
+  get nextElementSibling() {{ return this.nextSibling; }}
+  after(node) {{ this.parentElement?.insertBefore(node, this.nextElementSibling); }}
   adopt(child) {{
     if (typeof child.remove === 'function') child.remove();
     child.parentNode = this;
@@ -180,6 +191,7 @@ class Element {{
     this.isConnected = value;
     this.children.forEach(child => {{ if (typeof child.setConnected === 'function') child.setConnected(value); }});
   }}
+  prepend(child) {{ this.insertBefore(child, this.firstChild); }}
   append(...children) {{
     children.forEach(child => {{
       this.adopt(child);
@@ -200,11 +212,16 @@ class Element {{
   getAttribute(name) {{ return this.attributes[name] ?? null; }}
   removeAttribute(name) {{ delete this.attributes[name]; }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
+  querySelector(selector) {{ return this.querySelectorAll(selector)[0] ?? null; }}
   querySelectorAll(selector) {{
-    const tags = new Set(selector.split(',').map(value => value.trim().toUpperCase()));
-    return this.children.flatMap(child => [
-      ...(tags.has(child.tagName) ? [child] : []), ...child.querySelectorAll(selector)
-    ]);
+    const matches = child => selector.split(',').some(part => {{
+      const value = part.trim();
+      if (value === '[role=status]') return child.getAttribute('role') === 'status';
+      if (value === 'dialog[open]') return child.tagName === 'DIALOG' && child.open;
+      if (value.startsWith('.')) return child.classList.contains(value.slice(1));
+      return child.tagName === value.toUpperCase();
+    }});
+    return this.children.flatMap(child => [ ...(matches(child) ? [child] : []), ...child.querySelectorAll(selector) ]);
   }}
   showModal() {{ this.open = true; }}
   close() {{ this.open = false; }}
@@ -244,7 +261,9 @@ globalThis.controlGroups = Object.fromEntries(
   Object.entries(elements).map(([id, element]) => [id, element.querySelectorAll('input, select, textarea, button')])
 );
 globalThis.controlGroups['app-header'] = appHeader.querySelectorAll('input, select, textarea, button');
+globalThis.CSS = {{ escape: value => String(value).replace(/[^a-zA-Z0-9_-]/g, char => String.fromCharCode(92) + char) }};
 globalThis.document = {{
+  body: nodes.find(node => node.tagName === 'BODY'),
   activeElement: null,
   listeners: {{}},
   getElementById(id) {{ return elements[id] || null; }},
@@ -256,20 +275,38 @@ globalThis.document = {{
     return element;
   }},
   createTextNode(text) {{ const node = new Element('', '#TEXT'); node.textContent = text; return node; }},
-  querySelector(selector) {{ return selector === '.app-header' ? appHeader : null; }},
+  querySelector(selector) {{
+    if (selector.startsWith('#screen-')) {{
+      const [id, descendant] = selector.split(' ');
+      return elements[id.slice(1)]?.querySelector(descendant) ?? null;
+    }}
+    return this.body.querySelector(selector);
+  }},
   querySelectorAll(selector) {{
+    if (selector === 'dialog' || selector === 'dialog[open]') return this.body.querySelectorAll(selector);
     if (selector !== '.entry-select') return [];
     return elements['entry-list'].children.flatMap(item => item.children);
   }}
 }};
+document.body.dataset.screen = 'wi';
 elements['serve-bootstrap'] = new Element('serve-bootstrap', 'SCRIPT');
 elements['serve-bootstrap'].textContent = JSON.stringify({{
   base_path: '/atk', stall_ms: 45000, host_name: 'node-test', wi_root: '/notes'
 }});
 globalThis.window = globalThis;
+globalThis.matchMedia = () => ({{ matches: false, addEventListener() {{}} }});
+globalThis.MutationObserver = class {{ observe() {{}} }};
 globalThis.confirm = () => true;
-globalThis.setTimeout = () => 1;
-globalThis.clearTimeout = () => undefined;
+const nativeTimeout = globalThis.setTimeout;
+const nativeClearTimeout = globalThis.clearTimeout;
+const scenarioDeadline = nativeTimeout(() => {{
+  process.stderr.write('Nodeの画面試験が完了しませんでした');
+  process.exitCode = 1;
+}}, 5000);
+const clearScenarioDeadline = () => nativeClearTimeout(scenarioDeadline);
+globalThis.setTimeout = (callback, delay, ...args) =>
+  nativeTimeout(callback, delay < 45000 ? Math.min(5, delay) : delay, ...args).unref();
+globalThis.clearTimeout = nativeClearTimeout;
 globalThis.setInterval = () => 1;
 globalThis.clearInterval = () => undefined;
 // 実サーバーは購読を登録した直後に`subscribed`を送る。画面の初期取得はこの合図を待つため、同じ順序で送る。
@@ -285,7 +322,10 @@ const fetchCalls = [];
 let fetchHandler = async () => ({{ok: true, status: 200, statusText: 'OK', json: async () => ({{entries: [], warnings: []}})}});
 globalThis.fetch = async (url, options = {{}}) => {{
   fetchCalls.push({{url, options}});
-  return fetchHandler(url, options);
+  const response = await fetchHandler(url, options);
+  response.text ??= async () => '';
+  response.clone ??= () => ({{...response}});
+  return response;
 }};
 eval({json.dumps(executable)});
 """

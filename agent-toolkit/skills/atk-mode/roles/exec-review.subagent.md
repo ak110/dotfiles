@@ -23,6 +23,7 @@ optional_inputs:
 - 担当モデル
 - rewrite_map
 - 受理済みの完成条件証拠
+- 検証結果の返却原本
 writes_worktree: false
 continuations:
 - instruction: 再レビューせよ
@@ -32,11 +33,14 @@ continuations:
   - 対象HEAD
   - review_contract
   - rewrite_map
+  - 検証結果の返却原本
   paths:
   - rewrite_map
+  path_lists:
+  - 検証結果の返却原本
   references:
   - review_contract
-  condition: 計画外の認可が更新された場合はreview_contract、前回レビュー後の履歴書換えではrewrite_mapを渡す
+  condition: 計画外の認可が更新された場合はreview_contract、前回レビュー後の履歴書換えではrewrite_map、返却を検証結果の原本にした場合は今回の対象HEADと検証結果の返却原本を渡す
 startup_documents:
 - agent-toolkit:atk-mode/playbooks/exec-review.md
 ---
@@ -65,13 +69,13 @@ startup_documents:
   複数の基準は、全基準を1つの管理表と1つの返却で判定する。
 - `計画`: 計画ファイルの絶対パスか、同じレビュー単位の全計画の絶対パスのJSON配列。
   JSON配列は、全計画の要求と各計画の検証結果を1つの管理表と1つの返却で判定する（起動側が1回の起動へまとめた計画を分けない）。
-  検証結果は、実装担当が引き継ぎ記録へ記録した行であり、本担当が書く完成条件証拠とは別の資料として読む。
+  検証結果は、本担当が書く完成条件証拠とは別の資料として、`agent-toolkit:atk-mode/references/review-record.md`「完成条件証拠の作成」に従って読む。
 - `CI記録`: 7項目のCI記録（`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正commitが必要なCI失敗を修正するエージェント」）。
   `修正系列の開始時のHEAD`は同じ修正系列で引き継ぐ短縮OID、`原因commitOID`は今回の原因commitの短縮OIDで、再帰的な失敗ではCI記録と同時に更新される。
 - `対象HEAD`: 起動側が固定した完全OID。
   行がなければ、直接起動と旧入力との互換のため着手時のHEADを固定する。
 - `WI記録`と`開始時のHEAD`: 計画に無いWIの、ファイル名、要求、完成条件、由来、採否の記録（計画にあるWIは本担当が取得する）。
-  計画が無い時の検証結果は、WI記録か引き継ぎ記録が示す場所から読む。
+  計画が無い時も同じ手順で検証結果を読み、WI記録が原本の所在を示す場合はそこから読める。
 - `review_contract`: `CI記録`、計画外の`WI`、新形式AWIで必須とする。
   単一条項の直接の契約か、契約を書いたMarkdownの絶対パスで受け取る（形式は`agent-toolkit:atk-mode/references/review-contract.md`「review_contractの書式」）。
 - `評価用WI原本`: 評価時点に固定したWI本文の一覧（WIファイル名から保存本文の絶対パスへのJSON辞書）の絶対パス。
@@ -85,6 +89,9 @@ startup_documents:
   同じthreadでは、自分が返却の前に保存した記録を引き継ぐ。
   比較元を特定できない時は、不足するHEADか本文の取得元を続行できない理由として返す。
 - `rewrite_map`: 前回のレビューの後の履歴の書き換えやcommitの分割で変わったOIDの、旧から新への対応表の絶対パス（形式は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」）。
+- `検証結果の返却原本`: 引き継ぎ記録から読めない検証結果を直接記録した実装担当の返却ファイルの絶対パス1件か、複数件のJSON配列。
+  `対象HEAD`とともに受け取り、`agent-toolkit:atk-mode/references/review-record.md`「完成条件証拠の作成」に従って読む。
+  各回に省略された場合はその回の検証結果を引き継ぎ記録から読み、前回の返却原本を引き継がない。
 - `受理済みの完成条件証拠`: 委譲元が受理した実行レビューの返却ファイルの絶対パス。
   省略時と該当が無い時は`なし`とする。
 - `担当モデル`: 実行レビュー担当の指定値と実行値を比較するための値で、この入力だけでは読者別探索担当のモデルを上書きしない。
@@ -143,6 +150,9 @@ Git管理外のデータはGitから戻せず、レビュー工程で失うと�
    作った作業ツリーは、検証結果を使う受領処理が終わった後に`git -C <対象worktree> worktree remove <作成先>`で登録を解除して回収する。
 5. この手順で検証が成立しない場合は、本書「操作区分」のとおり、必要な操作と対象を委譲元へ返す。
 
+成果物を判定する最初の合否は、`agent-basics:review-standards/references/reviewer.md`「初回レビュー」に従う。
+原要求の判定に必要な代表操作・実機の証拠を先に確かめ、判定行への対応は`agent-toolkit:atk-mode/references/review-record.md`に従う。
+
 ## 出力
 
 以下の本文返却に加え、同じ担当が正式原本を保存して所在だけを返す方式を選べる。
@@ -197,6 +207,8 @@ Git管理外のデータはGitから戻せず、レビュー工程で失うと�
 再レビュー: <要（範囲・失われる前提・理由）|不要（評価前提の所在）>
 <WI> 完成条件<N>: 達成|未達|根拠不足 — 根拠: <実行結果またはパス:行>
 <WI> 原文要求<N>「<要求単位の逐語>」: 達成|未達|根拠不足 — 根拠: <実行結果またはパス:行>
+<WI> 引用照合<N>: 達成|未達|根拠不足|除外 — 根拠: <原文要求行への対応または除外の分類と根拠>
+<WI> 引用除外<N>.<K>: <除外区分> — 根拠: <原文単位の出所と理由>
 ```
 
 `達成`行の`根拠:`には`agent-toolkit:atk-mode/references/review-record.md`「根拠の書き方」の所在と観測内容の組を書き、この組を示せない条件は`根拠不足`とする。

@@ -63,7 +63,7 @@ async def test_waiting_keyboard_save_skip_page_boundary_and_last_item(browser_ha
     await playwright.async_api.expect(page.locator("#waiting-progress")).to_contain_text("101 / 102")
 
     await page.keyboard.press("Escape")
-    await page.get_by_label("判断待ちのtarget-repo", exact=True).select_option("github.com/example/b")
+    await page.get_by_label("判断待ちの対象リポジトリ", exact=True).select_option("github.com/example/b")
     await playwright.async_api.expect(page.locator(".entry-select")).to_have_count(50)
     await page.locator(".entry-select").last.click()
     await page.get_by_role("button", name="保存せず次へ", exact=True).focus()
@@ -83,7 +83,7 @@ async def test_waiting_save_failure_and_external_change_keep_current_input(brows
     await page.goto(harness.base_url + "/")
     await page.get_by_role("radio", name="判断待ち", exact=True).check()
     await page.locator(".entry-select").first.click()
-    await page.get_by_label("UWIへの回答（必須）", exact=True).fill("入力中の回答")
+    await page.get_by_label("質問への回答（必須）", exact=True).fill("入力中の回答")
 
     async def fail_save(route: playwright.async_api.Route) -> None:
         await route.fulfill(status=409, json={"code": "edit_conflict", "error": "外部更新"})
@@ -146,3 +146,33 @@ async def test_initial_loading_finishing_during_answer_keeps_waiting_navigation(
     finally:
         initial_release.set()
         answer_release.set()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_waiting_deleted_after_retry_clears_common_notice(browser_harness: _BrowserHarness) -> None:
+    harness = browser_harness
+    first = _question(harness.root, "20200101-000000-001.md", important=True)
+    _question(harness.root, "20200101-000000-002.md")
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.get_by_role("radio", name="判断待ち", exact=True).check()
+    await page.locator(".entry-select").first.click()
+    await page.locator("#answer-input").fill("入力中の回答")
+    attempts = 0
+
+    async def fail_then_missing(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        await route.fulfill(status=503 if attempts <= 2 else 404)
+
+    await page.route(f"**/api/entries/{first.name}", fail_then_missing)
+    harness.current_state.publish("changed")
+    notice = page.locator("#update-status")
+    expect = playwright.async_api.expect
+    await expect(notice).to_contain_text("WIの詳細を取得できません。")
+    await notice.get_by_role("button", name="再取得").click()
+    await expect(page.locator("#detail-alert")).to_contain_text("削除されました")
+    await expect(notice).to_be_hidden()
+    await expect(page.locator("#answer-input")).to_have_value("入力中の回答")
+    await expect(page.get_by_role("button", name="保存せず次へ")).to_be_enabled()
+    assert attempts == 3

@@ -625,7 +625,10 @@ def check_large_bash_read(command: str, cwd: str) -> str | None:
         paths = list(dict.fromkeys(extracted))
         return _large_warning(
             "エージェント向け文書を見出しの正規表現で範囲抽出しようとしている: " + "、".join(map(str, paths)),
-            fix="全文を取得してください。",
+            fix=(
+                "見出しの範囲だけを取り出すと、同じ判断に必要な適用条件・例外・認可・終了条件が別の節から抜けるため、"
+                "全文を取得してください。長い場合は行番号で分割して末尾まで読んでください。"
+            ),
         )
     return None
 

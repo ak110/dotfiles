@@ -36,40 +36,6 @@ def starts_with_kind(text: str) -> bool:
     return _KIND_HEAD.match(text.lstrip(_LEADING_DECORATION)) is not None
 
 
-TEXT_ONLY_KINDS = frozenset({"手順", "文書"})
-"""判断時に思い出して適用することに頼る種類。再発した事象へこれだけを重ねると、同じ未適用を繰り返す。 pyfltr: allow-comment"""
-
-STRUCTURE_EXCEPTION_LABEL = "構造化不可"
-"""再発への対策が文書・手順だけになる時に、構造・検査で防げない理由を書く欄の語。 pyfltr: allow-comment"""
-
-_STRUCTURE_EXCEPTION = re.compile(STRUCTURE_EXCEPTION_LABEL + r"[ \t　]*[:：][ \t　]*[^\s。．；;、，,.]")
-
-
-def has_structure_exception(text: str) -> bool:
-    """`構造化不可:`の後に理由が書かれているかを返す。語だけの行は理由の無い例外として扱わない。 pyfltr: allow-comment"""
-    return _STRUCTURE_EXCEPTION.search(text) is not None
-
-
-_ADOPTED_LABEL = re.compile(
-    r"(?:^|[。．;；、,\s])(?P<kind>"
-    + "|".join(re.escape(kind) for kind in sorted(ADOPTED_KINDS, key=len, reverse=True))
-    + r")[ \t]*[:：]"
-)
-
-
-def adopted_kinds(text: str) -> set[str]:
-    """`再発防止:`の行の本文から、採る策の種類の語を全て返す。
-
-    行頭の語と、`<語>:`の形で並べた語を数える。 pyfltr: allow-comment
-    """
-    body = text.lstrip(_LEADING_DECORATION)
-    found = {match["kind"] for match in _ADOPTED_LABEL.finditer(body)}
-    head = _KIND_HEAD.match(body)
-    if head is not None and head.group(0) in ADOPTED_KINDS:
-        found.add(head.group(0))
-    return found
-
-
 RECURRENCE_KINDS = ("未適用", "範囲不足", "効果不足", "読込喪失", "削除", "未配布", "誘発入力")
 """`再発:`の行の先頭に置く、前回の対策が防げなかった理由の区分。
 

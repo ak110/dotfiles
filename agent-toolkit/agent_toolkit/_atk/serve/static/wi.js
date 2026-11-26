@@ -4,7 +4,7 @@ import {
   isCurrentUserListOperation, loadBranchRegistry, loadEntries, loadTargetRepos, movePage, refreshKnownEntries, syncNotificationButton
 } from "./wi_list.js";
 import {
-  SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible
+  SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible, attachScrollEdges, recordUpdateSuccess, setUpdateError
 } from "./common.js";
 import {
   api, closeDialog, closeOperationNotice, runPending, setGlobalError
@@ -42,7 +42,7 @@ async function synchronizeAndLoad() {
   let syncFailed = false;
   try {
     await (runPending('sync', {
-      container: document.querySelector('.app-header'), button: byId('refresh-button'), busyLabel: '同期中'
+      container: byId('wi-page-toolbar'), button: byId('refresh-button'), busyLabel: '同期中'
     }, async () => {
       let syncFailure = null;
       try {
@@ -121,9 +121,7 @@ export function reloadFromExternalChange(trigger = 'resync', event = null) {
 
 async function reloadFromExternalChangeOnce(timing = {}) {
   // 通知用の既知集合の更新は表示に関わらないため待たず、取得の記録だけを同じ操作へ対応付ける。
-  void refreshKnownEntries({notify: true, timing}).catch((error) => {
-    setGlobalError(error.message);
-  });
+  void refreshKnownEntries({notify: true, timing}).catch(() => {});
   if (wiState.userListOperationPending) {
     wiState.externalListReloadPending = true;
     return;
@@ -141,6 +139,7 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
   const dialog = byId(dialogId);
   const close = closeHandler || (() => closeDialog(dialog));
   byId(closeButtonId).addEventListener('click', close);
+  dialog.querySelector('[id$="-cancel-button"]')?.addEventListener('click', close);
   dialog.addEventListener('cancel', event => {
     event.preventDefault();
     close();
@@ -182,7 +181,10 @@ function bindEvents() {
   byId('wi-mode-normal').addEventListener('change', () => {
     void handleFilterChange({mode: 'normal'});
   });
-  byId('wi-mode-search').addEventListener('change', () => { void handleFilterChange(); });
+  byId('wi-mode-search').addEventListener('change', () => {
+    document.querySelector('#screen-wi .filters details').open = true;
+    void handleFilterChange();
+  });
   byId('wi-mode-waiting').addEventListener('change', () => {
     void handleFilterChange({mode: 'waiting', reloadRepos: true});
   });
@@ -250,14 +252,9 @@ let resolveFirstSubscription = () => {};
 const firstSubscription = new Promise(resolve => { resolveFirstSubscription = resolve; });
 
 // 無通信の検知、再接続とbfcacheの前後の接続の開閉は共通モジュールが担う。
+let syncFailures = 0;
 function subscribeEvents() {
   return connectEvents('/api/events', {
-    open: () => {
-      if (byId('connection-status').dataset.syncFailed !== 'true') {
-        byId('connection-status').hidden = true;
-        byId('connection-status').textContent = '';
-      }
-    },
     subscribed: () => {
       if (!initialLoadStarted) {
         resolveFirstSubscription();
@@ -273,24 +270,18 @@ function subscribeEvents() {
     },
     error: () => {
       byId('connection-status').dataset.connected = 'false';
-      if (byId('connection-status').dataset.syncFailed === 'true') return;
-      byId('connection-status').textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / 自動更新`, '自動更新を再接続中');
-      byId('connection-status').hidden = false;
+
     },
     changed: (event) => {
       void initialization.then(() => reloadFromExternalChange('sse', event));
     },
     'sync-error': () => {
-      const status = byId('connection-status');
-      status.dataset.syncFailed = 'true';
-      status.textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / Git同期`, 'Git同期に失敗しました。自動で再試行します。今すぐ同期も利用できます。');
-      status.hidden = false;
+      syncFailures += 1;
+      if (syncFailures >= 2) setUpdateError('wi', 'sync', 'WIを同期できません。', synchronizeAndLoad);
     },
     'sync-ok': () => {
-      const status = byId('connection-status');
-      status.dataset.syncFailed = 'false';
-      status.textContent = '';
-      status.hidden = true;
+      syncFailures = 0;
+      recordUpdateSuccess('wi', 'sync');
     },
   });
 }
@@ -314,14 +305,22 @@ function initializeApp() {
 
 async function init() {
   bindEvents();
+  const detailBody = byId("detail-dialog-body");
+  attachScrollEdges(detailBody, byId("detail-scroll-actions"), detailBody);
   resyncWhenVisible(() => {
     refreshCooldownDisplays();
     return initialization.then(() => reloadFromExternalChange());
   });
   const compact = window.matchMedia('(max-width: 700px)');
-  const resetDetailActions = () => { byId('detail-more').open = !compact.matches; };
+  const resetDetailActions = () => {
+    const more = byId('detail-more');
+    more.open = more.dataset.answering !== 'true' && !compact.matches;
+  };
   compact.addEventListener('change', resetDetailActions);
-  byId('detail-dialog').addEventListener('close', resetDetailActions);
+  byId('detail-dialog').addEventListener('close', () => {
+    delete byId('detail-more').dataset.answering;
+    resetDetailActions();
+  });
   resetDetailActions();
   if (compact.matches) {
     document.querySelector('#screen-wi .filters details').open = false;

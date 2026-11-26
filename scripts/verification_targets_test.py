@@ -1,6 +1,5 @@
 import json
 import pathlib
-import shutil
 import subprocess
 import sys
 
@@ -11,6 +10,9 @@ from agent_toolkit._testing.lane_integration_support import _integration_args, _
 from agent_toolkit._testing.lane_support import _create, _invoke
 from pyfltr_precommit import main as precommit_main
 from verification_targets import consumer_tests, required_tests, uncovered_tests
+
+_PLUGIN = "agent-" + "toolkit"
+_MISSING_REFERENCE = f"{_PLUGIN}/agent_toolkit/_atk/wi.py"
 
 
 def test_direct_and_named_consumers(tmp_path: pathlib.Path) -> None:
@@ -92,6 +94,12 @@ def test_empty_result_and_failed_listing_are_distinct(tmp_path: pathlib.Path, mo
         ("pytools/process_example.py", "", "child.terminate()\n", ["subprocess_stop_invariant_test.py"]),
         ("scripts/message.py", "", 'MESSAGE = "変更"\n', ["retired_terms_invariant_test.py"]),
         ("scripts/unrelated.py", "", "VALUE = 2\n", []),
+        (
+            "ci_workflow_test.py",
+            "",
+            f'TARGET = "{_MISSING_REFERENCE}"\n',
+            ["agent_toolkit_reference_invariant_test.py"],
+        ),
     ],
 )
 def test_integration_argv_covers_cross_contracts_even_if_sources_are_omitted(
@@ -118,19 +126,17 @@ def test_integration_argv_covers_cross_contracts_even_if_sources_are_omitted(
 def test_individually_valid_norm_changes_fail_on_combined_tree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], remove_policy: bool
 ) -> None:
-    source = pathlib.Path(__file__).resolve().parents[1] / "norm_size_budget_invariant_test.py"
     root, selection, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selection, monkeypatch, root)
     worktree = pathlib.Path(record["worktree"])
     documents = pathlib.Path("agent-toolkit/skills/atk-mode")
     (worktree / documents).mkdir(parents=True)
-    (worktree / documents / "base.md").write_text("A" * (3_150_000 - 16), encoding="ascii")
-    shutil.copyfile(source, worktree / source.name)
+    (worktree / documents / "base.md").write_text("A", encoding="ascii")
     verification = [
         sys.executable,
         "-c",
-        "import runpy,sys; runpy.run_path(sys.argv[1])['test_norm_markdown_within_budget']()",
-        source.name,
+        "import pathlib,sys; sys.exit(len(list(pathlib.Path(sys.argv[1]).glob('*.md'))) > 2)",
+        str(documents),
     ]
     policy = worktree / "pyproject.toml"
     policy.write_text(
@@ -288,3 +294,129 @@ def test_incomplete_decisions_are_not_confirmation(decisions: list[dict[str, obj
     }
     with pytest.raises(ValueError):
         required_tests(snapshot, {**snapshot, "decisions": decisions})
+
+
+@pytest.mark.parametrize(
+    ("target", "literal"),
+    [
+        (f"{_PLUGIN}/agent_toolkit/_atk/moved.py", "generated"),
+        (f"{_PLUGIN}/share/example.md", "generated"),
+        ("generated/output.py", "generated"),
+        ("generated/output.py", "./generated"),
+        ("generated/output.py", "generated//"),
+        ("generated/sub/output.py", "generated/./sub"),
+        ("generated/output.py", "generated/output.py"),
+    ],
+)
+def test_removed_reference_target_requires_reference_check(tmp_path: pathlib.Path, target: str, literal: str) -> None:
+    pyproject = f'[tool.pyright]\nexclude = ["{literal}"]\n'
+    root = init_repository(
+        tmp_path / "repo", files={target: "", "notes.txt": "a", "pyproject.toml": pyproject}, commit_message="init"
+    )
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    (root / target).unlink()
+    assert {"test": "agent_toolkit_reference_invariant_test.py", "reason": "reference-target-removed"} in (
+        verification_targets.cross_contracts(root, base)
+    )
+    (root / target).write_text("", encoding="utf-8")
+    (root / "notes.txt").write_text("b", encoding="utf-8")
+    assert verification_targets.cross_contracts(root, base) == []
+
+
+def test_reference_contract_is_required_without_base(tmp_path: pathlib.Path) -> None:
+    root = init_repository(
+        tmp_path / "repo",
+        files={
+            "ci_workflow_test.py": f'TARGET = "{_MISSING_REFERENCE}"\n',
+            "plain.py": "VALUE = 1\n",
+            "agent_toolkit_reference_invariant_test.py": "import plain\n",
+        },
+        commit_message="init",
+    )
+    snapshot = consumer_tests(root, ["ci_workflow_test.py"])
+    assert snapshot["reference_contracts"] == [
+        {
+            "test": "agent_toolkit_reference_invariant_test.py",
+            "reason": "repository-references",
+            "source": "ci_workflow_test.py",
+        }
+    ]
+    assert required_tests(snapshot) == ["agent_toolkit_reference_invariant_test.py"]
+    assert uncovered_tests(root, required_tests(snapshot), ["ci_workflow_test.py"]) == [
+        "agent_toolkit_reference_invariant_test.py"
+    ]
+    plain = consumer_tests(root, ["plain.py"])
+    assert plain["reference_contracts"] == []
+    assert [(row["test"], row["required"]) for row in plain["candidates"]] == [
+        ("agent_toolkit_reference_invariant_test.py", True)
+    ]
+
+
+@pytest.mark.parametrize("prefix", ["", "+", "++", "-", "--"])
+def test_reference_in_header_like_hunk_line_requires_reference_check(tmp_path: pathlib.Path, prefix: str) -> None:
+    root = init_repository(tmp_path / "repo", files={"notes.md": "x\n"}, commit_message="init")
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    (root / "notes.md").write_text(f"{prefix}{prefix} ref {_PLUGIN}:/share/example.md\n", encoding="utf-8")
+    assert {"test": "agent_toolkit_reference_invariant_test.py", "reason": "repository-references"} in (
+        verification_targets.cross_contracts(root, base)
+    )
+
+
+@pytest.mark.parametrize("form", ["relative", "dot", "absolute"])
+def test_reference_contract_is_independent_of_path_form(tmp_path: pathlib.Path, form: str) -> None:
+    root = init_repository(
+        tmp_path / "repo",
+        files={
+            "pyproject.toml": "[tool.pyright]\n",
+            "notes.md": f"{_MISSING_REFERENCE}\n",
+            "agent_toolkit_reference_invariant_test.py": "TARGET = 'notes.md'\n",
+            "unrelated.md": "x\n",
+        },
+        commit_message="init",
+    )
+    for name in ("pyproject.toml", "notes.md"):
+        given = {"relative": name, "dot": f"./{name}", "absolute": str(root.resolve() / name)}[form]
+        snapshot = consumer_tests(root, [given])
+        assert [row["source"] for row in snapshot["reference_contracts"]] == [name]
+        assert required_tests(snapshot) == ["agent_toolkit_reference_invariant_test.py"]
+    unrelated = consumer_tests(root, ["unrelated.md"])
+    assert unrelated["reference_contracts"] == []
+
+
+def test_removed_file_outside_pyright_literal_or_glob_keeps_contracts(tmp_path: pathlib.Path) -> None:
+    pyproject = '[tool.pyright]\nexclude = ["generated/*", "other"]\n'
+    root = init_repository(
+        tmp_path / "repo", files={"generated/output.py": "", "pyproject.toml": pyproject}, commit_message="init"
+    )
+    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    (root / "generated/output.py").unlink()
+    assert verification_targets.cross_contracts(root, base) == []
+
+
+@pytest.mark.parametrize("include", [False, True])
+def test_adding_reference_check_to_targets_keeps_saved_decisions(tmp_path: pathlib.Path, include: bool) -> None:
+    root = init_repository(
+        tmp_path / "repo",
+        files={
+            "helper.py": "VALUE = 1\n",
+            "agent_toolkit_reference_invariant_test.py": "NAME = 'helper'\n",
+        },
+        commit_message="init",
+    )
+    snapshot = consumer_tests(root, ["helper.py"])
+    assert [(row["test"], row["required"]) for row in snapshot["candidates"]] == [
+        ("agent_toolkit_reference_invariant_test.py", False)
+    ]
+    decisions = [
+        {
+            "source": "helper.py",
+            "test": "agent_toolkit_reference_invariant_test.py",
+            "include": include,
+            "reason": "参照検査の採否を確かめる",
+        }
+    ]
+    review = {**snapshot, "decisions": decisions}
+    with_check = consumer_tests(root, ["helper.py", "agent_toolkit_reference_invariant_test.py"])
+    assert with_check["candidates"] == snapshot["candidates"]
+    assert required_tests(snapshot, review) == (["agent_toolkit_reference_invariant_test.py"] if include else [])
+    assert required_tests(with_check, review) == ["agent_toolkit_reference_invariant_test.py"]

@@ -8,12 +8,14 @@ import os
 import pathlib
 import subprocess
 import sys
+import types
 import typing
 
 import pytest
+import quart
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._atk.serve import sessions, sessions_local
+from agent_toolkit._atk.serve import sessions, sessions_local, shell_routes
 from agent_toolkit._testing import session_tree
 from agent_toolkit._testing.serve_sessions_support import (
     _age,
@@ -128,7 +130,15 @@ def test_remote_helper_listing_links_recorded_delegation(tmp_path: pathlib.Path)
         text=True,
         env=environment,
     )
-    assert json.loads(search.stdout) == {"paths": [str(child)], "incomplete": False}
+    assert json.loads(search.stdout) == {
+        "paths": [str(child)],
+        "incomplete": False,
+        "unavailable": False,
+        "retry_paths": [],
+    }
+    selected = base64.b64encode(json.dumps([str(parent)]).encode()).decode()
+    targeted = subprocess.run([*search.args, selected], check=True, capture_output=True, text=True, env=environment)
+    assert json.loads(targeted.stdout)["paths"] == []
 
 
 @pytest.mark.asyncio
@@ -407,3 +417,126 @@ async def test_remote_detail_session_name_follows_local_rules(
     assert codex_detail["session_name"] == "リモートのthread"
     assert unnamed_detail["session_name"] is None
     assert "project" not in codex_detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("remote", [False, True])
+async def test_search_retries_only_timed_out_records_and_keeps_other_matches(tmp_path, monkeypatch, remote):
+    helper = _load_remote_helper()
+    host = "peer" if remote else "local-host"
+    paths = [str(tmp_path / f"{name}.jsonl") for name in ("denied", "good", "slow")]
+    entries = [
+        helper.sessions_models.SessionSummary("claude", host, None, "message", str(index), path, None, None, None)
+        for index, path in enumerate(paths)
+    ]
+    calls = []
+    recovered = False
+
+    def matches(path, *_args, **_kwargs):
+        calls.append(path.stem)
+        if path.stem == "denied":
+            raise PermissionError
+        if path.stem == "slow" and not recovered:
+            raise TimeoutError
+        return True
+
+    async def listing(_context):
+        return entries, []
+
+    async def runner(_host, op, args):
+        assert op == "search"
+        return json.dumps(helper._search_payload(args[0], paths_b64=args[1] if len(args) > 1 else ""))
+
+    monkeypatch.setattr(sessions, "list_sessions", listing)
+    monkeypatch.setattr(sessions, "is_local_record_path", lambda *_args: True)
+    monkeypatch.setattr(sessions, "record_matches", matches)
+    monkeypatch.setattr(helper.sessions_models, "record_matches", matches)
+    monkeypatch.setattr(helper, "_is_safe_record_path", lambda _path: True)
+    monkeypatch.setattr(helper, "_list_payload", lambda *_args: {"entries": [entry.to_json() for entry in entries]})
+    context = _context(tmp_path, remote_hosts=[host] if remote else [], ssh_runner=runner)
+
+    result, unavailable, retry = await sessions.search_sessions(context, "match")
+    assert [entry.path for entry in result] == [paths[1]]
+    assert unavailable == [host]
+    assert retry == {host: [paths[2]]}
+    assert calls == ["denied", "good", "slow"]
+    calls.clear()
+    recovered = True
+    result, unavailable, retry = await sessions.search_sessions(context, "match", retry)
+    assert [entry.path for entry in result] == [paths[2]]
+    assert not unavailable and not retry
+    assert calls == ["slow"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rpc", [False, True])
+@pytest.mark.parametrize("status", [403, 404, 503])
+async def test_remote_detail_api_preserves_read_failure(tmp_path, monkeypatch, rpc, status):
+    helper = _load_remote_helper()
+    failure = {403: PermissionError, 404: FileNotFoundError, 503: TimeoutError}[status]
+
+    def read(_path):
+        raise failure
+
+    monkeypatch.setattr(helper, "_read_payload", read)
+
+    async def request(op, args):
+        return helper._handle_request({"id": 1, "op": op, **args}, None, None)
+
+    async def runner(_host, op, args):
+        assert not rpc and op == "read"
+        stdout = io.StringIO()
+        monkeypatch.setattr(sys, "argv", ["helper", op, *args])
+        monkeypatch.setattr(sys, "stdout", stdout)
+        assert helper.main() == 0
+        return stdout.getvalue()
+
+    context = _context(tmp_path, remote_hosts=["peer"], ssh_runner=runner)
+    if rpc:
+        context.state.clients["peer"] = typing.cast(
+            typing.Any, types.SimpleNamespace(is_connected=lambda: True, request=request)
+        )
+    app = quart.Quart(__name__)
+    shell_routes.register_error_handlers(app)
+    shell_routes.register_session_routes(app, context, typing.cast(typing.Any, None))
+    response = await app.test_client().get(
+        "/api/sessions/detail", query_string={"host": "peer", "engine": "claude", "path": "/records/run.jsonl"}
+    )
+    assert response.status_code == status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op", ["list", "search"])
+@pytest.mark.parametrize("temporary", [False, True])
+async def test_session_ssh_255_does_not_retry_auth_rejection(tmp_path, monkeypatch, op, temporary):
+    helper = _load_remote_helper()
+    peer = "peer"
+    entries = [
+        helper.sessions_models.SessionSummary("claude", host, None, "message", host, f"/{host}/run.jsonl", None, None, None)
+        for host in ("local-host", peer)
+    ]
+    calls = []
+
+    async def runner(_host, operation, _args):
+        calls.append(operation)
+        diagnostic = b"Connection timed out" if temporary else b"user@peer: Permission denied (publickey)."
+        raise _atk_serve_remote.RemoteHelperError(255, diagnostic)
+
+    context = _context(tmp_path, remote_hosts=[peer], ssh_runner=runner)
+    if op == "list":
+        results, warning = await sessions._remote_sessions(context, peer)
+        assert not results
+        assert warning is not None and warning["retryable"] == str(temporary).lower()
+    else:
+
+        async def listing(_context):
+            return entries, []
+
+        monkeypatch.setattr(sessions, "list_sessions", listing)
+        monkeypatch.setattr(sessions, "is_local_record_path", lambda *_args: True)
+        monkeypatch.setattr(sessions, "record_matches", lambda *_args, **_kwargs: True)
+        results, unavailable, retry = await sessions.search_sessions(context, "message")
+        assert [entry.host for entry in results] == ["local-host"]
+        assert unavailable == ([] if temporary else [peer])
+        assert retry == ({peer: None} if temporary else {})
+    assert calls == [op]

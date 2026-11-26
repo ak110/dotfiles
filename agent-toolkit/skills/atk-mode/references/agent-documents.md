@@ -1,5 +1,7 @@
 # エージェント向け文書の置き場所と配送
 
+agent-toolkitの文書を書くエージェントが、置いた規範を必要とする各起動区分のエージェントへ確実に届け、受け取る側が自分に向けた規範を見落とさないようにする。
+
 agent-toolkitのエージェント向け文書を置く場所と、各起動区分のエージェントへ届く経路を定める。
 作り方の基準は`agent-basics:writing-standards/references/agent-documents-basics.md`にある。
 スキルの基準は`agent-basics:writing-standards/references/agent-skills.md`、役割文書とサブエージェント定義の基準は`agent-basics:writing-standards/references/sub-agents.md`にある。

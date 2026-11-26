@@ -16,13 +16,14 @@ from agent_toolkit._testing.wi_add_support import (
     _patch_cmd_add_operations,
     _run_public_add,
     _with_cause,
+    _write_origin_review,
 )
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
 from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_notes, _write_awi_file
 
 _RECORD = plan_fixture.cause_record()
-_RECORD_WITHOUT_SPREAD = _RECORD.replace(f"{plan_fixture.cause_record_line('広がり')}\n", "")
+_RECORD_WITHOUT_SPREAD = _RECORD.replace(f"{plan_fixture.cause_record_line('類似見直し')}\n", "")
 _PREVIOUS_TABLE = plan_fixture.rows_table(
     ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策"), plan_fixture.BUG_FILLER
 )
@@ -36,11 +37,11 @@ _RECORD_UNTYPED = _RECORD.replace(plan_fixture.cause_record_line("再発防止")
 _SECTIONS: dict[str, tuple[str, str | None]] = {
     "valid": (_RECORD, None),
     "two_units": (f"### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD}", None),
-    "missing_line": (_RECORD_WITHOUT_SPREAD, "`広がり:`の行が無い（書く内容: 同じ仕組みの他の箇所"),
+    "missing_line": (_RECORD_WITHOUT_SPREAD, "`類似見直し:`の行が無い（書く内容: 検索の式と件数"),
     "empty_line": (_RECORD.replace(plan_fixture.cause_record_line("確認"), "- 確認:"), "`確認:`の行に本文が無い"),
     "second_unit_missing": (
         f"### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD_WITHOUT_SPREAD}",
-        "`### 事象B`: `広がり:`の行が無い",
+        "`### 事象B`: `類似見直し:`の行が無い",
     ),
     "legacy_tables": (plan_fixture.legacy_cause_tables(), "原因分析を廃止した表で書いている"),
     "previous_table": (_PREVIOUS_TABLE, "原因分析を廃止した表で書いている"),
@@ -65,25 +66,15 @@ _RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
         f"{_RECORD}\n- 再発: 前回は規範の追記で対処した。",
         "`再発:`の行が区分の語で始まらない",
     ),
-    "recurrence_text_only": (
-        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。")
-        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
-        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
-    ),
-    "recurrence_text_only_with_reason": (
-        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可: 判定に文脈の意味が要る。")
-        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
+    "recurrence_document": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 送付先が逆の例を、実際の受理先を示す例に置き換える。")
+        + "\n- 再発: 誘発入力: 前回の案内は受理されない送付先を示していた。",
         None,
     ),
-    "recurrence_text_only_with_empty_reason": (
-        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可:")
-        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
-        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
-    ),
-    "recurrence_text_only_with_separator_only": (
-        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 文書: 実例を載せる。構造化不可：；")
-        + "\n- 再発: 未適用: 前回は規範の追記で対処した。",
-        "再発した事象への`再発防止:`が`文書`・`手順`だけである",
+    "recurrence_procedure": (
+        _RECORD.replace(_TEXT_ONLY_PREVENTION, "- 再発防止: 手順: 検証後の確認を送信前へ移す。")
+        + "\n- 再発: 読込喪失: 前回の確認は送信後に読む手順にあった。",
+        None,
     ),
     "recurrence_kind_without_reason": (f"{_RECORD}\n- 再発: 該当なし", "`再発:`の行が区分の語だけで根拠が無い"),
     "recurrence_structural": (f"{_RECORD}\n- 再発: 範囲不足: 前回は1つの経路だけを検査した。", None),
@@ -92,7 +83,7 @@ _RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
         None,
     ),
 }
-"""再発した事象の記録の区分と、文書・手順だけの再発防止を保存時に止める場合（2026年11月25日の分析）。 pyfltr: allow-comment"""
+"""再発の区分・理由を検査し、文書・手順型の対策も受理する。 pyfltr: allow-comment"""
 _SECTIONS.update(_RECURRENCE_CASES)
 
 
@@ -338,10 +329,9 @@ _REPEATED_QUOTE = "過去に何度もしているという指摘も過去に何�
         ("- 再発: 未適用: 前回は規範の追記で対処した。今回は保存時の検査へ変える。", False),
         ("- 再発: 該当なし: 同じ指摘への前回の対策は無い。", False),
         ("- 再発: 未調査: 前回の対策を調べていない。", True),
-        ("- 再発: 未適用: 前回は規範の追記で対処した。\n- 再発防止: 文書: 実例を載せる。", True),
         (
-            "- 再発: 未適用: 前回は規範の追記で対処した。\n"
-            "- 再発防止: 文書: 実例を載せる。構造化不可: 判定に文脈の意味が要る。",
+            "- 再発: 誘発入力: 前回の案内は受理されない送付先を示していた。\n"
+            "- 再発防止: 文書: 送付先が逆の例を、実際の受理先を示す例に置き換える。",
             False,
         ),
     ],
@@ -373,10 +363,10 @@ def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
             for text in (
                 "反復の候補に当たるのに`再発:`の行が無い",
                 "`再発:`の行が区分の語で始まらない",
-                "`文書`・`手順`だけである",
             )
         )
     else:
+        args.origin_review = [_write_origin_review(tmp_path, body, _REPEATED_QUOTE)]
         _run_public_add(args, notes, _FIXED_DT, tmp_path)
         assert "成功:" in capsys.readouterr().out
 
@@ -406,7 +396,9 @@ def test_public_add_accepts_steady_behavior_wording_without_recurrence_line(
     body = (
         f"# 確認画面に説明を足す\n\n説明\n\n## 反映内容と反映先\n対象\n\n## ユーザー指摘の逐語引用\n\n```text\n{quote}\n```\n"
     )
-    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
+    args.origin_review = [_write_origin_review(tmp_path, body, quote)]
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
     assert "成功:" in capsys.readouterr().out
 
 
@@ -451,5 +443,7 @@ def test_public_add_accepts_not_applicable_line_for_non_recurring_quote(
         "## 調査結果と判断根拠\n\n- 再発: 該当なし: 前に1回指摘しただけで、同じ問題の反復ではない。\n\n"
         "## ユーザー指摘の逐語引用\n\n```text\n前に文言を1回指摘しただけだけど、ここも直して。\n```\n"
     )
-    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
+    args.origin_review = [_write_origin_review(tmp_path, body, "前に文言を1回指摘しただけだけど、ここも直して。")]
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
     assert "成功:" in capsys.readouterr().out

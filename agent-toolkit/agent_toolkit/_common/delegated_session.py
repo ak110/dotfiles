@@ -26,6 +26,13 @@ LAUNCH_KIND_ENV = "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND"
 PLUGIN_ROOT_ENV = "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT"
 """委譲先のhookが資料とCLI案内に使う、起動側が選択した配布物の絶対パス。"""
 
+CALLER_PLUGIN_ROOT_ENV = "AGENT_TOOLKIT_CALLER_PLUGIN_ROOT"
+"""`agents_server`の転送側が管理サービスへ渡す、接続元の配布物の絶対パス。
+
+共有の管理サービスは最も新しい世代が受け付けるため、委譲元のCLIより新しい版で委譲先が動く場合がある。
+管理サービスはこの値で版の差を検出し、委譲先へ委譲元の起動部分を伝える。pyfltr: allow-comment
+"""
+
 FINAL_RESPONSE_NOTICE = (
     "agents_serverの委譲元が受け取るのは最後の応答の本文だけである。"
     "完了報告を書いた後に作業を続けた場合は、最後の応答へ完了報告の全文を書き直せ（前の応答を参照して省かない）。"
@@ -106,6 +113,34 @@ WHOLE_CONTRACT_KIND = "work-contract-reference"
 """サーバーが起動本文へ加える、全体作業契約の所在を示す要素の種別。"""
 
 WHOLE_CONTRACT_LINE_PREFIX = "全体作業契約: "
+OWN_CONTRACT_KIND = "own-work-contract"
+OWN_CONTRACT_LINE_PREFIX = "自身の作業契約: "
+
+
+def prompt_own_contract_path(prompt: str, root: pathlib.Path) -> pathlib.Path | None:
+    _, notice = split_own_contract_notice(prompt)
+    if not notice:
+        return None
+    _, _, remainder = notice.partition("\n")
+    line = remainder.partition("\n")[0]
+    if not line.startswith(OWN_CONTRACT_LINE_PREFIX):
+        return None
+    path = pathlib.Path(line.removeprefix(OWN_CONTRACT_LINE_PREFIX))
+    if path.name != "work-contract.md" or not path.parent.name.startswith("work-contract-"):
+        return None
+    try:
+        return path if path.parent.parent == root and path.resolve() == root.resolve() / path.parent.name / path.name else None
+    except OSError, RuntimeError:
+        return None
+
+
+def split_own_contract_notice(prompt: str) -> tuple[str, str]:
+    opening = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "agents-server", "kind": OWN_CONTRACT_KIND})
+    original, separator, notice = prompt.rpartition("\n\n" + opening + "\n")
+    closing = f"</{AUTO_INSERTED_ELEMENT}>"
+    if separator and notice.endswith(closing) and closing not in notice.removesuffix(closing):
+        return original, opening + "\n" + notice
+    return prompt, ""
 
 
 def prompt_whole_contract_path(prompt: str) -> pathlib.Path | None:

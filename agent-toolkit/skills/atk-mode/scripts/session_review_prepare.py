@@ -32,7 +32,7 @@ import session_review_evidence
 from agent_toolkit._atk import managed_temp, run_script
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import session_record_paths, session_registry, session_review
+from agent_toolkit._common import send_misdetection, session_record_paths, session_registry, session_review
 from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 from session_review_prepare_candidates import (
@@ -562,6 +562,11 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     hook_timings_path.write_text(json.dumps(hook_timings, ensure_ascii=False) + "\n", encoding="utf-8")
     stats.append(hook_timings)
     stats_text = _stats_document(stats) + unconfirmed_text
+    claims = send_misdetection.summary(session_id)
+    if len((stats_text + claims).encode("utf-8")) <= _STATS_MAX_BYTES:
+        stats_text += claims
+    elif claims:
+        (work_dir / "send-misdetection.md").write_text(claims, encoding="utf-8")
     if len(candidate_text.encode("utf-8")) > _CANDIDATES_MAX_BYTES or len(stats_text.encode("utf-8")) > _STATS_MAX_BYTES:
         return _missing("bundle", "候補または統計の初回表示が表示予算を超えた。全量の証拠はbundleへ保持した。")
     candidates_path.write_text(candidate_text, encoding="utf-8")

@@ -1,5 +1,6 @@
 # Alpine.js記述スタイル
 
+Alpine.jsで実装する担当が表示と状態の持ち方を選び、画面を使う人に初期表示から意図どおりに操作できる画面を届ける。
 対象の版: Alpine.js v3系（公式ドキュメント <https://alpinejs.dev/start-here>）。
 本書は、Alpine.jsを使う実装を書く・直す時に、版に固有の書き方と誤りやすい事項を示す。
 CSPとHTMLの挿入の規定は`agent-basics:writing-standards/references/quality-principles-constraints.md`の適用である。

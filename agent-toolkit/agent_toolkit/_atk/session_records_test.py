@@ -14,7 +14,7 @@ import pytest
 from agent_toolkit._atk import run_skill_execution, session_record_format, session_records
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY
-from agent_toolkit._common import message_format, skill_modes
+from agent_toolkit._common import automated_prompt, message_format, skill_modes
 
 
 def _write_record(path: pathlib.Path, records: list[object], modified_at: int = 10) -> None:
@@ -93,13 +93,29 @@ def test_codex_display_distinguishes_startup_notice_from_other_developer_message
     assert unrelated[0].kind == "developer"
 
 
-def test_claude_display_marks_initial_goal_but_not_a_later_delivery() -> None:
-    goal = message_format.auto_message("巡回する", source="process-loop", kind="goal")
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize("source", ["process-loop", "run-skill"])
+def test_display_marks_initial_goal_but_not_a_later_delivery(engine: str, source: str) -> None:
+    goal = (
+        _pl_session.build_process_loop_prompt()
+        if source == "process-loop"
+        else automated_prompt.wrap(
+            run_skill_execution.build_goal(skill_modes.PROCESS_WI, "single-lane"),
+            source=automated_prompt.SOURCE_RUN_SKILL,
+            kind=automated_prompt.KIND_GOAL,
+        )
+    )
     delivery = message_format.auto_message("追送した依頼", source="agents-server", kind="delivery")
-    records = [_claude_user_text_record(text) for text in ("<system-reminder>規範</system-reminder>", goal, delivery)]
-    events, _totals = session_record_format.claude_events(records)
-    assert [item.initial_work for item in events] == [False, True, False]
-    assert all(item.kind == "injected" for item in events)
+    notice = message_format.auto_message("規範", source="rules_context", kind="notice")
+    texts = (notice, goal, delivery, goal, f"目標の引用: {goal}")
+    if engine == "claude":
+        events, _totals = session_record_format.claude_events([_claude_user_text_record(text) for text in texts])
+    else:
+        events, _totals = session_record_format.codex_events(
+            [_codex_message_record(role="user", item_type="input_text", text=text) for text in texts]
+        )
+    assert [item.initial_work for item in events] == [False, True, False, False, False]
+    assert all(item.kind == "injected" for item in events[:4])
 
 
 class TestCandidatePaths:

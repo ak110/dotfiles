@@ -34,29 +34,41 @@ def _request_count(harness: _ScreenHarness, path: str) -> int:
     return sum(1 for url in harness.requests if urllib.parse.urlsplit(url).path == path)
 
 
-async def _open_all_screens(harness: _ScreenHarness) -> None:
-    await _observe_screen_requests(harness.page)
-    await harness.page.goto(harness.base_url + "/sessions")
-    await playwright.async_api.expect(harness.page.locator("#sessions .session-item")).to_have_count(2)
-    await _wait_screen_requests_consumed(harness.page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
-    await playwright.async_api.expect(harness.page.locator("#entry-list .entry-select").first).to_have_count(1)
-    await playwright.async_api.expect(harness.page.locator("#files .file").first).to_have_count(1)
-
-
-async def _resynchronize_visible(page: playwright.async_api.Page, *, timeout: float = 10_000) -> None:
-    paths = [_SCREEN_STREAMS[name][1] for name in ("wi", "sessions")]
-    before = await page.evaluate(
-        "paths => Object.fromEntries(paths.map(path => [path, window.__screenRequests.completed[path] || 0]))", paths
+async def _open_screen(harness: _ScreenHarness, screen: str) -> None:
+    page = harness.page
+    events, listing = _SCREEN_STREAMS[screen]
+    await _observe_screen_requests(page)
+    await page.goto(harness.base_url + ("/" if screen == "wi" else f"/{screen}"))
+    await playwright.async_api.expect(page.locator(f"#screen-{screen}")).to_be_visible()
+    await _wait_screen_requests_consumed(page, (events,))
+    await page.wait_for_function(
+        "([events, listing]) => window.__screenRequests.subscribed[events] > 0 "
+        "&& window.__screenRequests.completed[listing] > 0",
+        arg=[events, listing],
     )
+    _assert_other_streams_unrequested(harness, screen)
+
+
+def _assert_other_streams_unrequested(harness: _ScreenHarness, screen: str) -> None:
+    assert {events: _request_count(harness, events) for name, (events, _) in _SCREEN_STREAMS.items() if name != screen} == {
+        events: 0 for name, (events, _) in _SCREEN_STREAMS.items() if name != screen
+    }
+
+
+async def _resynchronize_visible(page: playwright.async_api.Page, screen: str, *, timeout: float = 10_000) -> None:
+    listing = _SCREEN_STREAMS[screen][1]
+    before = await page.evaluate("path => window.__screenRequests.completed[path]", listing)
     await page.evaluate(
         """() => {
-            Object.defineProperty(document, "visibilityState", {value: "visible", configurable: true});
-            document.dispatchEvent(new Event("visibilitychange"));
+            for (const state of ["hidden", "visible"]) {
+                Object.defineProperty(document, "visibilityState", {value: state, configurable: true});
+                document.dispatchEvent(new Event("visibilitychange"));
+            }
         }"""
     )
     await page.wait_for_function(
-        "before => Object.entries(before).every(([path, count]) => window.__screenRequests.completed[path] > count)",
-        arg=before,
+        "([path, count]) => window.__screenRequests.completed[path] > count",
+        arg=[listing, before],
         timeout=timeout,
     )
 
@@ -92,10 +104,10 @@ class _DelayedResponse:
                 return playwright.async_api.expect(row).not_to_have_attribute("aria-busy", "true", timeout=5000)
         else:
             status = page.locator("#search-status")
-            await playwright.async_api.expect(status).to_have_text("検索中")
+            await playwright.async_api.expect(status).to_be_empty()
 
             def completed():
-                return playwright.async_api.expect(status).not_to_have_text("検索中", timeout=5000)
+                return playwright.async_api.expect(status).to_be_empty()
 
         self.release.set()
         await asyncio.wait_for(self.fulfilled.wait(), timeout=5)

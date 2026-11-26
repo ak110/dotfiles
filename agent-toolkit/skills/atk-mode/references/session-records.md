@@ -1,5 +1,6 @@
 # セッション記録の形式と照会
 
+セッション記録を集計・照会する担当が、記録の範囲を取り違えずに件数や所要時間をユーザーへ正確に報告できるようにするための資料である。
 本書は、Claude Code、Codex、OpenCode、Antigravityが保存する会話の記録（セッション記録）を集計・照会する時の、記録の形式、集計値の典拠、照会の選び方を定める。
 件数、不在、全件、所要時間を述べる時は、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従い、照会した範囲と未確認の範囲を分けて書く。
 

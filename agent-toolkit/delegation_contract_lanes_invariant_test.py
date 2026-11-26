@@ -314,8 +314,9 @@ def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
     restart = _h2_section(finish, "公開状態の検収と再起動")
     unfinished = next(line for line in restart.splitlines() if "新しいcommitが無く、公開後の操作だけが未完了の場合" in line)
     assert "未完了の公開後の操作だけを再開する" in unfinished
-    completed = next(line for line in restart.splitlines() if "再起動せずに報告へ進む" in line)
+    completed = next(line for line in restart.splitlines() if "報告へ進む" in line and "繰り返さず" in line)
     assert "CIの検収と公開後の操作が全て済んだ場合" in completed
+    assert "既に検収した反映・再起動を繰り返さず" in completed
     recovery = _h2_section(publish, "公開工程の続行不能からの再開")
     assert "CI結果、および正常終了した公開後操作の内容は確実に保持する" in recovery
     assert "未完了の工程のみを再開" in recovery

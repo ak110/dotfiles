@@ -36,6 +36,7 @@ async def test_explore_rechecks_preconditions_once(monkeypatch, tmp_path, classi
         await owner._advance_child_session_wait(session)  # noqa: SLF001  # pylint: disable=protected-access
     assert len(prompts) == 1
     assert "形式違反と判定したものではない" in prompts[0]
+    assert "未完了の単位・再開条件を識別" not in prompts[0]
     assert "試した手段と再開条件" in prompts[0] and "権限拒否・認可不足の回避は求めない" in prompts[0]
     assert session.effort == "low"
     assert not session.effort_history
@@ -52,3 +53,27 @@ async def test_explore_rechecks_preconditions_once(monkeypatch, tmp_path, classi
 def test_explore_success_and_wait_need_no_precondition_recheck(tmp_path, message):
     session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
     assert not result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message})
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_invalid_result_recovery_explains_why_format_matters(monkeypatch, tmp_path):
+    session = state.SessionState("explore", str(tmp_path), launch_kind="explore", engine="codex", model="test", effort="low")
+    message = "観測済み成果\n続行できない区分: runtime_unavailable\n続行できない理由: 予算が尽きた"
+    cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
+    assert session.result_contract_recovery_pending
+    prompts = []
+
+    async def reply(current, prompt):
+        prompts.append(prompt)
+        state.begin_reply(current, preserve_waits=True)
+        return {"delivery": "reply_started"}
+
+    backend = Mock(send_message=AsyncMock(side_effect=reply))
+    async with manager.AgentsServerManager() as owner:
+        monkeypatch.setattr(owner, "_backend", Mock(return_value=backend))
+        await owner._advance_child_session_wait(session)  # noqa: SLF001  # pylint: disable=protected-access
+    assert len(prompts) == 1
+    assert "返却形式の契約に適合しない" in prompts[0]
+    assert "未完了の単位・再開条件を識別" in prompts[0]
+    assert "権限拒否・認可不足の回避は求めない" in prompts[0]

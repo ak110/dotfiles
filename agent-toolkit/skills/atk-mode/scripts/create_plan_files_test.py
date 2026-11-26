@@ -149,9 +149,17 @@ def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
     return _make_repo(tmp_path, monkeypatch)
 
 
+def _notes_with_wis(directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
+    notes = directory / "notes"
+    (notes / "processing").mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (notes / "processing" / name).write_text("---\ntype: awi\nsource: add-awi-by-user\n---\n# 要求\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+
+
 def _source(repo: pathlib.Path, directory: pathlib.Path) -> pathlib.Path:
     main_source = directory / "main.md"
-    main_source.write_text(_plan_fixture.awi_plan(repo=repo.resolve()), encoding="utf-8")
+    main_source.write_text(_plan_fixture.wi_list_plan(repo=repo.resolve()), encoding="utf-8")
     return main_source
 
 
@@ -188,7 +196,7 @@ def test_wrong_execution_worktree_guides_recovery_without_changing_source(
 def test_prior_plan_repository_mismatch_names_values_and_recovery(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
+    _notes_with_wis(tmp_path, monkeypatch, "20261020-000000-001.md")
     source = _source(repo, tmp_path)
     prior = tmp_path / "prior.md"
     other = tmp_path / "other"
@@ -250,7 +258,7 @@ def test_cli_accepts_bom_source_and_preserves_bytes(
 def test_prior_plan_repository_accepts_equivalent_path_notation(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
+    _notes_with_wis(tmp_path, monkeypatch, "20261020-000000-001.md", "20261020-000000-002.md")
     source = _source(repo, tmp_path)
     prior = tmp_path / "prior.md"
     prior.write_text(
@@ -322,30 +330,6 @@ def test_cli_accepts_bare_name(
     assert json.loads(path.with_suffix(".created.json").read_text(encoding="utf-8")) == {"date": "2026-09-18"}
 
 
-def test_cli_replaces_stem_placeholder_in_adjunct_reference(
-    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    source = _source(repo, tmp_path)
-    placeholder = f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.exec-review.tsv"
-    content = source.read_text(encoding="utf-8")
-    source.write_text(
-        content.replace(_plan_fixture.REQUEST_BODY, f"{_plan_fixture.REQUEST_BODY}指摘は`{placeholder}`へ記録する。", 1),
-        encoding="utf-8",
-    )
-
-    result = create_plan_files.main(
-        ["--source", str(source), "--name", "13-0217_参照", "--home", str(tmp_path / "home"), "--work-dir", str(repo)]
-    )
-
-    captured = capsys.readouterr()
-    assert result == 0, captured.err
-    (path,) = [pathlib.Path(line) for line in captured.out.splitlines()]
-    assert path.name == "13-0217_参照.md"
-    created = path.read_text(encoding="utf-8")
-    assert f"`{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}13-0217_参照.exec-review.tsv`" in created
-    assert create_plan_files.PLAN_STEM_PLACEHOLDER not in created
-
-
 def test_process_lane_plan_name_uses_local_time_and_two_digit_lane() -> None:
     now = datetime.datetime(2026, 9, 14, 23, 5, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
 
@@ -400,16 +384,16 @@ def test_adds_hex_suffix_only_after_collision(
     assert path.name == "13-0217_計画-a1b2.md"
 
 
-@pytest.mark.parametrize("saved_format", ["eight-section", "legacy"])
+@pytest.mark.parametrize("saved_format", ["awi", "eight-section", "legacy"])
 def test_cli_rejects_saved_plan_formats(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], saved_format: str
 ) -> None:
     source = tmp_path / "saved-format.md"
-    content = (
-        _plan_fixture.eight_section_plan(repo=repo.resolve())
-        if saved_format == "eight-section"
-        else _plan_fixture.single_file_plan(repo=repo.resolve())
-    )
+    content = {
+        "awi": lambda: _plan_fixture.awi_plan(repo=repo.resolve()),
+        "eight-section": lambda: _plan_fixture.eight_section_plan(repo=repo.resolve()),
+        "legacy": lambda: _plan_fixture.single_file_plan(repo=repo.resolve()),
+    }[saved_format]()
     source.write_text(content, encoding="utf-8")
 
     result = create_plan_files.main(
@@ -417,61 +401,7 @@ def test_cli_rejects_saved_plan_formats(
     )
 
     assert result == 1
-    assert "新しく作る計画ファイルはAWI本文と同じ書式" in capsys.readouterr().err
-    assert not list((tmp_path / "home").rglob("*.md"))
-
-
-@pytest.mark.parametrize(
-    ("related_wi", "cause"),
-    [(_plan_fixture.WI_FILES, False), ((), True)],
-    ids=["related-wi", "cause-analysis"],
-)
-def test_cli_creates_bug_plan_as_single_file(
-    repo: pathlib.Path,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-    related_wi: tuple[tuple[str, str], ...],
-    cause: bool,
-) -> None:
-    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
-    source = tmp_path / "bug.md"
-    source.write_text(
-        _plan_fixture.awi_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related_wi, cause=cause),
-        encoding="utf-8",
-    )
-
-    result = create_plan_files.main(
-        ["--main-source", str(source), "--name", "13-0217_バグ対応", "--home", str(tmp_path / "home"), "--work-dir", str(repo)]
-    )
-
-    captured = capsys.readouterr()
-    assert result == 0, captured.err
-    assert [pathlib.Path(line).name for line in captured.out.splitlines()] == ["13-0217_バグ対応.md"]
-    assert not list((tmp_path / "home").rglob("*.bugs.md"))
-
-
-def test_cli_rejects_bug_plan_without_cause_analysis_and_related_wi(
-    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    source = tmp_path / "no-wi.md"
-    source.write_text(_plan_fixture.awi_plan(repo=repo.resolve(), work_type="バグ対応"), encoding="utf-8")
-
-    result = create_plan_files.main(
-        [
-            "--main-source",
-            str(source),
-            "--name",
-            "13-0217_WIなしのバグ対応",
-            "--home",
-            str(tmp_path / "home"),
-            "--work-dir",
-            str(repo),
-        ]
-    )
-
-    assert result != 0
-    assert "関連WIが無いバグ対応の計画には`## 原因分析`が必要" in capsys.readouterr().err
+    assert "WIリスト形式" in capsys.readouterr().err
     assert not list((tmp_path / "home").rglob("*.md"))
 
 
@@ -574,11 +504,10 @@ def test_public_plan_create_owner_reaches_listing_and_save_advisor(
 def test_awi_plan_counts_only_judgment_lines_in_evidence(
     repo: pathlib.Path, tmp_path: pathlib.Path, judgment: str, accepted: bool
 ) -> None:
-    source = _source(repo, tmp_path)
-    content = source.read_text(encoding="utf-8")
+    source = tmp_path / "awi.md"
+    content = _plan_fixture.awi_plan(repo=repo.resolve())
     content = content.replace("既存の判定処理を読み、更新が必要な箇所を確かめた。", f"構文解析を変更する。\n\n{judgment}")
     source.write_text(content, encoding="utf-8")
-    errors, _warnings = check_plan_file.check(source, repo, reject_migration_warnings=True)
-    assert bool(errors) is not accepted, errors
-    if not accepted:
-        assert any("形式検証の判定" in error for error in errors)
+    errors, warnings = check_plan_file.check(source, repo)
+    assert not errors, errors
+    assert any("形式検証の判定" in warning for warning in warnings) is not accepted, warnings

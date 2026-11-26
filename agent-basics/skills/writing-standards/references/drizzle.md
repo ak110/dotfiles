@@ -1,5 +1,6 @@
 # Drizzle ORM／Drizzle Kit記述スタイル
 
+Drizzleで実装する担当が移行とクエリの境界を定め、ユーザーのデータを保ちながらスキーマの更新と検索を実行できるようにする。
 対象の版: drizzle-orm・drizzle-kitの0.x系（参考とした実利用の版はdrizzle-orm 0.45、drizzle-kit 0.31。公式ドキュメント <https://orm.drizzle.team/docs/overview>）。
 本書は、Drizzle ORMとDrizzle Kitを使うコードとマイグレーションを書く・直す時に読む。
 マイグレーションの履歴とSQLの組み立ての規定は`agent-basics:writing-standards/references/quality-principles-constraints.md`の適用である。

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from playwright.async_api import Locator, Route, expect
 
-from agent_toolkit._atk import config, config_settings
+from agent_toolkit._atk import config, config_settings, usage_refresh
 from agent_toolkit._atk.serve import settings_routes
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_fixture,
@@ -17,6 +17,13 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
 from agent_toolkit._common import usage_observation, usage_settings
 
 pytestmark = [pytest.mark.browser]
+
+
+@pytest.fixture(autouse=True)
+def isolate_observation_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(usage_refresh, "refresh", lambda **_kwargs: [])
+
+
 _DAY = 86400
 _ACCOUNT = "synthetic-claude"
 
@@ -137,7 +144,7 @@ async def test_claude_permission_uses_matching_inventory_and_weekly_observation(
     apply = section.get_by_role("button", name="この提案を入力")
     weekly = section.get_by_role("button", name="次の週次リセットの1日前まで")
     if case == "other-account":
-        await expect(section).to_contain_text("このアカウントに在庫がありません")
+        await expect(section).to_contain_text("このアカウントのリセット権は未登録です。")
         await expect(section.get_by_role("button", name="追加", exact=True)).to_be_disabled()
         return
     await expect(section.get_by_label("アカウント", exact=True)).to_have_value(_ACCOUNT)
@@ -184,7 +191,8 @@ async def test_permission_draft_survives_host_switch_and_remote_unknown_has_no_c
     account = section.get_by_label("アカウント", exact=True)
     until = section.get_by_label("終了（このブラウザーの時刻）")
     await expect(account).to_have_value("synthetic-codex")
-    await expect(section.get_by_text("詳細: アカウントの直接入力")).to_be_hidden()
+    await expect(section.get_by_text("詳細: アカウントの直接入力", exact=True)).to_be_hidden()
+    await expect(section).not_to_contain_text("atk config usage --refresh")
     await section.get_by_label("リセット前の猶予").select_option("2")
     await section.get_by_role("button", name="次の週次リセットの2日前まで").click()
     await section.get_by_label("回数").fill("7")
@@ -196,8 +204,8 @@ async def test_permission_draft_survives_host_switch_and_remote_unknown_has_no_c
     await section.get_by_text("許可を追加", exact=True).click()
     assert await account.locator("option").count() == 0
     remote_account_visible = await account.is_visible()
-    await expect(section).to_contain_text("atk config usage --refresh")
-    await section.get_by_text("詳細: アカウントの直接入力").click()
+    await expect(section).not_to_contain_text("atk config usage --refresh")
+    await section.get_by_text("詳細: アカウントの直接入力", exact=True).click()
     await expect(section.get_by_label("アカウントを直接入力")).to_be_visible()
     await host.select_option("")
     await expect(account).to_have_value("synthetic-codex")
@@ -284,7 +292,10 @@ async def test_codex_suggestion_uses_observation_not_display_time(
         usage_observation.observe(windows, setting_signature="synthetic", active_seconds=0)
     section = await _open_add(screen_harness)
     editor = section.locator('details[data-editor="usage_reset_permissions:"]')
-    await expect(editor).to_contain_text(reason)
+    if case == "unobserved":
+        await expect(editor).not_to_contain_text(reason)
+    else:
+        await expect(editor).to_contain_text(reason)
     apply = editor.get_by_role("button", name="この提案を入力")
     if proposed:
         await apply.click()
@@ -328,3 +339,38 @@ async def test_existing_permission_keeps_legacy_scope_and_shows_period_states(sc
     assert [saved[0][field] for field in ("id", "account", "scope")] == [
         entries[0][field] for field in ("id", "account", "scope")
     ]
+
+
+@pytest.mark.usefixtures("isolated_permissions")
+@pytest.mark.asyncio(loop_scope="session")
+async def test_open_permission_observes_quota_without_discarding_draft(
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempts = 0
+
+    def refresh(**_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return ["Codex: 一時失敗"]
+        usage_settings.record_metadata(
+            "codex",
+            {
+                "account": "observed",
+                "permission_account": "observed",
+                "weekly_window": {"window_id": "codex:secondary", "resets_at": time.time() + 3 * _DAY},
+            },
+        )
+        return []
+
+    monkeypatch.setattr(usage_refresh, "refresh", refresh)
+    section = await _open_add(screen_harness)
+    count = section.get_by_label("回数")
+    await count.fill("2")
+    page = screen_harness.page
+    await expect(page.locator("#update-status")).to_be_hidden()
+    await expect(section.get_by_label("アカウント", exact=True)).to_have_value("observed")
+    await expect(section.get_by_role("button", name="次の週次リセットの1日前まで")).to_be_enabled()
+    await expect(count).to_have_value("2")
+    assert attempts == 2
+    await expect(page.locator("#update-status")).to_be_hidden()

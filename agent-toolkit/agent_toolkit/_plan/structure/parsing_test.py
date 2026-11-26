@@ -103,10 +103,10 @@ def test_human_readable_main_rejects_internal_identifiers(mutation: str, expecte
 
 
 def test_bug_file_structure_rejects_record_line_without_text() -> None:
-    content = _BUG_FILE_CONTENT.replace(_plan_fixture.cause_record_line("処置"), "- **処置**: ")
+    content = _BUG_FILE_CONTENT.replace(_plan_fixture.cause_record_line("対策"), "- **対策**: ")
     errors = plan_sections.check_bug_file_structure(content)
-    content_of_action = _plan_format.CAUSE_RECORD_REQUIRED_LABELS["処置"]
-    assert errors == [f"`### {_plan_fixture.BUG_UNIT_H3}`: `処置:`の行に本文が無い（同じ行に書く内容: {content_of_action}）"]
+    content_of_action = _plan_format.CAUSE_RECORD_REQUIRED_LABELS["対策"]
+    assert errors == [f"`### {_plan_fixture.BUG_UNIT_H3}`: `対策:`の行に本文が無い（同じ行に書く内容: {content_of_action}）"]
 
 
 def test_bug_file_structure_accepts_legacy_standalone_table() -> None:

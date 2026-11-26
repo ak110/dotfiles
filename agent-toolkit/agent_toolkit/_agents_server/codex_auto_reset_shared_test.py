@@ -1,0 +1,192 @@
+"""共有した許可の回数を、private-notesの独立した2 cloneの合計で守ることを検証する。  pyfltr: allow-comment
+
+外部の消費は`codex_auto_reset_test`の模擬RPCで置き換え、実在アカウントとcreditには接続しない。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import pathlib
+import subprocess
+
+import pytest
+
+from agent_toolkit._agents_server import codex_auto_reset
+from agent_toolkit._agents_server.codex_auto_reset import check_auto_reset
+from agent_toolkit._agents_server.codex_auto_reset_test import _RPC, _permission
+from agent_toolkit._atk import config_settings, reset_reservations
+from agent_toolkit._atk.wi import sync
+from agent_toolkit._testing import git_repository
+
+
+@pytest.fixture(name="clones")
+def _clones(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    seed = git_repository.init_repository(tmp_path / "seed", initial_branch="main", origin=str(remote), files={".gitkeep": ""})
+    git_repository.commit_all(seed, "initialize")
+    git_repository.run_git(seed, "push", "-u", "origin", "main")
+    clones = []
+    for name in ("a", "b"):
+        clone = tmp_path / f"notes-{name}"
+        git_repository.run_git(tmp_path, "clone", str(remote), str(clone))
+        git_repository.run_git(clone, "config", "user.name", name)
+        git_repository.run_git(clone, "config", "user.email", f"{name}@example.invalid")
+        clones.append(clone)
+    return clones[0], clones[1], remote
+
+
+def _publish_permissions(notes: pathlib.Path, permissions: list[dict], *, issued: bool = True) -> None:
+    value = json.dumps(permissions)
+    if issued:
+        value = reset_reservations.mark_new_permissions({}, value)
+    path = notes / config_settings.SHARED_SETTINGS_FILENAME
+    path.write_text(json.dumps({reset_reservations.PERMISSIONS: value}), encoding="utf-8")
+    git_repository.commit_all(notes, "test: register permission")
+    git_repository.run_git(notes, "push")
+
+
+def _upstream_records(clone: pathlib.Path) -> list[dict]:
+    git_repository.run_git(clone, "fetch")
+    text = git_repository.git_output(clone, "show", f"@{{u}}:{reset_reservations.FILENAME}")
+    return json.loads(text)["reservations"]
+
+
+@pytest.mark.asyncio
+async def test_count_is_shared_across_clones(tmp_path, monkeypatch, clones):
+    """片方の端末で消費した回数は、他方の端末の許可の残りから引かれる。  pyfltr: allow-comment"""
+    notes_a, notes_b, _ = clones
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    permissions = [_permission(count=1)]
+    _publish_permissions(notes_a, permissions)
+    _pulled(notes_b)
+    rpc_a, rpc_b = _RPC(used=100), _RPC(used=100)
+    result = await check_auto_reset(rpc_a, state_dir=tmp_path / "state-a", permissions=permissions, shared_notes=notes_a)
+    assert result.reset_confirmed
+    assert [item["status"] for item in _upstream_records(notes_a)] == ["success"]
+    assert not codex_auto_reset.has_permission(
+        permissions, rpc_b.account["account"], None, state_dir=tmp_path / "state-b", shared_notes=_pulled(notes_b)
+    )
+    result = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", permissions=permissions, shared_notes=notes_b)
+    assert not result.reset_confirmed
+    assert not rpc_b.consumptions
+
+
+def _pulled(clone: pathlib.Path) -> pathlib.Path:
+    git_repository.run_git(clone, "pull", "--ff-only")
+    return clone
+
+
+@pytest.mark.asyncio
+async def test_parallel_hosts_never_exceed_count(tmp_path, monkeypatch, clones):
+    """両端末が古い台帳で判定しても、共有先の受理順で後の予約が拒否され、消費は送られない。  pyfltr: allow-comment"""
+    notes_a, notes_b, _ = clones
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    permissions = [_permission(count=1)]
+    _publish_permissions(notes_a, permissions)
+    _pulled(notes_b)
+    rpc_a, rpc_b = _RPC(used=100), _RPC(used=100)
+    rpc_a.release = asyncio.Event()
+    task = asyncio.create_task(
+        check_auto_reset(rpc_a, state_dir=tmp_path / "state-a", permissions=permissions, shared_notes=notes_a)
+    )
+    await rpc_a.entered.wait()
+    # 端末bは端末aの予約を取り込む前の作業ツリーで判定を始める。  # pyfltr: allow-comment
+    monkeypatch.setattr(sync, "pull", lambda _notes: None)
+    result_b = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", permissions=permissions, shared_notes=notes_b)
+    rpc_a.release.set()
+    result_a = await task
+    assert result_a.reset_confirmed
+    assert not result_b.reset_confirmed
+    assert "予約できない" in result_b.diagnostic
+    assert not rpc_b.consumptions
+    assert git_repository.git_output(notes_b, "status", "--porcelain") == ""
+
+
+@pytest.mark.asyncio
+async def test_unsynced_reservation_does_not_consume(tmp_path, monkeypatch, clones):
+    """共有先が予約を受理したと確認できない間は、消費を送らない。  pyfltr: allow-comment"""
+    notes_a, _, _ = clones
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    _publish_permissions(notes_a, [_permission()])
+    git = sync.run_git
+
+    def fail_push(args, cwd, **kwargs):
+        if args[:1] == ["push"]:
+            raise subprocess.CalledProcessError(1, ["git", "push"])
+        return git(args, cwd, **kwargs)
+
+    monkeypatch.setattr(sync, "run_git", fail_push)
+    rpc = _RPC(used=100)
+    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", permissions=[_permission()], shared_notes=notes_a)
+    assert not result.reset_confirmed
+    assert not rpc.consumptions
+    assert not list((tmp_path / "state-a" / "agents-server" / "codex-auto-reset").glob("*.json"))
+    assert git_repository.git_output(notes_a, "rev-list", "--count", "@{u}..HEAD") == "0"
+
+
+@pytest.mark.asyncio
+async def test_lost_response_retries_with_same_key_and_keeps_count(tmp_path, monkeypatch, clones):
+    """応答を失った消費は成功扱いせず、予約を数えたまま同じ冪等キーで再送する。  pyfltr: allow-comment"""
+    notes_a, notes_b, _ = clones
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    permissions = [_permission(count=1)]
+    _publish_permissions(notes_a, permissions)
+    rpc = _RPC(used=100)
+    rpc.outcomes = [TimeoutError("lost"), "alreadyRedeemed"]
+    with pytest.raises(TimeoutError):
+        await check_auto_reset(rpc, state_dir=tmp_path / "state-a", permissions=permissions, shared_notes=notes_a)
+    assert [item["status"] for item in _upstream_records(notes_a)] == ["pending"]
+    # 応答不明の予約は他の端末でも回数に数える。  # pyfltr: allow-comment
+    rpc_b = _RPC(used=100)
+    result_b = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", permissions=permissions, shared_notes=notes_b)
+    assert not result_b.reset_confirmed and not rpc_b.consumptions
+    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", permissions=permissions, shared_notes=notes_a)
+    assert result.reset_confirmed
+    first, second = rpc.consumptions
+    assert first["idempotencyKey"] == second["idempotencyKey"]
+    assert [item["status"] for item in _upstream_records(notes_a)] == ["success"]
+
+
+@pytest.mark.asyncio
+async def test_rejected_consumption_releases_reservation(tmp_path, monkeypatch, clones):
+    notes_a, _, _ = clones
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    _publish_permissions(notes_a, [_permission()])
+    rpc = _RPC(used=100)
+    rpc.outcomes = ["noCredit"]
+    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", permissions=[_permission()], shared_notes=notes_a)
+    assert not result.reset_confirmed
+    assert [item["status"] for item in _upstream_records(notes_a)] == ["closed"]
+    assert reset_reservations.used(_upstream_records(notes_a), "permitted-period") == 0
+
+
+@pytest.mark.parametrize("source", ["a", "b"])
+@pytest.mark.parametrize("status", ["unused", "success", "pending"])
+@pytest.mark.asyncio
+async def test_legacy_permission_never_creates_a_new_consumption(tmp_path, monkeypatch, clones, status, source):
+    notes_a, notes_b, _ = clones
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    permissions = [_permission()]
+    rpc_a, rpc_b = _RPC(used=100), _RPC(used=100)
+    state_a, state_b = tmp_path / "state-a", tmp_path / "state-b"
+    if status == "success":
+        assert (await check_auto_reset(rpc_a, state_dir=state_a, permissions=permissions)).reset_confirmed
+    elif status == "pending":
+        rpc_a.outcomes = [TimeoutError("lost"), "alreadyRedeemed"]
+        with pytest.raises(TimeoutError):
+            await check_auto_reset(rpc_a, state_dir=state_a, permissions=permissions)
+
+    _publish_permissions(notes_a if source == "a" else notes_b, permissions, issued=False)
+    result = await check_auto_reset(rpc_b, state_dir=state_b, permissions=permissions, shared_notes=notes_b)
+    assert not result.reset_confirmed and not rpc_b.consumptions
+    assert "旧端末" in result.diagnostic
+    if status == "pending":
+        result = await check_auto_reset(rpc_a, state_dir=state_a, permissions=permissions, shared_notes=notes_a)
+        assert result.reset_confirmed
+        assert len({attempt["idempotencyKey"] for attempt in rpc_a.consumptions}) == 1
+        assert [item["status"] for item in _upstream_records(notes_a)] == ["success"]
+    else:
+        rpc_a.limits["rateLimits"]["secondary"]["resetsAt"] += 1
+        result = await check_auto_reset(rpc_a, state_dir=state_a, permissions=permissions, shared_notes=notes_a)
+        assert not result.reset_confirmed and len(rpc_a.consumptions) == (status == "success")

@@ -4,26 +4,7 @@ from agent_toolkit._common.process_loop_session import (
     claim_process_loop_session,
     is_identified_process_loop_session,
     is_process_loop_session,
-    is_report_opening,
 )
-
-
-@pytest.mark.parametrize(
-    ("opening", "expected"),
-    [
-        ("2026年11月23日のdotfilesの作業結果について、この対応で問題ありませんか？", True),
-        # 実例: 実行日をISO形式で書いた報告で終了判定が働かず、巡回が止まった。  # pyfltr: allow-comment
-        (
-            "\n2026-11-24のdotfilesほか6リポジトリの巡回の作業結果について、この対応で問題ありませんか？\n本文",
-            True,
-        ),
-        ("設定を変更しました。この対応で問題ありませんか？", False),
-        ("本文\n2026-11-24のdotfilesの作業結果について、この対応で問題ありませんか？", False),
-        ("", False),
-    ],
-)
-def test_is_report_opening(opening: str, expected: bool) -> None:
-    assert is_report_opening(opening) is expected
 
 
 @pytest.mark.parametrize(

@@ -41,32 +41,20 @@ fetchHandler = async url => {
 };
 await loadEntries({announce: true});
 const shown = {
-  message: elements['operation-notice-message'].textContent,
-  hidden: elements['operation-notice'].hidden
+  message: elements['update-status'].querySelector('[role=status]').textContent,
+  hidden: elements['update-status'].hidden
 };
-elements['operation-notice-close-button'].focus();
-elements['operation-notice-close-button'].listeners.click();
 process.stdout.write(JSON.stringify({
   rows: entries.map(entry => entry.filename),
   status: elements['result-status'].textContent,
-  shown,
-  cleared: {
-    message: elements['operation-notice-message'].textContent,
-    hidden: elements['operation-notice'].hidden,
-    focused
-  }
+  shown
 }));
 """
     )
     assert result == {
         "rows": [],
         "status": "一致する項目はありません",
-        "shown": {"message": "［WI / node-test / /notes / 一覧取得］検索に失敗", "hidden": False},
-        "cleared": {
-            "message": "［WI / node-test / /notes / 一覧取得］検索に失敗",
-            "hidden": True,
-            "focused": "refresh-button",
-        },
+        "shown": {"message": "WI一覧を取得できません。", "hidden": False},
     }
 
 

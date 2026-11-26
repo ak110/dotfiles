@@ -114,9 +114,11 @@ async def test_navigation_ignores_delayed_detail_and_search_results(
         await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
         await page.locator("#plans-filter").fill("初回")
         await asyncio.wait_for(delayed.requested.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#search-status")).to_have_text("検索中")
         await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
         await page.locator("#sessions .session-item").first.wait_for(state="visible")
         await delayed.finish(page)
+        await playwright.async_api.expect(page.locator("#update-status")).to_be_hidden()
         await page.unroute("**/api/plans/search?*", delayed)
 
     for succeeds in (True, False):
@@ -196,11 +198,10 @@ async def test_detail_loading_keeps_list_and_navigation_positions(browser_harnes
         await asyncio.wait_for(started.wait(), timeout=5)
         await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
         spinner = await page.locator("#loading-indicator").bounding_box()
-        filters = await page.locator("#screen-wi .filters").bounding_box()
-        pane = await page.locator("#screen-wi .entry-pane").bounding_box()
-        assert spinner is not None and filters is not None and pane is not None
-        spinner_center = spinner["x"] + spinner["width"] / 2
-        assert filters["x"] + filters["width"] <= spinner_center <= pane["x"]
+        list_toolbar = await page.locator("#screen-wi .entry-columns").bounding_box()
+        assert spinner is not None and list_toolbar is not None
+        assert list_toolbar["y"] <= spinner["y"] < before_row["y"]
+        assert list_toolbar["x"] <= spinner["x"] < list_toolbar["x"] + list_toolbar["width"]
 
         spinner_visible = await page.locator("#loading-indicator").evaluate(
             "element => { const style = getComputedStyle(element, '::before'); "
@@ -302,7 +303,7 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
     ),
 )
 @pytest.mark.asyncio(loop_scope="session")
-@pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
+@pytest.mark.parametrize("width", [1920, 1440, 1280, 900])
 async def test_navigation_links_match_on_all_screens(screen_harness: _ScreenHarness, width: int) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": width, "height": 800})
@@ -331,6 +332,20 @@ async def test_navigation_links_match_on_all_screens(screen_harness: _ScreenHarn
         ).to_have_text(name)
         clicked[path] = await links.evaluate_all(_NAV_LINK_METRICS)
     assert clicked == direct
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_narrow_navigation_select_changes_screen_without_reload(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 390, "height": 800})
+    await page.goto(screen_harness.base_url + "/")
+    await page.evaluate("window.testPageIdentity = 'same-document'")
+    picker = page.get_by_role("combobox", name="画面を切り替える")
+    for name in ("plans", "agents", "sessions", "usage", "settings", "wi"):
+        await picker.select_option(name)
+        await playwright.async_api.expect(picker).to_have_value(name)
+        await playwright.async_api.expect(page.locator(f"#screen-{name}")).to_be_visible()
+        assert await page.evaluate("window.testPageIdentity") == "same-document"
 
 
 @pytest.mark.cpu_limit(

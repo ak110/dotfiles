@@ -17,10 +17,11 @@ from typing import Any
 
 from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
-from agent_toolkit._common import file_lock, plugin_environment, runtime_environment, windows_job
+from agent_toolkit._common import delegated_session, file_lock, plugin_environment, runtime_environment, windows_job
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.diagnostic_redaction import read_diagnostic_tail
 from agent_toolkit._common.next_action import report, with_next_action
+from agent_toolkit._common.service_code_identity import code_digest
 
 
 def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generation: str) -> None:
@@ -100,13 +101,7 @@ def _modules(directory: str) -> Iterator[tuple[str, list[int]]]:
 
 
 def _code_digest(root: pathlib.Path, version: str, paths: list[pathlib.Path]) -> str:
-    digest = hashlib.sha256(version.encode("utf-8"))
-    for path in paths:
-        name = str(path.relative_to(root)).encode("utf-8")
-        content = path.read_bytes()
-        digest.update(len(name).to_bytes(8, "big") + name)
-        digest.update(len(content).to_bytes(8, "big") + content)
-    return digest.hexdigest()
+    return code_digest(version, ((path.relative_to(root), path.read_bytes()) for path in paths))
 
 
 def _saved_identities(path: pathlib.Path) -> dict[str, str]:
@@ -160,9 +155,10 @@ def ensure_service(
     """
     publish = caller.environment.get(DEFER_PUBLISH_ENV) != "1"
     directory = service_transport.namespace(caller)
-    generation, version = code_identity(root, directory)
+    source = root
+    requested, version = code_identity(source, directory)
     registry = GenerationRegistry(directory)
-    target = registry.reserve(generation, root, version)
+    target = registry.reserve(requested, source, version)
     generation = target["generation"]
     root = pathlib.Path(target["root"])
     ready = directory / f"{generation}.json"
@@ -178,6 +174,8 @@ def ensure_service(
                 if service_transport.process_alive(record["process"]):
                     return service_rpc.request_sync(record, "publish", {}) if publish else record
                 exited = record["process"]
+            if generation == requested:
+                root = source
             python = plugin_environment.prepared_python(root, caller.environment) or python or pathlib.Path(sys.executable)
             env = {
                 key: value
@@ -540,13 +538,17 @@ def forward(
     environment: Mapping[str, str] | None = None,
 ) -> int:
     """schemaを定義せず、現行受付への切替と認証済みJSONの中継だけを行う。"""
+    root = root or pathlib.Path(__file__).resolve().parents[2]
+    # 委譲先との版の差を管理サービスが判定できるよう、接続元のCLIの配布物を渡す。継承した値は上書きする。pyfltr: allow-comment
     caller = runtime_environment.CallerContext(
-        dict(os.environ if environment is None else environment),
+        {
+            **(os.environ if environment is None else environment),
+            delegated_session.CALLER_PLUGIN_ROOT_ENV: str(root),
+        },
         pathlib.Path.cwd(),
         connection_id="mcp-" + uuid.uuid4().hex,
         parent_settings=_parent_settings(),
     )
-    root = root or pathlib.Path(__file__).resolve().parents[2]
     bridge = _Forwarder(caller)
     registry = GenerationRegistry(service_transport.namespace(caller))
     previous_reconnect = None

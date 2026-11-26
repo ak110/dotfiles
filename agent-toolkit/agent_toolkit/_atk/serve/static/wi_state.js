@@ -1,10 +1,11 @@
 // WI画面の状態・状態集合と要素の識別。
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
-export const KIND_LABELS = {awi: 'awi', uwi: 'uwi', unknown: 'unknown'};
+export const KIND_LABELS = {awi: '作業', uwi: 'ユーザー向け', unknown: '種別不明'};
 // 確認状態の値ごとの表示名。キーを持たない項目は表示しない。
 export const STATE_LABELS = {
-  inbox: 'inbox', processing: 'processing', hold: 'hold',
-  adopted: 'adopted', rejected: 'rejected'
+  inbox: '受信', processing: '処理中', hold: '保留', adopted: '採用', rejected: '却下',
+  cooldown: '再開待ち', answered: '回答済み', 'needs-verify': '確認待ち', unknown: '不明',
+  active: '未完了', processable: '受信・処理中', all: 'すべて'
 };
 export const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
 export const MUTABLE_STATES = new Set(['inbox', 'processing', 'hold']);

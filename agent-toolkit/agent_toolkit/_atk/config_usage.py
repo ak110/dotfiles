@@ -6,14 +6,17 @@ import argparse
 import datetime
 import json
 import os
+import sys
 import time
 from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk import config_settings, help_text
+from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import claude_usage_limit, registry_index, session_registry, usage_observation, usage_settings
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.usage_settings import deadline, read_metadata, read_settings, settings_path, temporary_settings
 
 MODEL_ORDER_POLICY = "候補は工程別モデル設定の順に試す。利用枠の観測は残量表示とreset判断に使い、候補の順序は変更しない。"
@@ -29,14 +32,30 @@ def allowed_temporary_key(key: str) -> bool:
     }
 
 
-def update_temporary(key: str | None, value: str | None, until: str | None) -> None:
+def update_temporary(key: str | None, value: str | None, until: str | None) -> tuple[str | None, tuple[str, ...]] | None:
     if key is not None:
         if not allowed_temporary_key(key):
-            raise ValueError("一時指定できるのは工程モデル・接続使用順・速度・上限待機方針だけ")
+            raise ActionableError(
+                f"{key}は一時指定の対象外",
+                next_action="一時指定に使えるキーを `atk config temporary set --help` で確認する",
+            )
         if value is not None:
-            config_settings.validate_mutable_setting(key, value)
+            try:
+                config_settings.validate_mutable_setting(key, value)
+            except ValueError as error:
+                raise ActionableError(
+                    f"{key}の一時指定値が不正: {error}",
+                    next_action=f"値を直して `atk config temporary set {key} <VALUE>` を再実行する",
+                ) from error
     if until is not None:
-        deadline(until)
+        try:
+            deadline(until)
+        except ValueError as error:
+            raise ActionableError(
+                "一時指定の期限は時差付きISO 8601の日時で指定する",
+                next_action="例: --until 2030-01-01T12:00:00+09:00 を付けて `atk config temporary set` を再実行する",
+            ) from error
+    changed_deadline = None
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.with_suffix(".lock").open("a+", encoding="utf-8") as lock:
@@ -56,11 +75,18 @@ def update_temporary(key: str | None, value: str | None, until: str | None) -> N
                     state.pop("until", None)
             else:
                 values = temporary_settings()
+                previous_until = state.get("until")
+                others = tuple(sorted(values.keys() - {key}))
+                old_time = deadline(previous_until) if isinstance(previous_until, str) and others else None
+                new_time = deadline(until) if until is not None else None
+                if others and old_time != new_time:
+                    changed_deadline = (previous_until, others)
                 values[key] = config_settings.normalize_setting(key, value)
                 state.update(values=values, until=until)
             atomic_write(path, json.dumps(state, ensure_ascii=False) + "\n")
         finally:
             release_lock(lock)
+    return changed_deadline
 
 
 def profile_windows(observed: dict[str, Any]) -> list[dict[str, Any]]:
@@ -171,6 +197,7 @@ def reset_editor_snapshot(
 ) -> dict[str, Any]:
     claude = read_metadata("claude")
     codex = read_metadata("codex")
+    failures = state.get("refresh_failures", []) if state.get("refresh_context") == usage_settings.context_id() else []
     return {
         "accounts": {
             "claude": {"account": claude.get("account"), "plan": claude.get("contract")},
@@ -178,6 +205,10 @@ def reset_editor_snapshot(
         },
         "claude_inventory": state.get("claude_reset_inventory", []),
         "codex_weekly": codex.get("weekly_window"),
+        "refresh_failed": bool(failures),
+        "failed_engines": [
+            engine for engine in ("codex", "claude") if any(failure.lower().startswith(f"{engine}:") for failure in failures)
+        ],
         "windows": display_windows(windows, history),
     }
 
@@ -213,11 +244,13 @@ def build_parser(sub: Any) -> None:
         **help_text.HELP["atk config temporary clear"],
     )
     clear.add_argument("key", nargs="?", help="このキーの一時指定だけを解除する。省略時は全て解除する。")
-    help_text.add_command(
+    show = help_text.add_command(
         actions,
         "show",
         **help_text.HELP["atk config temporary show"],
     )
+    for command in (set_, clear, show):
+        command.add_argument("--json", action="store_true", help="一時指定の状態をJSONで表示する")
 
 
 def _display_scope(scope: str) -> str:
@@ -245,17 +278,28 @@ def dispatch(
     refresh: Callable[..., None] | None,
 ) -> None:
     if args.config_subcommand == "temporary":
+        change = None
         if args.temporary_action == "set":
-            update_temporary(args.key, args.value, args.until)
+            change = update_temporary(args.key, args.value, args.until)
         elif args.temporary_action == "clear":
             update_temporary(args.key, None, None)
         state = read_settings()
-        print(
-            json.dumps(
-                {"temporary": {key: state.get(key) for key in ("values", "until")}, "effective": temporary_settings()},
-                ensure_ascii=False,
-            )
-        )
+        effective = temporary_settings()
+        temporary = {key: state.get(key) for key in ("values", "until")}
+        if args.json or not is_human_terminal(sys.stdout):
+            print(json.dumps({"temporary": temporary, "effective": effective}, ensure_ascii=False))
+        elif temporary["values"]:
+            if change is not None:
+                old_until, affected = change
+                print(f"既存の一時指定の期限を変更: {old_until or '明示解除まで'} → {args.until or '明示解除まで'}")
+                for key in affected:
+                    print(f"  対象: {key}")
+            print(f"一時指定の期限: {temporary['until'] or '明示解除まで'}")
+            for key, value in sorted(temporary["values"].items()):
+                status = "適用期間内" if key in effective else "期限切れ"
+                print(f"{key}: {value}（{status}）")
+        else:
+            print("一時指定はない。通常設定を使う。")
         return
     if args.set_claude_reset_inventory is not None:
         usage_settings.save_claude_reset_inventory(args.set_claude_reset_inventory)

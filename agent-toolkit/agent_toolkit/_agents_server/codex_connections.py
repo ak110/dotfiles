@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import typing
 import uuid
@@ -19,6 +20,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.codex_instructions import (
     _current_service_tier,
+    _send_with_service_tier,
     codex_instruction_fields,
 )
 from agent_toolkit._agents_server.codex_protocol import (
@@ -31,7 +33,7 @@ from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState, begin_reply
 from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk.usage_limit_policy import should_wait
-from agent_toolkit._common import session_record_paths, startup_features
+from agent_toolkit._common import codex_fast_mode, session_record_paths, startup_features
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -68,7 +70,14 @@ class CodexConnectionsMixin:
                 if session.interrupt_requested:
                     return False
                 session.codex_model_provider = candidate
-                await self._resume_thread(session, client, self._writer_session_ids.get(session.session_id))
+                await self._resume_thread(
+                    session,
+                    client,
+                    self._writer_session_ids.get(session.session_id),
+                    auth=selection.auth,
+                    quota_workspace=selection.quota_workspace,
+                    auth_observed_at=selection.auth_observed_at,
+                )
             except JsonRpcResponseError as exc:
                 session.codex_model_provider = original
                 _LOG.info(
@@ -124,11 +133,15 @@ class CodexConnectionsMixin:
         session: SessionState,
         client: Any,
         writer_session_id: str | None = None,
+        *,
+        auth: dict[str, Any] | None = None,
+        quota_workspace: str | None = None,
+        auth_observed_at: datetime.datetime | None = None,
     ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
         if archive := self._archive_tasks.get(session.session_id):
             await asyncio.shield(archive)
-        await self._apply_connection_order(session, client)
+        selection = await self._apply_connection_order(session, client)
         try:
             target = await self._compatible_resume_provider(session, client)
         except (AppServerError, TimeoutError, OSError) as error:
@@ -136,15 +149,23 @@ class CodexConnectionsMixin:
                 "Codexの再開条件を取得できず、再開先との状態互換性を確認できない"
             ) from error
         subscription: bool | None = await run_file_operation(codex_connection.subscription_provider_for, target) is not None
-        if not codex_providers.has_provider_configuration() and target in (None, "openai"):
-            subscription = None
+        if not codex_providers.has_provider_configuration() and target == "openai":
+            subscription = target == "openai"
         resume_params: dict[str, Any] = {
             "threadId": session.session_id,
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
-            "serviceTier": await _current_service_tier(client.request, session.cwd, subscription=subscription),
         }
+        decision = await _current_service_tier(
+            client.request,
+            session.cwd,
+            subscription=subscription,
+            provider=target,
+            auth=selection.auth if selection is not None else auth,
+            quota_workspace=selection.quota_workspace if selection is not None else quota_workspace,
+            auth_observed_at=selection.auth_observed_at if selection is not None else auth_observed_at,
+        )
         if session.model is not None:
             resume_params["model"] = session.model
         resume_params["modelProvider"] = target
@@ -162,7 +183,7 @@ class CodexConnectionsMixin:
         resume_params.update(await run_file_operation(codex_instruction_fields, session.launch_kind))
         if owner_session_id is not None and writer_session_id is not None:
             await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
-        resume_response = await self._request_thread_resume(client, resume_params)
+        resume_response = await self._request_thread_resume(client, resume_params, decision=decision)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
             raise AppServerError("thread/resume returned an unexpected thread.id")
@@ -170,6 +191,8 @@ class CodexConnectionsMixin:
             "modelProvider"
         ) != target:
             raise AppServerError("thread/resume did not confirm the requested connection")
+        if session.codex_state_provider is not None and session.codex_state_provider != target:
+            await codex_fast_mode.invalidate_provider(session.codex_state_provider)
         session.codex_state_provider = target
         return writer_session_id
 
@@ -179,7 +202,9 @@ class CodexConnectionsMixin:
         # 「agent-toolkit/agent_toolkit/_agents_server/codex_resume_state.py：会話状態の生成先：2026年10月23日」にある。
         target = session.codex_model_provider
         if target is None:
-            effective = await client.request("config/read", {"cwd": session.cwd, "includeLayers": False})
+            effective = await codex_fast_mode.read_with_retry(
+                client.request, "config/read", {"cwd": session.cwd, "includeLayers": False}
+            )
             configuration = effective.get("config")
             if not isinstance(configuration, dict):
                 raise codex_resume_state.IncompatibleResumeError("Codexの再開先設定を取得できず、状態互換性を確認できない")
@@ -219,10 +244,20 @@ class CodexConnectionsMixin:
         session.touch()
         await self._notify_waiters()
 
-    async def _request_thread_resume(self: CodexManager, client: Any, params: dict[str, Any]) -> dict[str, Any]:
+    async def _request_thread_resume(
+        self: CodexManager, client: Any, params: dict[str, Any], *, decision: codex_fast_mode.FastTier | None = None
+    ) -> dict[str, Any]:
         """unsubscribe後の閉鎖と再開が競合した場合だけ、閉鎖通知を待って再送する。"""
         if "baseInstructions" not in params:
             params = {**params, **await run_file_operation(codex_instruction_fields)}
+
+        async def send_resume() -> dict[str, Any]:
+            if decision is None:
+                return await client.request("thread/resume", params)
+            return await _send_with_service_tier(
+                client, "thread/resume", params, decision, provider=params.get("modelProvider"), record_start=True
+            )
+
         thread_id = params["threadId"]
         closed = asyncio.Event()
         self._resume_close_events[thread_id] = closed
@@ -240,7 +275,7 @@ class CodexConnectionsMixin:
                                 f"`codex unarchive {thread_id}` で解除して再送してください"
                             ) from exc
                 try:
-                    return await client.request("thread/resume", params)
+                    return await send_resume()
                 except JsonRpcResponseError as exc:
                     if str(exc) != (
                         f"thread/resume: thread {thread_id} is closing; retry thread/resume after the thread is closed"
@@ -256,7 +291,7 @@ class CodexConnectionsMixin:
                         )
                     if not closed.is_set():
                         raise
-                return await client.request("thread/resume", params)
+                return await send_resume()
         except JsonRpcResponseError as exc:
             if exc.method == "thread/resume" and thread_id in str(exc) and "already has an active writer" in str(exc):
                 raise codex_resume_state.ThreadWriterConflictError(str(exc)) from exc
@@ -312,13 +347,14 @@ class CodexConnectionsMixin:
         )
 
     @staticmethod
-    async def _apply_connection_order(session: SessionState, client: Any) -> None:
+    async def _apply_connection_order(session: SessionState, client: Any) -> codex_providers.ProviderSelection | None:
         role = codex_connection.role_of(session.model_type)
         if not codex_connection.outside_order(
             session.codex_model_provider, role, subscription_provider=session.codex_subscription_provider
         ):
-            return
+            return None
         selection = await codex_providers.select(client.request, session.cwd, role=role)
         _LOG.info("Codex接続先を使用順の先頭へ移しました: session_id=%s provider=%s", session.session_id, selection.primary)
         session.codex_model_provider = selection.primary
         session.codex_subscription_provider = selection.primary if selection.subscription else None
+        return selection

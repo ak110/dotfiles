@@ -83,7 +83,10 @@ fetchHandler = async url => {
   if (!url.includes('/api/entries?')) throw new Error('想定外のURL: ' + url);
   return new Promise(resolve => { resolvers.push(resolve); });
 };
+setDisplayMode('search');
+elements['search-input'].value = 'old';
 const first = loadEntries();
+elements['search-input'].value = 'new';
 const second = loadEntries();
 resolvers[1]({
   ok: true, status: 200, statusText: 'OK',
@@ -116,11 +119,11 @@ process.stdout.write(JSON.stringify({
 def test_assets_discard_stale_search_error_without_overwriting_global_error() -> None:
     result = _run_node_ui(
         stale_search_script(
-            "let rejectFallback;",
-            "new Promise((_resolve, reject) => { rejectFallback = reject; })",
+            "let finishFallback;",
+            "new Promise(resolve => { finishFallback = resolve; })",
         )
         + """elements['operation-notice'].textContent = '後発要求のエラー';
-rejectFallback(new Error('失効した検索エラー'));
+finishFallback({ok: false, status: 403, json: async () => ({error: '失効した検索エラー'})});
 await oldRequest;
 process.stdout.write(JSON.stringify({
   rows: entries.map(entry => entry.filename),
@@ -142,10 +145,10 @@ def test_assets_ignore_error_from_stale_repo_candidate_request() -> None:
     """失効した候補要求の失敗で最新候補とエラー領域を上書きしない。"""
     result = _run_node_ui(
         """
-let rejectAdopted;
+let finishAdopted;
 fetchHandler = async url => {
   if (url.endsWith('/api/repos?status=adopted')) {
-    return new Promise((_resolve, reject) => { rejectAdopted = reject; });
+    return new Promise(resolve => { finishAdopted = resolve; });
   }
   return {
     ok: true, status: 200, statusText: 'OK',
@@ -157,7 +160,7 @@ const stale = loadTargetRepos();
 await Promise.resolve();
 elements['state-filter'].value = 'active';
 await loadTargetRepos();
-rejectAdopted(new Error('旧要求の失敗'));
+finishAdopted({ok: false, status: 403, json: async () => ({error: '旧要求の失敗'})});
 await stale;
 process.stdout.write(JSON.stringify({
   candidates: elements['target-filter'].children.map(option => option.value),

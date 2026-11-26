@@ -8,31 +8,47 @@ from agent_toolkit._common import mcp_environment, proxy_environment
 def test_mcp_setting_names_follow_public_config_keys(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    def unexpected_app_server(*_args, **_kwargs):
+        pytest.fail("設定一覧でCodex app-serverを起動した")
+
+    def saved_settings() -> dict[str, bytes]:
+        directory = config_settings.config_dir()
+        if not directory.is_dir():
+            return {}
+        return {path.name: path.read_bytes() for path in directory.iterdir() if path.is_file()}
+
+    monkeypatch.setattr(config.codex_models, "with_app_server", unexpected_app_server)
     with pytest.raises(SystemExit) as exited:
         atk.main(["config", "show"])
     assert exited.value.code == 0
-    keys = {line.partition(" ")[0] for line in capsys.readouterr().out.splitlines()}
-    keys -= {"config_dir", "state_dir", "data_dir", "private_notes"}
+    baseline = capsys.readouterr().out.splitlines()
+    paths = {"config_dir", "state_dir", "data_dir", "private_notes"}
+    keys = {line.partition(" ")[0] for line in baseline} - paths
     setting_names = config.config_environment_variable_names()
     names = mcp_environment.environment_variable_names(setting_names)
     for key in keys:
         assert f"AGENT_TOOLKIT_CONFIG_{key.upper()}" in names
         config.resolve_mutable_setting(key)
-    legacy_labels = {
-        **dict.fromkeys(config_settings.RETIRED_CONNECTION_KEYS, "旧接続設定"),
-        **dict.fromkeys(config_settings.RETIRED_RESEARCH_KEYS, "旧調査設定"),
-    }
     for name in setting_names:
         key = name.removeprefix("AGENT_TOOLKIT_CONFIG_").lower()
-        if key in legacy_labels:
+        if key in config_settings.RETIRED_CONNECTION_KEYS:
             assert name in names
             assert key not in keys
-            monkeypatch.setenv(name, "legacy-value")
-            with pytest.raises(SystemExit) as exited:
-                atk.main(["config", "show"])
+            before = saved_settings()
+            with monkeypatch.context() as legacy:
+                legacy.setenv(name, "legacy-value")
+                with pytest.raises(SystemExit) as exited:
+                    atk.main(["config", "show"])
+            shown = capsys.readouterr()
+            affected = keys.intersection(config_settings.RETIRED_CONNECTION_KEYS[key])
             assert exited.value.code == 2
-            assert legacy_labels[key] in capsys.readouterr().err
-            monkeypatch.delenv(name)
+            assert "旧接続設定" in shown.err and name in shown.err
+            if key == "claude_api_env_file":
+                assert shown.out.splitlines() == baseline
+            else:
+                assert affected
+                assert {line.partition(" ")[0] for line in shown.out.splitlines()} - paths == keys - affected
+            assert saved_settings() == before
         elif key in config_settings.RETIRED_FIXED_KEYS or key in config_settings.LEGACY_REMOTE_HOSTS_KEYS:
             assert name in names
             assert key not in keys
@@ -56,14 +72,26 @@ def test_mcp_setting_names_follow_public_config_keys(
             with pytest.raises(ValueError, match=name):
                 config.resolve_configured_repositories()
             monkeypatch.delenv(name)
-        elif key == "usage_auto_allocation":
+        elif key in config_settings.RETIRED_RESEARCH_KEYS or key == "usage_auto_allocation":
             assert name in names
-            monkeypatch.setenv(name, "true")
-            with pytest.raises(SystemExit) as exited:
-                atk.main(["config", "show"])
-            assert exited.value.code == 2
-            assert name in capsys.readouterr().err
-            monkeypatch.delenv(name)
+            assert key not in keys
+            before = saved_settings()
+            with monkeypatch.context() as legacy:
+                legacy.setenv(name, "legacy-value")
+                with pytest.raises(SystemExit) as shown:
+                    atk.main(["config", "show"])
+                assert shown.value.code == 2
+                display = capsys.readouterr()
+                assert display.out.splitlines() == baseline
+                assert name in display.err
+                with pytest.raises(SystemExit) as rejected:
+                    atk.main(["config", "get", "codex_fast_mode"])
+                assert rejected.value.code == 2
+                err = capsys.readouterr().err
+                assert name in err
+                if key in config_settings.RETIRED_RESEARCH_KEYS:
+                    assert "旧調査設定" in err
+            assert saved_settings() == before
         else:
             assert key in keys
     assert not {"AGENT_TOOLKIT_CONFIG_STATE_DIR", "AGENT_TOOLKIT_CONFIG_PRIVATE_NOTES"} & set(names)

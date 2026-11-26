@@ -4,7 +4,6 @@
 
 import pathlib
 import subprocess
-import time
 from typing import Any
 
 import pytest
@@ -15,6 +14,7 @@ from agent_toolkit._atk.wi import background_sync
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import uwi as uwi_module
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
+from agent_toolkit._atk.wi.effect_check_test import _sync_workers as _sync_workers
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.git_fakes import _FIXED_HEAD_COMMIT
@@ -477,6 +477,7 @@ def test_add_preserves_remote_entry_and_draft(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     input_kind: str,
+    sync_workers: list[subprocess.Popen[bytes]],
 ) -> None:
     """原稿確定後に同期したremote本文と新規原稿を、ともにremoteへ保存する。"""
     origin = git_repository.init_bare_repository(tmp_path / "origin.git")
@@ -519,14 +520,20 @@ def test_add_preserves_remote_entry_and_draft(
         atk.main(["wi", "add", "--target-repo", str(target), *extra], home=tmp_path, now=_FIXED_DT)
     assert result.value.code == 0
     assert published
+    assert len(sync_workers) == 1, f"今回起動した同期worker: {len(sync_workers)}件"
+    try:
+        returncode = sync_workers[0].wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"同期workerが期限内に終了しなかった: {background_sync.read_status(notes)}")
+    assert returncode == 0, f"同期workerが異常終了した: 終了コード {returncode}"
+    sync_workers.clear()
+    status = background_sync.read_status(notes)
+    assert status.get("state") == "synced", f"同期worker終了後の状態が不正: {status}"
     saved = notes / "2024/01" / f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"
     assert draft in saved.read_text(encoding="utf-8")
-    deadline = time.monotonic() + 5
-    branch = "refs/heads/main"
-    while git_repository.git_output(notes, "rev-parse", branch) != git_repository.git_output(origin, "rev-parse", branch):
-        assert time.monotonic() < deadline, background_sync.read_status(notes)
-        time.sleep(0.02)
     assert (notes / "2026/10/remote.md").read_bytes() == (peer / "2026/10/remote.md").read_bytes()
-    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "@{u}")
+    head = git_repository.git_output(notes, "rev-parse", "HEAD")
+    assert head == git_repository.git_output(notes, "rev-parse", "@{u}"), "同期完了後も追跡refがHEADと不一致"
+    assert head == git_repository.git_output(origin, "rev-parse", "refs/heads/main"), "同期完了後もbareのrefがHEADと不一致"
     assert draft in git_repository.git_output(origin, "show", f"main:{saved.relative_to(notes).as_posix()}")
     assert git_repository.git_output(notes, "status", "--porcelain") == ""

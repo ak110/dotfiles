@@ -6,6 +6,7 @@ from agent_toolkit._atk import config_migration, config_settings
 from agent_toolkit._common import runtime_environment
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.usage_settings import temporary_settings
+lazy from agent_toolkit._atk import reset_reservations
 
 
 def connection_order(engine: str, role: str) -> tuple[str, ...]:
@@ -53,11 +54,20 @@ def mutable_setting_source(
     return "省略時の値"
 
 
-def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
+def resolve_mutable_setting(
+    key: str,
+    *,
+    fallback: str | None = None,
+    read_only: bool = False,
+    local: Mapping[str, str] | None = None,
+    local_error: ValueError | None = None,
+) -> str:
     if key not in config_settings.MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
-    config_migration.check_legacy_environment()
-    config_migration.migrate_legacy_settings()
+    if local is None:
+        config_migration.check_legacy_environment()
+    if not read_only:
+        config_migration.migrate_legacy_settings()
     env_name = config_settings.config_env_name(key)
     env_value, source_env = (
         config_migration.remote_hosts_environment()
@@ -66,11 +76,9 @@ def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
     )
     value = env_value or temporary_settings().get(key)
     if value is None:
-        value = (
-            config_settings.raw_mutable_setting(key)
-            if fallback is None
-            else config_settings.raw_mutable_setting(key, fallback=fallback)
-        )
+        if local_error is not None:
+            raise local_error
+        value = config_settings.raw_mutable_setting(key, fallback=fallback, local=local)
     try:
         config_settings.validate_mutable_setting(key, value)
     except ValueError as error:
@@ -81,4 +89,5 @@ def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
             else f"`atk config set {key} <VALUE>`で受理可能書式の値へ直して再実行する"
         )
         raise ActionableError(f"{source}の値が不正です（値: {value}）。{error}", next_action=next_action) from error
-    return config_settings.normalize_setting(key, value)
+    value = config_settings.normalize_setting(key, value)
+    return reset_reservations.public_permissions(value) if key == reset_reservations.PERMISSIONS else value

@@ -191,7 +191,11 @@ class TestEditBodyFile:
             storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
             expected_content: str | None = None,
             finalized_content: dict[str, str] | None = None,
+            allow_terminal: bool = False,
+            origin_reviews: tuple[str, ...] = (),
+            draft: str | None = None,
         ) -> bool:
+            assert not allow_terminal
             path.write_text(path.read_text(encoding="utf-8").replace("編集前", "競合側の変更"), encoding="utf-8")
             return original_edit(
                 private_notes,
@@ -202,6 +206,8 @@ class TestEditBodyFile:
                 storage=storage,
                 expected_content=expected_content,
                 finalized_content=finalized_content,
+                origin_reviews=origin_reviews,
+                draft=draft,
             )
 
         monkeypatch.setattr(mutation_content, "edit_entry_content", conflict)

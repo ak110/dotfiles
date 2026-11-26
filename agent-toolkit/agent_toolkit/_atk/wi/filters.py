@@ -30,7 +30,7 @@ def answered_matches(entry_type: str | None, text: str, answered_filters: str | 
     filters = set(_values(answered_filters))
     if "all" in filters:
         return True
-    if entry_type != WI_TYPE_UWI:
+    if entry_type != WI_TYPE_UWI or _wi_uwi_scan.is_report(text):
         return False
     answered = _wi_uwi_scan.is_uwi_answered(text)
     return (answered and "yes" in filters) or (not answered and "no" in filters)

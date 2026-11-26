@@ -157,3 +157,21 @@ def test_helper_imports_only_remote_runtime_dependencies(tmp_path: pathlib.Path)
 
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == []
+
+
+@pytest.mark.parametrize("operation", ["read", "search"])
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [(PermissionError, "permission_denied"), (FileNotFoundError, "not_found"), (TimeoutError, "timeout")],
+)
+def test_read_error_type_is_shared_by_rpc_and_single_command(monkeypatch, tmp_path, capsys, operation, error, kind):
+    _isolate(monkeypatch, tmp_path)
+
+    def fail(*_args):
+        raise error("failure")
+
+    monkeypatch.setattr(helper, f"_{operation}_payload", fail)
+    monkeypatch.setattr(sys, "argv", [str(_HELPER_PATH), operation, ""])
+    assert helper.main() == 0
+    assert json.loads(capsys.readouterr().out)["error_type"] == kind
+    assert helper._handle_request({"id": 1, "op": operation})["error_type"] == kind  # pylint: disable=protected-access

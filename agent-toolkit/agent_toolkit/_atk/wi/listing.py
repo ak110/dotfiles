@@ -192,7 +192,9 @@ def print_entries(
             state_readiness = _state_readiness(state, path.name, readiness)
             label = f"{state}/{item_kind}/{state_readiness}"
             answered = False
-            if entry_type == WI_TYPE_UWI:
+            if entry_type == WI_TYPE_UWI and _wi_uwi_scan.is_report(text):
+                label = f"{state}/report"
+            elif entry_type == WI_TYPE_UWI:
                 answered = _wi_uwi_scan.is_uwi_answered(text)
                 label = (
                     f"{state}/answered/blocked"

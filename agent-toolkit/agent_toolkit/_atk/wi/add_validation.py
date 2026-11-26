@@ -7,12 +7,27 @@ from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
+from agent_toolkit._atk.wi import origin_review
 from agent_toolkit._atk.wi import priority as _priority
 from agent_toolkit._atk.wi import uwi_body as _uwi
-from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import REPORT_TITLE_PREFIX, WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._plan import structure as _plan_structure
+
+
+def validate_report_body(body: str, choices: object) -> None:
+    """報告（`question_type: report`）の本文が質問の形を持たないかを確かめる。
+
+    新規保存と本文編集が共有する。  pyfltr: allow-comment
+    """
+    if not body.lstrip().startswith(REPORT_TITLE_PREFIX):
+        raise WebInputError("報告の1行目は`# 報告: `で始める", next_action="本文の1行目を`# 報告: <要点>`にして保存し直す")
+    if choices or any(line.strip() == "## 選択肢と帰結" for line in body.splitlines()):
+        raise WebInputError(
+            "報告は選択肢を持たない",
+            next_action="choicesと`## 選択肢と帰結`を除き、本人の判断が必要な事項は別の質問のUWIとして投入する",
+        )
 
 
 def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
@@ -272,6 +287,7 @@ _RESERVED_ADD_KEY_NEXT_ACTIONS = {
     "proposal_fingerprint": "atkによる原稿の指紋の記録に任せる",
     "github_source": "GitHubの取り込み処理による出所の記録に任せる",
     "processing_owner": "atk wi start-processingまたはtake-overで担当を記録する",
+    "detailed": "計画を作る時点で詳細化したAWIの新規投入では--detailedを指定する",
     "submitter_session": "atkによる投入元セッションの自動取得に任せる",
     "run_skill_run_id": "atkによるrun-skill実行識別子の自動取得に任せる",
     "plan_file": "通常新規投入では除き、移行・復元では--batchを使う",
@@ -352,6 +368,7 @@ def _validate_add_entries(
     scope: str | None = None,
     source: str | None = None,
     cooldown_until: str | None = None,
+    origin_reviews: tuple[str, ...] = (),
 ) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください", next_action="本文を1件以上指定して再投入する")
@@ -382,7 +399,8 @@ def _validate_add_entries(
             ),
         )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
-    for frontmatter, body in parsed_messages:
+    for message, (frontmatter, body) in zip(messages, parsed_messages, strict=True):
+        origin_review.require(message, body=body, entry_type=entry_type, reviews=origin_reviews)
         for key in _RETIRED_ADD_KEYS:
             frontmatter.pop(key, None)
         if entry_type == WI_TYPE_UWI:
@@ -395,6 +413,8 @@ def _validate_add_entries(
                     f"frontmatterから{key}を除き、{_RESERVED_ADD_KEY_NEXT_ACTIONS[key]}" for key in rejected_keys
                 ),
             )
+        if entry_type == WI_TYPE_UWI and question_type == _constants.QUESTION_TYPE_REPORT:
+            validate_report_body(body, choices)
         require_agent_awi_sections(
             body,
             frontmatter,
@@ -416,9 +436,15 @@ def _validate_add_entries(
             "choice形式には非空の選択肢が2件以上必要です",
             next_action="`--choices`で選択肢を2件以上指定するか、別のquestion_typeを選ぶ",
         )
-    if entry_type == WI_TYPE_UWI and question_type == _constants.QUESTION_TYPE_POST_APPROVAL and choices is not None:
+    if (
+        entry_type == WI_TYPE_UWI
+        and question_type in (_constants.QUESTION_TYPE_POST_APPROVAL, _constants.QUESTION_TYPE_REPORT)
+        and choices is not None
+    ):
         raise WebInputError(
-            "post-approval形式の選択肢は固定です",
+            "report形式は選択肢を持たない"
+            if question_type == _constants.QUESTION_TYPE_REPORT
+            else "post-approval形式の選択肢は固定です",
             next_action="--choicesを外して再投入する",
         )
     return parsed_messages, normalized_target_repo, normalized_cooldown

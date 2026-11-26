@@ -4,6 +4,7 @@
 起動対象: session-termination.subagent.md
 ```
 
+選定とレーンを担う主体が公開の固定操作を公開担当へ任せても自分で行っても、検証とCIを通った変更だけをユーザーへ公開できるようにするための文書である。
 作業`process-wi`の公開工程で、メインか対象リポジトリ担当が直接実行する場合と、公開担当へ委譲して検収する場合に適用する。
 公開工程の流れは`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に、委譲先の手順は`agent-toolkit:atk-mode/roles/session-termination.subagent.md`にある。
 
@@ -25,7 +26,10 @@
 <!-- 生成元: skills/atk-mode/roles/session-termination.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
-通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
+通常起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意する。
+`agents_server.start`に役割文書の`subagent_md_path`と、以下の役割固有の入力をまとめた`extra_params`を渡す。
+`mode`は省略する（明示する場合は`mode: task`）。
+全体作業契約の絶対パスは`extra_params`の外の`whole_contract_path`に渡す。
 
 - 必須入力名: `bump種別`、`引き継ぎ記録先`
 - 任意入力名: `プロジェクト固有の公開後の操作`、`延期adopt`、`公開対象のadopt済みAWI`

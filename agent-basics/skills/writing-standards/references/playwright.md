@@ -1,5 +1,6 @@
 # Playwrightテスト記述スタイル
 
+Playwrightでテストを書く担当が画面に現れる結果を互いに状態を共有しないテストで確かめ、ユーザーが再現できる操作結果から合否を判断できるようにする。
 対象の版: Playwright Test v1系とPythonのバインディング（公式のベストプラクティス <https://playwright.dev/docs/best-practices>）。
 本書は、Playwrightでブラウザーのテストを書く・直す・レビューする時に、誤りやすい待機と診断の採り方を示す。
 ロケーター、アサーション、隔離の基準はPythonのバインディングにも当てはめ、設定はランナーごとの契約（Playwright TestとPythonで別）に従う。

@@ -73,11 +73,11 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {
-        "heading": "uwi / adopted",
+        "heading": "採用",
         "metadata": [
-            "answered:yes",
-            "target_repo:example/repo",
-            "updated_at:—",
+            "回答:回答済み",
+            "対象リポジトリ:example/repo",
+            "最終更新:—",
         ],
         "readonly": False,
         "editHidden": False,
@@ -219,7 +219,7 @@ process.stdout.write(JSON.stringify({
             "state": "processing",
             "focused": "detail-dialog-body",
         },
-        "reopened": {"state": "awi / processing", "forceVisible": True},
+        "reopened": {"state": "処理中", "forceVisible": True},
         "missing": {
             "detailOpen": False,
             "deleteOpen": False,
@@ -258,6 +258,7 @@ async function exercise(updatedEntries, warnings) {
     deleteOpen: elements['delete-dialog'].open,
     detailOpen: elements['detail-dialog'].open,
     alert: elements['detail-alert'].textContent,
+    readNotice: elements['update-status'].querySelector('[role=status]').textContent,
     topmost: topmostDialog()?.id || '',
     focused
   };
@@ -277,7 +278,7 @@ process.stdout.write(JSON.stringify({changed, unreadable}));
     for outcome in result.values():
         assert outcome["deleteOpen"] is False
         assert outcome["detailOpen"] is True
-        assert "詳細取得に失敗" in outcome["alert"]
+        assert outcome["readNotice"] == "WIの詳細を取得できません。"
         assert "削除確認を閉じました" in outcome["alert"]
         assert "削除操作をやり直してください" in outcome["alert"]
         assert outcome["topmost"] == "detail-dialog"

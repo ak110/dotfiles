@@ -8,7 +8,7 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk.wi import frontmatter
+from agent_toolkit._atk.wi import filters, frontmatter, uwi_scan
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._common import session_state, uwi_watch
 from agent_toolkit._common.process_loop_session import REPORT_SAVED_AT_KEY
@@ -344,10 +344,93 @@ def test_cmd_add_records_codex_report_save(tmp_path: pathlib.Path, monkeypatch: 
     body = (
         "設定変更を承認しますか？"
         if case == "ordinary"
-        else "\n2026年11月23日のdotfilesの作業結果について、この対応で問題ありませんか？"
+        else "---\ncompletion_report: true\n---\n\n# 報告: 2026年11月23日のdotfilesの作業結果"
     )
     args = _cmd_add_args(tmp_path, body, source="process-wi", entry_type=WI_TYPE_UWI, dry_run=case == "dry-run")
-    args.question_type = "post-approval"
+    args.question_type = "post-approval" if case == "ordinary" else "report"
     _run_public_add(args, notes, _FIXED_DT, tmp_path)
 
     assert (REPORT_SAVED_AT_KEY in session_state.read_state("report-thread")) == (case == "report")
+
+
+@pytest.mark.parametrize("question_type", ["report", "yes-no"])
+def test_cmd_add_report_is_saved_without_waiting_for_answer(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    question_type: str,
+) -> None:
+    # 作業結果の報告は回答待ちにせず、本人の判断が要る確認だけが未回答として残る。  # pyfltr: allow-comment
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "report-session")
+    body = (
+        "# 報告: WI投入受付の結果\n\n処理結果を1件保存した。" if question_type == "report" else "どちらの表示名を使いますか？"
+    )
+    args = _cmd_add_args(tmp_path, body, source="process-wi", entry_type=WI_TYPE_UWI)
+    args.question_type = question_type
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+
+    saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert len(saved) == 1
+    parsed = frontmatter.parse_frontmatter(saved[0].read_text(encoding="utf-8"))
+    assert parsed is not None
+    report = question_type == "report"
+    assert parsed[0]["state"] == ("adopted" if report else "inbox")
+    assert "choices" not in parsed[0]
+    assert ("1件を報告として保存した" in capsys.readouterr().out) == report
+    assert bool(uwi_watch.awaiting(session_state.read_state("report-session"))) != report
+    text = saved[0].read_text(encoding="utf-8")
+    assert ("## 回答" in text) != report
+    assert uwi_scan.answer_label(text) == ("report" if report else "unanswered")
+    assert filters.answered_matches(WI_TYPE_UWI, text, ["no"]) != report
+
+
+def test_cmd_add_rejects_report_without_report_title(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(
+        tmp_path, "作業結果について、この対応で問題ありませんか？", source="process-wi", entry_type=WI_TYPE_UWI
+    )
+    args.question_type = "report"
+    with pytest.raises(SystemExit):
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize(
+    ("edited", "accepted"),
+    [
+        ("# 報告: WI投入受付の結果\n\n更新した。", True),
+        ("# どちらにしますか？\n\n## 選択肢と帰結\n\n- A\n- B", False),
+        ("---\nchoices: A,B\n---\n\n# 報告: 結果\n\n本文", False),
+    ],
+)
+def test_edit_report_keeps_report_form(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    edited: str,
+    accepted: bool,
+) -> None:
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "# 報告: WI投入受付の結果\n\n保存した。", source="process-wi", entry_type=WI_TYPE_UWI)
+    args.question_type = "report"
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    saved = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    before = saved.read_text(encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body_path = tmp_path / "edit.md"
+    body_path.write_text(edited, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as result:
+        atk.main(
+            ["wi", "edit", saved.name, "--body-file", str(body_path), "--target-repo", "github.com/example/repo"], home=tmp_path
+        )
+    assert (result.value.code == 0) == accepted, capsys.readouterr().err
+    after = saved.read_text(encoding="utf-8")
+    assert ("更新した。" in after) == accepted
+    if not accepted:
+        assert after == before

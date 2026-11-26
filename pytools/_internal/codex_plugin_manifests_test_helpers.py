@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import threading
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -216,9 +216,10 @@ class _ProxyCodexClient(codex_backend.JsonRpcProcess):
         method: str,
         params: dict[str, Any] | None = None,
         *,
-        on_sent: Any = None,
-        on_sent_async: Any = None,
+        on_sent: Callable[[], None] | None = None,
+        on_sent_async: Callable[[], Awaitable[None]] | None = None,
+        before_send: Callable[[], contextlib.AbstractContextManager[None]] | None = None,
     ) -> dict[str, Any]:
         if method == "initialize":
             params = {**(params or {}), "capabilities": {"experimentalApi": True}}
-        return await super().request(method, params, on_sent=on_sent, on_sent_async=on_sent_async)
+        return await super().request(method, params, on_sent=on_sent, on_sent_async=on_sent_async, before_send=before_send)

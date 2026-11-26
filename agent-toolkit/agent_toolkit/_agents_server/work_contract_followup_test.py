@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools
+from agent_toolkit._agents_server import launch_requests, mcp_tools, subagent_contract
 from agent_toolkit._common import session_registry, task_documents
 from agent_toolkit._common.next_action import ActionableError
 
@@ -263,6 +263,7 @@ async def test_launcher_conversation_resolves_whole_contract(
         "resolve_session_temp",
         lambda session_id, **_kwargs: launcher_area if session_id == "launcher-conversation" else None,
     )
+    monkeypatch.setattr(subagent_contract, "_path", lambda session_id: tmp_path / f"{session_id}-contract.md")
     manager = _manager("launcher-conversation")
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     inputs = _start_inputs(tmp_path, monkeypatch, mode)

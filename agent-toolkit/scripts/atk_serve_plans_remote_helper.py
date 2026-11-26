@@ -91,7 +91,9 @@ def _resolve_target(source_or_rel_b64: str, rel_b64: str | None = None) -> pathl
     specs = _root_specs()
     candidates = [spec for spec in specs if spec.source_id == source_id] if source_id else specs
     matches = [
-        target for spec in candidates if (target := viewer_files.resolve_under_root(spec.path, rel, spec.source_id)) is not None
+        target
+        for spec in candidates
+        if (target := viewer_files.resolve_under_root(spec.path, rel, spec.source_id, strict_io=True)) is not None
     ]
     if len(matches) != 1:
         if len(matches) > 1:
@@ -111,7 +113,7 @@ def _search_payload(query_b64: str, source_id: str | None = None) -> dict[str, t
     matches: list[dict[str, str]] = []
     specs = [spec for spec in _root_specs() if source_id in (None, "") or spec.source_id == source_id]
     for spec in specs:
-        for rel in viewer_files.search_root(spec.path, query, spec.source_id):
+        for rel in viewer_files.search_root(spec.path, query, spec.source_id, strict_io=True):
             matched.append(rel)
             matches.append({"source_id": spec.source_id, "path": rel})
     payload: dict[str, typing.Any] = {"paths": sorted(matched)}
@@ -319,14 +321,8 @@ def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
             payload = _search_payload(str(req.get("query", "")), source_id)
             return {"type": "response", "id": req_id, "ok": True, **payload}
         return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
-    except FileNotFoundError as error:
-        return {
-            "type": "response",
-            "id": req_id,
-            "ok": False,
-            "error_type": "not_found",
-            "error": f"FileNotFoundError: {error}",
-        }
+    except (FileNotFoundError, PermissionError, TimeoutError) as error:
+        return {"type": "response", "id": req_id, "ok": False, **_read_failure(error)}
     except Exception as e:  # noqa: BLE001  pylint: disable=broad-exception-caught
         return {"type": "response", "id": req_id, "ok": False, "error": f"{type(e).__name__}: {e}"}
 
@@ -369,6 +365,15 @@ def _serve() -> int:
     return _wait_until_stopped(stop_event, observer)
 
 
+def _read_failure(error: OSError) -> dict[str, str]:
+    kind = (
+        "not_found"
+        if isinstance(error, FileNotFoundError)
+        else ("permission_denied" if isinstance(error, PermissionError) else "timeout")
+    )
+    return {"error_type": kind, "error": f"{type(error).__name__}: {error}"}
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         sys.stderr.write("missing operation\n")
@@ -384,10 +389,13 @@ def main() -> int:
         if len(sys.argv) < 3:
             sys.stderr.write("missing path\n")
             return 2
-        if len(sys.argv) >= 4:
-            _read_file(sys.argv[2], sys.argv[3])
-        else:
-            _read_file(sys.argv[2])
+        try:
+            if len(sys.argv) >= 4:
+                _read_file(sys.argv[2], sys.argv[3])
+            else:
+                _read_file(sys.argv[2])
+        except (FileNotFoundError, PermissionError, TimeoutError) as error:
+            json.dump(_read_failure(error), sys.stdout)
         return 0
     if op == "search":
         if len(sys.argv) < 3:
@@ -399,7 +407,11 @@ def main() -> int:
         else:
             source_id = None
             query_b64 = sys.argv[2]
-        json.dump(_search_payload(query_b64, source_id), sys.stdout, ensure_ascii=False)
+        try:
+            payload = _search_payload(query_b64, source_id)
+        except (FileNotFoundError, PermissionError, TimeoutError) as error:
+            payload = _read_failure(error)
+        json.dump(payload, sys.stdout, ensure_ascii=False)
         return 0
     if op == "watch":
         return _watch_files()

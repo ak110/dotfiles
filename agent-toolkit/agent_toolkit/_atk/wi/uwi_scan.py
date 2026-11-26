@@ -1,7 +1,7 @@
 import pathlib
 import typing
 
-from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI, normalized_wi_type
+from agent_toolkit._atk.wi.constants import QUESTION_TYPE_REPORT, WI_PROCESSABLE_STATES, WI_TYPE_UWI, normalized_wi_type
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
 from agent_toolkit._common import private_notes as _private_notes
@@ -22,6 +22,22 @@ class ActiveUwi(typing.NamedTuple):
 class ActiveUwiScan(typing.NamedTuple):
     entries: list[ActiveUwi]
     complete: bool
+
+
+def is_report(text: str) -> bool:
+    """回答を求めない報告（`question_type: report`）かを返す。
+
+    報告は回答の有無の判定と未回答の集計から外す。  pyfltr: allow-comment
+    """
+    parsed = parse_frontmatter(text)
+    return parsed is not None and parsed[0].get("question_type") == QUESTION_TYPE_REPORT
+
+
+def answer_label(text: str) -> str:
+    """一覧と詳細の見出しに付けるUWIの回答の区分（`report`・`answered`・`unanswered`）を返す。  pyfltr: allow-comment"""
+    if is_report(text):
+        return "report"
+    return "answered" if is_uwi_answered(text) else "unanswered"
 
 
 def is_uwi_answered(text: str) -> bool:

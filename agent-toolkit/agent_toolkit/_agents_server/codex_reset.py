@@ -14,7 +14,7 @@ from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState, utc_now
-from agent_toolkit._atk import usage_refresh
+from agent_toolkit._atk import reset_reservations, usage_refresh
 from agent_toolkit._atk.usage_limit_policy import should_wait
 from agent_toolkit._common import codex_usage_limit, state_paths, usage_observation, usage_settings
 
@@ -219,6 +219,7 @@ class CodexResetMixin:
                             active=not session.interrupt_requested,
                             pace=pace,
                             on_permission_confirmed=permission_confirmed,
+                            shared_notes=await run_file_operation(reset_reservations.shared_notes),
                         )
                         if result.diagnostic:
                             _LOG.info("Codex自動reset: session_id=%s diagnostic=%s", session.session_id, result.diagnostic)

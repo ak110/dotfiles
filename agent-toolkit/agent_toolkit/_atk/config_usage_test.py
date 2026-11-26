@@ -26,6 +26,49 @@ def isolated_usage(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(usage_refresh, "ensure_fresh", lambda **_kwargs: None)
 
 
+def test_temporary_terminal_summary_preserves_json(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config_usage, "is_human_terminal", lambda _stream: True)
+    assert _main(tmp_path, "config", "temporary", "set", "codex_fast_mode", "false") == 0
+    shown = capsys.readouterr().out
+    assert "明示解除まで" in shown and "codex_fast_mode: false（適用期間内）" in shown
+    assert _main(tmp_path, "config", "temporary", "show", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["effective"] == {"codex_fast_mode": "false"}
+    assert _main(tmp_path, "config", "temporary", "clear") == 0
+    assert "一時指定はない" in capsys.readouterr().out
+
+
+def test_temporary_reports_changed_deadline_for_other_active_keys(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config_usage, "is_human_terminal", lambda _stream: True)
+    command = ("config", "temporary", "set")
+    old, new = "2098-05-01T12:00:00+09:00", "2099-06-01T12:00:00+09:00"
+    assert _main(tmp_path, *command, "claude_worker_connections", "payg", "--until", old) == 0
+    assert "期限を変更" not in capsys.readouterr().out
+    assert _main(tmp_path, *command, "codex_fast_mode", "false", "--until", new) == 0
+    shown = capsys.readouterr().out
+    assert f"{old} → {new}" in shown and "対象: claude_worker_connections" in shown
+    assert _main(tmp_path, *command, "codex_fast_mode", "true", "--until", new) == 0
+    assert "期限を変更" not in capsys.readouterr().out
+    assert _main(tmp_path, *command, "codex_fast_mode", "false") == 0
+    shown = capsys.readouterr().out
+    assert f"{new} → 明示解除まで" in shown and "対象: claude_worker_connections" in shown
+
+
+@pytest.mark.parametrize(
+    ("argv", "guidance"),
+    [
+        (("set", "codex_fast_mode", "review"), "temporary set codex_fast_mode <VALUE>"),
+        (("set", "codex_fast_mode", "false", "--until", "2099-01-01T12:00"), "--until 2030-01-01T12:00:00+09:00"),
+        (("set", "serve_port", "3000"), "temporary set --help"),
+        (("clear", "serve_port"), "temporary set --help"),
+    ],
+)
+def test_temporary_invalid_input_guides_temporary_operation(tmp_path, capsys, argv, guidance):
+    assert _main(tmp_path, "config", "temporary", *argv) == 2
+    shown = capsys.readouterr()
+    assert guidance in shown.err
+    assert "atk config set" not in shown.err
+
+
 def test_temporary_expiry_uses_current_normal_setting(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     first = "codex:model-one/low"
     temporary = "claude:temporary-model/high"

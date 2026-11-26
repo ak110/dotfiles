@@ -31,6 +31,7 @@ description: >
 3. 同じ最上位セッションでリリースPRを1件マージ済みなら、追加分は`develop`へのpushとCIの成功まで確かめる。
    長い継続中は`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の期限で追加のリリースPRを作り、セッションの終了を待たない。
    期限より前にセッションを終える場合は、追加分を次のセッションのPRへまとめる。
+   その場合もdevelopの公開単位は手順6で反映する。
    マージ済みの`master`の不具合の修正を`develop`へ公開した場合は、不具合を残さないため、同じセッションでも追加のリリースPRを作ってマージする（ユーザー指示、2026年10月28日）。
 4. 同じheadとbaseを持つopenなPRを確かめる。
    1件なら再利用し、複数なら候補の番号とURLを報告して停止する。
@@ -46,12 +47,14 @@ description: >
    ローカル同期は `merge-pr` が共有依存環境を準備した後に行う。
    先に手動でfast-forwardしない。
    共通CIを再利用した場合も、マージした完全OIDのCI結果を`merge-pr`の手順で確かめる。
-6. 今回`master`へ反映した使い方の変更を採用記録から拾い、公開版のガイドを確かめる。
+6. developのみの公開も含め、CIと必要なリリースを確認した公開単位ごとに `update-dotfiles` から稼働版の確認まで続ける。
+   ホストごとの追跡系統に対応する公開OID・配布版を `docs/development/operations-services.md`「公開単位ごとの反映と稼働版の確認」の手順へ渡す。
+   巡回では統括にプラグイン・MCPの反映と本人再開を引き継ぎ、その結果と導入済みの両サービスの版の一致が揃うまで公開完了を返さない。
+   反映に失敗したら、公開済みのOIDと結果を保ち、未完了の工程から再開する。
+7. 今回`master`へ反映した使い方の変更を採用記録から拾い、公開版のガイドを確かめる。
    `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」に従って設定の要否を環境ごとに確かめ、専用の案内UWIを登録する。
    `develop`へのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。
-7. 主checkoutをfast-forwardした後は、稼働中の`atk-serve.service`を再起動する。
-   反映と稼働の確認は`docs/development/operations-services.md`「fast-forward後のatk serveへの反映」に従い、反映したHEAD、再起動の終了コード、active/runningとHTTPの確認結果を完了報告へ残す。
 8. PRの作成かマージに失敗した時点で停止し、外部の状態、失敗した工程、runのURL、再開に必要な情報を報告する。
    再開は報告した情報から手で行い、自動の再試行とロールバックは使わずに済ませる。
 
-返す報告に含める項目: PRのURL、マージコミットの完全OID、CIとReleaseのrunの結果、反映したHEADと`atk serve`の確認結果、登録した案内UWI、停止した場合の外部の状態と再開に必要な情報。
+返す報告に含める項目: PRのURL、マージコミットの完全OID、CIとReleaseのrunの結果、環境別の公開OIDと両サービスの確認結果、再開後の確認結果、登録した案内UWI、停止した場合の外部の状態と再開に必要な情報。

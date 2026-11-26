@@ -1,5 +1,7 @@
+import json
 import os
 import pathlib
+import re
 import stat
 import subprocess
 import sys
@@ -7,6 +9,7 @@ from collections.abc import Callable
 from typing import NoReturn
 
 import pytest
+from agent_toolkit._common.completion_exit import LAUNCH_ENV
 
 from pytools import agent_launcher
 
@@ -462,3 +465,300 @@ def test_argcomplete_writes_claude_options_to_fd8(tmp_path: pathlib.Path) -> Non
     candidates = completion_output.read_text(encoding="utf-8").split("\v")
     assert "--model" in candidates
     assert "--permission-mode" in candidates
+
+
+@pytest.mark.parametrize("wrapper", ["opus", "sonnet", "fable"])
+@pytest.mark.parametrize(
+    ("state", "status", "display"),
+    [
+        ("exiting", 0, True),
+        ("requested", 0, False),
+        ("missing", 0, False),
+        ("other-launch", 0, False),
+        ("exiting", 17, False),
+    ],
+)
+def test_claude_completion_after_child_exit(
+    wrapper: str,
+    state: str,
+    status: int,
+    display: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    child_hint = "Resume this session with:\nclaude --resume session-a"
+    actual_wait = agent_launcher._wait_for_claude
+    events: list[dict] = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                        "id": call,
+                        "input": {"kind": "completion", "message": message},
+                    },
+                ]
+            },
+        }
+        for call, message in [("call-a", "完了報告\n\n本文"), ("call-b", "別の誤った報告")]
+    ]
+    events.extend(
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": call, "content": json.dumps({"ok": ok}), "is_error": not ok},
+                ]
+            },
+        }
+        for call, ok in [("call-a", True), ("call-b", False)]
+    )
+    record = "".join(json.dumps(event) + "\n" for event in events)
+    fake = tmp_path / "fake_claude.py"
+    fake.write_text(
+        f"""import json, os, pathlib, sys
+root = pathlib.Path(os.environ["CLAUDE_CONFIG_DIR"])
+launch = os.environ["AGENT_TOOLKIT_COMPLETION_LAUNCH_ID"]
+state = {state!r}
+if state != "missing":
+    directory = root / "agent-toolkit-function-hooks"
+    directory.mkdir()
+    if state == "other-launch":
+        launch, state = "a" * 32, "exiting"
+    path = directory / f"completion-exit-{{launch}}.txt"
+    path.write_text(json.dumps({{"session": "session-a", "call": "call-a", "status": state}}), encoding="utf-8")
+path = root / "projects" / "test" / "session-a.jsonl"
+path.parent.mkdir(parents=True)
+path.write_text({record!r}, encoding="utf-8")
+print({child_hint!r})
+sys.exit({status})
+""",
+        encoding="utf-8",
+    )
+
+    def wait(command: list[str], env: dict[str, str]) -> int:
+        assert command[-2:] == ["--resume", "session-a"]
+        return actual_wait([sys.executable, str(fake)], env)
+
+    monkeypatch.setattr(agent_launcher, "_wait_for_claude", wait)
+    with pytest.raises(SystemExit) as error:
+        getattr(agent_launcher, f"main_{wrapper}")(
+            ["--resume", "session-a"],
+            home=tmp_path,
+            resolve=lambda *_: pathlib.Path("claude"),
+            isatty=lambda _: True,
+        )
+    assert error.value.code == status
+    output = capfd.readouterr().out
+    assert output.startswith(child_hint + "\n")
+    if display:
+        assert "完了報告\n\n本文\n" in output
+        assert output.splitlines()[-2] == "同じ起動方法で再開:"
+        command = output.splitlines()[-1]
+        if os.name == "nt":
+            assert command == f'cmd /d /c "set CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1&& {wrapper} --resume session-a"'
+        else:
+            assert command == f"CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 {wrapper} --resume session-a"
+            launcher = tmp_path / wrapper
+            launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$CLAUDE_CODE_EXPERIMENTAL_CODE_MODE" "$@"\n', encoding="utf-8")
+            launcher.chmod(0o755)
+            resumed = subprocess.run(
+                ["/bin/sh", "-c", command],
+                env={**os.environ, "PATH": str(tmp_path)},
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert resumed.stdout.splitlines() == ["1", "--resume", "session-a"]
+            print(output, end="")
+            print(resumed.stdout, end="")
+        assert "別の誤った報告" not in output
+        assert not list((tmp_path / "agent-toolkit-function-hooks").iterdir())
+    else:
+        assert output == child_hint + "\n"
+
+
+@pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--print", "hello"],
+        ["-p", "hello"],
+        ["--resume", "--print", "hello"],
+        ["-r", "-p", "hello"],
+        ["--resume", "session-a", "-p"],
+        ["--version"],
+    ],
+)
+def test_claude_entrypoints_keep_noninteractive_path(
+    entrypoint: Entrypoint,
+    args: list[str],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def run(command: list[str]) -> int:
+        assert command[-len(args) :] == args
+        print("本体出力")
+        return 19
+
+    with pytest.raises(SystemExit) as error:
+        entrypoint(
+            args,
+            home=tmp_path,
+            os_name="nt",
+            resolve=lambda *_: pathlib.Path("claude"),
+            isatty=lambda _: True,
+            run=run,
+        )
+    assert error.value.code == 19
+    assert capsys.readouterr().out == "本体出力\n"
+
+
+@pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["hello"],
+        ["--model", "sonnet"],
+        ["--model=sonnet", "hello"],
+        ["--model", "sonnet", "--resume", "session-a"],
+        ["--model", "sonnet", "-r"],
+        ["--model=sonnet", "--continue"],
+        ["--resume"],
+        ["-r", "session-a"],
+        ["--continue"],
+        ["two words"],
+        ["--add-dir", "/one", "/two", "mcp"],
+        ["--resume", "mcp"],
+        ["--unknown-option", "hello"],
+        ["--", "hello"],
+        ["--", "--print"],
+    ],
+)
+@pytest.mark.parametrize("fds", [{0, 1}, {0}, {1}])
+def test_claude_resume_checks_both_terminal_descriptors(
+    entrypoint: Entrypoint,
+    args: list[str],
+    fds: set[int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launches: list[str] = []
+
+    def wait(_command: list[str], env: dict[str, str]) -> int:
+        launches.append(env[LAUNCH_ENV])
+        return 21
+
+    monkeypatch.setattr(agent_launcher, "_wait_for_claude", wait)
+    with pytest.raises(SystemExit) as error:
+        entrypoint(
+            args,
+            home=tmp_path,
+            os_name="nt",
+            resolve=lambda *_: pathlib.Path("claude"),
+            isatty=lambda fd: fd in fds,
+            run=lambda _: 19,
+        )
+    assert error.value.code == (21 if fds == {0, 1} else 19)
+    assert len(launches) == (1 if fds == {0, 1} else 0)
+    assert all(len(launch) == 32 for launch in launches)
+
+
+@pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--", "mcp", "list"],
+        ["--model", "sonnet", "--", "mcp", "list"],
+        ["mcp", "list"],
+        ["auth", "status"],
+        ["auto-mode"],
+        ["plugins"],
+        ["--bg", "hello"],
+        ["--background", "hello"],
+        ["--desktop", "--resume", "session-a"],
+        ["--debug", "hooks", "plugins", "list"],
+        ["--plugin-url", "https://example.invalid/plugin.zip", "mcp", "list"],
+        ["--model=sonnet", "mcp", "list"],
+        ["--unknown-option", "mcp", "list"],
+        ["--add-dir=/missing", "mcp", "list"],
+        ["--add-dir", "/one", "/two", "--debug", "hooks", "plugin", "list"],
+        ["--cloud"],
+        ["--environment", "remote-id"],
+        ["-p", "hello"],
+        ["--resume", "--print", "hello"],
+        ["-r", "-p", "hello"],
+    ],
+)
+def test_claude_noninteractive_launch_preserves_posix_execv(
+    entrypoint: Entrypoint,
+    args: list[str],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv(LAUNCH_ENV, raising=False)
+
+    def execv(path: str, command: list[str]) -> NoReturn:
+        assert path == str(tmp_path / "claude")
+        assert command[-len(args) :] == args
+        assert LAUNCH_ENV not in os.environ
+        print("本体出力")
+        raise SystemExit(19)
+
+    monkeypatch.setattr(agent_launcher.os, "execv", execv)
+    monkeypatch.setattr(agent_launcher, "_run_completion_launcher", lambda *_: pytest.fail("別画面・非対話の起動は待機しない"))
+    with pytest.raises(SystemExit) as error:
+        entrypoint(args, home=tmp_path, os_name="posix", resolve=lambda *_: tmp_path / "claude", isatty=lambda _: True)
+    assert error.value.code == 19
+    assert capsys.readouterr().out == "本体出力\n"
+
+
+def _claude_launch_help_contract() -> tuple[set[str], set[str], set[str], set[str]]:
+    help_text = pathlib.Path(__file__).with_name("fixtures").joinpath("claude-2.1.332-help.txt").read_text(encoding="utf-8")
+    option_text, command_text = help_text.split("\nOptions:\n", 1)[1].split("\nCommands:\n", 1)
+    single: set[str] = set()
+    variadic: set[str] = set()
+    for names, value in re.findall(
+        r"^  (-[a-zA-Z0-9-]+(?:, -[a-zA-Z0-9-]+)*) (<[^>]+>|\[[^\]]+\])",
+        option_text,
+        re.MULTILINE,
+    ):
+        (variadic if "..." in value else single).update(names.split(", "))
+    hidden = {f"{option}-file" for option in re.findall(r"(--[a-z-]+)\[-file\]", option_text)}
+    management = {
+        name
+        for aliases in re.findall(r"^  ([a-z][a-z-]*(?:\|[a-z][a-z-]*)*)(?= +)", command_text, re.MULTILINE)
+        for name in aliases.split("|")
+    }
+    return single, variadic, hidden, management
+
+
+def test_claude_launch_option_and_command_lists_match_published_help() -> None:
+    single, variadic, hidden, management = _claude_launch_help_contract()
+    assert single == agent_launcher._CLAUDE_LAUNCH_VALUE_OPTIONS
+    assert variadic == agent_launcher._CLAUDE_LAUNCH_VARIADIC_OPTIONS
+    assert hidden == agent_launcher._CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS
+    assert management == agent_launcher._CLAUDE_MANAGEMENT_COMMANDS
+
+
+def _claude_value_prefixes() -> list[list[str]]:
+    single, variadic, hidden, _ = _claude_launch_help_contract()
+    prefixes = [[option, "value"] for option in sorted(single | hidden)]
+    # pyfltr: allow-comment -- 可変長引数は裸の位置引数まで消費するため、実物で成立する2形に限る。
+    prefixes.extend([option, "first", "second", "--verbose"] for option in sorted(variadic))
+    prefixes.extend([f"{option}=value"] for option in sorted(variadic))
+    return prefixes
+
+
+@pytest.mark.parametrize("prefix", _claude_value_prefixes())
+def test_each_value_option_before_a_claude_management_command_excludes_launch(prefix: list[str]) -> None:
+    assert not agent_launcher._can_retain_claude_output([*prefix, "mcp", "list"], lambda _: True)
+    assert agent_launcher._can_retain_claude_output([*prefix, "hello"], lambda _: True) == (
+        prefix[0] not in {"--cloud", "--environment"}
+    )

@@ -11,6 +11,7 @@ import typing
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import session_costs as _session_costs
 from agent_toolkit._atk.serve import session_parents, session_watch
+from agent_toolkit._atk.serve.remote import read_failure_status
 from agent_toolkit._atk.serve.sessions_events import (
     deliver_record,
     deliver_refresh,
@@ -147,46 +148,110 @@ async def _collect_sessions(context: SessionsContext) -> tuple[list[SessionSumma
     return limited, warnings
 
 
-def _search_local(context: SessionsContext, entries: list[SessionSummary], query: str) -> tuple[set[str], bool]:
+def _search_local(context: SessionsContext, entries: list[SessionSummary], query: str) -> tuple[set[str], bool, list[str]]:
     found: set[str] = set()
-    incomplete = False
+    unavailable = False
+    retry: list[str] = []
     deadline = time.monotonic() + OPERATION_TIMEOUT_SEC["search"]
     for entry in entries:
         if not is_local_record_path(context, entry.path):
-            incomplete = True
+            unavailable = True
             continue
         try:
             if record_matches(pathlib.Path(entry.path), entry.engine, query, deadline=deadline):
                 found.add(entry.path)
-        except OSError, ValueError:
-            incomplete = True
-    return found, incomplete
+        except (OSError, ValueError) as error:
+            status = read_failure_status(error)
+            if status == 503:
+                retry.append(entry.path)
+            elif status == 403:
+                unavailable = True
+    return found, unavailable, retry
 
 
-async def search_sessions(context: SessionsContext, query: str) -> tuple[list[SessionSummary], bool]:
+type SearchTargets = dict[str, list[str] | None]
+
+
+def _search_path_batches(paths: list[str]) -> typing.Iterator[list[str]]:
+    batch: list[str] = []
+    for path in paths:
+        if batch and len(json.dumps([*batch, path], ensure_ascii=False).encode()) > 1800:
+            yield batch
+            batch = []
+        batch.append(path)
+    if batch:
+        yield batch
+
+
+async def search_sessions(
+    context: SessionsContext, query: str, targets: SearchTargets | None = None
+) -> tuple[list[SessionSummary], list[str], SearchTargets]:
     entries, warnings = await list_sessions(context)
     by_host: dict[str, list[SessionSummary]] = {}
     for entry in entries:
+        if targets is not None:
+            if entry.host not in targets:
+                continue
+            requested = targets[entry.host]
+            if requested is not None and entry.path not in requested:
+                continue
         by_host.setdefault(entry.host, []).append(entry)
     encoded_query = base64.b64encode(query.encode("utf-8")).decode("ascii")
-
-    async def search_host(host: str, candidates: list[SessionSummary]) -> tuple[list[SessionSummary], bool]:
-        if host == context.hostname:
-            paths, incomplete = await asyncio.to_thread(_search_local, context, candidates, query)
+    denied: set[str] = set()
+    retry: SearchTargets = {}
+    for warning in warnings:
+        host = warning["host"]
+        if targets is not None and host not in targets:
+            continue
+        if warning.get("retryable") == "true":
+            retry[host] = targets.get(host) if targets is not None else None
         else:
-            try:
-                response = await _remote_call(context, host, "search", {"query": encoded_query})
-            except OSError, ValueError, RuntimeError:
-                return [], True
-            supplied = response.get("paths")
-            if not isinstance(supplied, list) or not all(isinstance(path, str) for path in supplied):
-                return [], True
-            paths = set(supplied)
-            incomplete = response.get("incomplete") is not False
-        return [entry for entry in candidates if entry.path in paths], incomplete
+            denied.add(host)
+
+    async def search_host(host: str, candidates: list[SessionSummary]) -> list[SessionSummary]:
+        if host == context.hostname:
+            paths, unavailable, retry_paths = await asyncio.to_thread(_search_local, context, candidates, query)
+            if unavailable:
+                denied.add(host)
+            if retry_paths:
+                retry[host] = retry_paths
+        else:
+            paths = set()
+            requested = None if targets is None else targets[host]
+            batches = [None] if requested is None else list(_search_path_batches(requested))
+            retry_paths = []
+            for batch in batches:
+                args = {"query": encoded_query}
+                if batch is not None:
+                    args["paths"] = base64.b64encode(json.dumps(batch, ensure_ascii=False).encode()).decode("ascii")
+                try:
+                    response = await _remote_call(context, host, "search", args)
+                except Exception as error:  # noqa: BLE001
+                    if read_failure_status(error) == 503:
+                        if batch is None:
+                            retry[host] = None
+                        else:
+                            retry_paths.extend(batch)
+                    else:
+                        denied.add(host)
+                    continue
+                supplied = response.get("paths")
+                if not isinstance(supplied, list) or not all(isinstance(path, str) for path in supplied):
+                    denied.add(host)
+                    continue
+                paths.update(supplied)
+                failed = response.get("retry_paths")
+                if isinstance(failed, list):
+                    candidates_by_path = {entry.path for entry in candidates}
+                    retry_paths.extend(path for path in failed if isinstance(path, str) and path in candidates_by_path)
+                if response.get("unavailable") or (response.get("incomplete") and failed is None):
+                    denied.add(host)
+            if retry_paths:
+                retry[host] = list(dict.fromkeys(retry_paths))
+        return [entry for entry in candidates if entry.path in paths]
 
     results = await asyncio.gather(*(search_host(host, candidates) for host, candidates in by_host.items()))
-    return [entry for matches, _ in results for entry in matches], bool(warnings) or any(flag for _, flag in results)
+    return [entry for matches in results for entry in matches], sorted(denied), retry
 
 
 async def session_detail(context: SessionsContext, engine: str, host: str, path: str) -> dict[str, typing.Any]:
@@ -199,13 +264,9 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
     if not is_safe_remote_record_path(path):
         raise SessionNotFoundError(path)
     path_b64 = base64.b64encode(path.encode("utf-8")).decode("ascii")
-    try:
-        payload = await _remote_call(context, host, "read", {"path": path_b64})
-    except Exception as error:  # noqa: BLE001
-        logger.warning("リモートのセッション記録を取得できません host=%s path=%s: %s", host, path, error)
-        raise SessionNotFoundError(path) from error
+    payload = await _remote_call(context, host, "read", {"path": path_b64})
     text = base64.b64decode(str(payload["data"])).decode("utf-8", errors="replace")
-    records, broken = session_record_format.parse_records(text)
+    records, broken = session_record_format.parse_records(text, include_positions=True)
     subagents, subagents_unavailable = _remote_subagents(engine, payload)
     detail = build_detail(
         engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=subagents_unavailable

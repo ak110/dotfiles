@@ -109,7 +109,9 @@ def _wi_candidate_events(collected: list[_CollectedRecord], session_id: str) -> 
         is_uwi = _wi_constants.normalized_wi_type(metadata.get("type")) == _wi_constants.WI_TYPE_UWI
         submitted = is_uwi and metadata.get("submitter_session") == session_id
         question = _wi_sections.title(text) if is_uwi else ""
-        if submitted and _REPORT_UWI_QUESTION.search(question):
+        if submitted and (
+            metadata.get("question_type") == _wi_constants.QUESTION_TYPE_REPORT or _REPORT_UWI_QUESTION.search(question)
+        ):
             continue
         location = {"record": f"wi:{path.name}", "line": 0, "wi_file": path.name, "wi_state": state}
         if submitted:

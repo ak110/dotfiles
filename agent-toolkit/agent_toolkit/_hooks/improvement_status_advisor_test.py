@@ -139,7 +139,7 @@ def test_send_to_user_record_heads_exist_in_bugfix() -> None:
     """送達後に求める記録の行頭語が、bugfixの`SKILL.md`の「記録」にある。"""
     sender = (plugin_resources.plugin_root() / "hooks/send_to_user.tsx").read_text(encoding="utf-8")
     heads = re.findall(r'cues: \[[^\]]+\],\n\s*head: "([^"]+)"', sender)
-    assert set(heads) == {"処置", "再発防止"}
+    assert set(heads) == {"対策", "再発防止"}
     basics = resolve_plugin_root("agent-basics", plugin_resources.plugin_root())
     entry = (basics / "skills/bugfix/SKILL.md").read_text(encoding="utf-8")
     assert all(f"- {head}:" in entry or f"`{head}:`" in entry for head in heads)

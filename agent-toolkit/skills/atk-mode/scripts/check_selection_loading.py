@@ -153,22 +153,22 @@ def _generate_selection(
         ) from error
 
 
-def complete_plan_requirements(selection: dict[str, object], private_notes: pathlib.Path) -> None:
+def complete_detail_requirements(selection: dict[str, object], private_notes: pathlib.Path) -> None:
     def metadata(name: str) -> dict[str, typing.Any]:
         try:
             source = _plan_file.find_wi_source(name, private_notes)
             parsed = _wi_frontmatter.parse_frontmatter(source.read_text(encoding="utf-8")) if source else None
         except (OSError, UnicodeError, ValueError) as error:
-            raise InputError(f"計画要否を補えない: {name}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
+            raise InputError(f"詳細化要否を補えない: {name}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
         kind = normalized_wi_type(parsed[0].get("type")) if parsed else None
         if parsed is None or kind is None:
             raise InputError(
-                f"計画要否を補えない: {name}の本文またはfrontmatterのtypeを確認できない",
+                f"詳細化要否を補えない: {name}の本文またはfrontmatterのtypeを確認できない",
                 next_action="元WIを取得し、frontmatterのtypeを確認して同じpick-wi-checkを再実行する",
             )
         return {**parsed[0], "type": kind}
 
-    selection_contract.complete_plan_requirements(selection, metadata)
+    selection_contract.complete_detail_requirements(selection, metadata)
 
 
 def load_inline_addition(

@@ -145,7 +145,7 @@ def compose_prompt(
     records: tuple[pathlib.Path, ...],
 ) -> str:
     path = delegated_session.prompt_handoff_path(session.prompt)
-    original = session.prompt
+    original, _notice = delegated_session.split_own_contract_notice(session.prompt)
     if path is not None:
         original = "\n".join(
             f"引き継ぎ記録先: {path}（継続）" if line.startswith(("引き継ぎ記録先:", "引き継ぎ記録先：")) else line

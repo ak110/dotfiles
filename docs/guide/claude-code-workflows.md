@@ -44,6 +44,7 @@ atk wi process-loop
 直接編集してよいリポジトリは`--edit allow`、AWIだけを投入するものは`--edit awi`、編集しないものは`--edit deny`で登録する。
 未登録は編集不可として扱われ、編集ツールと`git commit`が拒否される。
 編集を依頼した未登録リポジトリは、エージェントが登録内容を確認してから設定を進める。
+同じprivate-notesを使う別の端末で登録済みなら、`atk config repos set github.com/example/project --path ~/project`でcloneを関連付けるだけで使える。
 cloneの無い対象も`atk config repos add github.com/example/project --edit awi`のように登録できる。
 検証OSを限定する場合は`atk config repos set ~/project-a --platforms windows`のように指定する（未指定はLinuxとWindows）。
 保守ブランチと次期開発ブランチのように作業が入るブランチが複数あるリポジトリは、ブランチを系統として登録すると系統ごとに処理される（[ブランチの系統](claude-code-wi.md#ブランチの系統)）。

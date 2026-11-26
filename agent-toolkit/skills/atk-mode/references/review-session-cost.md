@@ -1,10 +1,10 @@
 # 振り返りの費用と所要時間の分析
 
-本書は、振り返りの分析で、費用（読み込み、Skill、結果量、反復、トークンの上位）と所要時間を比べて改善案を選ぶ基準を定める。
+本書は、振り返りの担当が品質を保ったままユーザーの費用と待ち時間を減らせるよう、費用（読み込み、Skill、結果量、反復、トークンの上位）と所要時間を比べて改善案を選ぶ基準を定める。
 分析の手順書`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`を全文読み、費用を比べる時は「工程2」の手順7に従う。
 品質を保ち、その内側で費用と時間を比べる（原則2、`agent-basics:writing-standards/references/quality-principles-qcd.md`）。
 数値は観測した範囲だけを事実とし、未計測を推定で埋めない（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
-改善案は`agent-basics:bugfix/references/prevention.md`「案を比べる順」の順に比べ、採否は同書「害と費用の比べ方」、採用しない時の区分は同書「再発防止を採用しない場合」で決める。
+改善案は`agent-basics:bugfix/references/prevention.md`「案を比べる」に従って比べ、採否は同書「害と費用の比べ方」、採用しない時の区分は同書「再発防止を採用しない場合」で決める。
 集計値の典拠と数え方は`agent-toolkit:atk-mode/references/session-records.md`「集計値の典拠」が定める。
 
 ## 比較して探す観点
@@ -50,7 +50,7 @@
 
 規範に従った結果、処理の停止、差し戻し、空転、不要な反復、過大な読み込みや準備が生じた事象を扱う。
 規範が適用されなかった事象との切り分けと、記録の照会による判定は、分析の手順書`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「規範の未適用と目的逸脱」で行う。
-前提の評価には`agent-basics:bugfix/references/premises.md`「規範に従った結果の失敗」を適用し、条文の緩和、削除、一般化を追加より先に比べる。
+前提の評価には`agent-basics:bugfix/references/premises.md`「規範に従った結果の失敗」を適用し、条文の緩和・削除・一般化と追加を同じ軸で比べる。
 正常に完了した作業でも、読み込み、準備、検収、後始末の作業量を成果と比べ、規範が求める工程を簡略化できないかを検討する。
 
 - 記録すること: 対象の条文の所在（ファイル名と節）、観測された処理の停止、採る改善案と根拠

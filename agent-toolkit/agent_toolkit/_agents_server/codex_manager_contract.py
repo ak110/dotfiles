@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import typing
 from collections.abc import Coroutine
 from typing import Any
@@ -17,7 +18,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.codex_protocol import JsonRpcResponseError
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState
-from agent_toolkit._common import codex_usage_limit
+from agent_toolkit._common import codex_fast_mode, codex_usage_limit
 
 
 class CodexManager(typing.Protocol):
@@ -71,7 +72,16 @@ class CodexManager(typing.Protocol):
 
     async def _close_thread(self, thread_id: str, client: Any, *, session: SessionState | None = None) -> None: ...
 
-    async def _resume_thread(self, session: SessionState, client: Any, writer_session_id: str | None = None) -> str | None: ...
+    async def _resume_thread(
+        self,
+        session: SessionState,
+        client: Any,
+        writer_session_id: str | None = None,
+        *,
+        auth: dict[str, Any] | None = None,
+        quota_workspace: str | None = None,
+        auth_observed_at: datetime.datetime | None = None,
+    ) -> str | None: ...
 
     @staticmethod
     async def _compatible_resume_provider(session: SessionState, client: Any) -> str: ...
@@ -80,7 +90,9 @@ class CodexManager(typing.Protocol):
         self, session: SessionState, error: codex_resume_state.IncompatibleResumeError, *, new_reply: bool = False
     ) -> None: ...
 
-    async def _request_thread_resume(self, client: Any, params: dict[str, Any]) -> dict[str, Any]: ...
+    async def _request_thread_resume(
+        self, client: Any, params: dict[str, Any], *, decision: codex_fast_mode.FastTier | None = None
+    ) -> dict[str, Any]: ...
 
     def _hold_provider_failure(self, session: SessionState, error: Any = None) -> bool: ...
 
@@ -190,7 +202,16 @@ class CodexManager(typing.Protocol):
 
     async def _mark_turn_start_ambiguous(self, session: SessionState, error: BaseException) -> None: ...
 
-    async def _start_turn(self, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None: ...
+    async def _start_turn(
+        self,
+        session: SessionState,
+        prompt: str,
+        client: JsonRpcProcess | None = None,
+        *,
+        auth: dict[str, Any] | None = None,
+        quota_workspace: str | None = None,
+        auth_observed_at: datetime.datetime | None = None,
+    ) -> None: ...
 
     async def _notify_waiters(self) -> None: ...
 
@@ -216,7 +237,7 @@ class CodexManager(typing.Protocol):
     def _provider_failure(session: SessionState, error: Any = None) -> bool: ...
 
     @staticmethod
-    async def _apply_connection_order(session: SessionState, client: Any) -> None: ...
+    async def _apply_connection_order(session: SessionState, client: Any) -> codex_providers.ProviderSelection | None: ...
 
     @staticmethod
     def _turn_start_response_is_ambiguous(client: Any, error: BaseException) -> bool: ...
