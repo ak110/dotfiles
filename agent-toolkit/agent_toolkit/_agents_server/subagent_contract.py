@@ -101,15 +101,15 @@ def apply_followup(session_id: str, changes: Mapping[str, str], delivery: str) -
             unresolved, marker, active = body.removeprefix(_HEADER).partition(_ACTIVE)
             if not marker:
                 raise ValueError("現在の依頼の見出しが無い")
-            delta = "".join(f"- {old!r} → {new!r}\n" for old, new in changes.items())
-            pending = unresolved.removeprefix(_UNCONFIRMED)
+            entry = "- " + "、".join(f"{old!r} → {new!r}" for old, new in sorted(changes.items())) + "\n"
+            pending = unresolved.removeprefix(_UNCONFIRMED).splitlines(keepends=True)
             if delivery == "reply_ambiguous":
-                if delta not in pending:
-                    pending += delta
+                if entry not in pending:
+                    pending.append(entry)
             else:
                 active = _edit_request(active, changes)
-                pending = pending.replace(delta, "", 1)
-            unresolved = f"{_UNCONFIRMED}{pending}" if pending else ""
+                pending = [line for line in pending if line != entry]
+            unresolved = _UNCONFIRMED + "".join(pending) if pending else ""
             atomic_write(path, f"{_HEADER}{unresolved}{_ACTIVE}{active.strip()}\n")
     except (managed_temp.ManagedTempError, OSError, ValueError) as error:
         _LOG.warning("委譲先の作業契約を更新できない: session_id=%s", session_id, exc_info=True)

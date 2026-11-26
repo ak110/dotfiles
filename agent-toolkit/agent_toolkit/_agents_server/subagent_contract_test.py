@@ -67,3 +67,17 @@ def test_handoff_inherits_predecessor_contract() -> None:
     assert subagent_contract.apply_followup("contract-new", {"目的E": "目的F"}, "reply_started") is None
     assert "目的F" in _body("contract-new") and "目的E" not in _body("contract-new")
     assert "目的E" in _body("contract-old") and "目的F" not in _body("contract-old")
+
+
+def test_confirmed_batch_clears_only_its_uncertain_entry_regardless_of_key_order() -> None:
+    changes = {"担当A": "担当B", "担当B": "担当C"}
+    reverse = dict(reversed(tuple(changes.items())))
+    for session_id, confirmed in (("same", changes), ("reverse", reverse)):
+        assert subagent_contract.create(session_id, "担当A: 書式確認\n担当B: 内容確認") is None
+        assert subagent_contract.apply_followup(session_id, {"": "未確定の追加"}, "reply_ambiguous") is None
+        assert subagent_contract.apply_followup(session_id, changes, "reply_ambiguous") is None
+        assert subagent_contract.apply_followup(session_id, reverse, "reply_failed") is None
+        assert subagent_contract.apply_followup(session_id, confirmed, "reply_started") is None
+        pending, _, active = _body(session_id).partition("## 現在の依頼")
+        assert "未確定の追加" in pending and "担当A" not in pending and "担当C" not in pending
+        assert active.strip() == "担当B: 書式確認\n担当C: 内容確認"
