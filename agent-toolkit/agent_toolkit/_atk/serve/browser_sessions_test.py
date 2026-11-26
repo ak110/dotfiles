@@ -473,6 +473,67 @@ async def test_session_links_distinguish_blocks_on_the_same_record_line(screen_h
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_session_line_link_survives_record_notification_during_open(screen_harness: _ScreenHarness) -> None:
+    (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
+    paragraph = {"type": "user", "cwd": "/home/aki/proj", "message": {"content": "長い会話の発話"}}
+    linked = {"type": "assistant", "message": {"content": [{"type": "text", "text": text} for text in ("先行", "後続")]}}
+    record.write_text("\n".join(json.dumps(entry) for entry in [*([paragraph] * 24), linked]) + "\n", encoding="utf-8")
+    page = screen_harness.page
+    await page.add_init_script("""
+        const NativeEventSource = window.EventSource;
+        window.EventSource = class extends NativeEventSource {
+          constructor(url) {
+            super(url);
+            if (!new URL(url, location.href).pathname.endsWith('/api/sessions/events')) return;
+            this.close();
+            window.testSessionEvents = this;
+            queueMicrotask(() => this.dispatchEvent(new Event('subscribed')));
+          }
+        };
+    """)
+    open_started, release_open, release_refresh = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    detail_pattern = "**/api/sessions/detail?*"
+
+    async def hold_detail(route: playwright.async_api.Route) -> None:
+        if not open_started.is_set():
+            open_started.set()
+            await release_open.wait()
+            await route.continue_()
+            return
+        await release_refresh.wait()
+        response = await route.fetch()
+        await route.fulfill(response=response, json={**await response.json(), "session_name": "再取得済み"})
+
+    await page.route(detail_pattern, hold_detail)
+    selection = {"host": "browser-test", "engine": "claude", "path": record.as_posix()}
+    expect = playwright.async_api.expect
+    markers = page.locator("#detail .event-linked")
+    main = page.locator("#screen-sessions main")
+    try:
+        await page.goto(
+            screen_harness.base_url + "/sessions?" + urlencode({**selection, "line": 25}), wait_until="domcontentloaded"
+        )
+        await asyncio.wait_for(open_started.wait(), timeout=10)
+        await page.evaluate(
+            "selection => window.testSessionEvents.dispatchEvent(new MessageEvent('message', {"
+            "data: JSON.stringify({...selection, type: 'record'})}))",
+            selection,
+        )
+        release_open.set()
+        await expect(markers).to_have_count(2)
+        assert await main.evaluate("element => element.scrollTop") > 0
+        await main.evaluate("element => { element.scrollTop = 0; }")
+        release_refresh.set()
+        await expect(page.locator("#detail-title")).to_contain_text("再取得済み")
+        await expect(markers).to_have_count(2)
+        assert await main.evaluate("element => element.scrollTop") == 0
+    finally:
+        release_open.set()
+        release_refresh.set()
+        await page.unroute(detail_pattern, hold_detail)
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_report_markdown_and_result_follow_the_view_mode(screen_harness: _ScreenHarness) -> None:
     (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
     entries = [
