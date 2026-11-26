@@ -34,6 +34,7 @@ from agent_toolkit._atk import (
     run_script,
     run_skill_batch_evidence,
     run_skill_batch_finalize,
+    run_skill_batch_records,
     weekly_schedule,
 )
 from agent_toolkit._atk.managed_temp import paths as managed_temp_paths
@@ -56,7 +57,6 @@ from agent_toolkit._common import (
     plugin_environment,
     private_notes,
     session_activity,
-    session_record_paths,
     session_registry,
     session_review,
     skill_modes,
@@ -114,7 +114,9 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     elif (
         count
         and session_review.auto_start_due(now=now)
-        and any(not target.get("review_batch") and not _waiting_for_rollout(target) for target in pending)
+        and any(
+            not target.get("review_batch") and not run_skill_batch_records.waiting_for_rollout(target) for target in pending
+        )
     ):
         mode = "batch"
     else:
@@ -235,30 +237,6 @@ def weekly_auto_start_due(work: str, *, now: float) -> bool:
     return not _failure_blocks(key, same_version=record.get("failure_version") == version)
 
 
-def _lacks_record(target: dict[str, Any]) -> bool:
-    if target["host"] not in {"claude", "codex"} or target.get("lane_parent_session_id"):
-        return False
-    path = target.get("transcript_path")
-    if not isinstance(path, str) or not path:
-        return False
-    try:
-        pathlib.Path(path).lstat()
-    except FileNotFoundError:
-        return target["host"] == "claude" or not session_record_paths.find_codex_records(target["session_id"])
-    except OSError:
-        # 読取権限や形式の問題は、不在として待ちを消さずprepareの診断へ渡す。
-        return False
-    return False
-
-
-def _waiting_for_rollout(target: dict[str, Any]) -> bool:
-    return (
-        target["host"] == "codex"
-        and not target.get("transcript_path")
-        and not session_record_paths.find_codex_records(target["session_id"])
-    )
-
-
 def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
     selected = []
     for target in session_review.pending():
@@ -267,14 +245,14 @@ def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
             continue
         if session_activity.review_activity({target["session_id"]}).has_activity:
             continue
-        if _lacks_record(target):
+        if run_skill_batch_records.lacks_record(target):
             if session_review.discard_pending(target):
                 print(f"記録ファイルの無い対象を振り返りの待ちから外した: {target['session_id']}", file=sys.stderr)
             continue
         blocked = _blocked(target)
         if not manual and (blocked or target.get("failure_unreported")):
             continue
-        if _waiting_for_rollout(target):
+        if run_skill_batch_records.waiting_for_rollout(target):
             continue
         selected.append(target)
     return selected if any(not target.get("review_batch") for target in selected) else []
@@ -327,13 +305,7 @@ def _meta_report_target(*, now: datetime.datetime) -> str:
 def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
     if session_activity.review_activity({target["session_id"]}).has_activity:
         return None
-    arguments = (
-        ["--agents-session-id", target["session_id"]]
-        if target.get("lane_parent_session_id")
-        else ["--transcript", target["transcript_path"]]
-        if target["host"] == "claude"
-        else ["--codex-thread-id", target["session_id"]]
-    )
+    arguments = run_skill_batch_records.prepare_arguments(target)
     if target.get("target_repo") and target.get("cwd") and pathlib.Path(target["cwd"]).is_dir():
         arguments.extend(["--target-repo", target["cwd"]])
     previous = session_review.previous_scope(target)

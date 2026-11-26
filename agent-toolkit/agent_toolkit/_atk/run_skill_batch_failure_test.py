@@ -120,7 +120,7 @@ def test_missing_record_does_not_discard_reregistered_generation(tmp_path, monke
 @pytest.mark.usefixtures("leaf_git_commands")
 def test_removed_codex_rollouts_do_not_fail_batch_preparation(tmp_path, monkeypatch):
     notes = run_skill_batch_test._notes()  # pylint: disable=protected-access
-    monkeypatch.setattr(run_skill_batch.session_record_paths, "find_codex_records", lambda session_id: ())
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "default-codex"))
     for session_id in ("removed-first", "removed-second"):
         transcript = tmp_path / "isolated-codex" / "sessions" / "2026" / "11" / "26" / f"rollout-date-{session_id}.jsonl"
         session_review.record(
@@ -135,6 +135,46 @@ def test_removed_codex_rollouts_do_not_fail_batch_preparation(tmp_path, monkeypa
     assert run_skill_batch.dispatch(run_skill_batch_test._args("manual"), dispatch_model) == 0  # pylint: disable=protected-access
     assert not session_review.pending()
     assert not run_skill_batch_test._failure_awis(notes)  # pylint: disable=protected-access
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(1.25, reason="実Gitと準備スクリプトで別のCodexホームから報告確定まで検証する。")
+@pytest.mark.parametrize("archived", [False, True])
+def test_batch_resolves_registered_rollout_in_other_codex_home(tmp_path, monkeypatch, archived):
+    # pylint: disable=protected-access
+    notes = run_skill_batch_test._notes()
+    session_id = "01a216c7-fe50-7361-878c-f507d87b537a"
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "runner-codex"))
+    registered = tmp_path / "other-codex" / "sessions" / "2026" / "11" / "26" / f"rollout-date-{session_id}.jsonl"
+    source = registered.parents[4] / "archived_sessions" / registered.name if archived else registered
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        json.dumps({"timestamp": "2026-11-26T07:35:35Z", "type": "session_meta", "payload": {"id": session_id}})
+        + "\n"
+        + json.dumps(
+            {
+                "timestamp": "2026-11-26T07:35:36Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "別のホームに保存した要求"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    session_review.record(
+        {"hook_event_name": "SessionStart", "session_id": session_id, "transcript_path": str(registered)},
+        host="codex",
+    )
+    calls = []
+    assert (
+        run_skill_batch.dispatch(
+            run_skill_batch_test._args("manual"), run_skill_batch_test._report_and_finish(notes, monkeypatch, calls)
+        )
+        == 0
+    )
+    assert [item["session_id"] for item in calls[0]["prepared"]] == [session_id]
+    assert not session_review.pending()
+    assert not run_skill_batch_test._failure_awis(notes)
 
 
 @pytest.mark.usefixtures("leaf_git_commands")

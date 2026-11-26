@@ -77,6 +77,9 @@ def _build_parser() -> argparse.ArgumentParser:
     session = parser.add_mutually_exclusive_group(required=True)
     session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
+    parser.add_argument(
+        "--codex-home", type=pathlib.Path, metavar="DIR", help="Codexの記録の保存先。省略時はCODEX_HOMEか~/.codex。"
+    )
     session.add_argument("--opencode-session-id", metavar="ID", help="OpenCodeのses_で始まるセッションID。")
     session.add_argument("--agents-session-id", metavar="ID", help="agents_serverが起動した委譲先のsession ID。")
     parser.add_argument(
@@ -270,7 +273,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             info = resolution.resume_info or resolution.handoff_info
             if info is None:
                 raise ValueError("session登録簿から実行エンジンを解決できない")
-            record = session_record_paths.find_session_record(args.agents_session_id)
+            record = session_record_paths.find_session_record(args.agents_session_id, codex_home=args.codex_home)
             if record is None or len(record.paths) != 1 or record.engine != info.engine:
                 raise ValueError("登録済みsessionのセッション記録を一意に解決できない")
             if info.engine in {"claude", "agy"}:
@@ -304,6 +307,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         return _missing("bundle", "開始日時が終了日時より後。--conversation-sinceと--conversation-untilを確認する")
     if args.conversation_after is not None and args.work_dir is None:
         return _missing("bundle", "--conversation-afterには同じbundleを持つ--work-dirを指定する")
+    if args.codex_home is not None and args.codex_thread_id is None:
+        return _missing("bundle", "--codex-homeはCodexの記録の取得と併用する")
     if args.opencode_db is not None and args.opencode_session_id is None:
         return _missing("bundle", "--opencode-dbは--opencode-session-idと併用する")
     local_evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
@@ -344,6 +349,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             session_arguments.extend(["--opencode-db", str(pathlib.Path(args.opencode_db).expanduser().resolve())])
     else:
         session_arguments = ["--codex-thread-id", args.codex_thread_id]
+        if args.codex_home is not None:
+            session_arguments.extend(["--codex-home", str(args.codex_home.expanduser().resolve())])
     lightweight = args.conversation_only or args.conversation_window or args.conversation_digest
     after = args.after
     if after is None and not args.full and not lightweight:
