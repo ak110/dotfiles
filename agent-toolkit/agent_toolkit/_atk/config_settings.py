@@ -627,10 +627,7 @@ def repository_settings(*, check_paths: bool = True, read_only: bool = False) ->
     explicit = runtime_environment.environment().get(config_env_name("repositories"))
     if explicit:
         return config_repositories.parse(explicit, check_paths=check_paths)
-    value = data.get("repositories", "{}")
-    if not isinstance(value, str):
-        raise ValueError("repositoriesの保存値はJSON文字列で指定する")
-    merged = _merged_repositories(value)
+    merged = _merged_repositories(data.get("repositories", "{}"))
     if check_paths:
         for repo_id, item in merged.items():
             if item["process_loop"] and item.get("path"):
@@ -640,10 +637,20 @@ def repository_settings(*, check_paths: bool = True, read_only: bool = False) ->
     return merged
 
 
-def _merged_repositories(local: str) -> dict[str, dict[str, Any]]:
+def persistent_repository_registration(repo_id: str) -> dict[str, Any]:
+    return _merged_repositories(load_config_strict().get("repositories", "{}"), require_complete=repo_id).get(repo_id, {})
+
+
+def _merged_repositories(local: object, *, require_complete: str | None = None) -> dict[str, dict[str, Any]]:
+    if not isinstance(local, str):
+        raise ValueError("repositoriesの保存値はJSON文字列で指定する")
     path = shared_settings_path()
     shared = load_shared_settings(path).get("repositories") if path is not None else None
-    return config_repositories.merge(config_repositories.parse_shared(shared or "{}"), config_repositories.parse_local(local))
+    local_entries = config_repositories.parse_local(local)
+    merged = config_repositories.merge(config_repositories.parse_shared(shared or "{}"), local_entries)
+    if require_complete is not None and require_complete in local_entries and require_complete not in merged:
+        raise ValueError(f"{require_complete} の端末登録に対応する共有登録がありません")
+    return merged
 
 
 def repository_branch_settings() -> dict[str, config_repositories.BranchSettings]:

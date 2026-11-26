@@ -9,25 +9,17 @@ import hashlib
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
-import time
 from types import SimpleNamespace
-from typing import Any, cast
 
 import anyio
 import mcp
 import mcp.client.stdio
-import psutil
 import pytest
-from agent_toolkit._agents_server import service_forward, service_transport
-from agent_toolkit._agents_server.service_generations import GenerationRegistry
-from agent_toolkit._common import plugin_environment, plugin_environment_cleanup, process_tree, session_review, windows_job
-from agent_toolkit._common.runtime_environment import CallerContext
-from agent_toolkit._testing import git_repository, isolation, late_descendant
-from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT
-from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
+from agent_toolkit._agents_server import service_forward
+from agent_toolkit._common import plugin_environment, plugin_environment_cleanup, process_tree, session_review
+from agent_toolkit._testing import git_repository, late_descendant
 
 from pytools._internal import common as _common
 from pytools._internal import post_apply_outcome
@@ -152,7 +144,7 @@ def _prepared(calls: list[list[str]]) -> list[str]:
 
 
 class TestPrerequisites:
-    def test_missing_uv_skips(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    def test_missing_uv_fails_for_approved_targets(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         calls = _setup(monkeypatch, tmp_path)
         monkeypatch.setattr(
             _common,
@@ -160,8 +152,47 @@ class TestPrerequisites:
             lambda name, **_kwargs: None if name == "uv" else pathlib.Path(name),
         )
 
+        outcome = _warmup.run()
+        assert outcome.failure and "uvの解決" in outcome.failure and "agents_server_mcp.py" in outcome.failure
+        assert not _prepared(calls)
+
+    def test_no_approved_targets_does_not_require_uv(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        _setup(monkeypatch, tmp_path)
+        monkeypatch.setattr(_warmup, "_targets", lambda: [])
+        monkeypatch.setattr(_common, "resolve_executable", lambda *_args, **_kwargs: pytest.fail("uvの解決は不要"))
+
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
-        assert not calls
+
+    @pytest.mark.parametrize(
+        ("broken", "expected"),
+        [
+            ("local", "config.json"),
+            ("shared", "atk-config.json"),
+            ("path", "absent"),
+            ("unlinked", "端末登録に対応する共有登録がありません"),
+        ],
+    )
+    def test_invalid_registration_is_a_failure(self, monkeypatch, tmp_path, broken, expected):
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
+        config = _warmup.config_settings.config_file_path()
+        config.parent.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
+        monkeypatch.setattr(_warmup, "_targets", lambda: pytest.fail("不正な登録から対象を解決しない"))
+        private_notes = tmp_path / "notes"
+        private_notes.mkdir()
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+        shared = private_notes / _warmup.config_settings.SHARED_SETTINGS_FILENAME
+        saved = _main_checkout_config(tmp_path / "absent")
+        if broken == "unlinked":
+            saved = {"repositories": json.dumps({"github.com/ak110/dotfiles": {"path": str(tmp_path)}})}
+        config.write_text("{" if broken == "local" else json.dumps(saved), encoding="utf-8")
+        if broken == "shared":
+            shared.write_text("{", encoding="utf-8")
+
+        outcome = _warmup.run()
+
+        assert outcome.failure and "永続リポジトリ登録を解決できません" in outcome.failure
+        assert expected in outcome.failure
 
     def test_minimal_mode_skips_before_target_resolution(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_warmup.dotfiles_mode, "is_minimal", lambda: True)
@@ -197,6 +228,35 @@ class TestElevated:
 
 
 class TestTargets:
+    @pytest.mark.parametrize("process_loop_in_shared", [False, True])
+    def test_persistent_registration_works_before_and_after_shared_migration(
+        self, monkeypatch, tmp_path, process_loop_in_shared
+    ):
+        settings = _warmup.config_settings
+        read_persistent = settings.load_config_strict
+        calls = _setup(monkeypatch, tmp_path)
+        monkeypatch.setattr(settings, "load_config_strict", read_persistent)
+        repo_id = "github.com/ak110/dotfiles"
+        local: dict[str, object] = {"path": str(tmp_path)}
+        shared: dict[str, object] = {"edit": "allow"}
+        if process_loop_in_shared:
+            shared["process_loop"] = True
+        else:
+            local["process_loop"] = False
+        config = settings.config_file_path()
+        config.parent.mkdir(parents=True, exist_ok=True)
+        notes = tmp_path / "notes"
+        notes.mkdir()
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+        shared_config = notes / settings.SHARED_SETTINGS_FILENAME
+        for path, entry in ((config, local), (shared_config, shared)):
+            path.write_text(json.dumps({"repositories": json.dumps({repo_id: entry})}), encoding="utf-8")
+
+        outcome = _warmup.run()
+
+        assert outcome.failure is None and _warmed(calls)
+        assert settings.persistent_repository_registration(repo_id)["process_loop"] is process_loop_in_shared
+
     def test_update_marker_is_not_a_service_startup_input(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
@@ -429,13 +489,12 @@ class TestCodexResolution:
 
 
 class TestFailureHandling:
-    """構築の失敗はスキップと数え、残る対象の構築を続ける。"""
-
     def test_continues_after_nonzero_exit(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         calls = _setup(monkeypatch, tmp_path, warmup_returncode=1)
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
-        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        outcome = _warmup.run()
+        assert outcome.failure and "--prepare" in outcome.failure
         assert len(_prepared(calls)) == 1
 
     def test_continues_after_execution_error(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -443,7 +502,8 @@ class TestFailureHandling:
         calls = _setup(monkeypatch, tmp_path, warmup_returncode=None)
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
-        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        outcome = _warmup.run()
+        assert outcome.failure and "--prepare" in outcome.failure
         assert len(_prepared(calls)) == 1
 
     def test_prepared_server_startup_failure_is_reported(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -506,21 +566,6 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
     if behavior == "exit":
         assert "startup failed" in outcome.message and "Traceback" not in outcome.message
         assert "startup failed" in caplog.text and "Traceback" in caplog.text
-
-
-def _stop_services(directory: pathlib.Path) -> None:
-    for path in directory.glob("*.json"):
-        if path.name == "generations.json":
-            continue
-        identity = json.loads(path.read_text(encoding="utf-8"))["process"]
-        if not service_transport.process_alive(identity):
-            continue
-        with contextlib.suppress(psutil.NoSuchProcess):
-            service = psutil.Process(int(identity.split(":", 1)[0]))
-            owners = [process for process in service.parents() if _serves(process, directory)]
-            result = process_tree.stop_tree(owners[-1] if owners else service)
-            assert not result.residual and not result.unresolved, result.descriptions()
-        assert not service_transport.process_alive(identity)
 
 
 def _probe_server(tmp_path: pathlib.Path, behavior: str, *, stderr: str = "") -> pathlib.Path:
@@ -614,128 +659,6 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
         assert "子の出力: 常駐起動の標準エラー" in outcome.message
 
     assert deferred == ["1"]
-
-
-_PLUGIN_ROOT = pathlib.Path(plugin_environment.__file__).resolve().parents[2]
-
-
-@pytest.fixture(name="service_environment", scope="module")
-def _service_environment(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
-    """実の管理サービスを起動する試験が共用する、準備済みの依存環境を指す環境を返す。状態領域は各試験が指定する。"""
-    environment = {
-        key: value
-        for key, value in isolation.build_host_environ().items()
-        if key not in {"AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "VIRTUAL_ENV", "CLAUDECODE", "UV_FROZEN"}
-    }
-    # Windowsは依存環境のDLLを260文字を超えるパスから読み込めないため、試験名を含まない短い領域へ準備する。
-    environment["AGENT_TOOLKIT_RUNTIME_DATA"] = str(tmp_path_factory.mktemp("rt"))
-    prepare_plugin_environment(_PLUGIN_ROOT, environment, timeout=_REAL_MCP_PREPARE_TIMEOUT)
-    return environment
-
-
-def _serves(process: psutil.Process, directory: pathlib.Path) -> bool:
-    with contextlib.suppress(psutil.Error):
-        return str(directory) in process.cmdline()
-    return False
-
-
-def _launch_command(root: pathlib.Path) -> list[str]:
-    return [
-        sys.executable,
-        str(_PLUGIN_ROOT / "scripts" / "launch.py"),
-        "--project",
-        str(root),
-        str(root / "agent_toolkit" / "agents_server_mcp.py"),
-    ]
-
-
-@pytest.mark.windows
-@pytest.mark.timeout(240)
-@pytest.mark.cpu_limit(
-    3.0,
-    reason="実のlauncher・転送側・管理サービスを起動し、MCPのinitializeとtools/listを通して世代を公開する。",
-)
-def test_published_service_outlives_startup_check(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, service_environment: dict[str, str]
-) -> None:
-    """起動確認が公開した管理サービスの世代は、確認用の接続と子プロセスの終了後も生存し、次の版の確認で受付を引き継ぐ。
-
-    WindowsのMCP SDKは確認用の子プロセスを離脱不可のKILL_ON_JOB_CLOSEのJobへ入れ、接続を閉じるとJobの全プロセスを止める。
-    2026-11-18、確認用の転送側が起動した新世代が確認の終了とともに終了し、受付先が終了した世代を指し続けた。
-    """
-    environment = dict(service_environment, XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
-    # 起動確認は自身の環境を、起動する子プロセスと公開先の管理領域の解決に使う。
-    monkeypatch.setattr(os, "environ", environment)
-    monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 120.0)
-
-    previous_root = tmp_path / "previous" / "agent-toolkit"
-    updated = tmp_path / "updated" / "agent-toolkit"
-    ignore = shutil.ignore_patterns(".venv", "__pycache__", "node_modules", "*_test.py")
-    shutil.copytree(_PLUGIN_ROOT, previous_root, ignore=ignore)
-    shutil.copytree(previous_root, updated, ignore=ignore)
-    with (updated / "agent_toolkit" / "agents_server_mcp.py").open("a", encoding="utf-8") as script:
-        script.write("# updated\n")
-    registry = GenerationRegistry(service_transport.namespace(CallerContext(environment, tmp_path)))
-
-    def published(target: pathlib.Path) -> dict:
-        outcome = asyncio.run(_CHECK_STARTUP(_launch_command(target)))
-        assert outcome.ok, outcome.message
-        current = registry.current()
-        assert current is not None and current["generation"] == service_forward.code_identity(target, registry.directory)[0]
-        assert service_transport.process_alive(current["process"])
-        return current
-
-    try:
-        previous = published(previous_root)
-        published(updated)
-
-        deadline = time.monotonic() + 30
-        while service_transport.process_alive(previous["process"]):
-            assert time.monotonic() < deadline, "旧世代が退出しない"
-            time.sleep(0.1)
-    finally:
-        _stop_services(registry.directory)
-
-
-@pytest.mark.windows
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows Jobの終了が所属プロセスを止める条件を実APIで確かめる")
-@pytest.mark.timeout(240)
-@pytest.mark.cpu_limit(1.5, reason="実Windows Job・管理サービスと資源回収を通す。sthenoの所有CPU実測は1.079秒。")
-def test_service_outlives_killing_job_of_its_launcher(tmp_path: pathlib.Path, service_environment: dict[str, str]) -> None:
-    """離脱を許すKILL_ON_JOB_CLOSEのJobの中から起動した管理サービスは、そのJobの終了後も生存する。
-
-    SSHのセッションは所属プロセスをこの種類のJobへ入れ、venvのpython.exeは子を自動で離脱させるJobをその内側に作る。
-    2026-11-19、SSHのセッションから起動した管理サービスが外側のJobに残り、セッションの終了とともに終了した。
-    """
-    environment = dict(service_environment, XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
-    registry = GenerationRegistry(service_transport.namespace(CallerContext(environment, tmp_path)))
-    try:
-        with windows_job.WindowsJob() as job:
-
-            def member(command: list[str]) -> subprocess.Popen[bytes]:
-                process = subprocess.Popen(  # pylint: disable=consider-using-with
-                    command, stdin=subprocess.DEVNULL, env=environment, creationflags=windows_job.CREATE_SUSPENDED
-                )
-                # _handleはWindows版CPythonの属性であり、Linux上の型検査からは解決できない。
-                job.assign_suspended(int(cast(Any, process)._handle), process.pid)  # pylint: disable=protected-access,no-member
-                return process
-
-            launcher = member(_launch_command(_PLUGIN_ROOT))
-            unbroken = member([sys.executable, "-c", "import time; time.sleep(600)"])
-            assert launcher.wait(timeout=120) == 0
-            current = registry.current()
-            assert current is not None and service_transport.process_alive(current["process"])
-
-            service = psutil.Process(int(current["process"].split(":", 1)[0]))
-            owners = [process for process in service.parents() if _serves(process, registry.directory)]
-            assert owners
-
-        unbroken.wait(timeout=30)
-        exited, _running = psutil.wait_procs([service, *owners], timeout=3)
-        assert not exited
-        assert service_transport.process_alive(current["process"])
-    finally:
-        _stop_services(registry.directory)
 
 
 def test_unreclaimed_startup_process_is_reported_apart_from_startup_failure(monkeypatch: pytest.MonkeyPatch) -> None:

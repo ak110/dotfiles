@@ -147,7 +147,7 @@ def run(
 
 
 def resolve_targets(targets: Callable[[], list[Path]], *, tag: str) -> tuple[list[Path], Path] | None:
-    uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
+    uv = _resolve_uv()
     if uv is None:
         logger.warning(
             log_format.format_status(
@@ -178,33 +178,44 @@ def resolve_targets(targets: Callable[[], list[Path]], *, tag: str) -> tuple[lis
 class PreparedTargets:
     commands: list[list[str]]
     legacy: tuple[Path, ...] = ()
+    failures: tuple[str, ...] = ()
 
 
 def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> PreparedTargets:
-    resolved = resolve_targets(targets, tag=tag)
-    if resolved is None:
+    paths = targets()
+    if not paths:
         return PreparedTargets([])
-    paths, python = resolved
-    prepared: dict[Path, bool] = {}
+    uv = _resolve_uv()
+    if uv is None:
+        return PreparedTargets([], failures=tuple(f"{target}: uvの解決に失敗: uv CLIが見つかりません" for target in paths))
+    try:
+        python = _find_python(uv)
+    except (OSError, ValueError) as error:
+        return PreparedTargets([], failures=tuple(f"{target}: Pythonの解決に失敗: {error}" for target in paths))
+    prepared: dict[Path, CommandOutcome] = {}
     commands: list[list[str]] = []
     legacy: list[Path] = []
+    failures: list[str] = []
     for target in paths:
         bootstrap = _bootstrap(target, python)
-        key = _environment_key(Path(bootstrap[-1]), python, target=target, tag=tag)
+        try:
+            key = _environment_key(Path(bootstrap[-1]), python, target=target, tag=tag)
+        except (OSError, ValueError) as error:
+            failures.append(f"{target}: 共有依存環境の準備に失敗: {error}")
+            continue
         if key is None:
             legacy.append(target)
             continue
         if key not in prepared:
-            prepared[key] = run_command([*bootstrap, "--prepare", str(target)], target=log_format.home_short(target), tag=tag)
-        if prepared[key]:
+            result = _run_command([*bootstrap, "--prepare", str(target)])
+            result.report(target=log_format.home_short(target), tag=tag)
+            prepared[key] = result
+        result = prepared[key]
+        if result.ok:
             commands.append([*bootstrap, str(target)])
         else:
-            logger.warning(
-                log_format.format_status(
-                    tag, f"共有依存環境を準備できず対象の確認を省略: {target}。`update-dotfiles`を再実行する"
-                )
-            )
-    return PreparedTargets(commands, tuple(legacy))
+            failures.append(f"{target}: 共有依存環境の準備（--prepare）に失敗: {result.failure_reason()}")
+    return PreparedTargets(commands, tuple(legacy), tuple(failures))
 
 
 def cleanup_prepared(prepared: PreparedTargets, *, approved_commands: Sequence[Sequence[str]]) -> None:
@@ -374,7 +385,17 @@ def warmup(
     prepared: set[Path] | None = None,
 ) -> bool:
     bootstrap = _bootstrap(path, python)
-    key = _environment_key(Path(bootstrap[-1]), python, target=path, tag=tag)
+    try:
+        key = _environment_key(Path(bootstrap[-1]), python, target=path, tag=tag)
+    except FileNotFoundError as error:
+        logger.warning(
+            log_format.format_status(
+                tag,
+                f"依存の固定内容が見つからず準備を省略: {path}: {error}。"
+                "プラグインの導入・更新手順で配布物を回復してから`update-dotfiles`を再実行する",
+            )
+        )
+        return False
     if key is None:
         return False
     if prepared is None or key not in prepared:
@@ -386,7 +407,7 @@ def warmup(
 
 
 def _environment_key(root: Path, python: Path, *, target: Path, tag: str) -> Path | None:
-    """配布rootの共有依存環境を返す。依存の固定内容を持たない旧形式の配布rootはNone。
+    """配布rootの共有依存環境を返す。旧形式の依存定義と固定内容が残る配布rootはNone。  pyfltr: allow-comment
 
     旧形式（配布rootにuvのプロジェクトを置いた版）は、その版自身の起動部分だけが準備できる。
     更新に失敗して有効版が旧形式のまま残った場合に、更新後の起動部分で準備せず再更新を案内する。
@@ -394,6 +415,8 @@ def _environment_key(root: Path, python: Path, *, target: Path, tag: str) -> Pat
     try:
         return plugin_environment.project_environment(root, os.environ, python_executable=python)
     except FileNotFoundError:
+        if not ((root / "pyproject.toml").is_file() and (root / "uv.lock").is_file()):
+            raise
         logger.warning(
             log_format.format_status(
                 tag,
@@ -404,7 +427,23 @@ def _environment_key(root: Path, python: Path, *, target: Path, tag: str) -> Pat
         return None
 
 
+def _resolve_uv() -> Path | None:
+    return common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
+
+
 def _resolve_python(uv: Path, tag: str) -> Path | None:
+    try:
+        return _find_python(uv)
+    except ValueError as error:
+        logger.warning(
+            log_format.format_status(
+                tag, f"agent-toolkit用Pythonを解決できないため環境構築を除外: {error}。`update-dotfiles`を再実行する"
+            )
+        )
+        return None
+
+
+def _find_python(uv: Path) -> Path:
     result = common.run_subprocess(
         [str(uv), "python", "find", "--no-config", "--no-project", "3.15"],
         timeout=_PYTHON_FIND_TIMEOUT,
@@ -414,14 +453,8 @@ def _resolve_python(uv: Path, tag: str) -> Path | None:
         path = Path(result.stdout.strip())
         if path.is_file():
             return path.resolve()
-    logger.warning(
-        log_format.format_status(
-            tag,
-            "agent-toolkit用Pythonを解決できないため環境構築を除外: "
-            f"{common.format_cli_error(result)}。`update-dotfiles`を再実行する",
-        )
-    )
-    return None
+        raise ValueError(f"uvが返したPythonが実在するファイルではありません: {result.stdout.strip()!r}")
+    raise ValueError(common.format_cli_error(result))
 
 
 def _bootstrap(path: Path, python: Path) -> list[str]:
@@ -440,9 +473,13 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
 
     失敗は警告として記録し、構築できた場合は真を返す。
     """
+    return _run_command(cmd).report(target=target, tag=tag)
+
+
+def _run_command(cmd: Sequence[str]) -> CommandOutcome:
     started = time.monotonic()
     result = common.run_subprocess(list(cmd), timeout=_WARMUP_TIMEOUT, tag=Path(cmd[0]).stem)
-    return CommandOutcome(list(cmd), result, time.monotonic() - started).report(target=target, tag=tag)
+    return CommandOutcome(list(cmd), result, time.monotonic() - started)
 
 
 def output_summary(output: str) -> str:
@@ -462,6 +499,9 @@ class CommandOutcome:
     @property
     def ok(self) -> bool:
         return self.result is not None and self.result.returncode == 0
+
+    def failure_reason(self) -> str:
+        return self.error or common.format_cli_error(self.result)
 
     def report(self, *, target: str, tag: str) -> bool:
         """標準出力・標準エラーを対象と対応付け、成功と失敗の診断を表示する。"""

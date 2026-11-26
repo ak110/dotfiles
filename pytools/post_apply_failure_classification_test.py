@@ -30,6 +30,7 @@ from pytools._internal import (
     install_codex_plugins,
     install_libarchive,
     install_opencode_toolkit,
+    post_apply_outcome,
     prune_claude_plugin_cache,
     prune_foreign_tools,
     remove_codex_claude_mcp,
@@ -146,13 +147,118 @@ def _codex_plugins_add_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     monkeypatch.setattr(install_codex_plugins, "_remove_unused_plugins", _raise(RuntimeError("Codex plugin addに失敗")))
 
 
-def _uv_environment_build_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    script = tmp_path / "plugin" / "agent_toolkit" / "agents_server_mcp.py"
+def _prepare_warmup_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path]:
+    root = tmp_path / "agent-toolkit"
+    script = root / "agent_toolkit" / "agents_server_mcp.py"
     script.parent.mkdir(parents=True)
-    script.write_text("", encoding="utf-8")
+    script.touch()
+    lock = root / "scripts" / "launch.py.lock"
+    lock.parent.mkdir()
+    lock.write_text("version = 1\n", encoding="utf-8")
+    config = warmup_agents_server.config_settings.config_file_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        json.dumps({"repositories": json.dumps({"github.com/ak110/dotfiles": {"edit": "allow", "path": str(tmp_path)}})}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(common, "resolve_executable", lambda name, **_kwargs: tmp_path / name)
     monkeypatch.setattr(warmup_agents_server, "_targets", lambda: [script])
+    python = tmp_path / "python"
+    python.touch()
+    return script, python
+
+
+def _uv_environment_build_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _prepare_warmup_failure(monkeypatch, tmp_path)
     monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _completed(1, stderr="resolution failed"))
+
+
+def _warmup_summary_after_later_step(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
+    monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", tmp_path / "state" / "sync-report.json")
+    marker = tmp_path / "later-step"
+
+    def later():
+        marker.touch()
+        return post_apply_outcome.PostApplyOutcome()
+
+    steps: list[post_apply._StepSpec | tuple[str, Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
+        ("warmup", warmup_agents_server.run),
+        post_apply._StepSpec("後続", later, after_all_preceding=True),  # noqa: SLF001
+    ]
+    with pytest.raises(SystemExit) as ended:
+        post_apply.main(runner=lambda: post_apply.run(steps))
+
+    assert ended.value.code == 1 and marker.is_file()
+    data = json.loads((tmp_path / "state" / "sync-report.json").read_text(encoding="utf-8"))
+    (failed,) = data["post_apply"]["failed_steps"]
+    assert failed["name"] == "warmup"
+    return str(failed["reason"])
+
+
+@pytest.mark.parametrize(
+    ("failed_stage", "diagnostic"),
+    [("--prepare", "prepare denied"), ("--check-dependencies", "dependency bad")],
+)
+def test_warmup_failure_reaches_summary_after_later_step(monkeypatch, tmp_path, capsys, failed_stage, diagnostic):
+    script, python = _prepare_warmup_failure(monkeypatch, tmp_path)
+
+    def run(command, **_kwargs):
+        if command[1:3] == ["python", "find"]:
+            return _completed(0, stdout=str(python))
+        return _completed(1, stderr=diagnostic) if failed_stage in command else _completed(0)
+
+    async def check(command):
+        return warmup_agents_server.plugin_warmup.CommandOutcome(command, run(command), 0)
+
+    monkeypatch.setattr(common, "run_subprocess", run)
+    monkeypatch.setattr(warmup_agents_server.plugin_warmup, "check_command", check)
+    reason = _warmup_summary_after_later_step(monkeypatch, tmp_path)
+
+    assert failed_stage in reason and diagnostic in reason and str(script) in reason
+    assert diagnostic in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("missing", ["checkout", "cache"])
+@pytest.mark.parametrize("other_target", [False, True])
+def test_missing_current_dependency_lock_fails_after_later_step(monkeypatch, tmp_path, capsys, missing, other_target):
+    checkout_script, python = _prepare_warmup_failure(monkeypatch, tmp_path)
+    claude_home = tmp_path / "claude"
+    cache = claude_home / "plugins" / "cache" / claude_common.MARKETPLACE_NAME / "agent-toolkit" / "current"
+    cache_script = cache / "agent_toolkit" / "agents_server_mcp.py"
+    cache_script.parent.mkdir(parents=True)
+    cache_script.touch()
+    cache_lock = cache / "scripts" / "launch.py.lock"
+    cache_lock.parent.mkdir(parents=True)
+    cache_lock.write_text("version = 1\n", encoding="utf-8")
+    monkeypatch.setattr(claude_common, "CLAUDE_HOME", claude_home)
+    failed, other = (checkout_script, cache_script) if missing == "checkout" else (cache_script, checkout_script)
+    lock = failed.parents[1] / "scripts" / "launch.py.lock"
+    lock.unlink()
+    monkeypatch.setattr(warmup_agents_server, "_targets", lambda: [failed, other] if other_target else [failed])
+    monkeypatch.setattr(warmup_agents_server.post_apply_cache, "matches", lambda *_args: False)
+    monkeypatch.setattr(warmup_agents_server.windows_security, "is_elevated_above_user_processes", lambda: False)
+    monkeypatch.setattr(
+        common, "run_subprocess", lambda command, **_kwargs: _completed(0, stdout=str(python) if "find" in command else "")
+    )
+    started = []
+
+    async def check(command):
+        return warmup_agents_server.plugin_warmup.CommandOutcome(command, _completed(0), 0)
+
+    async def startup(command):
+        started.append(Path(command[-1]))
+        return warmup_agents_server._StartupOutcome(True, "起動確認済み")
+
+    monkeypatch.setattr(warmup_agents_server.plugin_warmup, "check_command", check)
+    monkeypatch.setattr(warmup_agents_server, "_check_startup", startup)
+
+    reason = _warmup_summary_after_later_step(monkeypatch, tmp_path)
+
+    assert str(failed) in reason and "共有依存環境の準備に失敗" in reason and "launch.py.lock" in reason
+    assert "launch.py.lock" in capsys.readouterr().err
+    assert started == ([other] if other_target else [])
 
 
 def _uvx_environment_build_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -442,7 +548,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "Claude Code plugin cache の旧版削除": [(_plugin_cache_removal_fails, 1)],
     "Codex plugin snapshot の生成": [(_codex_snapshot_write_fails, 1)],
     "Codex plugin のインストール": [(_codex_plugins_add_fails, 0)],
-    "agents_serverのuv環境ウォームアップ": [(_uv_environment_build_fails, 0)],
+    "agents_serverのuv環境ウォームアップ": [(_uv_environment_build_fails, 1)],
     "pyfltr MCPのuv環境ウォームアップ": [(_uvx_environment_build_fails, 0)],
     "旧Codex User scope MCP登録の移行": [(_legacy_codex_mcp_removal_fails, 1)],
     "Claude 設定": [(_claude_settings_write_fails, 1)],
