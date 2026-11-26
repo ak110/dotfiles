@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from agent_toolkit._agents_server.launch_requests_materials import exec_review_wi_names
+from agent_toolkit._atk import lane_records
 from agent_toolkit._atk.session_record_format import as_text
 from agent_toolkit._atk.wi import frontmatter, layout, processing_owner, repo, user_comment, uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_TYPE_AWI, WI_TYPE_UWI
@@ -131,6 +133,29 @@ def _legacy_wi_model(comment: str, phase: str, model_type: str) -> bool:
     return bool(values) and all(value == model_type for value in values)
 
 
+def _assigned_wi(launch: Mapping[str, Any], filename: str) -> bool:
+    if launch["mode"] != "task":
+        return False
+    params = launch.get("extra_params") or {}
+    document = pathlib.Path(launch.get("subagent_md_path") or "").name
+    if document == "exec-review.subagent.md":
+        bases = {value.strip() for value in re.split(r"[、,，､]", params.get("レビュー基準", ""))}
+        if "CI記録" in bases:
+            return False
+        scope = {"計画": params["計画"]} if "計画" in bases else {}
+        if "WI" in bases and (record := params.get("WI記録")):
+            scope["WI記録"] = record
+        return exec_review_wi_names(scope) == {filename}
+    if document != "exec.subagent.md" or params.get("担当種別") != "レーン担当":
+        return False
+    selection_file = pathlib.Path(params.get("選定結果の出力先ファイル") or "")
+    lane = params.get("レーン識別子")
+    if not selection_file.is_absolute() or not isinstance(lane, str) or not lane.strip():
+        return False
+    assigned = lane_records.read_selection({"selection_file": selection_file, "lane": lane})
+    return assigned is not None and assigned["lane_wis"] == [filename]
+
+
 def _matches_wi(
     evidence: str,
     expected: str,
@@ -164,6 +189,7 @@ def _matches_wi(
             and owner is not None
             and owner.host == socket.gethostname()
             and owner.session in ancestry
+            and _assigned_wi(launch, filename)
         ):
             return False
         comment = user_comment.extract_user_comment(raw)
@@ -210,7 +236,7 @@ def require(
             or _matches_wi(evidence, expected, ancestry, launch=launch, phase=phase, model_type=model_type)
         ):
             return
-    except OSError, ValueError:
+    except OSError, ValueError, yaml.YAMLError:
         pass
     raise ActionableError(
         "本人の原文・回答を取得できないか、今回の対象・工程・全候補に一致しない。委譲先は起動していない。",

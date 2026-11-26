@@ -367,8 +367,7 @@ def _check_review_bases(params: Mapping[str, str]) -> None:
         _material_paths("計画", params["計画"])
 
 
-def _check_exec_review_materials(params: Mapping[str, str]) -> None:
-    _check_review_bases(params)
+def exec_review_wi_names(params: Mapping[str, str]) -> set[str]:
     names: set[str] = set()
     if plan := params.get("計画"):
         for path in _material_paths("計画", plan):
@@ -377,6 +376,12 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
     if record and "\n" not in record and pathlib.Path(record).is_absolute():
         record = _material_paths("WI記録", record)[0].read_text(encoding="utf-8")
     names.update(re.findall(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md", record))
+    return names
+
+
+def _check_exec_review_materials(params: Mapping[str, str]) -> None:
+    _check_review_bases(params)
+    names = exec_review_wi_names(params)
     if original := params.get("評価用WI原本"):
         try:
             if not pathlib.Path(original).is_absolute() or "\n" in original:

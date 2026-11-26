@@ -23,6 +23,14 @@ _WI = "20261126-224649-001.md"
 _REPO = "github.com/example/project"
 
 
+def _lane_inputs(root: pathlib.Path, *wis: str) -> dict[str, str]:
+    params = _observed_input_params("exec.subagent.md", root)
+    selection = root / "selection.yaml"
+    rows = [{"WI": wi, "レーン": params["レーン識別子"]} for wi in wis]
+    selection.write_text(json.dumps({"選定": rows}, ensure_ascii=False), encoding="utf-8")
+    return {**params, "選定結果の出力先ファイル": str(selection)}
+
+
 def _human(text: str) -> dict[str, Any]:
     return {"type": "user", "origin": {"kind": "human"}, "message": {"content": text}}
 
@@ -110,6 +118,9 @@ async def test_public_start_accepts_scoped_human_selection(
         "model_override": "user_instruction",
         "model_override_evidence": _PROOF,
     }
+    if kind == "wi":
+        inputs.pop("prompt")
+        inputs.update(mode="task", subagent_md_path="exec", extra_params=_lane_inputs(tmp_path, _WI))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:draft/medium")
     async with _manager_with_fake("codex") as (manager, backend):
         _record(monkeypatch, manager, record, engine="codex" if kind == "codex" else "claude")
@@ -136,7 +147,9 @@ async def test_public_start_accepts_scoped_human_selection(
                 body = f"## 質問\n\n{approved}\n\n## 回答\n{ANSWER_MARKER}\n{approved}\n"
             entry.write_text(f"---\nstate: processing\ntarget_repo: {_REPO}\n{content}---\n\n{body}", encoding="utf-8")
         await mcp_tools.mcp.call_tool("start", inputs)
-        assert backend.start_calls == ([("draft", "medium", "write")] if kind == "write" else [("explicit", "high", "explore")])
+        launch_kind = "delegate" if kind == "wi" else "explore"
+        expected = ("draft", "medium", "write") if kind == "write" else ("explicit", "high", launch_kind)
+        assert backend.start_calls == [expected]
 
 
 @pytest.mark.asyncio
@@ -297,17 +310,20 @@ async def test_recorded_start_failure_allows_recovery_only_for_the_failed_phase(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "author,comment",
+    "author,comment,assignment",
     [
-        ("human", '担当モデル: {実装担当: "codex:explicit/high"}'),
-        ("human", "実装担当: `codex:explicit/high`"),
-        ("agent", "実装担当: `codex:explicit/high`"),
-        ("human", "> 実装担当: `codex:explicit/high`"),
-        ("human", '担当モデル: {実装担当: "codex:other/high", 実装担当: "codex:explicit/high"}'),
+        ("human", '担当モデル: {実装担当: "codex:explicit/high"}', "same"),
+        ("human", "実装担当: `codex:explicit/high`", "same"),
+        ("agent", "実装担当: `codex:explicit/high`", "same"),
+        ("human", "> 実装担当: `codex:explicit/high`", "same"),
+        ("human", '担当モデル: {実装担当: "codex:other/high", 実装担当: "codex:explicit/high"}', "same"),
+        ("human", "実装担当: `codex:explicit/high`", "unassigned"),
+        ("human", "実装担当: `codex:explicit/high`", "other"),
+        ("human", "実装担当: `codex:explicit/high`", "multiple"),
     ],
 )
 async def test_existing_wi_model_requires_a_matching_user_field(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, author: str, comment: str
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, author: str, comment: str, assignment: str
 ) -> None:
     notes = tmp_path / "notes"
     entry = notes / "2026" / "11" / _WI
@@ -320,18 +336,20 @@ async def test_existing_wi_model_requires_a_matching_user_field(
         f"processing_owner: {{host: {socket.gethostname()}, session: {_OWNER}}}\n---\n\n## {section}\n\n{comment}\n",
         encoding="utf-8",
     )
+    other = "20261126-224649-002.md"
+    assignments = {"same": (_WI,), "unassigned": (), "other": (other,), "multiple": (_WI, other)}
     inputs = {
         "cwd": str(tmp_path),
         "subagent_md_path": "exec",
         "label": entry.stem,
-        "extra_params": _observed_input_params("exec.subagent.md", tmp_path),
+        "extra_params": _lane_inputs(tmp_path, *assignments[assignment]),
         "model_type": _MODEL,
         "model_override": "user_instruction",
         "model_override_evidence": f"wi:{_WI}",
     }
     async with _manager_with_fake("codex") as (manager, backend):
         _record(monkeypatch, manager, tmp_path / "session.jsonl")
-        if author != "human" or comment.startswith(">") or "codex:other" in comment:
+        if assignment != "same" or author != "human" or comment.startswith(">") or "codex:other" in comment:
             with pytest.raises(ToolError, match="起動していない"):
                 await mcp_tools.mcp.call_tool("start", inputs)
             assert not backend.start_calls
