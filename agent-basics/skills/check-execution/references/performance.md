@@ -1,5 +1,6 @@
 # 性能の測定
 
+性能を測る担当が条件をそろえた測定で採否と報告を決め、ユーザーが誤差や推測に基づく性能の主張で判断を誤らないようにする。
 速度や資源使用量を測る時と、測った数値で採否を決める・報告する前に、上から実行する手順書である。
 数値の主張を観測の範囲に限る点は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）の適用である。
 測るかどうかと回数を判断の必要で決める点は原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）の適用である。

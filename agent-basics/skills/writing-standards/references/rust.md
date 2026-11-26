@@ -1,5 +1,6 @@
 # Rust記述スタイル
 
+Rustで実装する担当が採用するライブラリと`unsafe`の根拠の書き方をそろえ、ユーザーが保守しにくいエラー処理や根拠の無い`unsafe`を含むコードを受け取らないようにする。
 Rustのコードとテストを書く時とレビューする時の、採用するライブラリと`unsafe`の根拠の書き方を示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用として、Rustに固有の決まりだけを置く。
 

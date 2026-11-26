@@ -13,6 +13,7 @@ description: >
 
 # 検証の実行と判定
 
+変更を検証する担当が必要な検証を実行して結果を観測どおりに判定し、ユーザーが確かめていない成功を信じて欠陥を受け取らないようにする。
 変更を検証する担当者が、実行するチェックとテスト、正規の検証コマンド、結果の判定、起動した検証の回収方法を決める手順である。
 成功の主張を観測の範囲に限る点は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）の適用である。
 検証の深さとコストの比べ方は原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）の適用である。

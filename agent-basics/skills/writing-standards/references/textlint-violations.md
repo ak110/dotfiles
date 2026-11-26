@@ -1,5 +1,6 @@
 # 文章チェックと診断
 
+文章チェックの診断へ対応する担当が意味を保ったまま直し、読み手が規則に合い意味の変わらない文章を受け取れるようにする。
 文章チェック（textlint、markdownlint、口語表現チェック、ダッシュ記号チェック、typos）の対象、実行、診断への対応と、文の書き直しを委ねる時の検収を定める。
 チェックで守れる規則をチェックに任せる（原則9、`agent-basics:writing-standards/references/quality-principles-subtraction.md`）。
 意味が保たれたかは作った者と別の担当が確かめる（原則6、`agent-basics:writing-standards/references/quality-principles-verification.md`）。

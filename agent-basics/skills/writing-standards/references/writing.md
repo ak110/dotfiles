@@ -1,5 +1,6 @@
 # 文章の書き方
 
+文章を書く担当が読み手の文脈で書き、人間とエージェントが誤解せずに内容を判断へ使えるようにする。
 人間とエージェントが読む文章（文書、README、コメント、作業項目の本文、委譲の依頼文、報告、コミットメッセージなど）を書く時と直す時の共通の規定である。
 原則8（`agent-basics:writing-standards/references/quality-principles-readers.md`）を文章へ当てはめ、原則から導けない規定と原則だけでは外れやすい場面を書く。
 事実と推論の区別は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従う。

@@ -1,5 +1,6 @@
 # レビュー担当の手順
 
+レビュー担当が根拠を示して欠陥を指摘し、ユーザーが作った者の見落としを含む成果物を受け取らないようにする。
 レビュー担当が、コード・文書・計画・作業項目のレビューと、提案・判断・委譲先の出力の妥当性の評価で実行する手順と指摘基準を定める。
 原則6（`agent-basics:writing-standards/references/quality-principles-verification.md`）を独立した確認へ適用する。
 原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）を指摘の根拠へ適用する。

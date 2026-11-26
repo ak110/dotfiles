@@ -1,5 +1,6 @@
 # 文字エンコーディングの詳細
 
+文字コードと改行を扱う担当が混在する環境で誤りやすい点を避け、ユーザーが文字化けや壊れたファイルを受け取らないようにする。
 WindowsとLinuxが混在する日本語の環境で文字コードと改行を扱う時（入出力、ZIP、Unicodeの正規化、書込ツールでの編集）の、一般知識から導けない誤りやすい点と避け方を示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用である。
 

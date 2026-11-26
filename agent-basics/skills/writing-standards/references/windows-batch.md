@@ -1,5 +1,6 @@
 # Windowsバッチファイル記述スタイル
 
+バッチファイルを書く担当がcmd.exeに固有の誤りを避け、ユーザーが文字化けや予期しない動作を起こすバッチを受け取らないようにする。
 cmd.exeで実行するバッチファイル（`.cmd`、`.bat`）を作る時と編集する時の、採用の判断と文字コード・改行の扱いを示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用として、cmd.exeに固有の決まりだけを置く。
 

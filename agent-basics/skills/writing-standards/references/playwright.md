@@ -1,5 +1,6 @@
 # Playwrightテスト記述スタイル
 
+Playwrightでテストを書く担当が待機と診断の誤りを避け、ユーザーが不安定な試験や原因を特定できない失敗を受け取らないようにする。
 対象の版: Playwright Test v1系とPythonのバインディング（公式のベストプラクティス <https://playwright.dev/docs/best-practices>）。
 本書は、Playwrightでブラウザーのテストを書く・直す・レビューする時に、誤りやすい待機と診断の採り方を示す。
 ロケーター、アサーション、隔離の基準はPythonのバインディングにも当てはめ、設定はランナーごとの契約（Playwright TestとPythonで別）に従う。

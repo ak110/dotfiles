@@ -1,5 +1,6 @@
 # スキルの実装
 
+スキルを作る担当が、必要な場面で起動されて必要な資料だけを読ませる構造にし、ユーザーが起動漏れや過剰な読込による誤りと遅れを受けないようにする。
 本書は、Agent Skillsのスキル（`SKILL.md`、frontmatter、`references/`）を作る時と改める時の基準である。
 エージェントの種類を問わない部分を扱い、Claude Codeに固有の事項は節名か項目に明記する。
 主に原則8（`agent-basics:writing-standards/references/quality-principles-readers.md`）の適用である。

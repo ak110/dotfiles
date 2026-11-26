@@ -1,5 +1,6 @@
 # Bash記述スタイル
 
+Bashのスクリプトを書く担当が誤りやすい書き方を避け、ユーザーが意図しない削除や失敗の見逃しを起こすスクリプトを受け取らないようにする。
 Bashのスクリプト（`sh`、`bash`、`sh.tmpl`）を書く時とレビューする時の、採る書き方と、`exec`と削除で誤りやすい点を示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用である。
 削除の規定は原則4（`agent-basics:writing-standards/references/quality-principles-constraints.md`）の適用である。

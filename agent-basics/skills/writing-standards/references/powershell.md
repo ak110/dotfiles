@@ -1,5 +1,6 @@
 # PowerShell記述スタイル
 
+PowerShellのスクリプトを書く担当が版の互換と失敗の検知を守り、ユーザーが一部の環境で動かないスクリプトや失敗を見逃すスクリプトを受け取らないようにする。
 PowerShellのスクリプトを書く時とレビューする時の、Windows PowerShell 5.1との互換、外部コマンドの失敗の検知、COMの呼び出し方を示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用として、PowerShellに固有の決まりだけを置く。
 PSScriptAnalyzerが導入されている環境では、その診断に従う。

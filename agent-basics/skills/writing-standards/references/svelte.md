@@ -1,5 +1,6 @@
 # Svelte／SvelteKit記述スタイル
 
+Svelteで実装する担当が版に固有の誤りを避け、ユーザーが動かない画面や状態の漏えい、CSRFの欠陥を受け取らないようにする。
 対象の版: Svelte 5系、SvelteKit 2〜3系。
 本書は、runesモードで書くSvelteとSvelteKitのコードで、公式ドキュメント（<https://svelte.dev/docs>）のうち誤りやすい版に固有の事項を示す。
 サーバーの状態、CSRF、秘匿値の規定は`agent-basics:writing-standards/references/quality-principles-constraints.md`の適用である。

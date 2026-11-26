@@ -1,5 +1,6 @@
 # pytilpackの使い方
 
+pytilpackへ依存するプロジェクトで実装する担当が既存の機能を先に使い、ユーザーが同じ処理の重複した実装と保守の負担を抱えないようにする。
 pytilpackはPythonのユーティリティ集で、各種ライブラリ向けの拡張と汎用モジュールを`import pytilpack.<対象ライブラリ名または汎用モジュール名>`（`pytilpack.httpx`、`pytilpack.cache`など）で提供する。
 本書は、pytilpackを使うコードを読み書きする時と、pytilpackへ依存するプロジェクトで汎用的な処理を新しく実装する前に読む。
 既存の機能を先に探すのは`agent-basics:writing-standards/references/quality-principles-subtraction.md`の適用である。

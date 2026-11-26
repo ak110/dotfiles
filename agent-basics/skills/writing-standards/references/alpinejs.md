@@ -1,5 +1,6 @@
 # Alpine.js記述スタイル
 
+Alpine.jsで実装する担当が版に固有の誤りを避け、ユーザーが動かない画面や安全でないHTMLの挿入を受け取らないようにする。
 対象の版: Alpine.js v3系（公式ドキュメント <https://alpinejs.dev/start-here>）。
 本書は、Alpine.jsを使う実装を書く・直す時に、版に固有の書き方と誤りやすい事項を示す。
 CSPとHTMLの挿入の規定は`agent-basics:writing-standards/references/quality-principles-constraints.md`の適用である。
