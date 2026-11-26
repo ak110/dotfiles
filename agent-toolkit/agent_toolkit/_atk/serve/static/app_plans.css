@@ -262,6 +262,9 @@
   #screen-plans.drawer-open #plans-drawer-backdrop {
     display: block;
   }
+  #screen-plans main .toolbar {
+    padding-inline: var(--space-2);
+  }
   #screen-plans #plans-menu-btn {
     display: inline-flex;
     align-items: center;
@@ -302,4 +305,4 @@
   }
 }
 
-#screen-plans main .toolbar { position: sticky; top: 0; z-index: 2; flex-wrap: wrap; background: var(--color-surface); }
+#screen-plans main .toolbar { position: sticky; top: 0; z-index: 2; background: var(--color-surface); }
