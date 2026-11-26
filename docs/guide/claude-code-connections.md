@@ -8,9 +8,9 @@ Codexの認証の所在と各エンジンの使用順は、`atk serve`の「設�
 ## 接続の使い分け
 
 設定画面では、ローカルの共有設定を「全ホスト共通」で編集する。
-共有先が一致しないホストの値は「ホスト別」で編集する。
+共有先が一致しないホストの値は「設定対象ホスト」で選んだホストの欄で編集する。
 
-接続の使用順、利用上限の待機方針、Codexのprovider ID（`codex_credits_provider`・`codex_payg_provider`）は、同じprivate-notesを同期する環境で共有する。
+同じprivate-notesを同期する環境では、接続の使用順、利用上限の待機方針、Codexのprovider ID（`codex_credits_provider`・`codex_payg_provider`）を共有する。
 provider IDの定義と認証は各端末の`config.toml`と環境変数に置き、共有しない。
 共有したIDがある端末の`config.toml`に無い場合は、「設定」に端末名・キーとともに警告が出る。
 共有設定ファイルの場所は`atk config show`の標準エラーで確認できる。

@@ -218,9 +218,11 @@ async def test_opening_settings_prefetches_unselected_hosts_without_migrating_th
         async with asyncio.timeout(3):
             while True:
                 listing = await (await client.get("/api/settings?background=1")).get_json()
-                if listing["automatic_unsupported"] == ["legacy"]:
+                states = {name: peer["state"] for name, peer in listing["comparison"].items()}
+                if states == {"current": "ready", "legacy": "legacy"}:
                     break
                 await asyncio.sleep(0.01)
+        assert listing["automatic_unsupported"] == ["legacy"]
         cached = await (await client.get("/api/settings?host=current&background=1")).get_json()
         assert cached["settings"] == {}
         assert set(calls) == {

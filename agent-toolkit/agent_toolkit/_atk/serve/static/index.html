@@ -453,8 +453,6 @@
         <button id="settings-search-clear" type="button" hidden>絞り込みを解除</button>
         <p id="settings-no-matches" role="status" hidden>一致する設定はありません。</p>
       </div>
-      <h2>ホスト別</h2>
-      <a href="#settings-shared-heading">全ホスト共通の設定へ</a>
       <div class="settings-toolbar">
       <label for="settings-host">設定対象ホスト</label>
       <select id="settings-host" disabled><option value="">ローカル</option></select>
@@ -465,15 +463,12 @@
         <p id="settings-fast-reason"></p>
       </details>
       <details id="settings-compare"><summary>ホスト別の設定を比較</summary><div id="settings-comparison" tabindex="0" role="region" aria-label="ホスト別の設定の比較"></div></details>
+      <div id="settings-shared"></div>
       <div id="settings-unsaved"></div>
       <div class="settings-layout">
         <nav id="settings-nav" aria-label="設定の分類"></nav>
         <div id="settings-content"></div>
       </div>
-      <section aria-labelledby="settings-shared-heading">
-        <h2 id="settings-shared-heading">全ホスト共通</h2>
-        <div id="settings-shared"></div>
-      </section>
     </main>
   </section>
 

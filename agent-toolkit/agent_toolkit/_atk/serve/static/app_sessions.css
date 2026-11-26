@@ -308,7 +308,7 @@
   margin: 0;
 }
 #settings-status:empty,
-:is(#settings-content, #settings-shared) [role="alert"]:empty {
+#settings-content [role="alert"]:empty {
   display: none;
 }
 .settings-layout {
@@ -316,11 +316,14 @@
   gap: var(--space-4);
   grid-template-columns: minmax(0, 1fr);
 }
-#settings-nav {
+#settings-nav:not([hidden]) {
   display: flex;
   flex-wrap: wrap;
   align-content: start;
   gap: var(--space-1);
+}
+#settings-nav[hidden] + #settings-content {
+  grid-column: 1 / -1;
 }
 #settings-nav button {
   text-align: start;
@@ -342,7 +345,7 @@
   margin-block-start: var(--space-3);
   padding-block-start: var(--space-3);
 }
-:is(#settings-content, #settings-shared) .settings-format {
+#settings-content .settings-format {
   color: var(--color-secondary-text);
   font-size: var(--font-size-small);
 }
@@ -355,6 +358,12 @@
 }
 #settings-content [data-setting] h3 {
   margin: 0;
+}
+#settings-content .settings-scope {
+  margin-block-start: var(--space-4);
+}
+#settings-content .settings-scope-heading {
+  margin-block: 0;
 }
 #settings-content [data-setting] p {
   margin-block: var(--space-2);
@@ -389,9 +398,9 @@
   .settings-layout {
     grid-template-columns: 12rem minmax(0, 1fr);
   }
-  .settings-row {
+  .settings-row:not([hidden]) {
     display: grid;
-    grid-template-columns: minmax(10rem, 2fr) minmax(0, 3fr);
+    grid-template-columns: minmax(0, 21rem) minmax(0, 1fr);
     gap: var(--space-3);
   }
   #settings-nav {
@@ -403,6 +412,7 @@
 }
 
 #settings-shared { overflow-wrap: anywhere; }
+#settings-shared > p { margin-block: var(--space-2); }
 #settings-comparison { max-inline-size: 100%; max-block-size: 24rem; overflow: auto; }
 #settings-comparison th { text-align: start; background: var(--color-surface); padding: var(--space-2); }
 #settings-comparison thead th { position: sticky; inset-block-start: 0; z-index: 1; }

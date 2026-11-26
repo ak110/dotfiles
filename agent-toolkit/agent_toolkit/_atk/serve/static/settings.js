@@ -11,6 +11,11 @@ const fastState = document.getElementById("settings-fast-state");
 const fastDetail = document.getElementById("settings-fast-detail");
 const fastReason = document.getElementById("settings-fast-reason");
 const shared = document.getElementById("settings-shared");
+const SHARED_SCOPE = '[data-scope="shared"]';
+const HOST_EDITOR = `[data-editor]:not(${SHARED_SCOPE} *)`;
+function inSharedScope(node) {
+  return Boolean(node.closest(SHARED_SCOPE));
+}
 const comparison = document.getElementById("settings-comparison");
 const search = document.getElementById("settings-search");
 let localData;
@@ -64,7 +69,7 @@ function editorFields(editor) {
 }
 
 function rememberEditors(savedSlot) {
-  return new Map(Array.from(content.querySelectorAll("[data-editor]"), editor => [
+  return new Map(Array.from(content.querySelectorAll(HOST_EDITOR), editor => [
     editor.dataset.editor,
     {
       open: editor.open,
@@ -106,13 +111,13 @@ function rememberSettingFocus(active) {
   if (navigation.contains(active)) return {group: active.dataset.group};
   const editor = active.closest("[data-editor]");
   const label = active.labels?.[0]?.textContent;
-  if (!editor || (!shared.contains(active) && !content.contains(active))) return null;
+  if (!editor || !content.contains(active)) return null;
   const sharedAction = active.dataset.sharedConflictAction;
   if (sharedAction) return {editor: editor.dataset.editor, shared: true, sharedAction};
   if (!label) return null;
   return {
     editor: editor.dataset.editor,
-    shared: shared.contains(editor),
+    shared: inSharedScope(editor),
     label,
     start: active.selectionStart,
     end: active.selectionEnd,
@@ -126,7 +131,8 @@ function restoreSettingFocus(focus) {
     navigation.querySelector(`[data-group="${CSS.escape(focus.group)}"]`)?.focus({preventScroll: true});
     return;
   }
-  const editor = (focus.shared ? shared : content).querySelector(`[data-editor="${CSS.escape(focus.editor)}"]`);
+  const slot = `[data-editor="${CSS.escape(focus.editor)}"]`;
+  const editor = content.querySelector(focus.shared ? `${SHARED_SCOPE} ${slot}` : `${HOST_EDITOR}${slot}`);
   if (!editor) return;
   if (focus.sharedAction) {
     editor.querySelector(`[data-shared-conflict-action="${CSS.escape(focus.sharedAction)}"]`)?.focus({preventScroll: true});
@@ -183,7 +189,7 @@ async function operate(payload, output, submittedEditor = null) {
 
 function restoreEditors(drafts, editorKey) {
   let savedEditor;
-  for (const editor of content.querySelectorAll("[data-editor]")) {
+  for (const editor of content.querySelectorAll(HOST_EDITOR)) {
     const previous = drafts.get(editor.dataset.editor);
     if (previous?.open) editor.open = true;
     if (editor.dataset.editor === "temporary" && previous?.values[0] != null) {
@@ -253,7 +259,8 @@ async function saveShared(payload, output) {
     localData = updated;
     renderComparison(displayedData ?? updated);
     renderShared(output.closest("[data-setting]")?.dataset.setting);
-    const notice = shared.querySelector(`[data-setting="${CSS.escape(payload.key ?? "")}"] [data-settings-result]`);
+    filterSettings();
+    const notice = content.querySelector(`${SHARED_SCOPE} [data-setting="${CSS.escape(payload.key ?? "")}"] [data-settings-result]`);
     if (notice) revealSettingResult(notice, "設定を保存しました。", true);
   } catch (error) {
     revealSettingResult(output, error.message, true);
@@ -305,24 +312,18 @@ async function retryComparison() {
 function filterSettings() {
   const needle = search.value.trim().toLowerCase();
   let count = 0;
-  for (const root of [shared, content]) {
-    for (const editor of root.querySelectorAll("[data-setting]")) {
-      editor.hidden = !!needle && !editor.dataset.search.includes(needle);
-      if (!editor.hidden) count++;
-    }
-    for (const group of root.querySelectorAll("section")) {
-      if (needle) group.hidden = !group.querySelector("[data-setting]:not([hidden])");
-      else if (root === shared) group.hidden = false;
-    }
+  for (const editor of content.querySelectorAll("[data-setting]")) {
+    editor.hidden = !!needle && !editor.dataset.search.includes(needle);
+    if (!editor.hidden) count++;
   }
-  if (!needle) showGroup();
+  showGroup(Boolean(needle));
   document.getElementById("settings-search-clear").hidden = !needle;
   document.getElementById("settings-no-matches").hidden = !needle || count > 0;
 }
 
 function updateUnsaved() {
   const list = document.getElementById("settings-unsaved");
-  const drafts = [...shared.querySelectorAll("[data-editor]"), ...content.querySelectorAll("[data-editor]")]
+  const drafts = [...content.querySelectorAll("[data-editor]")]
     .filter(editor => editorFields(editor).some(input => input.value !== input.dataset.initialValue));
   const other = [...hostDrafts.entries()].filter(([name]) => name !== host).flatMap(([name, {editors}]) =>
     [...editors].filter(([, draft]) => draft.values.some(Boolean)).map(([slot]) => [name, slot]));
@@ -356,7 +357,7 @@ document.getElementById("settings-search-clear").addEventListener("click", () =>
   filterSettings();
   search.focus();
 });
-for (const root of [shared, content]) root.addEventListener("input", updateUnsaved);
+content.addEventListener("input", updateUnsaved);
 function warnOnUnload(event) {
   event.preventDefault();
   event.returnValue = "";
@@ -390,10 +391,8 @@ function render(data) {
   renderFastStart(data);
   if (!host) {
     localData = data;
-    renderShared();
   } else if (localData && data.comparison) {
     localData = {...localData, comparison: data.comparison};
-    renderSharedComparison();
   }
   renderComparison(data);
   renderHost(data);
@@ -413,12 +412,17 @@ function updateWriteControls() {
     control.toggleAttribute("data-write-blocked", Boolean(host) && (loading || staleSnapshotHost === host));
     syncWriteControl(control);
   }
-  for (const control of [...content.querySelectorAll("button:not([data-conflict-action], [data-local-edit])"), ...shared.querySelectorAll("button:not([data-conflict-action])")]) {
+  for (const control of content.querySelectorAll("[data-shared-migration] button")) {
+    control.toggleAttribute("data-write-blocked", busy || loading);
+    syncWriteControl(control);
+  }
+  for (const control of content.querySelectorAll("button:not([data-conflict-action])")) {
+    if (control.hasAttribute("data-local-edit") && !inSharedScope(control)) continue;
     const editor = control.closest("[data-editor]");
     if (!editor) continue;
     const setting = control.closest("[data-setting]") || editor;
     const blocked = busy || staleSnapshotHost === host || setting.querySelector(".settings-shared-conflict") ||
-      (!shared.contains(control) && (loading || conflicts.has(setting.dataset.editor)));
+      (!inSharedScope(control) && (loading || conflicts.has(setting.dataset.editor)));
     if (blocked) {
       control.dataset.writeBlocked = "";
       const reason = busy || loading ? "settings-status" : setting.querySelector("[data-conflict]")?.id;
@@ -445,14 +449,14 @@ function resolveConflict(slot, keepDraft) {
     renderConflicts();
     updateUnsaved();
   } else {
-    content.querySelector(`[data-editor="${CSS.escape(slot)}"] [data-conflict]`)?.remove();
+    content.querySelector(`${HOST_EDITOR}[data-editor="${CSS.escape(slot)}"] [data-conflict]`)?.remove();
     updateWriteControls();
   }
 }
 
 function renderConflicts() {
   for (const [slot, {key, latest}] of conflicts) {
-    const editor = content.querySelector(`[data-editor="${CSS.escape(slot)}"]`);
+    const editor = content.querySelector(`${HOST_EDITOR}[data-editor="${CSS.escape(slot)}"]`);
     if (!editor) continue;
     const notice = element("div", "", "notice notice-warning");
     notice.dataset.conflict = "";
@@ -560,7 +564,7 @@ async function loadHost(background = false, retry = false) {
     if (generation !== loadGeneration) return;
     const scroll = content.closest("main");
     const scrollTop = scroll.scrollTop;
-    const prior = content.hasChildNodes() ? rememberEditors() : savedDrafts?.editors ?? new Map();
+    const prior = displayedData ? rememberEditors() : savedDrafts?.editors ?? new Map();
     let data = initial;
     if (initial.cached) {
       render(initial);
@@ -638,7 +642,7 @@ async function enter() {
 
 function selectHost(selected) {
   if (busy) return;
-  if (content.hasChildNodes()) hostDrafts.set(host, {snapshot: displayedData, editors: rememberEditors()});
+  if (displayedData) hostDrafts.set(host, {snapshot: displayedData, editors: rememberEditors()});
   setUpdateError("settings", "refresh");
   setUpdateError("settings", "usage");
   host = selected;
@@ -647,8 +651,7 @@ function selectHost(selected) {
   fastDetail.open = false;
   renderFastStart();
   conflicts.clear();
-  navigation.replaceChildren();
-  content.replaceChildren();
+  renderHost({settings: {}, paths: {}, hosts: localData?.hosts, loadingHost: true});
   updateUnsaved();
   void loadHost();
 }

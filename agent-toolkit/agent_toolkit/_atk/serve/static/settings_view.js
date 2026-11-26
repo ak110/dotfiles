@@ -108,7 +108,7 @@ export function createSettingsView({
         ? "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"
         : "読み取り専用"));
       parent.append(block);
-      return;
+      return block;
     }
     if (item.shared) description.append(element("p", sharedScope(item.shared_sync)));
     if (timing) description.append(element("p", key === "remote_hosts" ?
@@ -156,6 +156,7 @@ export function createSettingsView({
     }
     controls.append(output);
     parent.append(block);
+    return block;
   }
 
   function repositoryEditor(parent, repo = "", attributes = {}) {
@@ -273,7 +274,7 @@ export function createSettingsView({
       }
       await migrateShared({action: "apply", revision: plan.revision, choices}, output);
     });
-    apply.disabled = plan.invalid.length > 0 || !plan.pending;
+    setWriteUnavailable(apply, plan.invalid.length > 0 || !plan.pending);
     const actions = element("div", "", "form-actions");
     actions.append(apply);
     box.append(actions);
@@ -293,27 +294,39 @@ export function createSettingsView({
       /connections|provider|env_file/.test(key) ? "connections" : "other";
   }
 
-  const groupTitles = {models: "工程別モデル", connections: "接続", usage: "利用枠", other: "その他の設定とパス"};
+  let sharedEditors = new Map();
+
+  function scope(group, name) {
+    return content.querySelector(`[data-scope="${name}"][data-group="${group}"]`);
+  }
+
+  function addScope(group, id, name, title) {
+    const target = element("div", "", "settings-scope");
+    target.dataset.scope = name;
+    target.dataset.group = id;
+    const label = element("p", title, "settings-scope-heading");
+    label.id = `settings-scope-${id}-${name}`;
+    target.setAttribute("role", "group");
+    target.setAttribute("aria-labelledby", label.id);
+    target.append(label);
+    group.append(target);
+    return target;
+  }
 
   function renderShared(savedKey) {
     const data = state.localData;
-    if (!data) return;
+    if (!data || !content.querySelector("[data-scope=\"shared\"]")) return;
     const focus = rememberSettingFocus(document.activeElement);
-    const old = new Map([...shared.querySelectorAll("[data-setting]")].map(node => [node.dataset.setting, node]));
+    const old = sharedEditors;
+    sharedEditors = new Map();
+    for (const target of content.querySelectorAll("[data-scope=\"shared\"]")) target.replaceChildren(target.firstChild);
     const note = element("p");
     note.dataset.sharedComparison = "";
-    const nodes = [note];
-    const sections = new Map();
+    let count = 0;
     for (const [key, item] of Object.entries(data.settings)) {
       if (!item.shared) continue;
-      const group = groupId(key);
-      if (!sections.has(group)) {
-        const node = element("section");
-        node.append(element("h3", groupTitles[group] ?? "その他の設定"));
-        sections.set(group, node);
-        nodes.push(node);
-      }
-      const target = sections.get(group);
+      const target = scope(groupId(key), "shared");
+      count++;
       const prior = old.get(key);
       if (prior && key !== savedKey && editorFields(prior).some(field => field.value !== field.dataset.initialValue)) {
         target.append(prior);
@@ -339,11 +352,14 @@ export function createSettingsView({
           conflict.append(" ", preserve, " ", replace);
           prior.append(conflict);
         }
+        sharedEditors.set(key, prior);
       } else {
-        keyEditor(target, key, item, data, saveShared);
+        sharedEditors.set(key, keyEditor(target, key, item, data, saveShared));
       }
     }
-    if (sections.size === 0) nodes.push(element("p", "共有設定はありません。"));
+    const nodes = [note];
+    if (count === 0) nodes.push(element("p", "共有設定はありません。"));
+    const sharedPresets = scope("models", "shared");
     for (const [preset, values] of Object.entries(data.presets ?? {})) {
       if (!Object.keys(values).length || !Object.keys(values).every(key => data.settings[key]?.shared)) continue;
       const detail = element("details");
@@ -353,7 +369,7 @@ export function createSettingsView({
       const actions = element("div", "", "form-actions");
       actions.append(button("適用", () => saveShared({action: "preset", preset}, output)));
       detail.append(actions, output);
-      nodes.push(detail);
+      sharedPresets?.append(detail);
     }
     shared.replaceChildren(...nodes);
     renderSharedComparison();
@@ -441,18 +457,23 @@ export function createSettingsView({
       candidates.append(element("p", `${engine}: ${models.join(", ")}`));
     }
     if (data.model_candidates) groups.models.append(candidates);
-    if (!migrationPanel(groups.migration, data)) groups.migration.remove();
+    if (data.loadingHost || !migrationPanel(groups.migration, data)) groups.migration.remove();
     for (const warning of data.provider_warnings ?? []) {
       groups.connections.append(element("p", `${state.host || "ローカル"}: ${warning.message}`, "notice notice-warning"));
     }
     const settings = Object.entries(data.settings).sort(([left], [right]) =>
       Number(right === "remote_hosts") - Number(left === "remote_hosts"));
+    const hostTitle = `このホストだけ（${state.host || "ローカル"}）`;
+    const scopes = {};
+    for (const id of ["models", "connections", "usage", "repos", "serve", "other"]) {
+      addScope(groups[id], id, "shared", "全ホスト共通");
+      scopes[id] = addScope(groups[id], id, "host", hostTitle);
+    }
     for (const [key, item] of settings) {
       if ((!state.host && item.shared) || (state.host && sameSharedSetting(data, key))) continue;
-      const group = groups[groupId(key)];
-      if (key !== "repositories" || !data.repositories) keyEditor(group, key, item, data);
+      if (key !== "repositories" || !data.repositories) keyEditor(scopes[groupId(key)], key, item, data);
     }
-    for (const [key, value] of Object.entries(data.paths)) groups.other.append(element("p", `${key}: ${value}`));
+    for (const [key, value] of Object.entries(data.paths)) scopes.other.append(element("p", `${key}: ${value}`));
     for (const [repo, attributes] of Object.entries(data.repositories ?? {})) {
       if (!attributes.path && data.shared_migration && /^[^/]+\/[^/]/.test(repo) && !repo.startsWith("/")) {
         const missing = element("p", `${repo}: この端末には未登録。atk config repos set ${repo} --path <clone>`);
@@ -465,13 +486,10 @@ export function createSettingsView({
     if (data.model_order_policy) groups.usage.append(element("p", data.model_order_policy));
     const usageLink = element("a", "利用枠の使用率とリセット権を見る");
     usageLink.href = BASE_PATH + "/usage";
-    const usageHelp = element("p");
-    usageHelp.append(usageLink);
-    groups.usage.append(usageHelp);
+    groups.usage.append(usageLink);
     if (data.temporary) renderTemporary(groups.temporary, data);
     else groups.temporary.remove();
-    const presets = groups.models;
-    if (data.presets) presets.append(element("h3", "プリセット"));
+    const presets = scopes.models;
     for (const [preset, values] of Object.entries(data.presets ?? {})) {
       const item = element("details");
       item.dataset.editor = `preset:${preset}`;
@@ -489,6 +507,8 @@ export function createSettingsView({
       item.append(actions, output);
       presets.append(item);
     }
+    content.replaceChildren(root);
+    renderShared();
     navigation.replaceChildren();
     for (const [id, group] of Object.entries(groups)) {
       if (!group.parentNode) continue;
@@ -502,10 +522,6 @@ export function createSettingsView({
       control.setAttribute("aria-controls", group.id);
       navigation.append(control);
     }
-    content.replaceChildren(root);
-    if (!document.getElementById(`settings-group-${state.activeGroup}`)) state.activeGroup = "models";
-    showGroup();
-
     const options = [new Option("ローカル", ""), ...(data.hosts ?? []).map(name => new Option(name, name))];
     hostPicker.replaceChildren(...options);
     hostPicker.value = state.host;
@@ -513,13 +529,24 @@ export function createSettingsView({
     updateWriteControls();
   }
 
-  function showGroup() {
-    for (const control of navigation.querySelectorAll("button")) {
-      const selected = control.dataset.group === state.activeGroup;
-      document.getElementById(control.getAttribute("aria-controls")).hidden = !selected;
+  function showGroup(searching = false) {
+    const controls = [...navigation.querySelectorAll("button")];
+    const groups = controls.map(control => document.getElementById(control.getAttribute("aria-controls")));
+    for (const target of content.querySelectorAll("[data-scope]")) {
+      target.hidden = searching ? !target.querySelector("[data-setting]:not([hidden])") : target.children.length === 1;
+    }
+    const available = groups.map(group => [...group.children].some(child =>
+      !child.hidden && !["H2", "A"].includes(child.tagName)));
+    const active = controls.some((control, index) => available[index] && control.dataset.group === state.activeGroup) ?
+      state.activeGroup : controls[available.indexOf(true)]?.dataset.group;
+    for (const [index, control] of controls.entries()) {
+      const selected = !searching && available[index] && control.dataset.group === active;
+      control.hidden = searching || !available[index];
+      groups[index].hidden = searching ? !groups[index].querySelector("[data-setting]:not([hidden])") : !selected;
       if (selected) control.setAttribute("aria-current", "page");
       else control.removeAttribute("aria-current");
     }
+    navigation.hidden = searching || !available.some(Boolean);
   }
 
   function renderTemporary(temporary, data) {
