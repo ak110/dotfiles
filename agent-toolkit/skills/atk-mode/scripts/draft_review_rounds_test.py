@@ -392,7 +392,7 @@ def test_interrupted_index_prunes_deleted_values_and_recovers(tmp_path, monkeypa
         os.utime(item, (1, 1))
     index = tmp_path / "index.json"
     monkeypatch.setattr(draft_review_rounds, "_CHECKPOINT_RECORDS", 1)
-    extract = draft_review_rounds._extract
+    extract = draft_review_rounds._extract  # pylint: disable=protected-access
 
     def interrupt(path):
         if path == later.path:

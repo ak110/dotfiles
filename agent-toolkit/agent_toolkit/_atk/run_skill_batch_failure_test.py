@@ -165,7 +165,7 @@ def test_batch_resolves_registered_rollout_in_other_codex_home(tmp_path, monkeyp
         {"hook_event_name": "SessionStart", "session_id": session_id, "transcript_path": str(registered)},
         host="codex",
     )
-    calls = []
+    calls: list[dict] = []
     assert (
         run_skill_batch.dispatch(
             run_skill_batch_test._args("manual"), run_skill_batch_test._report_and_finish(notes, monkeypatch, calls)

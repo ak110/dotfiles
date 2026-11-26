@@ -275,9 +275,7 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
     [
         "agent-toolkit:review-session",
         "agent-toolkit:review-session batch",
-        "agent-toolkit:session-review",
-        "agent-toolkit:session-review batch",
-        "agent-toolkit:session-review-batch",
+        *(f"agent-toolkit:{legacy_mode}" for legacy_mode in ("session-review", "session-review batch", "session-review-batch")),
         "review-session",
         "review-session batch",
     ],
