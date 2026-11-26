@@ -7,6 +7,13 @@ from agent_toolkit._atk.serve import assets
 _COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 _BLOCK = re.compile(r"([^{}]+)\{([^{}]*)\}")
 _DECLARATION = re.compile(r"(?:^|;)\s*([\w-]+)\s*:\s*([^;]+)")
+_DIAGRAM_CONTENT = {
+    "#screen-plans .diagram",
+    "#screen-plans .diagram-output",
+    "#screen-plans .diagram-source",
+    "#screen-plans .diagram-source pre",
+    "#screen-plans .diagram-error",
+}
 _GEOMETRY = {
     (".visually-hidden", "margin"),
     ("::highlight(session-search)", "background-color"),
@@ -65,7 +72,7 @@ def _unshared_declarations(css: str) -> list[tuple[str, str, str]]:
     for block in _BLOCK.finditer(_COMMENT.sub("", css)):
         selector, body = block.groups()
         selector = selector.strip()
-        if selector == ":root" or selector.startswith(".markdown-body") or selector.startswith("#screen-plans .diagram"):
+        if selector == ":root" or selector.startswith(".markdown-body") or selector in _DIAGRAM_CONTENT:
             continue
         for prop, value in _DECLARATION.findall(body):
             prop, value = prop.lower(), value.strip()
@@ -99,9 +106,17 @@ def test_style_guard_reports_direct_values_inside_media_query(prop: str, value: 
     assert _unshared_declarations(rule) == [(".detail-toolbar", prop, value)]
 
 
+@pytest.mark.parametrize(("prop", "value"), [("font-size", "13px"), ("color", "#ddd")])
+def test_style_guard_checks_diagram_source_control(prop: str, value: str) -> None:
+    selector = "#screen-plans .diagram-source summary"
+    assert _unshared_declarations(f"{selector} {{ {prop}: {value}; }}") == [(selector, prop, value)]
+
+
 def test_style_guard_accepts_shared_values_and_content_geometry() -> None:
     assert not _unshared_declarations(
         ".detail-toolbar { border: 1px solid var(--color-border); font: inherit; padding: var(--space-2); }"
+        "#screen-plans .diagram-source summary { font-size: var(--font-size-base); color: var(--color-secondary-text); }"
+        "#screen-plans .diagram-source pre { font-size: 0.875rem; }"
         ".markdown-body h2 { font-size: 1.5em; }"
         "#screen-plans .diagram-output { margin: 1rem; }"
         "#agents-app .agent-identity { padding-inline-start: min(calc(var(--agent-depth) * 0.875rem), 20%); }"
