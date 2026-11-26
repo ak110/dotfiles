@@ -251,14 +251,23 @@ def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) ->
             )
 
 
+_LABEL_PURPOSES = {
+    SIMILAR_REVIEW_LABEL: "類似見直しの件数は、同じ原因を持つ別の箇所の修正漏れを減らすために求める",
+    ACCEPTANCE_LABEL: "検収は、修正前に決めた条件で直ったことを確かめられるようにするために求める",
+    ACCEPTANCE_RESULT_LABEL: "検収結果は、修正前に決めた検収の条件で直ったことを示すために求める",
+}
+
+
 def _require_labels(body: str, labels: tuple[str, ...], option: str, definition: str = _LABEL_DEFINITION) -> None:
     lines = [line.strip() for line in body.splitlines()]
     missing = [label for label in labels if not any(line.startswith(label) and line[len(label) :].strip() for line in lines)]
     if missing:
+        purposes = "".join(f"{_LABEL_PURPOSES[label]}。" for label in missing if label in _LABEL_PURPOSES)
         raise _ActionableError(
             f"{option}の本文に必須ラベルが無いか、ラベルの後の記述が空である: {'、'.join(missing)}",
             next_action=(
-                f"欠けたラベルを行頭に置いて同じ行へ内容を書き、同じコマンドを再実行する。各ラベルに書く内容は{definition}が定める"
+                purposes + "欠けたラベルを行頭に置いて同じ行へ内容を書き、同じコマンドを再実行する。"
+                f"各ラベルに書く内容は{definition}が定める"
             ),
         )
     if SIMILAR_REVIEW_LABEL in labels:

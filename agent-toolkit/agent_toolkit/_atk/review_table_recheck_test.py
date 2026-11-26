@@ -439,4 +439,5 @@ def test_exec_issue_without_acceptance_keeps_table(
     assert path.read_bytes() == before
     error = capsys.readouterr().err
     assert "検収:" in error
+    assert "修正前に決めた条件で直った" in error
     assert "review-record.md" in error
