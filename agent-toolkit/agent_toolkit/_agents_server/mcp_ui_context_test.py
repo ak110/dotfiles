@@ -269,7 +269,7 @@ async def test_send_rejection_preserves_body_only_when_resend_can_recover(
         saved = re.search(r"本文の保存先: `([^`]+)`", rejection)
         assert saved is not None
         assert pathlib.Path(saved[1]).read_bytes() == body.encode("utf-8")
-        assert rejection.index("`Read`") < rejection.index("`edit()`") < rejection.index(".text()")
+        assert "指摘箇所だけ直し" in rejection and "body_ref:" in rejection
         assert 'kind: "completion"' in rejection
         assert "最終応答に書く" not in rejection
     else:
@@ -350,7 +350,7 @@ async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, t
                 await mcp_tools.mcp.call_tool("send_to_user", {"message": message})
         saved = tmp_path / "message.md"
         assert saved.read_text(encoding="utf-8") == message
-        assert ("message: await file" in str(rejection.value)) == (tool_use_id == "repl_fixture")
+        assert "body_ref:" in str(rejection.value)
         request.reset_mock()
         with pytest.raises(ToolError, match="申告できる判定"):
             await mcp_tools.mcp.call_tool(

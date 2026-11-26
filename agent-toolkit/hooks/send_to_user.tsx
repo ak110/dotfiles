@@ -1,6 +1,8 @@
 import { automatedMessage } from "./automated_message.ts";
 import outputPolicy from "../agent_toolkit/_common/output-policy.ts";
 
+export const recoveryRoute = "長い完了報告を書く前に `send_to_user_preflight({})` で前提を確認する。拒否後は通知の `body_ref` だけで保存本文を渡し、修正が必要な場合だけ本文の該当箇所を編集する。";
+
 export const questionRoute = "回答を求める質問・選択は、ツール一覧に`AskUserQuestion`があればそれで尋ね、なければmessageで送る。";
 export function deliveryGuidance(alreadyDelivered: boolean): string {
   return alreadyDelivered && outputPolicy.full_guidance_once ? outputPolicy.send_repeat : outputPolicy.send_guidance;

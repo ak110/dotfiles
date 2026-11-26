@@ -765,19 +765,39 @@ async def show_session(
     return await _manager().show_session(session_id, verbose=verbose)
 
 
+@mcp.tool(
+    name="send_to_user_preflight",
+    title="完了報告の事前確認",
+    description="メイン専用。長い完了報告を書く前に引数なしで呼び、未読・未回収を確認する。送信は行わない。",
+    annotations=ToolAnnotations(read_only_hint=True),
+)
+async def send_to_user_preflight(
+    checked: Annotated[bool, Field(description="PreToolUse専用。呼出元は指定しない。")] = False,
+) -> dict[str, Any]:
+    caller = runtime_environment.current()
+    if (_UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment)) or not checked:
+        raise ValueError("完了報告の事前確認を証明できない。メイン会話でPreToolUseを有効にする。")
+    return {"ready": True}
+
+
 @mcp.tool(name="send_to_user", title="ユーザー画面への本文表示", annotations=ToolAnnotations(destructive_hint=False))
 async def send_to_user(
-    message: Annotated[str, Field(description="画面へそのまま表示する日本語のMarkdown本文")],
+    message: Annotated[str | None, Field(description="表示する日本語のMarkdown本文。body_refとは排他的。")] = None,
     kind: Annotated[str | None, Field(description="最終の完了報告では completion。途中の報告では省略する")] = None,
     misdetection: Annotated[
         list[dict[str, str]] | None,
         Field(description="誤検出のときだけcheckとreasonを指定する。表示済みの警告にはさらにdelivery_idを指定する。"),
     ] = None,
+    body_ref: Annotated[str | None, Field(description="拒否通知に示されたこの会話の参照。messageとは排他的。")] = None,
 ) -> dict[str, Any]:
     """メイン専用。会話内modが表示を確認した場合だけ成功を返す。表示後の本文は再掲しない。"""
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
+    if (message is None) == (body_ref is None):
+        raise ValueError("messageとbody_refの一方だけを指定する。本文は表示していない。")
+    if message is None:
+        raise ValueError("保存本文の事前検査を確認できない。送達のPreToolUseを有効にする。本文は表示していない。")
     tool_use_id = _TOOL_USE_ID.get()
     claims, error = send_misdetection.parse(misdetection)
     session_id = _manager().launcher_session_id()

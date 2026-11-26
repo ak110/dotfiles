@@ -85,7 +85,8 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "annotations": {"destructive_hint": False},
         "input_schema": {
             "properties": {
-                "message": {"type": "string"},
+                "message": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "body_ref": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "kind": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "misdetection": {
                     "anyOf": [
@@ -95,10 +96,17 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "default": None,
                 },
             },
-            "required": ["message"],
             "type": "object",
         },
         "output_schema": {"additionalProperties": True, "title": "send_to_userDictOutput", "type": "object"},
+    },
+    "send_to_user_preflight": {
+        "annotations": {"read_only_hint": True},
+        "input_schema": {
+            "properties": {"checked": {"default": False, "type": "boolean"}},
+            "type": "object",
+        },
+        "output_schema": {"additionalProperties": True, "title": "send_to_user_preflightDictOutput", "type": "object"},
     },
     "show": {
         "annotations": {"read_only_hint": True},

@@ -79,6 +79,26 @@ for (const placed of [true, false]) {
   });
 }
 
+test("未展開の本文参照は表示しない", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  const id = "f".repeat(32);
+  queue(on, "ui-session", id);
+  on("session.id", () => ({ value: "ui-session" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message: "別の本文", body_ref: "未展開の参照" }, expires: 99999999999 }) }));
+  let placements = 0;
+  on("ui.place", () => { placements++; return { value: { isPlaced: true, requestId: "placed-row" } }; });
+  const replies: string[] = [];
+  on("fs.write", (_$, e) => { replies.push(e.text); return { value: undefined }; });
+  await $.turn.start({ text: "操作", turnId: "ui-turn" });
+  await clock.advance(100);
+  expect(placements).toBe(0);
+  const response = JSON.parse(replies.at(-1) ?? "{}");
+  expect(response.ok).toBe(false);
+  expect(response.reason).toContain("未送信");
+});
+
 test("MCP送信済みの詳しい案内は初回だけ返し、新しい警告は残す", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);

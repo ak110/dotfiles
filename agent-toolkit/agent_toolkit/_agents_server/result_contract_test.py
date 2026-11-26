@@ -434,6 +434,10 @@ async def test_cli_role_model_change_rejects_public_reply_but_keeps_result_recov
     session.engine = backend_type.ENGINE
     session.model_type = "orchestrate" if stale else "execute"
     session.explicit_role_model = False
+    session.model = "provider/configured" if session.engine == "opencode" else "configured"
+    session.effort = "medium"
+    separator = "@" if session.engine == "opencode" else "/"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", f"{session.engine}:{session.model}{separator}{session.effort}")
 
     async def start(*_args: Any, **kwargs: Any) -> state.SessionState:
         session.turn_seq = kwargs["turn_seq"]

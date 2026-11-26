@@ -9,6 +9,12 @@ from agent_toolkit._agents_server.launch_requests_inputs import _PLUGIN_ROOT_VAR
 from agent_toolkit._common import task_documents
 from agent_toolkit._common.next_action import ActionableError
 
+_SUPPLEMENT_BOUNDARY = "\n\n## 補足\n\n"
+
+
+def named_followup_body(prompt: str) -> str:
+    return prompt.partition(_SUPPLEMENT_BOUNDARY)[0]
+
 
 def _continuation_recovery(declaration: task_documents.TaskDocumentDeclaration | str | None) -> str:
     freeform = json.dumps({"prompt": "<今回の指示と新しい入力>"}, ensure_ascii=False)
@@ -65,7 +71,11 @@ def continuation_prompt(
         if isinstance(declaration, task_documents.TaskDocumentDeclaration):
             known_lines = set(launch_prompt.splitlines())
             for followup in followup_prompts:
-                known_lines.update(followup.splitlines())
+                first_line = followup.partition("\n")[0]
+                body = (
+                    named_followup_body(followup) if any(item.instruction == first_line for item in continuations) else followup
+                )
+                known_lines.update(body.splitlines())
             controls = frozenset(name for item in continuations for name in item.accepted)
             for line in text.splitlines():
                 name, separator, value = line.partition(": ")
@@ -150,4 +160,4 @@ def continuation_prompt(
                 next_action=f"{name}へ実在するファイルの絶対パスだけを渡す。空白を含むファイル名はそのまま指定する",
             )
     body = "\n".join([contract.instruction, *named_input_lines(params)])
-    return body if supplement is None else f"{body}\n\n## 補足\n\n{supplement}"
+    return body if supplement is None else f"{body}{_SUPPLEMENT_BOUNDARY}{supplement}"

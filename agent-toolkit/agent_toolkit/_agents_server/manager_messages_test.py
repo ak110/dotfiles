@@ -13,7 +13,7 @@ import pytest
 from agent_toolkit._agents_server import launch_requests, plugin_root, result_projection, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import session_registry, state_paths, task_documents
+from agent_toolkit._common import codex_models, session_registry, state_paths, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     BlockingContinuationClaudeClient,
@@ -43,6 +43,9 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
         "unchanged",
         "old-model",
         "registry-old-model",
+        "effort-changed",
+        "registry-effort-changed",
+        "old-effort",
     ],
 )
 async def test_repository_process_reply_after_role_model_change(
@@ -50,10 +53,12 @@ async def test_repository_process_reply_after_role_model_change(
 ) -> None:
     role = task_documents.find_role_document(plugin_root.SERVER_PLUGIN_ROOT, "repository-process.subagent.md")
     assert role is not None
-    allowed = phase in {"registry-explicit", "explicit", "unchanged"}
+    allowed = phase in {"registry-explicit", "explicit", "unchanged", "effort-changed", "registry-effort-changed"}
     monkeypatch.setenv(
         "AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL",
-        "codex:configured/high,claude:sonnet/medium" if allowed else "codex:configured/high",
+        "codex:configured/high,claude:sonnet/medium"
+        if allowed
+        else ("claude:sonnet/high" if phase == "old-effort" else "codex:configured/high"),
     )
     async with _manager_with_fake("claude") as (manager, backend):
         session = state.SessionState(
@@ -80,10 +85,13 @@ async def test_repository_process_reply_after_role_model_change(
             _complete(session, message="直前の結果")
         if phase == "explicit":
             session.explicit_role_model = True
-        if phase in {"unchanged", "old-model", "registry-old-model"}:
+        if phase in {"effort-changed", "registry-effort-changed"}:
+            session.effort = "high"
+            session.effort_history = (("2026-11-27T00:00:00Z", "medium", "high", "launcher"),)
+        if phase in {"unchanged", "old-model", "registry-old-model", "effort-changed", "registry-effort-changed", "old-effort"}:
             session.model_type = "execute"
             session.explicit_role_model = False
-        if phase in {"registry", "registry-explicit", "registry-old-model"}:
+        if phase.startswith("registry"):
             monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
             session_registry.publish(
                 session.session_id,
@@ -100,21 +108,45 @@ async def test_repository_process_reply_after_role_model_change(
         else:
             manager.sessions[session.session_id] = session
 
-        if phase in {"active", "explicit", "unchanged", "registry-explicit"}:
+        if phase == "active" or allowed:
             result = await manager.send_message(session.session_id, "続行")
             assert result["delivery"] == ("steered" if phase == "active" else "reply_started")
-            if phase == "registry-explicit":
+            if phase.startswith("registry"):
                 assert backend.resume_calls == [session.session_id]
             else:
                 assert backend.send_calls == 1
         else:
-            diagnostic = "現行の工程executeの候補に含まれない" if phase.endswith("old-model") else "orchestrate.*execute"
+            diagnostic = (
+                "現行の工程executeの候補に含まれない"
+                if phase.endswith("old-model") or phase == "old-effort"
+                else "orchestrate.*execute"
+            )
             with pytest.raises(ActionableError, match=diagnostic) as exc:
                 await manager.send_message(session.session_id, "続行")
 
             assert "handoff_from" in exc.value.next_action
             assert backend.send_calls == 0
             assert not backend.resume_calls
+
+
+@pytest.mark.parametrize("broken", ["codex:astra/medium", "codex:sol/xhigh"])
+@pytest.mark.parametrize("matching_first", [False, True])
+def test_available_role_candidate_survives_other_catalog_failure(monkeypatch, tmp_path, broken, matching_first):
+    role = task_documents.find_role_document(plugin_root.SERVER_PLUGIN_ROOT, "repository-process.subagent.md")
+    assert role is not None
+    active = "codex:sol/medium"
+    candidates = [active, broken] if matching_first else [broken, active]
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", ",".join(candidates))
+    monkeypatch.setattr(
+        codex_models,
+        "list_models",
+        lambda: [{"model": "gpt-6.2-sol", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}]}],
+    )
+    session = state.SessionState("thread-1", str(tmp_path), engine="codex", model="gpt-6.2-sol", effort="medium")
+    assert launch_requests._configured_role_contains(session, role, "execute")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", broken)
+    with pytest.raises(ValueError, match="系列|effort"):
+        launch_requests._configured_role_contains(session, role, "execute")
 
 
 @pytest.mark.asyncio

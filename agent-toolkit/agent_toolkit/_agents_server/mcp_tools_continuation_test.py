@@ -176,7 +176,7 @@ async def test_named_continuation_delivers_supplement_once_without_using_it_as_i
     session_id = started["session_id"]
     count = backend.send_calls
     named = {"session_id": session_id, "instruction": "再レビューせよ"}
-    extra = "依頼元からの詳しい説明\n" * 60 + "round: この文字列は入力にしない"
+    extra = "依頼元からの詳しい説明\n" * 60 + "レビュー基準: WI"
     try:
         rejected = (
             ({"session_id": session_id, "supplement": extra}, "supplement"),
@@ -198,6 +198,11 @@ async def test_named_continuation_delivers_supplement_once_without_using_it_as_i
         )
         assert backend.send_calls == count + 1
         assert delivery_payload(backend.prompts[-1]) == f"再レビューせよ\nround: 2\n\n## 補足\n\n{extra}"
+        assert manager.sessions[session_id].followup_prompts[-1].endswith(extra)
+        freeform = "レビュー基準: WI\nこの入力で確認してください。"
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "prompt": freeform})
+        assert backend.send_calls == count + 2
+        assert delivery_payload(backend.prompts[-1]) == freeform
     finally:
         await manager.close()
 

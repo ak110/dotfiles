@@ -41,7 +41,14 @@ from agent_toolkit._agents_server.state import (
 from agent_toolkit._agents_server.tool_descriptions import HANDOFF_MODEL_INPUTS, START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import delegated_session, runtime_environment, session_registry, startup_documents, task_documents
+from agent_toolkit._common import (
+    codex_models,
+    delegated_session,
+    runtime_environment,
+    session_registry,
+    startup_documents,
+    task_documents,
+)
 from agent_toolkit._common.markdown_headings import parse_headings, without_literal_blocks
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
@@ -410,11 +417,27 @@ async def reject_stale_role_reply(session: SessionState | SessionResumeState) ->
 def _configured_role_contains(session: SessionState | SessionResumeState, role: pathlib.Path, phase: str) -> bool:
     if session.model is None or session.effort is None:
         raise ValueError("終了した担当のモデルまたはeffortが記録されていない")
-    candidate = session.engine, session.model, session.effort
+    identities = {(session.engine, session.model, session.effort)}
+    if session.effort_history and (initial := session.effort_history[0][1]):
+        identities.add((session.engine, session.model, initial))
     exec_lane = role.name == "exec.subagent.md" and "担当種別: レーン担当" in session.prompt.splitlines()
     configured = _atk_config.parse_unresolved_model_candidates(phase, exec_lane=exec_lane)
     same_engine = [item for item in configured if item[0] == session.engine]
-    return candidate in same_engine or candidate in _atk_config.resolve_catalog(same_engine)
+    if identities.intersection(same_engine):
+        return True
+    if not codex_models.needs_catalog(same_engine):
+        return False
+    catalog = codex_models.list_models()
+    unresolved = []
+    for item in same_engine:
+        try:
+            if codex_models.resolve_candidate(item, catalog) in identities:
+                return True
+        except codex_models.CatalogResolutionError as error:
+            unresolved.append(str(error))
+    if unresolved:
+        raise ValueError(" / ".join(unresolved))
+    return False
 
 
 def builtin_task_prompt(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:

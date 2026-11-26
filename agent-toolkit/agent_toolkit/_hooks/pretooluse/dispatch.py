@@ -74,7 +74,7 @@ import re
 lazy import dataclasses
 
 lazy from agent_toolkit._atk.config_settings import APPLY_PRESET_SHOW, CONNECTION_ORDER_KEYS, MODEL_DEFAULTS
-lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
+lazy from agent_toolkit._atk.send_to_user_recovery import load_body_reference, resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import delegated_session, send_misdetection, send_to_user
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
@@ -155,7 +155,7 @@ _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
 _MAIN_ONLY_MCP_TOOLS = frozenset(
     f"{prefix}{name}"
     for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
-    for name in ("send_to_user", "compact_conversation", "apply_runtime_changes")
+    for name in ("send_to_user", "send_to_user_preflight", "compact_conversation", "apply_runtime_changes")
 )
 _SCOPE_REVIEW_MCP_TOOLS = frozenset(
     f"{prefix}{name}"
@@ -216,7 +216,9 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
         if warning := delivered_repost_gate.pretooluse_notice(payload, session_id):
             pending_notices.append(warning)
         if decision.block is None:
-            pending_notices.extend(_unread_material_notices(payload, tool_name, tool_input, session_id))
+            pending_notices.extend(
+                _unread_material_notices(payload, tool_name, decision.updated_input or tool_input, session_id)
+            )
         if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
             pending_notices.append(warning)
         if decision.block is None:
@@ -267,7 +269,6 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
             )
     if is_send_to_user_tool(tool_name) and isinstance(message := tool_input.get("message"), str):
         from agent_toolkit._hooks.persisted_output import unread_evidence  # pylint: disable=import-outside-toplevel
-        from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
 
         if unread := unread_evidence(payload, session_id, message):
             found.append(
@@ -275,16 +276,6 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
                     "画面へ送る根拠に未取得の退避出力がある。",
                     f"`{unread}`の全文を取得し、根拠が変わるなら報告を訂正してください。",
                     "未取得の退避出力を根拠にした報告",
-                )
-            )
-        if not send_to_user.from_repl(payload.get("tool_use_id")) and (
-            playbook := missing_completion_before_report(payload, session_id, message, tool_input.get("kind"))
-        ):
-            found.append(
-                (
-                    "作業完了報告の手順書の取得を確認できないまま、完了報告を送る操作である。",
-                    f"`{playbook}`を全文読み、欠けた項目があれば報告を補ってください。",
-                    "完了報告の手順書の取得を確認できない完了報告",
                 )
             )
     actor = _agent_id.resolve_hook_agent_id(payload)
@@ -344,6 +335,23 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 fix="結果本文を委譲元へ最終応答で返してください。",
             )
         )
+    if tool_name in _MAIN_ONLY_MCP_TOOLS and tool_name.endswith("__send_to_user_preflight"):
+        from agent_toolkit._hooks import termination_evidence  # pylint: disable=import-outside-toplevel
+
+        if not session_id or not termination_evidence.evidence_available(payload):
+            return Decision(block="完了報告の前提を確認できない。本文は表示していない。")
+        prerequisite = _completion_prerequisite(payload, session_id)
+        return Decision(block=prerequisite) if prerequisite else Decision(allow=True, updated_input={"checked": True})
+    hydrated = None
+    if is_send_to_user_tool(tool_name) and (reference := tool_input.get("body_ref")) is not None:
+        if tool_input.get("message") is not None:
+            return Decision(block=_block_notice("messageとbody_refは同時に指定できない。", fix="いずれか一方を指定する。"))
+        try:
+            text = load_body_reference(session_id, reference)
+        except ValueError as error:
+            return Decision(block=_block_notice(str(error), fix="同じ会話の拒否通知にあるbody_refを指定する。"))
+        hydrated = {key: value for key, value in tool_input.items() if key != "body_ref"} | {"message": text}
+        tool_input = hydrated
     if (tool_name == "AskUserQuestion" or tool_name in _SCOPE_REVIEW_MCP_TOOLS) and (
         reminder := work_contract.scope_review_before_send(
             session_id,
@@ -435,29 +443,12 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return user_facing_checks.decide_user_facing_text_tool(payload, tool_name, tool_input)
     send_warnings: list[str] = []
     if is_send_to_user_tool(tool_name):
-        from agent_toolkit._hooks.agents_server_session_advisor import outstanding_before_completion  # pylint: disable=import-outside-toplevel
-        from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
-
         message = tool_input.get("message")
         kind = tool_input.get("kind")
         reason = _send_understanding_block(message, retry)
         edit_body = True
-        if reason is None and session_id and send_to_user.is_completion(message, kind):
-            if pending := outstanding_before_completion(session_id, _agent_id.resolve_hook_agent_id(payload)):
-                reason = _block_notice(
-                    f"完了報告の前に委譲先の結果と続行を確認してください。{pending}",
-                    fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返してください。",
-                )
-            elif send_to_user.from_repl(payload.get("tool_use_id")) and (
-                playbook := missing_completion_before_report(payload, session_id, message, kind)
-            ):
-                reason = _block_notice(
-                    "完了報告の手順書を読んだ証拠がないため、まだ表示していない。",
-                    fix=(
-                        f"`Read`で`{playbook}`を全文読んでください。`Bash`で全文を表示しても構いません。"
-                        "`file(...).text()`は証拠にならない。"
-                    ),
-                )
+        if reason is None and send_to_user.is_completion(message, kind):
+            reason = _completion_prerequisite(payload, session_id)
             edit_body = reason is None
         bugfix_block = None
         if reason is None:
@@ -468,7 +459,9 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             combined = "\n\n".join(item for item in (reason, notice_block) if item)
             if notice_block is not None or bugfix_block is not None:
                 combined += "\n\n" + delivered_repost_gate.send_fix()
-            return _retry_send(payload, tool_name, tool_input, session_id, combined, edit_body=edit_body)
+            return _retry_send(
+                payload, tool_name, tool_input, session_id, combined, edit_body=edit_body or notice_block is not None
+            )
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (
@@ -476,7 +469,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             if is_send_to_user_tool(tool_name) and isinstance(message, str)
             else None
         )
-        return Decision(allow=True, context=timing, notices=tuple(send_warnings))
+        return Decision(allow=True, context=timing, notices=tuple(send_warnings), updated_input=hydrated)
     if tool_name == "Skill":
         return Decision()
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
@@ -523,6 +516,25 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     if tool_name in _SEARCH_TOOL_NAMES:
         return Decision(notices=notices)
     return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd, payload), notices=notices)
+
+
+def _completion_prerequisite(payload: dict, session_id: str) -> str | None:
+    from agent_toolkit._hooks.agents_server_session_advisor import outstanding_before_completion  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
+
+    if not session_id:
+        return _block_notice("完了報告の会話を特定できない。", fix="この会話の送達ツールを読み直す。")
+    if pending := outstanding_before_completion(session_id, _agent_id.resolve_hook_agent_id(payload)):
+        return _block_notice(
+            f"完了報告の前に委譲先の結果と続行を確認してください。{pending}",
+            fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返してください。",
+        )
+    if playbook := missing_completion_before_report(payload, session_id, "", "completion"):
+        return _block_notice(
+            "完了報告の手順書を読んだ証拠がない。",
+            fix=f"`Read`か`Bash`で`{playbook}`を全文読んでください。`file(...).text()`は証拠にならない。",
+        )
+    return None
 
 
 def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> int:

@@ -5,7 +5,7 @@ import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
 import { mountPeriodicRecheck } from "./periodic_recheck.ts";
 
-type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; misdetection_checks?: unknown; targets?: unknown; resume?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
+type Request = { id: string; operation: string; input: { message?: string; body_ref?: unknown; tool_use_id?: unknown; misdetection_checks?: unknown; targets?: unknown; resume?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
 import type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 export type { BackgroundWait, RuntimeChange } from "./state.d.ts";
 
@@ -76,11 +76,14 @@ export function register(on: On): void {
         let resend: boolean | undefined;
         let warnings: string[] | undefined;
         const skipped = Array.isArray(request.input.misdetection_checks) ? request.input.misdetection_checks : [];
-        if (request.operation === "send_to_user" && typeof request.input?.message === "string" &&
+        if (request.operation === "send_to_user" &&
+            (typeof request.input.message !== "string" || request.input.body_ref != null)) {
+          reason = "検査済みの本文がない。報告は未送信です。";
+        } else if (request.operation === "send_to_user" && typeof request.input.message === "string" &&
             !skipped.includes("missing-prevention") && missingPreventionLine(request.input.message)) {
           reason = missingPreventionRejection;
           resend = true;
-        } else if (request.operation === "send_to_user" && typeof request.input?.message === "string") {
+        } else if (request.operation === "send_to_user" && typeof request.input.message === "string") {
           const messages = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {};
           await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, { ...messages, [request.id]: request.input.message });
           const placed = await $.ui.place({ id: request.id });

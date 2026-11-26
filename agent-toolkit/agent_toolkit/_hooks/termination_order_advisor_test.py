@@ -91,27 +91,33 @@ def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
     assert termination_order_advisor.evaluate(_payload("sess-unrelated", str(trace))) == ("approve", "")
 
 
-def test_formal_completion_report_requires_current_playbook_but_progress_does_not(tmp_path, capsys):
+@pytest.mark.parametrize("call_prefix", ["toolu", "repl"])
+def test_formal_completion_report_requires_current_playbook_but_progress_does_not(tmp_path, capsys, call_prefix):
     trace = _write_transcript(tmp_path, [])
     sid = "sess-formal-report"
     _start_skill(sid, trace, "agent-toolkit:atk-mode", arguments="process-wi")
 
-    def check(message: str, *, call_id: str | None = None, kind: str | None = None) -> str:
+    def call(name: str, arguments: dict, call_id: str) -> dict:
         payload = json.loads(_payload(sid, str(trace)))
-        payload.update(tool_name="mcp__plugin_agent-toolkit_agents_server__send_to_user", tool_input={"message": message})
-        if call_id is not None:
-            payload["tool_use_id"] = call_id
-        if kind is not None:
-            payload["tool_input"]["kind"] = kind
+        payload.update(tool_name=f"mcp__plugin_agent-toolkit_agents_server__{name}", tool_input=arguments)
+        payload["tool_use_id"] = f"{call_prefix}_{call_id}"
         assert dispatch.main(json.dumps(payload)) == 0
-        return capsys.readouterr().out
+        raw = capsys.readouterr().out
+        return json.loads(raw)["hookSpecificOutput"] if raw else {}
+
+    def check(message: str, *, call_id: str = "progress", kind: str | None = None) -> str:
+        return json.dumps(call("send_to_user", {"message": message, "kind": kind}, call_id), ensure_ascii=False)
+
+    def preflight() -> dict:
+        return call("send_to_user_preflight", {}, "preflight")
 
     assert "作業完了報告の手順書の取得" not in check("途中経過を報告する。")
     report = "## 作業完了報告\n作業の結果を報告する。"
     body = "見出しなしで完了したことを報告する。"
     assert "permissionDecisionReason" not in check(body, call_id="repl_progress")
-    assert "作業完了報告の手順書の取得" in check(body, call_id="toolu_direct", kind="completion")
-    rejected = json.loads(check(body, call_id="repl_completion", kind="completion"))["hookSpecificOutput"]
+    assert preflight()["permissionDecision"] == "deny"
+    assert "手順書" in preflight()["permissionDecisionReason"]
+    rejected = json.loads(check(body, call_id="completion", kind="completion"))
     assert rejected["permissionDecision"] == "deny"
     reason = rejected["permissionDecisionReason"]
     saved = re.search(r"本文の保存先: `([^`]+)`", reason)
@@ -122,14 +128,23 @@ def test_formal_completion_report_requires_current_playbook_but_progress_does_no
     playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
     response = termination_evidence_support.claude_read_response(playbook)
     _observe(sid, trace, "repl_read", "Read", {"file_path": str(playbook)}, response)
-    saved_body = pathlib.Path(saved[1]).read_text(encoding="utf-8")
-    assert "permissionDecisionReason" not in check(saved_body, call_id="repl_retry", kind="completion")
+    assert preflight()["updatedInput"] == {"checked": True}
+    path = pathlib.Path(saved[1])
+    ref = {"body_ref": path.parent.name, "kind": "completion"}
+    verified = call("send_to_user", ref, "retry")
+    assert verified["permissionDecision"] == "allow"
+    assert verified["updatedInput"] == {"message": body, "kind": "completion"}
+    corrected = "不足していた試験結果を追記した。"
+    path.write_text(corrected, encoding="utf-8")
+    assert call("send_to_user", ref, "corrected")["updatedInput"]["message"] == corrected
+    assert verified["updatedInput"]["message"] == body
     assert "作業完了報告の手順書の取得" not in check(report)
     session_state.update_state(
         sid,
         lambda state: {**state, "agents_server_sessions": {"child": {"owner_agent_id": "main", "pending_observation": True}}},
     )
-    blocked = check(body, call_id="repl_pending", kind="completion")
+    assert "委譲先の結果と続行を確認" in preflight()["permissionDecisionReason"]
+    blocked = check(body, call_id="pending", kind="completion")
     assert "委譲先の結果と続行を確認" in blocked
     assert "保存した本文は編集せず" in blocked
     assert "委譲先の結果と続行を確認" not in check("担当の結果は未回収です。")

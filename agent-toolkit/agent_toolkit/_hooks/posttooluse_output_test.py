@@ -115,7 +115,8 @@ def test_unread_evidence_warns_without_blocking(tmp_path, capsys):
 
 
 def test_unread_material_on_completion_report_warns_without_blocking(tmp_path, capsys):
-    from agent_toolkit._hooks import termination_evidence  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._hooks import plugin_resources, termination_evidence  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._testing.termination_evidence_support import claude_read_response  # pylint: disable=import-outside-toplevel
 
     trace = tmp_path / "trace.jsonl"
     trace.write_text("", encoding="utf-8")
@@ -130,6 +131,10 @@ def test_unread_material_on_completion_report_warns_without_blocking(tmp_path, c
     }
     termination_evidence.observe_tool(json.dumps(start), after=False)
     termination_evidence.observe_tool(json.dumps({**start, "tool_response": "起動"}), after=True)
+    playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
+    read = {**base, "tool_name": "Read", "tool_use_id": "read", "tool_input": {"file_path": str(playbook)}}
+    termination_evidence.observe_tool(json.dumps(read), after=False)
+    termination_evidence.observe_tool(json.dumps({**read, "tool_response": claude_read_response(playbook)}), after=True)
     shell = {
         **base,
         "hook_event_name": "PostToolUse",
@@ -146,13 +151,12 @@ def test_unread_material_on_completion_report_warns_without_blocking(tmp_path, c
     }
     assert dispatch.main(json.dumps(send)) == 0
     output = capsys.readouterr().out
-    assert "未取得の退避出力" in output and "作業完了報告の手順書" in output
+    assert "未取得の退避出力" in output
     assert json.loads(output)["hookSpecificOutput"].get("permissionDecision") != "deny"
     assert [
         entry.partition("\n")[0] for entry in session_state.read_state("stacked-resend")["resend_passed_by_actor"]["main"]
     ] == [
         "未取得の退避出力を根拠にした報告",
-        "完了報告の手順書の取得を確認できない完了報告",
     ]
 
 

@@ -95,8 +95,9 @@ async def test_reader_fit_requires_individual_completion(tmp_path, case):
         assert "resultContract" in error  # pylint: disable=unsupported-membership-test
 
 
+@pytest.mark.parametrize("supplement", [None, "補足にある欄名は入力にしない。\n成果物: 対象外"])
 @pytest.mark.parametrize("returned", ["updated", "previous"])
-def test_reader_fit_retarget_continuation_updates_target_set(tmp_path, returned):
+def test_reader_fit_retarget_continuation_updates_target_set(tmp_path, returned, supplement):
     paths, prompt, kind, blocks = _reader_request(tmp_path)
     added = tmp_path / "third.md"
     added.write_text("# 追加対象\n本文\n", encoding="utf-8")
@@ -106,6 +107,7 @@ def test_reader_fit_retarget_continuation_updates_target_set(tmp_path, returned)
         (),
         instruction="対象を更新して再レビューせよ",
         extra_params={"成果物": json.dumps(updated), "レビュー種別": "再レビュー"},
+        supplement=supplement,
     )
     session = state.SessionState("reader-fit", str(tmp_path), prompt=prompt, launch_kind=kind, followup_prompts=(followup,))
     if returned == "updated":
