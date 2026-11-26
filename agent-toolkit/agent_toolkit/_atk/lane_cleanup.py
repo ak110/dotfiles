@@ -562,6 +562,7 @@ def recover_record(record: dict[str, typing.Any], path: pathlib.Path) -> None:
         raise ValueError("repoのGit共通ディレクトリが所有記録と異なる")
     trees = _lane_records.worktrees(repo)
     registered = str(worktree) in trees
+    use_remove_hook = False
     if registered:
         if trees[str(worktree)] != record["branch"]:
             raise ValueError("worktreeの登録が所有記録と異なる")
@@ -573,6 +574,11 @@ def recover_record(record: dict[str, typing.Any], path: pathlib.Path) -> None:
                 raise ValueError(activity)
             if _lane_activity.has_unignored_changes(worktree):
                 raise ValueError("未commitまたは未追跡の変更がある。成果をcommitしてから再実行する")
+            use_remove_hook = bool(record.get("project_hook") and worktree_hooks.configured(repo, "WorktreeRemove"))
+            if not use_remove_hook:
+                reason = _registered_unowned_data_reason(record, worktree, trees)
+                if reason:
+                    raise ValueError(reason)
     elif worktree.exists():
         raise ValueError("登録の無いworktreeが残っている。内容とGit登録を確認する")
     if record["branch"] not in _lane_records.branches(repo):
@@ -583,7 +589,7 @@ def recover_record(record: dict[str, typing.Any], path: pathlib.Path) -> None:
         raise ValueError("回復の開始後に元branchのHEADが変わった。成果を確認して同じ操作を再実行する")
     _lane_records.save(path, record)
     if registered:
-        if worktree.exists() and record.get("project_hook") and worktree_hooks.configured(repo, "WorktreeRemove"):
+        if use_remove_hook:
             worktree_hooks.remove(
                 repo,
                 worktree,
