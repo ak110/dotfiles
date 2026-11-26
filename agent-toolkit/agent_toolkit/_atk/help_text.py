@@ -487,7 +487,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
         "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後に現在のセッションを自律終了するとき、または未完了成果を保存して本人IDの再開を予約した後に再起動するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。本人IDの保存済み再開予約がある場合は、ターンの完了を待たず一致した単一PIDへ終了要求を送る。予約は消費せず、完了とも記録しない。それ以外のFunction hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止しない。対話CLIでの終了操作だけを条件付きで案内する。",
-        "epilog": "実行例:\n\n  atk agents-exit-session",
+        "epilog": "実行例:\n\n  atk agents-exit-session\n  atk agents-exit-session --after-completion  # 対象の対話起動で送達済みの完了報告がある場合だけ /exit を要求する",
     },
     "atk lane": {
         "summary": "レーン資源の作成と終了時回収を管理する",

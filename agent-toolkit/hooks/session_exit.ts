@@ -125,9 +125,74 @@ async function deleteSessionCrons($: EngineInterface): Promise<void> {
   }
 }
 
+async function completionPath($: EngineInterface): Promise<string | undefined> {
+  const launch = await $.env.get("AGENT_TOOLKIT_COMPLETION_LAUNCH_ID");
+  if (!launch || !/^[0-9a-f]{32}$/.test(launch)) return undefined;
+  const base = await statePath($, launch, "request");
+  return base?.replace(/request-([^/]+)$/, "completion-exit-$1");
+}
+
+async function cancelCompletion($: EngineInterface, path: string | undefined): Promise<void> {
+  if (path && await $.fs.exists(path)) await $.fs.write(path, "{}");
+}
+
+async function hasOtherCrons($: EngineInterface): Promise<boolean> {
+  if ((await $.tool.check({ tool: "CronList", input: {} })).decision !== "allow") return true;
+  const listed = await $.tool.call({ tool: "CronList" });
+  if (listed.deny !== undefined || listed.isError === true) return true;
+  const jobs = parseCronJobs(listed.result).filter((job) => job.durable !== true);
+  if (!jobs.length) return false;
+  const schedule = await $.process.run(
+    pluginLaunchCommand($.plugin.root, "agent_toolkit/atk.py", ["wait-schedule"]),
+    { timeoutMs: 60_000 },
+  );
+  const common = schedule.exitCode === 0 && !schedule.isStdoutTruncated ? parseSchedule(schedule.stdout) : undefined;
+  return !common || jobs.some((job) => job.prompt !== common.prompt);
+}
+
+async function completeAndExit(
+  $: EngineInterface, sessionId: string, aborted: boolean, unchanged: () => boolean,
+): Promise<void> {
+  const path = await completionPath($);
+  if (!path) return;
+  try {
+    const raw = await $.fs.read(path);
+    const state = JSON.parse(raw);
+    if (state?.session !== sessionId || !["requested", "approved"].includes(state.status)) return;
+    if (aborted || state.status !== "approved" || await hasOtherCrons($) ||
+        Object.keys((await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {}).length > 0 ||
+        await collectCommonTasks($) !== null || await $.fs.read(path) !== raw || !unchanged()) {
+      await cancelCompletion($, path);
+      return;
+    }
+    await $.fs.write(path, JSON.stringify({ ...state, status: "exiting" }));
+    try {
+      if (unchanged()) await $.command.run({ command: "exit" });
+    } finally {
+      await cancelCompletion($, path);
+    }
+  } catch {
+    await cancelCompletion($, path);
+  }
+}
+
 export function register(on: On): void {
+  let inputSequence = 0;
+  on("prompt.submit", { text: /^/ }, async ($, e, next) => {
+    inputSequence++;
+    await cancelCompletion($, await completionPath($));
+    return next(e);
+  });
+  on("turn.start", { turnId: /^/ }, async ($, e, next) => {
+    if (e.agentId === undefined) {
+      inputSequence++;
+      await cancelCompletion($, await completionPath($));
+    }
+    return next(e);
+  });
   const deliveredFailures = new Map<string, string>();
   on("turn.complete", async ($, e, next) => {
+    const sequence = inputSequence;
     const result = await next(e);
     if (e.agentId !== undefined) return result;
     const sessionId = await $.session.id();
@@ -141,6 +206,7 @@ export function register(on: On): void {
       else throw error;
     }
     if (content !== "requested") {
+      await completeAndExit($, sessionId, e.isAborted, () => inputSequence === sequence);
       const outcome = await collectPeriodicRecheck($, sessionId, e.isAborted);
       // 未点検のturnは解消の観測に数えず、実際の成功・対象消滅で通知の既往を解く。
       const note = outcome === undefined ? undefined : changedWarning(deliveredFailures, sessionId, outcome ?? undefined);

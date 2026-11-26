@@ -31,8 +31,8 @@ from typing import Any
 lazy import asyncio
 
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
+lazy from agent_toolkit._common import completion_exit, function_hook_requests
 lazy from agent_toolkit._common import delegated_session as _delegated_session
-lazy from agent_toolkit._common import function_hook_requests
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.function_hook_requests import cleanup, enqueue
 lazy from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
@@ -128,6 +128,32 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
         _collect_recheck_before_idle(session_id)
 
 
+def _completion_verdict(session_id: str, payload: dict, *, allowed: bool) -> None:
+    path = completion_exit.state_path(os.environ.get(completion_exit.LAUNCH_ENV, ""))
+    if path is None or not session_id or payload.get("agent_id") or is_codex_payload(payload):
+        return
+    state = completion_exit.read_state(path)
+    if state.get("session") != session_id or state.get("status") not in ("requested", "approved"):
+        return
+    try:
+        source = payload.get("transcript_path")
+        if (
+            allowed
+            and state.get("status") == "requested"
+            and isinstance(source, str)
+            and state.get("call") in completion_exit.current_reports(_transcript.read_transcript_entries(source))
+            and pending_async_status(
+                source, session_id, background_tasks=payload.get("background_tasks"), session_state=read_state(session_id)
+            )
+            == "complete"
+        ):
+            completion_exit.write_state(path, {**state, "status": "approved"})
+        else:
+            path.unlink(missing_ok=True)
+    except (OSError, ValueError) as error:
+        append_stop_log(session_id, "completion_exit_error", {"error": str(error)})
+
+
 def _holds_common_recheck_task(crons: object) -> bool:
     return isinstance(crons, list) and any(
         isinstance(cron, dict) and cron.get("prompt") == PERIODIC_RECHECK_PROMPT for cron in crons
@@ -192,6 +218,11 @@ def evaluate(payload_text: str) -> dict[str, object]:
     def _finalize(result: dict[str, object]) -> dict[str, object]:
         if is_codex_payload(payload):
             return {key: value for key, value in result.items() if key in {"decision", "reason"}}
+        _completion_verdict(
+            session_id,
+            payload,
+            allowed=not block_reasons and not yield_for_delivery and halt_request is None,
+        )
         _write_recheck_verdict(
             session_id,
             payload,

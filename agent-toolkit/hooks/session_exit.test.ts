@@ -8,6 +8,7 @@ import { PERIODIC_RECHECK_MARKER } from "./periodic_recheck.ts";
 type Job = { id: string; durable?: boolean; prompt?: string };
 
 type Options = {
+  completion?: string;
   request?: string;
   jobs?: Job[];
   decisions?: Record<string, "allow" | "ask" | "deny">;
@@ -20,6 +21,8 @@ type Options = {
 
 const REQUEST_PATH = "/home/tester/.claude/agent-toolkit-function-hooks/request-sess-1.txt";
 const RECHECK_PATH = "/home/tester/.claude/agent-toolkit-function-hooks/recheck-sess-1.txt";
+const LAUNCH = "a".repeat(32);
+const COMPLETION_PATH = `/home/tester/.claude/agent-toolkit-function-hooks/completion-exit-${LAUNCH}.txt`;
 const COMMON_PROMPT = `${PERIODIC_RECHECK_MARKER}\n共通の定期再確認\n</atk-auto>`;
 
 function engine(on: On, options: Options): { calls: string[]; writes: Map<string, string>; checks: string[]; argv: (readonly string[])[] } {
@@ -28,8 +31,17 @@ function engine(on: On, options: Options): { calls: string[]; writes: Map<string
   const writes = new Map<string, string>();
   const argv: (readonly string[])[] = [];
   on("session.id", () => ({ value: "sess-1" }));
-  on("env.get", (_$, e) => ({ value: e.name === "HOME" ? "/home/tester" : undefined }));
+  on("env.get", (_$, e) => ({
+    value: e.name === "HOME" ? "/home/tester" :
+      e.name === "AGENT_TOOLKIT_COMPLETION_LAUNCH_ID" && options.completion !== undefined ? LAUNCH : undefined,
+  }));
+  on("fs.exists", (_$, e) => ({ value: e.path === COMPLETION_PATH && options.completion !== undefined }));
+
   on("fs.read", (_$, e) => {
+    if (e.path === COMPLETION_PATH && options.completion !== undefined) {
+      return { value: writes.get(e.path) ?? JSON.stringify({ session: "sess-1", call: "tool-1", status: options.completion }) };
+    }
+
     if (e.path === RECHECK_PATH && options.recheck !== undefined) return { value: writes.get(e.path) ?? options.recheck };
     if (e.path !== REQUEST_PATH) {
       throw Object.assign(new Error(`ENOENT: ${e.path}`), { code: "ENOENT" });
@@ -329,4 +341,49 @@ test("Stopの回収要求で削除できなければ理由を応答へ返し、�
   expect(calls).toEqual(["CronList"]);
   expect(responses[0]?.reason).toContain("common: deny");
   expect(prompts).toEqual([]);
+});
+
+test("協調の終了要求はStopが許可した時だけ実行し、コマンドが戻れば記録を消す", async ($, on) => {
+  const { calls, writes } = engine(on, { completion: "approved" });
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).toEqual(["CronList", "CronList", "command:exit"]);
+  expect(writes.get(COMPLETION_PATH)).toBe("{}");
+});
+
+test("協調の終了要求は同じターンのStopの許可が無い時に取り消す", async ($, on) => {
+  const blocked = engine(on, { completion: "requested" });
+  await $.turn.complete(MAIN_TURN);
+  expect(blocked.calls).not.toContain("command:exit");
+  expect(blocked.writes.get(COMPLETION_PATH)).toBe("{}");
+});
+
+test("協調の終了要求は中断した時に取り消す", async ($, on) => {
+  const { calls, writes } = engine(on, { completion: "approved" });
+  await $.turn.complete({ ...MAIN_TURN, isAborted: true });
+  expect(calls).not.toContain("command:exit");
+  expect(writes.get(COMPLETION_PATH)).toBe("{}");
+});
+
+test("協調の終了要求は無関係なセッション限りのcronを消さず取り消す", async ($, on) => {
+  const { calls, writes } = engine(on, { completion: "approved", jobs: [{ id: "user-loop" }] });
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).not.toContain("command:exit");
+  expect(calls).not.toContain("CronDelete:user-loop");
+  expect(writes.get(COMPLETION_PATH)).toBe("{}");
+});
+
+test("協調の終了要求は次のターン開始時に破棄し、遅い完了イベントで実行しない", async ($, on) => {
+  const { calls, writes } = engine(on, { completion: "approved" });
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  await $.turn.start({ text: "続けて", turnId: "t2" });
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).not.toContain("command:exit");
+  expect(writes.get(COMPLETION_PATH)).toBe("{}");
+});
+
+test("協調の終了要求はcron一覧を取得できなければ取り消す", async ($, on) => {
+  const { calls, writes } = engine(on, { completion: "approved", listThrows: true });
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).not.toContain("command:exit");
+  expect(writes.get(COMPLETION_PATH)).toBe("{}");
 });

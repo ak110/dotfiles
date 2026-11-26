@@ -439,3 +439,62 @@ def test_queued_notifications_yield_without_overriding_block(
         state = _read_state(tmp_path, "queued-stop")
         assert not state.get("queued_notification_notified_ids")
         assert not state.get("warn_notice_counts")
+
+
+@pytest.mark.parametrize(
+    ("case", "approved"), [("clear", True), ("blocked", False), ("background", False), ("unrelated", False)]
+)
+def test_stop_completion_exit_verdict(case, approved, monkeypatch, tmp_path):
+    from agent_toolkit._common import completion_exit
+
+    _set_state_directory(monkeypatch, tmp_path)
+    launch = "a" * 32
+    monkeypatch.setenv(completion_exit.LAUNCH_ENV, launch)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    if case == "blocked":
+        _replace_checks(monkeypatch, {"run_skill_report_gate": ("block", "作業が残っている")})
+    state = completion_exit.state_path(launch, root=tmp_path)
+    assert state is not None
+    state.parent.mkdir()
+    completion_exit.write_state(state, {"session": "stop-completion", "call": "call-a", "status": "requested"})
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call-a",
+                            "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                            "input": {"kind": "completion", "message": "完了しました。"},
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-a" if case != "unrelated" else "call-b",
+                            "content": '{"ok":true}',
+                        }
+                    ]
+                },
+            },
+        ],
+    )
+    stop.evaluate(
+        json.dumps(
+            {
+                "session_id": "stop-completion",
+                "transcript_path": str(transcript),
+                "background_tasks": [{"id": "held", "type": "local_bash", "status": "running"}] if case == "background" else [],
+            }
+        )
+    )
+    assert completion_exit.read_state(state).get("status") == ("approved" if approved else None)

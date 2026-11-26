@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import stat
@@ -462,3 +463,119 @@ def test_argcomplete_writes_claude_options_to_fd8(tmp_path: pathlib.Path) -> Non
     candidates = completion_output.read_text(encoding="utf-8").split("\v")
     assert "--model" in candidates
     assert "--permission-mode" in candidates
+
+
+@pytest.mark.parametrize(
+    ("state", "status", "display"),
+    [
+        ("exiting", 0, True),
+        ("requested", 0, False),
+        ("missing", 0, False),
+        ("other-launch", 0, False),
+        ("exiting", 17, False),
+    ],
+)
+def test_opus_completion_after_child_exit(
+    state: str,
+    status: int,
+    display: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    actual_wait = agent_launcher._wait_for_claude
+    events: list[dict] = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                        "id": call,
+                        "input": {"kind": "completion", "message": message},
+                    },
+                ]
+            },
+        }
+        for call, message in [("call-a", "完了報告\n\n本文"), ("call-b", "別の誤った報告")]
+    ]
+    events.extend(
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": call, "content": json.dumps({"ok": ok}), "is_error": not ok},
+                ]
+            },
+        }
+        for call, ok in [("call-a", True), ("call-b", False)]
+    )
+    record = "".join(json.dumps(event) + "\n" for event in events)
+    fake = tmp_path / "fake_claude.py"
+    fake.write_text(
+        f"""import json, os, pathlib, sys
+root = pathlib.Path(os.environ["CLAUDE_CONFIG_DIR"])
+launch = os.environ["AGENT_TOOLKIT_COMPLETION_LAUNCH_ID"]
+state = {state!r}
+if state != "missing":
+    directory = root / "agent-toolkit-function-hooks"
+    directory.mkdir()
+    if state == "other-launch":
+        launch, state = "a" * 32, "exiting"
+    path = directory / f"completion-exit-{{launch}}.txt"
+    path.write_text(json.dumps({{"session": "session-a", "call": "call-a", "status": state}}), encoding="utf-8")
+path = root / "projects" / "test" / "session-a.jsonl"
+path.parent.mkdir(parents=True)
+path.write_text({record!r}, encoding="utf-8")
+sys.exit({status})
+""",
+        encoding="utf-8",
+    )
+
+    def wait(command: list[str], env: dict[str, str]) -> int:
+        assert command[-2:] == ["--resume", "session-a"]
+        return actual_wait([sys.executable, str(fake)], env)
+
+    monkeypatch.setattr(agent_launcher, "_wait_for_claude", wait)
+    with pytest.raises(SystemExit) as error:
+        agent_launcher.main_opus(
+            ["--resume", "session-a"],
+            home=tmp_path,
+            resolve=lambda *_: pathlib.Path("claude"),
+            isatty=lambda _: True,
+        )
+    assert error.value.code == status
+    output = capsys.readouterr().out
+    if display:
+        assert "完了報告\n\n本文\n" in output
+        assert "opus --resume session-a" in output
+        assert "別の誤った報告" not in output
+        assert not list((tmp_path / "agent-toolkit-function-hooks").iterdir())
+    else:
+        assert not output
+
+
+@pytest.mark.parametrize("args", [["--print", "hello"], ["-p", "hello"], ["mcp", "list"], ["auth", "status"]])
+def test_opus_noninteractive_does_not_create_launcher_id(
+    args: list[str],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def run(command: list[str]) -> int:
+        assert command[-len(args) :] == args
+        print("本体出力")
+        return 19
+
+    with pytest.raises(SystemExit) as error:
+        agent_launcher.main_opus(
+            args,
+            home=tmp_path,
+            os_name="nt",
+            resolve=lambda *_: pathlib.Path("claude"),
+            isatty=lambda _: True,
+            run=run,
+        )
+    assert error.value.code == 19
+    assert capsys.readouterr().out == "本体出力\n"

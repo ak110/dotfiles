@@ -43,6 +43,15 @@ dotfilesユーザーは`chezmoi apply`で同じプラグインを設定する。
 モデル別ランチャーは、手動で導入した開発機能を保ちながら、claude.aiの自動連携とChrome連携を止める。
 引数の先頭に`--full`を置くと、追加で機能を止めずに起動する。
 
+対話端末で `opus`、`sonnet`、`fable` を使い、`/agent-toolkit:atk-mode` の `add-awi-by-user`、`implement`、`process-user-comments` が終わると、完了報告の表示後にClaude Codeが自動で終了する。
+端末に完了報告の本文と再開コマンドが残る。
+会話を続けるには、表示されたコマンドを実行する。
+無効にするには起動前に環境変数 `AGENT_TOOLKIT_KEEP_SESSION` を設定する（値は任意）。
+
+公式の `claude` を直接起動した時、`poteto-mode` や非対話起動、Function hooksを読み込めない場合は対象外。
+ユーザーの回答・承認を待つ場合や、未回収の作業や別のセッション内cronが残る場合も終了しない。
+手動で `/exit` した時は報告を追加表示しない。
+
 ## 詳細設定と操作
 
 - [環境別の導入](claude-code-installation.md)

@@ -36,6 +36,8 @@ atk wi submit --show REQUEST_ID
 | `/agent-toolkit:atk-mode process-user-comments` | 登録済みAWIへ込み入ったユーザーコメントを書いた後、質問を対話で済ませて本文を整理し直してから自動処理へ渡したい |
 | `atk serve`の新規追加 | 画面から登録したい。種別「一括登録（show形式）」で移行・復元もできる |
 
+対象の作業をモデル別ランチャーで行う場合の終了と再開については、[Claude Codeのモデル別ランチャー](claude-code-guide.md#claude-codeのモデル別ランチャー)を参照。
+
 通常の登録は、本文を書いたファイルを渡して`atk wi add --body-file <本文ファイル>`を実行する。
 `atk wi add --cooldown-until '2026-10-11T12:00:00+09:00' --body-file <本文ファイル>`のように、指定時刻まで処理を始めないAWIも登録できる。
 登録済みのAWIを直したい場合は、`atk wi hold <ファイル名>`で自動処理から外し、本文を直してから`atk wi unhold <ファイル名>`で戻す。

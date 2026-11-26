@@ -307,3 +307,89 @@ def test_sweep_function_hook_files_includes_recheck(
         assert not (directory / f"{prefix}-old.txt").exists()
         assert (directory / f"{prefix}-fresh.txt").is_file()
     assert unrelated.is_file()
+
+
+@pytest.mark.parametrize(
+    ("case", "requested"),
+    [
+        ("ready", True),
+        ("no-launch", False),
+        ("no-marker", False),
+        ("stale-marker", False),
+        ("disabled", False),
+        ("delegated", False),
+        ("previous-turn", False),
+        ("delivery-error", False),
+    ],
+)
+def test_request_completion_exit_is_fail_closed(
+    case: str,
+    requested: bool,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent_toolkit._common import completion_exit
+
+    session, launch = "session-a", "a" * 32
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
+    monkeypatch.delenv(completion_exit.DISABLE_ENV, raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    if case != "no-launch":
+        monkeypatch.setenv(completion_exit.LAUNCH_ENV, launch)
+    else:
+        monkeypatch.delenv(completion_exit.LAUNCH_ENV, raising=False)
+    if case == "disabled":
+        monkeypatch.setenv(completion_exit.DISABLE_ENV, "1")
+    if case == "delegated":
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    monkeypatch.setattr(agents_exit_session, "identify_current_host", lambda: _claude_target(tmp_path))
+    monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_: pytest.fail("停止してはならない"))
+    paths = agents_exit_session.function_hook_paths(session)
+    assert paths is not None
+    marker, _ = paths
+    marker.parent.mkdir()
+    if case != "no-marker":
+        marker.write_text("ready", encoding="utf-8")
+    if case == "stale-marker":
+        os.utime(marker, (1, 1))
+    record = tmp_path / "projects" / "repo" / f"{session}.jsonl"
+    record.parent.mkdir(parents=True)
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "call-a",
+                        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                        "input": {"kind": "completion", "message": "今回の報告"},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call-a",
+                        "is_error": case == "delivery-error",
+                        "content": [{"type": "text", "text": '{"ok": true}'}],
+                    }
+                ]
+            },
+        },
+    ]
+    if case == "previous-turn":
+        entries.append({"type": "user", "origin": {"kind": "human"}, "message": {"role": "user", "content": "新しい依頼"}})
+    record.write_text("".join(json.dumps(event) + "\n" for event in entries), encoding="utf-8")
+
+    assert agents_exit_session.request_completion_exit() == 0
+    state = completion_exit.state_path(launch, root=tmp_path)
+    assert state is not None
+    assert state.exists() is requested
+    if requested:
+        assert completion_exit.read_state(state) == {"session": session, "call": "call-a", "status": "requested"}

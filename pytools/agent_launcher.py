@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from collections.abc import Callable
 from typing import NoReturn
 
@@ -157,6 +158,54 @@ def _enable_model_completion(command_name: str) -> None:
     enable_completion(parser)
 
 
+def _interactive_claude(argv: list[str], isatty: TerminalChecker) -> bool:
+    tokens = iter(argv)
+    for token in tokens:
+        if token == "--":
+            break
+        if token in {"-p", "--print", "--sdk-url", "--init-only", "--maintenance"} or token.startswith(
+            ("--print=", "--sdk-url=")
+        ):
+            return False
+        if token in _CLAUDE_VALUE_OPTIONS:
+            next(tokens, None)
+    return _claude_conversation(argv) and isatty(0) and isatty(1)
+
+
+def _wait_for_claude(command: list[str], env: dict[str, str]) -> int:
+    with subprocess.Popen(command, env=env) as child:
+        while True:
+            try:
+                return child.wait()
+            except KeyboardInterrupt:
+                # pyfltr: allow-comment -- 同じ端末の子にもCtrl+Cは届く。親から送り直さず、子の終了を待つ。
+                continue
+
+
+def _run_completion_launcher(command: list[str], wrapper: str, home: pathlib.Path, os_name: str) -> int:
+    from agent_toolkit._common import completion_exit, host_homes
+
+    launch = uuid.uuid4().hex
+    env = {**os.environ, completion_exit.LAUNCH_ENV: launch}
+    root = host_homes.claude_config_dir(env, home=home)
+    status = _wait_for_claude(command, env)
+    path = completion_exit.state_path(launch, root=root)
+    if path is not None and status == 0:
+        try:
+            state = completion_exit.read_state(path)
+            message = completion_exit.report_text(state, root=root)
+            if message is not None:
+                path.unlink()
+                session = state["session"]
+                print(message)
+                resume = f"{wrapper} --resume {session}"
+                setting = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"
+                print(f'再開: cmd /d /c "set {setting}&& {resume}"' if os_name == "nt" else f"再開: {setting} {resume}")
+        except OSError:
+            pass
+    return status if os_name == "nt" or status >= 0 else 128 - status
+
+
 def _run_model(
     command_name: str,
     model_args: tuple[str, ...],
@@ -170,6 +219,7 @@ def _run_model(
     isatty: TerminalChecker,
     family: str | None = None,
     full: bool = True,
+    wrapper: str | None = None,
 ) -> int:
     command_bin = _resolve_command(command_name, home, resolve)
     if command_bin is None:
@@ -197,6 +247,12 @@ def _run_model(
             return codex_launcher.run_interactive(pathlib.Path(command_bin), [*model_args, *argv], full=full)
         if not full and codex_launcher.uses_startup_features(argv):
             model_args = (*startup_features.codex_arguments(), *model_args)
+    if wrapper in {"opus", "sonnet", "fable"} and _interactive_claude(argv, isatty):
+        assert wrapper is not None
+        try:
+            return _run_completion_launcher([command_bin, *model_args, *argv], wrapper, home, os_name)
+        except FileNotFoundError:
+            return 127
     if os_name != "nt":
         try:
             os.execv(command_bin, [command_name, *model_args, *argv])
@@ -275,6 +331,7 @@ def _main(
             isatty=isatty,
             family=family,
             full=full,
+            wrapper=wrapper,
         )
     )
 
