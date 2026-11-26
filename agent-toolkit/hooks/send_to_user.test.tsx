@@ -226,6 +226,7 @@ test("表示済みの誤警告は質問前に送る本文と申告を同じ箇�
     for (const warning of warnings) {
       expect(warning).toContain(`"delivery_id":"${id}"`);
       expect(warning).toContain('質問の前に `message: "…"`');
+      expect(warning).toContain("1つのmisdetection配列にまとめる");
       expect(warning).not.toContain("hook通知への対応:");
     }
   }

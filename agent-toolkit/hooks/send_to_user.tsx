@@ -192,6 +192,7 @@ export function reportWarnings(message: string, deliveryId?: string, skipped: re
     const claim = JSON.stringify([{ check, reason: "誤検出と判断した理由", delivery_id: deliveryId }]);
     const guidance =
       `次の操作: 誤検出なら表示済みの本文は再掲せず、次のsend_to_userに \`misdetection=${claim}\` を付ける。` +
+      "同じ送達に誤検出が複数あれば、それぞれの判定名と送達IDの組を1つのmisdetection配列にまとめる。" +
       '次が質問だけなら、質問の前に `message: "…"` とその申告を付けたsend_to_userを1回呼ぶ。';
     warnings.add(warning.replace('kind="warn">', `kind="warn" check="${check}" delivery_id="${deliveryId}">`)
       .replace("</atk-auto>", `${guidance}\n</atk-auto>`));
