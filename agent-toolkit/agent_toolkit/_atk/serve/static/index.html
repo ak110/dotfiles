@@ -393,8 +393,9 @@
     <div id="sessions-app" class="two-pane">
       <aside id="sessions-sidebar" class="pane-sidebar">
         <div class="toolbar">
-          <label class="visually-hidden" for="sessions-filter">セッションを検索</label>
-          <input id="sessions-filter" type="search" placeholder="ホスト・作業ディレクトリ・識別子・パス・ラベルを検索">
+          <label for="sessions-filter">セッションを検索</label>
+          <input id="sessions-filter" type="search" aria-describedby="sessions-filter-scope">
+          <small id="sessions-filter-scope" class="secondary-text">検索対象: ホスト・作業ディレクトリ・識別子・パス・ラベル</small>
         </div>
         <div id="warnings" role="alert" hidden></div>
         <div id="sessions-list-error" role="alert" hidden></div>

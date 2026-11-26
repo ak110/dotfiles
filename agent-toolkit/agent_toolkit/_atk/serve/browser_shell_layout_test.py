@@ -32,7 +32,14 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
     await page.get_by_role("searchbox", name="計画ファイルを検索").fill("計画条件")
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await page.locator("#sessions .session-item").first.wait_for(state="visible")
-    await page.locator("#sessions-filter").fill("セッション条件")
+    session_search = page.get_by_role("searchbox", name="セッションを検索")
+    scope = page.locator("#sessions-filter-scope")
+    await scope.wait_for(state="visible")
+    await playwright.async_api.expect(session_search).to_have_accessible_description(
+        "検索対象: ホスト・作業ディレクトリ・識別子・パス・ラベル"
+    )
+    await session_search.fill("セッション条件")
+    await scope.wait_for(state="visible")
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     assert await page.locator("#plans-filter").input_value() == "計画条件"

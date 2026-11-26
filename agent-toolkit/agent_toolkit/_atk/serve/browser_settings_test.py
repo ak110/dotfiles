@@ -165,7 +165,7 @@ async def test_settings_host_scope_and_native_deadline(
     await page.get_by_role("navigation", name="設定の分類").get_by_text("利用枠", exact=True).click()
     permission = page.locator('[data-setting="usage_reset_permissions"]')
     await permission.get_by_text("許可を追加").click()
-    await permission.get_by_text("詳細", exact=True).click()
+    await permission.get_by_text("詳細: アカウントの直接入力", exact=True).click()
     await permission.get_by_label("アカウントを直接入力").fill("account")
     await permission.get_by_label("回数").fill("0")
     await permission.get_by_label("開始（このブラウザーの時刻）").fill("2099-01-01T00:00")
@@ -177,6 +177,14 @@ async def test_settings_host_scope_and_native_deadline(
     assert saved[0]["from"] == expected_start
     assert saved[0]["scope"] == "codex"
     assert re.fullmatch(r"codex-\d{8}-\d{6}-[a-f0-9]{8}", saved[0]["id"])
+    existing = permission.locator(f'[data-editor="usage_reset_permissions:{saved[0]["id"]}"]')
+    await existing.locator(".permission-caption").click()
+    await existing.get_by_label("エンジン").select_option("claude")
+    direct = existing.get_by_text("詳細: アカウントの直接入力", exact=True)
+    await expect(direct).to_be_visible()
+    await expect(existing).to_contain_text("atk config usage --refresh")
+    await direct.click()
+    await expect(existing.get_by_label("アカウントを直接入力")).to_be_visible()
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -317,7 +325,7 @@ async def test_remote_save_remains_visible_while_editing_elsewhere(
             await nav.get_by_text("利用枠", exact=True).click()
             add = page.locator('details[data-editor="usage_reset_permissions:"]')
             await add.get_by_text("許可を追加", exact=True).click()
-            await add.get_by_text("詳細", exact=True).click()
+            await add.get_by_text("詳細: アカウントの直接入力", exact=True).click()
             draft = add.get_by_label("アカウントを直接入力")
             save = add.get_by_role("button", name="追加", exact=True)
         elif editing == "hosts":
@@ -405,7 +413,7 @@ async def test_remote_settings_show_cached_snapshot_and_resolve_draft_conflict(
     assert started.is_set()
     await expect(field).to_have_value("my-draft")
     await expect(editor.get_by_role("button", name="保存", exact=True)).to_be_disabled()
-    await editor.get_by_role("button", name="最新の値を取り込む").click()
+    await editor.get_by_role("button", name="保存値を使う").click()
     await expect(field).to_have_value("new-value")
     await expect(editor.get_by_role("button", name="保存", exact=True)).to_be_enabled()
 
@@ -515,7 +523,7 @@ async def test_remote_permission_conflict_preserves_entry_written_during_refresh
 
     async def draft():
         await add.click()
-        await new_permission.get_by_text("詳細", exact=True).click()
+        await new_permission.get_by_text("詳細: アカウントの直接入力", exact=True).click()
         await new_permission.get_by_label("アカウントを直接入力").fill("my-account")
         await new_permission.get_by_label("回数").fill("1")
         await new_permission.get_by_label("開始（このブラウザーの時刻）").fill("2099-02-01T00:00")
@@ -531,7 +539,7 @@ async def test_remote_permission_conflict_preserves_entry_written_during_refresh
     await expect(editor).to_contain_text("最新の保存値: other-writer")
     await expect(editor.get_by_label("アカウントを直接入力")).to_have_value("my-account")
     await expect(editor.get_by_role("button", name="追加", exact=True)).to_be_disabled()
-    await editor.get_by_role("button", name="最新の値を取り込む").click()
+    await editor.get_by_role("button", name="保存値を使う").click()
     captions = editor.locator('.permission-caption:not([title="許可を追加"])')
     await expect(captions).to_contain_text("other-writer")
     await draft()
@@ -623,6 +631,15 @@ async def test_settings_periodic_read_preserves_draft_and_detects_conflict(
     conflict = editor.locator("[data-conflict]")
     await expect(conflict.locator("p")).to_have_text(["取得中に保存値が変更されました。", "最新の保存値: saved-host"])
     await expect(field).to_have_value("draft-host")
+    await expect(conflict.get_by_role("button", name="保存値を使う")).to_be_visible()
+    await conflict.get_by_role("button", name="入力を残す").click()
+    await expect(conflict).to_be_hidden()
+    await expect(field).to_have_value("draft-host")
+    await expect(page.locator("#settings-unsaved")).to_contain_text("未保存の変更: 1件")
+    assert config_settings.load_config()["serve_host"] == "saved-host"
+    await editor.get_by_role("button", name="保存", exact=True).click()
+    await expect(page.locator("#settings-unsaved")).to_be_empty()
+    assert config_settings.load_config()["serve_host"] == "draft-host"
 
 
 @pytest.mark.asyncio(loop_scope="session")

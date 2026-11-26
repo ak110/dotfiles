@@ -778,7 +778,7 @@ function renderConflicts() {
       element("p", "取得中に保存値が変更されました。"),
       element("p", `最新の保存値: ${latestValue}`),
     );
-    for (const [label, keepDraft] of [["最新の値を取り込む", false], ["自分の入力で上書き", true]]) {
+    for (const [label, keepDraft] of [["保存値を使う", false], ["入力を残す", true]]) {
       const choice = button(label, () => resolveConflict(slot, keepDraft));
       choice.dataset.conflictAction = "";
       notice.append(choice);
