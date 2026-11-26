@@ -148,6 +148,11 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 委譲元は委譲先の会話の抜粋（省略時は16,000バイトまで）だけを読んで助言を返すため、会話全体を読むadvisorより追加の使用量が小さく、Codexなどの委譲先でも使える。
 設定は不要で、対象になる組み合わせでは自動で有効になる。
 
+自由本文で割り当て済みの実装・修正を委譲する場合は、`start(mode=delegate, model_type=execute)` が `execute_model` を使う。
+レーンの実装は所定の `exec` の役割で起動する。
+`write_model` はユーザーが指定した場合だけ使い、起動時には `model_override=user_instruction` と `model_override_evidence` に実際の指示の根拠を渡す。
+後任を起動する場合も同じ指定が必要になる。
+
 `atk config apply-preset <名前>`は`write_model`を除く6工程を一括で設定する。
 引数を省くか`show`を指定すると、各プリセットの内容を保存せずに表示する。
 

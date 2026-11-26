@@ -92,7 +92,7 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
         assert not default.get("warnings")
         assert not named.get("warnings")
         await mcp_tools.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態")
-        await mcp_tools.start(str(tmp_path), mode="write", prompt="起草")
+        await mcp_tools.start(str(tmp_path), mode="write", prompt="起草", **_OVERRIDE)
 
         assert requested == ["chores_fast", "review", "chores_fast", "write"]
 
@@ -175,7 +175,7 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
                 str(tmp_path), mode="shell", command="Get-Item file", summary_policy="終了状態"
             ),
             "explore": await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査\n詳細"),
-            "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草\n詳細", label="あ" * 32),
+            "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草\n詳細", label="あ" * 32, **_OVERRIDE),
         }
 
         shown = {key: (await manager.show_session(response["session_id"]))["label"] for key, response in labels.items()}
@@ -241,8 +241,13 @@ async def test_start_rejects_missing_and_mixed_mode_inputs_before_creating_sessi
         method.assert_not_awaited()
 
 
-@pytest.mark.parametrize("model_type", ["execute", "orchestrate", " execute "])
-@pytest.mark.parametrize("mode", ["delegate", "explore", "write", "shell"])
+@pytest.mark.parametrize(
+    ("mode", "model_type"),
+    [
+        ("delegate", "orchestrate"),
+        *((mode, model) for mode in ("explore", "write", "shell") for model in ("execute", " execute ", "orchestrate")),
+    ],
+)
 @pytest.mark.asyncio
 async def test_start_rejects_role_only_model_types_for_freeform_modes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, model_type: str, mode: str
@@ -264,8 +269,17 @@ async def test_start_rejects_role_only_model_types_for_freeform_modes(
     assert f"mode={mode}" in body
     assert f"model_type={model_type.strip()}" in body
     assert "委譲先は起動していない" in body
-    for name in ("`review`", "`review_fast`", "`chores`", "`chores_fast`", "`write`", "subagent_md_path"):
+    for name in (
+        "`review`",
+        "`review_fast`",
+        "`chores`",
+        "`chores_fast`",
+        "`mode=delegate, model_type=execute`",
+        "`exec`",
+        "subagent_md_path",
+    ):
         assert name in body
+    assert "`write`" not in body
     for method in (manager.start, manager.start_explore, manager.start_write, manager.start_shell):
         method.assert_not_awaited()
 
@@ -343,7 +357,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
             },
             "delegate": {"prompt": "監査\n詳細", "model_type": "chores", "whole_contract_path": str(contract)},
             "explore": {"mode": "explore", "prompt": "調査", "label": "explore-対象"},
-            "write": {"mode": "write", "prompt": "起草"},
+            "write": {"mode": "write", "prompt": "起草", **_OVERRIDE},
             "shell": {"mode": "shell", "command": "make test", "summary_policy": "終了状態"},
         }
 
@@ -397,3 +411,93 @@ async def test_direct_override_refused_before_backend_start(
             model_override_evidence=evidence,
         )
     manager.start_explore.assert_not_awaited()
+
+
+@pytest.mark.parametrize("route", ["delegate", "write", "task"])
+@pytest.mark.parametrize(
+    ("reason", "evidence"),
+    [(None, None), ("user_instruction", "  "), ("observation", "観測"), ("fallback_failure", "切替失敗")],
+)
+@pytest.mark.asyncio
+async def test_write_model_requires_user_instruction_before_candidate_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    route: str,
+    reason: Literal["user_instruction", "observation", "fallback_failure"] | None,
+    evidence: str | None,
+) -> None:
+    requested = _recording_candidates(monkeypatch)
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("目的: 文案を起草する。", encoding="utf-8")
+    manifest = tmp_path / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text('{"name": "agent-toolkit"}', encoding="utf-8")
+    task = tmp_path / "skills" / "atk-mode" / "roles" / "draft.subagent.md"
+    task.parent.mkdir(parents=True)
+    task.write_text(
+        "---\nmode: write\nmodel_type: write\nusage: chores\n"
+        "required_inputs: []\nwrites_worktree: false\n---\n\n# 文案の起草\n",
+        encoding="utf-8",
+    )
+    inputs = {
+        "delegate": {"prompt": "実装", "model_type": "write", "whole_contract_path": str(contract)},
+        "write": {"prompt": "起草"},
+        "task": {"subagent_md_path": str(task)},
+    }
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        with pytest.raises(ToolError) as raised:
+            await mcp_tools.mcp.call_tool(
+                "start",
+                {
+                    "cwd": str(tmp_path),
+                    "mode": route,
+                    **inputs[route],
+                    "model_override": reason,
+                    "model_override_evidence": evidence,
+                },
+            )
+        assert "user_instruction" in str(raised.value)
+        assert "model_override_evidence" in str(raised.value)
+        assert "実装・修正" in str(raised.value)
+        assert not requested
+        assert not backend.start_calls
+
+
+@pytest.mark.asyncio
+async def test_freeform_execute_and_exec_use_execute_model_not_write_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:implementation/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:drafting/medium")
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("目的: 割り当て済みの範囲を実装する。", encoding="utf-8")
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        delegated = await mcp_tools.start(
+            str(tmp_path),
+            mode="delegate",
+            prompt="割り当て済み範囲を実装する",
+            model_type="execute",
+            whole_contract_path=str(contract),
+        )
+        role = await mcp_tools.start(
+            str(tmp_path), subagent_md_path="exec", extra_params=_observed_input_params("exec.subagent.md", tmp_path)
+        )
+        write = await mcp_tools.start(
+            str(tmp_path),
+            mode="write",
+            prompt="見出しの文案を作る",
+            model_override="user_instruction",
+            model_override_evidence="ユーザーが見出しの文案に write_model を指定",
+        )
+        assert [manager.sessions[item["session_id"]].model_type for item in (delegated, role, write)] == [
+            "execute",
+            "execute",
+            "write",
+        ]
+        assert backend.start_calls == [
+            ("implementation", "high", "delegate"),
+            ("implementation", "high", "delegate"),
+            ("drafting", "medium", "write"),
+        ]

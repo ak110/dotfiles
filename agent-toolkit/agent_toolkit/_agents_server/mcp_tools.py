@@ -33,7 +33,7 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
-from agent_toolkit._agents_server.manager_start import model_override_warnings
+from agent_toolkit._agents_server.manager_start import WRITE_MODEL_USER_EVIDENCE, model_override_warnings
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
 from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response
 from agent_toolkit._agents_server.tool_descriptions import (
@@ -387,11 +387,18 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         whole_contract_path=whole_contract_path,
     )
     warnings = (
-        [] if mode == "task" else model_override_warnings(model_type, reason=model_override, evidence=model_override_evidence)
+        []
+        if mode == "task"
+        else model_override_warnings(
+            model_type or agents_server_tools.START_MODE_MODEL_TYPES.get(mode),
+            reason=model_override,
+            evidence=model_override_evidence,
+        )
     )
     with (
         startup_features.selection(startup_profile),
         state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
+        WRITE_MODEL_USER_EVIDENCE.set(model_override_evidence if model_override == "user_instruction" else None),
         session_launchers.START_OBSERVATION.set(session_launchers.valid_start_observation(start_observation)),
     ):
         if mode == "task":
@@ -405,14 +412,15 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 whole_contract_path=whole_contract_path,
                 launcher_session_id=launcher,
             )
+            resolved_type = model_type or task_model_type
+            warnings = model_override_warnings(
+                resolved_type, default_type=task_model_type, reason=model_override, evidence=model_override_evidence
+            )
             context = await run_file_operation(_manager().launcher_record_context)
             task_prompt = launch_requests.with_launcher_record(task_prompt, context)
-            warnings = model_override_warnings(
-                model_type, default_type=task_model_type, reason=model_override, evidence=model_override_evidence
-            )
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None)
             response = await _manager().start(
-                model_type or task_model_type,
+                resolved_type,
                 task_prompt,
                 cwd,
                 launch_kind=launch_kind,

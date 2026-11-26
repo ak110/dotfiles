@@ -156,6 +156,8 @@ async def test_lightweight_start_does_not_allocate_record(
     inputs: dict[str, Any] = (
         {"command": "pwd", "summary_policy": "終了状態"} if mode == "shell" else {"prompt": "自己完結した作業"}
     )
+    if mode == "write":
+        inputs.update(model_override="user_instruction", model_override_evidence="ユーザーが文案の起草に write_model を指定")
     response = await mcp_tools.start(str(tmp_path), mode=mode, **inputs)
     assert "handoff_record_path" not in response
     allocate.assert_not_called()

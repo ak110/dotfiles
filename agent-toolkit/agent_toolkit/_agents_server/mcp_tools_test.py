@@ -14,6 +14,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import mcp_tools, shared_roots, state, status_file, tool_names
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     LISTED_SESSION_KEYS,
     FakeBackend,
@@ -143,7 +144,7 @@ async def test_public_start_returns_label_of_started_session(
             ),
             "delegate": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="chores"),
             "explore": await mcp_tools.start(cwd, mode="explore", prompt="探索"),
-            "write-awi": await mcp_tools.start(cwd, mode="write", prompt="定型変更", label="write-awi"),
+            "write-awi": await mcp_tools.start(cwd, mode="write", prompt="定型変更", label="write-awi", model_type="chores"),
             "shell-git": await mcp_tools.start(
                 cwd, mode="shell", command="git status --short", summary_policy="終了コードだけ"
             ),
@@ -265,7 +266,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "root_session_id": "root",
         **identity_fields,
     }
-    assert await mcp_tools.start(str(tmp_path), mode="write", prompt="定型変更") == {
+    assert await mcp_tools.start(str(tmp_path), mode="write", prompt="定型変更", model_type="chores") == {
         "session_id": "session",
         "status": "running",
         "label": "担当",
@@ -304,13 +305,15 @@ async def test_success_response_key_sets_for_all_tools(
 
         started = await manager.start("plan", "調査", str(tmp_path))
         explored = await manager.start_explore("探索", str(tmp_path))
-        written = await manager.start_write("定型変更", str(tmp_path))
+        with pytest.raises(ActionableError, match="ユーザーの指示が必要"):
+            await manager.start_write("起草", str(tmp_path))
+        written = await manager.start_write("定型変更", str(tmp_path), model_type="chores")
         shelled = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
         start_keys = {"session_id", "status", "label", "engine", "model", "effort", "model_type", "root_session_id"}
         assert started.keys() == start_keys
         assert explored.keys() == start_keys
         assert written.keys() == start_keys
-        assert written["model_type"] == "write"
+        assert written["model_type"] == "chores"
         assert shelled.keys() == start_keys
 
         session_id = str(started["session_id"])

@@ -56,6 +56,21 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 START_RESOURCE_GUARD: contextvars.ContextVar[Callable[[SessionState | None], Awaitable[None]] | None] = contextvars.ContextVar(
     "START_RESOURCE_GUARD", default=None
 )
+WRITE_MODEL_USER_EVIDENCE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "WRITE_MODEL_USER_EVIDENCE", default=None
+)
+
+
+def _require_write_model_evidence(model_type: str | None, user_evidence: str | None) -> None:
+    if model_type == "write" and not (user_evidence or "").strip():
+        raise ActionableError(
+            "`write_model`を使う工程`write`にはユーザーの指示が必要です。委譲先は起動していない。",
+            next_action=(
+                "ユーザーが今回の起動を指定した場合だけ`model_override=user_instruction`と"
+                "`model_override_evidence`に実際の指示の根拠を渡す。"
+                "実装・修正は`mode=delegate, model_type=execute`か、所定の`exec`の役割で起動する"
+            ),
+        )
 
 
 def model_override_warnings(
@@ -66,14 +81,21 @@ def model_override_warnings(
     evidence: str | None = None,
     inherited: bool = False,
 ) -> list[dict[str, str]]:
-    if model_type is None or (model_type in _atk_config.MODEL_TYPES and (default_type is None or model_type == default_type)):
+    _require_write_model_evidence(model_type, evidence if reason == "user_instruction" else None)
+    if model_type is None or (
+        model_type != "write" and model_type in _atk_config.MODEL_TYPES and (default_type is None or model_type == default_type)
+    ):
         return []
     next_action = (
         f"開始する工程名（役割の工程: {default_type or '役割文書を参照'}）をmodel_typeへ明示する。"
         if inherited
         else "該当する工程名で起動し直す。taskではmodel_typeを省略できる。"
     )
-    if inherited or reason not in ("user_instruction", "observation", "fallback_failure") or not (evidence or "").strip():
+    if (
+        (inherited and model_type != "write")
+        or reason not in ("user_instruction", "observation", "fallback_failure")
+        or not (evidence or "").strip()
+    ):
         raise ActionableError(
             "候補列の直接指定・役割の工程の変更にはmodel_overrideとmodel_override_evidenceが必要です",
             next_action=next_action,
@@ -194,6 +216,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         startup_inputs: Mapping[str, str] | None = None,
         explicit_role_model: bool = False,
     ) -> dict[str, Any]:
+        _require_write_model_evidence(model_type, WRITE_MODEL_USER_EVIDENCE.get())
         validate_prompt(prompt)
         validate_cwd(cwd)
         ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
@@ -481,9 +504,12 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         inherited_type = predecessor.model_type
         if inherited_type in _atk_config.MODEL_TYPES and role_type and not launch_requests.role_model_was_explicit(predecessor):
             inherited_type = role_type
+        successor_type = model_type if model_type is not None else inherited_type
+        if task_documents.launched_task_document(predecessor.prompt) is None:
+            launch_requests.validate_model_type_for_mode(predecessor.launch_kind, successor_type)
         warnings = model_override_warnings(
-            inherited_type if model_type is None else model_type,
-            default_type=role_type if model_type is not None or inherited_type not in _atk_config.MODEL_TYPES else None,
+            successor_type,
+            default_type=role_type if model_type is not None or successor_type not in _atk_config.MODEL_TYPES else None,
             reason=model_override,
             evidence=model_override_evidence,
             inherited=model_type is None,
@@ -502,9 +528,10 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         with (
             startup_features.selection(predecessor.startup_profile),
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
+            WRITE_MODEL_USER_EVIDENCE.set(model_override_evidence if model_override == "user_instruction" else None),
         ):
             response = await self._start_with_admission(
-                inherited_type if model_type is None else model_type,
+                successor_type,
                 prompt,
                 predecessor.cwd,
                 launch_kind=predecessor.launch_kind,

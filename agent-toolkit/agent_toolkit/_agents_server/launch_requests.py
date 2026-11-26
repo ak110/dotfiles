@@ -153,18 +153,18 @@ def validate_handoff_inputs(handoff_from: str, **inputs: Any) -> None:
         )
 
 
-RESERVED_FREEFORM_MODEL_TYPES = frozenset({"execute", "orchestrate"})
-
-
-def _reject_reserved_freeform_model_type(mode: str, model_type: Any) -> None:
-    if mode == "task" or not isinstance(model_type, str) or model_type.strip() not in RESERVED_FREEFORM_MODEL_TYPES:
+def validate_model_type_for_mode(mode: str, model_type: Any) -> None:
+    if mode == "task" or not isinstance(model_type, str):
+        return
+    reserved = {"orchestrate"} if mode == "delegate" else {"execute", "orchestrate"}
+    if model_type.strip() not in reserved:
         return
     raise ActionableError(
         f"mode={mode}では`model_type={model_type.strip()}`を指定できない。委譲先は起動していない。",
         next_action=(
-            "自分の判断で起動する委譲は`model_type`に`review`・`review_fast`・`chores`・`chores_fast`・`write`の"
-            "いずれかを指定して再発行する。役割文書（`<役割名>.subagent.md`）を持つ定型作業は`mode`を省略したtaskで"
-            "`subagent_md_path`を指定して起動する"
+            "実装・修正は`mode=delegate, model_type=execute`か、所定の`exec`の役割で起動する。"
+            "その他の自律委譲は`review`・`review_fast`・`chores`・`chores_fast`から作業に合う工程を選ぶ。"
+            "定型作業は`mode`を省略し、`subagent_md_path`に所定の役割を指定する"
         ),
     )
 
@@ -180,7 +180,7 @@ def validate_start_inputs(mode: str, **inputs: Any) -> None:
     missing = [name for name in required if inputs.get(name) is None]
     unexpected = sorted(given - accepted)
     if not missing and not unexpected:
-        _reject_reserved_freeform_model_type(mode, inputs.get("model_type"))
+        validate_model_type_for_mode(mode, inputs.get("model_type"))
         return
     details = []
     if missing:
@@ -383,6 +383,7 @@ async def reject_stale_role_reply(session: SessionState | SessionResumeState) ->
             f"役割のmodel_typeが{session.model_type}から{current}へ変更されたため、追送は配送していない: {session.session_id}",
             next_action=(
                 f"`start`の`handoff_from`へ`{session.session_id}`を、`model_type`へ現行の工程名`{current}`を渡して引き継ぎ、後任へ未配送の指示を渡す"
+                + ("。`write`は後任への実際のユーザー指示の根拠がある場合だけ指定する" if current == "write" else "")
             ),
         )
 

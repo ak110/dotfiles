@@ -122,8 +122,11 @@
    - 役割文書がある作業は`task`で渡し、手順、権限、検証、返却の形式は役割文書に任せる。
    - 対話・要求の組み直し、複数対象の網羅や長い記録の分類、成果ファイルの作成や全公開操作と呼び出し元の対応表の検収を伴う調査は`delegate`にする。
      自由本文と全体作業契約を渡せば`mode`は省ける。
+   - 割り当て済みの範囲の実装・修正は `start(mode=delegate, model_type=execute)` で渡せる。
+     委譲元が作業範囲、書き込み所有権、完成判定を定め、通常の作業契約を使って検収する。
+     レーンと役割の契約が必要な場合は所定の `exec` を使う。
    - 単一対象の結論と所在を返す調査は`explore`、終了状態と要約で成り立つコマンド実行は`shell`にする。
-   - 内容の確定した文章の起草と、小規模な定型の書き込みは`write`にする。
+   - 軽量の文章起草で `write_model` を使うのは、ユーザーが指定した場合に限る。
 3. 次の場合に限り、Claude Codeの`Agent`ツールとCodexの`spawn_agent`を使う。
    - `agents_server`のMCPツールを呼べない場合。
      切り替えた工程、本来の設定値（engine、モデル、effort）、理由を報告に書く。
@@ -203,6 +206,7 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
    依頼文は`agent-toolkit:atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」で組む。
 3. 各modeの入力は、公開の`start`の説明とスキーマで確かめ、`cwd`へ作業ディレクトリの絶対パスを渡す。
    `explore`と`write`は`prompt`を、`shell`は`command`と`summary_policy`を使い、スキルの手順を要する作業は`task`か`delegate`へ回す。
+   工程が `write` になる起動は、ユーザーが指定した場合だけ `model_override=user_instruction` と `model_override_evidence` に実際の指示の根拠を渡す。
 4. `explore`は読み取り専用とし、後続の入力には`atk agents wait`が保存した`agent_message_path`を直接指定する。
 5. `shell`と`write`の書き込み先を、生成物も含めて他の担当と重ならない範囲に限り、同じ担当の交代は先行の終了後に行う。
 6. `session_id`を保持し、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`で終了状態と結果本文を回収する。

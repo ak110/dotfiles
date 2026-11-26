@@ -23,13 +23,13 @@
 
 | `model_type` | 対応する工程・役割 |
 | --- | --- |
-| `execute` | WI選定、レーン分け、計画、設計判断を伴う実装と修正、原因分析、観点選定、候補判定、結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`repository-process`・`session-termination` |
-| `chores` | 内容と完成判定が確定した単発のコーディング・修正・追随、中規模の走査。`refine-prompt`、`atk commit`の省略時 |
+| `execute` | WI選定、レーン分け、計画、実装と修正（割り当て済みの範囲なら自由本文の`delegate`も可）、原因分析、観点選定、候補判定、結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`repository-process`・`session-termination` |
+| `chores` | 定型の追随作業、中規模の読み取り・要約・走査。`refine-prompt`、`atk commit`の省略時 |
 | `chores_fast` | 定型走査、軽微な作業、コマンド実行。自由本文の`explore`・`shell`の省略時 |
 | `review` | 実行レビュー、ユーザビリティレビュー、投入前レビュー。`exec-review`・`usability-review`・`wi-draft-review` |
 | `review_fast` | 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` |
 | `orchestrate` | 最上位の統括、process-loopの新規セッション、run-skill |
-| `write` | 文章の起草。`write`の省略時 |
+| `write` | ユーザーが指定した場合の文章起草。軽量mode `write`の省略時 |
 
 設定は`execute_model`、`review_model`、`review_fast_model`、`chores_model`、`chores_fast_model`、`orchestrate_model`、`write_model`の7つのキーで、個別に変えられる。
 `model_type`を省いた時は、`explore`・`shell`は`chores_fast`、`write`は`write`、`task`は役割文書のfrontmatterの工程を使う。
@@ -42,9 +42,14 @@
    モデルを`model_type`へ渡す時は`model_override=user_instruction`を指定し、`model_override_evidence`にWIのファイル名とユーザー由来の根拠を書く。
    1回の起動に異なる指定が含まれる場合は、WIと指定値を示して委譲単位を分ける。
 3. 工程は役割文書が定めたものを使い、`task`で現在の設定を使う時は`model_type`を省く。
-   エージェントが自分の判断で切り出せる工程は`review`・`review_fast`・`chores`・`chores_fast`・`write`の5つに限り、起動と読み込みを含めてもコストが下がる部分だけにする。
-   `execute`は役割文書がその工程を定める`task`、`orchestrate`は規範が起動の形を定める最上位の統括だけに使う。
-   定型走査・事実収集・コマンド実行は`chores_fast`、中規模の読み取り・要約・走査と確定済みの書き込みは`chores`へ渡す。
+   自由本文で切り出す工程は、起動と検収を含めても費用が下がる場合に、作業に応じて `execute`・`review`・`review_fast`・`chores`・`chores_fast` から選ぶ。
+   実装・修正でレーンと役割の契約を要する時は所定の `exec` を使う。
+   作業範囲・書き込み所有権・完成判定を統括が定めた確定作業は、新しいレーンを作らず `start(mode=delegate, model_type=execute)` で委譲できる。
+   通常の作業契約を使って検収し、役割担当の判断と統合許可は移さない。
+   `orchestrate` は規範が起動の形を定める最上位の統括だけに使う。
+   定型走査・事実収集・コマンド実行は `chores_fast`、中規模の読み取り・要約・走査は `chores` へ渡す。
+   役割や省略値から解決する場合と後任起動を含め、`write` はユーザーが指定した時だけ使う。
+   `model_override=user_instruction` を指定し、`model_override_evidence` に実際のユーザーの指示を示す。
 4. 候補列の直接指定と役割の工程の変更には、`model_override`と`model_override_evidence`を指定する。
    区分はユーザーの指示（`user_instruction`）、軽量モデルだけの実機観測（`observation`）、自動切替が働かなかった場合（`fallback_failure`）に限る。
    以後の初回の起動は工程の設定へ戻す。
