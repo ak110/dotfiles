@@ -31,7 +31,7 @@ from agent_toolkit._common import process_loop_session
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
-from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
+from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 SELF_CHECK_INTERVAL_SECONDS = 30 * 60
@@ -242,7 +242,15 @@ def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: b
         if main_agent and process_loop_session.is_identified_process_loop_session(session_id, os.environ)
         else ("", None)
     )
-    body = elapsed_text + previous + _saturation_text(session_id) + new_wis + skipped_text + instruction
+    body = (
+        elapsed_text
+        + previous
+        + _saturation_text(session_id)
+        + new_wis
+        + skipped_text
+        + _contract_text(payload, session_id)
+        + instruction
+    )
     text = _llm_notice(body, tag="notice")
     if not text:
         return None
@@ -252,6 +260,14 @@ def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: b
     for field, value in skipped_receipts:
         _notice.stage_delivery(text, session_id, field, agent_id, value)
     return text
+
+
+def _contract_text(payload: dict, session_id: str) -> str:
+    from agent_toolkit._hooks import work_contract  # pylint: disable=import-outside-toplevel
+
+    if resolve_hook_agent_id(payload) != MAIN_AGENT_ID or not work_contract.exists(session_id):
+        return ""
+    return f"自身の作業契約`{work_contract.record_path(session_id)}`を読み直し、目的、訂正と残る要求を確かめてください。"
 
 
 def _skipped_notices(session_id: str, agent_id: str) -> tuple[str, list[tuple[str, str]]]:

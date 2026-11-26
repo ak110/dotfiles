@@ -28,6 +28,7 @@ from agent_toolkit._agents_server import (
     shared_roots,
     state,
     status_file,
+    subagent_contract,
 )
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -365,6 +366,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         response = await _manager().start_handoff(
             handoff_from, model_type=model_type, **{key: value for key, value in override_args.items() if value is not None}
         )
+        await subagent_contract.record_inherited(response, handoff_from)
         public = public_start_response(response)
         public["cwd"] = response["cwd"]
         public["model_type"] = response["model_type"]
@@ -429,6 +431,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 explicit_role_model=model_type is not None,
                 startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
             )
+            await subagent_contract.record_created(response, subagent_contract.task_request(subagent_md_path, params))
             if warnings:
                 response.setdefault("warnings", []).extend(warnings)
             if handoff_path is not None:
@@ -445,6 +448,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 launcher_session_id=launcher,
             )
             response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
+            await subagent_contract.record_created(response, prompt)
             if warnings:
                 response.setdefault("warnings", []).extend(warnings)
             public = public_start_response(response)
@@ -453,9 +457,11 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         elif mode == "explore":
             assert prompt is not None
             response = await _manager().start_explore(prompt, cwd, label=label, model_type=model_type)
+            await subagent_contract.record_created(response, prompt)
         elif mode == "write":
             assert prompt is not None
             response = await _manager().start_write(prompt, cwd, label=label, model_type=model_type)
+            await subagent_contract.record_created(response, prompt)
         else:
             assert command is not None and summary_policy is not None
             response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)

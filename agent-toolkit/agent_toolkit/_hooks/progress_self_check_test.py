@@ -570,3 +570,15 @@ def test_scoped_notices_merge_at_delivery_even_if_built_before_either_was_sent()
     notice_module.stage_new_wi_preview(text, sid, "main", snapshot)
     notice_module.record_delivery(text)
     assert left.filename in notice_module.new_wi_preview(sid, "main", [left])[0]
+
+
+@pytest.mark.parametrize("agent", [None, "subagent-1"])
+def test_due_notice_points_to_own_work_contract(agent: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent_toolkit._agents_server import subagent_contract  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._hooks import work_contract  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    sid = _session_id()
+    assert subagent_contract.create(sid, "目的X") is None
+    generated = _due_notice(sid, agent=agent)
+    assert (str(work_contract.record_path(sid)) in generated) == (agent is None)

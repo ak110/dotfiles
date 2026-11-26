@@ -173,7 +173,7 @@ Codexの組み込みの委譲機能で起動された担当は、作業の前に
 ### 多段工程の引き継ぎ記録
 
 作業記録の要否、保存先、項目、更新の時点は`agent-toolkit:atk-mode/references/work-contract.md`に従い、入力の`引き継ぎ記録先`を受け取った時はそのファイルを使う。
-追送で変わった要求を記録へ統合して工程の境界ごとに当初の目的と現行の要求に合うかを確かめ、返却では成果と未完了の作業の所在を渡す。
+起動依頼と追送はサーバーが自身の作業契約（同書「作成と所有」の手順3）へ記録するので、圧縮後、進捗点検と工程の境界ごとにそれを見返して当初の目的と現行の要求に合うかを確かめ、返却では成果と未完了の作業の所在を渡す。
 状態を変える`atk wi`の反映は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「委譲先によるprivate-notesへの反映」に従う。
 
 進捗点検は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「進捗点検」に従い、委譲先では次の差だけを加える。

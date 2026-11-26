@@ -19,6 +19,7 @@ from agent_toolkit._agents_server import (
     retained_results,
     state,
     status_file,
+    subagent_contract,
 )
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
@@ -177,6 +178,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             extra_params=extra_params,
         )
         response = await self._deliver_message(session_id, prompt)
+        await run_file_operation(subagent_contract.append_followup, session_id, prompt, response["delivery"])
         session = self.sessions.get(session_id)
         if session is not None and response["delivery"] != "reply_failed":
             session.followup_prompts += (prompt,)

@@ -299,3 +299,22 @@ def test_process_loop_claim_survives_session_start_failure(
 
     assert process_loop_session.is_identified_process_loop_session("coordinator", environ)
     assert not process_loop_session.is_identified_process_loop_session("nested", environ)
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("agent_id", [None, "builtin-child"])
+def test_delegated_compaction_points_to_its_own_work_contract(
+    agent_id: str | None, host: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent_toolkit._agents_server import subagent_contract  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._hooks import work_contract  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    session_id = f"own-contract-{host}-{agent_id}"
+    assert subagent_contract.create(session_id, "目的X を達成する") is None
+    payload = {"hook_event_name": "SessionStart", "source": "compact", "session_id": session_id} | (
+        {"agent_id": agent_id} if agent_id else {}
+    )
+    (rules_context.main if host == "claude" else rules_context_codex.main)(json.dumps(payload))
+    output = _output(capsys)
+    assert (str(work_contract.record_path(session_id)) in output) == (agent_id is None)
