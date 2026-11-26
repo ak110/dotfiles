@@ -178,8 +178,8 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
     assert len(saved) == 1
     key, report = saved[0]
     assert "review-session meta" in report
-    assert "meta-run.log" in report
-    assert str(tmp_path) not in report
+    assert "失敗した段階のログ" in report and "execution-3" in report
+    assert str(tmp_path) not in report and "meta-run.log" not in report
     record = session_review.read(weekly_schedule.record_path("meta"))
     assert record["failure_key"] == key
     assert "completed" not in record
@@ -235,7 +235,38 @@ def test_auto_meta_unregistered_worktree_reports_registration_lookup(monkeypatch
     assert result.value.code == 1
     assert len(reports) == 1
     report = reports[0]
-    assert "`atk config repos list`" in report and "実行ログは未作成" in report
+    assert "worktree-1" in report and "実行ログは未作成" in report
+    assert "Git作業ツリーを `atk config repos` で登録する:" in report
+
+
+def test_auto_meta_queue_failure_records_diagnostic_and_no_log(monkeypatch, tmp_path):
+    _automatic_launch(monkeypatch, "a" * 32)
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
+    monkeypatch.setattr(run_skill_batch, "_plugin_repository", lambda: "https://github.com/test/package")
+    monkeypatch.setattr(
+        run_skill_batch.config_settings,
+        "repository_settings",
+        lambda **_args: {"github.com/test/package": {"path": str(tmp_path)}},
+    )
+
+    def fail_queue(**_kwargs):
+        raise ValueError(f"キューを読み取れない: '{tmp_path / 'private notes' / 'entry.md'}' password=test-only")
+
+    monkeypatch.setattr(run_skill_batch, "_meta_report_target", fail_queue)
+    monkeypatch.setattr(run_skill, "_dispatch_once", lambda _args: pytest.fail("モデルを起動してはならない"))
+    reports = []
+
+    def save_failure(_key, message):
+        reports.append(message())
+        return True
+
+    monkeypatch.setattr(run_skill_batch, "_save_failure_report", save_failure)
+    with pytest.raises(SystemExit) as result:
+        atk.main(["run-skill", "--args", "meta", "agent-toolkit:review-session"])
+    assert result.value.code == 1
+    assert len(reports) == 1
+    assert all(value in reports[0] for value in ("queue-1", "キューを読み取れない", "実行ログは未作成"))
+    assert str(tmp_path) not in reports[0] and "test-only" not in reports[0]
 
 
 def test_meta_failed_report_save_explains_next_action(monkeypatch, tmp_path, caplog):
@@ -282,6 +313,53 @@ def test_meta_retries_unsynced_failure_report_without_rerunning(monkeypatch, man
     assert result.value.code == int(manual)
     assert saved == ["previous"]
     assert session_review.read(start)["report_synced"] is not manual
+
+
+def test_meta_resaves_original_evidence_after_version_and_log_change(monkeypatch, tmp_path):
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
+    version = "0.0.1"
+    oid = "a" * 40
+    evidence = run_skill_batch.run_skill_batch_evidence
+    monkeypatch.setattr(evidence, "plugin_version", lambda _path: version)
+    monkeypatch.setattr(evidence, "plugin_source", lambda _path, value: {"version": value, "commit": oid, "source": "Git"})
+    report_attempts = []
+    log = tmp_path / "log.txt"
+
+    def execute(args):
+        args.log_path = log
+        args.batch_failure = "save-report: 報告保存に失敗した"
+        log.write_text(
+            f"スキルへ渡す引数: 会話本文を出さない\n[stderr] 診断: {tmp_path} token=fixture-only\n"
+            '[stdout] {"type":"assistant","message":"普通の会話行"}\n',
+            encoding="utf-8",
+        )
+        return 3
+
+    def save_failure(key, message):
+        report_attempts.append((key, message()))
+        return len(report_attempts) > 1
+
+    monkeypatch.setattr(run_skill, "_dispatch_once", execute)
+    monkeypatch.setattr(run_skill_batch, "_save_failure_report", save_failure)
+    with pytest.raises(SystemExit) as result:
+        atk.main(["run-skill", "--target-repo", str(tmp_path), "--args", "meta", "agent-toolkit:review-session"])
+    assert result.value.code == 3
+    prior = session_review.read(weekly_schedule.record_path("meta"))
+    assert not prior["report_synced"]
+    version, oid = "0.0.2", "b" * 40
+    log.unlink()
+    _automatic_launch(monkeypatch, "a" * 32)
+    monkeypatch.setattr(run_skill, "_dispatch_once", lambda _args: pytest.fail("未同期分の保存で再実行してはならない"))
+    with pytest.raises(SystemExit) as result:
+        atk.main(["run-skill", "--args", "meta", "agent-toolkit:review-session"])
+    assert result.value.code == 0
+    assert len(report_attempts) == 2 and report_attempts[0] == report_attempts[1]
+    report = report_attempts[0][1]
+    for value in ("0.0.1", "a" * 40, "報告保存に失敗した", "診断: <ローカルパス>"):
+        assert value in report
+    for value in ("0.0.2", "b" * 40, str(tmp_path), "fixture-only", "普通の会話行", "会話本文を出さない"):
+        assert value not in report
+    assert session_review.read(weekly_schedule.record_path("meta")) == {**prior, "report_synced": True}
 
 
 def _pending(name, *, batch=False):

@@ -542,7 +542,7 @@ def test_activity_resumed_after_selection_is_deferred(tmp_path, monkeypatch, oth
     failures = _failure_awis(notes)
     assert len(failures) == (1 if other == "broken" else 0)
     if failures:
-        assert "対象: broken\n" in failures[0].read_text(encoding="utf-8")
+        assert '"session_id": "broken"' in failures[0].read_text(encoding="utf-8")
     # 元対象の準備は、活動が終わった後の次の公開batchから再試行できる。
     if other is None:
         monkeypatch.setattr(
@@ -685,7 +685,8 @@ def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monke
     assert data["target_repo"] == run_skill_batch.repo.resolve_repo_id(
         json.loads((run_skill_batch.PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text())["repository"]
     )
-    assert "対象: bad\n" in body and "## 完成条件" in body
+    assert '"session_id": "bad"' in body and "## 完成条件" in body
+    assert '"session_id": "one"' not in body
 
 
 @_REAL_REPORT_CPU
@@ -723,7 +724,7 @@ def test_prepare_failure_diagnostic_reaches_run_record_and_awi(tmp_path) -> None
     failure = failures[0].read_text(encoding="utf-8")
     assert "不足:" in failure
     assert all(not record.get("log_path") for record in records)
-    assert "error・targets・prepared" in failure
+    assert '"stage": "prepare-or-state"' in failure and '"record_state":' in failure
     assert "実行ログの終了状態" not in failure
 
 
@@ -773,11 +774,10 @@ def test_prepare_exit_two_preserves_both_diagnostic_streams(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize("reason", ["prepare-or-state: prepareが終了2: 不足", "run-skill-exit-1: 子の回収失敗"])
-def test_failure_awi_requires_success_through_failed_phase(tmp_path, reason) -> None:
+def test_failure_awi_requires_success_through_failed_phase(reason) -> None:
     """準備成功だけで準備以降の失敗を完了扱いしない完成条件を保存する。"""
-    # pylint: disable-next=protected-access
-    message = run_skill_batch._failure_message(  # noqa: SLF001
-        "failure", reason, tmp_path / "run.json", {"targets": [{"session_id": "one"}]}
+    message = run_skill_batch.run_skill_batch_evidence.failure_message(
+        "failure", reason, {"targets": [{"session_id": "one"}]}, "github.com/example/dotfiles"
     )
     assert "準備から失敗した工程までの成功を確認する" in message
     assert "子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する" in message
@@ -819,8 +819,8 @@ def test_child_failure_keeps_scope_unprocessed(tmp_path, resume) -> None:
     assert records[0]["error"] == reason
     body = _failure_awis(notes)[0].read_text(encoding="utf-8")
     assert reason in body
-    assert f"実行ログ: {log_path}" in body
-    assert "実行ログの終了状態・標準出力・標準エラーを比較する" in body
+    assert str(log_path) not in body
+    assert "標準エラー: 子の回収失敗" in body and "終了状態: exit code 1" in body
     assert "error・targets・prepared" not in body
     assert pathlib.Path(records[0]["log_path"]).read_text(encoding="utf-8") == log_path.read_text(encoding="utf-8")
 

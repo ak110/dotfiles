@@ -10,8 +10,10 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import run_skill_batch, weekly_schedule
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import frontmatter
+from agent_toolkit._common import session_review
 from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 from agent_toolkit._testing.run_skill_support import _engine_env, _Env, _log_files, _records, _run, _startup_input
@@ -112,6 +114,24 @@ def test_normal_exit_requires_same_run_committed_report(
     assert not out
     assert "報告用UWI" in err and "ローカル保存" in err and "次の操作:" in err
     assert str(_log_files(engine_env)[0]) in err
+
+
+def test_weekly_meta_preserves_report_save_failure_after_child_exits_zero(engine_env, monkeypatch, capsys):
+    monkeypatch.setenv("FAKE_REPORT_MODE", "missing")
+    reports = []
+
+    def save_failure(_key, message):
+        reports.append(message())
+        return True
+
+    monkeypatch.setattr(run_skill_batch, "_save_failure_report", save_failure)
+    code, _out, error = _run(["--target-repo", str(engine_env.repo), "--args", "meta", "agent-toolkit:review-session"], capsys)
+    assert code == 1 and "報告用UWIのローカル保存を確認できない" in error
+    assert len(reports) == 1 and "終了状態: exit code 0" in reports[0]
+    saved = session_review.read(weekly_schedule.record_path("meta"))
+    assert saved["failure_stage"] == "report-save" and saved["exit_code"] == 1
+    assert "報告用UWIのローカル保存を確認できない" in saved["failure_diagnostics"]["error"]
+    assert str(_log_files(engine_env)[0]) not in reports[0]
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])

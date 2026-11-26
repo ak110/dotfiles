@@ -119,7 +119,7 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
     remote_before_recovery = []
     log = tmp_path / "model.log"
     log.write_text(
-        'スキル: agent-toolkit:review-session\n[stdout] {"type":"assistant","message":"会話本文"}\n終了状態: exit code 0\n',
+        'スキル: agent-toolkit:review-session\n[stdout] {"type":"assistant","message":"会話の検出用"}\n終了状態: exit code 0\n',
         encoding="utf-8",
     )
     stop_log = tmp_path / "stop.log"
@@ -224,7 +224,9 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
     assert "decision=approve_block_limit_reached" in details["stop_log"]["tail"][-1]
     assert details["plugin_source"]["commit"]
     assert details["exit_code"] is None and details["log"]["tail"] == "終了状態: exit code 0"
-    assert "初期要求" not in body and "会話本文" not in body
+    assert details["stage"] == "finish" and details["prepared_count"] == 3 and "targets" not in details
+    assert str(tmp_path) not in body
+    assert "初期要求" not in body and "会話の検出用" not in body
 
 
 @pytest.mark.usefixtures("leaf_git_commands")

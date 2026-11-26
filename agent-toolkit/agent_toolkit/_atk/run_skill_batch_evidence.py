@@ -6,14 +6,20 @@ import collections
 import datetime
 import json
 import pathlib
-import platform
+import re
 import stat
 import sys
 from typing import Any
 
 from agent_toolkit._atk import run_skill_state
 from agent_toolkit._common import diagnostic_process, host_homes, session_record_paths, session_review
-from agent_toolkit._common.diagnostic_redaction import ByteDiagnosticLine, newest_diagnostic_lines, redact_secrets
+from agent_toolkit._common.diagnostic_redaction import (
+    ByteDiagnosticLine,
+    diagnostic_excerpt,
+    newest_diagnostic_lines,
+    redact_diagnostic_values,
+    redact_secrets,
+)
 from agent_toolkit._git import command as git_command
 
 _EXCERPT_BYTES = 8192
@@ -24,20 +30,27 @@ _LINE_BYTES = 2000
 """1行の上限。実行条件と診断イベントの各上限より小さくし、どの区分にも少なくとも1行が入るようにする。"""
 _HEADER_LINES = 20
 _EVENT_LIMIT = 20
-_TARGET_FIELDS = (
-    "host",
-    "session_id",
-    "transcript_path",
-    "cwd",
-    "target_repo",
-    "started_at",
-    "updated_at",
-    "generation",
-    "review_batch",
-)
-_PREPARE_ONLY_FIELDS = frozenset({"started_at", "updated_at", "generation"})
-"""対象の選定と準備にだけ使う項目。準備に成功した対象では調査に使わないため本文から外す。  pyfltr: allow-comment"""
+_TARGET_FIELDS = ("host", "session_id", "target_repo", "started_at", "updated_at", "generation", "review_batch")
 _STOP_LOG_LINES = 20
+_LOCAL_PATH_START = r"(?:/[^\s/'\\\"]|[A-Za-z]:[/\\]|\\\\)"
+_QUOTED_LOCAL_PATH = re.compile(r"""(['"])(?=""" + _LOCAL_PATH_START + r""")([^\r\n]*?)\1""")
+_LOCAL_PATH = re.compile(r"""(?<![\w:/\\])""" + _LOCAL_PATH_START + r"""[^\s'"<>,;|)\]}]*""")
+
+
+def _portable_text(text: str) -> str:
+    safe = redact_secrets(text)
+    safe = _QUOTED_LOCAL_PATH.sub(r"\1<ローカルパス>\1", safe)
+    return _LOCAL_PATH.sub("<ローカルパス>", safe)
+
+
+def _portable_values(value: Any) -> Any:
+    if isinstance(value, str):
+        return _portable_text(value)
+    if isinstance(value, dict):
+        return {_portable_text(key): _portable_values(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_portable_values(item) for item in value]
+    return value
 
 
 def plugin_version(root: pathlib.Path) -> str:
@@ -95,12 +108,16 @@ def _stop_log(run_id: Any) -> dict[str, Any]:
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             for raw_line in stream:
-                lines.append(ByteDiagnosticLine(raw_line.rstrip("\r\n"), line_bytes=_LINE_BYTES))
+                lines.append(ByteDiagnosticLine(_portable_text(raw_line.rstrip("\r\n")), line_bytes=_LINE_BYTES))
     except FileNotFoundError:
-        return {"status": "ログなし", "session_id": session_id, "path": str(path)}
+        return {"status": "ログなし", "session_id": session_id}
     except OSError as error:
         return {"status": "読取不能", "session_id": session_id, "error": str(error)}
-    return {"status": "取得済み", "session_id": session_id, "path": str(path), "tail": [line.text for line in lines]}
+    return {
+        "status": "取得済み",
+        "session_id": session_id,
+        "tail": newest_diagnostic_lines(list(lines), total_bytes=_EVENT_BYTES),
+    }
 
 
 def _record_state(raw: Any) -> dict[str, Any]:
@@ -127,9 +144,9 @@ def _record_state(raw: Any) -> dict[str, Any]:
     return {"kind": "ディレクトリ" if stat.S_ISDIR(info.st_mode) else "その他"}
 
 
-def _log_diagnostics(raw: Any) -> dict[str, Any]:
+def _log_diagnostics(raw: Any, *, missing: str = "実行ログなし（モデル未起動、または所在未記録）") -> dict[str, Any]:
     if not raw:
-        return {"status": "実行ログなし（モデル未起動、または所在未記録）"}
+        return {"status": missing}
     header: list[str] = []
     header_bytes = 0
     header_open = True
@@ -154,11 +171,13 @@ def _log_diagnostics(raw: Any) -> dict[str, Any]:
 
                     if diagnostic_process.is_error_event(payload):
                         event_count += 1
-                        events.append(ByteDiagnosticLine(payload, line_bytes=_LINE_BYTES))
+                        events.append(ByteDiagnosticLine(_portable_text(payload), line_bytes=_LINE_BYTES))
                     else:
                         omitted += 1
                     continue
-                clipped = ByteDiagnosticLine(line, line_bytes=_LINE_BYTES)
+                if not line.strip() or line.startswith(("スキルへ渡す引数: ", "引数: ", "ログ: ")):
+                    continue
+                clipped = ByteDiagnosticLine(_portable_text(line), line_bytes=_LINE_BYTES)
 
                 header_open = header_open and len(header) < _HEADER_LINES and header_bytes + clipped.size <= _HEADER_BYTES
                 if header_open:
@@ -171,12 +190,12 @@ def _log_diagnostics(raw: Any) -> dict[str, Any]:
                     tail_bytes -= tail.popleft().size
                     tail_truncated = True
     except OSError as error:
-        return {"status": "読取不能", "error": str(error)}
+        return {"status": "読取不能", "error": _portable_text(str(error))}
     kept_events = newest_diagnostic_lines(list(events), total_bytes=_EVENT_BYTES)
     event_bytes = sum(len(event.encode()) + 1 for event in kept_events)
     kept_tail = newest_diagnostic_lines(list(tail), total_bytes=_EXCERPT_BYTES - header_bytes - event_bytes)
     return {
-        "status": "取得済み",
+        "status": "取得済み" if header or kept_events or kept_tail else "ログに採用できる診断がない",
         "total_bytes": size,
         "header": header,
         "error_events": kept_events,
@@ -199,64 +218,85 @@ def _previous_scope(target: dict[str, Any]) -> dict[str, Any] | None:
         return {"読取不能": str(error)}
 
 
+def _record_location(target: dict[str, Any]) -> str:
+    raw = target.get("transcript_path")
+    if not isinstance(raw, str) or not raw:
+        return "所在未記録"
+    parts = raw.replace("\\", "/").split("/")
+    if target.get("host") == "codex":
+        if "archived_sessions" in parts:
+            return "Codexホームの archived_sessions"
+        if "sessions" in parts:
+            return "Codexホームの sessions"
+    if target.get("host") == "claude" and "projects" in parts:
+        return "Claude Code設定の projects"
+    return "hookが報告した記録の場所"
+
+
+def _prepare_target(target: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **{field: target[field] for field in _TARGET_FIELDS if target.get(field) is not None},
+        "record_location": _record_location(target),
+        "record_state": _record_state(target.get("transcript_path")),
+        "previous_scope": _previous_scope(target),
+    }
+
+
 def failure_details(manifest: dict[str, Any]) -> str:
-    """会話ファイルを読まず、失敗時の入力・診断をJSONとして本文に固定する。"""
+    reason = manifest.get("error") or ""
+    stage = reason.partition(":")[0] if reason else "不明"
     prepared = {(item.get("host"), item.get("session_id")) for item in manifest.get("prepared", [])}
-    targets = []
-    for target in manifest["targets"]:
-        done = (target.get("host"), target.get("session_id")) in prepared
-        snapshot = {field: target.get(field) for field in _TARGET_FIELDS if not (done and field in _PREPARE_ONLY_FIELDS)}
-        snapshot["record_state"] = _record_state(target.get("transcript_path"))
-        previous = _previous_scope(target)
-        if previous is not None or not done:
-            snapshot["previous_scope"] = previous
-        targets.append(snapshot)
     details = {
-        "hostname": platform.node(),
         "os": sys.platform,
         "plugin_version": manifest.get("failure_version") or "不明",
         "plugin_source": manifest.get("failure_source") or {"commit": None, "source": "不明"},
-        "targets": targets,
-        "error": redact_secrets(manifest["error"]) if manifest.get("error") else manifest.get("error"),
+        "stage": stage,
+        "error": diagnostic_excerpt(_portable_text(reason), prefix_bytes=_EXCERPT_BYTES) or None,
         "failure_diagnostics": manifest.get("failure_diagnostics"),
         "prepared_count": len(manifest.get("prepared", [])),
-        "prepared_session_ids": [item.get("session_id") for item in manifest.get("prepared", [])],
+        "analysis_succeeded": manifest.get("analysis_succeeded"),
         "exit_code": manifest.get("exit_code"),
         "log": _log_diagnostics(manifest.get("log_path")),
         "stop_log": _stop_log(manifest.get("run_id")) if manifest.get("log_path") else {"status": "モデル未起動"},
     }
+    if stage == "prepare-or-state":
+        details["targets"] = [
+            _prepare_target(target)
+            for target in manifest["targets"]
+            if (target.get("host"), target.get("session_id")) not in prepared
+        ]
+    return _details_block(details)
 
+
+def _details_block(details: dict[str, Any]) -> str:
     return (
         "### 失敗時の入力と診断\n\n"
-        + "\n".join("    " + line for line in json.dumps(details, ensure_ascii=False, indent=2).splitlines())
+        + "\n".join(
+            "    " + line
+            for line in json.dumps(
+                _portable_values(redact_diagnostic_values(details)), ensure_ascii=False, indent=2
+            ).splitlines()
+        )
         + "\n"
     )
 
 
-def failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest: dict[str, Any], target_repo: str) -> str:
-    targets = ", ".join(item["session_id"] for item in manifest["targets"])
-    log = f"実行ログ: {manifest['log_path']}\n" if manifest.get("log_path") else ""
-    action = (
-        "実行記録のerrorと、実行ログの終了状態・標準出力・標準エラーを比較する。"
-        if log
-        else "実行記録のerror・targets・preparedから失敗した工程と入力を確認し、"
-        "errorにある不足項目と次の操作に従って入力や読取条件を修正する。"
-    )
+def failure_message(failure_key: str, reason: str, manifest: dict[str, Any], target_repo: str) -> str:
     body = (
         "# 非同期振り返り（review-session batch）の失敗の是正\n\n"
-        "非同期振り返りが下記の対象セッションを処理できなかった。"
+        "非同期振り返りが対象の準備・分析・報告のいずれかを完了できなかった。"
         "同じ原因の未完了AWIがある間は対象の自動振り返りを止めている。"
         "AWIがadopted・rejectedで終了した場合、または未完了AWIが無くagent-toolkitの版が変わった場合に再試行する。"
         "削除だけでは再試行せず、起票済みの同じ失敗は終了AWIを観測するまで再起票しない。\n\n"
         "## 反映内容と反映先\n\n"
-        "失敗理由と実行記録から原因を特定し、振り返りの前後処理または準備処理を是正する。"
+        "下記の版・工程・診断から原因を特定し、振り返りの前後処理または準備処理を是正する。"
         f"反映先は`{target_repo}`とする。"
         "是正にユーザーの判断が要る点があれば、UWIで確認する。\n\n"
         "## 調査結果と判断根拠\n\n"
-        "失敗理由は振り返りの起動元が記録した値である。"
-        "下記に入力のメタ情報と診断を埋め込んだ。セッション記録の本文は転記していない。\n\n"
+        "下記は失敗時の版と診断である。準備失敗では対象と記録の状態、実行以後では工程と結果を示す。"
+        "取得できず調査になお必要な情報だけ、起票元へ照会する。会話本文は転記していない。\n\n"
         "## 完成条件\n\n"
-        "埋め込まれた入力と記録状態から合成した再現テストを作り、是正前の失敗と是正後の成功を確認する。"
+        "下記の診断を使って失敗を再現するテストを作り、是正前の失敗と是正後の成功を確認する。"
         "再現テストで準備から失敗した工程までの成功を確認する。"
         "準備以降に失敗した場合は、子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する。"
         "起票ホストでの実際の再試行は是正を含む版の配布後に行い、処理担当は観測しなくてよい。"
@@ -265,13 +305,60 @@ def failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest:
         "セッション開始・終了時に自動起動できる。"
         "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する。\n\n"
         "## 詳細\n\n"
-        f"失敗理由: {redact_secrets(reason)}\n"
-        f"実行記録: {path}\n"
-        f"{log}"
-        f"次の操作: {action}"
-        "本文の埋め込み情報で足りない場合に限り、起票ホストで不足する情報を取得する。\n"
-        f"対象: {targets}\n"
-        f"\n{failure_details(manifest)}"
+        f"{failure_details({**manifest, 'error': reason})}"
     )
     metadata = f"session_review_failure_key: {json.dumps(failure_key)}\n"
     return f"---\n{metadata}---\n\n{body}"
+
+
+def meta_failure_evidence(
+    root: pathlib.Path,
+    *,
+    stage: str,
+    detail: str | None,
+    log_path: pathlib.Path | None,
+    report_target: str | None,
+) -> dict[str, Any]:
+    try:
+        version = plugin_version(root)
+        source = plugin_source(root, version)
+    except (OSError, ValueError, KeyError) as error:
+        version = "不明"
+        source = {"commit": None, "source": "版・配布元を取得できない: " + _portable_text(str(error))}
+    missing = (
+        "実行ログは未作成（モデル実行前の失敗）"
+        if stage.startswith(("worktree-", "queue-"))
+        else "実行ログの所在が記録されていない"
+    )
+    return {
+        "failure_version": version,
+        "failure_source": source,
+        "failure_diagnostics": {
+            "report_target": report_target,
+            "error": diagnostic_excerpt(_portable_text(detail), prefix_bytes=_EXCERPT_BYTES) if detail else None,
+            "log": _log_diagnostics(log_path, missing=missing),
+        },
+    }
+
+
+def meta_failure_message(record: dict[str, Any]) -> str:
+    details = {
+        "started_at": record.get("started_at"),
+        "stage": record.get("failure_stage"),
+        "exit_code": record.get("exit_code"),
+        "plugin_version": record.get("failure_version") or "不明（失敗時の記録なし）",
+        "plugin_source": record.get("failure_source") or {"commit": None, "source": "失敗時の記録なし"},
+        "failure_diagnostics": record.get("failure_diagnostics") or {"status": "失敗時の診断を状態に記録していない"},
+    }
+    return (
+        f"---\nsession_review_failure_key: {json.dumps(record['failure_key'])}\n---\n\n"
+        "# 週次メタ分析（review-session meta）の失敗の是正\n\n"
+        "週次メタ分析が失敗し、報告を完了できなかった。\n\n"
+        "## 反映内容と反映先\n\n"
+        "下記の版、工程、判明した診断を使って配布元で原因を是正する。"
+        "本文から得られず調査になお必要な情報だけ、起票元へ照会する。\n\n"
+        "## 完成条件\n\n"
+        "原因を再現する入力で失敗と是正後の報告の保存を確かめる。"
+        "手動での確認には `atk run-skill --args meta review-session` を使う。\n\n"
+        "## 詳細\n\n" + _details_block(details)
+    )

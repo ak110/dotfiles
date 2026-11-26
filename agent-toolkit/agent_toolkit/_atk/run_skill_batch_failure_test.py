@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime
 import json
 import pathlib
-import platform
 import sys
 
 import pytest
@@ -214,27 +213,25 @@ def test_failure_body_survives_manifest_and_log_removal(tmp_path, phase):
     log.unlink(missing_ok=True)
     body = report.read_text(encoding="utf-8")
     details = json.loads("\n".join(line[4:] for line in body.splitlines() if line.startswith("    ")))
-    assert details["hostname"] == platform.node() and details["os"] == sys.platform
-    assert details["plugin_version"]
-    snapshot = details["targets"][0]
-    for field in ("host", "session_id", "transcript_path", "cwd", "target_repo", "review_batch"):
-        assert snapshot[field] == target[field]
-    # 選定と準備だけに使う項目は、準備に失敗した対象にだけ残す。  # pyfltr: allow-comment
-    for field in ("started_at", "updated_at", "generation"):
-        assert snapshot.get(field) == (target[field] if phase == "prepare" else None)
-    assert ("previous_scope" in snapshot) is (phase == "prepare")
-    assert snapshot["record_state"]["kind"] == ("ディレクトリ" if phase == "prepare" else "ファイル")
+    assert details["os"] == sys.platform
+    assert details["plugin_version"] and details["plugin_source"]["commit"]
     assert details["prepared_count"] == (0 if phase == "prepare" else 1)
-    assert details["prepared_session_ids"] == ([] if phase == "prepare" else ["one"])
     if phase == "prepare":
+        assert details["stage"] == "prepare-or-state"
+        snapshot = details["targets"][0]
+        for field in ("host", "session_id", "target_repo", "review_batch", "started_at", "updated_at", "generation"):
+            assert snapshot.get(field) == target.get(field)
+        assert snapshot["record_location"] == "hookが報告した記録の場所"
+        assert snapshot["record_state"]["kind"] == "ディレクトリ"
+        assert "previous_scope" in snapshot
         assert "prepareが終了2" in details["error"] and "不足: transcript_path" in details["error"]
         assert "ログなし" in details["log"]["status"]
     else:
+        assert details["stage"] == "run-skill-exit-7" and "targets" not in details
         assert details["exit_code"] == 7 and details["log"]["tail_truncated"]
         assert "モデル起動後の診断" in "\n".join(details["log"]["error_events"])
         assert "[stderr] 回収失敗" in details["log"]["tail"]
-        assert snapshot["record_state"]["size_bytes"] == transcript.stat().st_size
-        assert snapshot["record_state"]["modified_at"]
+    assert str(tmp_path) not in body and "実行記録: " not in body and "実行ログ: " not in body
     assert "初期要求" not in body and "会話本文の検出用" not in body
 
 
@@ -359,10 +356,10 @@ _LONG_EVENT = '[stdout] {"type":"result","is_error":true,"detail":"' + "y" * 300
 @pytest.mark.parametrize(
     "text",
     [
-        f"引数: {_HUGE}\n[stderr] 終了\n",
+        f"終了状態: {_HUGE}\n[stderr] 終了\n",
         f"[stderr] 開始\n[stderr] {_HUGE}\n",
         "[stderr] 開始\n" + _LONG_EVENT * 30,
-        f"引数: {_HUGE}\n" + _LONG_EVENT * 30 + f"[stderr] {_HUGE}\n",
+        f"終了状態: {_HUGE}\n" + _LONG_EVENT * 30 + f"[stderr] {_HUGE}\n",
     ],
     ids=["header", "tail", "events", "all"],
 )
@@ -384,3 +381,24 @@ def test_log_diagnostics_redact_before_truncating_lines(tmp_path):
     assert details["error_events"] == [f"{prefix}{filler} https://[REDACTED]"]
     assert details["tail"].endswith("\n[stderr] 正常な行")
     assert "[REDACTED]" in details["tail"]
+
+
+@pytest.mark.parametrize(
+    ("log_kind", "status"),
+    [
+        ("not-recorded", "実行ログの所在が記録されていない"),
+        ("missing", "読取不能"),
+        ("empty", "ログに採用できる診断がない"),
+    ],
+)
+def test_meta_log_evidence_distinguishes_unavailable_inputs(tmp_path, log_kind, status):
+    log = None if log_kind == "not-recorded" else tmp_path / "model.log"
+    if log_kind == "empty":
+        assert log is not None
+        log.touch()
+    evidence = run_skill_batch_evidence.meta_failure_evidence(
+        run_skill_batch.PLUGIN_ROOT, stage="execution-3", detail=None, log_path=log, report_target=None
+    )
+    diagnostics = evidence["failure_diagnostics"]
+    assert diagnostics["log"]["status"] == status
+    assert diagnostics["error"] is None

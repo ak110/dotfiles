@@ -344,6 +344,8 @@ def run_locked(
         remaining = writer.record.remaining
         code = output.exit_code
         assert code is not None
+        if scope == session_review.META_SCOPE and output.report_missing:
+            args.batch_failure = "report-save: 報告用UWIのローカル保存を確認できない"
         limit = output.paused_for_usage_limit
         if (
             limit is None
@@ -441,6 +443,7 @@ class _SessionOutput:
     usage_limit: _orchestrator.UsageLimitState | None = None
     on_thread_id: typing.Callable[[str], None] | None = None
     exit_code: int | None = None
+    report_missing: bool = False
     paused_for_usage_limit: _claude_usage_limit.UsageLimitState | None = None
 
     def receive(self, line: str) -> None:
