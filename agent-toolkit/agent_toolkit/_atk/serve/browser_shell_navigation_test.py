@@ -114,9 +114,11 @@ async def test_navigation_ignores_delayed_detail_and_search_results(
         await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
         await page.locator("#plans-filter").fill("初回")
         await asyncio.wait_for(delayed.requested.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#search-status")).to_have_text("検索中")
         await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
         await page.locator("#sessions .session-item").first.wait_for(state="visible")
         await delayed.finish(page)
+        await playwright.async_api.expect(page.locator("#update-status")).to_be_hidden()
         await page.unroute("**/api/plans/search?*", delayed)
 
     for succeeds in (True, False):

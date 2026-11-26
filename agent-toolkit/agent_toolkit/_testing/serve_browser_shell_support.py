@@ -104,10 +104,10 @@ class _DelayedResponse:
                 return playwright.async_api.expect(row).not_to_have_attribute("aria-busy", "true", timeout=5000)
         else:
             status = page.locator("#search-status")
-            await playwright.async_api.expect(status).to_have_text("検索中")
+            await playwright.async_api.expect(status).to_be_empty()
 
             def completed():
-                return playwright.async_api.expect(status).not_to_have_text("検索中", timeout=5000)
+                return playwright.async_api.expect(status).to_be_empty()
 
         self.release.set()
         await asyncio.wait_for(self.fulfilled.wait(), timeout=5)
