@@ -752,6 +752,11 @@ async def test_preview_retry_stops_when_another_plan_is_selected(screen_harness:
     page = screen_harness.page
     (screen_harness.root / "second.md").write_text("# 別の計画\n\n切替先の本文", encoding="utf-8")
     old_calls = 0
+    release_events = asyncio.Event()
+
+    async def hold_events(route: playwright.async_api.Route) -> None:
+        await release_events.wait()
+        await route.continue_()
 
     async def fail_old(route: playwright.async_api.Route) -> None:
         nonlocal old_calls
@@ -762,14 +767,18 @@ async def test_preview_retry_stops_when_another_plan_is_selected(screen_harness:
         else:
             await route.continue_()
 
+    await page.route("**/api/plans/events", hold_events)
     await page.route("**/api/plans/file?*", fail_old)
-    await page.goto(screen_harness.base_url + "/plans?host=browser-test&path=plan.md")
-    notice = page.locator("#update-status")
-    await playwright.async_api.expect(notice).to_be_visible()
-    assert old_calls == 2
-    await page.locator("#files .file").filter(has_text="second.md").click()
-    await playwright.async_api.expect(page.locator("#preview")).to_contain_text("切替先の本文")
     await page.clock.install()
-    await page.clock.fast_forward(31_000)
-    await playwright.async_api.expect(notice).to_be_hidden()
-    assert old_calls == 2
+    try:
+        await page.goto(screen_harness.base_url + "/plans?host=browser-test&path=plan.md")
+        notice = page.locator("#update-status")
+        await playwright.async_api.expect(notice.filter(has_text="計画の本文を取得できません。")).to_be_visible()
+        assert old_calls == 2
+        await page.locator("#files .file").filter(has_text="second.md").click()
+        await playwright.async_api.expect(page.locator("#preview")).to_contain_text("切替先の本文")
+        await page.clock.fast_forward(31_000)
+        await playwright.async_api.expect(notice).to_be_hidden()
+        assert old_calls == 2
+    finally:
+        release_events.set()
