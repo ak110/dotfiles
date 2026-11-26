@@ -132,6 +132,7 @@ def render_index(
     # 使う値は`plans-bootstrap`へ置く。資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけを埋め込む。
     serve_bootstrap = {
         "base_path": base_path,
+        "runtime_versions": "runtime_versions" in quart.current_app.view_functions,
         "stall_ms": int(_runtime.SSE_STALL_SEC * 1000),
         "host_name": plans_context.hostname,
         "wi_root": str(quart.current_app.config["SERVE_STATE"].root),

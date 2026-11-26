@@ -19,6 +19,35 @@ function readBootstrap() {
   return element ? JSON.parse(element.textContent) : {};
 }
 
+if (bootstrap.runtime_versions === true) {
+  const notice = document.getElementById("runtime-version-status");
+  const button = notice.querySelector("button");
+  const status = notice.querySelector("[role=status]");
+  let pending = false;
+  async function checkRuntimeVersions() {
+    if (pending) return;
+    pending = true;
+    try {
+      const response = await fetch(`${BASE_PATH}/api/runtime-versions`, {signal: AbortSignal.timeout(35000)});
+      const warnings = response.ok ? await response.json() : null;
+      if (!Array.isArray(warnings)) throw new Error("runtime versions unavailable");
+      status.textContent = warnings.join(" / ");
+      if (!warnings.length && document.activeElement === button) {
+        document.querySelector(`#screen-${CSS.escape(document.body.dataset.screen)} h1`)?.focus();
+      }
+      notice.hidden = warnings.length === 0;
+    } catch {
+      notice.hidden = false;
+      status.textContent = "サービスの稼働版と公開版を取得できません。";
+    } finally {
+      pending = false;
+    }
+  }
+  button.addEventListener("click", checkRuntimeVersions);
+  void checkRuntimeVersions();
+  setInterval(checkRuntimeVersions, 30 * 60 * 1000);
+}
+
 const updateErrors = new Map();
 const updateStatus = document.getElementById("update-status");
 

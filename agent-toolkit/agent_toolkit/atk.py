@@ -35,6 +35,7 @@ from agent_toolkit._atk.environment import is_agent_environment  # noqa: E402
 # pylint: disable=wrong-import-position,protected-access
 # 使うサブコマンドだけを読み込む。
 lazy from agent_toolkit._agents_server import commands as _agents
+lazy from agent_toolkit._agents_server import runtime_version as _agents_runtime_version
 lazy from agent_toolkit._agents_server.session_listing import serve_agent_listing as _agent_listing  # noqa: E402
 lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
 lazy from agent_toolkit._atk import cli_support as _cli_support
@@ -292,6 +293,10 @@ _EARLY_COMMANDS: dict[str, Callable[[argparse.Namespace], int | None]] = {
 # pylint: enable=unnecessary-lambda
 
 
+def serve_agents_version() -> tuple[bool, str | None]:
+    return _agents_runtime_version.observe()
+
+
 def serve_agent_listing(include_terminated: bool) -> list[dict[str, Any]]:
     return _agent_listing(include_terminated=include_terminated)
 
@@ -308,6 +313,7 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
         invocation.args,
         home=invocation.home,
         agent_listing=serve_agent_listing,
+        agents_version=serve_agents_version,
     ),
     "worktree-stash": lambda invocation: _worktree_stash.dispatch(
         invocation.args,

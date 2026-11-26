@@ -21,6 +21,7 @@ from agent_toolkit._common import delegated_session, file_lock, plugin_environme
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.diagnostic_redaction import read_diagnostic_tail
 from agent_toolkit._common.next_action import report, with_next_action
+from agent_toolkit._common.service_code_identity import code_digest
 
 
 def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generation: str) -> None:
@@ -100,13 +101,7 @@ def _modules(directory: str) -> Iterator[tuple[str, list[int]]]:
 
 
 def _code_digest(root: pathlib.Path, version: str, paths: list[pathlib.Path]) -> str:
-    digest = hashlib.sha256(version.encode("utf-8"))
-    for path in paths:
-        name = str(path.relative_to(root)).encode("utf-8")
-        content = path.read_bytes()
-        digest.update(len(name).to_bytes(8, "big") + name)
-        digest.update(len(content).to_bytes(8, "big") + content)
-    return digest.hexdigest()
+    return code_digest(version, ((path.relative_to(root), path.read_bytes()) for path in paths))
 
 
 def _saved_identities(path: pathlib.Path) -> dict[str, str]:

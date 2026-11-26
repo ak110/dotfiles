@@ -1,3 +1,4 @@
+import asyncio
 import pathlib
 
 import pytilpack.quart
@@ -5,7 +6,7 @@ import pytilpack.sse
 import quart
 
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._atk.serve import agent_routes, settings_routes, usage_routes, web_push
+from agent_toolkit._atk.serve import agent_routes, settings_routes, usage_routes, versions, web_push
 from agent_toolkit._atk.serve import config as serve_config
 from agent_toolkit._atk.serve import entry_index as _entry_index
 from agent_toolkit._atk.serve import plans as serve_plans
@@ -103,3 +104,26 @@ def create_app(
         pytilpack.quart.ProxyFix(app), state.shutdown_requested
     )
     return app
+
+
+def register_version_routes(
+    app: quart.Quart, repo: pathlib.Path, revision: str | None, *, agents_version: versions.AgentsVersion | None = None
+) -> None:
+
+    @app.get(versions.IDENTITY_PATH)
+    async def identity() -> quart.Response:
+        return _shell_routes.json_no_store({"revision": revision})
+
+    def check() -> list[str]:
+        checks = versions.check_versions(
+            repo,
+            versions.latest_published(repo),
+            serve_revision=revision,
+            include_serve=True,
+            agents=agents_version() if agents_version else (False, None),
+        )
+        return [check.message() for check in checks if check.status != "match"]
+
+    @app.get("/api/runtime-versions")
+    async def runtime_versions() -> quart.Response:
+        return _shell_routes.json_no_store(await asyncio.to_thread(check))

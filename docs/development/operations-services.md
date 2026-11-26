@@ -34,17 +34,38 @@
   変更後は`sudo apachectl configtest`で構文を確認してから`sudo systemctl reload apache2`を実行する。
   既存の`/atk/`を開くエンドユーザーのアクセス先と表示は変わらない
 
-### fast-forward後のatk serveへの反映
+### 公開単位ごとの反映と稼働版の確認
 
-主checkoutのfast-forward後は、そのcheckoutを参照する稼働中の`atk-serve.service`を再起動する。
-対象は前節の`linux_server`ホストであり、unitが未導入の環境では実施しない。
-`systemctl --user show atk-serve.service --property=LoadState --property=ActiveState --property=SubState`で導入と稼働状態を確認する。
-停止中のunitを新たに起動する必要がある場合は、そのホストの運用判断を確認する。
+利用環境が古い版のままにならないよう、公開単位ごとに次を行う。
 
-1. `git -C /home/aki/dotfiles rev-parse --short HEAD`で反映対象を記録する。
-2. `systemctl --user restart atk-serve.service`を実行し、終了コードを確認する。
-3. `systemctl --user show atk-serve.service --property=ActiveState --property=SubState`で`active`と`running`を確認する。
-4. `curl --fail --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}\n' http://127.0.0.1:28766/`でHTTP 200を確認する。
-ホストや設定でcheckoutと待受が異なる場合は、unitの`ExecStart`と`atk config`の設定に合わせる。
-再起動や稼働確認に失敗した場合は、`systemctl --user status`と`journalctl --user -u atk-serve.service`で診断を取得する。
-反映HEAD、各終了コード、状態とHTTP応答、失敗時の診断を記録して公開担当へ返す。
+1. CIと必要なリリースの検収結果から、ホストが追跡する公開系統の完全OIDを渡す。
+   developを追跡するホストには検収済みのdevelop、masterを追跡するホストには検収済みのmasterのOIDを使う。
+   主checkoutの現在のHEADでは代用しない。
+   配布版は `git show <公開OID>:agent-toolkit/.claude-plugin/plugin.json` の `version` を使い、OIDとともに記録する。
+2. 対象ホストで `update-dotfiles` を実行し、成功を確認する。
+   稼働中のunitを使うホストでは `systemctl --user restart atk-serve.service` を実行する。
+   `systemctl --user show atk-serve.service --property=LoadState --property=ActiveState --property=SubState` で稼働を確認する。
+   unitが未導入なら新設しない。
+   異常時は `systemctl --user status atk-serve.service` と `journalctl --user -u atk-serve.service` を確認する。
+3. プラグインとMCPを読み込み直し、agents_serverの新しい受付世代を起動する。
+   巡回の統括は `process-loop.md` の手順5で同じ会話を再開してから次を実行する。
+   `atk serve versions --published <そのホスト向け公開OID>` が、対象サービスの全てで一致を返すことを確かめる。
+   サービスを導入していないホストではそのサービスだけを `--skip-serve` または `--skip-agents-server` で外す。
+   照会に失敗しただけのサービスは外さない。
+
+`atk serve` は実プロセスが起動時に確定したcheckoutのOIDを返す。
+起動対象に未コミットの変更がある時はOIDを確定しない。
+`agents_server` は現在の受付世代に認証した接続で問い合わせ、実プロセスが返した世代と登録済みの配布版を、公開OIDの配布版とコードから求めた世代と比べる。
+再起動の終了コードやHTTP 200だけでは反映を確認できない。
+各段階の結果と未完了の操作を記録し、失敗した時は成功済みのpush・リリースをやり直さず未完了段階から再開する。
+
+### 画面で稼働版を確認する
+
+dotfilesのcheckoutから起動した `atk serve` では、公開版と稼働版が異なるサービスを画面上部に表示する。
+公開版はcheckoutが追跡するoriginのブランチから取得する。
+未公開のローカルコミットは比較に使わない。
+「版を再確認」を押すか画面を開き直すと再照会し、一致すれば表示が消える。
+公開先に接続できない、公開コミットのオブジェクトがローカルに無い、サービスに接続できないなどの場合は、取得不能と表示する。
+日常の端末確認も `atk serve versions` を使う。
+取得不能の場合はネットワーク・`update-dotfiles logs`・サービスの稼働状態を確認する。
+サービスの運用担当は公開後の案内で、この表示と再確認の操作を必要な利用者へ伝える。

@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import contextlib
 import logging
@@ -8,10 +9,11 @@ import subprocess
 lazy import hypercorn.asyncio
 lazy import hypercorn.config
 
-from agent_toolkit._atk.serve import app as _atk_serve_app
+from agent_toolkit._atk.serve import versions
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
 lazy from agent_toolkit._atk import weekly_command as _weekly_command
+lazy from agent_toolkit._atk.serve import app as _atk_serve_app
 lazy from agent_toolkit._atk.serve import config as _atk_serve_config
 lazy from agent_toolkit._atk.serve import state as _atk_serve_state
 lazy from agent_toolkit._atk.serve.agent_routes import AgentListing
@@ -53,6 +55,7 @@ async def _serve(
     agent_listing: AgentListing | None = None,
     *,
     weekly: bool = False,
+    agents_version: versions.AgentsVersion | None = None,
 ) -> None:
     """Quartアプリをhypercornで起動し、シグナル受信でgraceful shutdownする。
 
@@ -61,7 +64,9 @@ async def _serve(
     SIGHUP到達時も購読中のSSE接続を片付けてから終了できるようにする。
     """
     async with _atk_serve_state.ServeState(private_notes) as state:
-        await _serve_with_state(private_notes, config, state, agent_listing=agent_listing, weekly=weekly)
+        await _serve_with_state(
+            private_notes, config, state, agent_listing=agent_listing, weekly=weekly, agents_version=agents_version
+        )
 
 
 async def _serve_with_state(
@@ -71,8 +76,15 @@ async def _serve_with_state(
     *,
     agent_listing: AgentListing | None = None,
     weekly: bool = False,
+    agents_version: versions.AgentsVersion | None = None,
 ) -> None:
+    repo = versions.package_checkout()
+    revision = await asyncio.to_thread(versions.startup_revision, repo) if repo is not None else None
     app = await _atk_serve_app.create_app_async(private_notes, config, state, agent_listing=agent_listing)
+    if repo is not None:
+        if revision is not None and revision != await asyncio.to_thread(versions.startup_revision, repo):
+            revision = None
+        _atk_serve_app.register_version_routes(app, repo, revision, agents_version=agents_version)
     hypercorn_config = hypercorn.config.Config()
     hypercorn_config.bind = [f"{config.host}:{config.port}"]
 
@@ -131,6 +143,7 @@ def run(
     port: int | None = None,
     home: pathlib.Path | None = None,
     agent_listing: AgentListing | None = None,
+    agents_version: versions.AgentsVersion | None = None,
 ) -> None:
 
     logging.basicConfig(
@@ -145,4 +158,21 @@ def run(
     config = _atk_serve_config.resolve_config(host=host, port=port)
     logger.info("atk serveを http://%s:%s/ で配信します", config.host, config.port)
     with _console_title.console_title(build_console_title()):
-        asyncio.run(_serve(private_notes, config, agent_listing, weekly=True))
+        asyncio.run(_serve(private_notes, config, agent_listing, weekly=True, agents_version=agents_version))
+
+
+def show_versions(args: argparse.Namespace, *, home: pathlib.Path, agents_version: versions.AgentsVersion | None) -> int:
+    if args.published is not None and versions.full_oid(args.published) is None:
+        args.serve_parser.error("--publishedには公開コミットの完全OIDを指定してください。")
+    repo = versions.dotfiles_checkout(home)
+    if repo is None:
+        _next_action.report("dotfilesのcheckoutを特定できません。", next_action="dotfilesの作業ツリーのatkで照会する")
+        return 1
+    serve_address = None
+    if not args.skip_serve:
+        config = _atk_serve_config.resolve_config(host=args.host, port=args.port)
+        serve_address = (config.host, config.port)
+    version = agents_version()[1] if not args.skip_agents_server and agents_version else None
+    return versions.show_versions(
+        repo, published=args.published, serve_address=serve_address, agents=(not args.skip_agents_server, version)
+    )
