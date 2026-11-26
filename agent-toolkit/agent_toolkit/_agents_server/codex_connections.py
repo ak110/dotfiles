@@ -20,6 +20,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.codex_instructions import (
     _current_service_tier,
+    _send_with_service_tier,
     codex_instruction_fields,
 )
 from agent_toolkit._agents_server.codex_protocol import (
@@ -155,17 +156,16 @@ class CodexConnectionsMixin:
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
-            "serviceTier": await _current_service_tier(
-                client.request,
-                session.cwd,
-                subscription=subscription,
-                provider=target,
-                auth=selection.auth if selection is not None else auth,
-                quota_workspace=selection.quota_workspace if selection is not None else quota_workspace,
-                auth_observed_at=selection.auth_observed_at if selection is not None else auth_observed_at,
-                record_start=True,
-            ),
         }
+        decision = await _current_service_tier(
+            client.request,
+            session.cwd,
+            subscription=subscription,
+            provider=target,
+            auth=selection.auth if selection is not None else auth,
+            quota_workspace=selection.quota_workspace if selection is not None else quota_workspace,
+            auth_observed_at=selection.auth_observed_at if selection is not None else auth_observed_at,
+        )
         if session.model is not None:
             resume_params["model"] = session.model
         resume_params["modelProvider"] = target
@@ -183,7 +183,7 @@ class CodexConnectionsMixin:
         resume_params.update(await run_file_operation(codex_instruction_fields, session.launch_kind))
         if owner_session_id is not None and writer_session_id is not None:
             await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
-        resume_response = await self._request_thread_resume(client, resume_params)
+        resume_response = await self._request_thread_resume(client, resume_params, decision=decision)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
             raise AppServerError("thread/resume returned an unexpected thread.id")
@@ -244,10 +244,20 @@ class CodexConnectionsMixin:
         session.touch()
         await self._notify_waiters()
 
-    async def _request_thread_resume(self: CodexManager, client: Any, params: dict[str, Any]) -> dict[str, Any]:
+    async def _request_thread_resume(
+        self: CodexManager, client: Any, params: dict[str, Any], *, decision: codex_fast_mode.FastTier | None = None
+    ) -> dict[str, Any]:
         """unsubscribe後の閉鎖と再開が競合した場合だけ、閉鎖通知を待って再送する。"""
         if "baseInstructions" not in params:
             params = {**params, **await run_file_operation(codex_instruction_fields)}
+
+        async def send_resume() -> dict[str, Any]:
+            if decision is None:
+                return await client.request("thread/resume", params)
+            return await _send_with_service_tier(
+                client, "thread/resume", params, decision, provider=params.get("modelProvider"), record_start=True
+            )
+
         thread_id = params["threadId"]
         closed = asyncio.Event()
         self._resume_close_events[thread_id] = closed
@@ -265,7 +275,7 @@ class CodexConnectionsMixin:
                                 f"`codex unarchive {thread_id}` で解除して再送してください"
                             ) from exc
                 try:
-                    return await client.request("thread/resume", params)
+                    return await send_resume()
                 except JsonRpcResponseError as exc:
                     if str(exc) != (
                         f"thread/resume: thread {thread_id} is closing; retry thread/resume after the thread is closed"
@@ -281,7 +291,7 @@ class CodexConnectionsMixin:
                         )
                     if not closed.is_set():
                         raise
-                return await client.request("thread/resume", params)
+                return await send_resume()
         except JsonRpcResponseError as exc:
             if exc.method == "thread/resume" and thread_id in str(exc) and "already has an active writer" in str(exc):
                 raise codex_resume_state.ThreadWriterConflictError(str(exc)) from exc

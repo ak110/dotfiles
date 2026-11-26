@@ -8,7 +8,7 @@ import typing
 from typing import Any
 
 from agent_toolkit._agents_server import codex_providers, codex_resume_state, configured_model
-from agent_toolkit._agents_server.codex_instructions import _current_service_tier
+from agent_toolkit._agents_server.codex_instructions import _current_service_tier, _send_with_service_tier
 from agent_toolkit._agents_server.codex_protocol import (
     JsonRpcResponseError,
     StartCandidateUnavailable,
@@ -142,23 +142,26 @@ class CodexTurnsMixin:
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandboxPolicy": {"type": "dangerFullAccess"},
-            "serviceTier": await _current_service_tier(
-                client.request,
-                session.cwd,
-                subscription=subscription,
-                provider=provider,
-                auth=auth,
-                quota_workspace=quota_workspace,
-                auth_observed_at=auth_observed_at,
-            ),
         }
+        decision = await _current_service_tier(
+            client.request,
+            session.cwd,
+            subscription=subscription,
+            provider=provider,
+            auth=auth,
+            quota_workspace=quota_workspace,
+            auth_observed_at=auth_observed_at,
+        )
         if session.model is not None:
             params["model"] = session.model
         if session.effort is not None:
             params["effort"] = session.effort
-        response = await client.request(
+        response = await _send_with_service_tier(
+            client,
             "turn/start",
             params,
+            decision,
+            provider=provider,
             on_sent=lambda: self._mark_turn_start_sent(session, fast_mode=params["serviceTier"] == "priority"),
         )
         turn = response.get("turn")

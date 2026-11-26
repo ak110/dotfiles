@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import datetime
 import hashlib
 import json
 import logging
+import pathlib
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Generator
 from typing import Any, Literal
 
 import filelock
@@ -34,12 +36,25 @@ class FastTier:
     tier: str
     explanation: str
     source: Literal["current", "previous", "unavailable", "legacy"] = "current"
+    observed_at: datetime.datetime | None = dataclasses.field(default=None, compare=False, repr=False)
+    allowed_until: datetime.datetime | None = dataclasses.field(default=None, compare=False, repr=False)
+    identity: str | None = dataclasses.field(default=None, compare=False, repr=False)
 
 
 def record_start_decision(instant: datetime.datetime, decision: FastTier) -> None:
     try:
         path = state_paths.state_dir() / "codex-fast-start.json"
-        atomic_file.atomic_write(path, json.dumps({"at": instant.isoformat(), **dataclasses.asdict(decision)}))
+        atomic_file.atomic_write(
+            path,
+            json.dumps(
+                {
+                    "at": instant.isoformat(),
+                    "tier": decision.tier,
+                    "explanation": decision.explanation,
+                    "source": decision.source,
+                }
+            ),
+        )
     except OSError:
         _LOG.debug("Codexの起動時判定を保存できません", exc_info=True)
 
@@ -101,6 +116,88 @@ def quota_workspace_id(quota: dict[str, Any]) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _provider_key(provider: str) -> str:
+    return hashlib.sha256(provider.encode()).hexdigest()
+
+
+def _identity_key(workspace: str | None) -> str | None:
+    return hashlib.sha256(workspace.encode()).hexdigest() if workspace is not None else None
+
+
+@contextlib.contextmanager
+def _decision_store() -> Generator[tuple[pathlib.Path, dict[str, Any]]]:
+    root = state_paths.state_dir()
+    path = root / "codex-fast-success.json"
+    root.mkdir(parents=True, exist_ok=True)
+    with filelock.FileLock(str(root / "codex-fast-success.lock"), timeout=0.2, is_singleton=True):
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            loaded = {}
+        if not isinstance(loaded, dict):
+            raise ValueError("Codexの成功判定が辞書ではない")
+        yield path, loaded
+
+
+@contextlib.contextmanager
+def outgoing_decision(provider: str | None, decision: FastTier, instant: datetime.datetime) -> Generator[FastTier]:
+    if decision.tier != "priority" or decision.observed_at is None:
+        yield decision
+        return
+    unavailable = FastTier("default", "送信前に最新の高速判定を確認できない", "unavailable")
+    selected = decision
+    with contextlib.ExitStack() as stack:
+        try:
+            _, records = stack.enter_context(_decision_store())
+        except OSError, ValueError, filelock.Timeout:
+            selected = unavailable
+        else:
+            record = records.get(_provider_key(provider or "openai"))
+            if decision.allowed_until is not None and instant >= decision.allowed_until:
+                selected = FastTier("default", "送信前に高速判定の有効期限を過ぎた", "unavailable")
+            elif record is not None and _valid_record(record, instant):
+                current_at = datetime.datetime.fromisoformat(record["at"])
+                if current_at > decision.observed_at and (
+                    record.get("tier") != "priority"
+                    or record.get("workspace") != decision.identity
+                    or datetime.datetime.fromisoformat(record["until"]) <= instant
+                ):
+                    selected = FastTier("default", "送信前に新しい接続条件を確認")
+        yield selected
+
+
+def outgoing_metadata(provider: str | None, decision: FastTier, *, record_start: bool) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "tier": decision.tier,
+        "explanation": decision.explanation,
+        "source": decision.source,
+        "observed_at": decision.observed_at.isoformat() if decision.observed_at is not None else None,
+        "allowed_until": decision.allowed_until.isoformat() if decision.allowed_until is not None else None,
+        "identity": decision.identity,
+        "record_start": record_start,
+    }
+
+
+@contextlib.contextmanager
+def apply_outgoing_metadata(params: dict[str, Any], metadata: dict[str, Any]) -> Generator[None]:
+    instant = datetime.datetime.now(datetime.UTC)
+    observed, deadline = metadata["observed_at"], metadata["allowed_until"]
+    decision = FastTier(
+        metadata["tier"],
+        metadata["explanation"],
+        metadata["source"],
+        datetime.datetime.fromisoformat(observed) if observed is not None else None,
+        datetime.datetime.fromisoformat(deadline) if deadline is not None else None,
+        metadata["identity"],
+    )
+    with outgoing_decision(metadata["provider"], decision, instant) as resolved:
+        params["serviceTier"] = resolved.tier
+        if metadata["record_start"]:
+            record_start_decision(instant, resolved)
+        yield
+
+
 def _cache_decision(
     provider: str | None,
     workspace: str | None,
@@ -112,22 +209,11 @@ def _cache_decision(
 ) -> FastTier | None:
     if provider is None:
         return None
-    key = hashlib.sha256(provider.encode()).hexdigest()
-    identity = hashlib.sha256(workspace.encode()).hexdigest() if workspace is not None else None
+    key = _provider_key(provider)
+    identity = _identity_key(workspace)
     try:
-        root = state_paths.state_dir()
-        path = root / "codex-fast-success.json"
-        root.mkdir(parents=True, exist_ok=True)
-        with filelock.FileLock(str(root / "codex-fast-success.lock"), timeout=0.2, is_singleton=True):
-            try:
-                loaded = json.loads(path.read_text(encoding="utf-8"))
-            except FileNotFoundError, ValueError:
-                loaded = {}
-            records = {}
-            if isinstance(loaded, dict):
-                for name, record in loaded.items():
-                    if _valid_record(record, instant):
-                        records[name] = record
+        with _decision_store() as (path, loaded):
+            records = {name: value for name, value in loaded.items() if _valid_record(value, instant)}
             retained, result = _transition(records.get(key), identity, instant, decision, deadline, read_at=read_at)
             if retained is None:
                 records.pop(key, None)
@@ -139,7 +225,7 @@ def _cache_decision(
                 )[:16]
                 atomic_file.atomic_write(path, json.dumps(dict(newest)))
             return result
-    except OSError, filelock.Timeout:
+    except OSError, ValueError, filelock.Timeout:
         _LOG.debug("Codexの自動速度判定の成功値を読み書きできません", exc_info=True)
     return None
 
@@ -173,7 +259,14 @@ def _transition(
         return {"at": instant.isoformat()}, None
     if datetime.datetime.fromisoformat(previous["until"]) <= (read_at or instant):
         return previous, None
-    return previous, FastTier(previous["tier"], previous["explanation"], "previous")
+    return previous, FastTier(
+        previous["tier"],
+        previous["explanation"],
+        "previous",
+        datetime.datetime.fromisoformat(previous["at"]),
+        datetime.datetime.fromisoformat(previous["until"]),
+        identity,
+    )
 
 
 def _valid_record(record: Any, instant: datetime.datetime) -> bool:
@@ -276,7 +369,9 @@ async def auto_service_tier(
         decision, current_workspace, deadline = _account_observation(auth, instant)
         if decision is not None:
             await asyncio.to_thread(_cache_decision, provider, current_workspace, observed_at, decision, deadline)
-            return decision
+            return dataclasses.replace(
+                decision, observed_at=observed_at, allowed_until=deadline, identity=_identity_key(current_workspace)
+            )
         if current_workspace is not None:
             workspace = current_workspace
             workspace_at = observed_at

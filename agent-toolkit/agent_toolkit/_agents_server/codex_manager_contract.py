@@ -18,7 +18,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.codex_protocol import JsonRpcResponseError
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState
-from agent_toolkit._common import codex_usage_limit
+from agent_toolkit._common import codex_fast_mode, codex_usage_limit
 
 
 class CodexManager(typing.Protocol):
@@ -90,7 +90,9 @@ class CodexManager(typing.Protocol):
         self, session: SessionState, error: codex_resume_state.IncompatibleResumeError, *, new_reply: bool = False
     ) -> None: ...
 
-    async def _request_thread_resume(self, client: Any, params: dict[str, Any]) -> dict[str, Any]: ...
+    async def _request_thread_resume(
+        self, client: Any, params: dict[str, Any], *, decision: codex_fast_mode.FastTier | None = None
+    ) -> dict[str, Any]: ...
 
     def _hold_provider_failure(self, session: SessionState, error: Any = None) -> bool: ...
 

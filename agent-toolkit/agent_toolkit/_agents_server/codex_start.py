@@ -10,7 +10,11 @@ from typing import Any
 
 from agent_toolkit._agents_server import codex_providers, codex_resume_state, session_identity, shared_roots
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._agents_server.codex_instructions import _current_service_tier, codex_instruction_fields
+from agent_toolkit._agents_server.codex_instructions import (
+    _current_service_tier,
+    _send_with_service_tier,
+    codex_instruction_fields,
+)
 from agent_toolkit._agents_server.codex_protocol import (
     AppServerError,
     JsonRpcResponseError,
@@ -187,7 +191,6 @@ class CodexStartMixin:
                             tier = await _current_service_tier(
                                 client.request,
                                 cwd,
-                                record_start=True,
                                 provider=candidate,
                                 auth=selection.auth,
                                 quota_workspace=selection.quota_workspace,
@@ -196,8 +199,13 @@ class CodexStartMixin:
                                     await run_file_operation(codex_connection.subscription_provider_for, candidate) is not None
                                 ),
                             )
-                            thread_response = await client.request(
-                                "thread/start", {**params, "modelProvider": candidate, "serviceTier": tier}
+                            thread_response = await _send_with_service_tier(
+                                client,
+                                "thread/start",
+                                {**params, "modelProvider": candidate},
+                                tier,
+                                provider=candidate,
+                                record_start=True,
                             )
                         except JsonRpcResponseError as exc:
                             detail, logged = exc.diagnostic()
@@ -213,8 +221,10 @@ class CodexStartMixin:
                     if thread_response is None:
                         raise AppServerError("Codex connection candidates were rejected: " + "; ".join(failures))
                 else:
-                    tier = await _current_service_tier(client.request, cwd, subscription=None, record_start=True)
-                    thread_response = await client.request("thread/start", {**params, "serviceTier": tier})
+                    tier = await _current_service_tier(client.request, cwd, subscription=None)
+                    thread_response = await _send_with_service_tier(
+                        client, "thread/start", params, tier, provider=None, record_start=True
+                    )
         except TimeoutError as exc:
             diagnostic_method = getattr(client, "initialization_diagnostic", None)
             diagnostic = (

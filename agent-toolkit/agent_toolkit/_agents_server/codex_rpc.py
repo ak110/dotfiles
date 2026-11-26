@@ -209,6 +209,7 @@ class JsonRpcProcess:
         *,
         on_sent: Callable[[], None] | None = None,
         on_sent_async: Callable[[], Awaitable[None]] | None = None,
+        before_send: Callable[[], contextlib.AbstractContextManager[None]] | None = None,
     ) -> dict[str, Any]:
         if self.process is None or self.process.stdin is None:
             raise AppServerError("Codex App Server is not running")
@@ -220,7 +221,11 @@ class JsonRpcProcess:
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         self._pending[request_id] = future
         try:
-            await self._send({"id": request_id, "method": method, "params": params or {}})
+            message = {"id": request_id, "method": method, "params": params if params is not None else {}}
+            if before_send is None:
+                await self._send(message)
+            else:
+                await self._send(message, before_send=before_send)
             if on_sent is not None:
                 on_sent()
             if on_sent_async is not None:
@@ -241,13 +246,16 @@ class JsonRpcProcess:
     async def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         await self._send({"method": method, "params": params or {}})
 
-    async def _send(self, message: dict[str, Any]) -> None:
+    async def _send(
+        self, message: dict[str, Any], *, before_send: Callable[[], contextlib.AbstractContextManager[None]] | None = None
+    ) -> None:
         if self.process is None or self.process.stdin is None or self._closed:
             raise AppServerError("Codex App Server stdin is unavailable")
-        encoded = (json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
         async with self._write_lock:
             try:
-                self.process.stdin.write(encoded)
+                with before_send() if before_send is not None else contextlib.nullcontext():
+                    encoded = (json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+                    self.process.stdin.write(encoded)
                 await self.process.stdin.drain()
             except (BrokenPipeError, ConnectionError) as exc:
                 diagnostic = self.initialization_diagnostic()

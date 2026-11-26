@@ -613,7 +613,13 @@ function renderFastStart(data, failed = false) {
 function render(data) {
   displayedData = data;
   renderFastStart(data);
-  if (!host) { localData = data; renderShared(); }
+  if (!host) {
+    localData = data;
+    renderShared();
+  } else if (localData && data.comparison) {
+    localData = {...localData, comparison: data.comparison};
+    renderShared();
+  }
   renderComparison(data);
   const root = document.createDocumentFragment();
   const groups = {

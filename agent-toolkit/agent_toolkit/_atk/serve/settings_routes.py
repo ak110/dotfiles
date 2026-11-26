@@ -208,12 +208,26 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
             for name in hosts
         }
 
+    def remember_snapshot(host: str, snapshot: dict[str, typing.Any]) -> None:
+        snapshot["fetched_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+        snapshots[host] = snapshot
+        errors.pop(host, None)
+
+    def with_host_status(snapshot: dict[str, typing.Any], hosts: tuple[str, ...]) -> quart.Response:
+        return json_no_store(
+            {
+                **snapshot,
+                "hosts": hosts,
+                "automatic_errors": {key: errors[key] for key in hosts if key in errors},
+                "automatic_unsupported": sorted(unsupported.intersection(hosts)),
+                "comparison": comparison(hosts),
+            }
+        )
+
     async def refresh_remote(host: str) -> None:
         async with locks.setdefault(host, asyncio.Lock()):
             try:
                 snapshot, _ = await asyncio.to_thread(_remote_snapshot, host, read_only=True)
-                snapshot["fetched_at"] = datetime.datetime.now(datetime.UTC).isoformat()
-                snapshots[host] = snapshot
             except _ReadOnlyUnsupported:
                 unsupported.add(host)
                 errors.pop(host, None)
@@ -221,7 +235,7 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 errors[host] = "自動取得に失敗しました"
             else:
                 unsupported.discard(host)
-                errors.pop(host, None)
+                remember_snapshot(host, snapshot)
 
     async def refresh_remotes() -> None:
         shutdown = typing.cast(asyncio.Event, app.shutdown_event)
@@ -261,19 +275,11 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 hosts = (host,) if host else await asyncio.to_thread(_remote_hosts, read_only=True)
                 await asyncio.gather(*(refresh_remote(name) for name in hosts if name not in unsupported))
             if background and host:
+                hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
                 background_snapshot = snapshots.get(host)
                 if background_snapshot is None or host in errors:
                     raise ValueError(errors.get(host, "リモート設定の自動取得を待っています"))
-                hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
-                return json_no_store(
-                    {
-                        **background_snapshot,
-                        "hosts": hosts,
-                        "automatic_errors": {key: errors[key] for key in hosts if key in errors},
-                        "automatic_unsupported": sorted(unsupported.intersection(hosts)),
-                        "comparison": comparison(hosts),
-                    }
-                )
+                return with_host_status(background_snapshot, hosts)
             if host and quart.request.args.get("cached") == "1" and host in snapshots:
                 hosts = await asyncio.to_thread(_remote_hosts)
                 cached = snapshots.get(host)
@@ -282,8 +288,7 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
             async with locks.setdefault(host, asyncio.Lock()):
                 if host:
                     snapshot, _ = await asyncio.to_thread(_remote_snapshot, host)
-                    snapshot["fetched_at"] = datetime.datetime.now(datetime.UTC).isoformat()
-                    snapshots[host] = snapshot
+                    remember_snapshot(host, snapshot)
                 else:
                     snapshot = (
                         await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home(), read_only=True)
@@ -299,15 +304,7 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                     if background
                     else await asyncio.to_thread(_remote_hosts)
                 )
-                return json_no_store(
-                    {
-                        **snapshot,
-                        "hosts": hosts,
-                        "automatic_errors": {key: errors[key] for key in hosts if key in errors},
-                        "automatic_unsupported": sorted(unsupported.intersection(hosts)),
-                        "comparison": comparison(hosts),
-                    }
-                )
+                return with_host_status(snapshot, hosts)
         except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
             message = error if isinstance(error, ValueError) else ValueError("設定を読み込めませんでした")
             raise web_input_error_from(message, next_action="ホストの設定とSSHの接続を確認する") from error

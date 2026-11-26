@@ -819,3 +819,51 @@ async def test_shared_conflict_keeps_keyboard_choice_on_periodic_update(
     await page.keyboard.press("Enter")
     await expect(conflict).to_have_count(0)
     await expect(field).to_have_value(draft if keep else latest)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_remote_settings_retry_clears_the_recovered_hosts_status_everywhere(
+    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    config_settings.save_config({"remote_hosts": '["cold", "offline"]'})
+    snapshot = config.settings_snapshot(tmp_path)
+    snapshot["codex_fast_start"] = {
+        "speed": "通常",
+        "source": "直前の成功判定",
+        "at": "2026-11-26T12:00:00+09:00",
+        "reason": "Plus",
+    }
+    unavailable = {"cold", "offline"}
+
+    def remote_snapshot(host: str, **_kwargs):
+        if host in unavailable:
+            raise ValueError("SSH接続に失敗しました")
+        return copy.deepcopy(snapshot), None
+
+    monkeypatch.setattr(settings_routes, "_remote_snapshot", remote_snapshot)
+    page = screen_harness.page
+    api = screen_harness.base_url + "/api/settings"
+    prefetch = await page.request.get(api + "?background=1&retry=1")
+    assert prefetch.ok
+    assert set((await prefetch.json())["automatic_errors"]) == unavailable
+    await page.goto(screen_harness.base_url + "/settings")
+    expect = playwright.async_api.expect
+    shared = page.locator("#settings-shared")
+    status = page.locator("#update-status")
+    fast = page.locator("#settings-fast-state")
+    await expect(shared).to_contain_text("cold: 取得失敗")
+    await page.get_by_label("設定対象ホスト").select_option("cold")
+    await expect(fast).to_contain_text("（cold）: 取得できませんでした")
+    unavailable.remove("cold")
+    await status.get_by_role("button", name="再取得").click()
+    await expect(fast).to_contain_text("（cold）: 通常（直前の成功判定）")
+    await expect(shared).not_to_contain_text("cold: 取得失敗")
+    await expect(shared).to_contain_text("offline: 取得失敗")
+    await expect(status).not_to_contain_text("cold:")
+    await expect(status).to_contain_text("offline: 自動取得に失敗しました")
+    cached = await page.request.get(api + "?host=cold&background=1")
+    assert cached.ok
+    assert set((await cached.json())["automatic_errors"]) == {"offline"}

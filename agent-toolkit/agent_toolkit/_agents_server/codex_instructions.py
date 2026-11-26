@@ -12,6 +12,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from agent_toolkit._agents_server import plugin_root as plugin_roots
+from agent_toolkit._agents_server import service_io
+from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_prompts import (
     LIGHTWEIGHT_LAUNCH_KINDS,
@@ -44,13 +46,12 @@ async def _current_service_tier(
     *,
     subscription: bool | None,
     now: datetime.datetime | None = None,
-    record_start: bool = False,
     provider: str | None = None,
     auth: dict[str, Any] | None = None,
     quota_workspace: str | None = None,
     auth_observed_at: datetime.datetime | None = None,
-) -> str:
-    """現在の接続とアカウントから、Codexに明示する速度を決める。  pyfltr: allow-comment"""
+) -> codex_fast_mode.FastTier:
+    """現在の接続とアカウントから、Codexに送る速度の候補を得る。  pyfltr: allow-comment"""
     mode = await run_file_operation(_atk_config.resolve_mutable_setting, "codex_fast_mode")
     if mode == "auto":
         decision = await codex_fast_mode.auto_service_tier(
@@ -65,10 +66,31 @@ async def _current_service_tier(
         )
     else:
         decision = codex_fast_mode.FastTier("priority" if mode == "true" else "default", f"明示指定: {mode}")
-    instant = now if now is not None else datetime.datetime.now(datetime.UTC)
-    if record_start:
-        await run_file_operation(codex_fast_mode.record_start_decision, instant, decision)
-    return decision.tier
+    return decision
+
+
+async def _send_with_service_tier(
+    client: Any,
+    method: str,
+    params: dict[str, Any],
+    decision: codex_fast_mode.FastTier,
+    *,
+    provider: str | None,
+    record_start: bool = False,
+    on_sent: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    metadata = codex_fast_mode.outgoing_metadata(provider, decision, record_start=record_start)
+    if isinstance(client, service_io.CodexResource):
+        return await client.request(method, params, on_sent=on_sent, outgoing_speed=metadata)
+    if isinstance(client, JsonRpcProcess):
+        return await client.request(
+            method, params, before_send=lambda: codex_fast_mode.apply_outgoing_metadata(params, metadata), on_sent=on_sent
+        )
+    with codex_fast_mode.apply_outgoing_metadata(params, metadata):
+        pass
+    if on_sent is not None:
+        return await client.request(method, params, on_sent=on_sent)
+    return await client.request(method, params)
 
 
 def _embedded_rule_paths() -> set[str]:
