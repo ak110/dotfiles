@@ -38,6 +38,9 @@ async def test_user_comment_ui_empty_save_removes_section(browser_harness: _Brow
     comment_input = detail.locator("#user-comment-input")
     await playwright.async_api.expect(comment_input).to_have_value("削除対象のコメント")
     await playwright.async_api.expect(detail.locator("#user-comment-input-hint")).to_be_visible()
+    await playwright.async_api.expect(comment_input).to_have_accessible_description(
+        "空にして保存すると、ユーザーコメント節を削除する。"
+    )
     await comment_input.fill("")
     await detail.get_by_role("button", name="コメントを保存").click()
     await _wait_and_close_operation_notice(page, "ユーザーコメントを削除しました")

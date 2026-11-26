@@ -165,7 +165,7 @@ async def test_settings_host_scope_and_native_deadline(
     await page.get_by_role("navigation", name="設定の分類").get_by_text("利用枠", exact=True).click()
     permission = page.locator('[data-setting="usage_reset_permissions"]')
     await permission.get_by_text("許可を追加").click()
-    await permission.get_by_text("詳細: アカウントの直接入力").click()
+    await permission.get_by_text("詳細", exact=True).click()
     await permission.get_by_label("アカウントを直接入力").fill("account")
     await permission.get_by_label("回数").fill("0")
     await permission.get_by_label("開始（このブラウザーの時刻）").fill("2099-01-01T00:00")
@@ -317,7 +317,7 @@ async def test_remote_save_remains_visible_while_editing_elsewhere(
             await nav.get_by_text("利用枠", exact=True).click()
             add = page.locator('details[data-editor="usage_reset_permissions:"]')
             await add.get_by_text("許可を追加", exact=True).click()
-            await add.get_by_text("詳細: アカウントの直接入力").click()
+            await add.get_by_text("詳細", exact=True).click()
             draft = add.get_by_label("アカウントを直接入力")
             save = add.get_by_role("button", name="追加", exact=True)
         elif editing == "hosts":
@@ -515,7 +515,7 @@ async def test_remote_permission_conflict_preserves_entry_written_during_refresh
 
     async def draft():
         await add.click()
-        await new_permission.get_by_text("詳細: アカウントの直接入力").click()
+        await new_permission.get_by_text("詳細", exact=True).click()
         await new_permission.get_by_label("アカウントを直接入力").fill("my-account")
         await new_permission.get_by_label("回数").fill("1")
         await new_permission.get_by_label("開始（このブラウザーの時刻）").fill("2099-02-01T00:00")
@@ -620,7 +620,8 @@ async def test_settings_periodic_read_preserves_draft_and_detects_conflict(
     config.update_settings({"action": "set", "key": "serve_host", "value": "saved-host"})
     await page.clock.fast_forward(30_000)
     expect = playwright.async_api.expect
-    await expect(editor.locator("[data-conflict]")).to_be_visible()
+    conflict = editor.locator("[data-conflict]")
+    await expect(conflict.locator("p")).to_have_text(["取得中に保存値が変更されました。", "最新の保存値: saved-host"])
     await expect(field).to_have_value("draft-host")
 
 

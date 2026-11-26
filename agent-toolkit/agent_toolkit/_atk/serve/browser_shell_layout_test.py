@@ -28,7 +28,8 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    await page.locator("#plans-filter").fill("計画条件")
+    await page.get_by_text("計画ファイルを検索", exact=True).wait_for(state="visible")
+    await page.get_by_role("searchbox", name="計画ファイルを検索").fill("計画条件")
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await page.locator("#sessions .session-item").first.wait_for(state="visible")
     await page.locator("#sessions-filter").fill("セッション条件")

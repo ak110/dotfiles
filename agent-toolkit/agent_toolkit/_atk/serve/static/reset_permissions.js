@@ -137,7 +137,7 @@ export function renderResetPermissions(parent, entries, model, save, ui) {
     editor.append(hints);
     const account = field(editor, "アカウント", "", []);
     const accountDetails = element("details");
-    accountDetails.append(element("summary", "詳細: アカウントの直接入力"));
+    accountDetails.append(element("summary", "詳細"));
     const direct = field(accountDetails, "アカウントを直接入力", "");
     editor.append(accountDetails);
     const scope = field(editor, "範囲", "", []);

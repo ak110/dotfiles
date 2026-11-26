@@ -184,7 +184,7 @@ async def test_permission_draft_survives_host_switch_and_remote_unknown_has_no_c
     account = section.get_by_label("アカウント", exact=True)
     until = section.get_by_label("終了（このブラウザーの時刻）")
     await expect(account).to_have_value("synthetic-codex")
-    await expect(section.get_by_text("詳細: アカウントの直接入力")).to_be_hidden()
+    await expect(section.get_by_text("詳細", exact=True)).to_be_hidden()
     await section.get_by_label("リセット前の猶予").select_option("2")
     await section.get_by_role("button", name="次の週次リセットの2日前まで").click()
     await section.get_by_label("回数").fill("7")
@@ -197,7 +197,7 @@ async def test_permission_draft_survives_host_switch_and_remote_unknown_has_no_c
     assert await account.locator("option").count() == 0
     remote_account_visible = await account.is_visible()
     await expect(section).to_contain_text("atk config usage --refresh")
-    await section.get_by_text("詳細: アカウントの直接入力").click()
+    await section.get_by_text("詳細", exact=True).click()
     await expect(section.get_by_label("アカウントを直接入力")).to_be_visible()
     await host.select_option("")
     await expect(account).to_have_value("synthetic-codex")

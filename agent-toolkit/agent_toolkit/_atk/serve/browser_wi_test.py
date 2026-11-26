@@ -468,6 +468,9 @@ async def test_uwi_detail_offers_answer_and_other_operations_at_once(browser_har
     footer = detail.locator("#detail-footer")
     for selector in ("#answer-input", "#save-answer-button", "#adopt-button", "#edit-button", "#delete-button"):
         await playwright.async_api.expect(footer.locator(selector)).to_be_visible()
+    await playwright.async_api.expect(footer.get_by_role("textbox", name="UWIへの回答（必須）")).to_have_attribute(
+        "placeholder", "回答を入力"
+    )
     choices = footer.locator("#answer-choices button")
     assert await choices.count() >= 1
     input_box = await footer.locator("#answer-input").bounding_box()

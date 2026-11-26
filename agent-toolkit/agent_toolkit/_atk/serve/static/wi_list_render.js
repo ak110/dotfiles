@@ -280,7 +280,7 @@ function renderEmptyState() {
 function renderListWarnings(lines) {
   renderWarnings(byId('list-warning'), lines);
   const summary = byId('list-warning-summary');
-  const text = `一覧から除外したファイルの警告: ${lines.length}件（開くと理由と次の操作を表示）`;
+  const text = `一覧から除外したファイルの警告: ${lines.length}件`;
   // 外枠は通知領域（role="alert"）のため、同じ件数での再描画で読み上げを繰り返さないよう、変わった時だけ書き換える。
   if (summary.textContent !== text) summary.textContent = text;
   byId('list-warning-box').hidden = lines.length === 0;

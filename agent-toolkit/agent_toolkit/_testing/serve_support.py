@@ -90,6 +90,9 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
         "(() => {\n"
         + _module_body(assets.SCRIPTS["common.js"])
         + "\nfunction registerScreen() {}\n"
+        + "const {closeWiReferences, configureWiReferences, linkWiReferences, wiLink} = (() => {\n"
+        + _module_body(assets.SCRIPTS["wi_reference.js"])
+        + "\nreturn {closeWiReferences, configureWiReferences, linkWiReferences, wiLink};\n})();\n"
         + "\n".join(
             _module_body(assets.SCRIPTS[name])
             for name in (

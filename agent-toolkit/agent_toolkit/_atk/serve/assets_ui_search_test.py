@@ -98,7 +98,7 @@ process.stdout.write(JSON.stringify({warning, folded, cleared, messages}));
     )
     assert result == {
         "folded": {
-            "summary": "一覧から除外したファイルの警告: 2件（開くと理由と次の操作を表示）",
+            "summary": "一覧から除外したファイルの警告: 2件",
             "boxHidden": False,
             "open": True,
             "inside": True,

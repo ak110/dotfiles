@@ -172,7 +172,6 @@
         <section id="edit-panel" class="edit-panel" hidden>
           <h3>ファイル全体を編集</h3>
           <label for="edit-content">ファイル全体（メタデータを含む、必須）</label>
-          <p class="field-hint">frontmatterを含むMarkdownファイル全体を編集する。</p>
           <textarea id="edit-content" aria-describedby="edit-content-error" required></textarea>
           <p id="edit-content-error" class="inline-error" hidden></p>
         </section>
@@ -195,7 +194,7 @@
           <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
           <div class="answer-row">
             <label for="answer-input" class="visually-hidden">UWIへの回答（必須）</label>
-            <textarea id="answer-input" rows="1" placeholder="回答を入力（選択肢を押すと入力される）" aria-describedby="answer-input-error" required></textarea>
+            <textarea id="answer-input" rows="1" placeholder="回答を入力" aria-describedby="answer-input-error" required></textarea>
             <button id="save-answer-button" class="button-primary" type="button">回答を保存</button>
           </div>
           <div class="answer-choices">
@@ -248,7 +247,7 @@
           </select>
           <label id="create-content-label" for="create-content">本文（必須）</label>
           <textarea id="create-content" name="message" aria-describedby="create-mode-hint create-content-error" required></textarea>
-          <p id="create-mode-hint" role="status" hidden>show形式の本文として一括取り込みします。target-repo、確認範囲、回答形式、選択肢の単件入力欄は使用しません。</p>
+          <p id="create-mode-hint" role="status" hidden>target-repo、系統、確認範囲、回答形式、選択肢の単件入力欄は使用しません。</p>
           <p id="create-content-error" class="inline-error" hidden></p>
           <div id="create-repo-fields" class="dialog-form-fields">
             <label for="create-target">target-repo（frontmatterに無い場合は必須）</label>
@@ -257,7 +256,7 @@
             <p id="create-target-error" class="inline-error" hidden></p>
           </div>
           <div id="create-branch-fields" class="dialog-form-fields" hidden>
-            <label for="create-branch">系統（登録した系統の1つを選ぶ）</label>
+            <label for="create-branch">系統</label>
             <select id="create-branch" name="target_branch"></select>
           </div>
           <div id="uwi-fields" class="dialog-form-fields" hidden>
@@ -332,8 +331,8 @@
     <div id="plans-app" class="two-pane">
       <aside id="plans-sidebar" class="pane-sidebar">
         <div class="toolbar">
-          <label class="visually-hidden" for="plans-filter">計画ファイルを検索</label>
-          <input id="plans-filter" type="search" placeholder="検索...">
+          <label for="plans-filter">計画ファイルを検索</label>
+          <input id="plans-filter" type="search">
           <span id="search-status" role="status"></span>
         </div>
         <div id="plans-selection-status" hidden></div>
@@ -345,7 +344,7 @@
       </aside>
       <main>
         <div class="toolbar">
-          <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="ファイル一覧を開く" aria-controls="plans-sidebar" aria-expanded="false">&#9776;</button>
+          <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="計画一覧" aria-controls="plans-sidebar" aria-expanded="false">一覧</button>
           <span class="spacer"></span>
           <button id="copy-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="本文" type="button" disabled><span class="wide-label">Markdownをコピー</span><span class="short-label">本文</span></button>
           <button id="copy-path-btn" class="button-secondary copy-feedback" data-reserve-wide="計画ファイルのパスをコピー" data-reserve-short="パス" type="button" disabled><span class="wide-label">計画ファイルのパスをコピー</span><span class="short-label">パス</span></button>
@@ -354,7 +353,7 @@
         </div>
         <div id="meta-mobile" class="empty"></div>
         <div id="plans-loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
-        <article id="preview" class="markdown-body">一覧から計画ファイルを選択してください。</article>
+        <article id="preview" class="markdown-body">計画ファイル未選択</article>
       </main>
       <div id="plans-drawer-backdrop"></div>
     </div>
@@ -406,7 +405,7 @@
       </aside>
       <main>
         <div class="toolbar">
-          <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧を開く" aria-controls="sessions-sidebar" aria-expanded="false">&#9776;</button>
+          <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧" aria-controls="sessions-sidebar" aria-expanded="false">一覧</button>
           <span id="detail-title" class="detail-title"></span>
           <span class="spacer"></span>
           <span id="detail-usage" class="secondary-text"></span>
@@ -423,7 +422,7 @@
           <button id="session-user-prev" type="button">前のユーザー発話</button>
           <button id="session-user-next" type="button">次のユーザー発話</button>
         </div>
-        <article id="detail" class="markdown-body">一覧からセッションを選択してください。</article>
+        <article id="detail" class="markdown-body">セッション未選択</article>
       </main>
       <div id="sessions-drawer-backdrop"></div>
     </div>

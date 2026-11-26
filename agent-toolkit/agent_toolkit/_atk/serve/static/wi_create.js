@@ -30,7 +30,7 @@ export function updateCreateFields() {
   const showFormatHint = !isBatch && isShowFormatCandidate(byId('create-content').value);
   const isUwi = kind === 'uwi';
   const isChoice = isUwi && !showFormatHint && byId('create-question-type').value === 'choice';
-  byId('create-mode-hint').hidden = !showFormatHint;
+  byId('create-mode-hint').hidden = !(isBatch || showFormatHint);
   byId('uwi-fields').hidden = !isUwi || showFormatHint;
   byId('choice-fields').hidden = !isChoice;
   // 一括登録は各エントリのfrontmatterの値だけを用いるため、対象リポジトリ欄を隠す。

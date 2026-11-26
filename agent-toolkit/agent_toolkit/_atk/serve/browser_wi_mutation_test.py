@@ -346,7 +346,9 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
     answer_row = page.locator('.entry-select[data-key="answer-same.md"]')
     await answer_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await detail.locator("#answer-input").fill("未処理側だけへの回答")
+    answer = detail.get_by_role("textbox", name="UWIへの回答（必須）")
+    await playwright.async_api.expect(answer).to_have_attribute("placeholder", "回答を入力")
+    await answer.fill("未処理側だけへの回答")
     async with page.expect_request("**/api/entries/answer") as answer_request_info:
         await detail.get_by_role("button", name="回答を保存").click()
     answer_request = await answer_request_info.value

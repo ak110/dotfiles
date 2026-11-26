@@ -235,7 +235,7 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
     await dialog.locator("#create-content").fill(show_text)
     await playwright.async_api.expect(dialog.locator("#create-choices")).to_have_value("")
     await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_be_visible()
-    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_contain_text("一括取り込みします")
+    await playwright.async_api.expect(dialog.locator("#create-mode-hint")).to_contain_text("単件入力欄は使用しません")
     await playwright.async_api.expect(dialog.locator("#uwi-fields")).to_be_hidden()
     await playwright.async_api.expect(dialog.locator("#create-repo-fields")).to_be_hidden()
     await dialog.locator("#create-content").fill("単件の本文")

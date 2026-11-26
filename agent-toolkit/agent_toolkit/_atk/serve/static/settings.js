@@ -283,7 +283,7 @@ function keyEditor(parent, key, item, data, save = operate) {
   }
   if (item.shared) description.append(element("p", sharedScope(item.shared_sync)));
   if (key === "codex_fast_mode") {
-    description.append(element("p", "実効値は採用中の設定です。自動判定で実際に使う速度は接続先と提供期間で決まります。"));
+    description.append(element("p", "自動判定で実際に使う速度は接続先と提供期間で決まります。"));
   }
   if (timing) description.append(element("p", key === "remote_hosts" ?
     "反映: 設定のホスト切替は保存後、計画とセッションは次回のatk serve起動" : `反映: ${timing}`));
@@ -775,7 +775,7 @@ function renderConflicts() {
       JSON.parse(latest.saved).map(entry => `${entry.id} · ${entry.count}回 · ${entry.from}〜${entry.until}`).join(" / ") || "許可なし" :
       latest.saved;
     notice.append(
-      element("p", "取得中に保存値が変更されました。入力欄は編集中の値です。保存する前にどちらを使うか選んでください。"),
+      element("p", "取得中に保存値が変更されました。"),
       element("p", `最新の保存値: ${latestValue}`),
     );
     for (const [label, keepDraft] of [["最新の値を取り込む", false], ["自分の入力で上書き", true]]) {
