@@ -21,4 +21,4 @@
 
 [Issue作成画面](https://github.com/ak110/dotfiles/issues/new/choose)で、アクセシビリティの障壁の報告フォームを選ぶ。
 
-目標とする基準と見直しの契機は、[アクセシビリティの共通方針](https://github.com/ak110/.github/blob/main/policies/accessibility.md)を参照する。
+目標とする基準と見直しの契機は、[アクセシビリティの共通方針](https://github.com/ak110/.github/blob/master/policies/accessibility.md)を参照する。

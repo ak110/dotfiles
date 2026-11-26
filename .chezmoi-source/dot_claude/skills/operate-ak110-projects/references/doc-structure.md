@@ -84,7 +84,7 @@ PyPIなど外部サービスのバッジはインライン形式のままでよ�
 - 確認した環境、版、観測日、結果と未検証の範囲
 - 既知の障壁と回避策
 - 報告先（その製品の `https://github.com/ak110/<repo>/issues/new/choose`）
-- [共通方針](https://github.com/ak110/.github/blob/main/policies/accessibility.md)へのリンク（目標とする基準、報告で求めないこと、見直す契機の文面は複製しない）
+- [共通方針](https://github.com/ak110/.github/blob/master/policies/accessibility.md)へのリンク（目標とする基準、報告で求めないこと、見直す契機の文面は複製しない）
 
 要素構造と実際の支援技術の観測を区別し、実測した版と操作を超える適合を宣言しない。
 既定ファイルはcloneに含まれないため、README.mdの「ドキュメント」章から `ACCESSIBILITY.md` と共通の `CONTRIBUTING.md`・`SECURITY.md` へリンクする。
