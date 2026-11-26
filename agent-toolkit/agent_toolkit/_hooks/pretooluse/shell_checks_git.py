@@ -156,6 +156,34 @@ def is_new_commit_message(arguments: Sequence[str]) -> bool:
     return not (names & {"--fixup", "--squash", "-C", "--reuse-message"} or {"--amend", "--no-edit"} <= names)
 
 
+_UNCHANGING_COMMIT_OPTIONS = frozenset(
+    {
+        "-m",
+        "--message",
+        "-F",
+        "--file",
+        "-q",
+        "--quiet",
+        "-a",
+        "--all",
+        "--allow-empty",
+        "-n",
+        "--no-verify",
+    }
+)
+
+
+def commit_input_unchanged_by_options(command: str) -> bool:
+    commits = [
+        parsed[1]
+        for invocation in extract_bash_invocations(command)
+        if (parsed := git_subcommand_tokens(invocation.segment)) is not None and parsed[0] == "commit"
+    ]
+    return bool(commits) and all(
+        option in _UNCHANGING_COMMIT_OPTIONS for arguments in commits for option, _ in git_commit_options(arguments)
+    )
+
+
 def commit_requires_preflight(command: str) -> bool:
     for invocation in extract_bash_invocations(command):
         segment = invocation.segment

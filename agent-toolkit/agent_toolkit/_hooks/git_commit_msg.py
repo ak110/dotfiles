@@ -8,7 +8,6 @@ import pathlib
 import re
 import subprocess
 import sys
-from collections.abc import Mapping
 
 import psutil
 
@@ -18,20 +17,6 @@ from agent_toolkit._git import command as git_command
 from agent_toolkit._hooks.pretooluse import commit_identity, shell_checks_git
 
 _HOOK_NAME = re.compile(r"[a-z][a-z-]*")
-
-
-def original_environment(directory: pathlib.Path, environment: Mapping[str, str]) -> dict[str, str]:
-    original = dict(environment)
-    key = "GIT_CONFIG_PARAMETERS"
-    token = commit_hook_environment.config_parameter(directory)
-    text = original.get(key, "")
-    pattern = r"(?<!\S)" + re.escape(token) + r"(?!\S)"
-    restored = re.sub(pattern, "", text, count=1).strip()
-    if restored:
-        original[key] = restored
-    else:
-        original.pop(key, None)
-    return original
 
 
 def _forward_existing(name: str, arguments: list[str], directory: pathlib.Path, original: dict[str, str]) -> tuple[bool, int]:
@@ -92,7 +77,7 @@ def _validate_message(path: pathlib.Path, original: dict[str, str], *, forwarded
 
 
 def run_hook(name: str, arguments: list[str], directory: pathlib.Path) -> int:
-    original = original_environment(directory, os.environ)
+    original = commit_hook_environment.original_environment(directory, os.environ)
     forwarded, status = _forward_existing(name, arguments, directory, original)
     if status or name != "commit-msg" or len(arguments) != 1:
         return status

@@ -106,6 +106,10 @@ def main() -> int:
         if options.persist_claude_env:
             plugin_environment.persist_claude_environment(root, os.environ)
         caller_environment = dict(os.environ)
+        if target == root / "agent_toolkit" / "atk.py":
+            from agent_toolkit._common import commit_hook_environment
+
+            caller_environment = commit_hook_environment.atk_environment(options.arguments, caller_environment)
         path = caller_environment.get("PATH", "").split(os.pathsep)
         if path and Path(path[0]).resolve() == Path(sys.executable).resolve().parent:
             caller_environment["PATH"] = os.pathsep.join(path[1:])

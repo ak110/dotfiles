@@ -1,3 +1,4 @@
+import os
 import pathlib
 import shlex
 import subprocess
@@ -7,8 +8,10 @@ import pytest
 
 from agent_toolkit._common import commit_hook_environment
 from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
+from agent_toolkit._git import command as git_command
 from agent_toolkit._hooks import git_commit_msg
 from agent_toolkit._hooks.pretooluse import commit_identity
+from agent_toolkit._hooks.pretooluse.shell_checks_git import commit_input_unchanged_by_options
 from agent_toolkit._testing.git_repository import init_repository
 
 _BAD = "試験\n\n20261126-123456-001.md"
@@ -33,6 +36,7 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
         {"session_id": "session-1", "model": _ID.model, "effort": _ID.effort}, is_codex=True
     )
     monkeypatch.setenv("CODEX_THREAD_ID", "session-1")
+    monkeypatch.setenv(commit_hook_environment.HOOKS_ENV, str(hooks))
     monkeypatch.setenv("PYTHONPATH", str(package))
     monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'color.ui'='never' " + commit_hook_environment.config_parameter(hooks))
     return checkout
@@ -132,6 +136,25 @@ def test_history_operations_and_human_commit_remain_allowed(repo: pathlib.Path, 
     assert _git(repo, "commit", "--allow-empty", "--amend", "--no-edit").returncode == 0
     monkeypatch.delenv("CODEX_THREAD_ID")
     assert _git(repo, "commit", "--allow-empty", "-m", _BAD).returncode == 0
+
+
+def test_product_generated_commit_does_not_apply_agent_authorship(repo: pathlib.Path) -> None:
+    inherited = dict(os.environ)
+    clean = commit_hook_environment.atk_environment(["wi", "sync"], inherited)
+    assert commit_hook_environment.atk_environment(["run-script", "commit-with-timeout"], inherited) is inherited
+    result = git_command.run(["commit", "--allow-empty", "-m", "自動保存"], cwd=repo, env=clean, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert _git(repo, "show", "-s", "--format=%B").stdout.strip() == "自動保存"
+    assert _git(repo, "config", "--get", "color.ui").stdout.strip() == "never"
+
+
+def test_git_can_add_valid_trailer_not_known_to_pretooluse(repo: pathlib.Path) -> None:
+    direct = "git commit --allow-empty -m 試験"
+    assert commit_input_unchanged_by_options(direct)
+    assert not commit_input_unchanged_by_options(f"{direct} --trailer {shlex.quote(_TRAILER)}")
+    result = _git(repo, "commit", "--allow-empty", "-m", "試験", "--trailer", _TRAILER)
+    assert result.returncode == 0, result.stderr
+    assert _git(repo, "show", "-s", "--format=%B").stdout.strip() == _GOOD
 
 
 def test_existing_hook_receives_stdin(repo: pathlib.Path) -> None:

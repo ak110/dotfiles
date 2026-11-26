@@ -2,8 +2,10 @@
 
 import os
 import pathlib
+import re
 import shlex
 import shutil
+from collections.abc import Mapping, Sequence
 
 from agent_toolkit._common import atomic_file
 
@@ -45,6 +47,26 @@ _HOOKS = (
 def config_parameter(directory: pathlib.Path) -> str:
     value = directory.as_posix().replace("'", "'\\''").replace("!", "'\\!'")
     return "'core.hooksPath'='" + value + "'"
+
+
+def original_environment(directory: pathlib.Path, environment: Mapping[str, str]) -> dict[str, str]:
+    original = dict(environment)
+    key = "GIT_CONFIG_PARAMETERS"
+    pattern = r"(?<!\S)" + re.escape(config_parameter(directory)) + r"(?!\S)"
+    restored = re.sub(pattern, "", original.get(key, ""), count=1).strip()
+    if restored:
+        original[key] = restored
+    else:
+        original.pop(key, None)
+    original.pop(HOOKS_ENV, None)
+    return original
+
+
+def atk_environment(arguments: Sequence[str], environment: dict[str, str]) -> dict[str, str]:
+    directory = environment.get(HOOKS_ENV)
+    if directory and tuple(arguments[:2]) != ("run-script", "commit-with-timeout"):
+        return original_environment(pathlib.Path(directory), environment)
+    return environment
 
 
 def shell_exports(directory: pathlib.Path) -> str:

@@ -141,7 +141,11 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
-lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import commit_requires_preflight, duplicate_autosquash_subject
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import (
+    commit_input_unchanged_by_options,
+    commit_requires_preflight,
+    duplicate_autosquash_subject,
+)
 lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES, check_task_document_launch
 lazy from agent_toolkit._hooks.pretooluse.warning_context import (
     format_warning_context,
@@ -660,7 +664,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     messages = tuple(_git_commit_messages(command, cwd=cwd))
     hook_installed = not is_antigravity_payload(payload) and commit_identity.commit_hook_installed(is_codex=is_codex)
     preflight = hook_installed and commit_requires_preflight(command)
-    if preflight and not messages:
+    if preflight and (not messages or not commit_input_unchanged_by_options(command)):
         return Decision(
             block="Git hookを外す場合は、確定した本文を`-m`または保存済みファイルの`-F`で指定して、"
             "commitの前に同じ書式と帰属の検査を受けてください。"
@@ -668,7 +672,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     if messages and (
         preflight
         or not hook_installed
-        or not any(line.startswith("#") for message in messages for line in message.splitlines())
+        or commit_input_unchanged_by_options(command)
+        and not any(line.startswith("#") for message in messages for line in message.splitlines())
         and commit_identity.static_commit_body_safe(command, cwd)
     ):
         checks_attribution = is_codex or not commit_identity.claude_commit_attribution_disabled(cwd)
