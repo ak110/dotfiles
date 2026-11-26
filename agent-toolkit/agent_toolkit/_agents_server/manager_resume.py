@@ -154,6 +154,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                             "直前の不足申告の前提を一度再確認する。形式違反と判定したものではない。"
                             if result_contract.invalid_result_reason(session, pending) is None
                             else "直前の返却は返却形式の契約に適合しない。"
+                            "委譲元は返却の欄から完了した成果と未完了の単位・再開条件を識別して次の作業を決めるため、"
+                            "形式を直して返す必要がある。"
                         )
                         + f"診断: {reason}\n"
                         + "成果と残作業を確認し、担当内で補える作業を完遂した上で所定の返却形式を返せ。"
