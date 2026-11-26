@@ -31,7 +31,9 @@ async def test_ui_authorization_uses_bound_caller(monkeypatch: pytest.MonkeyPatc
     for delegated in (True, False):
         # global判定への退行は、拒否側でも許可側でも失敗として観測する。
         monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", not delegated)
-        environment = {"AGENT_TOOLKIT_OWNER_SESSION": "owner"} if delegated else {}
+        environment = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
+        if delegated:
+            environment["AGENT_TOOLKIT_OWNER_SESSION"] = "owner"
         caller = runtime_environment.CallerContext(environment, tmp_path)
         with runtime_environment.bind(caller):
             for name, arguments in (
@@ -64,7 +66,9 @@ async def test_send_to_user_carries_tool_use_id_from_request_meta(
     params = CallToolRequestParams.model_validate(
         {"name": "send_to_user", "arguments": {"message": "確認が完了した。"}, **({"_meta": meta} if meta else {})}
     )
-    with runtime_environment.bind(runtime_environment.CallerContext({}, tmp_path)):
+    with runtime_environment.bind(
+        runtime_environment.CallerContext({"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}, tmp_path)
+    ):
         async with mcp_tools._request_scope(params):  # pylint: disable=protected-access
             await mcp_tools.mcp.call_tool("send_to_user", {"message": "確認が完了した。"})
     expected = {"message": "確認が完了した。", **({"tool_use_id": "toolu_01"} if meta else {})}
@@ -113,7 +117,9 @@ async def test_send_to_user_consults_report_guidance_for_improvement_lines(
         )
 
     monkeypatch.setattr(mcp_tools.subprocess, "run", run)
-    caller = runtime_environment.bind(runtime_environment.CallerContext({}, caller_cwd))
+    caller = runtime_environment.bind(
+        runtime_environment.CallerContext({"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}, caller_cwd)
+    )
     with caller if shared else contextlib.nullcontext():
         response = await mcp_tools.mcp.call_tool("send_to_user", {"message": message})
     expected = (
@@ -267,7 +273,7 @@ async def test_send_rejection_preserves_body_only_when_resend_can_recover(
         assert 'kind: "completion"' in rejection
         assert "最終応答に書く" not in rejection
     else:
-        assert not list(tmp_path.iterdir())
+        assert not list(tmp_path.rglob("message.md"))
     if case == "language":
         assert "日本語で書き直す" in rejection
     elif case != "delegated":
@@ -301,7 +307,9 @@ async def test_send_to_user_keeps_warnings_in_result_when_stash_fails(
     params = CallToolRequestParams.model_validate(
         {"name": "send_to_user", "arguments": {"message": "確認が完了した。"}, "_meta": {"claudecode/toolUseId": "toolu_01"}}
     )
-    with runtime_environment.bind(runtime_environment.CallerContext({}, tmp_path)):
+    with runtime_environment.bind(
+        runtime_environment.CallerContext({"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}, tmp_path)
+    ):
         async with mcp_tools._request_scope(params):  # pylint: disable=protected-access
             response = await mcp_tools.mcp.call_tool("send_to_user", {"message": "確認が完了した。"})
     assert calls == [("launcher-main", "toolu_01", [warning])]

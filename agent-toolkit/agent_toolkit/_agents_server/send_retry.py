@@ -15,14 +15,15 @@ async def deliver(
     retry: set[str],
     message: str,
 ) -> tuple[dict[str, Any], dict[str, str]]:
-    if not retry:
-        return await request("send_to_user", inputs), {}
     sources = await run_file_operation(send_misdetection.take_rejections, session_id or "", retry, message)
-    if not session_id or retry - sources.keys():
+    if sources is None:
         raise ValueError("同じ本文と判定の未送達記録を確認できない。")
     try:
-        return await request("send_to_user", inputs), sources
+        result = await request("send_to_user", inputs)
     except ActionableError as error:
-        if isinstance(error.__cause__, function_hook_requests.HookRequestRejected):
-            await run_file_operation(send_misdetection.restore_rejections, session_id, message, sources)
+        if session_id and isinstance(error.__cause__, function_hook_requests.HookRequestRejected):
+            await run_file_operation(send_misdetection.finish_rejection, session_id, message, failed=True)
         raise
+    if session_id:
+        await run_file_operation(send_misdetection.finish_rejection, session_id, message, failed=False)
+    return result, sources

@@ -795,13 +795,10 @@ async def send_to_user(
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
     tool_use_id = _TOOL_USE_ID.get()
     claims, error = send_misdetection.parse(misdetection)
-    session_id = _manager().launcher_session_id() if claims else None
-    if error or (session_id and (error := send_misdetection.validate_displayed(session_id, claims))):
+    session_id = _manager().launcher_session_id()
+    if error or (claims and session_id and (error := send_misdetection.validate_displayed(session_id, claims))):
         raise ValueError(error)
     retry = send_misdetection.retry_checks(claims)
-    sources = await run_file_operation(send_misdetection.rejection_sources, session_id or "", retry, message) if retry else {}
-    if retry - sources.keys():
-        raise ValueError("同じ本文と判定の未送達記録を確認できない。")
     if (
         "response-language" not in retry
         and response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN

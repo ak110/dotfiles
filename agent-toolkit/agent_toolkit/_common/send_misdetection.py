@@ -76,38 +76,53 @@ def retry_checks(claims: list[Claim]) -> set[str]:
 
 
 def retry_hint(check: str) -> str:
-    return (
-        f" 判定名は `{check}`。誤検出の場合だけ同じ本文に "
-        f'`misdetection=[{{"check":"{check}","reason":"理由"}}]` を付けて再送する。'
-    )
+    return f" 判定名は `{check}`。"
 
 
 def rejection_check(reason: str) -> str | None:
     return next((check for check in sorted(RETRY) if f"判定名は `{check}`。" in reason), None)
 
 
-def _body_key(check: str, message: str) -> str:
-    return hashlib.sha256((check + "\0" + message).encode(errors="surrogatepass")).hexdigest()
+def _body_key(message: str) -> str:
+    return hashlib.sha256(message.encode(errors="surrogatepass")).hexdigest()
 
 
-def remember_rejection(session_id: str, check: str, message: str, location: str) -> None:
+_REJECTIONS = "send_misdetection_body_rejections"
+
+
+class _Rejection(TypedDict):
+    status: str
+    sources: dict[str, str]
+
+
+def remember_rejection(session_id: str, check: str, message: str, location: str) -> bool:
     if not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
-        return
-    key = _body_key(check, message)
+        return False
+    key = _body_key(message)
 
     def update(state: dict) -> dict:
-        seen = {**state.get("send_misdetection_rejections", {}), key: location}
-        state["send_misdetection_rejections"] = dict(list(seen.items())[-200:])
+        seen: dict[str, _Rejection] = state.setdefault(_REJECTIONS, {})
+        entry = seen.pop(key, None)
+        if entry is None or entry["status"] not in {"pending", "reserved"}:
+            entry = _Rejection(status="pending", sources={})
+        entry["sources"][check] = location
+        seen[key] = entry
+        if len(seen) > 200:
+            oldest = next((item for item, value in seen.items() if value["status"] != "reserved"), None)
+            if oldest is not None:
+                seen.pop(oldest)
         return state
 
-    session_state.update_state(session_id, update)
+    return session_state.update_state(session_id, update)
 
 
 def rejection_sources(session_id: str, checks: set[str], message: object) -> dict[str, str]:
     if not checks or not isinstance(message, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
         return {}
-    seen = session_state.read_state(session_id).get("send_misdetection_rejections", {})
-    return {check: source for check in checks if isinstance((source := seen.get(_body_key(check, message))), str)}
+    entry = session_state.read_state(session_id).get(_REJECTIONS, {}).get(_body_key(message), {})
+    if entry.get("status") != "pending":
+        return {}
+    return {check: source for check, source in entry["sources"].items() if check in checks}
 
 
 def warning_pair(text: str) -> tuple[str, str] | None:
@@ -121,25 +136,42 @@ def resolved(session_id: str) -> set[tuple[str, str]]:
     return {tuple(pair) for pair in session_state.read_state(session_id).get("send_misdetection_resolved", [])}
 
 
-def take_rejections(session_id: str, checks: set[str], message: str) -> dict[str, str]:
-    keys = {check: _body_key(check, message) for check in checks}
+def take_rejections(session_id: str, checks: set[str], message: str) -> dict[str, str] | None:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
+        return None if checks else {}
+    key = _body_key(message)
     taken: dict[str, str] = {}
 
     def update(state: dict) -> dict | None:
-        seen = state.get("send_misdetection_rejections", {})
-        if not all(isinstance(seen.get(key), str) for key in keys.values()):
+        seen: dict[str, _Rejection] = state.setdefault(_REJECTIONS, {})
+        entry = seen.get(key)
+        if entry is None:
+            if checks:
+                return None
+            seen[key] = {"status": "reserved", "sources": {}}
+            return state
+        if entry["status"] != "pending" or checks - entry["sources"].keys():
             return None
-        taken.update({check: seen.pop(key) for check, key in keys.items()})
+        taken.update(entry["sources"])
+        entry["status"] = "reserved"
         return state
 
-    return taken if keys and session_state.update_state(session_id, update) else {}
+    if session_state.update_state(session_id, update):
+        return taken
+    return None
 
 
-def restore_rejections(session_id: str, message: str, sources: dict[str, str]) -> None:
-    def update(state: dict) -> dict:
-        seen = state.setdefault("send_misdetection_rejections", {})
-        for check, source in sources.items():
-            seen.setdefault(_body_key(check, message), source)
+def finish_rejection(session_id: str, message: str, *, failed: bool) -> None:
+    def update(state: dict) -> dict | None:
+        seen: dict[str, _Rejection] = state.get(_REJECTIONS, {})
+        key = _body_key(message)
+        entry = seen.get(key)
+        if entry is None or entry["status"] != "reserved":
+            return None
+        if entry["sources"]:
+            entry["status"] = "pending" if failed else "sent"
+        else:
+            seen.pop(key)
         return state
 
     session_state.update_state(session_id, update)

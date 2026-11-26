@@ -97,7 +97,8 @@ def _block_body(phrase: str, delivery: str, hint: str = "") -> str:
         "規範があっても起きた誤りは、その規範だけでは再発を防げない。" + hint,
         fix=(
             "`agent-basics:bugfix`の`references/prevention.md`「案を比べる順」に従い、誘因の除去・構造・検査のどれかを選んで"
-            "処置し、本文を書き直してください。案内を確認し、本文を維持する場合は同じ主体から同じ本文を再発行してよい。"
+            "処置し、本文を書き直してください。"
+            + ("" if hint else "案内を確認し、本文を維持する場合は同じ主体から同じ本文を再発行してよい。")
         ),
     )
 
@@ -108,7 +109,7 @@ def _untyped_prevention_body(line: str, delivery: str, hint: str = "") -> str:
         "既存の規則があることや守れなかったことは、再発防止を見送る理由にならない。" + hint,
         fix=(
             f"`agent-basics:bugfix`の`references/prevention.md`に従って策を決め、行の先頭に種類の語を置いてください。{KINDS_GUIDANCE}。"
-            "行が再発防止の記録でないなら、同じ主体から同じ本文を再発行してよい。"
+            + ("" if hint else "行が再発防止の記録でないなら、同じ主体から同じ本文を再発行してよい。")
         ),
     )
 
@@ -121,8 +122,14 @@ def text_block(payload: dict, text: object, delivery: str, *, retry: set[str] | 
     untyped = None if phrase is not None or "prevention-kind" in checks else find_untyped_prevention(text)
     if phrase is None and untyped is None:
         return None
-    if not checks and _consume_retry(payload, text):
-        return None
+    if not checks:
+        if retry is None:
+            if _consume_retry(payload, text):
+                return None
+        elif send_misdetection.rejection_sources(
+            payload.get("session_id", ""), {"norm-excuse" if phrase is not None else "prevention-kind"}, text
+        ):
+            return None
     if phrase is not None:
         return _block_body(phrase, delivery, send_misdetection.retry_hint("norm-excuse") if retry is not None else "")
     return _untyped_prevention_body(
