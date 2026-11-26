@@ -462,6 +462,7 @@ def test_heading_extraction_warns_only_for_normative_files(tmp_path, capsys, cod
     assert specific.get("permissionDecision") != "deny"
     context = specific.get("additionalContext", "")
     assert ("見出しの正規表現" in context) is (normative and warned)
+    assert ("例外・認可・終了条件が別の節から抜ける" in context) is (normative and warned)
     if normative and warned:
         assert str(path) in context and "全文" in context
         assert "cat --" not in context and "functions.exec" not in context
