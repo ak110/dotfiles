@@ -179,12 +179,18 @@ def run_locked(
             "accepted_scopes": skill_modes.accepted_scopes(args.skill, args.args),
             "run_id": run_id,
             "target_repo": args.target_repo if getattr(args, "work_dir", None) is not None else None,
-            "batch_manifest": getattr(args, "batch_manifest", None),
+            "batch_manifest": manifest,
+            **({"batch_analysis": str(session_review.batch_analysis_path(pathlib.Path(manifest)))} if manifest else {}),
         },
         ensure_ascii=False,
     )
     if record is not None:
-        env[mcp_environment.SESSION_START_INPUT_ENV] = record.input.model_dump_json()
+        startup_input = record.input
+        if manifest:
+            startup_input = startup_input.model_copy(
+                update={"batch_analysis": str(session_review.batch_analysis_path(pathlib.Path(manifest)))}
+            )
+        env[mcp_environment.SESSION_START_INPUT_ENV] = startup_input.model_dump_json(exclude_unset=True)
     session_id: str | None = record.session_id if record is not None else None
     if orchestrator == "claude":
         if getattr(args, "batch_manifest", None):

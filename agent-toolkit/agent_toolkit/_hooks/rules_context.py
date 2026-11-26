@@ -29,7 +29,7 @@ from agent_toolkit._common import delegated_session, mcp_environment, message_fo
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-lazy from agent_toolkit._common import host_homes, session_state, wait_schedule
+lazy from agent_toolkit._common import host_homes, session_review, session_review_analysis, session_state, wait_schedule
 lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session, is_process_loop_session
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import agents_server_session_advisor, repository_protection, session_title, timing, work_contract
@@ -293,6 +293,21 @@ def _existing_session_temp(session_id: object) -> str | None:
     return str(path) if path is not None else None
 
 
+def _batch_analysis_notice() -> str:
+    if not (manifest := os.environ.get(session_review.BATCH_ENV)):
+        return ""
+    path = pathlib.Path(manifest)
+    analysis = session_review.batch_analysis_path(path)
+    try:
+        missing = session_review_analysis.unfinished(path, session_review.BatchWriter(path).load())
+    except OSError, ValueError:
+        return (
+            f"batchの分析記録: {analysis}。"
+            "記録が無ければ `atk run-script session-review-state -- prepare-analysis` を実行してください。"
+        )
+    return f"batchの分析記録: {analysis}。未完了の対象: {', '.join(missing) if missing else 'なし'}。"
+
+
 def _compaction_notice(session_id: str, transcript_path: object) -> str:
     purpose = "当初の目的と現行の要求を見失わないよう、"
     scope = "その他の資料は次の操作・判断に該当するときに読んでください。"
@@ -452,6 +467,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     notices = "\n".join(part for part in (compact_text, wait_notice) if part)
                     if notices:
                         recovery = _llm_notice(notices)
+                if not delegated and subject == MAIN_AGENT_ID and (analysis_notice := _batch_analysis_notice()):
+                    recovery = f"{recovery}\n{_llm_notice(analysis_notice)}"
                 content = f"{content}\n\n{recovery}" if content else recovery
     elif event_name == "SubagentStart":
         content = compose_subagent_start()

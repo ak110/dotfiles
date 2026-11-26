@@ -133,6 +133,10 @@ class ReviewBatch(pydantic.BaseModel):
         return self
 
 
+def batch_analysis_path(manifest: pathlib.Path) -> pathlib.Path:
+    return manifest.with_suffix(".analysis.md")
+
+
 def resolve_report_notes(saved: str | None) -> pathlib.Path:
     return pathlib.Path(saved) if saved else private_notes.default_private_notes()
 
@@ -922,6 +926,7 @@ def sweep(*, now: float) -> None:
                     scope = pathlib.Path(prepared["scope_path"])
                     if scope.parent == path.parent and scope.name.startswith(value["run_id"] + "-"):
                         scope.unlink(missing_ok=True)
+                batch_analysis_path(path).unlink(missing_ok=True)
                 path.unlink()
         referenced.update(waiting)
         launch_log = directory() / "launch.log"

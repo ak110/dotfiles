@@ -18,6 +18,7 @@ from agent_toolkit._atk.wi import add, frontmatter, layout, sync
 from agent_toolkit._atk.wi.mutations import content
 from agent_toolkit._common import session_activity, session_record_paths, session_review
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.run_skill_support import record_completed_batch_analysis
 
 _STOP_SESSION = "36a3ac29-3ce6-48a9-85a7-e59e0bbcf0ab"
 
@@ -135,6 +136,7 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
     def execute(args):
         path = pathlib.Path(args.batch_manifest)
         manifests.append(path)
+        record_completed_batch_analysis(path)
         session_review.write(path, {**session_review.read(path), "log_path": str(log)})
         script = run_skill_batch.PLUGIN_ROOT / "skills/atk-mode/scripts/session_review_state.py"
         child_env = {**os.environ, "PYTHONIOENCODING": "utf-8", session_review.BATCH_ENV: str(path)}

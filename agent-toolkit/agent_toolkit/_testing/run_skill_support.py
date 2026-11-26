@@ -18,9 +18,16 @@ import pytest
 
 from agent_toolkit import atk, hook
 from agent_toolkit._atk import run_skill
-from agent_toolkit._common import process_identity, process_tree
+from agent_toolkit._common import process_identity, process_tree, session_review
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
+
+
+def record_completed_batch_analysis(manifest: str | pathlib.Path) -> None:
+    path = session_review.batch_analysis_path(pathlib.Path(manifest))
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace(" | 未着手 | ", " | 完了 | "), encoding="utf-8")
+
 
 _FAKE_ENGINE = """\
 #!{python}
@@ -135,6 +142,8 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
 if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_BATCH") and os.environ.get("FAKE_SESSION_EXIT", "0") == "0":
     from argparse import Namespace
     from agent_toolkit._atk import run_script
+    from agent_toolkit._testing.run_skill_support import record_completed_batch_analysis
+    record_completed_batch_analysis(os.environ["AGENT_TOOLKIT_SESSION_REVIEW_BATCH"])
     finish = run_script.dispatch(Namespace(script_name="session-review-state", script_args=["finish"]))
     if finish:
         sys.exit(finish)

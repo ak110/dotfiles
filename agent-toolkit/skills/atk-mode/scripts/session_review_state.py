@@ -12,7 +12,11 @@ import time
 
 import filelock
 from agent_toolkit._atk.wi import add_reports
-from agent_toolkit._common import next_action, session_review
+from agent_toolkit._common import next_action, session_review, session_review_analysis
+
+
+class _AnalysisIncomplete(next_action.ActionableError):
+    pass
 
 
 def _finish() -> dict[str, str | bool]:
@@ -28,6 +32,18 @@ def _finish() -> dict[str, str | bool]:
         raise next_action.ActionableError(
             "確定済みbatchは更新できない",
             next_action="保存済みの実行記録で確定結果を確認する",
+        )
+    try:
+        unfinished = session_review_analysis.unfinished(writer.path, batch)
+    except FileNotFoundError as error:
+        raise _AnalysisIncomplete(
+            "batchの分析記録が無い",
+            next_action="同じbatch内で `atk run-script session-review-state -- prepare-analysis` を実行する",
+        ) from error
+    if unfinished:
+        raise _AnalysisIncomplete(
+            "分析記録の行が未完了か欠落している対象: " + "、".join(unfinished),
+            next_action=f"{session_review.batch_analysis_path(writer.path)}で対象の分析と記録を終えてからfinishを再実行する",
         )
     notes = session_review.resolve_report_notes(batch.report_notes)
     try:
@@ -66,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True, help="待ちの照会、範囲の成功確定、batch分析完了の記録。")
     commands.add_parser("show")
+    commands.add_parser("prepare-analysis", help="同じbatchの分析記録が無ければ雛形を作る。")
     commands.add_parser("finish", help="報告の保存を確かめ、batch分析の完了を記録する。範囲の確定は起動元が行う。")
     complete = commands.add_parser("complete")
     complete.add_argument("--prepared", required=True, metavar="PATH", help="成功したprepareの1行JSONを保存したファイル。")
@@ -74,6 +91,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "show":
             targets = session_review.pending()
             result = {"pending_count": len(targets), "targets": targets}
+        elif args.command == "prepare-analysis":
+            if not (value := os.environ.get(session_review.BATCH_ENV)):
+                raise next_action.ActionableError(
+                    "batchのmanifestが未指定",
+                    next_action="同じbatch内でprepare-analysisを実行する",
+                )
+            writer = session_review.BatchWriter(pathlib.Path(value))
+            result = {"batch_analysis": str(session_review_analysis.ensure(writer))}
         elif args.command == "complete":
             result = session_review.complete(session_review.read(pathlib.Path(args.prepared)))
             try:
@@ -89,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             result = _finish()
     except next_action.ActionableError as error:
         print(f"失敗: {error.message}", file=sys.stderr)
-        return 2
+        return 1 if isinstance(error, _AnalysisIncomplete) else 2
     except (OSError, ValueError, KeyError, TypeError) as error:
         recovery = (
             "batchの実行記録を確認し、読めない場合はログを保全して起動元へ返す"

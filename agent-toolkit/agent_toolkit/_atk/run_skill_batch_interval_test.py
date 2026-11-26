@@ -23,6 +23,7 @@ from agent_toolkit._common import (
     session_state,
 )
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.run_skill_support import record_completed_batch_analysis
 
 
 def _capture_batch_launches(monkeypatch, *, mode="batch"):
@@ -630,6 +631,7 @@ def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
                 scope=session_review.BATCH_SCOPE,
                 question_type="post-approval",
             )
+            record_completed_batch_analysis(path)
             assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
         return 0
 

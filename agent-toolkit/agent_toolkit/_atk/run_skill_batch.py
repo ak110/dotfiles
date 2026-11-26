@@ -59,6 +59,7 @@ from agent_toolkit._common import (
     session_activity,
     session_registry,
     session_review,
+    session_review_analysis,
     skill_modes,
     weekly_work,
 )
@@ -767,6 +768,7 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
         if manifest["status"] == session_review.BatchStatus.USAGE_LIMIT_PAUSED:
             args.resume_usage_limited = True
             session_review.BatchWriter(path).resume_usage_limited()
+        session_review_analysis.ensure(session_review.BatchWriter(path))
         code = execute(args)
         manifest = session_review.read(path)
         if code:
@@ -916,6 +918,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             run_args = argparse.Namespace(**vars(args))
             run_args.target_repo, run_args.work_dir = target_repo, str(cwd)
             run_args.batch_manifest, run_args.run_id = str(path), run_id
+            session_review_analysis.ensure(writer)
             code = execute(run_args)
             manifest = session_review.read(path)
             if code:

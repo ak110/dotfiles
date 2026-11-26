@@ -15,6 +15,7 @@ from agent_toolkit._atk.managed_temp import paths, sweep, sweep_lock
 from agent_toolkit._atk.wi import add, layout
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, session_evidence_support
+from agent_toolkit._testing.run_skill_support import record_completed_batch_analysis
 
 
 def _register(path: pathlib.Path) -> dict:
@@ -45,6 +46,7 @@ def _save_report_and_finish(notes, monkeypatch, args, body):
         scope=session_review.BATCH_SCOPE,
         question_type="post-approval",
     )
+    record_completed_batch_analysis(args.batch_manifest)
     assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
 
 

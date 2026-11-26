@@ -19,6 +19,7 @@ from agent_toolkit._atk import config, run_script, run_skill_batch, weekly_sched
 from agent_toolkit._atk.wi import add, add_reports, frontmatter, layout, sync, uwi
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, late_descendant
+from agent_toolkit._testing.run_skill_support import record_completed_batch_analysis
 
 _REAL_REPORT_CPU = pytest.mark.cpu_limit(
     2.0,
@@ -328,6 +329,7 @@ def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeyp
             scope=session_review.BATCH_SCOPE,
             question_type="post-approval",
         )
+        record_completed_batch_analysis(args.batch_manifest)
         assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
         return 0
 
@@ -529,6 +531,7 @@ def test_activity_resumed_after_selection_is_deferred(tmp_path, monkeypatch, oth
             scope=session_review.BATCH_SCOPE,
             question_type="post-approval",
         )
+        record_completed_batch_analysis(args.batch_manifest)
         assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
         return 0
 
@@ -666,6 +669,7 @@ def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monke
             scope=session_review.BATCH_SCOPE,
             question_type="post-approval",
         )
+        record_completed_batch_analysis(args.batch_manifest)
         assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
         return 0
 
@@ -859,6 +863,7 @@ def _report_and_finish(notes, monkeypatch, calls):
             scope=session_review.BATCH_SCOPE,
             question_type="post-approval",
         )
+        record_completed_batch_analysis(args.batch_manifest)
         assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
         return 0
 
