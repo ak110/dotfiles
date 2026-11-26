@@ -110,7 +110,10 @@ def _remote_snapshot(host: str, *, read_only: bool = False) -> tuple[dict[str, t
         raise ValueError("SSH先で設定を取得できません。接続とSSH先のatkの起動を確認してください")
 
     if read_only:
-        raise _ReadOnlyUnsupported
+        capability = runner(host, "atk config snapshot --help", None)
+        if capability.returncode == 2 or (capability.returncode == 0 and b"--read-only" not in capability.stdout):
+            raise _ReadOnlyUnsupported
+        raise ValueError("SSH先の読み取り専用の設定取得に失敗しました")
     legacy = runner(host, "atk config show", None)
     if legacy.returncode != 0:
         raise ValueError("SSH先で設定を取得できません。SSH先でatk config showの実行結果を確認してください")

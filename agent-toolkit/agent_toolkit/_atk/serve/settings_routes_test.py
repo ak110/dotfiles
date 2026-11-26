@@ -176,6 +176,8 @@ def test_background_snapshot_never_falls_back_to_legacy_reads(monkeypatch, suppo
         calls.append(operation)
         if operation == "uname -s":
             return subprocess.CompletedProcess(command, 0, b"Linux\n", b"")
+        if operation == "atk config snapshot --help":
+            return subprocess.CompletedProcess(command, 0, b"usage: atk config snapshot", b"")
         assert operation == "atk config snapshot --read-only"
         return subprocess.CompletedProcess(command, 0 if supported else 2, b'{"settings":{}}', b"")
 
@@ -186,7 +188,7 @@ def test_background_snapshot_never_falls_back_to_legacy_reads(monkeypatch, suppo
     else:
         with pytest.raises(settings_routes._ReadOnlyUnsupported):
             settings_routes._remote_snapshot("host", read_only=True)
-    assert calls == ["uname -s", "atk config snapshot --read-only"]
+    assert calls == ["uname -s", "atk config snapshot --read-only"] + ([] if supported else ["atk config snapshot --help"])
 
 
 @pytest.mark.asyncio
@@ -200,6 +202,8 @@ async def test_opening_settings_prefetches_unselected_hosts_without_migrating_th
         calls.append((host, operation))
         if operation == "uname -s":
             return subprocess.CompletedProcess(command, 0, b"Linux\n", b"")
+        if operation == "atk config snapshot --help":
+            return subprocess.CompletedProcess(command, 0, b"usage: atk config snapshot", b"")
         assert operation == "atk config snapshot --read-only"
         return subprocess.CompletedProcess(command, 0 if host == "current" else 2, b'{"settings":{}}', b"")
 
@@ -221,6 +225,6 @@ async def test_opening_settings_prefetches_unselected_hosts_without_migrating_th
         assert cached["settings"] == {}
         assert set(calls) == {
             (host, operation) for host in ("current", "legacy") for operation in ("uname -s", "atk config snapshot --read-only")
-        }
+        } | {("legacy", "atk config snapshot --help")}
     finally:
         await app.shutdown()
