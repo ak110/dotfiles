@@ -540,7 +540,8 @@ def _resolve_whole_contract(whole_contract_path: str | None, launcher_session_id
         expected = directory / "work-contract.md"
     if not expected.is_file():
         raise ActionableError(
-            f"全体作業契約が未作成です: {expected}。委譲先は起動していない。",
+            f"全体作業契約が未作成です: {expected}。"
+            "委譲先が当初の目的と現行の要求を見失わないよう、契約の無い起動は拒否する。委譲先は起動していない。",
             next_action=(
                 f"`skills/atk-mode/references/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する。"
                 f"別の記録を使う場合は{_WHOLE_CONTRACT_REISSUE}"
