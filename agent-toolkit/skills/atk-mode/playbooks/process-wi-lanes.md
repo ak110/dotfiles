@@ -10,7 +10,10 @@
 
 1. 目標から始める判断は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」に従う。
 2. 選定結果の`着手前に必要なレーン`が全て統合済みのレーンを、統合先の最新HEADからworktreeを作成し、段階をまたいで並行に起動する。
-   この欄が無いレーンも起動する。
+   この欄が無いか空のレーンにも、着手に必要な先行成果はない。
+   初回・選定への追加・先行成果の統合後は、最新の選定を `atk run-script pick-wi-check` で確認する。
+   要約の「着手条件を満たすレーン」を既存の `start` の成功結果と照合し、担当がいないレーンだけを起動する。
+   worktreeの準備は起動成功とみなさず、履歴表示は現在の起動指示に使わない。
    先行工程を正当な理由で次の巡回へ回す場合は、`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」の手順10で後続の先行条件を再判定する。
    先行成果が必要な後段は統合完了まで待つ。
    成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする。
