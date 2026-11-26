@@ -12,7 +12,7 @@ import sys
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import claude_connection, codex_connection, config_settings
+from agent_toolkit._atk import claude_connection, codex_connection, config_migration, config_settings, git_sync
 from agent_toolkit._atk import config as config_module
 from agent_toolkit._atk.wi import sync
 from agent_toolkit._common import codex_fast_mode, state_paths
@@ -234,7 +234,7 @@ def test_read_only_snapshot_does_not_run_migrations(tmp_path, monkeypatch, capsy
         pytest.fail("読み取り専用の取得で移行が呼ばれた")
 
     for name in ("migrate_legacy_settings", "migrate_serve_settings"):
-        monkeypatch.setattr(config_module._config_migration, name, unexpected_migration)
+        monkeypatch.setattr(config_migration, name, unexpected_migration)
 
     assert _main(tmp_path, "config", "snapshot", "--read-only") == 0
     snapshot = json.loads(capsys.readouterr().out)
@@ -601,9 +601,15 @@ def test_shared_identity_uses_remote_and_upstream_branch_without_exposing_creden
     }
     monkeypatch.setattr(config_module.git_command, "optional_stdout", lambda args, _directory: commands[args[0]])
     path = tmp_path / "atk-config.json"
-    identity = config_module._shared_settings_identity(path)
+    monkeypatch.setattr(config_settings, "shared_settings_path", lambda: path)
+    monkeypatch.setattr(git_sync, "has_remote", lambda _directory: True)
+
+    def snapshot_identity():
+        return config_module.settings_snapshot(tmp_path, read_only=True)["shared_identity"]
+
+    identity = snapshot_identity()
     assert identity is not None and len(identity) == 64 and "fixture-credential" not in identity
     commands["remote"] = "git@example.org:owner/notes.git"
-    assert config_module._shared_settings_identity(path) == identity
+    assert snapshot_identity() == identity
     commands["for-each-ref"] = "upstream\0refs/heads/second"
-    assert config_module._shared_settings_identity(path) != identity
+    assert snapshot_identity() != identity
