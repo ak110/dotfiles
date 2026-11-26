@@ -16,23 +16,11 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_body as _uwi
 from agent_toolkit._atk.wi.add_reports import (
     check_run_report_sync,
+    compare_draft_openings,
     has_committed_run_report,
     has_synced_run_report,
-)
-from agent_toolkit._atk.wi.add_reports import (
-    compare_draft_openings as compare_draft_openings,
-)
-from agent_toolkit._atk.wi.add_reports import (
-    print_deferral_candidates as print_deferral_candidates,
-)
-from agent_toolkit._atk.wi.add_reports import (
-    print_draft_openings as print_draft_openings,
-)
-from agent_toolkit._atk.wi.add_validation import (
-    _EMPTY_AWI_ERROR as _EMPTY_AWI_ERROR,
-)
-from agent_toolkit._atk.wi.add_validation import (
-    _EMPTY_AWI_NEXT_ACTION as _EMPTY_AWI_NEXT_ACTION,
+    print_deferral_candidates,
+    print_draft_openings,
 )
 from agent_toolkit._atk.wi.add_validation import (
     _RESERVED_FRONTMATTER_KEYS,
@@ -42,22 +30,11 @@ from agent_toolkit._atk.wi.add_validation import (
     body_is_effectively_empty,
     normalize_choices,
     normalize_cooldown_until,
+    parse_entry_message,
+    require_agent_awi_sections,
+    require_cause_analysis_format,
+    require_confirmed_cause,
     validate_retrospective_report,
-)
-from agent_toolkit._atk.wi.add_validation import (
-    _require_agent_source as _require_agent_source,
-)
-from agent_toolkit._atk.wi.add_validation import (
-    parse_entry_message as parse_entry_message,
-)
-from agent_toolkit._atk.wi.add_validation import (
-    require_agent_awi_sections as require_agent_awi_sections,
-)
-from agent_toolkit._atk.wi.add_validation import (
-    require_cause_analysis_format as require_cause_analysis_format,
-)
-from agent_toolkit._atk.wi.add_validation import (
-    require_confirmed_cause as require_confirmed_cause,
 )
 from agent_toolkit._atk.wi.constants import (
     DETAILED_KEY,
@@ -67,9 +44,7 @@ from agent_toolkit._atk.wi.constants import (
     WI_TYPE_AWI,
     WI_TYPE_UWI,
 )
-from agent_toolkit._atk.wi.repo import resolve_add_target as resolve_add_target
-from agent_toolkit._atk.wi.repo import resolve_head_commit as resolve_head_commit
-from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
+from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import process_loop_session as _process_loop_session
@@ -117,7 +92,7 @@ def _track_batch_report_save(
             if (
                 data.get("source", source) == "run-skill"
                 and data.get("run_skill_report") == "true"
-                and (active := _active_report_batch(_item_scope(data, scope))) is not None
+                and (active := _active_report_batch(item_scope(data, scope))) is not None
             ):
                 break
     if active is None:
@@ -141,7 +116,7 @@ def _track_batch_report_save(
         writer.record_report_step("save-result", {**details, "status": status})
 
 
-def _item_scope(data: dict[str, object], scope: str | None) -> str | None:
+def item_scope(data: dict[str, object], scope: str | None) -> str | None:
     body_scope = data.get("scope")
     return scope if scope is not None else body_scope if isinstance(body_scope, str) else None
 
@@ -235,11 +210,11 @@ def print_entry_details(details: dict[str, object | None]) -> None:
     print(f"    extra_frontmatter: {rendered_extra_frontmatter}")
 
 
-def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
+def normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
     return tuple(dict.fromkeys(_wi_filenames.validate_filename(value, inbox_dir).name for value in (values or ())))
 
 
-def _missing_dependency_warnings(
+def missing_dependency_warnings(
     private_notes: pathlib.Path,
     inbox_dir: pathlib.Path,
     generated: list[str],
@@ -254,7 +229,7 @@ def _missing_dependency_warnings(
     )
 
 
-def _resolve_submitter_session() -> str | None:
+def resolve_submitter_session() -> str | None:
     """UWIを投入したセッションの識別子を環境から解決する。
 
     委譲先は委譲元のセッションを返すため、委譲先が投入したUWIも委譲元のセッションへ通知される。
@@ -347,7 +322,7 @@ def add_entries_locked(
         for key in (_add_drafts.FINGERPRINT, "github_source"):
             if key in frontmatter:
                 frontmatter_data[key] = frontmatter[key]
-        effective_scope = _item_scope(frontmatter, scope)
+        effective_scope = item_scope(frontmatter, scope)
         if entry_type == WI_TYPE_UWI:
             frontmatter_data = run_report_metadata(
                 frontmatter_data, question_type=question_type, scope=effective_scope, new_report=True
@@ -445,7 +420,7 @@ def add_entries(
         cooldown_until=cooldown_until,
         origin_reviews=origin_reviews,
     )
-    item_branches, target_commit_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
+    item_branches, target_commit_branch = resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
     if draft_basis is not None:
         if target_commit != draft_basis.oid or normalized_target_repo != draft_basis.repo:
             raise WebInputError("起草の基点が保存対象と一致しない", next_action=_add_drafts.DRAFT_BASIS_NEXT)
@@ -535,7 +510,7 @@ def add_entries(
     return generated
 
 
-def _resolve_item_branches(
+def resolve_item_branches(
     parsed_messages: list[tuple[dict[str, object], str]],
     target_repo: str | None,
     target_branch: str | None,
@@ -586,6 +561,15 @@ def read_body_files(paths: list[str]) -> list[str]:
 
 
 __all__ = [
+    "resolve_head_commit",
+    "resolve_add_target",
+    "require_confirmed_cause",
+    "require_cause_analysis_format",
+    "require_agent_awi_sections",
+    "parse_entry_message",
+    "print_draft_openings",
+    "print_deferral_candidates",
+    "compare_draft_openings",
     "_parse_leading_frontmatter",
     "body_is_effectively_empty",
     "check_run_report_sync",

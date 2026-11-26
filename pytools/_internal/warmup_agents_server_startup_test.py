@@ -3,6 +3,7 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -42,7 +43,7 @@ def _service_environment(tmp_path_factory: pytest.TempPathFactory) -> dict[str, 
 
 def _stop_services(directory: pathlib.Path) -> None:
     for path in directory.glob("*.json"):
-        if path.name == "generations.json":
+        if not re.fullmatch(r"[0-9a-f]{64}", path.stem):
             continue
         identity = json.loads(path.read_text(encoding="utf-8"))["process"]
         if not service_transport.process_alive(identity):

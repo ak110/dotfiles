@@ -63,7 +63,7 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
     if rows is None:
         notice.forget_resends(session_id, actor, _RESEND_KEY)
         return reason, fix
-    merge_pending = [row for row in rows if row.merge_pending]
+    merge_pending = [row for row in (rows or ()) if row.merge_pending]
     if not merge_pending and notice.consume_resend(
         session_id,
         actor,

@@ -82,7 +82,7 @@ def _draft_namespace(args: argparse.Namespace) -> str | None:
     if explicit is not None:
         path = pathlib.Path(explicit)
         return path.parent.name if path.is_absolute() and path.is_file() else None
-    session = add._resolve_submitter_session()
+    session = add.resolve_submitter_session()
     temp = managed_temp.find_session_temp(session) if session is not None else None
     return temp.name if temp is not None and (temp / "work-contract.md").is_file() else None
 
@@ -250,7 +250,7 @@ def cmd_add(
                 print(message, file=sys.stderr)
         raise
     dependency_dir = private_notes / WI_STATE_INBOX
-    canonical_dependencies = add._normalize_dependencies(args.depends_on, dependency_dir)
+    canonical_dependencies = add.normalize_dependencies(args.depends_on, dependency_dir)
     choices = normalize_choices(",".join(args.choices)) if args.choices is not None else None
     saved_details: dict[str, dict[str, object | None]] = {}
     namespace = _draft_namespace(args)
@@ -269,13 +269,13 @@ def cmd_add(
                 cooldown_until=getattr(args, "cooldown_until", None),
                 origin_reviews=tuple(getattr(args, "origin_review", None) or ()),
             )
-            item_branches, resolved_branch = add._resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
+            item_branches, resolved_branch = add.resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
             if args.type == WI_TYPE_UWI and args.question_type == QUESTION_TYPE_REPORT:
                 for frontmatter, body in parsed_messages:
                     raw_repo = frontmatter.get("target_repo")
                     item_repo = resolve_repo_id_or_raise(raw_repo) if isinstance(raw_repo, str) else normalized_target_repo
                     validate_retrospective_report(
-                        private_notes, body, {"scope": add._item_scope(frontmatter, args.scope), "target_repo": item_repo}
+                        private_notes, body, {"scope": add.item_scope(frontmatter, args.scope), "target_repo": item_repo}
                     )
             if draft_basis is not None:
                 _add_drafts.ensure_destinations(draft_basis, parsed_messages, item_branches, resolved_branch)
@@ -325,7 +325,7 @@ def cmd_add(
             depends_on=canonical_dependencies,
             cooldown_until=getattr(args, "cooldown_until", None),
             saved_details=saved_details,
-            submitter_session=add._resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
+            submitter_session=add.resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
             target_branch=target_branch,
             initial_state=WI_STATE_HOLD if hold else WI_STATE_INBOX,
             draft_basis=draft_basis,
@@ -347,7 +347,7 @@ def cmd_add(
         sys.exit(1)
     count = len(generated)
     inbox_dir = private_notes
-    for warning in add._missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
+    for warning in add.missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
     _outcome.report_success(
         f"{count}件をholdへ保存した" if hold else f"{count}件を報告として保存した" if report else f"{count}件をinboxへ投入した"
