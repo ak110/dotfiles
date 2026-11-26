@@ -232,10 +232,16 @@ def _cmd_config_show(home: pathlib.Path) -> int:
 def _auto_fast_report() -> str:
     previous = codex_fast_mode.latest_start_decision()
     if previous is None:
-        return "Codex自動速度: 委譲の起動時に判定する"
+        return "Codex自動速度: 起動時判定の記録なし"
     instant, decision = previous
     speed = "高速" if decision.tier == "priority" else "通常"
-    return f"Codex自動速度: 最後の起動時判定 {instant}、{speed}（{decision.explanation}）"
+    source = {
+        "current": "今回確認",
+        "previous": "直前の成功判定",
+        "unavailable": "確認不能",
+        "legacy": "出所の記録なし",
+    }[decision.source]
+    return f"Codex自動速度: 最後の起動時判定 {instant}、{speed}（{decision.explanation}／{source}）"
 
 
 def _pending_shared(local: dict[str, Any]) -> dict[str, Any]:
@@ -500,6 +506,7 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
     return {
         "settings": settings,
+        "codex_fast_start": _auto_fast_report(),
         "shared_identity": _shared_settings_identity(shared_path) if shared_path is not None and shared_sync else None,
         "paths": effective,
         "presets": _config_settings.PRESET_MODELS,

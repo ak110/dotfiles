@@ -94,7 +94,10 @@ class CodexStartMixin:
         session.status = "starting"
         session.touch()
         try:
-            await self._start_turn(session, prompt, client)
+            if selection is None or selection.auth is None:
+                await self._start_turn(session, prompt, client)
+            else:
+                await self._start_turn(session, prompt, client, auth=selection.auth)
         except Exception as exc:
             if self._turn_start_response_is_ambiguous(client, exc):
                 await self._mark_turn_start_ambiguous(session, exc)
@@ -114,11 +117,6 @@ class CodexStartMixin:
         *,
         role: str = "delegate",
     ) -> tuple[dict[str, Any], codex_providers.ProviderSelection | None, set[str], str | None, str | None]:
-        selection = None
-        if codex_providers.has_provider_configuration():
-            selection = await codex_providers.select(client.request, cwd, role=role)
-            if not codex_providers.has_provider_configuration():
-                selection = None
         params: dict[str, Any] = {
             "cwd": cwd,
             # Codexが承認を要すると判定するコマンドは拒否され、PermissionRequest hookは呼ばれない。
@@ -139,6 +137,11 @@ class CodexStartMixin:
         attempted: set[str] = set()
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                selection = None
+                if codex_providers.has_provider_configuration():
+                    selection = await codex_providers.select(client.request, cwd, role=role)
+                    if not codex_providers.has_provider_configuration():
+                        selection = None
                 thread_response = None
                 if selection is not None and (selection.primary or selection.candidates):
                     order = (selection.primary, *selection.candidates)
@@ -178,6 +181,8 @@ class CodexStartMixin:
                                 client.request,
                                 cwd,
                                 record_start=True,
+                                provider=candidate,
+                                auth=selection.auth,
                                 subscription=(
                                     await run_file_operation(codex_connection.subscription_provider_for, candidate) is not None
                                 ),

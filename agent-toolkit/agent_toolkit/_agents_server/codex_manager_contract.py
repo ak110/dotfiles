@@ -71,7 +71,14 @@ class CodexManager(typing.Protocol):
 
     async def _close_thread(self, thread_id: str, client: Any, *, session: SessionState | None = None) -> None: ...
 
-    async def _resume_thread(self, session: SessionState, client: Any, writer_session_id: str | None = None) -> str | None: ...
+    async def _resume_thread(
+        self,
+        session: SessionState,
+        client: Any,
+        writer_session_id: str | None = None,
+        *,
+        auth: dict[str, Any] | None = None,
+    ) -> str | None: ...
 
     @staticmethod
     async def _compatible_resume_provider(session: SessionState, client: Any) -> str: ...
@@ -190,7 +197,14 @@ class CodexManager(typing.Protocol):
 
     async def _mark_turn_start_ambiguous(self, session: SessionState, error: BaseException) -> None: ...
 
-    async def _start_turn(self, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None: ...
+    async def _start_turn(
+        self,
+        session: SessionState,
+        prompt: str,
+        client: JsonRpcProcess | None = None,
+        *,
+        auth: dict[str, Any] | None = None,
+    ) -> None: ...
 
     async def _notify_waiters(self) -> None: ...
 
@@ -216,7 +230,7 @@ class CodexManager(typing.Protocol):
     def _provider_failure(session: SessionState, error: Any = None) -> bool: ...
 
     @staticmethod
-    async def _apply_connection_order(session: SessionState, client: Any) -> None: ...
+    async def _apply_connection_order(session: SessionState, client: Any) -> codex_providers.ProviderSelection | None: ...
 
     @staticmethod
     def _turn_start_response_is_ambiguous(client: Any, error: BaseException) -> bool: ...

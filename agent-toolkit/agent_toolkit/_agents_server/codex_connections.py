@@ -31,7 +31,7 @@ from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState, begin_reply
 from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk.usage_limit_policy import should_wait
-from agent_toolkit._common import session_record_paths, startup_features
+from agent_toolkit._common import codex_fast_mode, session_record_paths, startup_features
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -68,7 +68,9 @@ class CodexConnectionsMixin:
                 if session.interrupt_requested:
                     return False
                 session.codex_model_provider = candidate
-                await self._resume_thread(session, client, self._writer_session_ids.get(session.session_id))
+                await self._resume_thread(
+                    session, client, self._writer_session_ids.get(session.session_id), auth=selection.auth
+                )
             except JsonRpcResponseError as exc:
                 session.codex_model_provider = original
                 _LOG.info(
@@ -124,11 +126,13 @@ class CodexConnectionsMixin:
         session: SessionState,
         client: Any,
         writer_session_id: str | None = None,
+        *,
+        auth: dict[str, Any] | None = None,
     ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
         if archive := self._archive_tasks.get(session.session_id):
             await asyncio.shield(archive)
-        await self._apply_connection_order(session, client)
+        selection = await self._apply_connection_order(session, client)
         try:
             target = await self._compatible_resume_provider(session, client)
         except (AppServerError, TimeoutError, OSError) as error:
@@ -143,7 +147,14 @@ class CodexConnectionsMixin:
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
-            "serviceTier": await _current_service_tier(client.request, session.cwd, subscription=subscription),
+            "serviceTier": await _current_service_tier(
+                client.request,
+                session.cwd,
+                subscription=subscription,
+                provider=target,
+                auth=selection.auth if selection is not None else auth,
+                record_start=True,
+            ),
         }
         if session.model is not None:
             resume_params["model"] = session.model
@@ -179,7 +190,9 @@ class CodexConnectionsMixin:
         # 「agent-toolkit/agent_toolkit/_agents_server/codex_resume_state.py：会話状態の生成先：2026年10月23日」にある。
         target = session.codex_model_provider
         if target is None:
-            effective = await client.request("config/read", {"cwd": session.cwd, "includeLayers": False})
+            effective = await codex_fast_mode.read_with_retry(
+                client.request, "config/read", {"cwd": session.cwd, "includeLayers": False}
+            )
             configuration = effective.get("config")
             if not isinstance(configuration, dict):
                 raise codex_resume_state.IncompatibleResumeError("Codexの再開先設定を取得できず、状態互換性を確認できない")
@@ -312,13 +325,14 @@ class CodexConnectionsMixin:
         )
 
     @staticmethod
-    async def _apply_connection_order(session: SessionState, client: Any) -> None:
+    async def _apply_connection_order(session: SessionState, client: Any) -> codex_providers.ProviderSelection | None:
         role = codex_connection.role_of(session.model_type)
         if not codex_connection.outside_order(
             session.codex_model_provider, role, subscription_provider=session.codex_subscription_provider
         ):
-            return
+            return None
         selection = await codex_providers.select(client.request, session.cwd, role=role)
         _LOG.info("Codex接続先を使用順の先頭へ移しました: session_id=%s provider=%s", session.session_id, selection.primary)
         session.codex_model_provider = selection.primary
         session.codex_subscription_provider = selection.primary if selection.subscription else None
+        return selection

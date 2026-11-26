@@ -116,7 +116,14 @@ class CodexTurnsMixin:
         session.touch()
         await self._notify_waiters()
 
-    async def _start_turn(self: CodexManager, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None:
+    async def _start_turn(
+        self: CodexManager,
+        session: SessionState,
+        prompt: str,
+        client: JsonRpcProcess | None = None,
+        *,
+        auth: dict[str, Any] | None = None,
+    ) -> None:
         if client is None:
             client = await self._acquire_owned_client(session.session_id, session.launch_kind)
         self._start_auto_reset_monitor(session, client)
@@ -132,7 +139,9 @@ class CodexTurnsMixin:
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandboxPolicy": {"type": "dangerFullAccess"},
-            "serviceTier": await _current_service_tier(client.request, session.cwd, subscription=subscription),
+            "serviceTier": await _current_service_tier(
+                client.request, session.cwd, subscription=subscription, provider=provider, auth=auth
+            ),
         }
         if session.model is not None:
             params["model"] = session.model

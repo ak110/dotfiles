@@ -16,7 +16,7 @@ from agent_toolkit._agents_server import api_credits, codex_auto_reset, engine_a
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._atk import codex_connection, usage_refresh
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._common import codex_usage_limit, runtime_environment, state_paths
+from agent_toolkit._common import codex_fast_mode, codex_usage_limit, runtime_environment, state_paths
 
 CONTINUE_PROMPT = "以前の会話と実行結果を確認し、完了済みの操作を繰り返さず、未完了の作業を続けて所定の返却形式を返せ。"
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -38,6 +38,7 @@ class ProviderSelection:
     diagnostics: tuple[str, ...] = ()
     usage_limit_resets_at: int | None = None
     auto_reset_permitted: bool = False
+    auth: dict[str, Any] | None = dataclasses.field(default=None, repr=False, compare=False)
 
 
 def has_provider_configuration() -> bool:
@@ -84,13 +85,13 @@ async def select(
     新規の会話の開始順と、失敗した会話が次に試す後続候補の順を同じ実効順序にそろえ、
     並べ替えで後ろへ回した`credits`を後続候補で先に再試行しないようにする。
     """
-    response = await request("config/read", {"cwd": cwd, "includeLayers": False})
+    response = await codex_fast_mode.read_with_retry(request, "config/read", {"cwd": cwd, "includeLayers": False})
     effective = response.get("config")
     if not isinstance(effective, dict):
         raise ValueError("Codexの実効接続先設定を取得できません")
     providers = effective.get("model_providers", {})
     providers = providers if isinstance(providers, dict) else {}
-    auth = await request("account/read", {"refreshToken": False})
+    auth = await codex_fast_mode.read_with_retry(request, "account/read", {"refreshToken": False})
     account = auth.get("account")
     account_type = account.get("type") if isinstance(account, dict) else None
     entries = codex_connection.provider_entries(role)
@@ -141,8 +142,7 @@ async def select(
         except RuntimeError, OSError, TimeoutError:
             usage = {}
 
-        routing = auth.get("workspaceRouting")
-        active_id = routing.get("chatgptAccountId") if isinstance(routing, dict) else None
+        active_id = codex_fast_mode.workspace_id(auth)
         snapshot_id = usage.get("accountId")
         if snapshot_id is None or active_id is not None and snapshot_id == active_id:
             if usage_refresh.enabled():
@@ -176,6 +176,7 @@ async def select(
         tuple(diagnostics),
         usage_limit_resets_at,
         auto_reset_permitted,
+        auth,
     )
 
 

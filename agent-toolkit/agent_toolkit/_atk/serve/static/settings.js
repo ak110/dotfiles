@@ -274,6 +274,9 @@ function keyEditor(parent, key, item, data, save = operate) {
   const effective = key === "usage_reset_permissions" ? `${JSON.parse(item.effective || "[]").length}件の許可` :
     item.effective || "未指定";
   description.append(element("p", `実効値: ${effective}${source}`));
+  if (key === "codex_fast_mode") {
+    description.append(element("p", data.codex_fast_start ?? "起動時判定の記録なし"));
+  }
   if (item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && host)) {
     description.append(element("p", key === "usage_reset_permissions" && host
       ? "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"
@@ -282,9 +285,6 @@ function keyEditor(parent, key, item, data, save = operate) {
     return;
   }
   if (item.shared) description.append(element("p", sharedScope(item.shared_sync)));
-  if (key === "codex_fast_mode") {
-    description.append(element("p", "自動判定で実際に使う速度は接続先と提供期間で決まります。"));
-  }
   if (timing) description.append(element("p", key === "remote_hosts" ?
     "反映: 設定のホスト切替は保存後、計画とセッションは次回のatk serve起動" : `反映: ${timing}`));
   if (item.source === "一時指定" || item.source?.startsWith("AGENT_TOOLKIT_CONFIG_")) {

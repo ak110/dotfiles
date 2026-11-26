@@ -273,3 +273,131 @@ async def test_config_changes_apply_to_new_reply_and_restored_turns(
                 if method in {"thread/resume", "turn/start"}
             )
             assert restored.fast_mode is initial
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("plan", "tier"), [("business", "priority"), ("plus", "default")])
+async def test_auto_tier_recovers_without_changing_speed(tmp_path, monkeypatch, plan, tier):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "auto")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(codex_fast_mode, "_RETRY_ATTEMPT_SECONDS", 0.01)
+    now = datetime.datetime(2026, 11, 26, tzinfo=datetime.UTC)
+    auth = {"workspaceRouting": {"chatgptAccountId": "first"}, "account": {"type": "chatgpt", "planType": plan}}
+    outcomes = iter([auth, OSError(), auth, TimeoutError(), TimeoutError(), auth])
+
+    async def request(method, _params):
+        if method == "account/rateLimits/read":
+            return {"accountId": "first"}
+        assert method == "account/read"
+        value = next(outcomes)
+        if isinstance(value, TimeoutError):
+            await asyncio.sleep(60)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    for seconds, source in enumerate(("current", "current", "previous", "current")):
+        sent = await codex_instructions._current_service_tier(
+            request,
+            ".",
+            subscription=True,
+            provider="openai",
+            now=now + datetime.timedelta(seconds=seconds),
+            record_start=True,
+        )
+        assert sent == tier
+        recorded = codex_fast_mode.latest_start_decision()
+        assert recorded is not None
+        assert recorded[1].source == source
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("change", "source"),
+    [
+        ("workspace", "unavailable"),
+        ("provider", "unavailable"),
+        ("identity", "unavailable"),
+        ("expiry", "unavailable"),
+        ("plan", "current"),
+        ("logout", "current"),
+        ("end", "current"),
+        ("api", "current"),
+    ],
+)
+async def test_auto_tier_never_reuses_across_changed_conditions(tmp_path, monkeypatch, change, source):
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    now = datetime.datetime.fromisoformat("2026-12-31T23:50:00+09:00")
+    routing = {"chatgptAccountId": "first"}
+    auth = {"workspaceRouting": routing, "account": {"type": "chatgpt", "planType": "business"}}
+    request = AsyncMock(side_effect=AssertionError("接続選択で取得済み"))
+    assert (
+        await codex_fast_mode.auto_service_tier(request, ".", subscription=True, now=now, provider="openai", auth=auth)
+    ).tier == "priority"
+    request.assert_not_awaited()
+
+    async def failed(method, _params):
+        if method == "account/read":
+            if change == "plan":
+                return {**auth, "account": {"type": "chatgpt", "planType": "plus"}}
+            if change == "logout":
+                return {"account": None}
+            raise OSError
+        assert method == "account/rateLimits/read"
+        if change == "identity":
+            return {}
+        return {"accountId": "other" if change == "workspace" else "first"}
+
+    later = now + datetime.timedelta(minutes={"end": 10, "expiry": 5}.get(change, 0))
+    result = await codex_fast_mode.auto_service_tier(
+        failed,
+        ".",
+        subscription=change != "api",
+        now=later,
+        provider="other" if change == "provider" else "openai",
+    )
+    assert (result.tier, result.source) == ("default", source)
+
+
+@pytest.mark.asyncio
+async def test_auto_tier_sends_priority_on_start_turn_and_resume(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "auto")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(codex_fast_mode, "_RETRY_ATTEMPT_SECONDS", 0.02)
+    end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
+    monkeypatch.setattr(codex_fast_mode, "_FREE_FAST_MODE_PERIODS", ((frozenset({"business"}), end, ""),))
+    auth = {"workspaceRouting": {"chatgptAccountId": "workspace"}, "account": {"type": "chatgpt", "planType": "business"}}
+    plans = iter([auth, OSError(), auth, TimeoutError(), TimeoutError(), auth])
+    client = _TierClient()
+    original = client.request
+
+    async def request(method, params=None, **kwargs):
+        if method == "config/read":
+            return {"config": {"model_provider": "openai"}}
+        if method == "account/rateLimits/read":
+            return {"accountId": "workspace"}
+        if method == "account/read":
+            answer = next(plans)
+            if isinstance(answer, TimeoutError):
+                await asyncio.sleep(60)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        return await original(method, params, **kwargs)
+
+    monkeypatch.setattr(client, "request", request)
+    async with subject.AppServerManager({}, asyncio.Condition()) as manager:
+        monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+        session = await manager.start("開始", str(tmp_path))
+        thread_id = session.session_id
+    async with subject.AppServerManager({}, asyncio.Condition()) as restarted:
+        monkeypatch.setattr(restarted, "_ensure_client", AsyncMock(return_value=client))
+        await restarted.resume(thread_id, state.ResumePrompt("再開"), str(tmp_path), state_provider="openai")
+        sent = [
+            (method, params["serviceTier"])
+            for method, params in client.requests
+            if method in {"thread/start", "turn/start", "thread/resume"}
+        ]
+        assert sent == [(method, "priority") for method in ("thread/start", "turn/start", "thread/resume", "turn/start")]
+        latest = codex_fast_mode.latest_start_decision()
+        assert latest is not None and latest[1].source == "previous"

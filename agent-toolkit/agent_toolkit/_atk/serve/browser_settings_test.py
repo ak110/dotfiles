@@ -219,7 +219,10 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
                 return subprocess.CompletedProcess(args, 0, b"usage: atk config snapshot", b"")
             assert command == "atk config show"
             return subprocess.CompletedProcess(
-                args, 0, b"serve_host old\nserve_sessions_codex_home old-path\nusage_reset_permissions []\n", b""
+                args,
+                0,
+                b"serve_host old\ncodex_fast_mode auto\nserve_sessions_codex_home old-path\nusage_reset_permissions []\n",
+                b"",
             )
         assert host == "new-host"
         if command == "atk config update":
@@ -233,6 +236,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
         assert command in {"atk config snapshot", "atk config snapshot --read-only"}
         snapshot = config.settings_snapshot(tmp_path)
         snapshot["settings"]["serve_host"].update(effective=remote_value, saved=remote_value)
+        snapshot["codex_fast_start"] = "最後の起動時判定: new-host の高速"
         return subprocess.CompletedProcess(args, 0, json.dumps(snapshot).encode(), b"")
 
     monkeypatch.setattr(settings_routes, "run_with_timeout", ssh)
@@ -242,9 +246,12 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     status = page.locator("#settings-status")
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     picker = page.get_by_label("設定対象ホスト")
+    fast = page.locator('[data-setting="codex_fast_mode"]')
+    await expect(fast).to_contain_text("起動時判定の記録なし")
     await picker.select_option("old-host")
     legacy = page.locator('[data-setting="serve_sessions_codex_home"]')
     await expect(legacy).to_contain_text("読み取り専用")
+    await expect(fast).to_contain_text("起動時判定の記録なし")
     await expect(legacy.get_by_role("button")).to_have_count(0)
     groups = page.get_by_role("navigation", name="設定の分類")
     await groups.get_by_text("利用枠", exact=True).click()
@@ -260,6 +267,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     await picker.select_option("new-host")
     port = page.locator('[data-setting="serve_host"]')
     await expect(port).to_contain_text("実効値: remote")
+    await expect(fast).to_contain_text("new-host の高速")
     await port.get_by_label("保存値").fill("updated")
     save = port.get_by_role("button", name="保存")
     await page.set_viewport_size({"width": 320, "height": 720})
@@ -284,6 +292,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     await expect(notice).to_be_in_viewport()
     await picker.select_option("")
     await expect(port).to_contain_text("実効値: local")
+    await expect(fast).to_contain_text("起動時判定の記録なし")
 
 
 @pytest.mark.parametrize("fails", [False, True])

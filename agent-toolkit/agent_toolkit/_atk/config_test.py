@@ -6,6 +6,7 @@ import datetime
 import io
 import json
 import pathlib
+import socket
 import subprocess
 import sys
 
@@ -128,22 +129,26 @@ def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_pat
     assert not _saved(tmp_path).keys() & {"review_model", "codex_fast_mode"}
 
 
-@pytest.mark.parametrize("previous", [False, True])
-def test_config_show_auto_fast_without_app_server(tmp_path, monkeypatch, capsys, previous):
+@pytest.mark.parametrize("source", [None, "current", "previous", "unavailable"])
+def test_config_show_auto_fast_without_app_server(tmp_path, monkeypatch, capsys, source):
     def unexpected(*_args, **_kwargs):
         pytest.fail("設定参照でCodex app-serverを起動した")
 
     monkeypatch.setattr(config_module, "is_human_terminal", lambda _stream=None: True)
     monkeypatch.setattr(config_module.codex_models, "with_app_server", unexpected)
+    monkeypatch.setattr(socket.socket, "connect", unexpected)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     instant = datetime.datetime(2026, 11, 26, tzinfo=datetime.UTC)
-    if previous:
-        codex_fast_mode.record_start_decision(instant, codex_fast_mode.FastTier("priority", "planType=business"))
+    if source is not None:
+        codex_fast_mode.record_start_decision(instant, codex_fast_mode.FastTier("priority", "planType=business", source))
 
     assert _main(tmp_path, "config", "show") == 0
     shown = capsys.readouterr()
     assert "codex_fast_mode auto\n" in shown.out
-    expected = f"最後の起動時判定 {instant.isoformat()}、高速（planType=business）" if previous else "委譲の起動時に判定する"
+    expected = "起動時判定の記録なし"
+    if source is not None:
+        label = {"current": "今回確認", "previous": "直前の成功判定", "unavailable": "確認不能"}[source]
+        expected = f"最後の起動時判定 {instant.isoformat()}、高速（planType=business／{label}）"
     assert f"Codex自動速度: {expected}\n" in shown.err
     assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
     assert capsys.readouterr().out == "auto\n"
