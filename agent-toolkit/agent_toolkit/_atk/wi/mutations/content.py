@@ -9,6 +9,7 @@ import sys
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import add as _add
+from agent_toolkit._atk.wi import add_validation as _add_validation
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import entries as _wi_entries
@@ -412,6 +413,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
                 "報告と質問の回答形式は相互に変えられない",
                 next_action="frontmatterのquestion_typeを保存済みの値に戻し、質問が必要なら別のUWIとして投入する",
             )
+        _add_validation.validate_report_body(normalized_message_body, updated_data.get("choices"))
         return _frontmatter.serialize_frontmatter(
             updated_data, "\n" + _strip_trailing_blank_lines(normalized_message_body) + "\n"
         )

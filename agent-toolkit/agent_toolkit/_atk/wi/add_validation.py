@@ -15,6 +15,20 @@ from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._plan import structure as _plan_structure
 
 
+def validate_report_body(body: str, choices: object) -> None:
+    """報告（`question_type: report`）の本文が質問の形を持たないかを確かめる。
+
+    新規保存と本文編集が共有する。  pyfltr: allow-comment
+    """
+    if not body.lstrip().startswith(REPORT_TITLE_PREFIX):
+        raise WebInputError("報告の1行目は`# 報告: `で始める", next_action="本文の1行目を`# 報告: <要点>`にして保存し直す")
+    if choices or any(line.strip() == "## 選択肢と帰結" for line in body.splitlines()):
+        raise WebInputError(
+            "報告は選択肢を持たない",
+            next_action="choicesと`## 選択肢と帰結`を除き、本人の判断が必要な事項は別の質問のUWIとして投入する",
+        )
+
+
 def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
     """target_repoの解決失敗を、投入を拒否する1件の`WebInputError`へ変換する。"""
     return WebInputError(f"target_repoを解決できません: {value}（{error.reason}）", next_action=error.next_action)
@@ -396,15 +410,8 @@ def _validate_add_entries(
                     f"frontmatterから{key}を除き、{_RESERVED_ADD_KEY_NEXT_ACTIONS[key]}" for key in rejected_keys
                 ),
             )
-        if (
-            entry_type == WI_TYPE_UWI
-            and question_type == _constants.QUESTION_TYPE_REPORT
-            and not body.lstrip().startswith(REPORT_TITLE_PREFIX)
-        ):
-            raise WebInputError(
-                "報告の1行目は`# 報告: `で始める",
-                next_action="本文の1行目を`# 報告: <要点>`にして再投入する",
-            )
+        if entry_type == WI_TYPE_UWI and question_type == _constants.QUESTION_TYPE_REPORT:
+            validate_report_body(body, choices)
         require_agent_awi_sections(
             body,
             frontmatter,

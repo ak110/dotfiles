@@ -311,7 +311,12 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     question_type = "post-approval" if ordinary else "report"
     report_body = tmp_path / "report.md"
     marker = "" if ordinary or boundary in {"guidance-only", "codex-guidance"} else "completion_report: true\n"
-    report_body.write_text(f"---\n{marker}---\n\n# 報告: 作業結果\n", encoding="utf-8")
+    # 判定は保存済みのWIを読み、原稿は保存後に消えていても結果を変えない。  # pyfltr: allow-comment
+    saved_entry = tmp_path / "notes" / "20000101-010101-001.md"
+    saved_entry.parent.mkdir()
+    saved_entry.write_text(f"---\ntype: uwi\n{marker}question_type: report\n---\n\n# 報告: 作業結果\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     command = (
         f"cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type={question_type} --body-file {report_body}"
     )
@@ -328,7 +333,7 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
             "type": "user",
             "message": {"content": [{"type": "tool_result", "tool_use_id": "save", "is_error": False, "content": ""}]},
             "toolUseResult": {
-                "stdout": f"警告: 表記を確認する\n成功: {saved}\n  ~/notes/inbox/20000101-010101-001.md",
+                "stdout": f"警告: 表記を確認する\n成功: {saved}\n  ~/notes/20000101-010101-001.md",
                 "interrupted": False,
             },
         },
@@ -424,7 +429,7 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     )
     if boundary.startswith("codex"):
         records = [{"type": "event_msg", "payload": {"type": "user_message", "message": "巡回"}}]
-        commands = [("save", command, f"成功: {saved}\n  ~/notes/inbox/20000101-010101-001.md")]
+        commands = [("save", command, f"成功: {saved}\n  ~/notes/20000101-010101-001.md")]
         if boundary.endswith("-exit"):
             commands.append(("exit", "atk agents-exit-session", '{"exit_session_invoked":true}'))
         for call_id, cmd, stdout in commands:

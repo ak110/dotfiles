@@ -29,7 +29,9 @@ lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 _block = block_formatter("process_loop_exit_gate")
 
 
-_SAVE_SUCCESS = re.compile(r"^成功: 1件を報告として保存した\r?\n +[^\r\n]*[/\\][0-9]{8}-[0-9]{6}-[0-9]{3}\.md\r?$", re.M)
+_SAVE_SUCCESS = re.compile(
+    r"^成功: 1件を報告として保存した\r?\n +(?P<path>[^\r\n]*[/\\][0-9]{8}-[0-9]{6}-[0-9]{3}\.md)\r?$", re.M
+)
 
 
 def _save_args(command: object) -> tuple[str, ...]:
@@ -51,30 +53,20 @@ def _save_args(command: object) -> tuple[str, ...]:
     return args[3:]
 
 
-def _is_completion_report(args: tuple[str, ...]) -> bool:
-    """保存した本文のfrontmatterに巡回の完了報告の印（`completion_report: true`）があるかを返す。
+def _save_succeeded(stdout: object) -> bool:
+    """保存成功の出力が示す保存済みのWIに、巡回の完了報告の印（`completion_report: true`）があるかを返す。
 
+    原稿でなく保存結果を読むため、原稿の移動や消失で判定が変わらない。
     公開後の案内など、同じ回答形式の報告を途中で保存しても終了判定に使わない。
     pyfltr: allow-comment
     """
-    for index, arg in enumerate(args):
-        if arg == "--body-file" and index + 1 < len(args):
-            value = args[index + 1]
-        elif arg.startswith("--body-file="):
-            value = arg.partition("=")[2]
-        else:
-            continue
-        try:
-            parsed = parse_frontmatter(Path(value).read_text(encoding="utf-8"))
-        except OSError, UnicodeError:
-            continue
-        if parsed is not None and str(parsed[0].get("completion_report")).lower() == "true":
-            return True
-    return False
-
-
-def _save_succeeded(stdout: object) -> bool:
-    return isinstance(stdout, str) and _SAVE_SUCCESS.search(stdout) is not None
+    if not isinstance(stdout, str) or (match := _SAVE_SUCCESS.search(stdout)) is None:
+        return False
+    try:
+        parsed = parse_frontmatter(Path(match["path"].strip()).expanduser().read_text(encoding="utf-8"))
+    except OSError, UnicodeError:
+        return False
+    return parsed is not None and str(parsed[0].get("completion_report")).lower() == "true"
 
 
 def _current_turn(entries: list[dict]) -> list[dict]:
@@ -105,7 +97,7 @@ def _claude_report_saved(entries: list[dict]) -> bool:
                 if not isinstance(identifier := item.get("id"), str) or not isinstance(tool_input := item.get("input"), dict):
                     continue
                 name = item.get("name")
-                if name in ATK_SHELL_TOOLS and (args := _save_args(tool_input.get("command"))) and _is_completion_report(args):
+                if name in ATK_SHELL_TOOLS and (args := _save_args(tool_input.get("command"))):
                     pending[identifier] = args
                 elif isinstance(name, str) and name.endswith("__compact_conversation"):
                     pending[identifier] = ()
@@ -151,7 +143,7 @@ def _codex_report_saved(entries: list[dict]) -> bool:
         call_id = payload.get("call_id")
         if not isinstance(call_id, str):
             continue
-        if (args := _save_args(codex_shell_command(payload))) and _is_completion_report(args):
+        if args := _save_args(codex_shell_command(payload)):
             pending[call_id] = args
         elif (
             payload.get("type") in {"function_call_output", "custom_tool_call_output"}

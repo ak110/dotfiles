@@ -396,3 +396,41 @@ def test_cmd_add_rejects_report_without_report_title(tmp_path: pathlib.Path, mon
     with pytest.raises(SystemExit):
         _run_public_add(args, notes, _FIXED_DT, tmp_path)
     assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize(
+    ("edited", "accepted"),
+    [
+        ("# 報告: WI投入受付の結果\n\n更新した。", True),
+        ("# どちらにしますか？\n\n## 選択肢と帰結\n\n- A\n- B", False),
+        ("---\nchoices: A,B\n---\n\n# 報告: 結果\n\n本文", False),
+    ],
+)
+def test_edit_report_keeps_report_form(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    edited: str,
+    accepted: bool,
+) -> None:
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "# 報告: WI投入受付の結果\n\n保存した。", source="process-wi", entry_type=WI_TYPE_UWI)
+    args.question_type = "report"
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    saved = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    before = saved.read_text(encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body_path = tmp_path / "edit.md"
+    body_path.write_text(edited, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as result:
+        atk.main(
+            ["wi", "edit", saved.name, "--body-file", str(body_path), "--target-repo", "github.com/example/repo"], home=tmp_path
+        )
+    assert (result.value.code == 0) == accepted, capsys.readouterr().err
+    after = saved.read_text(encoding="utf-8")
+    assert ("更新した。" in after) == accepted
+    if not accepted:
+        assert after == before
