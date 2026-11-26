@@ -7,7 +7,7 @@ from agent_toolkit._atk.session_record_format import SessionEvent, claude_events
 
 
 class Progress:
-    """stderrが端末の実行だけ会話の進捗を表示し、診断ログには構造化出力を使う。  pyfltr: allow-comment
+    """stderrが端末の実行だけ会話の進捗を表示し、ログでは生診断と区別する。  pyfltr: allow-comment
 
     readerからの呼出は生診断の書込と同じロックの内側で行い、ログと表示の順序を保つ。
     """
@@ -39,14 +39,9 @@ class Progress:
             if record.get("type") == "thread.started" and isinstance(record.get("thread_id"), str):
                 self.message(f"Codexのthread識別子: {record['thread_id']}")
             events = _codex_events(record)
-        for event in events:
-            text = _projected_text(event)
-            if text is None:
-                continue
-            if event.kind == "tool_call" and event.call_id is not None:
-                if event.call_id in self._seen_tools:
-                    continue
-                self._seen_tools.add(event.call_id)
+        for text in _projected_messages(events, self._seen_tools):
+            self.log.write("".join(f"[progress] {line}\n" for line in _projected_lines(text)))
+            self.log.flush()
             print(text, file=self.stderr, flush=True)
 
 
@@ -58,7 +53,19 @@ def _projected_text(event: SessionEvent) -> str | None:
     return None
 
 
-def legacy_projection(payload: str) -> list[str]:
+def _projected_messages(events: list[SessionEvent], seen_tools: set[str]) -> typing.Iterator[str]:
+    for event in events:
+        text = _projected_text(event)
+        if text is None:
+            continue
+        if event.kind == "tool_call" and event.call_id is not None:
+            if event.call_id in seen_tools:
+                continue
+            seen_tools.add(event.call_id)
+        yield text
+
+
+def legacy_projection(payload: str, seen_tools: set[str]) -> list[str]:
     """旧ログでモデルの構造化行に直結していた端末用の派生表示を返す。  pyfltr: allow-comment"""
     try:
         record = json.loads(payload)
@@ -67,12 +74,11 @@ def legacy_projection(payload: str) -> list[str]:
     if not isinstance(record, dict):
         return []
     events = claude_events([record])[0] if record.get("type") == "assistant" else _codex_events(record)
-    return [
-        line
-        for event in events
-        if (text := _projected_text(event)) is not None
-        for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    ]
+    return [line for text in _projected_messages(events, seen_tools) for line in _projected_lines(text)]
+
+
+def _projected_lines(text: str) -> list[str]:
+    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
 
 def _codex_events(record: dict[str, typing.Any]) -> list[SessionEvent]:

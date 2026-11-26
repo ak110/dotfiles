@@ -426,7 +426,7 @@ def test_terminal_progress_is_not_reproduced_in_batch_or_meta_failure(tmp_path, 
         run_skill._copy_stream(source, "stdout", log, threading.Lock(), progress, engine)  # pylint: disable=protected-access
         log.write("終了状態: exit code 3\n")
     assert text in terminal.getvalue()
-    assert "assistant: 転載しない発話" not in path.read_text(encoding="utf-8")
+    assert "[progress] 転載しない発話の続き" in path.read_text(encoding="utf-8")
     details = run_skill_batch_evidence.meta_failure_evidence(
         run_skill_batch.PLUGIN_ROOT, stage="execution-3", detail=None, log_path=path, report_target=None
     )
@@ -447,8 +447,11 @@ def test_reissuing_legacy_batch_failure_does_not_copy_terminal_projection(tmp_pa
     run_skill_batch_test._target(tmp_path, "one")  # pylint: disable=protected-access
     log = tmp_path / "legacy.log"
     model_text = "旧ログの会話先頭\n[stderr] 旧ログの会話続き"
-    event = {"type": "assistant", "message": {"content": [{"type": "text", "text": model_text}]}}
+    tool = {"type": "tool_use", "id": "same-call", "name": "Read", "input": {}}
+    first = {"type": "assistant", "message": {"content": [tool]}}
+    event = {"type": "assistant", "message": {"content": [tool, {"type": "text", "text": model_text}]}}
     log.write_text(
+        f"[stdout] {json.dumps(first)}\ntool: Read\n"
         f"[stdout] {json.dumps(event, ensure_ascii=False)}\nassistant: {model_text}\n"
         "[stderr] 旧版のエラー\n終了状態: exit code 3\n",
         encoding="utf-8",

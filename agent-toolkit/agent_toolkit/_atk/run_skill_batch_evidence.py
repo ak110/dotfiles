@@ -157,6 +157,7 @@ def _log_diagnostics(raw: Any, *, missing: str = "実行ログなし（モデル
     tail_truncated = False
     omitted = 0
     legacy_projection: collections.deque[str] = collections.deque()
+    seen_tools: set[str] = set()
     try:
         path = pathlib.Path(raw)
         if not path.is_file():
@@ -171,7 +172,7 @@ def _log_diagnostics(raw: Any, *, missing: str = "実行ログなし（モデル
                 legacy_projection.clear()
                 if line.startswith(("[stdout] ", "[stderr] ")):
                     header_open = False
-                    legacy_projection.extend(run_skill_progress.legacy_projection(line.partition(" ")[2]))
+                    legacy_projection.extend(run_skill_progress.legacy_projection(line.partition(" ")[2], seen_tools))
                 if line.startswith("[stdout] "):
                     payload = line.removeprefix("[stdout] ")
 
