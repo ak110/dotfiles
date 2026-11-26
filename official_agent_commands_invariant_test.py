@@ -1,5 +1,8 @@
 import pathlib
 import re
+import shlex
+
+import pytest
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _POLICY = (
@@ -9,14 +12,71 @@ _POLICY = (
 _OFFICIAL = r"(?:claude|codex)"
 
 
+_SHELL_SEPARATORS = "();&|\n"
+_COMMAND_BOUNDARIES = {"if", "then", "elif", "else", "do", "{", "!", "time", "command", "builtin"}
+_OFFICIAL_NAMES = {"claude", "codex"}
+
+
+def _separator(token: str) -> bool:
+    return bool(token) and all(character in _SHELL_SEPARATORS for character in token)
+
+
+def _overwrites_official_command(source: str) -> bool:
+    lexer = shlex.shlex(source, posix=True, punctuation_chars=_SHELL_SEPARATORS)
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    tokens = list(lexer)
+    at_command = True
+    alias = False
+    for index, token in enumerate(tokens):
+        if _separator(token):
+            at_command, alias = True, False
+            continue
+        if alias and token.partition("=")[0] in _OFFICIAL_NAMES and "=" in token:
+            return True
+        if not at_command or token in _COMMAND_BOUNDARIES:
+            continue
+        following = tokens[index + 1 : index + 3]
+        if token == "function" and following and following[0] in _OFFICIAL_NAMES:
+            return True
+        if token in _OFFICIAL_NAMES and (following[:1] == ["()"] or following == ["(", ")"]):
+            return True
+        at_command, alias = False, token == "alias"
+    return False
+
+
 def test_shell_startup_preserves_official_commands() -> None:
-    definition = re.compile(
-        rf"""^\s*(?:function\s+{_OFFICIAL}\b|{_OFFICIAL}\s*\(\s*\)|alias\s+['"]?{_OFFICIAL}=)""",
-        re.MULTILINE,
-    )
     for name in ("dot_bashrc", "dot_bash_profile"):
         path = _ROOT / ".chezmoi-source" / name
-        assert definition.search(path.read_text(encoding="utf-8")) is None, f"{path}: {_POLICY}"
+        assert not _overwrites_official_command(path.read_text(encoding="utf-8")), f"{path}: {_POLICY}"
+
+
+@pytest.mark.parametrize("command", ["claude", "codex"])
+@pytest.mark.parametrize(
+    "source",
+    [
+        "{command}() {{ :; }}",
+        "if true; then function {command} {{ :; }}; fi",
+        "if true; then alias {command}='echo wrapped'; fi",
+        "alias other='echo other' {command}='echo wrapped'",
+        "alias other='echo other' \\n    {command}='echo wrapped'",
+    ],
+)
+def test_shell_guard_detects_overwrites(command: str, source: str) -> None:
+    assert _overwrites_official_command(source.format(command=command))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "# alias claude='echo wrapped'",
+        "alias myclaude='claude' mycodex='codex'",
+        "claude --version; codex --version",
+        'printf "%s" "alias claude=wrapped"',
+    ],
+)
+def test_shell_guard_allows_references(source: str) -> None:
+    assert not _overwrites_official_command(source)
 
 
 def test_bin_preserves_official_commands() -> None:
