@@ -642,6 +642,18 @@ async def test_session_report_markdown_and_result_follow_the_view_mode(screen_ha
     await result.locator("summary").click()
     await expect(result.locator("pre")).to_be_visible()
     if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
+        await page.set_viewport_size({"width": 1280, "height": 900})
+        pricing = page.locator("#detail .detail-pricing")
+        await pricing.wait_for()
+        await pricing.evaluate(
+            """price => {
+                const main = price.closest('main');
+                const bar = main.querySelector('#session-reading');
+                main.scrollTop += price.getBoundingClientRect().top - bar.getBoundingClientRect().bottom;
+            }"""
+        )
+        await expect(pricing).to_be_in_viewport(ratio=1)
+        await page.mouse.move(0, 0)
         await page.screenshot(path=Path(directory) / "002-user-report.png")
     await page.get_by_label("会話だけ").check()
     await expect(report.locator("strong")).to_have_text("報告の本文")

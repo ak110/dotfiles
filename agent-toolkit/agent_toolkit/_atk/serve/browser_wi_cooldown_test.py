@@ -115,6 +115,7 @@ async def test_answered_badge_replaces_inbox_for_answered_uwi(browser_harness: _
     await row.click()
     detail = page.get_by_role("dialog", name="詳細")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("回答済み")
+    await detail.locator("#detail-more summary").click()
     await detail.locator("#delete-button").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
     await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text("回答済み")
@@ -201,7 +202,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await playwright.async_api.expect(warning).to_have_text(warning_text)
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認待ち")
     await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("確認待ち")
-    for filename, expected in [("verify.md", "needs-verify"), ("plain.md", "inbox"), ("question.md", "inbox")]:
+    for filename, expected in [("verify.md", "確認待ち"), ("plain.md", "受信"), ("question.md", "受信")]:
         row = page.locator(f'.entry-select[data-key="{filename}"]')
         await playwright.async_api.expect(row.locator(".state-badge")).to_have_text(expected)
         assert "再開待ち" not in (await row.get_attribute("aria-label") or "").split("、")
