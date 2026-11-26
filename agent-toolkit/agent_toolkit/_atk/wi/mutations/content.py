@@ -16,6 +16,7 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
+from agent_toolkit._atk.wi import origin_review
 from agent_toolkit._atk.wi import processing_owner as _processing_owner
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
@@ -248,6 +249,19 @@ def _require_agent_edit_source(original: str, content: str) -> None:
         )
 
 
+def _require_origin_review(previous: str, updated: str, *, draft: str | None, reviews: tuple[str, ...]) -> None:
+    metadata, body = _frontmatter.parse_frontmatter(updated) or ({}, updated)
+    if _constants.normalized_wi_type(metadata.get("type")) == WI_TYPE_AWI:
+        origin_review.require(
+            updated if draft is None else draft,
+            body=body,
+            entry_type=WI_TYPE_AWI,
+            reviews=reviews,
+            previous=previous,
+            updated=updated,
+        )
+
+
 def edit_entry_content(
     private_notes: pathlib.Path,
     *,
@@ -259,6 +273,8 @@ def edit_entry_content(
     expected_content: str | None = None,
     finalized_content: dict[str, str] | None = None,
     allow_terminal: bool = False,
+    origin_reviews: tuple[str, ...] = (),
+    draft: str | None = None,
 ) -> bool:
     editable_states = (
         (*WI_EDITABLE_STATES, _constants.WI_STATE_ADOPTED, _constants.WI_STATE_REJECTED)
@@ -267,6 +283,9 @@ def edit_entry_content(
     )
     if state not in editable_states:
         raise WebInputError("編集可能状態はinbox、processingまたはholdです", next_action=_EDITABLE_STATE_NEXT_ACTION)
+
+    def validate(previous: str, updated: str) -> None:
+        _require_origin_review(previous, updated, draft=draft, reviews=origin_reviews)
 
     directory = private_notes / state
     return _edit_entry(
@@ -278,6 +297,7 @@ def edit_entry_content(
         storage=storage,
         expected_content=expected_content,
         commit_message="chore: edit wi item",
+        content_validator=validate,
         content_transformer=invalidate_repo_bound_metadata,
         finalized_content=finalized_content,
     )
@@ -304,9 +324,14 @@ def append_entry_content(
     path = paths[0][0] if paths else directory / filename
 
     def validate(previous: str, updated: str) -> None:
-        del updated
         if _wi_entries.entry_type_of(path, previous) == WI_TYPE_UWI:
             raise WebInputError("UWIには追記できません", next_action="--appendを外して本文全体を置き換える")
+        try:
+            _require_origin_review(previous, updated, draft=None, reviews=())
+        except WebInputError as error:
+            raise WebInputError(
+                error.reason, next_action="--appendを外して検収済みの原稿を--body-fileで指定する。" + error.next_action
+            ) from error
 
     return _append_entry(
         private_notes,
@@ -712,7 +737,9 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         sys.exit(1)
+    reviews = tuple(getattr(args, "origin_review", None) or ())
     try:
+        _require_origin_review(original, edited, draft=message, reviews=reviews)
         _require_agent_edit_source(original, edited)
         invalidate_repo_bound_metadata(original, edited)
         if message is not None or tmp_path is not None:
@@ -783,6 +810,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             expected_content=original,
             finalized_content=finalized_content,
             allow_terminal=_uwi_scan.is_report(original),
+            origin_reviews=reviews,
+            draft=message,
         )
     except RuntimeError:
         if tmp_path is None:
@@ -884,6 +913,9 @@ def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: s
             expected_content=snapshot,
             finalized_content=finalized_content,
         )
+    except WebInputError as error:
+        _outcome.report_failure(f"追記を拒否した: {error.reason}", next_action=error.next_action)
+        sys.exit(1)
     except RuntimeError:
         _outcome.report_failure(
             f"追記中に他プロセスが対象を変更した: {path.name}。指定した本文は反映していない",

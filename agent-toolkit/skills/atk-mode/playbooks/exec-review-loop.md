@@ -68,7 +68,9 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 4. `読者別探索`の申告が返却契約の定める全ての申告対象と想定読者を覆い、各ファイルの値が返却契約の条件を満たすことを確かめ、満たさなければ同じ担当に探索と判定をやり直させる。
    Git管理下の対象は、`git diff --name-only --diff-filter=d <レビュー開始時点> <レビューHEAD> -- '*.md' '*.md.tmpl'`から`review_contract`で判定対象外としたcommitだけによる変更を除いて求める。
 5. 未解決の指摘が1件以上なら、本書「レビュー修正」へ進む。
-6. 未解決の指摘が0件なら、対象WI集合の本文を取得し、`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」で全ての判定行を検収する。
+6. 未解決の指摘が0件なら、対象WI集合の本文を取得する。
+   `agent-toolkit:atk-mode/references/review-record.md`「条件別判定行の形式」の原文要求と引用照合を先に検収し、合格しなければ受理せず、不足の補完か実装の修正に戻る。
+   続いて`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」で全ての判定行を検収する。
    `達成`行は所在と観測内容の組に加え、指定の記録とcommitの差分（`git show <レビューHEAD>:<パス>`）を実際に読んで確かめる。
    組を欠く`達成`行と、条件文の文末だけを変えた定型句の`達成`行は、件数とHEADが一致していても同じ担当へ差し戻す。
    `失効`の行とレーン担当による条件の除外は、本書「技術判断で外せる完成条件」の境界と、要求の取り下げか不採用の根拠との対応を本文で確かめ（`review_contract`の記述だけをユーザーの判断の代わりにしない）、足りなければ本書「エスカレーションの事由別の扱い」で差し戻す。

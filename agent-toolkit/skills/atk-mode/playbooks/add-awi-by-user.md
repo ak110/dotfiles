@@ -45,9 +45,10 @@
      基準が明確な大量走査は読み取り専用で分担できる。
    - 原稿確定・不採用・登録0件の前に`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順6を再点検する。
      選好を要する不採用は同書の手順7で確認し、未調査や根拠の薄い候補の撤回だけなら残る検討へ戻る。
-   - 起草者は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」と`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`「入力」に従い、原稿を原文と読み比べ、dry-runで冒頭の抽出を確かめる。
+   - 起草者は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」と`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`「入力」に従う。
+     原稿を原文と読み比べ、独立検収者の原要求の合格後にdry-runで冒頭の抽出を確かめる。
      保存する原稿は毎回同じ親契約で独立検収する。
-     会話原本と起動発話の位置を渡し、同時にそろった原稿は識別子と冒頭の所在を対応付ける。
+     会話原本と起動発話の位置を渡し、同時にそろった原稿は識別子と原稿の所在を対応付ける。
      指摘は本書「指摘の分類と処置」で扱う。
    - 独立検収後の保存とその結果の確認は、`agent-toolkit:atk-mode/playbooks/wi-saving.md`の「投入と取得」の導入と「投入」「保存結果の検収」「返す報告に含める項目」に従う。
 4. 投入を終える。

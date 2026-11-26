@@ -4,6 +4,7 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._testing.wi_add_support import _write_origin_review
 from agent_toolkit._testing.wi_mutations_content_support import _edit_body_args
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file
 
@@ -35,7 +36,8 @@ def _run(args: list[str], tmp_path: pathlib.Path) -> int | str | None:
 def test_move_removes_comment_quoted_in_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = _prepare(tmp_path, monkeypatch)
 
-    assert _run(_move_args(tmp_path, _MOVED_BODY), tmp_path) == 0
+    review = _write_origin_review(tmp_path, _MOVED_BODY, _COMMENT)
+    assert _run([*_move_args(tmp_path, _MOVED_BODY), "--origin-review", review], tmp_path) == 0
 
     text = path.read_text(encoding="utf-8")
     assert "## ユーザーコメント" not in text
@@ -109,7 +111,8 @@ def test_move_keeps_trailing_spaces_of_last_quoted_line(tmp_path: pathlib.Path, 
     path = _prepare(tmp_path, monkeypatch, comment="指摘の末行  ")
     body = _QUOTE_HEAD + "> 指摘の末行  \n"
 
-    assert _run(_move_args(tmp_path, body, read_comment="指摘の末行  "), tmp_path) == 0
+    review = _write_origin_review(tmp_path, body, "指摘の末行  ")
+    assert _run([*_move_args(tmp_path, body, read_comment="指摘の末行  "), "--origin-review", review], tmp_path) == 0
 
     assert path.read_text(encoding="utf-8").endswith("> 指摘の末行  \n")
 
@@ -152,7 +155,8 @@ def test_move_dry_run_validates_without_saving(tmp_path: pathlib.Path, monkeypat
     path = _prepare(tmp_path, monkeypatch)
     original = path.read_bytes()
 
-    assert _run([*_move_args(tmp_path, _MOVED_BODY), "--dry-run"], tmp_path) == 0
+    review = _write_origin_review(tmp_path, _MOVED_BODY, _COMMENT)
+    assert _run([*_move_args(tmp_path, _MOVED_BODY), "--origin-review", review, "--dry-run"], tmp_path) == 0
     assert path.read_bytes() == original
 
     assert _run([*_move_args(tmp_path, "整理後の本文"), "--dry-run"], tmp_path) == 1
@@ -179,6 +183,7 @@ def test_move_rejects_invalid_combinations(tmp_path: pathlib.Path, monkeypatch: 
 def test_edit_without_move_still_preserves_comment(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = _prepare(tmp_path, monkeypatch)
 
-    assert _run(_edit_body_args(tmp_path, "fb.md", _MOVED_BODY), tmp_path) == 0
+    review = _write_origin_review(tmp_path, _MOVED_BODY, _COMMENT)
+    assert _run([*_edit_body_args(tmp_path, "fb.md", _MOVED_BODY), "--origin-review", review], tmp_path) == 0
 
     assert path.read_text(encoding="utf-8").endswith(f"## ユーザーコメント\n\n{_COMMENT}\n")

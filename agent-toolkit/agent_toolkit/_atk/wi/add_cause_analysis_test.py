@@ -16,6 +16,7 @@ from agent_toolkit._testing.wi_add_support import (
     _patch_cmd_add_operations,
     _run_public_add,
     _with_cause,
+    _write_origin_review,
 )
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
@@ -377,6 +378,7 @@ def test_public_add_requires_recurrence_line_when_quote_mentions_repetition(
             )
         )
     else:
+        args.origin_review = [_write_origin_review(tmp_path, body, _REPEATED_QUOTE)]
         _run_public_add(args, notes, _FIXED_DT, tmp_path)
         assert "成功:" in capsys.readouterr().out
 
@@ -406,7 +408,9 @@ def test_public_add_accepts_steady_behavior_wording_without_recurrence_line(
     body = (
         f"# 確認画面に説明を足す\n\n説明\n\n## 反映内容と反映先\n対象\n\n## ユーザー指摘の逐語引用\n\n```text\n{quote}\n```\n"
     )
-    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
+    args.origin_review = [_write_origin_review(tmp_path, body, quote)]
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
     assert "成功:" in capsys.readouterr().out
 
 
@@ -451,5 +455,7 @@ def test_public_add_accepts_not_applicable_line_for_non_recurring_quote(
         "## 調査結果と判断根拠\n\n- 再発: 該当なし: 前に1回指摘しただけで、同じ問題の反復ではない。\n\n"
         "## ユーザー指摘の逐語引用\n\n```text\n前に文言を1回指摘しただけだけど、ここも直して。\n```\n"
     )
-    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
+    args.origin_review = [_write_origin_review(tmp_path, body, "前に文言を1回指摘しただけだけど、ここも直して。")]
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
     assert "成功:" in capsys.readouterr().out

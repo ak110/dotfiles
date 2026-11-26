@@ -2,6 +2,8 @@
 
 import argparse
 import contextlib
+import hashlib
+import json
 import pathlib
 import subprocess
 import tempfile
@@ -72,6 +74,8 @@ def _run_public_add(
         argv.extend(("--source", args.source))
     for dependency in args.depends_on:
         argv.extend(("--depends-on", dependency))
+    for review in getattr(args, "origin_review", ()):
+        argv.extend(("--origin-review", review))
     if args.dry_run:
         argv.append("--dry-run")
     try:
@@ -79,6 +83,27 @@ def _run_public_add(
     except SystemExit as error:
         if error.code != 0:
             raise
+
+
+def _write_origin_review(tmp_path: pathlib.Path, draft: str, quote: str) -> str:
+    """逐語がある原稿について別の検査を確かめる試験用の検収入力。範囲語のない原文に限る。 pyfltr: allow-comment"""
+    original = tmp_path / "origin.md"
+    original.write_text(quote, encoding="utf-8")
+    record = tmp_path / "origin-review.json"
+    record.write_text(
+        json.dumps(
+            {
+                "判定": "合格",
+                "根拠": "独立検収で了承した入力を再現する。",
+                "原稿SHA256": hashlib.sha256(draft.encode()).hexdigest(),
+                "原本": str(original),
+                "原本SHA256": hashlib.sha256(quote.encode()).hexdigest(),
+                "範囲対応": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return str(record)
 
 
 def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:

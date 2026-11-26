@@ -14,6 +14,7 @@ SCRIPT_PATHS = {
     "wait-ci": pathlib.Path("agent_toolkit/wait_ci.py"),
     "cost-metrics": pathlib.Path("skills/atk-mode/scripts/cost_metrics.py"),
     "improvement-intake": pathlib.Path("skills/atk-mode/scripts/improvement_intake.py"),
+    "check-exec-review-origin": pathlib.Path("skills/atk-mode/scripts/check_exec_review_origin.py"),
     "review-adoption": pathlib.Path("skills/atk-mode/scripts/review_adoption.py"),
     "review-second-round": pathlib.Path("skills/atk-mode/scripts/review_second_round.py"),
     "delegation-prompt": pathlib.Path("skills/atk-mode/scripts/delegation_prompt.py"),

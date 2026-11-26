@@ -7,6 +7,7 @@ from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
+from agent_toolkit._atk.wi import origin_review
 from agent_toolkit._atk.wi import priority as _priority
 from agent_toolkit._atk.wi import uwi_body as _uwi
 from agent_toolkit._atk.wi.constants import REPORT_TITLE_PREFIX, WI_TYPE_AWI, WI_TYPE_UWI
@@ -367,6 +368,7 @@ def _validate_add_entries(
     scope: str | None = None,
     source: str | None = None,
     cooldown_until: str | None = None,
+    origin_reviews: tuple[str, ...] = (),
 ) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください", next_action="本文を1件以上指定して再投入する")
@@ -397,7 +399,8 @@ def _validate_add_entries(
             ),
         )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
-    for frontmatter, body in parsed_messages:
+    for message, (frontmatter, body) in zip(messages, parsed_messages, strict=True):
+        origin_review.require(message, body=body, entry_type=entry_type, reviews=origin_reviews)
         for key in _RETIRED_ADD_KEYS:
             frontmatter.pop(key, None)
         if entry_type == WI_TYPE_UWI:

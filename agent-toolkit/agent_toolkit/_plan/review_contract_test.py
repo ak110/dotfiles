@@ -14,6 +14,10 @@ _TABLE = f"""
 | {_SECOND} | 1 | 補足条件 | 比較する。 | 完成条件 1 |
 | {_SECOND} | 2 | 主要完成状態 | 変更する。 | 反映内容1 |
 """
+_DESIGN_QUOTE = (
+    "atk serveの画面、さっき言ったラベルの話だけじゃなく、余白の統一感とか"
+    "その他もろもろデザインの基本が全然できてない気がする。もろもろ全体的にちゃんとやれるように改善して。"
+)
 _REQUIRED = {_FIRST: (1, 1), _SECOND: (1, 1)}
 _ORIGINALS = {
     _FIRST: "## 完成条件\n\n1. 先頭の文。\n   末尾も保つ。\n",
@@ -97,3 +101,36 @@ def test_preserve_the_start_number_of_a_markdown_ordered_list(second_marker: str
     review_contract.validate(table, required, originals=originals)
     with pytest.raises(ValueError, match="補足条件 4 が原本の全文と一致しない"):
         review_contract.validate(table.replace("第四の条件。", "省略。"), required, originals=originals)
+
+
+def test_original_request_cannot_be_replaced_by_the_completion_conditions() -> None:
+    originals = {
+        **_ORIGINALS,
+        _FIRST: _ORIGINALS[_FIRST] + f"\n## ユーザー指摘の逐語引用\n\n> {_DESIGN_QUOTE}\n",
+    }
+    with pytest.raises(ValueError, match="引用1"):
+        review_contract.validate(_TABLE, _REQUIRED, originals=originals)
+
+
+@pytest.mark.parametrize(
+    ("evidence", "valid"),
+    [
+        ("", False),
+        (f"{_FIRST} 引用照合1: 未達 — 根拠: 一覧以外の画面が小さく読みにくい", False),
+        (f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1・原文要求2", False),
+        (f"{_FIRST} 引用照合1: 達成 — 根拠: 原文要求1", True),
+        (f"{_FIRST} 引用照合1: 除外 — 根拠: 割当外 — 20261125-030100-002.md#反映内容と反映先", True),
+    ],
+)
+def test_quote_receipt_requires_live_original_requirement(evidence: str, valid: bool) -> None:
+    originals = {_FIRST: f"## ユーザー指摘の逐語引用\n\n> {_DESIGN_QUOTE}\n"}
+    result = (
+        f"{_FIRST} 完成条件1: 達成 — 根拠: 画面はすべて共通部品を使っている\n"
+        f"{_FIRST} 原文要求1「もろもろ全体的にちゃんとやれるように改善して。」: 達成 — 根拠: 実機で全画面が読めた\n"
+        f"{evidence}\n"
+    )
+    if valid:
+        review_contract.validate_origin_verdicts(result, originals)
+    else:
+        with pytest.raises(ValueError, match="引用照合1"):
+            review_contract.validate_origin_verdicts(result, originals)

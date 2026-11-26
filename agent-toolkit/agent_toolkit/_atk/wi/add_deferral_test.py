@@ -12,7 +12,12 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add_reports
-from agent_toolkit._testing.wi_add_support import _cmd_add_args, _patch_cmd_add_operations, _run_public_add
+from agent_toolkit._testing.wi_add_support import (
+    _cmd_add_args,
+    _patch_cmd_add_operations,
+    _run_public_add,
+    _write_origin_review,
+)
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 from agent_toolkit._testing.wi_mutations_content_support import _edit_body_args
@@ -121,7 +126,10 @@ def test_add_lists_candidates_without_changing_result(
     _patch_cmd_add_operations(monkeypatch)
     text = _draft()
 
-    _run_public_add(_cmd_add_args(tmp_path, text, source="test", dry_run=dry_run), notes, _FIXED_DT, tmp_path)
+    args = _cmd_add_args(tmp_path, text, source="test", dry_run=dry_run)
+    review = _write_origin_review(tmp_path, text, "計画で決めずに今比較して結論を出して")
+    args.origin_review = [review]
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
 
     output = capsys.readouterr()
     _assert_lists_all(output.out, text)
@@ -175,8 +183,10 @@ def test_edit_lists_candidates_without_changing_result(
     path = _write_awi_file(notes, "deferral.md", body=AGENT_AWI_BODY)
     text = _draft()
 
+    review = _write_origin_review(tmp_path, text, "計画で決めずに今比較して結論を出して")
+    args = [*_edit_body_args(tmp_path, path.name, text), "--origin-review", review]
     with pytest.raises(SystemExit) as finished:
-        atk.main([*_edit_body_args(tmp_path, path.name, text), *(["--dry-run"] if dry_run else [])], home=tmp_path)
+        atk.main([*args, *(["--dry-run"] if dry_run else [])], home=tmp_path)
 
     output = capsys.readouterr()
     assert finished.value.code == 0, output.err

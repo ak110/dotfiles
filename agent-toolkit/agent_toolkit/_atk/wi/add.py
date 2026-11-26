@@ -447,6 +447,7 @@ def add_entries(
     draft_namespace: str | None = None,
     resolve_draft_links: bool = True,
     detailed: bool = False,
+    origin_reviews: tuple[str, ...] = (),
 ) -> list[str]:
     """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。  pyfltr: allow-comment
 
@@ -477,6 +478,7 @@ def add_entries(
         target_commit=target_commit,
         source=source,
         cooldown_until=cooldown_until,
+        origin_reviews=origin_reviews,
     )
     item_branches, target_commit_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
     if draft_basis is not None:
@@ -845,6 +847,7 @@ def cmd_add(
                 target_commit=target_commit,
                 source=args.source,
                 cooldown_until=getattr(args, "cooldown_until", None),
+                origin_reviews=tuple(getattr(args, "origin_review", None) or ()),
             )
             item_branches, resolved_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
             if draft_basis is not None:
@@ -901,6 +904,7 @@ def cmd_add(
             draft_basis=draft_basis,
             draft_namespace=namespace,
             detailed=bool(getattr(args, "detailed", False)),
+            origin_reviews=tuple(getattr(args, "origin_review", None) or ()),
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)

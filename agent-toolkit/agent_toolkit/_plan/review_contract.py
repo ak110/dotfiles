@@ -144,6 +144,10 @@ def validate(
         if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
             errors.append(f"{name}: 条件番号が不正または重複")
         original = (originals or {}).get(name, "")
+        for index, _ in enumerate(quoted_passages(original), 1):
+            reference = f"引用{index}"
+            if sum(row[2] == "原文照合" and bool(row[3]) and row[4] == reference for row in own) != 1:
+                errors.append(f"{name}: {reference} に対応する原文照合行が無いか重複している")
         numbered = _numbered_conditions(original)
         excluded = excluded_reflections(original)
         for row in own:
@@ -185,5 +189,52 @@ def validate(
                 f"{name}: 出典に対応する行が無い項目: {'、'.join(uncovered)}。"
                 "各項目の主要完成状態または除外理由を記した行を追加し、出典へ`反映内容N`を記す"
             )
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
+def quoted_passages(original: str) -> list[str]:
+    """逐語節は段落・引用・コードフェンスを同じ番号体系に載せる。 pyfltr: allow-comment"""
+    lines = last_h2_section_lines(original, "ユーザー指摘の逐語引用") or []
+    return [
+        "\n".join(lines[token.map[0] : token.map[1]])
+        for token in MarkdownIt().parse("\n".join(lines))
+        if token.level == 0 and token.map is not None
+    ]
+
+
+def validate_origin_verdicts(result: str, originals: Mapping[str, str]) -> None:
+    rows: dict[tuple[str, int], list[tuple[str, str]]] = {}
+    requirements: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for line in result.splitlines():
+        if match := re.fullmatch(r"(\S+) 引用照合([1-9][0-9]*): (達成|未達|根拠不足|除外) — 根拠: (\S.*)", line):
+            name, index, verdict, evidence = match.groups()
+            rows.setdefault((name, int(index)), []).append((verdict, evidence))
+        if match := re.fullmatch(r"(\S+) 原文要求([1-9][0-9]*)「(.+)」: (達成|未達|根拠不足) — 根拠: \S.*", line):
+            name, index, quote, verdict = match.groups()
+            requirements.setdefault((name, index), []).append((quote, verdict))
+    errors = []
+    for name, original in originals.items():
+        for index, passage in enumerate(quoted_passages(original), 1):
+            matching = rows.get((name, index), [])
+            label = f"{name} 引用照合{index}"
+            if len(matching) != 1:
+                errors.append(f"{label}: 判定が無いか重複している")
+                continue
+            verdict, evidence = matching[0]
+            if verdict == "除外":
+                if re.fullmatch(r"(失効|割当外|投入元で完了|回答済み|背景|重複) — \S.*", evidence) is None:
+                    errors.append(f"{label}: 除外した分類と根拠が無い")
+            elif verdict != "達成":
+                errors.append(f"{label}: {verdict}")
+            else:
+                numbers = re.findall(r"原文要求([1-9][0-9]*)", evidence)
+                joined = " ".join(re.sub(r"(?m)^ {0,3}> ?", "", passage).split())
+                for number in numbers:
+                    candidates = requirements.get((name, number), [])
+                    if len(candidates) != 1 or candidates[0][1] != "達成" or candidates[0][0] not in joined:
+                        errors.append(f"{label}: 原文要求{number}の逐語・達成判定を照合できない")
+                if not numbers:
+                    errors.append(f"{label}: 達成した原文要求行の参照が無い")
     if errors:
         raise ValueError("\n".join(errors))

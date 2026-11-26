@@ -29,6 +29,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         ),
     )
     add.add_argument("--source-contract", metavar="PATH", help="原本のURLを記した作業契約の絶対パス。")
+    add.add_argument("--origin-review", metavar="PATH", action="append", help="原要求の独立検収結果JSONの絶対パス。")
     placement = add.add_mutually_exclusive_group()
     placement.add_argument(
         "--batch",
@@ -349,6 +350,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     effect.add_argument("--corrective-awi", help="効果不足の是正先AWIの保存済みファイル名")
     effect.add_argument("--reason", help="判定の理由（pending・not_requiredでは必須）")
     edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk wi edit"])
+    edit.add_argument("--origin-review", metavar="PATH", action="append", help="原要求の独立検収結果JSONの絶対パス。")
     edit.add_argument(
         "filename",
         metavar="FILENAME",
