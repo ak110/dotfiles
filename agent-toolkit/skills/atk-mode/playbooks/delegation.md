@@ -182,6 +182,12 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
 7. 引数、省略時の値、応答の項目を、起動の直前にMCPツールのスキーマで確かめ、`start`を1回発行する。
    返った`session_id`と`handoff_record_path`を保持し、待機と回収は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`へ進む。
 
+起動手段にかかわらず、適用する暫定規範を`agent-toolkit:atk-mode/references/delegation-prompt.md`「入力の適格性と追送」に従って届ける。
+通常起動は既存の全体作業契約と更新時の再読通知を使う。
+軽量起動（同じmodeの役割を含む）やホスト組み込みなど、全体作業契約が自動で届かない委譲は、該当する項目だけを起動依頼に入れる。
+役割の起動では既存の依頼用入力に添え、未宣言の入力名を追加しない。
+稼働中の担当に関係する追加・更新・解除は、既存の再読通知か、原本と変わった項目が分かる追送で届ける。
+
 ### `<役割名>.parent.md`を持つ委譲の起動
 
 呼び出し元の起動契約（共有の`<役割名>.parent.md`か、呼び出し元の手順書へ統合された契約）で手順が決まった委譲は、次の手順で起動する。
@@ -207,6 +213,7 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
    依頼文は`agent-toolkit:atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」で組む。
 3. 各modeの入力は、公開の`start`の説明とスキーマで確かめ、`cwd`へ作業ディレクトリの絶対パスを渡す。
    `explore`と`write`は`prompt`を、`shell`は`command`と`summary_policy`を使い、スキルの手順を要する作業は`task`か`delegate`へ回す。
+   shellの要約に関わる暫定規範は`summary_policy`に入れ、実行に関わる条件は適合するコマンドを渡した上で同じ欄に明示する。
    工程が `write` になる起動は、ユーザーが指定した場合だけ `model_override=user_instruction` と `model_override_evidence` に実際の指示の根拠を渡す。
 4. `explore`は読み取り専用とし、後続の入力には`atk agents wait`が保存した`agent_message_path`を直接指定する。
 5. `shell`と`write`の書き込み先を、生成物も含めて他の担当と重ならない範囲に限り、同じ担当の交代は先行の終了後に行う。

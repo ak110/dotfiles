@@ -463,7 +463,7 @@ def delegated_notice(session_id: str, *, agent: str = "main") -> tuple[str, str]
         return None
     text = f"全体作業契約が起動後に更新された。原本: `{path}`。"
     notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, current)
-    return text, "原本を全文読み、現行要求と「即時対応で確定した暫定規則」を確かめて続行へ適用してください。"
+    return text, "原本を全文読み、現行要求と「暫定規範」を確かめて続行へ適用してください。"
 
 
 def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:

@@ -139,8 +139,10 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
 
 UTTERANCE_UNDERSTANDING_NOTICE_BODY = (
     "調査より先に、`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」を伝える。"
-    "送達指定のあるメインでは、作業前の最初の`send_to_user`の`message`に置く。"
-    "送達指定がない場合は応答の冒頭に置き、送達に失敗した場合は通常本文で伝えられる。"
+    "問い・提案・指示を分け、調査が要る問い・提案には理解・調べる内容・見込みを一次回答し、調査後に正式回答する。"
+    "即答できる問いは一度で答える。"
+    "`Claude Code`で使える時は作業前の最初の`send_to_user`の`message`、Codexでは`commentary`に置く。"
+    "途中送達を使えない場合や送達に失敗した場合は通常本文の冒頭に置く。"
 )
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"

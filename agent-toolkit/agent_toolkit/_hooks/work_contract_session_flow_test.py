@@ -141,11 +141,12 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     extra = {"turn_id": "turn"} if codex else {}
     operation = {"session_id": sid, "tool_name": "Judge", "tool_input": {}, **extra}
     assert "全体作業契約が起動後に更新された" not in run_hook("pretooluse", operation).stdout
-    path.write_text("# 目的\n継続する\n## 即時対応で確定した暫定規則\n契約専用の新規則\n", encoding="utf-8")
+    path.write_text("# 目的\n継続する\n## 守る制約\n### 暫定規範\n契約専用の新規則\n", encoding="utf-8")
     updated = run_hook("pretooluse", operation)
     assert updated.returncode == 0
     assert "全体作業契約が起動後に更新された" in updated.stdout
     assert str(path) in updated.stdout and "契約専用の新規則" not in updated.stdout
+    assert "「暫定規範」" in updated.stdout
     assert 'permissionDecision": "deny' not in updated.stdout
     assert "全体作業契約が起動後に更新された" not in run_hook("pretooluse", operation).stdout
     compact = run_hook("rules_context", {"session_id": sid, "hook_event_name": "SessionStart", "source": "compact", **extra})
@@ -157,7 +158,7 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     assert f"全体作業契約`{path}`" in compact.stdout and f"自身の引き継ぎ記録`{handoff}`" in compact.stdout
     assert "引き継ぎの本文" not in compact.stdout
     assert "契約専用の新規則" not in compact.stdout
-    path.write_text("# 目的\n## 即時対応で確定した暫定規則\n次の訂正を適用する\n", encoding="utf-8")
+    path.write_text("# 目的\n## 守る制約\n### 暫定規範\n次の訂正を適用する\n", encoding="utf-8")
     reupdated = run_hook("pretooluse", operation)
     assert reupdated.returncode == 0
     assert "全体作業契約が起動後に更新された" in reupdated.stdout

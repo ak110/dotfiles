@@ -581,7 +581,11 @@ class TestNonMatchingPrompts:
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
 def test_feedback_rule_is_delivered_once_per_context(tmp_path: pathlib.Path, host_fields: dict) -> None:
     for index, prompt in enumerate(
-        ("作業を続けて", "手戻り多すぎない？品質が悪いのでは？", "なんでこれ自分で気付けなかったの？")
+        (
+            "現行契約の規範はどこに書いてある？ AWIへ移した項目は全部消したら？ 別件の検証は続けて。",
+            "手戻り多すぎない？品質が悪いのでは？",
+            "なんでこれ自分で気付けなかったの？",
+        )
     ):
         result = _run({"session_id": "feedback", "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
@@ -592,8 +596,8 @@ def test_feedback_rule_is_delivered_once_per_context(tmp_path: pathlib.Path, hos
         assert "場合だけ" not in context
         assert "調査より先に" in context
         assert "最初の`send_to_user`の`message`" in context
-        assert "送達指定がない場合は応答の冒頭" in context
-        assert "送達に失敗した場合は通常本文" in context
+        assert "Codexでは`commentary`" in context
+        assert "一次回答" in context and "正式回答" in context
         assert "`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」" in context
         assert prompt not in context
 
