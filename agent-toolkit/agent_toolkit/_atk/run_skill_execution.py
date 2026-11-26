@@ -190,7 +190,9 @@ def run_locked(
             startup_input = startup_input.model_copy(
                 update={"batch_analysis": str(session_review.batch_analysis_path(pathlib.Path(manifest)))}
             )
-        env[mcp_environment.SESSION_START_INPUT_ENV] = startup_input.model_dump_json(exclude_unset=True)
+        env[mcp_environment.SESSION_START_INPUT_ENV] = startup_input.model_dump_json(
+            exclude_unset=True, exclude=None if manifest else {"batch_analysis"}
+        )
     session_id: str | None = record.session_id if record is not None else None
     if orchestrator == "claude":
         if getattr(args, "batch_manifest", None):
