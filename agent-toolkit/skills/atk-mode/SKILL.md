@@ -76,7 +76,7 @@ Codexは`playbooks/host-codex.md`「読む節」。
 
 ## 作業と手順書
 
-`/atk-mode <作業> [入力]`で起動、省略は対話。
+案内`playbooks/usage-guidance.md`
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
