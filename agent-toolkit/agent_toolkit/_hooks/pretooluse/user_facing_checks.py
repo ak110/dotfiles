@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import pathlib
@@ -23,9 +24,11 @@ from agent_toolkit._hooks.pretooluse.notices import _block_notice
 from agent_toolkit._hooks.pretooluse.warning_context import format_warning_context
 lazy from agent_toolkit._atk.wi import cli, entries
 lazy from agent_toolkit._common import private_notes
+lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.markdown_headings import without_literal_blocks
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
 lazy from agent_toolkit._plan.owner_records import resolve_conversation_session_id
 
@@ -278,13 +281,63 @@ def record_policy_question(payload: dict, session_id: str, tool_name: str, tool_
     if match is None:
         return
     key = tool_input["questions"][0].get("id") if tool_name == "request_user_input" else question["question"]
+    modifier = match["modifier"]
+    transcript = payload.get("transcript_path") if is_codex_payload(payload) else None
 
     def update(state: dict) -> dict:
         data = _policy_data(state, session_id, create=True)
-        data.setdefault("questions", {}).setdefault(call_id, [tool_name, match["modifier"], key, time.time_ns(), False])
+        waits = data.get("waits", {})
+        if isinstance(transcript, str) and transcript and modifier in waits and waits[modifier] is None:
+            delivered = _codex_policy_delivery(transcript, modifier, data.get("corrected", {}).get(modifier, 0))
+            if delivered is not None:
+                waits[modifier] = delivered
+        data.setdefault("questions", {}).setdefault(call_id, [tool_name, modifier, key, time.time_ns(), False])
         return state
 
     update_state(session_id, update)
+
+
+def _policy_modifier(message: str) -> str | None:
+    first = message.split("\n", 1)[0]
+    return first.removeprefix("方針（案）").strip() if first.startswith("方針（案）") else None
+
+
+def _codex_policy_delivery(transcript: str, modifier: str, corrected: int) -> int | None:
+    """Codexの記録から、修正回答の後にアシスタント本文で届けた改訂版の時刻（ns）を返す。  pyfltr: allow-comment
+
+    Codexではsend_to_userが送達できず、正規の伝達手段は本文（最終応答を含む）である。
+    記録の読み方は`norm_excuse_gate._codex_turn_texts`と同じく`response_item`の`output_text`を使う。
+    記録の時刻はミリ秒精度のため、修正回答の時刻もミリ秒へ切り捨てて比べる。
+    """
+    lines = _transcript.read_transcript_lines(transcript)
+    delivered: int | None = None
+    for line in lines or ():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        item = entry.get("payload") if isinstance(entry, dict) else None
+        if (
+            entry.get("type") != "response_item"
+            or not isinstance(item, dict)
+            or item.get("type") != "message"
+            or item.get("role") != "assistant"
+            or not isinstance(blocks := item.get("content"), list)
+            or not isinstance(stamp := entry.get("timestamp"), str)
+        ):
+            continue
+        text = "".join(
+            block["text"]
+            for block in blocks
+            if isinstance(block, dict) and block.get("type") == "output_text" and isinstance(block.get("text"), str)
+        )
+        try:
+            moment = int(datetime.datetime.fromisoformat(stamp).timestamp() * 1000) * 1_000_000
+        except ValueError:
+            continue
+        if _policy_modifier(text) == modifier and moment >= corrected // 1_000_000 * 1_000_000:
+            delivered = moment
+    return delivered
 
 
 def _result_object(response: object) -> dict:
@@ -310,10 +363,13 @@ def _apply_policy_answer(data: dict, call_id: str, question: list, answer: str) 
     _, modifier, _, asked, _ = question
     del data["questions"][call_id]
     waits = data.setdefault("waits", {})
+    corrected = data.setdefault("corrected", {})
     if answer != _APPROVED:
         waits[modifier] = None
+        corrected[modifier] = time.time_ns()
     elif modifier in waits and waits[modifier] is not None and waits[modifier] < asked:
         del waits[modifier]
+        corrected.pop(modifier, None)
 
 
 def observe_policy_result(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> None:
@@ -329,10 +385,9 @@ def observe_policy_result(payload: dict, session_id: str, tool_name: str, tool_i
             message = tool_input.get("message")
             if response.get("ok") is not True or not isinstance(message, str):
                 return None
-            first = message.split("\n", 1)[0]
-            if not first.startswith("方針（案）"):
+            modifier = _policy_modifier(message)
+            if modifier is None:
                 return None
-            modifier = first.removeprefix("方針（案）").strip()
             waits = data.get("waits", {})
             if modifier not in waits:
                 return None
@@ -449,10 +504,19 @@ def policy_reapproval_block(payload: dict, tool_name: str, tool_input: dict, ses
             return _block_notice(
                 "方針の修正回答に対する再承認を待っているため、確定操作を止めました。",
                 fix=(
-                    f"同じ会話のsend_to_userで改訂版を送ってください。再送する方針の1行目は{headings}です。"
-                    "修飾なしの形は「方針（案）」、修飾ありの例は「方針（案） 2件目の」です。"
-                    "件名、補足、本文は2行目以降に書き、送達の後で同じ修飾の方針の承認を問い直してください。"
-                    "送達できない場合は同じ会話でagents_serverの接続を回復してください（Claude Codeでは /mcp）。"
+                    (
+                        f"改訂版を応答の本文に書いてください。send_to_userは使わないでください。1行目は{headings}です。"
+                        if is_codex_payload(payload)
+                        else f"同じ会話のsend_to_userで改訂版を送ってください。再送する方針の1行目は{headings}です。"
+                    )
+                    + "修飾なしの形は「方針（案）」、修飾ありの例は「方針（案） 2件目の」です。"
+                    + "件名、補足、本文は2行目以降に書き、"
+                    + (
+                        "本文を書いた後で同じ修飾の方針の承認を問い直してください。"
+                        if is_codex_payload(payload)
+                        else "送達の後で同じ修飾の方針の承認を問い直してください。"
+                        "送達できない場合は同じ会話で /mcp を実行してagents_serverへ再接続してください。"
+                    )
                     if main
                     else "委譲元が再送と再承認を行うまで確定できません。結果を委譲元へ返して待ってください。"
                 ),

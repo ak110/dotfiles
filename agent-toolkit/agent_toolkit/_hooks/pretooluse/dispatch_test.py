@@ -813,7 +813,12 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     answer(ask("revision", "2件目の"), revise)
     modified_reason = blocked(commands[0])
     assert modified_reason and "1行目は「方針（案） 2件目の」です" in modified_reason
-    assert "件名、補足、本文は2行目以降" in modified_reason and "同じ会話でagents_serverの接続を回復" in modified_reason
+    assert "件名、補足、本文は2行目以降" in modified_reason
+    if host:
+        assert "応答の本文に書いて" in modified_reason and "/mcp" not in modified_reason
+        assert "send_to_userは使わない" in modified_reason
+    else:
+        assert "/mcp" in modified_reason
     outputs.append(f"修飾ありの最終案内 {tool}: {modified_reason}")
     for shell in ("Bash", "exec_command", "functions.exec_command"):
         for command in commands:
