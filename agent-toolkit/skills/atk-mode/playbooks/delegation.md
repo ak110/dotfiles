@@ -162,7 +162,7 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
 1. 対象、読み取り・書き込みの権限、完了の条件、返却で受け取る観測値を確定する。
    委譲する方針に未回答の確認か未反映の指摘が残っていれば、先に解く。
 2. 自由本文の`delegate`を起動する前に、セッションのmanaged-temp直下に現行の`work-contract.md`が無ければ、`agent-toolkit:atk-mode/references/work-contract.md`「作成と所有」で先に作る。
-   委譲先も当初の目的と現行の要求を見失わないためである。
+   委譲先も作業が長引いた時や圧縮の後に目的を見失わないためである。
    その絶対パスを`start`の`whole_contract_path`へ渡す。
    役割の`task`では、起動契約の入力の区間（`<!-- input-contract:... -->`）が案内する準備に従う。
    軽量起動にはこの準備は不要である。

@@ -210,7 +210,7 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 
 def _compact_recovery_context() -> str:
     return _llm_notice(
-        "会話が圧縮された。圧縮後に読むのは、当初の目的と現行の要求を戻すための作業契約と会話の要約だけである。"
+        "会話が圧縮された。圧縮後に読むのは、作業の目的を見返すための作業契約と会話の要約だけである。"
         "ほかの資料は、次に行う操作・判断の条件に該当した時に読んでください。"
     )
 
