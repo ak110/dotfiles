@@ -299,3 +299,16 @@ def test_one_response_does_not_resolve_a_second_warning(tmp_path):
 @pytest.mark.parametrize("response", ["hook通知への対応:", "hook通知への対応: 処置済み"])
 def test_marker_by_itself_does_not_resolve_warning(tmp_path, response):
     assert _evaluate([_HUMAN, _attachment(_WARN), _text(response)], tmp_path)[0] == "block"
+
+
+@pytest.mark.parametrize(("received", "reviewed"), [(False, False), (True, False), (False, True), (True, True)])
+def test_review_warning_needs_reads_and_a_new_decision(tmp_path, monkeypatch, received, reviewed):
+    title = "レビュー返却が指定した資料の取得を確認できないまま、採否を記録する操作である。"
+    body = _WARN.replace("セッション原記録の直接参照である。", title)
+    identifier = hashlib.sha256(body.encode()).hexdigest()[:12]
+    response = f"hook通知への対応: pretooluse: [{identifier}] {title} → 対象全件を検証する判断に変更した。"
+    monkeypatch.setattr(gate.review_receipt, "has_current_reads", lambda *_: received)
+    entries = [_HUMAN, _attachment(body), *([_text(response)] if reviewed else [])]
+    decision, _ = _evaluate(entries, tmp_path)
+    assert (decision == "approve") is (received and reviewed)
+    assert _evaluate(entries, tmp_path)[0] == decision

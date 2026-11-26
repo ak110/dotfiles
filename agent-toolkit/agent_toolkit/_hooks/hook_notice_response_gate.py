@@ -8,7 +8,8 @@ hookの添付（`hook_additional_context`・`hook_system_message`）だけから
 警告ごとに、既存操作が示す処置の証拠、有効な誤検出申告、または同じ警告を指す対応の説明を探す。
 処置を機械で観測できない警告について、対応の説明の内容までは検査しない。
 ユーザーへ届く次の操作（`send_to_user`と`AskUserQuestion`）はPreToolUseから`send_block`で、ターンの終わりはStopで止める。
-止めるのは警告の組ごとに、両方の経路を通じて1回とする（再発行で通す）。
+処置の成否を機械で判定できる警告は、再発行だけでは通さない。
+ほかの警告は、両方の経路を通じて同じ組を1回だけ止める。
 組は警告の添付の記録の識別子で区別し、別の発話の後に同じ文面で届いた警告は新しい組として扱う。
 
 通知を遮断にする根拠: hook通知の処置と対応行は規範で定めていたが
@@ -119,7 +120,7 @@ def _scan(turn: list[dict], resolved: set[tuple[str, str]], current: str, *, rev
     return {
         name: identity
         for name, (position, identity) in warnings.items()
-        if (not review_read if _REVIEW_WARNING in name else responses.get(name, -1) <= position)
+        if responses.get(name, -1) <= position or (_REVIEW_WARNING in name and not review_read)
     }
 
 
@@ -150,6 +151,8 @@ def _unanswered(
     )
     if not warnings:
         return None
+    if any(_REVIEW_WARNING in name for name in warnings):
+        return list(warnings)
     signature = hashlib.sha256(json.dumps(warnings, ensure_ascii=False).encode("utf-8")).hexdigest()
 
     def claim(state: dict) -> dict | None:
@@ -175,7 +178,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         fix=(
             "警告が求める操作を行ってください。"
             f"確認を補う場合は警告ごとに`{RESPONSE_PREFIX} <警告の表示名> → <結果か誤検出の根拠>`を書いてください"
-            "（`send_to_user`を使う会話ではその本文に含める）。同じ警告の組で再び止めることはしない。"
+            "（`send_to_user`を使う会話ではその本文に含める）。資料の取得を確認できる警告は、再発行だけでは通らない。"
         ),
     )
 
@@ -204,6 +207,6 @@ def send_block(
         fix=(
             "警告が求める操作を行ってください。"
             f"確認を補う書式は`{RESPONSE_PREFIX} <警告の表示名> → <結果か誤検出の根拠>`です。"
-            f"{where}。同じ警告の組で再び止めることはしない。"
+            f"{where}。資料の取得を確認できる警告は、再発行だけでは通らない。"
         ),
     )
