@@ -4,7 +4,8 @@
 未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動を求める。
 送達前の対象は、報告の見出しや再発防止の行を含む送信とkind: completionの送信に限る。
 対策・回帰防止・類似見直し・種類付きの再発防止を求める。
-類似見直しは未着手を明記した行を拒否し、結果や理由の妥当性は報告の検収で確かめる。
+類似見直しは未完了の状態値だけの行と、予定の欄だけを書いた行を拒否する。
+自然文の結果や理由の妥当性は報告の検収で確かめる。
 Stopでは報告の形によらず、同じ発話に対する4項目の記録を最終応答か送達済みの報告に求める。
 同じ発話に対する4項目の報告を送達済みなら、報告の構造を含まない最終応答に再掲を求めない。
 起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
@@ -53,11 +54,7 @@ _RECORD_LINE_RE = re.compile(
     r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<label>対策|回帰防止|類似見直し)[ \t]*[:：](?P<body>[^\n]*)$",
     re.MULTILINE,
 )
-_PENDING_SIMILAR_RE = re.compile(
-    r"(?:(?:(?P<scope>[^、。；;\n]+)(?:は|が))?未確認|(?:検索|確認)?予定)"
-    r"(?:[。．.]?|[ \t]*[：:].*|[ \t]*(?:（[^）]*）|\([^)]*\))[。．.]?)"
-)
-_SIMILAR_RESULT_RE = re.compile(r"該当[ \t]*[0-9０-９]+[ \t]*件")
+_PENDING_SIMILAR_STATUS = frozenset({"未確認", "予定", "検索予定", "確認予定"})
 
 _REPORT_STRUCTURE_RE = re.compile(r"^[ \t]*#{1,6}[ \t]+[^\n]*報告[ \t:：#]*$|AWI化ステータス[ \t]*[:：]", re.MULTILINE)
 
@@ -404,17 +401,15 @@ def _record_matches(message: object) -> list[re.Match[str]]:
     return list(_RECORD_LINE_RE.finditer(unquoted))
 
 
-def _is_pending_similar_review(body: str) -> bool:
-    pending = _PENDING_SIMILAR_RE.fullmatch(body)
-    return pending is not None and _SIMILAR_RESULT_RE.search(pending["scope"] or "") is None
-
-
 def _missing_record_labels(message: object) -> list[str]:
     present = {
         label
         for match in _record_matches(message)
         if (body := match["body"].strip())
-        and not ((label := match["label"]) == "類似見直し" and _is_pending_similar_review(body))
+        and not (
+            (label := match["label"]) == "類似見直し"
+            and (body.rstrip("。．.") in _PENDING_SIMILAR_STATUS or body.startswith(("予定:", "予定：")))
+        )
     }
     return [label for label in _RECORD_LABELS if label not in present]
 

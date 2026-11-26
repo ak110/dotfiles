@@ -167,18 +167,21 @@ def test_bugfix_record_checks_actions_independently(tmp_path, monkeypatch, repor
 @pytest.mark.parametrize(
     ("body", "blocked"),
     [
-        ("他のMRへの同種の積み増しは未確認", True),
-        ("未確認（これから検索する）", True),
-        ("未確認 (これから検索する)。", True),
+        ("他のMRへの同種の積み増しは未確認", False),
+        ("未確認（これから検索する）", False),
+        ("未確認 (これから検索する)。", False),
         ("検索予定", True),
-        ("未確認（該当0件かを調べる）", True),
+        ("未確認。", True),
+        ("該当0件かは未確認", False),
+        ("現行版を git grep -F で確認して一致0件／対象外は未確認", False),
+        ("未確認（該当0件かを調べる）", False),
         ("対象内を git grep -F で調べて該当0件／対象外は未確認", False),
         ("検索して該当１件を直したが対象外は未確認", False),
         ("関連ファイルを検索して該当0件。別リポジトリは未確認。", False),
         ("作業ツリーを検索して該当1件を直した、対象外の別版は未確認。", False),
     ],
 )
-def test_similar_review_pending_status_is_not_a_result(tmp_path, monkeypatch, body, blocked):
+def test_similar_review_checks_status_not_natural_language(tmp_path, monkeypatch, body, blocked):
     entries = [_human("直っていない。"), *_classified(), _BUGFIX]
     report = _TYPED_REPORT.replace(_RECORD_LEAD.splitlines()[2], f"類似見直し: {body}")
     payload = _payload(entries, tmp_path)
