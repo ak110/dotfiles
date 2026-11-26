@@ -479,7 +479,8 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     if len(body) > budget:
         return (
             f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめてください。"
-            "発話の転記、時刻、経緯、完了した要求が残っていれば、現在の目的・要件だけに書き直してください。"
+            "発話の転記、時刻、経緯、完了した要求、保存済みのAWIへ移した要求が残っていれば、"
+            "`agent-toolkit:atk-mode/references/work-contract.md`「更新する時点」に従って現在の目的・要件だけに書き直してください。"
             f"{RETURN_CRITERION}"
         )
     return f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"
