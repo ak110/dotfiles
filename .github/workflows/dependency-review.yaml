@@ -2,6 +2,7 @@ name: Dependency Review
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     branches:
       - master
 
@@ -15,28 +16,19 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: 依存差分の脆弱性を検査
+        id: review
         uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
+          fail-on-scopes: runtime, development, unknown
           license-check: false
           show-openssf-scorecard: false
 
       - name: 依存グラフのスナップショット警告を検査
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # 固定版は判定に使った全ページの警告を comment-content の見出しへ出す。
+        # 比較を再照会すると、判定に使った応答の警告が消えている場合がある。
+        if: >-
+          ${{ steps.review.outputs.comment-content == '' ||
+              contains(steps.review.outputs.comment-content, '<h2>Snapshot Warnings</h2>') }}
         run: |
-          set -euo pipefail
-          response=$(gh api --include "repos/${REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}")
-          # 正常な応答にも空の警告ヘッダーが付く。本文は判定しない。
-          if ! awk '
-            { sub(/\r$/, "") }
-            /^$/ { exit }
-            tolower($0) ~ /^x-github-dependency-graph-snapshot-warnings:[[:space:]]*[^[:space:]]/ {
-              exit 1
-            }
-          ' <<< "$response"; then
-            echo "::error::依存グラフの比較にスナップショット警告があります。依存グラフの更新後に再実行してください。"
-            exit 1
-          fi
+          echo "::error::依存グラフの比較にスナップショット警告があるか、比較の要約を取得できません。"
+          exit 1

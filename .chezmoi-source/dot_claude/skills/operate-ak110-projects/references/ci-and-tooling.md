@@ -59,10 +59,12 @@ CI workflowを編集する時は、次を確かめる。
 ## PRの依存差分チェック
 
 dotfilesでは、master宛ての全PRで`GitHub Dependency Review`を実行する。
-パスで限定せず、依存変更のないPRも成功の結果を返す。
-ライセンスチェックとOpenSSF Scorecardの表示は無効にし、既知の脆弱性を検出する。
+パスで限定せず、ベースブランチをmasterへ変更した場合にも実行する。
+依存変更のないPRも成功の結果を返す。
+ライセンスチェックとOpenSSF Scorecardの表示は無効にし、全スコープ（runtime・development・unknown）の既知の脆弱性を検出する。
 比較APIのエラーは成功扱いにしない。
 比較が成功しても `x-github-dependency-graph-snapshot-warnings` の値に警告があれば同じジョブを失敗させる。
+固定したActionが比較に使った応答の警告を要約から確認し、要約を取得できない場合も失敗させる。
 ヘッダーが無いか値が空なら、警告のチェックは成功とする。
 
 依存グラフが認識する `uv.lock`、`rust/claude-statusline/Cargo.lock`、workflowのaction、miseのロック配下の `package.json` は各定義の変更が比較結果に現れることを検証用PRで確かめる。
