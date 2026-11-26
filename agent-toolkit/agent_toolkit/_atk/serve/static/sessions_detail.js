@@ -129,7 +129,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     }
     const preview = event.kind === "tool_call" ? toolInputSummary(event) :
       !block.open && !nested && (event.kind === "tool_result" || event.kind === "injected") ?
-        (event.text?.trim().split(/\r?\n/, 1)[0] || (event.detail || event.html ? "本文あり" : "本文なし")) : "";
+        (event.text?.trimStart().startsWith("<atk-auto") ? "自動で追加された情報" :
+          event.text?.trim().split(/\r?\n/, 1)[0] || (event.detail || event.html ? "本文あり" : "本文なし")) : "";
     if (preview) {
       const excerpt = document.createElement("span");
       excerpt.className = "event-input-summary text-clip";
@@ -141,8 +142,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       const link = document.createElement("a");
       link.className = "event-link";
       link.href = eventUrl(event, conversationOnly && event.kind !== "tool_call");
-      link.textContent = event.kind === "tool_call" && conversationOnly ? "全イベントで開く" : "↗";
-      if (link.textContent === "↗") {
+      link.textContent = event.kind === "tool_call" && conversationOnly ? "全イベントで開く" : "発話リンク";
+      if (link.textContent === "発話リンク") {
         link.title = "この発話へのリンク";
         link.setAttribute("aria-label", "この発話へのリンク");
       }

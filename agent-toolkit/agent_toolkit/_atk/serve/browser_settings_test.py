@@ -730,7 +730,9 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
         hosts=["remote"],
         codex_fast_start={"speed": "高速", "source": "今回確認", "at": "2026-11-26T12:00:00+09:00", "reason": "Business"},
     )
+    snapshot["settings"]["review_model"].update(shared=False, shared_sync=False)
     peer = copy.deepcopy(snapshot)
+    peer["settings"]["review_model"].update(saved="codex:sol/high", effective="codex:sol/high")
     peer["codex_fast_start"].update(speed="通常", source="直前の成功判定")
     snapshot["comparison"] = {"remote": {"state": "ready", **peer}}
     posts = []
@@ -791,6 +793,12 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
     await expect(page.get_by_role("navigation", name="設定の分類")).to_have_count(1)
     await expect(fast).to_have_text("Codexの起動時判定（remote）: 通常（直前の成功判定）")
     await expect(page.locator("#settings-shared")).not_to_contain_text("今回確認")
+    compare = page.locator("#settings-compare")
+    await compare.locator("summary").click()
+    changed_row = compare.get_by_role("row").filter(has_text="レビューのモデル 相違あり")
+    await expect(changed_row).to_have_attribute("data-different", "")
+    await expect(changed_row.locator(".settings-different")).to_contain_text("codex:sol/high")
+    await compare.locator("summary").click()
     if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
         await page.set_viewport_size({"width": 1440, "height": 1000})
         await picker.scroll_into_view_if_needed()
@@ -802,7 +810,7 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
         await compare.locator("summary").click()
         for width in (1440, 400):
             await page.set_viewport_size({"width": width, "height": 900})
-            await compare.scroll_into_view_if_needed()
+            await compare.evaluate("element => { element.closest('main').scrollTop = 0; }")
             await page.screenshot(path=pathlib.Path(directory) / f"003-comparison-{width}.png")
 
 

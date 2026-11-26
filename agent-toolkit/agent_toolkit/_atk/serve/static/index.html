@@ -37,7 +37,7 @@
       <div class="page-identity">
         <h2 id="entry-heading" class="page-heading">ワークアイテム</h2>
         <div class="entry-heading-meta">
-          <span id="entry-count" class="secondary-text">0件（未回答UWI 0件）</span>
+          <span id="entry-count" class="secondary-text">0件（未回答の質問 0件）</span>
           <span id="entry-period" class="secondary-text">直近2週間に作成</span>
         </div>
       </div>
@@ -195,12 +195,11 @@
         </section>
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer form-actions">
-        <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="UWIへの回答" hidden>
-          <label class="visually-hidden" for="answer-input">質問への回答</label>
+        <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="質問への回答" hidden>
           <p id="waiting-progress" class="secondary-text" role="status" hidden></p>
           <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
           <div class="answer-row">
-            <label for="answer-input" class="visually-hidden">UWIへの回答（必須）</label>
+            <label for="answer-input" class="visually-hidden">質問への回答（必須）</label>
             <textarea id="answer-input" rows="1" placeholder="回答を入力" aria-describedby="answer-input-error" required></textarea>
             <button id="save-answer-button" class="button-primary" type="button">回答を保存</button>
           </div>
@@ -356,7 +355,7 @@
         <div class="toolbar detail-toolbar">
           <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="計画一覧" aria-controls="plans-sidebar" aria-expanded="false">一覧</button>
           <button id="copy-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="本文をコピー" type="button" disabled><span class="wide-label">本文をコピー</span><span class="short-label">本文をコピー</span></button>
-          <button id="copy-path-btn" class="button-secondary copy-feedback" data-reserve-wide="計画ファイルのパスをコピー" data-reserve-short="パスをコピー" type="button" disabled><span class="wide-label">パスをコピー</span><span class="short-label">パスをコピー</span></button>
+          <button id="copy-path-btn" class="button-secondary copy-feedback" data-reserve-wide="コピーに失敗しました" data-reserve-short="パスをコピー" type="button" disabled><span class="wide-label">パスをコピー</span><span class="short-label">パスをコピー</span></button>
           <span class="detail-navigation">
             <button id="prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のファイル" disabled>&uarr;</button>
             <button id="next-btn" class="nav-btn button-secondary" type="button" aria-label="次のファイル" disabled>&darr;</button>
@@ -441,8 +440,8 @@
           <label for="session-search">記録内検索</label>
           <input id="session-search" type="search">
           <output id="session-search-count" aria-live="polite"></output>
-          <button id="session-search-prev" class="button-secondary" type="button" aria-label="前の一致">前へ</button>
-          <button id="session-search-next" class="button-secondary" type="button" aria-label="次の一致">次へ</button>
+          <button id="session-search-prev" class="button-secondary" type="button" aria-label="前の一致">前の一致</button>
+          <button id="session-search-next" class="button-secondary" type="button" aria-label="次の一致">次の一致</button>
           </div>
           <div class="reading-navigation" role="group" aria-label="ユーザー発話の移動">
             <label><input id="session-conversation" type="checkbox"> 会話だけ</label>
@@ -481,7 +480,7 @@
         </div>
         <div class="settings-search">
           <label for="settings-search">設定を検索</label>
-          <input id="settings-search" type="search" placeholder="設定を検索">
+          <input id="settings-search" type="search">
           <button id="settings-search-clear" class="button-text" type="button" hidden>検索をクリア</button>
         </div>
       </div>
@@ -495,14 +494,16 @@
         <details id="settings-compare"><summary>ホスト別の設定を比較</summary><div id="settings-comparison"></div></details>
       </div>
       <div id="settings-shared" class="secondary-text"></div>
-      <div id="settings-unsaved"></div>
       <div class="settings-layout">
         <nav id="settings-nav" aria-label="設定の分類">
           <label for="settings-group-picker">分類</label>
           <select id="settings-group-picker"></select>
           <div id="settings-group-links"></div>
         </nav>
-        <div id="settings-content"></div>
+        <div class="settings-work">
+          <div id="settings-unsaved" class="form-actions"></div>
+          <div id="settings-content"></div>
+        </div>
       </div>
       </div>
     </main>

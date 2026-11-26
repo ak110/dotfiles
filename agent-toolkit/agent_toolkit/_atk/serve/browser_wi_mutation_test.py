@@ -251,6 +251,7 @@ async def _detail_conflict(harness: _BrowserHarness, mode_button: str | None, fi
     await detail.wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     if mode_button is not None:
+        await detail.locator("#detail-more summary").click()
         await page.locator(mode_button).click()
     user_input = _FREE_FORM_UWI + "\n入力の追記\n" if field == "#edit-content" else "保持する回答"
     await page.locator(field).fill(user_input)
@@ -314,6 +315,7 @@ async def test_edit_conflict_recovery_preserves_saved_input_and_external_change(
     await detail.get_by_role("button", name="閉じる", exact=True).click()
     await playwright.async_api.expect(detail).to_be_hidden()
     await page.locator('.entry-select[data-key="target.md"]').click()
+    await detail.locator("#detail-more summary").click()
     await detail.get_by_role("button", name="編集", exact=True).click()
     latest = await field.input_value()
     assert "他プロセスが変えた質問" in latest
@@ -346,7 +348,7 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
     answer_row = page.locator('.entry-select[data-key="answer-same.md"]')
     await answer_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    answer = detail.get_by_role("textbox", name="UWIへの回答（必須）")
+    answer = detail.get_by_role("textbox", name="質問への回答（必須）")
     await playwright.async_api.expect(answer).to_have_attribute("placeholder", "回答を入力")
     await answer.fill("未処理側だけへの回答")
     async with page.expect_request("**/api/entries/answer") as answer_request_info:

@@ -326,7 +326,7 @@ async def test_selecting_deleted_entry_refreshes_list_without_error(
         await playwright.async_api.expect(detail.locator("#detail-state")).to_have_attribute("data-state", "processing")
         await playwright.async_api.expect(notice).to_be_hidden()
         await playwright.async_api.expect(page.locator('.entry-select[data-key="stale.md"] .state-badge')).to_have_text(
-            "processing"
+            "処理中"
         )
 
 

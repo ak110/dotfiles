@@ -347,7 +347,7 @@ function updateUnsaved() {
   }
   window.addEventListener("beforeunload", warnOnUnload);
   list.append(element("p", `未保存の変更: ${count}件`));
-  for (const editor of drafts) list.append(button(editor.dataset.editorLabel ?? draftLabel(editor.dataset.editor), () => {
+  for (const editor of drafts) list.append(button(`${editor.dataset.editorLabel ?? draftLabel(editor.dataset.editor)}へ移動`, () => {
     const group = editor.closest("section[id^=settings-group-]");
     if (group) activeGroup = group.id.replace("settings-group-", "");
     search.value = "";
@@ -355,7 +355,7 @@ function updateUnsaved() {
     if (editor.tagName === "DETAILS") editor.open = true;
     editorFields(editor)[0]?.focus();
   }));
-  for (const [name, slot] of other) list.append(button(`${name || "ローカル"}: ${draftLabel(slot)}`, () => selectHost(name)));
+  for (const [name, slot] of other) list.append(button(`${name || "ローカル"}の設定を開く（${draftLabel(slot)}が未保存）`, () => selectHost(name)));
   list.append(button("未保存の変更を取り消す", () => {
     for (const editor of drafts) for (const input of editorFields(editor)) input.value = input.dataset.initialValue;
     hostDrafts.clear();

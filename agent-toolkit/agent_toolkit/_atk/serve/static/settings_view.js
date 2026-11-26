@@ -14,11 +14,15 @@ const SETTING_NAMES = {
   dotfiles_mode: "dotfilesの配布範囲", agents_concurrency: "委譲先の同時実行数",
   serve_port: "待受ポート", serve_host: "待受アドレス", remote_hosts: "接続先ホスト",
   serve_web_push: "ブラウザーを閉じている間の通知", serve_web_push_details: "通知に含める作業情報",
-  serve_plans_root: "計画の保存先",
+  serve_plans_root: "計画の保存先", repositories: "リポジトリの登録",
 };
 
+function displayName(names, key) {
+  return Object.hasOwn(names, key) ? names[key] : key;
+}
+
 export function settingName(key) {
-  return SETTING_NAMES[key] ?? key;
+  return displayName(SETTING_NAMES, key);
 }
 
 export function createSettingsView({
@@ -187,7 +191,8 @@ export function createSettingsView({
       submit(editor, "追加");
     } else if (key !== "repositories") {
       const editor = form(controls, () => save({action: "set", key, value: input.value}, output));
-      const input = field(editor, "保存値", item.saved, item.choices, !item.choices && item.saved?.length > 48 ? "multiline" : "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
+      const input = field(editor, "保存値", item.saved, item.choices,
+        !item.choices && item.saved?.length > (key.endsWith("_model") ? 30 : 48) ? "multiline" : "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
       if (key === "serve_port") input.inputMode = "numeric";
       if (!item.choices && item.format) {
         const hint = element("small", `形式: ${item.format}。${item.default === undefined ? "" : ` 初期値: ${item.default || "未指定"}`}`);
@@ -453,6 +458,22 @@ export function createSettingsView({
 
   }
 
+  function comparisonValue(key, setting, info) {
+    if (!setting) return info.state === "ready" ? "未設定" : "未取得";
+    const value = String(setting.saved ?? "");
+    if (!value || value === "{}") return "未設定";
+    if (value === "[]") return "なし";
+    if (key === "codex_fast_mode") return displayName({auto: "自動判定", true: "高速", false: "通常"}, value);
+    if (key.endsWith("_connections")) {
+      const labels = {subscription: "定額契約", credits: "クレジット", payg: "従量課金"};
+      return value.split(",").map(name => displayName(labels, name.trim())).join(" → ");
+    }
+    if (key.endsWith("_usage_limit_wait")) {
+      return displayName({never: "待たない", "five-hour": "5時間枠の回復を待つ", always: "回復を待つ"}, value);
+    }
+    return displayName({true: "有効", false: "無効"}, value);
+  }
+
   function renderComparison(data) {
     const hosts = [ ["", {state: "ready", ...state.localData}], ...Object.entries(data.comparison ?? state.localData?.comparison ?? {}) ];
     const table = element("table");
@@ -470,21 +491,27 @@ export function createSettingsView({
     for (const key of new Set(hosts.flatMap(([, value]) => Object.keys(value.settings ?? {})))) {
       const values = hosts.map(([name, info]) => {
         if (name ? sameSharedSetting(info, key) : info.settings?.[key]?.shared) return null;
-        return info.settings?.[key]?.saved ?? null;
+        return {setting: info.settings?.[key], info};
       });
-      if (values.every(value => value == null)) continue;
+      if (values.every(value => !value || !value.setting)) continue;
+      const different = new Set(values.filter(value => value?.setting).map(({setting}) => setting.saved)).size > 1;
       const row = body.insertRow();
+      row.toggleAttribute("data-different", different);
       const heading = element("th", settingName(key));
       heading.scope = "row";
+      if (different) heading.append(" ", element("span", "相違あり", "status-chip"));
       row.append(heading);
       for (const [index, value] of values.entries()) {
         const cell = row.insertCell();
         cell.append(element("span", hosts[index][0] || "ローカル", "comparison-host"));
-        for (const [part, segment] of String(value ?? "—").split(/(?<=[,/])/u).entries()) {
+        const displayed = value ? comparisonValue(key, value.setting, value.info) : "共有設定を使用";
+        for (const [part, segment] of displayed.split(/(?<=[,/])/u).entries()) {
           if (part > 0) cell.append(element("wbr"));
           cell.append(segment);
         }
-        if (value != null && value !== values[0]) cell.className = "settings-different";
+        if (different && value?.setting && value.setting.saved !== values[0]?.setting?.saved) {
+          cell.className = "settings-different";
+        }
       }
     }
     const actions = element("div", "", "form-actions");

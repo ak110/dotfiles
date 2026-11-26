@@ -83,7 +83,7 @@ async def test_waiting_save_failure_and_external_change_keep_current_input(brows
     await page.goto(harness.base_url + "/")
     await page.get_by_role("radio", name="判断待ち", exact=True).check()
     await page.locator(".entry-select").first.click()
-    await page.get_by_label("UWIへの回答（必須）", exact=True).fill("入力中の回答")
+    await page.get_by_label("質問への回答（必須）", exact=True).fill("入力中の回答")
 
     async def fail_save(route: playwright.async_api.Route) -> None:
         await route.fulfill(status=409, json={"code": "edit_conflict", "error": "外部更新"})

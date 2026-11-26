@@ -207,7 +207,10 @@ function renderEntry(entry) {
     shape.setAttribute('d', path);
     icon.append(shape);
   }
-  copy.append(icon);
+  const label = document.createElement('span');
+  label.className = 'copy-label';
+  label.textContent = 'コピー';
+  copy.append(icon, label);
   copy.setAttribute('aria-label', `${entry.filename}の要約をコピー`);
   copy.addEventListener('click', async () => {
     try {
@@ -255,7 +258,7 @@ function renderEmptyState() {
   create.hidden = true;
   if (wiState.entries.length) return;
   if (wiState.displayMode === 'waiting') {
-    message.textContent = '判断待ちの未回答UWIはありません。';
+    message.textContent = '判断待ちの質問はありません。';
     return;
   }
   const query = buildQuery();
@@ -299,7 +302,7 @@ export function renderEntries(warnings = [], announce = false) {
     (entryButtonForKey(focusedKey) || list.querySelector('.entry-select') || byId('empty-clear-button')).focus();
   }
   const unanswered = wiState.entries.filter(entry => entry.kind === 'uwi' && entry.answered === false).length;
-  byId('entry-count').textContent = `${wiState.entries.length}件（未回答UWI ${unanswered}件）`;
+  byId('entry-count').textContent = `${wiState.entries.length}件（未回答の質問 ${unanswered}件）`;
   // フィルター欄を折りたたむ狭い幅でも、一覧が期間で限られていることを見出しの近くで示す。
   const periodLabel = PERIOD_LABELS[buildQuery().get('period')];
   byId('entry-period').textContent = periodLabel ? `${periodLabel}に作成` : '';

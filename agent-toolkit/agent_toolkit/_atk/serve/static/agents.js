@@ -110,6 +110,7 @@ function watchHost(content, host) {
   let pending = false;
   let timer;
   let failed = false;
+  let hasSnapshot = false;
   let generation = 0;
   let current;
   let controller;
@@ -125,13 +126,16 @@ function watchHost(content, host) {
       const payload = await fetchJson("/api/agents/list?" + params, controller.signal);
       if (payload.error) throw new Error(payload.error);
       if (!active() || token !== generation) return;
+      hasSnapshot = true;
       renderRoots(content, payload.roots);
+      content.parentElement.hidden = false;
       failed = false;
       recordUpdateSuccess("agents", host);
     } catch {
       if (!active() || token !== generation) return;
       failed = true;
       content.querySelector(".inline-loading")?.remove();
+      content.parentElement.hidden = !hasSnapshot;
       setDisplayedReadError("agents", host, `${host ?? "ローカル"}のエージェント一覧を取得できません。`, refresh);
     } finally {
       pending = false;

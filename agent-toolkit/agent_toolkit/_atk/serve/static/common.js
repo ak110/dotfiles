@@ -94,7 +94,8 @@ function renderUpdateStatus() {
   }
   updateStatus.hidden = failures.length === 0;
   updateStatus.querySelector("[role=status]").textContent =
-    failures.map(({message}) => message).join(" ");
+    failures.length > 1 && !failures.some(item => item.stale) ? "一部の情報を更新できません。" :
+      failures.map(({message}) => message).join(" ");
   button.onclick = () => {
     rememberRetryFocus();
     for (const history of readFailures.values()) {
@@ -152,7 +153,7 @@ export function setUpdateError(screen, key, message, retry) {
   if (message) {
     const time = updateTimes.get(historyKey);
     const last = time && new Intl.DateTimeFormat("ja-JP", {dateStyle: "short", timeStyle: "short"}).format(time);
-    errors.set(key, {message: last ? `${message} 前回取得: ${last}。以前の情報を表示しています。` : message, retry});
+    errors.set(key, {message: last ? `${message} 前回取得: ${last}。以前の情報を表示しています。` : message, retry, stale: Boolean(last)});
   } else {
     stopDisplayedRetry(screen, key);
     errors.delete(key);

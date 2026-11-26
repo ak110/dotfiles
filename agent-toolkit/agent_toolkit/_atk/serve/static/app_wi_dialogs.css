@@ -379,7 +379,7 @@
   max-height: none;
 }
 :is(#screen-wi, .wi-reference-layer) .wi-reference-dialog .dialog-body {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-4);
 }
 :is(#screen-wi, .wi-reference-layer) .wi-reference-dialog .detail-metadata {
   gap: var(--space-1) var(--space-3);

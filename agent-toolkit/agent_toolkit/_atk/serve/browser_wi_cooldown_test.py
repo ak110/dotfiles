@@ -62,11 +62,11 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
     row = page.locator('.entry-select[data-key="verify.md"]')
     badge = row.locator(".state-badge")
     await playwright.async_api.expect(badge).to_have_text("確認待ち")
-    assert "inbox" not in await row.locator(".status-cell").inner_text()
+    assert "受信" not in await row.locator(".status-cell").inner_text()
     label = await row.get_attribute("aria-label")
     assert label is not None
-    assert "needs-verify" in label.split("、")
-    assert "inbox" not in label.split("、")
+    assert "確認待ち" in label.split("、")
+    assert "受信" not in label.split("、")
     processing_badge = page.locator('.entry-select[data-key="working.md"] .state-badge')
     style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
     assert await badge.evaluate(style) == await processing_badge.evaluate(style)
@@ -104,13 +104,11 @@ async def test_answered_badge_replaces_inbox_for_answered_uwi(browser_harness: _
     await playwright.async_api.expect(badge).to_have_text("回答済み")
     label = await row.get_attribute("aria-label")
     assert label is not None
-    assert "answered" in label.split("、")
-    assert "inbox" not in label.split("、")
+    assert "回答済み" in label.split("、")
+    assert "受信" not in label.split("、")
     unanswered_badge = page.locator('.entry-select[data-key="unanswered.md"] .state-badge')
     await playwright.async_api.expect(unanswered_badge).to_have_text("受信")
-    await playwright.async_api.expect(page.locator('.entry-select[data-key="taken.md"] .state-badge')).to_have_text(
-        "processing"
-    )
+    await playwright.async_api.expect(page.locator('.entry-select[data-key="taken.md"] .state-badge')).to_have_text("処理中")
     style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
     assert await badge.evaluate(style) == await unanswered_badge.evaluate(style)
 
@@ -160,13 +158,13 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
         assert await badge.count() == 1
         assert await badge.evaluate(style) == await normal.evaluate(style)
         await playwright.async_api.expect(badge).to_have_attribute("title", "解除日時: 2099/01/02 09:00 JST")
-        assert "cooldown" in (await row.get_attribute("aria-label") or "").split("、")
+        assert "再開待ち" in (await row.get_attribute("aria-label") or "").split("、")
         await playwright.async_api.expect(row).to_have_attribute("aria-label", re.compile("解除日時: 2099/01/02 09:00 JST"))
     question = page.locator('.entry-select[data-key="question.md"]')
     await playwright.async_api.expect(question.locator(".state-badge")).to_have_text("受信")
     assert await question.locator(".state-badge").get_attribute("title") is None
     question_label = await question.get_attribute("aria-label") or ""
-    assert "cooldown" not in question_label.split("、")
+    assert "再開待ち" not in question_label.split("、")
     assert "解除日時:" not in question_label
     await page.set_viewport_size({"width": 320, "height": 720})
 
@@ -206,7 +204,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     for filename, expected in [("verify.md", "needs-verify"), ("plain.md", "inbox"), ("question.md", "inbox")]:
         row = page.locator(f'.entry-select[data-key="{filename}"]')
         await playwright.async_api.expect(row.locator(".state-badge")).to_have_text(expected)
-        assert "cooldown" not in (await row.get_attribute("aria-label") or "").split("、")
+        assert "再開待ち" not in (await row.get_attribute("aria-label") or "").split("、")
         assert await row.locator(".state-badge").get_attribute("title") is None
         assert "解除日時:" not in (await row.get_attribute("aria-label") or "")
 
@@ -238,11 +236,11 @@ async def test_cooldown_resyncs_after_changes_and_visibility(browser_harness: _B
     await page.locator("#state-filter").select_option("all")
     for state_name in ["hold", "processing", "adopted", "rejected"]:
         await playwright.async_api.expect(page.locator(f'.entry-select[data-key="{state_name}.md"] .state-badge')).to_have_text(
-            state_name
+            {"hold": "保留", "processing": "処理中", "adopted": "採用", "rejected": "却下"}[state_name]
         )
     for name in ["now", "past", "naive", "invalid", "empty"]:
         await playwright.async_api.expect(page.locator(f'.entry-select[data-key="{name}.md"] .state-badge')).to_have_text(
-            "inbox"
+            "受信"
         )
     await page.locator("#state-filter").select_option("inbox")
     badge = page.locator('.entry-select[data-key="inbox.md"] .state-badge')

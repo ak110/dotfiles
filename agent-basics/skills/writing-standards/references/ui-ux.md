@@ -107,7 +107,9 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
 日時・件数・補足などの補助情報とバッジは14px（既定の0.875rem）を下回らない。
 区切りは薄い線と余白で示し、役割の無いカードの入れ子や強い影は省く。
 状態は薄い背景の小さなバッジと状態名で示す。
+選択やホバーの面の上でも、バッジの状態名と境界を読み分けられるようにする。
 一覧は1件を少ない行に収める。
+副情報を1行へ置く場合は、区切りを次の行に残さず、短い表示と詳細で読める完全な値を使い分ける。
 情報密度は余白、行数、表示する情報の選別、列の構成で上げ、文字を基準より小さくしない。
 
 参考: USWDSの[Typography](https://designsystem.digital.gov/components/typography/)と[Spacing units](https://designsystem.digital.gov/design-tokens/spacing-units/)から、読みやすい行長と余白の段の決め方を取り入れた（[公開方針](https://designsystem.digital.gov/about/website-policies-notices/)・[許諾](https://github.com/uswds/uswds/blob/develop/LICENSE.md)）。
