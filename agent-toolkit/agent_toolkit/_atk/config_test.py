@@ -83,8 +83,8 @@ def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_pat
     assert _main(tmp_path, "config", "show") == 0
     assert "review_model claude:sonnet/medium\n" in capsys.readouterr().out
     assert _saved(tmp_path)["codex_fast_mode"] == "true"
-    assert _main(tmp_path, "config", "set", "write_model", "codex:sol/medium") != 0
-    assert "migrate-shared" in capsys.readouterr().err
+    assert _main(tmp_path, "config", "set", "write_model", "codex:sol/medium") == 0
+    capsys.readouterr()
     # 比較は共有先を取得してから行うため、別のcloneが先に移行した値とも比べる。  # pyfltr: allow-comment
     assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
     preview = json.loads(capsys.readouterr().out)
@@ -239,7 +239,7 @@ def test_shared_migration_hint_uses_actual_stored_keys(tmp_path, monkeypatch, ca
         offline.setattr(sync, "run_git", forbid_transport)
         assert _main(tmp_path, "config", "show") == 0
     shown = capsys.readouterr()
-    assert ("未移行の共有設定がある" in shown.err) == bool(expected_keys)
+    assert "残す共有設定を選ぶ" not in shown.err
     if "base_engine" in stored:
         assert "execute_model claude:" in shown.out
     assert _main(tmp_path, "config", "migrate-shared") == 0
@@ -272,13 +272,13 @@ def test_shared_migration_comparison_has_terminal_and_machine_forms(tmp_path, mo
         assert f"atk config migrate-shared --apply {preview['revision']}" in shown
         assert "codex:sol/medium" in shown and "比較" in shown
         if initial:
-            assert "初回" in shown and "codex_fast_mode（共有に無い）" in shown
+            assert "初回" in shown and "codex_fast_mode（自動で共有）" in shown
             assert "--keep-" not in shown
         else:
-            assert "差あり" in shown and "初期値" in shown
+            assert "要選択" in shown and "初期値" in shown
             assert "--keep-local review_model" in shown and "--keep-shared review_model" in shown
         command = next(line.strip().split() for line in shown.splitlines() if line.startswith("  atk config"))
-        expected = [] if initial else ["--keep-shared", "codex_fast_mode", "--keep-shared", "review_model"]
+        expected = [] if initial else ["--keep-shared", "review_model"]
         assert command[5:] == expected
         _write_config(tmp_path, {})
         assert _main(tmp_path, "config", "migrate-shared") == 0
@@ -317,8 +317,12 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
     assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) != 0
     assert _saved(tmp_path) == original
     assert "共有先へ移行できない" in capsys.readouterr().err
-    assert git_repository.git_output(notes, "rev-list", "--count", "@{u}..HEAD") == "1"
-    assert json.loads((notes / "atk-config.json").read_text(encoding="utf-8")) == original
+    assert git_repository.git_output(notes, "rev-list", "--count", "@{u}..HEAD") == "0"
+    assert not (notes / "atk-config.json").exists()
+    monkeypatch.setattr(sync, "run_git", git)
+    assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) == 0
+    assert _saved(tmp_path) == {}
+    assert json.loads(git_repository.git_output(notes, "show", "@{u}:atk-config.json")) == original
 
 
 def test_read_only_snapshot_does_not_run_migrations(tmp_path, monkeypatch, capsys):
@@ -362,23 +366,18 @@ def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_
         assert not (notes / "atk-config.json").exists()
         return
 
-    with pytest.raises(ValueError, match="移行していない"):
-        config_module.update_settings({"action": "set", "key": "codex_fast_mode", "value": "true"})
-    with pytest.raises(ValueError, match="移行していない"):
-        config_module.update_settings({"action": "preset", "preset": "codex-primary"})
-    assert not (notes / "atk-config.json").exists()
-
-    settings = config_module.settings_snapshot(tmp_path)["settings"]
+    settings = config_module.settings_snapshot(tmp_path, read_only=True)["settings"]
     for key, effective in (("codex_fast_mode", "false"), ("review_model", "claude:sonnet/medium")):
         assert settings[key]["effective"] == effective
         assert settings[key]["source"] == "移行前のローカル保存値"
-        assert settings[key]["shared"] is True
-        assert settings[key]["shared_sync"] is upstream
-        assert settings[key]["migration_pending"] is upstream
-        assert "同期先を設定するまで" not in settings[key]["description"]
-    assert settings["codex_fast_mode"]["saved"] == "auto"
-    assert settings["review_model"]["saved"] == config_settings.MODEL_DEFAULTS["review_model"]
-    assert _saved(tmp_path) == {"codex_fast_mode": "false", "review_model": "claude:sonnet/medium"}
+        assert settings[key]["shared"] and settings[key]["shared_sync"]
+        assert not settings[key]["migration_pending"]
+    assert not (notes / "atk-config.json").exists()
+    config_module.update_settings({"action": "set", "key": "codex_fast_mode", "value": "true"})
+    assert _saved(tmp_path) == {}
+    settings = config_module.settings_snapshot(tmp_path, read_only=True)["settings"]
+    assert settings["codex_fast_mode"]["saved"] == "true"
+    assert settings["review_model"]["saved"] == "claude:sonnet/medium"
 
 
 def test_shared_connection_order_selects_both_engines_without_local_copy(tmp_path, monkeypatch):

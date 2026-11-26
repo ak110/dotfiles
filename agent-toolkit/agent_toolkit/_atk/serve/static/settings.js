@@ -109,6 +109,7 @@ function revealSettingResult(output, message, stayedAtOrigin) {
 
 function rememberSettingFocus(active) {
   if (navigation.contains(active)) return {group: active.dataset.group};
+  if (content.contains(active) && active.dataset.migrationFocus) return {migration: active.dataset.migrationFocus};
   const editor = active.closest("[data-editor]");
   const label = active.labels?.[0]?.textContent;
   if (!editor || !content.contains(active)) return null;
@@ -127,6 +128,11 @@ function rememberSettingFocus(active) {
 
 function restoreSettingFocus(focus) {
   if (!focus) return;
+  if (focus.migration) {
+    const target = content.querySelector(`[data-migration-focus="${CSS.escape(focus.migration)}"]`);
+    if (target && !target.closest("[hidden]")) target.focus({preventScroll: true});
+    return;
+  }
   if (focus.group) {
     navigation.querySelector(`[data-group="${CSS.escape(focus.group)}"]`)?.focus({preventScroll: true});
     return;
@@ -224,7 +230,7 @@ async function migrateShared(payload, output) {
   busy = true;
   updateWriteControls();
   const target = host;
-  status.textContent = payload.action === "apply" ? "共有へ移行中…" : "差を確認中…";
+  status.textContent = payload.action === "apply" ? "共有先に保存中…" : "差を確認中…";
   output.textContent = "";
   try {
     const query = target ? "?" + new URLSearchParams({host: target}) : "";
@@ -237,7 +243,7 @@ async function migrateShared(payload, output) {
     if (payload.action !== "apply") return data;
     busy = false;
     await loadHost();
-    const message = Number.isInteger(data.moved) ? `共有へ移行しました（${data.moved}件）。` : "共有へ移行しました。";
+    const message = "選んだ値を共有先に保存しました。";
     revealSettingResult(null, message, true);
     return null;
   } catch (error) {
@@ -425,9 +431,13 @@ function updateWriteControls() {
     syncWriteControl(control);
   }
   for (const control of content.querySelectorAll("[data-shared-migration] button")) {
-    control.toggleAttribute("data-write-blocked", busy || loading);
-    syncWriteControl(control);
+    if (busy || loading) control.setAttribute("aria-disabled", "true");
+    else control.removeAttribute("aria-disabled");
+    if (loading) control.setAttribute("aria-describedby", "settings-migration-wait");
+    else control.removeAttribute("aria-describedby");
   }
+  const migrationWait = content.querySelector("[data-migration-wait]");
+  if (migrationWait) migrationWait.hidden = !loading;
   for (const control of content.querySelectorAll("button:not([data-conflict-action])")) {
     if (control.hasAttribute("data-local-edit") && !inSharedScope(control)) continue;
     const editor = control.closest("[data-editor]");
@@ -609,10 +619,10 @@ async function loadHost(background = false, retry = false) {
     renderConflicts();
     updateUnsaved();
     scroll.scrollTop = scrollTop;
-    restoreSettingFocus(focus);
     staleSnapshotHost = undefined;
     loading = false;
     updateWriteControls();
+    restoreSettingFocus(focus);
     recordUpdateSuccess("settings", "refresh");
     showAutomaticErrors(data);
     status.textContent = data.legacy || data.automatic_unsupported?.includes(host) ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";

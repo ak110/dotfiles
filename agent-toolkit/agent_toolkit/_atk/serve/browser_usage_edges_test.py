@@ -267,7 +267,7 @@ async def test_usage_settings_link_selects_local_with_permission_editor(
         "paths": {},
         "usage": [{"engine": "codex", "window_id": "fixture-remote-window", "used_percent": 57}],
     }
-    monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host: (snapshot, None))
+    monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host, **_kwargs: (snapshot, None))
     monkeypatch.setattr(usage_refresh, "refresh", lambda **_kwargs: [])
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/settings")

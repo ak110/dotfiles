@@ -61,13 +61,13 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
 
 def update_repositories(args: argparse.Namespace) -> str | dict[str, Any]:
     config_migration.check_legacy_environment()
+    if args.repos_subcommand == "list":
+        return config_settings.repository_settings(check_paths=False, read_only=True)
     config_migration.migrate_legacy_settings()
     stored = config_settings.load_config_strict()
     raw = stored.get("repositories", "{}")
     if not isinstance(raw, str):
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
-    if args.repos_subcommand == "list":
-        return config_settings.repository_settings(check_paths=False)
     local = config_repositories.parse_local(raw)
     repositories = config_repositories.merge(_shared_repositories(), local)
     repo_id, located = config_repositories.identifier(args.repo)
@@ -101,33 +101,58 @@ def update_repositories(args: argparse.Namespace) -> str | dict[str, Any]:
             item.pop("path", None)
         normalized = json.loads(config_settings.normalize_setting("repositories", json.dumps({repo_id: item})))
         validated: dict[str, Any] = normalized[next(iter(normalized))]
+        if args.process_loop is True and not validated.get("path"):
+            raise ValueError(f"{repo_id}をこの端末で巡回するには--pathでcloneを関連付ける")
         _require_matching_origin(repo_id, validated.get("path"))
         if args.branches is not None:
             _require_remote_branches(repo_id, validated)
         item = validated
     shared_path = config_shared_migration.shared_write_path() if config_repositories.is_shared_id(repo_id) else None
-    current = local.get(repo_id)
-    if shared_path is None or (current is not None and not config_repositories.is_link(current)):
-        # 同期先の無い環境、共有できない登録、移行前の登録は端末側の登録全体を書き換える。  # pyfltr: allow-comment
-        if item is None:
-            local.pop(repo_id, None)
-        else:
-            local[repo_id] = item
-    else:
-        attributes = None if item is None else {key: value for key, value in item.items() if key != "path"}
-        before = repositories.get(repo_id)
-        if before is None or attributes != {key: value for key, value in before.items() if key != "path"}:
-            config_shared_migration.update_shared_settings(
-                shared_path, lambda shared: _with_shared_entry(shared, repo_id, attributes)
-            )
-        if item is not None and item.get("path"):
-            local[repo_id] = {"path": item["path"]}
-        else:
-            local.pop(repo_id, None)
-    value = json.dumps(local, ensure_ascii=False)
-    with config_settings.local_config_lock(config_settings.config_file_path()):
+    before = repositories.get(repo_id, {})
+    shared_fields = {key for key in config_repositories.SHARED_ATTRIBUTES if getattr(args, key, None) is not None}
+    fields = {key for unit in config_repositories.SHARED_UNITS if set(unit) & shared_fields for key in unit}
+    changes_shared = args.repos_subcommand != "set" or bool(fields)
+    if shared_path is not None and changes_shared:
+        attributes = None if item is None else config_repositories.shared_attributes(item)
+        config_shared_migration.update_shared_settings(
+            shared_path,
+            lambda shared: _with_shared_entry(shared, repo_id, attributes, fields if exists else None),
+            touched_repositories={
+                repo_id: fields if args.repos_subcommand == "set" else set(config_repositories.SHARED_ATTRIBUTES)
+            },
+        )
+
+    path = config_settings.config_file_path()
+    with config_settings.local_config_lock(path):
         latest = config_settings.load_config_strict()
-        config_settings.write_config_locked(config_settings.config_file_path(), {**latest, "repositories": value})
+        entries = config_repositories.local_entries(latest.get("repositories", "{}"))
+        matches = config_repositories.local_entries_by_id(entries).get(repo_id, [])
+        if len(matches) > 1:
+            raise ValueError(f"同じリポジトリの端末登録が重複している: {repo_id}")
+        old_key, current = matches[0] if matches else (repo_id, None)
+        if shared_path is None:
+            if item is None:
+                entries.pop(old_key, None)
+            else:
+                entries.pop(old_key, None)
+                entries[repo_id] = item
+        elif item is None:
+            entries.pop(old_key, None)
+        elif args.repos_subcommand == "add" or args.path is not None or args.process_loop is not None:
+            entry = config_repositories.parse_local_entry(old_key, current)[1] if matches else {}
+            if args.path is not None or args.repos_subcommand == "add":
+                if item.get("path"):
+                    entry["path"] = item["path"]
+                else:
+                    entry.pop("path", None)
+            if args.process_loop is not None:
+                entry["process_loop"] = args.process_loop
+            elif "process_loop" not in entry:
+                entry["process_loop"] = before.get("process_loop", False)
+            entries.pop(old_key, None)
+            entries[repo_id] = entry
+        if entries != config_repositories.local_entries(latest.get("repositories", "{}")):
+            config_settings.write_config_locked(path, {**latest, "repositories": json.dumps(entries, ensure_ascii=False)})
     return repo_id
 
 
@@ -137,13 +162,26 @@ def _shared_repositories() -> dict[str, dict[str, Any]]:
     return config_repositories.parse_shared(shared) if shared is not None else {}
 
 
-def _with_shared_entry(shared: dict[str, str], repo_id: str, attributes: dict[str, Any] | None) -> dict[str, str]:
-    """共有先の最新の登録のうち、対象の1件だけを置き換える。他の端末が加えた登録は保つ。  pyfltr: allow-comment"""
+def _with_shared_entry(
+    shared: dict[str, str],
+    repo_id: str,
+    attributes: dict[str, Any] | None,
+    fields: set[str] | None,
+) -> dict[str, str]:
     repositories = config_repositories.parse_shared(shared.get("repositories", "{}"))
     if attributes is None:
         repositories.pop(repo_id, None)
-    else:
+    elif fields is None:
+        if repo_id in repositories:
+            raise ValueError(f"別の端末が先に登録した: {repo_id}")
         repositories[repo_id] = attributes
+    elif fields:
+        if repo_id not in repositories:
+            raise ValueError(f"共有側に登録がない: {repo_id}。設定画面で残す値を選ぶ")
+        repositories[repo_id] = {key: value for key, value in repositories[repo_id].items() if key not in fields} | {
+            key: value for key, value in attributes.items() if key in fields
+        }
+    config_repositories.parse_shared(json.dumps(repositories))
     return {**shared, "repositories": json.dumps(repositories, ensure_ascii=False, sort_keys=True)}
 
 

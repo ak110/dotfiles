@@ -76,11 +76,6 @@ __all__ = [
 ]
 
 
-def _shared_write_path() -> pathlib.Path | None:
-    path = _config_settings.shared_settings_path()
-    return path if path is not None and git_sync.has_remote(path.parent) else None
-
-
 def save_mutable_settings(updates: dict[str, str]) -> bool:
     """変更可能設定の複数キーを検証して保存し、保存内容が変わったかを返す。
 
@@ -93,16 +88,36 @@ def save_mutable_settings(updates: dict[str, str]) -> bool:
         _config_settings.validate_mutable_setting(key, value)
     updates = {key: _config_settings.normalize_setting(key, value) for key, value in updates.items()}
     shared = {key: value for key, value in updates.items() if key in _config_settings.SHARED_SETTING_KEYS}
-    path = _shared_write_path() if shared else None
+    path = config_shared_migration.shared_write_path() if shared else None
     shared_changed = False
     if path is not None:
-        shared_changed = _save_shared_settings(path, shared)
+        saved = _config_settings.load_config_strict()
+        shared = {key: value for key, value in shared.items() if not _invalid_saved_value(key, saved)}
+        if shared:
+            shared_changed = _save_shared_settings(path, shared)
         updates = {key: value for key, value in updates.items() if key not in shared}
-    config = _config_settings.load_config_strict()
-    if all(config.get(key) == value for key, value in updates.items()):
+    if not updates:
         return shared_changed
-    _config_settings.save_config({**config, **updates})
+    local_path = _config_settings.config_file_path()
+    with _config_settings.local_config_lock(local_path):
+        config = _config_settings.load_config_strict()
+        if all(config.get(key) == value for key, value in updates.items()):
+            return shared_changed
+        _config_settings.write_config_locked(local_path, config | updates)
     return True
+
+
+def _invalid_saved_value(key: str, saved: dict[str, Any]) -> bool:
+    if key not in saved:
+        return False
+    value = saved[key]
+    if not isinstance(value, str):
+        return True
+    try:
+        _config_settings.validate_mutable_setting(key, value)
+    except ValueError:
+        return True
+    return False
 
 
 def _save_shared_settings(path: pathlib.Path, updates: dict[str, str]) -> bool:
@@ -113,7 +128,7 @@ def _save_shared_settings(path: pathlib.Path, updates: dict[str, str]) -> bool:
             changed[key] = reset_reservations.mark_new_permissions(current, updates[key])
         return changed
 
-    return config_shared_migration.update_shared_settings(path, update)
+    return config_shared_migration.update_shared_settings(path, update, touched=set(updates))
 
 
 def _reissue_remaining(notes: pathlib.Path, grant: dict[str, Any]) -> int:
@@ -255,8 +270,15 @@ def _cmd_config_show(home: pathlib.Path) -> int:
         print(f"共有設定ファイル: {path}", file=sys.stderr)
         if active:
             print("共有設定から解決したキー: " + "、".join(active), file=sys.stderr)
-        if git_sync.has_remote(path.parent) and _pending_shared(stored):
-            print(f"未移行の共有設定がある。{_MIGRATION_NEXT_ACTION}。", file=sys.stderr)
+        if git_sync.has_remote(path.parent):
+            plan = config_shared_migration.preview(stored, path, shared)
+            if plan["required"]:
+                print(
+                    "残す共有設定を選ぶ: " + "、".join(plan["required"]) + f"。{config_shared_migration.NEXT_ACTION}。",
+                    file=sys.stderr,
+                )
+            if plan["invalid"]:
+                print("共有できない値: " + "、".join(plan["invalid"]), file=sys.stderr)
     if human and settings.get("codex_fast_mode") == "auto":
         print(_auto_fast_report(), file=sys.stderr)
     return 2 if incomplete else 0
@@ -284,17 +306,6 @@ def _auto_fast_report() -> str:
     return f"Codex自動速度: 最後の起動時判定 {start['speed']}（{start['source']}） — {start['at']}、{start['reason']}"
 
 
-def _pending_shared(local: dict[str, Any]) -> dict[str, Any]:
-    return config_shared_migration.pending(local)
-
-
-_MIGRATION_NEXT_ACTION = config_shared_migration.NEXT_ACTION
-
-
-def _require_shared_migration() -> None:
-    config_shared_migration.require_migrated()
-
-
 def _print_shared_value(key: str, label: str, value: Any) -> None:
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
     if key in _config_settings.MODEL_DEFAULTS:
@@ -305,7 +316,7 @@ def _print_shared_value(key: str, label: str, value: Any) -> None:
 def _print_shared_comparison(plan: dict[str, Any]) -> None:
     print("共有設定の比較")
     print("初回: 共有設定ファイルがない" if plan["initial"] else "既存の共有設定ファイルと比較")
-    labels = {"equal": "一致", "different": "差あり", "local_only": "共有に無い"}
+    labels = {"equal": "一致", "different": "要選択", "local_only": "自動で共有", "invalid": "値が不正"}
     for item in plan["items"]:
         key = item["key"]
         print(f"\n{item['label']}（{labels[item['kind']]}）")
@@ -322,12 +333,13 @@ def _print_shared_comparison(plan: dict[str, Any]) -> None:
         print("\n移行するローカル共有設定はない。適用は不要。")
         return
     if plan["invalid"]:
-        print("\n移行できないローカル値を直してから、もう一度比較する。")
-        return
+        print("\n不正な値は移さず端末に残す。")
+        if not any(item["kind"] != "invalid" for item in plan["items"]):
+            return
     print("\n環境変数や一時指定があれば、移行後もその値が優先される。")
     command = f"atk config migrate-shared --apply {plan['revision']}"
     command += "".join(f" --keep-shared {key}" for key in plan["required"])
-    print("設定画面の「共有へ移行」でも同じ移行を行える。CLIでは次のコマンドで適用する。")
+    print("通常の起動・保存でも確定できる値を移す。今すぐCLIで適用する場合は次を実行する。")
     print(f"  {command}")
     if plan["required"]:
         print("この端末の値を残すキーだけ --keep-shared を --keep-local に変える。選んだ値は他の端末にも同期する。")
@@ -389,30 +401,52 @@ def _shared_settings_identity(path: pathlib.Path) -> str | None:
 
 
 def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[str, Any]:
-    effective = resolved_settings(home, read_only=read_only)
-    saved = _config_settings.load_config()
+    _config_migration.check_legacy_environment()
+    if not read_only:
+        _config_migration.migrate_legacy_settings()
+        _config_migration.migrate_serve_settings()
+    stored = _config_settings.load_config_strict()
+    saved = {key: value for key, value in stored.items() if isinstance(value, str)}
+    local, errors = _config_migration.preview_local_settings(saved)
     shared_path = _config_settings.shared_settings_path()
     shared = _config_settings.load_shared_settings(shared_path) if shared_path is not None else {}
     shared_sync = shared_path is not None and git_sync.has_remote(shared_path.parent)
     temporary = usage_settings.temporary_settings()
-    pending = config_shared_migration.pending(saved) if shared_sync else {}
+    plan = config_shared_migration.preview(stored, shared_path, shared) if shared_path is not None and shared_sync else None
+    migration_pending = (
+        {
+            "repositories" if item.get("repo") else key
+            for item in plan["items"]
+            if item["kind"] in ("different", "invalid")
+            for key in (item["fields"] or (item["key"],))
+        }
+        if plan
+        else set()
+    )
     settings = {}
     for key, default in _config_settings.MUTABLE_KEY_DEFAULTS.items():
         shared_key = shared_sync and key in _config_settings.SHARED_SETTING_KEYS
-        migration_pending = key in pending
+        failure = None
+        try:
+            effective = resolve_mutable_setting(key, read_only=True, local=local, local_error=errors.get(key))
+        except ValueError:
+            effective = None
+            failure = f"{key}の設定値を読めない"
         source = _mutable_source(key, saved, shared, temporary, shared_target=shared_key)
         description = _config_settings.setting_description(key)
         saved_value = shared.get(key, default) if shared_key else saved.get(key, default)
-        if key == reset_reservations.PERMISSIONS and isinstance(saved_value, str):
+        if key == reset_reservations.PERMISSIONS and isinstance(saved_value, str) and not failure:
             saved_value = reset_reservations.public_permissions(saved_value)
         settings[key] = {
-            "effective": effective.pop(key),
+            "effective": effective,
+            **({"error": failure} if failure else {}),
             "saved": saved_value,
             "default": default,
             "source": source,
             "shared": shared_key,
             "shared_sync": shared_key and shared_sync,
-            "migration_pending": migration_pending,
+            "migration_pending": key in migration_pending,
+            "invalid_local": shared_key and key in migration_pending and _invalid_saved_value(key, stored),
             "description": description,
             "format": _config_settings.setting_format(key),
             "choices": _config_settings.SETTING_CHOICES.get(key),
@@ -423,17 +457,29 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
     usage = usage_observation.snapshot(include_history=True)
     state = usage_settings.read_settings()
     windows = config_usage.profile_windows(usage)
+    repositories = settings["repositories"]["effective"]
     return {
         "settings": settings,
         "codex_fast_start": _fast_start_snapshot(),
         "shared_identity": _shared_settings_identity(shared_path) if shared_path is not None and shared_sync else None,
-        "paths": effective,
+        "paths": _setting_paths(home),
         "presets": _config_settings.PRESET_MODELS,
         "temporary": {"values": temporary, "until": state.get("until")},
-        "repositories": _config_settings.repository_settings(check_paths=False),
-        "shared_migration": {"format": config_shared_migration.FORMAT, "pending": sorted(pending)},
+        "repositories": json.loads(repositories) if isinstance(repositories, str) else {},
+        "shared_migration": {
+            "format": config_shared_migration.FORMAT,
+            "sync_failed": shared_path is not None and config_shared_migration.startup_sync_failed(shared_path),
+            "pending": plan["required"] if plan else [],
+            "plan": {**plan, "items": [item for item in plan["items"] if item["kind"] in ("different", "invalid")]}
+            if plan and (plan["required"] or plan["invalid"])
+            else None,
+        },
         "provider_warnings": codex_provider_check.provider_warnings(
-            {key: str(settings[key]["effective"]) for key in sorted(_config_settings.PROVIDER_KEYS)},
+            {
+                key: value
+                for key in sorted(_config_settings.PROVIDER_KEYS)
+                if isinstance(value := settings[key]["effective"], str)
+            },
             runtime_environment.environment(),
         ),
         "model_candidates": {engine: sorted(names) for engine, names in _config_settings.KNOWN_MODELS.items()},
@@ -456,12 +502,6 @@ def operation_text(payload: dict[str, Any], name: str, *, optional: bool = False
 
 def update_settings(payload: dict[str, Any]) -> None:
     action = payload.get("action")
-    mutable_write = action in ("set", "array-add", "array-remove")
-    key = operation_text(payload, "key") if mutable_write else None
-    if (action == "preset" or (mutable_write and key in _config_settings.SHARED_SETTING_KEYS)) and (
-        _shared_write_path() is not None
-    ):
-        _require_shared_migration()
     _config_migration.migrate_serve_settings()
     _config_migration.migrate_legacy_settings()
     if action == "reset-reissue":
@@ -570,16 +610,16 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
             next_action=f"受理可能書式の値で`atk config set {args.key} <VALUE>`を再実行する",
         )
         sys.exit(2)
-    shared_target = args.key in _config_settings.SHARED_SETTING_KEYS and _shared_write_path() is not None
-    if shared_target:
-        _require_shared_migration()
+    shared_target = args.key in _config_settings.SHARED_SETTING_KEYS and config_shared_migration.shared_write_path() is not None
     _report_candidate_warnings(_stage_model_candidate_warnings(args.key, args.value))
 
     _config_migration.migrate_serve_settings()
     value = _config_settings.normalize_setting(args.key, args.value)
     if not shared_target:
-        config = _config_migration.plan_legacy_migration(_config_settings.load_config_strict(), updates={args.key: value})
-        _config_settings.save_config(config)
+        path = _config_settings.config_file_path()
+        with _config_settings.local_config_lock(path):
+            config = _config_migration.plan_legacy_migration(_config_settings.load_config_strict(), updates={args.key: value})
+            _config_settings.write_config_locked(path, config)
     else:
         save_mutable_settings({args.key: value})
     _verify_saved_setting(args.key, value)
@@ -597,12 +637,12 @@ def _verify_saved_setting(key: str, value: str) -> None:
     local = _config_settings.load_config()
     path = _config_settings.shared_settings_path()
     shared = _config_settings.load_shared_settings(path) if path is not None else {}
-    shared_target = key in _config_settings.SHARED_SETTING_KEYS and _shared_write_path() is not None
+    shared_target = key in _config_settings.SHARED_SETTING_KEYS and config_shared_migration.shared_write_path() is not None
     source = _mutable_source(key, local, shared, usage_settings.temporary_settings(), shared_target=shared_target)
     if source == "一時指定":
         next_action = f"atk config temporary clear {key}で一時指定を解除して、atk config get {key}で確かめる"
     elif source == "移行前のローカル保存値":
-        next_action = f"{_config_file_path()}の設定を確認する。{_MIGRATION_NEXT_ACTION}"
+        next_action = f"{_config_file_path()}の設定を確認する。{config_shared_migration.NEXT_ACTION}"
     elif source.startswith(_config_settings.CONFIG_ENV_PREFIX):
         next_action = f"環境変数{source}を解除し、atk config get {key}で確かめる"
     else:
@@ -636,7 +676,7 @@ def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
                 print(f"  {key}: {value}")
         return
     settings = _config_settings.PRESET_MODELS[args.preset]
-    if _shared_write_path() is None:
+    if config_shared_migration.shared_write_path() is None:
         config = _config_migration.plan_legacy_migration(_config_settings.load_config(), updates=settings)
         _config_settings.save_config(config)
     else:

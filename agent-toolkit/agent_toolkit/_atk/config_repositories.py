@@ -169,7 +169,6 @@ def identifier(value: str) -> tuple[str, str | None]:
 
 SHARED_ATTRIBUTES = (
     "edit",
-    "process_loop",
     "platforms",
     "branches",
     "default_branch",
@@ -178,7 +177,20 @@ SHARED_ATTRIBUTES = (
     "github_issue_trusted_authors",
 )
 
-"""同じprivate-notesを使う端末で共有する登録属性。`path`だけを端末側に持つ。  pyfltr: allow-comment"""
+"""同じprivate-notesを使う端末で共有する登録属性。  pyfltr: allow-comment"""
+
+
+HOST_ATTRIBUTES = ("path", "process_loop")
+SHARED_UNITS = (
+    ("edit",),
+    ("platforms",),
+    ("branches", "default_branch", "merge_from"),
+    ("github_issues", "github_issue_trusted_authors"),
+)
+
+
+def shared_attributes(item: dict[str, Any]) -> dict[str, Any]:
+    return {key: item[key] for key in SHARED_ATTRIBUTES if key in item}
 
 
 def is_shared_id(repo_id: str) -> bool:
@@ -207,50 +219,103 @@ def parse_shared(value: str) -> dict[str, dict[str, Any]]:
             raise ValueError(f"共有する登録は正規化したリモートURLで指定する: {key}")
         if not isinstance(raw, dict) or "path" in raw:
             raise ValueError(f"共有する登録{key}にはpathを含めない")
-        repositories[key] = _parse_item(key, raw, None, check_paths=False, require_path=False)
+        item = _parse_item(key, raw, None, check_paths=False, require_path=False)
+        if "process_loop" not in raw:
+            item.pop("process_loop")
+        repositories[key] = item
     return repositories
 
 
 def is_link(item: dict[str, Any]) -> bool:
-    return item.keys() == {"path"}
+    return item.keys() <= {*HOST_ATTRIBUTES, "overrides"}
+
+
+def local_entries(value: str) -> dict[str, Any]:
+    return _load_object(value)
+
+
+def local_entries_by_id(entries: dict[str, Any]) -> dict[str, list[tuple[str, Any]]]:
+    groups: dict[str, list[tuple[str, Any]]] = {}
+    for key, raw in entries.items():
+        try:
+            repo_id, _ = identifier(key)
+        except ValueError, OSError:
+            repo_id = key
+        groups.setdefault(repo_id, []).append((key, raw))
+    return groups
+
+
+def parse_local_entry(key: str, raw: Any) -> tuple[str, dict[str, Any]]:
+    if isinstance(raw, dict) and is_shared_id(key) and is_link(raw):
+        item = dict(raw)
+        if "path" in item:
+            if not isinstance(item["path"], str) or not item["path"]:
+                raise ValueError(f"{key}のpathは空でない文字列で指定する")
+            item["path"] = normalize_path(item["path"])
+        if "process_loop" in item and not isinstance(item["process_loop"], bool):
+            raise ValueError(f"{key}のprocess_loopは真偽値で指定する")
+        if "overrides" in item:
+            overrides = item["overrides"]
+            if not isinstance(overrides, dict) or not overrides.keys() <= set(SHARED_ATTRIBUTES):
+                raise ValueError(f"{key}の端末側の上書き属性が不正")
+            item["overrides"] = shared_attributes(
+                _parse_item(key, {"edit": "deny", **overrides}, None, check_paths=False, require_path=False)
+            )
+            if "edit" not in overrides:
+                item["overrides"].pop("edit")
+            if "platforms" not in overrides:
+                item["overrides"].pop("platforms")
+            # 空の組も、共有値を端末側で無効にする上書きとして残す。  # pyfltr: allow-comment
+            for field in ("branches", "github_issues"):
+                if field in overrides and field not in item["overrides"]:
+                    item["overrides"][field] = overrides[field]
+        return key, item
+    repo_id, located = identifier(key)
+    return repo_id, _parse_item(key, raw, located, check_paths=False, require_path=not is_shared_id(repo_id), repo_id=repo_id)
 
 
 def parse_local(value: str) -> dict[str, dict[str, Any]]:
-    """端末側の登録を返す。リモートURLの登録は`path`だけの関連付けを受け付ける。  pyfltr: allow-comment"""
     repositories: dict[str, dict[str, Any]] = {}
-    for key, raw in _load_object(value).items():
-        if isinstance(raw, dict) and raw.keys() == {"path"} and is_shared_id(key):
-            if not isinstance(raw["path"], str) or not raw["path"]:
-                raise ValueError(f"{key}のpathは空でない文字列で指定する")
-            repositories[key] = {"path": normalize_path(raw["path"])}
-        else:
-            repositories.update(parse(json.dumps({key: raw}), check_paths=False))
+    for key, raw in local_entries(value).items():
+        repo_id, item = parse_local_entry(key, raw)
+        if repo_id in repositories:
+            raise ValueError(f"同じrepositoryの登録が重複している: {repo_id}")
+        repositories[repo_id] = item
     return repositories
 
 
 def merge(shared: dict[str, dict[str, Any]], local: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """共有属性と端末側のpathを合成する。移行前の属性付きの端末側登録はその端末の値を使う。  pyfltr: allow-comment"""
-    result = {repo_id: dict(item) for repo_id, item in shared.items()}
+    """旧共有の巡回値は移行前の端末関連付けにだけ適用する。  pyfltr: allow-comment"""
+    result = {repo_id: shared_attributes(item) | {"process_loop": False} for repo_id, item in shared.items()}
     for repo_id, item in local.items():
-        if is_link(item):
-            if repo_id in result:
-                result[repo_id]["path"] = item["path"]
-        else:
+        if not is_link(item):
             result[repo_id] = dict(item)
+            continue
+        if repo_id not in result:
+            continue
+        combined = result[repo_id]
+        overrides = item.get("overrides", {})
+        for fields in SHARED_UNITS:
+            if overrides.keys() & set(fields):
+                for key in fields:
+                    combined.pop(key, None)
+                combined.update({key: overrides[key] for key in fields if key in overrides})
+        if item.get("path"):
+            combined["path"] = item["path"]
+        combined["process_loop"] = item.get("process_loop", shared[repo_id].get("process_loop", False))
     return result
 
 
 def split(repositories: dict[str, dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-    """合成済みの登録を、共有属性と端末側の値（pathの関連付けと共有できない登録）へ分ける。  pyfltr: allow-comment"""
     shared: dict[str, dict[str, Any]] = {}
     local: dict[str, dict[str, Any]] = {}
     for repo_id, item in repositories.items():
         if not is_shared_id(repo_id):
             local[repo_id] = dict(item)
             continue
-        shared[repo_id] = {key: value for key, value in item.items() if key != "path"}
-        if item.get("path"):
-            local[repo_id] = {"path": item["path"]}
+        shared[repo_id] = shared_attributes(item)
+        if item.get("path") or "process_loop" in item:
+            local[repo_id] = {key: item[key] for key in HOST_ATTRIBUTES if key in item}
     return shared, local
 
 
