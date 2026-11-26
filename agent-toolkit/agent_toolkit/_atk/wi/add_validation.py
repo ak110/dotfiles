@@ -391,17 +391,27 @@ def normalize_choices(value: object) -> str | None:
 
 def _remove_matching_uwi_fields(
     frontmatter: dict[str, object], *, question_type: str | None, scope: str | None, choices: str | None
-) -> None:
+) -> str | None:
+    body_scope = None
     for key, expected in (("type", WI_TYPE_UWI), ("question_type", question_type), ("scope", scope), ("choices", choices)):
         if key not in frontmatter:
             continue
         raw = frontmatter.pop(key)
         value = normalize_choices(raw) if key == "choices" else raw.strip() if isinstance(raw, str) else None
+        if (
+            key == "scope"
+            and scope is None
+            and question_type == _constants.QUESTION_TYPE_REPORT
+            and value in _RETROSPECTIVE_SCOPES
+        ):
+            body_scope = value
+            continue
         if value is None or value != expected:
             raise WebInputError(
                 f"UWIの{key}が本文frontmatterとCLIで一致しません",
                 next_action=f"本文frontmatterの{key}を除くか、--{key.replace('_', '-')}と同じ値を指定する",
             )
+    return body_scope
 
 
 _RESERVED_FRONTMATTER_KEYS = ("target_repo", "target_branch", "source", *_RESERVED_ADD_KEY_NEXT_ACTIONS)
@@ -465,11 +475,12 @@ def _validate_add_entries(
         )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     for message, (frontmatter, body) in zip(messages, parsed_messages, strict=True):
+        body_scope = None
         origin_review.require(message, body=body, entry_type=entry_type, reviews=origin_reviews)
         for key in _RETIRED_ADD_KEYS:
             frontmatter.pop(key, None)
         if entry_type == WI_TYPE_UWI:
-            _remove_matching_uwi_fields(frontmatter, question_type=question_type, scope=scope, choices=choices)
+            body_scope = _remove_matching_uwi_fields(frontmatter, question_type=question_type, scope=scope, choices=choices)
         rejected_keys = [key for key in _RESERVED_ADD_KEY_NEXT_ACTIONS if key in frontmatter]
         if rejected_keys:
             raise WebInputError(
@@ -486,6 +497,8 @@ def _validate_add_entries(
             entry_type=entry_type,
             source=source,
         )
+        if body_scope is not None:
+            frontmatter["scope"] = body_scope
     if normalized_target_repo is None:
         _verify_frontmatter_target_repos(parsed_messages)
     else:

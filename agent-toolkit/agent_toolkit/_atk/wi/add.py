@@ -193,10 +193,16 @@ def _track_batch_report_save(
     scope: str | None,
     parsed_messages: list[tuple[dict[str, object], str]],
 ) -> Generator[None]:
-    active = _active_report_batch(scope) if entry_type == WI_TYPE_UWI else None
-    if active is None or not any(
-        data.get("source", source) == "run-skill" and data.get("run_skill_report") == "true" for data, _ in parsed_messages
-    ):
+    active = None
+    if entry_type == WI_TYPE_UWI:
+        for data, _ in parsed_messages:
+            if (
+                data.get("source", source) == "run-skill"
+                and data.get("run_skill_report") == "true"
+                and (active := _active_report_batch(_item_scope(data, scope))) is not None
+            ):
+                break
+    if active is None:
         yield
         return
     writer, batch = active
@@ -215,6 +221,11 @@ def _track_batch_report_save(
         status = "returned"
     finally:
         writer.record_report_step("save-result", {**details, "status": status})
+
+
+def _item_scope(data: dict[str, object], scope: str | None) -> str | None:
+    body_scope = data.get("scope")
+    return scope if scope is not None else body_scope if isinstance(body_scope, str) else None
 
 
 def run_report_metadata(
@@ -418,11 +429,14 @@ def add_entries_locked(
         for key in (_add_drafts.FINGERPRINT, "github_source"):
             if key in frontmatter:
                 frontmatter_data[key] = frontmatter[key]
+        effective_scope = _item_scope(frontmatter, scope)
         if entry_type == WI_TYPE_UWI:
-            frontmatter_data = run_report_metadata(frontmatter_data, question_type=question_type, scope=scope, new_report=True)
+            frontmatter_data = run_report_metadata(
+                frontmatter_data, question_type=question_type, scope=effective_scope, new_report=True
+            )
         if entry_type != WI_TYPE_AWI:
-            if scope:
-                frontmatter_data["scope"] = scope
+            if effective_scope:
+                frontmatter_data["scope"] = effective_scope
             frontmatter_data["question_type"] = question_type
             if question_type == QUESTION_TYPE_REPORT:
                 validate_retrospective_report(private_notes, body, frontmatter_data)
@@ -898,7 +912,9 @@ def cmd_add(
                 for frontmatter, body in parsed_messages:
                     raw_repo = frontmatter.get("target_repo")
                     item_repo = resolve_repo_id_or_raise(raw_repo) if isinstance(raw_repo, str) else normalized_target_repo
-                    validate_retrospective_report(private_notes, body, {"scope": args.scope, "target_repo": item_repo})
+                    validate_retrospective_report(
+                        private_notes, body, {"scope": _item_scope(frontmatter, args.scope), "target_repo": item_repo}
+                    )
             if draft_basis is not None:
                 _ensure_draft_destinations(draft_basis, parsed_messages, item_branches, resolved_branch)
                 draft_basis.verify(resolved_branch)

@@ -315,15 +315,19 @@ def test_retrospective_handoff_ignores_equivalent_carryover_headings(tmp_path, h
         ("不要（次の振り返りで調べる）", False),
     ],
 )
-def test_report_dry_run_and_save_check_handoff_in_effective_repo(tmp_path, monkeypatch, capsys, value, valid):
+@pytest.mark.parametrize("scope_in_body", [False, True])
+def test_report_dry_run_and_save_check_handoff_in_effective_repo(tmp_path, monkeypatch, capsys, value, valid, scope_in_body):
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     awi = notes / "2026/11/20261126-183408-001.md"
     awi.parent.mkdir(parents=True, exist_ok=True)
     awi.write_text("---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/other\n---\n\n# 調査\n", encoding="utf-8")
     body = tmp_path / "report.md"
+    scope = "agent-toolkit:review-session batch"
+    frontmatter_scope = f"scope: {scope}\n" if scope_in_body else ""
     body.write_text(
-        f"---\ntarget_repo: github.com/example/other\n---\n\n# 報告: 振り返り\n\n- 未確定: 再現しない; 検証の引き継ぎ: {value}",
+        f"---\ntarget_repo: github.com/example/other\n{frontmatter_scope}---\n\n# 報告: 振り返り\n\n"
+        f"- 未確定: 再現しない; 検証の引き継ぎ: {value}",
         encoding="utf-8",
     )
     args = [
@@ -333,8 +337,7 @@ def test_report_dry_run_and_save_check_handoff_in_effective_repo(tmp_path, monke
         "github.com/example/repo",
         "--type=uwi",
         "--question-type=report",
-        "--scope",
-        "agent-toolkit:review-session batch",
+        *([] if scope_in_body else ["--scope", scope]),
         "--source",
         "test",
         "--body-file",
@@ -346,4 +349,8 @@ def test_report_dry_run_and_save_check_handoff_in_effective_repo(tmp_path, monke
         assert (result.value.code == 0) == valid
         if not valid:
             assert "未確定の問題の引き継ぎ" in capsys.readouterr().err
-        assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1 + int(valid and not dry_run)
+        saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+        assert len(saved) == 1 + int(valid and not dry_run)
+        if valid and not dry_run:
+            parsed = frontmatter.parse_frontmatter(next(path for path in saved if path != awi).read_text(encoding="utf-8"))
+            assert parsed is not None and parsed[0]["scope"] == scope
