@@ -362,7 +362,8 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
     await page.locator("#detail").evaluate(
         "element => { const spacer = document.createElement('div'); spacer.style.height = '600px'; element.append(spacer); }"
     )
-    toolbar = page.locator("#screen-sessions main .toolbar")
+    toolbar = page.locator("#screen-sessions main > .toolbar").filter(has=page.locator("#detail-title"))
+    reading_toolbar = page.locator("#session-reading")
     before = await toolbar.bounding_box()
     assert before is not None
 
@@ -374,6 +375,8 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
     assert scroll_top > 0
     assert after is not None
     assert after["y"] < before["y"]
+    await playwright.async_api.expect(reading_toolbar.get_by_label("記録内検索")).to_be_in_viewport()
+    await reading_toolbar.get_by_label("記録内検索").fill("確認")
 
 
 @pytest.mark.asyncio(loop_scope="session")
