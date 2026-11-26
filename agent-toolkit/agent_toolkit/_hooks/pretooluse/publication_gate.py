@@ -45,7 +45,7 @@ def _is_publication(tool_name: str, tool_input: dict) -> bool:
 
 
 def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
-    """公開前の新着WIの判定漏れを止める。同じ発話の中で同じ操作を再発行すれば解除する。  pyfltr: allow-comment"""
+    """開始時集合と比較し、新着を確認できた場合だけ同じ操作の再発行を受け付ける。  pyfltr: allow-comment"""
     if not _applies(payload, session_id, tool_name, tool_input):
         return None
     actor = agent_id.resolve_hook_agent_id(payload)
@@ -53,6 +53,10 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
     if found is None:
         notice.forget_resends(session_id, actor, _RESEND_KEY)
         return None
+    reason, fix, rows = found
+    if rows is None:
+        notice.forget_resends(session_id, actor, _RESEND_KEY)
+        return reason, fix
     if notice.consume_resend(
         session_id,
         actor,
@@ -63,12 +67,9 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
         limit=1,
     ):
         return None
-    reason, fix, rows = found
-    if rows is not None:
-        recipient = actor
-        reason, snapshot = notice.new_wi_preview(session_id, recipient, rows)
-        reason = reason.replace("処理可能な新着WI:", "公開前の新着WI:", 1)
-        notice.stage_new_wi_preview(reason, session_id, recipient, snapshot, scoped=True)
+    reason, snapshot = notice.new_wi_preview(session_id, actor, rows)
+    reason = reason.replace("処理可能な新着WI:", "公開前の新着WI:", 1)
+    notice.stage_new_wi_preview(reason, session_id, actor, snapshot, scoped=True)
     return reason, f"{fix}同じ操作を再発行すると実行する。"
 
 

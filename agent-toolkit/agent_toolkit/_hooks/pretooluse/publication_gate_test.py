@@ -145,6 +145,45 @@ def test_publication_uses_registered_baseline_after_session_temp_changes(tmp_pat
             assert denied is not None and late.name in denied[0]
 
 
+def test_publication_requires_recovery_of_the_same_circuit_baseline(tmp_path, monkeypatch):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repository = config.ConfiguredRepository("github.com/example/foo", tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    owner = "active-publication"
+    _register_circuit(tmp_path, monkeypatch, "previous-publication")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", owner)
+    command = {"command": "git push origin develop"}
+    payload = {"session_id": owner, "cwd": str(tmp_path)}
+    for _ in range(2):
+        denied = publication_gate.check(payload, owner, "Bash", command)
+        assert denied is not None and "開始時集合がない" in denied[0]
+        assert "再発行すると実行" not in denied[1]
+
+    _register_circuit(tmp_path, monkeypatch, owner)
+    monkeypatch.setattr(snapshot.managed_temp, "find_session_temp", lambda _session_id: tmp_path / "compacted")
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner)
+    child = "publication-worker"
+    delegated = {"session_id": child, "agent_id": child, "cwd": str(tmp_path)}
+    assert publication_gate.check(delegated, child, "Bash", command) is None
+    late = _write_awi_file(notes, "20261124-085011-004.md")
+    initial = publication_gate.check(delegated, child, "Bash", command)
+    assert initial is not None and late.name in initial[0]
+
+    (source,) = snapshot.progress_sources(owner).values()
+    path = pathlib.Path(source["path"])
+    original = path.read_bytes()
+    path.write_bytes(b"invalid")
+    for _ in range(2):
+        denied = publication_gate.check(delegated, child, "Bash", command)
+        assert denied is not None and "新着WIを取得できない" in denied[0]
+        assert "再発行すると実行" not in denied[1]
+    path.write_bytes(original)
+    recovered = publication_gate.check(delegated, child, "Bash", command)
+    assert recovered is not None and late.name in recovered[0]
+    assert publication_gate.check(delegated, child, "Bash", command) is None
+
+
 def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path, monkeypatch):
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
