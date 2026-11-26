@@ -87,6 +87,28 @@ def test_symlink_and_untracked_files(tmp_path: pathlib.Path, capsys: pytest.Capt
     assert not output.out and not output.err
 
 
+@pytest.mark.parametrize(
+    ("selected", "expected"),
+    [
+        ("[short].md", 0),
+        ("s.md", 1),
+        (".gitattributes", 1),
+        ("nested/.gitattributes", 1),
+        ("pyproject.toml", 1),
+        ("scripts/check_file_lines.py", 1),
+    ],
+)
+def test_selected_paths_keep_repository_wide_checks_for_policy_changes(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], selected: str, expected: int
+) -> None:
+    repository = init_repository(tmp_path, files={"[short].md": "ok\n", "s.md": "x\n" * 251})
+    run_git(repository, "add", ".")
+    assert check_file_lines.check_repository(repository, [repository / selected]) == expected
+    output = capsys.readouterr()
+    assert not output.err
+    assert output.out.startswith("s.md:1:") == bool(expected)
+
+
 @pytest.mark.parametrize("query", ["rev-parse", "ls-files", "check-attr"])
 def test_git_query_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], query: str

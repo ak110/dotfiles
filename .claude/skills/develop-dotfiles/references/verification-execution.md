@@ -5,7 +5,9 @@
 ## 検証コマンドの実行
 
 共有の実行枠の対象は、`make test`、`uv run --frozen pyfltr run`、`git commit`の中の`pyfltr fast`、共通のpytestプラグインを読むpytestである。
-直下の`pyproject.toml`の`addopts`が同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で外すものは枠の対象外となる。
+直下の`pyproject.toml`の`addopts`が同プラグインを`-p`で読む。
+`-o addopts=''`でプラグインを外したpytestは、明示的に同じプラグインを指定しない限り枠の対象外となる。
+`make test-browser`は`-p agent_toolkit._testing.pytest_plugin`を指定するため枠を使う。
 枠はホスト全体で2つ（pyfltr 3.30.0以降）で、pytestと統合の検証は開始からworker・子孫の回収まで枠を持ち、入れ子の実行は祖先の所有を継ぎ、収集だけのpytest（`--collect-only`）は枠を取らない。
 シェルからの起動は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の形式と3分類に従う。
 Codexでは、共有枠を取る構成のpyfltr検証を、検査の所要にかかわらず初回からCLIで起動する。
@@ -79,6 +81,8 @@ exit "$rc"
    定義元の`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」は、条件の一致する成功の集合を合わせることを認める。
    dotfilesの統合前の最終確認はこれより厳しい追加の条件とし、最終の内容での単一の実行に限る。
    - 形は`uv run --frozen pyfltr run --no-fix --no-always-targets --commands=<手順2で選んだ全コマンド> <対象ファイルの絶対パス>`とする。
+     このrunに`DOTFILES_FILE_LINES_ALL=1`を渡し、`file-lines`だけは全追跡ファイルを調べる。
+     別のrunは立てない。
      変更箇所・直接の利用側・競合解消に関わるテストと、develop CIが実行しないチェックを含める。
    - 起動の前に`uv run --frozen python scripts/pyfltr_precommit.py --check-argv '<予定argvのJSON配列>' --consumer-review <判定JSONの絶対パス>`で引数と必須の範囲を確かめる。
      argvは`["run", "--no-fix", "--no-always-targets", "--commands=...", "<対象パス>"]`の形とし、曖昧な候補が無ければ`--consumer-review`を省く。
@@ -131,7 +135,7 @@ exit "$rc"
      [[ ${1-} == -- ]] || { echo "検証引数の前に -- が必要" >&2; exit 2; }
      shift
      make sync
-     uv run --frozen python scripts/prepare_verification_tools.py "${mise_tools[@]}" -- \
+     DOTFILES_FILE_LINES_ALL=1 uv run --frozen python scripts/prepare_verification_tools.py "${mise_tools[@]}" -- \
          pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err" || {
          code=$?
          cat "$log_prefix.err" >&2

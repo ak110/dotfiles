@@ -191,6 +191,7 @@ writing-check-dash-subproject-aware = false
 dotfiles-markdown-structure-subproject-aware = false
 file-lines-subproject-aware = false
 file-lines = true
+overrides = [{ when = "DOTFILES_FILE_LINES_ALL", file-lines-pass-filenames = false }]
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
 statusline-version-subproject-aware = false
@@ -300,10 +301,9 @@ pass-filenames = false
 [tool.pyfltr.custom-commands.file-lines]
 type = "linter"
 path = "uv"
-args = ["run", "--frozen", "python", "scripts/check_file_lines.py"]
+args = ["run", "--frozen", "python", "scripts/check_file_lines.py", "--"]
 targets = ["*"]
 fast = true
-pass-filenames = false
 
 [tool.pyfltr.custom-commands.dotfiles-test-copies]
 type = "linter"
