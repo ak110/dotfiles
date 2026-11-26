@@ -1,5 +1,4 @@
 import datetime
-import socket
 
 import playwright.async_api
 import pytest
@@ -165,6 +164,7 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
     error_region = page.locator("#operation-notice")
     error_message = page.locator("#operation-notice-message")
     close_button = page.get_by_role("button", name="操作通知を閉じる")
+    sync_context = f"［WI / browser-test / {browser_harness.root} / Git同期］"
 
     async def fail_first_list_request(route: playwright.async_api.Route) -> None:
         await route.fulfill(
@@ -175,9 +175,7 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 
     await page.route("**/api/sync", fail_first_list_request)
     await page.locator("#refresh-button").click()
-    await playwright.async_api.expect(error_message).to_contain_text(
-        f"［WI / {socket.gethostname()} / {browser_harness.root} / Git同期］一覧取得失敗"
-    )
+    await playwright.async_api.expect(error_message).to_contain_text(f"{sync_context}一覧取得失敗")
     await playwright.async_api.expect(error_region).to_be_visible()
     await page.unroute("**/api/sync", fail_first_list_request)
     await close_button.focus()
@@ -195,9 +193,7 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 
     await page.route("**/api/sync", fail_second_list_request)
     await page.locator("#refresh-button").click()
-    await playwright.async_api.expect(error_message).to_contain_text(
-        f"［WI / {socket.gethostname()} / {browser_harness.root} / Git同期］後続のエラー"
-    )
+    await playwright.async_api.expect(error_message).to_contain_text(f"{sync_context}後続のエラー")
     await playwright.async_api.expect(error_region).to_be_visible()
 
     metrics = await error_region.evaluate(
