@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -363,11 +363,19 @@ def period(collected: _Collected, since: datetime, until: datetime) -> dict[str,
         params = _request_fields(prompt)
         named_rejudgment = params.get("instruction") == "再判定せよ"
         previous = previous_single_failure.pop(receipt.session, None)
-        for path, identity, verdict in rows:
+        candidates = [
+            identity or _request_identity(prompt, params, path, path_identities[series, path], series_ids[series])
+            for path, identity, _ in rows
+        ]
+        claims = Counter(candidates)
+        for (path, identity, verdict), candidate in zip(rows, candidates, strict=True):
             path_ids = path_identities[series, path]
             first_path = path
             if not identity:
-                identity = _request_identity(prompt, params, path, path_ids, series_ids[series])
+                if candidate is not None and claims[candidate] > 1:
+                    counts["unassigned"] += int(since <= receipt.timestamp <= until)
+                    continue
+                identity = candidate
                 selected = params.get("要求識別子")
                 draft = params.get("原稿")
                 if identity is None and named_rejudgment:

@@ -306,7 +306,31 @@ def test_single_draft_rejudgment_uses_the_only_prior_judgment(tmp_path: Path, pr
     assert result["first_pass"] == 0
 
 
-def test_rejudgment_does_not_assign_multiple_unlabelled_results_using_one_mapping_id(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("second", "expected"),
+    [
+        pytest.param(_judgment("/shared.md", "合格") + _judgment("/shared.md", "修正要"), (0, 0, 2, 2), id="ambiguous"),
+        pytest.param(_judgment("/shared.md", "合格"), (1, 0, 0, 1), id="single"),
+        pytest.param(
+            _judgment("/corrected-a.md", "合格") + _judgment("/corrected-b.md", "合格"),
+            (0, 0, 2, 2),
+            id="different-paths",
+        ),
+        pytest.param(
+            _judgment("/shared.md", "修正要", "a") + _judgment("/shared.md", "合格"),
+            (1, 1, 0, 0),
+            id="explicit-other",
+        ),
+        pytest.param(
+            _judgment("/shared.md", "修正要") + _judgment("/shared.md", "合格", "b"),
+            (1, 0, 1, 1),
+            id="explicit-selected",
+        ),
+    ],
+)
+def test_rejudgment_assigns_only_unique_candidate_for_an_id(
+    tmp_path: Path, second: str, expected: tuple[int, int, int, int]
+) -> None:
     log = _Log(tmp_path / "parent.jsonl")
     log.start("reviewer", subagent_md_path=_ROLE)
     log.wait("reviewer", _judgment("/shared.md", "修正要", "a") + _judgment("/shared.md", "修正要", "b"))
@@ -320,7 +344,7 @@ def test_rejudgment_does_not_assign_multiple_unlabelled_results_using_one_mappin
         {"delivery": "reply_started"},
         day=27,
     )
-    log.wait("reviewer", _judgment("/corrected-a.md", "合格") + _judgment("/corrected-b.md", "合格"), day=27)
+    log.wait("reviewer", second, day=27)
     result = draft_review_rounds.period(log.collect(), _time(26), _time(27))
-    assert (result["passed"], result["unassigned"], result["no_second"]) == (0, 2, 2)
+    assert (result["passed"], result["failed"], result["unassigned"], result["no_second"]) == expected
     assert result["first_pass"] == 0
