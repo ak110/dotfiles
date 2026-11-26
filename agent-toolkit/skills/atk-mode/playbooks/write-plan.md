@@ -48,8 +48,8 @@
 回答済みUWIの扱い:
 
 - 元のAWIが同じレーンにあり`詳細化あり`なら、回答をそのAWIへ反映して詳細化する。
-- 元のAWIが同じレーンにあり`詳細化なし`（対象外の`source`か印あり）なら、AWIの本文は変えず、回答を要件として、計画と同じstemの実行レビュー指摘管理表へ実装の委譲前に記録する。
-  表が無ければ`atk review-table init`で作り、`atk review-table add`で1行加える。
+- 元のAWIが同じレーンにあり`詳細化なし`（対象外の`source`か印あり）なら、AWIの本文は変えず、UWIの`## 回答`をそのまま実装と実行レビューの基準にする。
+  UWIは一覧に載るため実装担当が読み、実行レビューはUWIの`## 回答`を原文要求として判定する（`agent-toolkit:atk-mode/references/review-contract.md`「記録する行と要求単位」）。
 - UWIが元のAWIを持たない時だけ、回答から`atk wi add --detailed --hold`で詳細化済みのAWIを作って一覧へ加える。
   原稿のfrontmatterの`proposal_id`は`answer/<UWIのファイル名>`とし、中断後の再投入では保存済みの1件を使う。
   加えたAWIは検査の集合へ含める（レーンでは`plan-check`の`--added-wi`、single-laneでは対応表へ加えて`--expected-wi`）。

@@ -465,12 +465,12 @@ def _apply_cooldown_edit(content: str, value: str, filename: str) -> str:
     return _frontmatter.serialize_frontmatter(data, body)
 
 
-def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False) -> None:
+def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False, message: str | None = None) -> None:
     if not is_agent_environment():
         return
     state = _wi_entries.entry_state_of(path)
     if state == WI_STATE_HOLD:
-        _reject_detailed_hold_edit(path)
+        reject_frozen_hold_edit(path, message)
         return
     if state != WI_STATE_PROCESSING:
         return
@@ -503,15 +503,31 @@ def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False) -
     sys.exit(2)
 
 
-def _reject_detailed_hold_edit(path: pathlib.Path) -> None:
+def reject_frozen_hold_edit(path: pathlib.Path, message: str | None) -> None:
     parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
-    if parsed is None or not is_detailed(parsed[0]):
+    if parsed is None or _constants.normalized_wi_type(parsed[0].get("type")) != WI_TYPE_AWI:
+        return
+    if is_detailed(parsed[0]):
+        reason = "保留中の詳細化済みのAWIは計画の基準に使うため"
+    elif parsed[0].get("source") == "implement" and not _is_merge_update(message):
+        reason = (
+            "implementの保留AWIは実行レビューの収束まで計画の基準に使い、"
+            "マージ用への更新（merge_branchとmerge_commitの追加）だけを受け付けるため"
+        )
+    else:
         return
     _outcome.report_failure(
-        f"保留中の詳細化済みのAWIはエージェント環境から本文を置き換えられない: {path.name}",
+        f"{reason}、エージェント環境から本文を置き換えられない: {path.name}",
         next_action="実装中に確定した要件の変更は実行レビュー指摘管理表へ記録し、この項目へはatk wi edit --appendで追記する",
     )
     sys.exit(2)
+
+
+def _is_merge_update(message: str | None) -> bool:
+    if message is None:
+        return False
+    parsed = _frontmatter.parse_frontmatter(message)
+    return parsed is not None and bool(parsed[0].get("merge_branch")) and bool(parsed[0].get("merge_commit"))
 
 
 def _mark_detailed(content: str, filename: str) -> str:
@@ -602,7 +618,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         original = _frontmatter.decode_entry_text(snapshot)
         editing_body = message is not None or args.cooldown_until is None
         if editing_body:
-            _reject_agent_processing_edit(path, detail=bool(getattr(args, "detail", False)))
+            _reject_agent_processing_edit(path, detail=bool(getattr(args, "detail", False)), message=message)
         normalized_target_repo = resolve_repo_id(args.target_repo) if args.target_repo is not None else None
         verify_target_repo_content(path, original, normalized_target_repo)
     original = _frontmatter.decode_entry_text(snapshot)
