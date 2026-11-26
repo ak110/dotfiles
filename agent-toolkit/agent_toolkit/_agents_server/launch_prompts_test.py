@@ -21,7 +21,7 @@ from agent_toolkit._agents_server import (
     session_errors,
 )
 from agent_toolkit._agents_server.state import LaunchKind
-from agent_toolkit._common import delegated_session, plugin_roots
+from agent_toolkit._common import delegated_session, plugin_roots, runtime_environment
 from agent_toolkit._testing.agents_server_claude_support import _capture_options
 
 
@@ -55,6 +55,47 @@ def test_plugin_resource_instructions_reject_invalid_toolkit_root(tmp_path: path
         root.mkdir()
     with pytest.raises(plugin_roots.PluginRootError, match="agent-toolkitの実在するskills"):
         launch_prompts.plugin_resource_instructions(root, "codex", str(tmp_path))
+
+
+def _toolkit(root: pathlib.Path, version: str) -> pathlib.Path:
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin" / "plugin.json").write_text(
+        f'{{"name": "agent-toolkit", "version": "{version}"}}', encoding="utf-8"
+    )
+    return root
+
+
+@pytest.mark.parametrize(
+    ("caller_version", "delegated", "expected"),
+    [
+        ("2.305.2", False, True),
+        ("2.308.0", False, False),
+        ("2.305.2", True, False),
+        (None, False, False),
+    ],
+    ids=["older-caller", "same-version", "delegated-caller", "no-caller-root"],
+)
+def test_caller_runtime_instructions_name_caller_launcher_on_version_skew(
+    tmp_path: pathlib.Path, caller_version: str | None, delegated: bool, expected: bool
+) -> None:
+    server = _toolkit(tmp_path / "server", "2.308.0")
+    environment = {}
+    if caller_version is not None:
+        caller = _toolkit(tmp_path / "caller", caller_version)
+        environment[delegated_session.CALLER_PLUGIN_ROOT_ENV] = str(caller)
+    if delegated:
+        environment[delegated_session.OWNER_SESSION_ENV] = "parent"
+    with runtime_environment.bind(runtime_environment.CallerContext(environment, tmp_path)):
+        notice = launch_prompts.caller_runtime_instructions(server)
+    if not expected:
+        assert notice is None
+        return
+    assert notice is not None
+    assert 'kind="caller-runtime"' in notice
+    assert "版2.305.2" in notice
+    assert "版2.308.0" in notice
+    command, _note = launch_prompts.plugin_environment.launcher_command(tmp_path / "caller")
+    assert command in notice
 
 
 _MARKERS = {

@@ -22,6 +22,9 @@
   hookは実体とplugin識別を検証し、不正な明示指定を診断する。
   無指定時はhook自身の配布物を使う。
   新しい会話への一般的な環境継承では除去し、起動側が選んだ値を設定する。
+- `AGENT_TOOLKIT_CALLER_PLUGIN_ROOT`: `agents_server`の転送側が、接続元のCLIの配布物の絶対パスを呼出元の環境に入れて管理サービスへ渡す（継承した値は上書きする）。
+  共有の管理サービスは最も新しい版の世代が受け付けるため、主checkoutのように開発中の版より古い配布物を使う委譲元では、委譲先が新しい版のCLIで動く。
+  管理サービスは委譲元が委譲先でない時にこの版と自身の版を比べ、異なれば委譲先へ委譲元の起動部分を伝え（`caller-runtime`）、委譲元がやり直す検査を同じ版で行わせる。
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションであることを示す印（値`1`）。
   後述の`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`が存在する場合は、hook入力の会話IDとの一致も確認する。
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: process-loopがClaude会話の新規起動またはID指定再開時に子セッションへ渡す会話ID。

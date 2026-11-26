@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import os
 import pathlib
@@ -12,7 +13,7 @@ import sys
 
 from agent_toolkit._agents_server import session_errors
 from agent_toolkit._agents_server.state import LaunchKind
-from agent_toolkit._common import message_format, plugin_environment, plugin_roots
+from agent_toolkit._common import delegated_session, message_format, plugin_environment, plugin_roots, runtime_environment
 
 # ベース指示の公開入力契約と再検証はdocs/development/audit-records.mdの
 # 「agent-toolkit/agent_toolkit/_agents_server/launch_prompts.py：委譲先のベース指示：2026年10月23日」にある。
@@ -249,12 +250,54 @@ def plugin_resource_instructions(toolkit_root: pathlib.Path, host: str, project:
     # Claude以外はbackendが保持済みtoolkit rootを既に案内する。
     toolkit_notice = f"agent-toolkit plugin root: {toolkit_root}\n" if host == "claude" else ""
     completion = "\n\n" + CODEX_COMPLETION_GUIDANCE if starting and host == "codex" else ""
-    return _normative(
+    resources = _normative(
         toolkit_notice + f"agent-basics plugin root: {basics_root}\n"
         "`agent-basics:`で始まる品質資料はagent-basicsのroot、"
         "`agent-toolkit:`のスキルと実行基盤の内部資源はagent-toolkitのrootから読んでください。"
         "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てないでください。" + completion,
         kind="plugin-resources",
+    )
+    caller = caller_runtime_instructions(toolkit_root)
+    return resources if caller is None else f"{resources}\n\n{caller}"
+
+
+def _plugin_version(root: pathlib.Path) -> str | None:
+    try:
+        manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    except OSError, UnicodeDecodeError, json.JSONDecodeError:
+        return None
+    if not isinstance(manifest, dict) or manifest.get("name") != "agent-toolkit":
+        return None
+    version = manifest.get("version")
+    return version if isinstance(version, str) and version else None
+
+
+def caller_runtime_instructions(toolkit_root: pathlib.Path) -> str | None:
+    """委譲元の`atk`が委譲先と異なる版の時、委譲元の起動部分を伝える本文を返す。
+
+    共有の管理サービスは接続元のうち最も新しい版の世代が受け付けるため、委譲元のCLIより新しい版で
+    委譲先が動く場合がある。委譲元が自分のCLIでやり直す検査を委譲先が別の版で行うと結果が一致しないため、
+    その検査に使う起動部分を伝える。委譲先から起動された接続は管理サービスと同じ配布物を案内されるため対象外とする。
+    pyfltr: allow-comment
+    """
+    environment = runtime_environment.environment()
+    value = environment.get(delegated_session.CALLER_PLUGIN_ROOT_ENV)
+    if not value or delegated_session.is_delegated(environment):
+        return None
+    caller_root = pathlib.Path(value)
+    if not caller_root.is_absolute():
+        return None
+    caller_version = _plugin_version(caller_root)
+    server_version = _plugin_version(toolkit_root)
+    if caller_version is None or server_version is None or caller_version == server_version:
+        return None
+    command, _argument_note = plugin_environment.launcher_command(caller_root)
+    return _normative(
+        f"委譲元のCLIは版{caller_version}（起動部分: {command}）であり、"
+        f"この委譲先の配布物（版{server_version}）と版が異なる。\n"
+        "委譲元が自分のCLIでやり直す検査（WIの原稿のdry-run、保存時の書式の検査など）は、委譲元の起動部分で実行して結果を返せ。"
+        "この委譲先の起動部分で結果が異なった時は、両方の版と結果を返せ。",
+        kind="caller-runtime",
     )
 
 
