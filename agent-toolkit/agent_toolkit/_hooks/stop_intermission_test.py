@@ -1,0 +1,250 @@
+"""Stopと送達前が同じ待機・是正の入力列を処理する契約。 pyfltr: allow-comment"""
+
+import json
+import pathlib
+
+import pytest
+
+from agent_toolkit._common import session_state
+from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
+from agent_toolkit._hooks import stop
+from agent_toolkit._hooks.bugfix_gate_test import _BUGFIX, _TYPED_REPORT, _classified, _human, _payload
+from agent_toolkit._hooks.termination_order_advisor_test import _start_skill
+from agent_toolkit._testing.helpers import repl_send_to_user_entries
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+
+_SEND = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
+_CAPABILITY = {
+    "type": "attachment",
+    "attachment": {
+        "type": "hook_additional_context",
+        "hookEvent": "UserPromptSubmit",
+        "hookName": "prompt.submit",
+        "content": ['<atk-auto source="send-to-user-contract" kind="notice">'],
+    },
+}
+_WARNING = {
+    "type": "attachment",
+    "attachment": {
+        "type": "hook_additional_context",
+        "content": ['<atk-auto source="fixture" kind="warn">未処置の警告</atk-auto>'],
+    },
+}
+_TASK = (
+    "<task-notification><task-id>wait-task</task-id><tool-use-id>toolu_wait</tool-use-id>"
+    "<status>completed</status></task-notification>"
+)
+
+
+@pytest.fixture(autouse=True)
+def _interactive(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "AGENT_TOOLKIT_DELEGATED_SESSION",
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
+        "AGENT_TOOLKIT_RUN_SKILL_ID",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+def _automatic(text: str) -> dict:
+    return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": text}}
+
+
+@pytest.mark.parametrize("periodic", [False, True])
+@pytest.mark.parametrize("waiting", [False, True])
+@pytest.mark.parametrize("answer", ["", "…", "新しい確認結果がある。"])
+def test_only_quiet_periodic_wait_omits_old_correction_and_send(
+    tmp_path: pathlib.Path, periodic: bool, waiting: bool, answer: str
+) -> None:
+    entries = [_human("前の不具合を直して。"), _CAPABILITY, *_classified()]
+    if periodic:
+        entries.append(_automatic(PERIODIC_RECHECK_PROMPT))
+    payload = _payload(
+        entries,
+        tmp_path,
+        last_assistant_message=answer,
+        background_tasks=[{"id": "wait-task", "type": "Bash", "status": "running"}] if waiting else [],
+    )
+    result = stop.evaluate(json.dumps(payload))
+    if periodic and waiting and answer in ("", "…"):
+        assert result == {}
+    else:
+        assert result["decision"] == "block"
+        assert "起動していない" in str(result["reason"])
+        if periodic and answer not in ("", "…"):
+            assert "send_to_user` の結果が無い" in str(result["reason"])
+
+
+def _send(entries: list[dict], tmp_path: pathlib.Path, message: str, *, repl: bool) -> dict:
+    result = _run_hook_in_process(
+        "pretooluse",
+        _payload(
+            entries,
+            tmp_path,
+            tool_name=_SEND,
+            tool_use_id="repl_send" if repl else "toolu_send",
+            tool_input={"message": message},
+        ),
+    )
+    assert result.returncode == 0 and not result.stderr
+    return json.loads(result.stdout)["hookSpecificOutput"] if result.stdout.strip() else {}
+
+
+@pytest.mark.parametrize("repl", [False, True])
+@pytest.mark.parametrize("warned", [False, True])
+def test_correction_recovery_sends_once(tmp_path: pathlib.Path, repl: bool, warned: bool) -> None:
+    entries = [_human("ここが壊れている。"), _CAPABILITY, *_classified()]
+    if warned:
+        entries.append(_WARNING)
+    output = _send(entries, tmp_path, "## 是正報告", repl=repl)
+    reason = output["permissionDecisionReason"]
+    for label in ("対策:", "回帰防止:", "類似見直し:", "再発防止:"):
+        assert label in reason
+    assert ("hook通知への対応:" in reason) is warned
+    assert reason.index("起動していない") < reason.index("対策:") < reason.index("1回送達")
+
+    entries.extend(_BUGFIX)
+    report = "## 是正報告\n" + _TYPED_REPORT
+    if warned:
+        report += "\nhook通知への対応: 警告の原因を解消した。"
+    assert _send(entries, tmp_path, report, repl=repl).get("permissionDecision") != "deny"
+    call = "repl_delivered" if repl else "toolu_delivered"
+    if repl:
+        delivered = repl_send_to_user_entries(call, {"message": report}, ok=True)
+    else:
+        delivered = [
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "tool_use", "id": call, "name": _SEND, "input": {"message": report}}]},
+            },
+            _ui_result(call, True),
+        ]
+    entries.extend(delivered)
+    entries.append({"type": "attachment", "attachment": {"commandMode": "task-notification", "prompt": _TASK}})
+    assert stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…"))) == {}
+    entries.append(_human("別の不具合を直して。"))
+    assert stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))["decision"] == "block"
+
+
+def _ui_result(call: str, ok: bool) -> dict:
+    return {
+        "type": "user",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": call,
+                    "is_error": False,
+                    "content": [{"type": "text", "text": json.dumps({"id": "c" * 32, "ok": ok})}],
+                }
+            ]
+        },
+    }
+
+
+@pytest.mark.parametrize("ok", [False, True])
+@pytest.mark.parametrize("final", [False, True])
+def test_runtime_receipt_allows_pause_but_not_completion(tmp_path: pathlib.Path, ok: bool, final: bool) -> None:
+    call = "toolu_change"
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": call,
+                        "name": "mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes",
+                        "input": {"targets": ["plugins", "agents_server", "pyfltr"]},
+                    }
+                ]
+            },
+        },
+        _ui_result(call, ok),
+    ]
+    payload = _payload(entries, tmp_path, last_assistant_message="## 作業完了報告\n作業を完了した。" if final else "…")
+    _start_skill(
+        payload["session_id"], pathlib.Path(payload["transcript_path"]), "agent-toolkit:atk-mode", arguments="process-wi"
+    )
+    result = stop.evaluate(json.dumps(payload))
+    assert ("termination_order_advisor" in str(result)) is (not ok or final)
+    if ok and not final:
+        entries.append(_automatic('<atk-auto source="runtime-changes" kind="notice">反映コマンドの応答</atk-auto>'))
+        resumed = stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))
+        assert "termination_order_advisor" in str(resumed)
+
+
+@pytest.mark.parametrize("failed_receipt", [False, True])
+@pytest.mark.parametrize("started_before_send", [False, True])
+def test_only_successful_report_after_bugfix_is_reusable(
+    tmp_path: pathlib.Path, failed_receipt: bool, started_before_send: bool
+) -> None:
+    entries = [_human("不具合を直して。"), _CAPABILITY, *_classified()]
+    report = repl_send_to_user_entries("repl_report", {"message": _TYPED_REPORT}, ok=not failed_receipt)
+    entries.extend([*_BUGFIX, *report] if started_before_send else [*report, *_BUGFIX])
+    result = stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))
+    assert (result.get("decision") != "block") is (started_before_send and not failed_receipt)
+
+
+@pytest.mark.parametrize("notification", ["queued", "completed", "failed", "missing"])
+def test_wait_reuses_notification_before_starting_another_wait(tmp_path: pathlib.Path, notification: str) -> None:
+    entries = [_human("委譲先の結果を待って。"), _CAPABILITY, *_classified("非是正")]
+    entries.append(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_wait",
+                        "name": "Bash",
+                        "input": {"command": "atk agents wait", "run_in_background": True},
+                    }
+                ]
+            },
+        }
+    )
+    entries.append(
+        {
+            "type": "user",
+            "toolUseResult": {"backgroundTaskId": "wait-task"},
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_wait",
+                    }
+                ]
+            },
+        }
+    )
+    if notification == "queued":
+        entries.append({"type": "queue-operation", "operation": "enqueue", "content": _TASK})
+    elif notification != "missing":
+        entries.append(
+            {
+                "type": "attachment",
+                "attachment": {
+                    "commandMode": "task-notification",
+                    "prompt": _TASK.replace("completed", notification),
+                },
+            }
+        )
+    payload = _payload(entries, tmp_path, last_assistant_message="…", background_tasks=[])
+    session_state.update_state(
+        payload["session_id"],
+        lambda state: {
+            **state,
+            "agents_server_sessions": {
+                "remaining": {"owner_agent_id": "main", "pending_observation": True},
+            },
+        },
+    )
+    result = stop.evaluate(json.dumps(payload))
+    assert "delivered_repost_gate" not in str(result)
+    if notification == "queued":
+        assert "agents_server_session_advisor" not in str(result)
+    else:
+        assert "agents_server_session_advisor" in str(result)
+        assert ("バックグラウンド起動" in str(result)) is (notification == "missing")

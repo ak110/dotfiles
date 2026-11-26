@@ -9,16 +9,19 @@
 """
 
 import json
+from collections.abc import Iterator
 lazy import hashlib
 lazy import os
 
 from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 from agent_toolkit._hooks import notice
 lazy from agent_toolkit._common import session_state, transcript
+lazy from agent_toolkit._common.completion_exit import ui_receipt
 lazy from agent_toolkit._common.json_lines import split_joined_line
 lazy from agent_toolkit._common.message_format import starts_with_auto_element
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
+lazy from agent_toolkit._hooks.background_tasks_notifications import _delivered_user_body
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
 
@@ -29,7 +32,15 @@ _block_notice = notice.block_formatter("delivered_repost_gate")
 _delivery_notice = notice.formatter("delivered_repost_gate")
 
 
-def _send_required(entries: list[dict]) -> bool:
+def send_fix() -> str:
+    return (
+        f"必要な項目を同じ本文にそろえ、`REPL`では`await {_SEND_CALL}`、直接呼べる場合は"
+        "`mcp__plugin_agent-toolkit_agents_server__send_to_user`で1回送達してください。"
+        "送達成功後は追加作業や再掲をせず、そのまま終えてください（本文が必要なら `…`）。"
+    )
+
+
+def send_required(entries: list[dict]) -> bool:
     for entry in entries:
         attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
         if (
@@ -42,6 +53,35 @@ def _send_required(entries: list[dict]) -> bool:
         ):
             return True
     return False
+
+
+def delivered_messages(entries: list[dict]) -> Iterator[tuple[int, int, str]]:
+    calls: dict[str, tuple[int, str]] = {}
+    for index, entry in enumerate(entries):
+        message = entry.get("message")
+        blocks = message.get("content") if isinstance(message, dict) else None
+        for block in blocks if isinstance(blocks, list) else ():
+            if not isinstance(block, dict):
+                continue
+            if (
+                entry.get("type") == "assistant"
+                and block.get("type") == "tool_use"
+                and is_send_to_user_tool(block.get("name"))
+                and isinstance(identifier := block.get("id"), str)
+                and isinstance(args := block.get("input"), dict)
+                and isinstance(text := args.get("message"), str)
+            ):
+                calls[identifier] = index, text
+            elif (
+                entry.get("type") == "user"
+                and block.get("type") == "tool_result"
+                and block.get("is_error") is not True
+                and isinstance(identifier := block.get("tool_use_id"), str)
+                and identifier in calls
+            ):
+                sent_at, sent_text = calls.pop(identifier)
+                if ui_receipt(entry, block) is not None:
+                    yield sent_at, index, sent_text
 
 
 def _latest_delivery_error(entries: list[dict]) -> bool | None:
@@ -66,10 +106,22 @@ def _latest_delivery_error(entries: list[dict]) -> bool | None:
     return latest_error
 
 
-def _turn_boundary(entry: dict) -> bool:
+def turn_prompt(entry: dict) -> str | None:
+    attachment = entry.get("attachment")
+    if (
+        entry.get("type") == "attachment"
+        and isinstance(attachment, dict)
+        and attachment.get("commandMode") == "task-notification"
+    ):
+        prompt = attachment.get("prompt")
+        return prompt if isinstance(prompt, str) else None
+    return _input_text(entry) or _delivered_user_body(entry)
+
+
+def turn_boundary(entry: dict) -> bool:
     if entry.get("isCompactSummary") is True or (entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"):
         return True
-    return (text := _input_text(entry)) is not None and (
+    return (text := turn_prompt(entry)) is not None and (
         _human_prompt(entry, text) is not None
         or starts_with_auto_element(text)
         or text.lstrip().startswith("<task-notification")
@@ -78,7 +130,7 @@ def _turn_boundary(entry: dict) -> bool:
 
 def _current_turn(entries: list[dict]) -> list[dict]:
     for index in range(len(entries) - 1, -1, -1):
-        if _turn_boundary(entries[index]):
+        if turn_boundary(entries[index]):
             return entries[index + 1 :]
     return entries
 
@@ -129,13 +181,13 @@ def _progress_turn(path: str, session_id: str, *, reuse_cursor: bool = True) -> 
             entry = joined[1] if joined is not None else None
         if not isinstance(entry, dict) or entry.get("isSidechain"):
             continue
-        if not required and _send_required([entry]):
+        if not required and send_required([entry]):
             if not finished:
                 return _current_turn(_conversation_entries(transcript.read_transcript_lines(path) or []))
             required = True
             if offset > boundary:
                 return _progress_turn(path, session_id, reuse_cursor=False)
-        if _turn_boundary(entry):
+        if turn_boundary(entry):
             if finished:
                 boundary = position
             turn.clear()
@@ -241,7 +293,11 @@ def pretooluse_notice(payload: dict, session_id: str) -> str | None:
     return None
 
 
-def evaluate(payload_text: str) -> tuple[str, str]:
+def evaluate(
+    payload_text: str, *, quiet_intermission: bool = False, delivery: tuple[list[dict], bool | None] | None = None
+) -> tuple[str, str]:
+    if quiet_intermission:
+        return "approve", ""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -255,16 +311,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         or not path
     ):
         return "approve", ""
-    entries, latest_error = current_turn_delivery(path)
+    entries, latest_error = delivery if delivery is not None else current_turn_delivery(path)
     if (
         latest_error is None
         and isinstance(last := payload.get("last_assistant_message"), str)
         and last.replace("…", "").strip()
-        and _send_required(entries)
+        and send_required(entries)
     ):
         return "block", _block_notice(
             "`send_to_user` を使える会話で、このターンに `send_to_user` の結果が無い。通常本文での終了を止めた。",
-            fix=f"`REPL` では `await {_SEND_CALL}` を呼んでください。ツールを直接呼べる場合は "
-            "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡してください。",
+            fix=send_fix(),
         )
     return "approve", ""

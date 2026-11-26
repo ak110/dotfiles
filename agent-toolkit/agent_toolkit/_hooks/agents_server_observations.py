@@ -506,10 +506,15 @@ def _record_agents_server_observation_attempt(
     update_state(session_id, _mutator)
 
 
+def runs_agents_wait(command: object) -> bool:
+    return isinstance(command, str) and any(
+        segment.resolved and is_agents_wait_command(segment.tokens) for segment in extract_execution_segments(command)
+    )
+
+
 def record_wait_observation_attempt(session_id: str, command: str, owner_agent_id: str) -> None:
-    if not any(segment.resolved and is_agents_wait_command(segment.tokens) for segment in extract_execution_segments(command)):
-        return
-    _clear_agents_server_pending_observation(session_id, owner_agent_id)
+    if runs_agents_wait(command):
+        _clear_agents_server_pending_observation(session_id, owner_agent_id)
 
 
 def observe_tool(

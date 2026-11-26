@@ -153,7 +153,7 @@ def missing_completion_before_report(payload: dict, session_id: str, message: ob
     return None
 
 
-def evaluate(payload_text: str) -> tuple[str, str]:
+def evaluate(payload_text: str, *, runtime_reserved: bool = False) -> tuple[str, str]:
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -167,6 +167,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_delegated_session", {})
         return "approve", ""
     if not termination_evidence.evidence_available(payload):
+        return "approve", ""
+
+    if runtime_reserved:
         return "approve", ""
 
     pending = dict(termination_evidence.pending_work(payload))
@@ -187,7 +190,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if transcript_path and not pathlib.Path(transcript_path).is_file():
         append_stop_log(session_id, "approve_transcript_unreadable", {"reason": "作業の待機対象を確認できない"})
         return "approve", ""
-    waiting = _waiting_work_ids(payload, session_id, transcript_path, set(missing))
+    waiting = (
+        set()
+        if is_completion(payload.get("last_assistant_message"), None)
+        else _waiting_work_ids(payload, session_id, transcript_path, set(missing))
+    )
     remaining = {work_id: kinds for work_id, kinds in missing.items() if work_id not in waiting}
     if not remaining:
         append_stop_log(session_id, "approve_completion_report_satisfied", {"waiting_count": len(waiting)})

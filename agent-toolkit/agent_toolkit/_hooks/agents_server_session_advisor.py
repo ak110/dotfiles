@@ -39,15 +39,22 @@ lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agents_server_observations as _observations
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
+lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_ID_RE, _TOOL_USE_ID_RE
+lazy from agent_toolkit._hooks.background_tasks_launches import collect_background_task_id_tool_use_ids
+lazy from agent_toolkit._hooks.background_tasks_notifications import queued_task_notification_contents
+lazy from agent_toolkit._hooks.delivered_repost_gate import turn_boundary, turn_prompt
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session
+lazy from agent_toolkit._hooks.transcript_scan import iter_assistant_blocks
 
 _HOOK_ID = "agents_server_session_advisor"
 _WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
 _WARNING_FIX = "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了してください。"
 
 _CLAUDE_WARNING_FIX = (
-    "バックグラウンド実行が使えるなら、実行ホストで引数なしの `atk agents wait` を単独でバックグラウンド起動し、"
+    "既存の完了通知があれば保存された出力と終了状態を先に回収してください。"
+    "それでも通知不着・待機の失敗や独立した未回収対象が残る場合だけ、"
+    "バックグラウンド実行が使えるなら実行ホストで引数なしの `atk agents wait` を単独でバックグラウンド起動し、"
     "起動を確認してからターンを終えてください。バックグラウンド実行が使えないなら同じターンでフォアグラウンド回収してください。"
     "結果が不要なら`kill(session_id)`で破棄してから終了してください。"
 )
@@ -136,7 +143,33 @@ def compact_wait_notice(session_id: str, owner_agent_id: str) -> str:
     return "\n".join(lines)
 
 
-def evaluate(payload_text: str) -> tuple[str, str]:
+def _wait_notice_present(entries: list[dict]) -> bool:
+    queued = queued_task_notification_contents(entries)
+    if not queued:
+        return False
+    calls = {
+        call
+        for block in iter_assistant_blocks(entries)
+        if block.get("type") == "tool_use"
+        and block.get("name") == "Bash"
+        and isinstance(call := block.get("id"), str)
+        and isinstance(arguments := block.get("input"), dict)
+        and _observations.runs_agents_wait(arguments.get("command"))
+    }
+    tasks = {task for task, linked in collect_background_task_id_tool_use_ids(entries).items() if calls & linked}
+    return any(calls & set(_TOOL_USE_ID_RE.findall(text)) or tasks & set(_TASK_ID_RE.findall(text)) for text in queued)
+
+
+def _completed_notification_prompt(entries: list[dict]) -> bool:
+    for entry in reversed(entries):
+        if not turn_boundary(entry):
+            continue
+        text = turn_prompt(entry)
+        return isinstance(text, str) and text.lstrip().startswith("<task-notification>")
+    return False
+
+
+def evaluate(payload_text: str, *, entries: list[dict] | None = None) -> tuple[str, str]:
     resolved = parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -163,7 +196,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if _continuation_owned(payload):
         observed |= _declared_waiting_target_ids(payload.get("last_assistant_message")) & set(pending_session_ids)
     pending_session_ids = [item for item in pending_session_ids if item not in observed]
-    if not pending_session_ids and not awaiting:
+    if not awaiting and (not pending_session_ids or (entries and _wait_notice_present(entries))):
         return "approve", ""
 
     description = (
@@ -178,5 +211,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     fix = "役割が求める指示を`send_message`で返してください。" if awaiting else ""
     if pending_session_ids:
         warning_fix = _WARNING_FIX if is_codex_payload(payload) or is_antigravity_payload(payload) else _CLAUDE_WARNING_FIX
+        if entries and _completed_notification_prompt(entries):
+            warning_fix = (
+                "完了通知の保存出力と終了状態を回収し、その結果で残る対象を特定してください。"
+                "失敗・通知不着や別の未回収対象がある場合だけ、次の待機を選んでください。"
+            )
         fix = f"{warning_fix}{fix}"
     return "notify", _notice(body, fix=fix, removable_cause=True, summary=body)

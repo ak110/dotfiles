@@ -8,6 +8,7 @@ import pytest
 from agent_toolkit._common import send_misdetection, session_record_paths
 from agent_toolkit._hooks import hook_notice_response_gate as gate
 from agent_toolkit._hooks.user_prompt_submit_test import _run_subcommand
+from agent_toolkit._testing.helpers import repl_send_to_user_entries
 
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "調べて"}}
 _SEND_TO_USER = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
@@ -57,18 +58,30 @@ def _evaluate(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> t
     return gate.evaluate(json.dumps(payload))
 
 
+def _send_receipt(identifier: str, *, ok: bool = True) -> dict:
+    return _result(identifier, json.dumps({"ok": ok}))
+
+
 @pytest.mark.parametrize(
     ("entries", "blocked"),
     [
         ([_HUMAN, _attachment(_WARN), _text("調査を終えた。")], True),
         ([_HUMAN, _attachment(_WARN), _text("hook通知への対応: 照会コマンドへ切り替えた。\n調査を終えた。")], False),
         ([_HUMAN, _attachment(_WARN), _text("- hook通知への対応: 誤検出（引用だけを読んだ）。")], False),
-        ([_HUMAN, _attachment(_WARN), _call(_SEND_TO_USER, "s1", {"message": "報告\nhook通知への対応: 処置した。"})], False),
         (
             [
                 _HUMAN,
                 _attachment(_WARN),
-                _call("REPL", "r1", {"code": "await send({message: `hook通知への対応: 処置した。`})"}),
+                _call(_SEND_TO_USER, "s1", {"message": "報告\nhook通知への対応: 処置した。"}),
+                _send_receipt("s1"),
+            ],
+            False,
+        ),
+        (
+            [
+                _HUMAN,
+                _attachment(_WARN),
+                *repl_send_to_user_entries("repl_warn", {"message": "hook通知への対応: 処置した。"}, ok=True),
             ],
             False,
         ),
@@ -149,7 +162,7 @@ def test_send_block_asks_question_after_response_report(tmp_path: pathlib.Path) 
     entries = [_HUMAN, _attachment(_WARN)]
     blocked = _send_block(entries, tmp_path, "AskUserQuestion", {"questions": []})
     assert blocked is not None and "send_to_user" in blocked
-    answered = [*entries, _call(_SEND_TO_USER, "s1", {"message": "hook通知への対応: 誤検出。"})]
+    answered = [*entries, _call(_SEND_TO_USER, "s1", {"message": "hook通知への対応: 誤検出。"}), _send_receipt("s1")]
     assert _send_block(answered, tmp_path, "AskUserQuestion", {"questions": []}) is None
 
 
@@ -257,3 +270,14 @@ def test_misdetection_resolves_only_matching_delivery(monkeypatch, tmp_path):
     assert "missing-disposition: 1件" in summary
     assert first in summary
     assert args["reason"] in summary
+
+
+@pytest.mark.parametrize("repl", [False, True])
+def test_failed_send_does_not_resolve_warning(tmp_path: pathlib.Path, repl: bool) -> None:
+    body = {"message": "hook通知への対応: 処置した。"}
+    sent = (
+        repl_send_to_user_entries("repl_warn", body, ok=False)
+        if repl
+        else [_call(_SEND_TO_USER, "s1", body), _send_receipt("s1", ok=False)]
+    )
+    assert _evaluate([_HUMAN, _attachment(_WARN), *sent], tmp_path)[0] == "block"

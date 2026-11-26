@@ -404,7 +404,9 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
         _record_background_task_id(session_id, task_id)
         if is_main_agent_context(payload):
             function_hook_requests.enqueue(session_id, "background_task", {"id": task_id, "command": command})
-    _agents_server_observations.record_wait_observation_attempt(session_id, command, resolve_hook_agent_id(payload))
+    response = payload.get("tool_response")
+    if not isinstance(response, dict) or not (response.get("exit_code", 0) != 0 or response.get("interrupted")):
+        _agents_server_observations.record_wait_observation_attempt(session_id, command, resolve_hook_agent_id(payload))
     _record_bash_response_state(session_id, command, payload.get("tool_response"))
 
 

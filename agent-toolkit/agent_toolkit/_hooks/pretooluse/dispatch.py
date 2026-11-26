@@ -414,7 +414,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 "同じ本文と判定の未送達記録を確認できない。", fix="未送達の通知と同じ本文・判定かを確かめてください。"
             )
         )
-    if (is_send_to_user_tool(tool_name) or tool_name == "AskUserQuestion") and (
+    if tool_name == "AskUserQuestion" and (
         notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
     ):
         return Decision(block=notice_block)
@@ -455,12 +455,16 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                     ),
                 )
             edit_body = reason is None
+        bugfix_block = None
         if reason is None:
-            reason = bugfix_gate.send_block(payload, message, kind=kind, warnings=send_warnings) or (
-                norm_excuse_gate.text_block(payload, message, "ユーザーへの送達", retry=retry)
-            )
-        if reason is not None:
-            return _retry_send(payload, tool_name, tool_input, session_id, reason, edit_body=edit_body)
+            bugfix_block = bugfix_gate.send_block(payload, message, kind=kind, warnings=send_warnings)
+            reason = bugfix_block or norm_excuse_gate.text_block(payload, message, "ユーザーへの送達", retry=retry)
+        notice_block = hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
+        if notice_block is not None or reason is not None:
+            combined = "\n\n".join(item for item in (reason, notice_block) if item)
+            if notice_block is not None or bugfix_block is not None:
+                combined += "\n\n" + delivered_repost_gate.send_fix()
+            return _retry_send(payload, tool_name, tool_input, session_id, combined, edit_body=edit_body)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (

@@ -169,27 +169,54 @@ test("MCP圧縮要求を表示要求と分けて予約受付する", async ($, o
 test("反映予約はターン後に公開コマンドを一度実行し結果を通知する", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);
-  queue(on, "runtime-ui-session", "c".repeat(32));
+  const reservation = "c".repeat(32);
+  const wait = "d".repeat(32);
+  on("fs.list", () => ({ value: [reservation, wait].map((id) => ({ name: `ui-request-runtime-ui-session-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false })) }));
+  on("fs.exists", () => ({ value: true }));
   const commands: string[] = [];
   const prompts: string[] = [];
+  let waits: string[] = [];
+  const receipts = new Map<string, { ok: boolean; reason: string }>();
   on("session.id", () => ({ value: "runtime-ui-session" }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", () => ({ text: "" }));
-  on("fs.read", () => ({ value: JSON.stringify({ id: "c".repeat(32), operation: "apply_runtime_changes", input: { targets: ["plugins", "agents_server", "pyfltr"] }, expires: 99999999999 }) }));
-  on("fs.write", () => ({ value: undefined }));
+  on("state.set", { plugin: "agent-toolkit", key: "backgroundWaits" }, async (_$, e, next) => {
+    const result = await next(e);
+    waits = Object.keys(e.value ?? {});
+    return result;
+  });
+  on("fs.read", (_$, e) => ({ value: JSON.stringify(e.path.endsWith(`-${wait}.txt`)
+    ? { id: wait, operation: "background_task", input: { id: "owned-wait", command: "atk agents wait" }, expires: 99999999999 }
+    : { id: reservation, operation: "apply_runtime_changes", input: { targets: ["plugins", "agents_server", "pyfltr"] }, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => {
+    if (e.path.includes("ui-response-")) {
+      const receipt = JSON.parse(e.text);
+      receipts.set(receipt.id, receipt);
+    }
+    return { value: undefined };
+  });
   on("command.run", (_$, e) => { commands.push(`${e.command} ${e.args}`.trim()); return { text: "反映コマンドの応答", context: ["確認用の文脈"] }; });
   on("prompt.submit", (_$, e) => { prompts.push(e.text); return { text: "" }; });
   await $.turn.start({ text: "反映", turnId: "runtime-ui-turn" });
   await clock.advance(100);
+  expect(receipts.get(reservation)?.ok).toBe(true);
+  expect(receipts.get(reservation)?.reason).toContain("まだ反映完了ではない");
   expect(commands).toEqual([]);
-  const completed = { answer: "", durationMs: 0, isAborted: false, turnId: "runtime-ui-turn", reason: "answer" as const };
+  const completed = { answer: "…", durationMs: 0, isAborted: false, turnId: "runtime-ui-turn", reason: "answer" as const };
   await $.turn.complete(completed);
   await clock.advance(0);
   await $.turn.complete(completed);
   await clock.advance(0);
   expect(commands).toEqual(["mcp reconnect plugin:agent-toolkit:agents_server", "mcp reconnect plugin:agent-toolkit:pyfltr", "reload-plugins"]);
   expect(prompts.length).toBe(1);
+  expect(prompts[0]).toContain('source="runtime-changes"');
   expect(prompts[0]).toContain("確認用の文脈");
+  expect(waits).toEqual(["owned-wait"]);
+  await $.session.append({
+    door: "delivery", origin: { kind: "composer" }, uuid: "5a19a2af-394f-4123-8c40-72e5e53e2d34",
+    message: { type: "user", content: [{ type: "text", text: "<task-notification><task-id>owned-wait</task-id><status>completed</status></task-notification>" }] },
+  });
+  expect(waits).toEqual([]);
 });
 
 for (const expired of [false, true]) {

@@ -30,7 +30,12 @@ lazy from agent_toolkit._common import send_misdetection, session_state, transcr
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._common.message_format import AUTO_ELEMENT_NAME_PATTERN
 lazy from agent_toolkit._hooks import stop_session as _stop_session
-lazy from agent_toolkit._hooks.delivered_repost_gate import _conversation_entries, _human_prompt, _input_text
+lazy from agent_toolkit._hooks.delivered_repost_gate import (
+    _conversation_entries,
+    _human_prompt,
+    _input_text,
+    delivered_messages,
+)
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 
 RESPONSE_PREFIX = "hook通知への対応:"
@@ -71,11 +76,6 @@ def _has_response(text: str) -> bool:
     return any(line.strip().lstrip("-*> \t").startswith(RESPONSE_PREFIX) for line in text.splitlines())
 
 
-def _input_has_response(text: str) -> bool:
-    """ツールの入力（REPLのコードなど）では、文字列の引用符の直後に始まる対応行も数える。 pyfltr: allow-comment"""
-    return re.search(rf"(?:^|[\n`\"'])[ \t\-*>]*{RESPONSE_PREFIX}", text) is not None
-
-
 def _since_human_input(entries: list[dict]) -> list[dict]:
     """最後の人間入力か会話の圧縮より後の記録を返す。 pyfltr: allow-comment"""
     for index in range(len(entries) - 1, -1, -1):
@@ -107,15 +107,11 @@ def _scan(turn: list[dict], resolved: set[tuple[str, str]] | None = None) -> tup
         for block in content if isinstance(content, list) else ():
             if not isinstance(block, dict):
                 continue
-            if entry.get("type") == "assistant" and block.get("type") == "text":
-                if _has_response(str(block.get("text", ""))):
-                    last_response = index
-            elif entry.get("type") == "assistant" and block.get("type") == "tool_use":
-                arguments = block.get("input")
-                if isinstance(arguments, dict) and any(
-                    _input_has_response(value) for value in arguments.values() if isinstance(value, str)
-                ):
-                    last_response = index
+            if entry.get("type") == "assistant" and block.get("type") == "text" and _has_response(str(block.get("text", ""))):
+                last_response = index
+    for sent_at, index, text in delivered_messages(turn):
+        if sent_at > last_warning and _has_response(text):
+            last_response = max(last_response, index)
     return warnings, identities, last_warning, last_response
 
 

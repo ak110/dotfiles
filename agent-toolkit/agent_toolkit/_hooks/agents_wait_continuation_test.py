@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from agent_toolkit._agents_server import shared_layout, shared_roots, wait_targets
 from agent_toolkit._common import session_registry, session_state
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -58,3 +60,32 @@ def test_wait_result_keeps_running_target_until_continuation_is_owned(monkeypatc
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION")
     session_registry.publish(remote, state=session_registry.PublicationState.RESULT_COMPLETED, cwd="/test")
     assert not stop.evaluate(payload)
+
+
+@pytest.mark.parametrize("failure", [{"exit_code": 1}, {"interrupted": True}])
+def test_failed_foreground_wait_does_not_discard_observation(failure, capsys):
+    local, remote = "failed-wait-owner", "pending-worker"
+    session_state.update_state(
+        local,
+        lambda state: {
+            **state,
+            "agents_server_sessions": {
+                remote: {"owner_agent_id": "main", "pending_observation": True},
+            },
+        },
+    )
+    assert (
+        posttooluse.main(
+            json.dumps(
+                {
+                    "session_id": local,
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "atk agents wait"},
+                    "tool_response": failure,
+                }
+            )
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert session_state.read_state(local)["agents_server_sessions"][remote]["pending_observation"]

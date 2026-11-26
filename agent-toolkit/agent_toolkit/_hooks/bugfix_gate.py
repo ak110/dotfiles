@@ -21,7 +21,6 @@ Stopでは報告の形によらず、同じ発話に対する4項目の記録を
 
 import json
 import re
-from collections.abc import Iterator
 lazy import os
 
 from agent_toolkit._common.send_to_user import COMPLETION_KIND
@@ -35,6 +34,7 @@ lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
+lazy from agent_toolkit._hooks.delivered_repost_gate import delivered_messages
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import git_subcommand_tokens
@@ -79,35 +79,8 @@ def _understanding_kind(text: object) -> str | None:
     return match[1] if match else ""
 
 
-def _delivered_messages(entries: list[dict]) -> Iterator[str]:
-    calls: dict[str, str] = {}
-    for entry in entries:
-        message = entry.get("message")
-        blocks = message.get("content") if isinstance(message, dict) else None
-        for block in blocks if isinstance(blocks, list) else ():
-            if not isinstance(block, dict):
-                continue
-            if (
-                entry.get("type") == "assistant"
-                and block.get("type") == "tool_use"
-                and str(block.get("name", "")).endswith(transcript.SEND_TO_USER_TOOL_SUFFIX)
-                and isinstance(identifier := block.get("id"), str)
-                and isinstance(args := block.get("input"), dict)
-                and isinstance(text := args.get("message"), str)
-            ):
-                calls[identifier] = text
-            elif (
-                entry.get("type") == "user"
-                and block.get("type") == "tool_result"
-                and block.get("is_error") is not True
-                and isinstance(identifier := block.get("tool_use_id"), str)
-                and identifier in calls
-            ):
-                yield calls.pop(identifier)
-
-
 def _turn_classification(entries: list[dict]) -> str | None:
-    return next((kind for text in _delivered_messages(entries) if (kind := _understanding_kind(text))), None)
+    return next((kind for _, _, text in delivered_messages(entries) if (kind := _understanding_kind(text))), None)
 
 
 _block_notice = notice.block_formatter("bugfix_gate")
@@ -251,10 +224,10 @@ def verification_notice(payload: dict, tool_name: str, tool_input: dict, session
     )
 
 
-def _bugfix_calls(entries: list[dict]) -> tuple[bool, bool]:
+def _bugfix_calls(entries: list[dict]) -> tuple[int | None, bool]:
     failed = False
-    calls: dict[str, bool] = {}
-    for entry in entries:
+    calls: dict[str, int | None] = {}
+    for index, entry in enumerate(entries):
         message = entry.get("message")
         blocks = message.get("content") if isinstance(message, dict) else None
         receipt = entry.get("toolUseResult")
@@ -265,7 +238,7 @@ def _bugfix_calls(entries: list[dict]) -> tuple[bool, bool]:
                 args, identifier = block.get("input"), block.get("id")
                 skill = args.get("skill") if isinstance(args, dict) else None
                 if isinstance(identifier, str) and identifier and isinstance(skill, str) and skill in _BUGFIX_SKILLS:
-                    calls[identifier] = entry.get("isVirtual") is not True
+                    calls[identifier] = None
             elif entry.get("type") == "user" and block.get("type") == "tool_result":
                 identifier = block.get("tool_use_id")
                 if not isinstance(identifier, str) or identifier not in calls:
@@ -273,17 +246,13 @@ def _bugfix_calls(entries: list[dict]) -> tuple[bool, bool]:
                 success = receipt.get("success") if isinstance(receipt, dict) else None
                 name = receipt.get("commandName") if isinstance(receipt, dict) else None
                 if block.get("is_error") is True or success is False:
-                    calls[identifier] = False
+                    calls[identifier] = None
                     failed = True
-                elif (
-                    entry.get("isVirtual") is True
-                    and block.get("is_error") is False
-                    and success is True
-                    and isinstance(name, str)
-                    and name in _BUGFIX_SKILLS
+                elif entry.get("isVirtual") is not True or (
+                    block.get("is_error") is False and success is True and isinstance(name, str) and name in _BUGFIX_SKILLS
                 ):
-                    calls[identifier] = True
-    return any(calls.values()), failed
+                    calls[identifier] = index
+    return min((index for index in calls.values() if index is not None), default=None), failed
 
 
 def _read_human_lines(payload: dict) -> list[str] | None:
@@ -427,6 +396,13 @@ def _has_report_structure(message: object, kind: object = None, *, include_parti
     )
 
 
+def _record_fix(message: object) -> str:
+    labels = [f"`{label}:`" for label in _missing_record_labels(message)]
+    if not _has_typed_prevention(message):
+        labels.append("種類付きの `再発防止:`")
+    return "、".join(labels) + " に実施結果か行わない理由を書いてください。類似見直しは予定や未確認だけで終えないでください。"
+
+
 def _turn_block(
     payload: dict,
     turn: tuple[str, list[dict], str | None],
@@ -463,21 +439,21 @@ def _turn_block(
     session_id = payload.get("session_id")
     repl_human_id = read_state(session_id).get(_REPL_SKILL_TURN_KEY) if isinstance(session_id, str) and session_id else None
     started, failed = _bugfix_calls(entries)
-    if not started and not (human_id is not None and human_id == repl_human_id):
+    repl_started = human_id is not None and human_id == repl_human_id
+    if started is None and not repl_started:
         if failed:
             return None
         return _block_notice(
             f"是正を受けた後に`agent-basics:bugfix`を起動していないため、{delivery}を止めた。",
-            fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。",
+            fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。本文には " + _record_fix(None),
         )
     if can_classify and not _has_report_structure(message, send_kind):
         return None
     if _has_typed_prevention(message):
-        if missing := _missing_record_labels(message):
+        if _missing_record_labels(message):
             return _block_notice(
                 f"バグ対応の記録が不足しているため、{delivery}を止めた。",
-                fix="、".join(f"`{label}:`" for label in missing)
-                + " に実施結果か行わない理由を書いてください。類似見直しは予定や未確認だけで終えないでください。",
+                fix=_record_fix(message),
             )
         _warn_about_regression_mention(message, session_id, warnings)
         return None
@@ -485,8 +461,11 @@ def _turn_block(
         not can_classify
         and not _has_report_structure(message, include_partial_record=True)
         and any(
-            _understanding_kind(text) is None and _has_typed_prevention(text) and not _missing_record_labels(text)
-            for text in _delivered_messages(entries)
+            (started is None or index > started)
+            and _understanding_kind(text) is None
+            and _has_typed_prevention(text)
+            and not _missing_record_labels(text)
+            for index, _, text in delivered_messages(entries)
         )
     ):
         return None
@@ -495,11 +474,11 @@ def _turn_block(
             f"`再発防止:`の行に回帰テストがあるため、{delivery}を止めた。"
             "回帰テストは今回の事象だけを検出する処置であり、再発防止ではない。",
             fix="回帰テストは`回帰防止:`の行へ移し、`再発防止:`の行には原因が違っても同じ害を防ぐ策か、"
-            "採らない区分名と理由を書いてください。",
+            "採らない区分名と理由を書いてください。" + _record_fix(message),
         )
     return _block_notice(
         f"種類付きの再発防止の行がないため、{delivery}を止めた。",
-        fix="`agent-basics:bugfix`の記録に従い、種類付きの `再発防止:` の行を書いてください。",
+        fix=_record_fix(message),
     )
 
 
@@ -510,7 +489,9 @@ def send_block(payload: dict, message: object = None, *, kind: object = None, wa
     return _turn_block(payload, turn, message, "ユーザーへの送達", can_classify=True, send_kind=kind, warnings=warnings)
 
 
-def evaluate(payload_text: str) -> tuple[str, str]:
+def evaluate(payload_text: str, *, quiet_intermission: bool = False) -> tuple[str, str]:
+    if quiet_intermission:
+        return "approve", ""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""

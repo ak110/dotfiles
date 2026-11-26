@@ -38,7 +38,7 @@ def record_path(session: str, *, root: pathlib.Path | None = None) -> pathlib.Pa
     return paths[0] if len(paths) == 1 else None
 
 
-def _blocks(entries: list[dict]) -> Iterator[tuple[dict, dict]]:
+def conversation_tool_blocks(entries: list[dict]) -> Iterator[tuple[dict, dict]]:
     for entry in entries:
         if entry.get("isSidechain") or entry.get("type") not in ("assistant", "user"):
             continue
@@ -48,9 +48,9 @@ def _blocks(entries: list[dict]) -> Iterator[tuple[dict, dict]]:
             yield from ((entry, item) for item in content if isinstance(item, dict))
 
 
-def _delivered(entry: dict, block: dict) -> bool:
+def ui_receipt(entry: dict, block: dict) -> dict | None:
     if block.get("is_error") is True:
-        return False
+        return None
     content = block.get("content")
     items = content if isinstance(content, list) else [{"text": content}]
     # REPL内のMCP呼び出しは同じIDの仮想tool_resultの本文が空で、応答はtoolUseResultに残る。pyfltr: allow-comment
@@ -65,14 +65,14 @@ def _delivered(entry: dict, block: dict) -> bool:
         except ValueError, RecursionError:
             continue
         if isinstance(value, dict) and value.get("ok") is True:
-            return True
-    return False
+            return value
+    return None
 
 
 def reports(entries: list[dict]) -> dict[str, str]:
     calls: dict[str, str] = {}
     delivered: dict[str, str] = {}
-    for entry, block in _blocks(entries):
+    for entry, block in conversation_tool_blocks(entries):
         if block.get("type") == "tool_use" and is_send_to_user_tool(block.get("name")):
             args = block.get("input")
             identifier = block.get("id")
@@ -87,7 +87,7 @@ def reports(entries: list[dict]) -> dict[str, str]:
             block.get("type") == "tool_result"
             and isinstance(identifier := block.get("tool_use_id"), str)
             and identifier in calls
-            and _delivered(entry, block)
+            and ui_receipt(entry, block) is not None
         ):
             delivered[identifier] = calls[identifier]
     return delivered
