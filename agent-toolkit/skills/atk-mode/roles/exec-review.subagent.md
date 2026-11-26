@@ -23,6 +23,7 @@ optional_inputs:
 - 担当モデル
 - rewrite_map
 - 受理済みの完成条件証拠
+- 検証結果の返却原本
 writes_worktree: false
 continuations:
 - instruction: 再レビューせよ
@@ -32,11 +33,14 @@ continuations:
   - 対象HEAD
   - review_contract
   - rewrite_map
+  - 検証結果の返却原本
   paths:
   - rewrite_map
+  path_lists:
+  - 検証結果の返却原本
   references:
   - review_contract
-  condition: 計画外の認可が更新された場合はreview_contract、前回レビュー後の履歴書換えではrewrite_mapを渡す
+  condition: 計画外の認可が更新された場合はreview_contract、前回レビュー後の履歴書換えではrewrite_map、返却を検証結果の原本にした場合は今回の対象HEADと検証結果の返却原本を渡す
 startup_documents:
 - agent-toolkit:atk-mode/playbooks/exec-review.md
 ---
@@ -85,6 +89,9 @@ startup_documents:
   同じthreadでは、自分が返却の前に保存した記録を引き継ぐ。
   比較元を特定できない時は、不足するHEADか本文の取得元を続行できない理由として返す。
 - `rewrite_map`: 前回のレビューの後の履歴の書き換えやcommitの分割で変わったOIDの、旧から新への対応表の絶対パス（形式は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」）。
+- `検証結果の返却原本`: 引き継ぎ記録から読めない検証結果を直接記録した実装担当の返却ファイルの絶対パス1件か、複数件のJSON配列。
+  `対象HEAD`とともに受け取り、`agent-toolkit:atk-mode/references/review-record.md`「完成条件証拠の作成」に従って読む。
+  各回に省略された場合はその回の検証結果を引き継ぎ記録から読み、前回の返却原本を引き継がない。
 - `受理済みの完成条件証拠`: 委譲元が受理した実行レビューの返却ファイルの絶対パス。
   省略時と該当が無い時は`なし`とする。
 - `担当モデル`: 実行レビュー担当の指定値と実行値を比較するための値で、この入力だけでは読者別探索担当のモデルを上書きしない。

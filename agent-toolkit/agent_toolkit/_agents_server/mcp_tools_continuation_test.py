@@ -154,6 +154,33 @@ async def test_continuation_input_errors_return_reason_and_next_action(
         await manager.close()
 
 
+@pytest.mark.parametrize("rereview", [False, True])
+@pytest.mark.asyncio
+async def test_exec_review_start_delivers_verification_return_without_handoff_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, rereview: bool
+) -> None:
+    _write_review_plan(tmp_path)
+    _recording_candidates(monkeypatch)
+    target_head = "a" * 40
+    return_path = tmp_path / "実装の返却.md"
+    return_path.write_text(f"検証結果: {target_head} 終了0\n", encoding="utf-8")
+    params = {
+        **_observed_input_params("exec-review.subagent.md", tmp_path),
+        "対象HEAD": target_head,
+        "検証結果の返却原本": str(return_path),
+    }
+    if rereview:
+        params.update({"レビュー種別": "引き継ぎ再レビュー", "round": "2", "前回確認版": str(tmp_path / "previous.md")})
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(str(tmp_path), subagent_md_path="exec-review", extra_params=params)
+        prompt = manager.sessions[started["session_id"]].prompt
+        assert f"対象HEAD: {target_head}" in prompt
+        assert f"検証結果の返却原本: {return_path}" in prompt
+        assert return_path.read_text(encoding="utf-8").strip() not in prompt
+        assert not (tmp_path / "handoff.md").exists()
+
+
 @pytest.mark.asyncio
 async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
@@ -188,11 +215,31 @@ async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytes
         assert delivery_payload(backend.prompts[-1]) == expected
         await mcp_tools.send_message(started["session_id"], expected.replace("round: 6", "round: 7"))
         assert delivery_payload(backend.prompts[-1]) == expected.replace("round: 6", "round: 7")
+        return_paths = []
+        target_head = "b" * 40
+        for name in ("修正の返却.md", "別計画の返却.md"):
+            path = tmp_path / name
+            path.write_text(f"検証結果: {target_head} 終了0\n", encoding="utf-8")
+            return_paths.append(str(path))
+        references = json.dumps(return_paths, ensure_ascii=False)
+        await mcp_tools.send_message(
+            started["session_id"],
+            instruction="再レビューせよ",
+            extra_params={"round": "8", "対象HEAD": target_head, "検証結果の返却原本": references},
+        )
+        payload = delivery_payload(backend.prompts[-1])
+        assert f"対象HEAD: {target_head}" in payload
+        assert f"検証結果の返却原本: {references}" in payload
+        await mcp_tools.send_message(started["session_id"], instruction="再レビューせよ", extra_params={"round": "9"})
+        assert delivery_payload(backend.prompts[-1]) == "再レビューせよ\nround: 9"
+        assert not (tmp_path / "handoff.md").exists()
         before = backend.send_calls
         for params in (
             {},
             {"round": "8", "rewrite_map": str(contract) + " 説明"},
             {"round": "8", "review_contract": str(contract) + " 説明"},
+            {"round": "8", "対象HEAD": target_head, "検証結果の返却原本": "relative.md"},
+            {"round": "8", "対象HEAD": target_head, "検証結果の返却原本": str(tmp_path / "missing.md")},
         ):
             with pytest.raises(ToolError):
                 await mcp_tools.mcp.call_tool(
