@@ -167,12 +167,14 @@ async function completeAndExit(
       await cancelCompletion($, path);
       return;
     }
-    await $.fs.write(path, JSON.stringify({ ...state, status: "exiting" }));
-    try {
-      if (unchanged()) await $.command.run({ command: "exit" });
-    } finally {
+    if (!unchanged()) {
       await cancelCompletion($, path);
+      return;
     }
+    // `/exit`は終了の完了前に戻るため、戻った後も`exiting`を残し、終了後のランチャーが報告を表示できるようにする。pyfltr: allow-comment
+    // 終了しなかった場合は次の入力かターン開始で取り消す。pyfltr: allow-comment
+    await $.fs.write(path, JSON.stringify({ ...state, status: "exiting" }));
+    await $.command.run({ command: "exit" });
   } catch {
     await cancelCompletion($, path);
   }

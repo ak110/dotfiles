@@ -18,6 +18,7 @@ type Options = {
   recheck?: string;
   deleteResponse?: "error" | "deny";
   tools?: string[];
+  exitThrows?: boolean;
 };
 
 const REQUEST_PATH = "/home/tester/.claude/agent-toolkit-function-hooks/request-sess-1.txt";
@@ -83,6 +84,7 @@ function engine(on: On, options: Options): { calls: string[]; writes: Map<string
   on("process.run", (_$, e) => { argv.push(e.argv); return { value: { exitCode: 0, stdout: JSON.stringify({ cron: "*/30 * * * *", prompt: COMMON_PROMPT }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }; });
   on("command.run", (_$, e) => {
     calls.push(`command:${e.command}`);
+    if (options.exitThrows) throw new Error("exit failed");
     return {};
   });
   on("turn.complete", (_$, e) => ({ text: e.answer }));
@@ -347,8 +349,15 @@ test("Stopの回収要求で削除できなければ理由を応答へ返し、�
   expect(prompts).toEqual([]);
 });
 
-test("協調の終了要求はStopが許可した時だけ実行し、コマンドが戻れば記録を消す", async ($, on) => {
+test("協調の終了要求はStopが許可した時だけ実行し、コマンドが戻っても終了後の表示のためexitingを残す", async ($, on) => {
   const { calls, writes } = engine(on, { completion: "approved" });
+  await $.turn.complete(MAIN_TURN);
+  expect(calls).toEqual(["CronList", "CronList", "command:exit"]);
+  expect(JSON.parse(writes.get(COMPLETION_PATH) ?? "{}").status).toBe("exiting");
+});
+
+test("協調の終了要求は/exitが例外になれば取り消す", async ($, on) => {
+  const { calls, writes } = engine(on, { completion: "approved", exitThrows: true });
   await $.turn.complete(MAIN_TURN);
   expect(calls).toEqual(["CronList", "CronList", "command:exit"]);
   expect(writes.get(COMPLETION_PATH)).toBe("{}");
