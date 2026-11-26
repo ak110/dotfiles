@@ -252,6 +252,7 @@ function keyEditor(parent, key, item, data, save = operate) {
   const listen = data.listen ?? {};
   const block = element("div");
   block.dataset.setting = key;
+  block.dataset.search = `${key} ${item.description ?? ""}`.toLowerCase();
   block.dataset.editor = `setting:${key}`;
   block.className = "settings-row";
   const description = element("div");
@@ -370,7 +371,7 @@ function groupId(key) {
 const groupTitles = {models: "工程別モデル", connections: "接続", usage: "利用枠", other: "その他の設定とパス"};
 
 async function saveShared(payload, output) {
-  if (busy) return;
+  if (busy || output.closest("[data-setting]")?.querySelector(".settings-shared-conflict")) return;
   busy = true;
   updateWriteControls();
   try {
@@ -410,6 +411,26 @@ function renderShared(savedKey) {
     const prior = old.get(key);
     if (prior && key !== savedKey && editorFields(prior).some(field => field.value !== field.dataset.initialValue)) {
       target.append(prior);
+      const field = editorFields(prior)[0];
+      if (field.dataset.initialValue !== item.saved) {
+        prior.querySelector(".settings-shared-conflict")?.remove();
+        const conflict = element("p", "共有の保存値が変わりました。");
+        conflict.className = "settings-shared-conflict";
+        conflict.setAttribute("role", "alert");
+        const resolve = keep => {
+          field.dataset.initialValue = item.saved;
+          if (!keep) field.value = item.saved;
+          conflict.remove();
+          updateWriteControls();
+          updateUnsaved();
+        };
+        const preserve = button("入力を残す", () => resolve(true));
+        const replace = button("保存値を使う", () => resolve(false));
+        preserve.dataset.conflictAction = "";
+        replace.dataset.conflictAction = "";
+        conflict.append(" ", preserve, " ", replace);
+        prior.append(conflict);
+      }
     } else {
       keyEditor(target, key, item, data, saveShared);
     }
@@ -437,6 +458,18 @@ function renderShared(savedKey) {
   shared.replaceChildren(...nodes);
 }
 
+async function retryComparison() {
+  try {
+    localData = await request(undefined, false, true, true, "");
+    renderShared();
+    renderComparison(localData);
+    setUpdateError("settings", "comparison");
+    filterSettings();
+  } catch (error) {
+    setUpdateError("settings", "comparison", error.message, retryComparison);
+  }
+}
+
 function renderComparison(data) {
   const hosts = [ ["", {state: "ready", ...localData}], ...Object.entries(data.comparison ?? localData?.comparison ?? {}) ];
   const table = element("table");
@@ -450,7 +483,7 @@ function renderComparison(data) {
     header.append(button(name || "ローカル", () => selectHost(name)));
     if (info.state === "pending" || info.state === "error") {
       header.append(element("p", info.state === "pending" ? "未取得" : "取得失敗"),
-        button("再取得", () => loadHost(true, true)));
+        button("再取得", retryComparison));
     } else if (info.state === "legacy") header.append(element("p", "旧版のため自動取得なし"));
     headers.append(header);
   }
@@ -479,8 +512,7 @@ function filterSettings() {
   let count = 0;
   for (const root of [shared, content]) {
     for (const editor of root.querySelectorAll("[data-setting]")) {
-      const text = editor.querySelector("div")?.textContent ?? editor.dataset.setting;
-      editor.hidden = !!needle && !text.toLowerCase().includes(needle);
+      editor.hidden = !!needle && !editor.dataset.search.includes(needle);
       if (!editor.hidden) count++;
     }
     for (const group of root.querySelectorAll("section")) {
@@ -501,7 +533,11 @@ function updateUnsaved() {
     [...editors].filter(([, draft]) => draft.values.some(Boolean)).map(([slot]) => [name, slot]));
   const count = drafts.length + other.length;
   list.replaceChildren();
-  if (!count) return;
+  if (!count) {
+    window.removeEventListener("beforeunload", warnOnUnload);
+    return;
+  }
+  window.addEventListener("beforeunload", warnOnUnload);
   list.append(element("p", `未保存の変更: ${count}件`));
   for (const editor of drafts) list.append(button(editor.dataset.editor, () => {
     const group = editor.closest("section[id^=settings-group-]");
@@ -526,17 +562,14 @@ document.getElementById("settings-search-clear").addEventListener("click", () =>
   search.focus();
 });
 for (const root of [shared, content]) root.addEventListener("input", updateUnsaved);
-window.addEventListener("beforeunload", event => {
-  if (!document.getElementById("settings-unsaved").hasChildNodes()) return;
+function warnOnUnload(event) {
   event.preventDefault();
   event.returnValue = "";
-});
-document.addEventListener("click", event => {
-  if (document.body.dataset.screen !== "settings" || !document.getElementById("settings-unsaved").hasChildNodes()) return;
-  const link = event.target.closest("nav.app-nav a[href]");
-  if (link && new URL(link.href).pathname !== location.pathname && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey &&
+}
+document.addEventListener("atk-screen-will-change", event => {
+  if (document.body.dataset.screen === "settings" && document.getElementById("settings-unsaved").hasChildNodes() &&
       !window.confirm("未保存の設定があります。この画面を離れますか？")) event.preventDefault();
-}, true);
+});
 
 function render(data) {
   displayedData = data;
@@ -674,11 +707,12 @@ function setWriteUnavailable(control, unavailable) {
 }
 
 function updateWriteControls() {
-  for (const control of [...content.querySelectorAll("button:not([data-conflict-action], [data-local-edit])"), ...shared.querySelectorAll("button")]) {
+  for (const control of [...content.querySelectorAll("button:not([data-conflict-action], [data-local-edit])"), ...shared.querySelectorAll("button:not([data-conflict-action])")]) {
     const editor = control.closest("[data-editor]");
     if (!editor) continue;
     const setting = control.closest("[data-setting]") || editor;
-    const blocked = busy || (!shared.contains(control) && (loading || conflicts.has(setting.dataset.editor)));
+    const blocked = busy || setting.querySelector(".settings-shared-conflict") ||
+      (!shared.contains(control) && (loading || conflicts.has(setting.dataset.editor)));
     if (blocked) {
       control.dataset.writeBlocked = "";
       const reason = busy || loading ? "settings-status" : setting.querySelector("[data-conflict]")?.id;

@@ -41,7 +41,10 @@ function screenNameFromUrl(url) {
   return "wi";
 }
 
+let currentScreenUrl = location.href;
+
 function showScreen(name, focusHeading = false) {
+  currentScreenUrl = location.href;
   document.body.dataset.screen = name;
   document.title = `${{wi: "ワークアイテム", plans: "計画ファイル", sessions: "セッション", agents: "エージェント", settings: "設定", usage: "利用枠"}[name]} - atk serve`;
   for (const screen of document.querySelectorAll(".screen")) {
@@ -70,12 +73,23 @@ document.addEventListener("click", (event) => {
   event.preventDefault();
   const url = new URL(link.href, location.href);
   const name = screenNameFromUrl(url);
-  if (name === document.body.dataset.screen) return;
+  if (name === document.body.dataset.screen || !canSwitchScreen(name)) return;
   history.pushState({atkShell: true}, "", url);
   showScreen(name, true);
 });
 
-window.addEventListener("popstate", () => showScreen(screenNameFromUrl(location.href), true));
+function canSwitchScreen(name) {
+  return document.dispatchEvent(new CustomEvent("atk-screen-will-change", {detail: name, cancelable: true}));
+}
+
+window.addEventListener("popstate", () => {
+  const name = screenNameFromUrl(location.href);
+  if (name !== document.body.dataset.screen && !canSwitchScreen(name)) {
+    history.pushState({atkShell: true}, "", currentScreenUrl);
+    return;
+  }
+  showScreen(name, true);
+});
 
 document.addEventListener("DOMContentLoaded", () => {
   const initialName = document.body.dataset.screen;

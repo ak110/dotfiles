@@ -1,6 +1,7 @@
 import copy
 import datetime
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -682,3 +683,15 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
     await editor.get_by_role("button", name="保存").click()
     await expect(editor.get_by_role("alert")).to_contain_text("設定を保存しました")
     assert posts == [{"action": "set", "key": "execute_model", "value": "codex:sol/high"}]
+    peer["shared_identity"] = "different-branch"
+    picker = page.get_by_label("設定対象ホスト")
+    await picker.select_option("")
+    await picker.select_option("remote")
+    await expect(page.locator('#settings-content [data-setting="execute_model"]')).to_have_count(1)
+    if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
+        compare = page.locator("#settings-compare")
+        await compare.locator("summary").click()
+        for width in (1440, 400):
+            await page.set_viewport_size({"width": width, "height": 900})
+            await compare.scroll_into_view_if_needed()
+            await page.screenshot(path=pathlib.Path(directory) / f"003-comparison-{width}.png")
