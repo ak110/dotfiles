@@ -166,7 +166,8 @@ def test_service_outlives_killing_job_of_its_launcher(tmp_path: pathlib.Path, se
     2026-11-19、SSHのセッションから起動した管理サービスが外側のJobに残り、セッションの終了とともに終了した。
     """
     environment = dict(service_environment, XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
-    registry = GenerationRegistry(service_transport.namespace(CallerContext(environment, tmp_path)))
+    caller = service_transport.plugin_caller(CallerContext(environment, tmp_path), _PLUGIN_ROOT)
+    registry = GenerationRegistry(service_transport.namespace(caller))
     try:
         with windows_job.WindowsJob() as job:
 
