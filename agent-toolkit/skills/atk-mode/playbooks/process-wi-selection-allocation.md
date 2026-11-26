@@ -9,9 +9,6 @@
 レーン分けで満たす価値は、所要時間の均等化、依存の連結成分を分けないこと、レーン数の最小化の3つである。
 全体の完了時間は最も遅いレーンで決まり、レーンを増やすほど起動の固定費も増える。
 レーン数の上限、6000秒の比較、全工程の所要時間算定、巨大WIの承認は、ユーザーが決めた時間目標の運用であり、全ての選定で行う。
-監査記録は`docs/development/audit-records-wi.md`にある。
-レーン数ごとの所要時間の比較の節は「agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md：調査とレーン分け：2026年11月17日」である。
-配分の節は「agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年8月31日」である。
 
 ## 調査とレーン分け
 
@@ -100,9 +97,6 @@ agents_serverは役割とエンジンを問わず全担当を合算し、マシ�
    有限の回答期限と公開の質問手段があればその場で質問し、無ければ個別の事前承認型UWIと元WIの回答依存へ接続する。
    個別承認は、一般的な例外方針、無回答、対象の無い継続指示と区別して確かめる。
    未承認と拒否の時は通常の時間対象に保ち、承認後も全件の実装、必要な品質、公開を保つ。
-
-同時数の監査記録は`docs/development/audit-records-wi.md`にある。
-該当節は「agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md：内部担当の同時数と巨大WIの判定：2026年11月12日」である。
 
 ## 反映先と上流投入
 

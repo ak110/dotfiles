@@ -15,11 +15,11 @@ Claude Code 2.1.292のセッションで、要求本文を`extra_params`へ埋�
 不正入力をホストへ再送する必要はない。
 現行版でのファイル入力は、公開された`start`のスキーマと`add-wi.parent.md`の入力契約を確認し、要求・共通入力をmanaged-tempへ保存して絶対パスを渡し、起動の終了状態と担当が取得した内容を原文と比べる。
 
-## agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年8月31日
+## agent-toolkit/skills/atk-mode/playbooks/process-wi-selection-allocation.md：調査とレーン分け：2026年8月31日
 
 2026年8月31日から9月2日までの5セッションの観測で、出力トークン量はレーン数へほぼ比例し、レーン数を増やしたセッションで所要時間が短くなる傾向は観測されなかった。
 
-## agent-toolkit/skills/atk-mode/playbooks/process-wi-lanes.md「統合とAWI終了」：所有資源の回収：2026年9月3日
+## agent-toolkit/skills/atk-mode/playbooks/process-wi-lanes.md：統合とAWI終了：2026年9月3日
 
 2026年9月3日にgit version 2.43.0で、upstreamを設定した専用branchをローカルの`develop`へ統合した直後に`branch -d`が未統合として拒否されることを確認した。
 再検証は`git branch -vv`で追跡先を確認して同じ状態の`branch -d`の終了コードを観測する。

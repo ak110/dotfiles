@@ -20,7 +20,7 @@
 | 稼働中の委譲先へ追送する、依頼文か引き継ぎ記録先の行を書く | `agent-toolkit:atk-mode/references/delegation-prompt.md` |
 | `explore`・`shell`を起動する | 本書「軽量の起動」 |
 | 役割文書を持つ委譲を起動する | 呼び出し元の起動契約（`agent-toolkit:atk-mode/roles/<役割名>.parent.md`か呼び出し元の手順書の節）と、本書「`<役割名>.parent.md`を持つ委譲の起動」 |
-| 同じworktreeへ後続か並列の書き込み担当を起動する、実装担当・レビュー担当のworktreeと書き込み所有権を割り当てる | 本書「作業ツリーの保護」 |
+| 後続・並列の書き込み担当のworktreeと書き込み所有権を割り当てる、直接連絡できない別セッションと共有資源の作業を申し送る | 委譲内の書き込みは本書「作業ツリーの保護」、別セッションへの申し送りは `agent-toolkit:atk-mode/references/shared-resource-handoff.md` |
 | 実機の確認、対照実験、識別子の観測だけのために起動する | 本書「実機の観測だけを目的とする起動」 |
 | 委譲先のモデルとeffortを選ぶ、成果が受入れ基準に届かずモデルかeffortを変える | `agent-toolkit:atk-mode/references/model-settings.md` |
 | 完了通知を処理する、待機区間を組む、待機と停滞を判定する、待機を開始できないか`atk agents wait`が異常の終了コードで終わった | `agent-toolkit:atk-mode/playbooks/delegation-waiting.md` |

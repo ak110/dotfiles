@@ -118,6 +118,7 @@ description: >
 | テスト設計・検証手法を選ぶ時、テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md`、`references/testing-design.md` |
 | テストの網羅範囲の管理方法を設計・変更・レビューする時、画面を操作する探索的な試行の要否を決める時、状態遷移・並行処理・認可の検証を設計する時 | `references/testing.md`、`references/testing-design.md` |
 | 依存パッケージ、コンテナーイメージ、言語処理系、CI・自動ビルドのツールやactionの版指定を選ぶ・変える作業の起草、計画、実装、レビューの時（配布物が渡す`uvx --from`、`dependencies`、`uv run --with`、PEP 723の版指定、Python対応版の追加、pnpmの導入と版の更新を含む） | `references/dependency-management.md` |
+| 自分の配布物のバージョン番号を決める・上げる・レビューする時と、依存先のバージョン番号から互換性を判断する時 | `references/versioning.md` |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` |
 
 ### 技術別

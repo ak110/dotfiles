@@ -22,7 +22,6 @@
   過去の対策との比較は`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「原因と対策」に従う。
 
 巡回の終了条件は、dotfilesリポジトリの`AGENTS.md`と`.claude/skills/develop-dotfiles/references/process-wi-duration.md`「所要時間と終了条件」に従う。
-毎回、次回の候補全体の180分以内の見込みを根拠とともに検収するまで、必要な改善の実装と公開を続ける。
 
 ## 再発の集計
 

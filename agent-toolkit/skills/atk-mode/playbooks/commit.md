@@ -88,11 +88,6 @@ commitの単位の判断は本節を定義元とし、計画と他の手順書�
    一致しなければ退避は戻っておらず、`git apply <退避ファイル>`で復元し、同じ比較で一致を確かめる。
    復元した退避ファイルは本書「作業用ブランチと退避物の扱い」に従って消す。
 
-観測の条件と再検証は`docs/development/audit-records-commit-timeout.md`の次の節にある。
-
-- 「agent-toolkit/skills/atk-mode/playbooks/commit.md：hookの打ち切りと退避の復元：2026年11月10日」
-- 「agent-toolkit/skills/atk-mode/playbooks/commit.md：hookの打ち切りと退避の復元：2026年11月11日」
-
 ## commitとフックの検証
 
 初回の検証を選ぶ時は、commitフックが実行するチェックと対象集合も含めて比べ、同じ条件の検証をフックの前後に重ねない。

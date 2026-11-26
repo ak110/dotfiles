@@ -90,7 +90,7 @@ SessionStartで起動だけを通知されたCodexは`atk-mode`の`SKILL.md`とC
 5. `apply_patch`で既存のファイルを全面的に置き換える時も、同じパスへのUpdateを使う（1つのpatchで同じパスをDeleteとAddに分けると適用に失敗する）。
 6. 明示の指示が無い限り、Officeファイルは原本を変えずに扱う。
    共有原本の編集依頼だけでは途中状態の同期は認められないため、編集前に`agent-basics:writing-standards/references/quality-principles-constraints.md`を全文読み、「共有Office文書の編集」に従う。
-   CSVは利用側の仕様に従う（仕様が不明ならUTF-8のBOM付き）。
+   CSVの符号化は利用側の仕様と`agent-basics:writing-standards/references/encoding.md`「基本原則」に従って決める。
 
 ### 資料の読取
 

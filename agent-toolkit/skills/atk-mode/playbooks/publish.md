@@ -26,15 +26,16 @@ PRの作成、リリースの作成、タグ付けを依頼が明示した場合
 
 ## 版数と生成物
 
-1. 版数の更新が必要な場合は、バージョニング規範と未pushの差分を比べて最上位の変更種別を採用し、版数の更新、派生マニフェストの同期、自動生成ファイルの同期の確認、commitを続けて行う。
+1. 版数の更新が必要な場合は、未pushの差分を対象に、プロジェクトが明示した方針に従ってバージョンを決める。
+   方針がなければ、`agent-basics:writing-standards/references/versioning.md`に従い、過去のリリースの慣行に合わせる。
+   バージョンの更新、派生マニフェストの同期、自動生成ファイルの同期の確認、commitを続けて行う。
    同期は各ジェネレーターが定める対象ファイル群と終了コードで判定する。
    commitは`agent-toolkit:atk-mode/playbooks/commit.md`で作る。
-2. プロジェクト固有の方針が無い場合は、次の基準で版数を決める。
+2. バージョンを決める時は、次の指定と認可を守る。
    - ユーザーが明示した区分（MAJOR、MINOR、PATCH）を最優先にする。
    - MAJORは、ユーザーの明示の指示がある時だけ上げる。
-     後方互換の破壊を外部へ宣言する操作であり、認可を要する。
-   - 3数値のSemVerでない版は、プロジェクトの対応表かユーザーの明示の指示に従う。
-     手がかりが無ければ版数を変えず、判定できない根拠を報告する。
+   - `major.minor.patch`の3つの数で表せないバージョンは、プロジェクトの対応表かユーザーの明示の指示に従う。
+     手がかりが無ければバージョンを変えず、判定できない根拠を報告する。
 3. `agent-toolkit:atk-mode`の作業`process-wi`の完了担当は、未pushの追加差分と公開済みの版数を比べて更新し、公開済みの成果を重複して数えない。
    追加差分の無い再検収では版数の更新とpushを省き、同じ公開先とcommitのCIを検収済みなら待機も省く。
    CIが未判定なら本書「公開工程の続行不能からの再開」へ進む。
@@ -57,11 +58,6 @@ PRの作成、リリースの作成、タグ付けを依頼が明示した場合
    公開担当は、保存した出力の実在、内容、終了コード0を検収する。
 5. チェックの失敗と、設定の未適用や処理の未完了を示す警告は、続けられない原因として`agent-basics:bugfix`で扱い、認可の範囲内で直す。
    `agent-toolkit:atk-mode`の作業`process-wi`の完了担当のCI修正は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「検証またはCIの失敗」に従う。
-
-検証の分担を確かめた記録は、`docs/development/audit-records-commit-environment.md`の次の節にある。
-
-- 「agent-toolkit/skills/atk-mode/playbooks/publish.md：検証とCI：2026年10月11日」
-- 「agent-toolkit/skills/atk-mode/playbooks/publish.md：検証とCI：2026年10月19日」
 
 ## pushと公開状態
 

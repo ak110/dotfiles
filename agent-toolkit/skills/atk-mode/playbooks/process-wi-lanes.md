@@ -131,8 +131,6 @@
    未統合、dirty、稼働中、状態不明、途中で失敗した対象は、理由と残る操作を回収対象の外へ保存し、再実行では残りから再開する。
    セッションのmanaged-tempと証拠のファイルは専用worktreeの中に置かない（回収の対象から外すため）。
    統合済みの判定を確かめてからbranchを`-D`で削除するのは、通常の`-d`がupstreamを基準に判定し、push前のローカル統合を未統合として削除を拒否するためである。
-   監査記録は`docs/development/audit-records-wi.md`にある。
-   該当の節は「agent-toolkit/skills/atk-mode/playbooks/process-wi-lanes.md「統合とAWI終了」：所有資源の回収：2026年9月3日」である。
 
 ### 未回収レーンの再回収
 

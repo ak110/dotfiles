@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/skills/atk-mode/references/session-records.md：H1直下：2026年9月2日
+## agent-toolkit/skills/atk-mode/references/session-records.md：セッション記録の形式と照会：2026年9月2日
 
 2026年9月2日に`~/.claude/projects`配下と`~/.codex/sessions`配下の記録で確認した。
 再検証は両ディレクトリの記録から対象のキーを検索する。
@@ -46,7 +46,7 @@ user役レコードの`text`の先頭が前置きであることも確認する�
 観測はいずれも値を開かずに行った。
 公式文書の2つの節を取得して前掲の記述を確かめ、Codexの記録で`encrypted_content`を持つレコードの`payload.type`を数えて再検証する。
 
-## セッション記録のAPI要求の写し：2026年10月18日
+## agent-toolkit/skills/atk-mode/references/session-records.md：Claude Codeの記録：2026年10月18日
 
 既存調査はClaude Code 2.1.301のリポジトリ外のセッション記録に、同じtool_use IDを持つ`assistant`と`api-request-blob`があると報告した。
 写しは`message`に会話と同じ形のcontentを持ち、timestampとuuidを持たない。

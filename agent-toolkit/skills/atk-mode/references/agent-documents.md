@@ -59,7 +59,6 @@ Claude Codeの`Agent`ツールの委譲先でスキルが使えるかは確か�
 - `atk wi process-loop`が対話CLIで起動する統括はメインの列、統括が`agents_server`で起動するリポジトリ担当は`task`・`delegate`の列の配送を受ける。
   リポジトリ担当の対象リポジトリでのメインとしての責務は、`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「担当の役割」が定める。
 - プロジェクト規範の自動読み込みの行は実機の観測による。
-  記録は`docs/development/audit-records-agent-documents.md`の「agent-basics/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日」にある。
 
 ## スキルの実装
 
