@@ -159,17 +159,61 @@ def _enable_model_completion(command_name: str) -> None:
 
 
 def _interactive_claude(argv: list[str], isatty: TerminalChecker) -> bool:
-    tokens = iter(argv)
-    for token in tokens:
+    if not (isatty(0) and isatty(1)):
+        return False
+    management = {
+        "agents",
+        "attach",
+        "auth",
+        "auto-mode",
+        "doctor",
+        "gateway",
+        "import",
+        "install",
+        "kill",
+        "logs",
+        "mcp",
+        "plugin",
+        "plugins",
+        "purge",
+        "respawn",
+        "rm",
+        "setup-token",
+        "stop",
+        "ultrareview",
+        "update",
+        "upgrade",
+    }
+    noninteractive = {
+        "-p",
+        "--print",
+        "-h",
+        "--help",
+        "-v",
+        "--version",
+        "--sdk-url",
+        "--init-only",
+        "--maintenance",
+        "--bg",
+    }
+    optional_values = {"--resume", "-r", "--teleport", "-w", "--worktree"}
+    first_positional = True
+    index = 0
+    while index < len(argv):
+        token = argv[index]
         if token == "--":
             break
-        if token in {"-p", "--print", "--sdk-url", "--init-only", "--maintenance"} or token.startswith(
-            ("--print=", "--sdk-url=")
-        ):
+        if token.partition("=")[0] in noninteractive:
             return False
-        if token in _CLAUDE_VALUE_OPTIONS:
-            next(tokens, None)
-    return _claude_conversation(argv) and isatty(0) and isatty(1)
+        if token in (_CLAUDE_VALUE_OPTIONS | {"--model"} | optional_values):
+            if index + 1 < len(argv) and not argv[index + 1].startswith("-"):
+                index += 1
+        elif first_positional and not token.startswith("-"):
+            if token in management:
+                return False
+            first_positional = False
+        index += 1
+    return True
 
 
 def _wait_for_claude(command: list[str], env: dict[str, str]) -> int:

@@ -557,8 +557,25 @@ sys.exit({status})
         assert not output
 
 
-@pytest.mark.parametrize("args", [["--print", "hello"], ["-p", "hello"], ["mcp", "list"], ["auth", "status"]])
-def test_opus_noninteractive_does_not_create_launcher_id(
+@pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--print", "hello"],
+        ["-p", "hello"],
+        ["--resume", "--print", "hello"],
+        ["-r", "-p", "hello"],
+        ["--resume", "session-a", "-p"],
+        ["mcp", "list"],
+        ["auth", "status"],
+        ["auto-mode"],
+        ["plugins"],
+        ["--bg", "hello"],
+        ["--version"],
+    ],
+)
+def test_claude_entrypoints_keep_noninteractive_path(
+    entrypoint: Entrypoint,
     args: list[str],
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -569,7 +586,7 @@ def test_opus_noninteractive_does_not_create_launcher_id(
         return 19
 
     with pytest.raises(SystemExit) as error:
-        agent_launcher.main_opus(
+        entrypoint(
             args,
             home=tmp_path,
             os_name="nt",
@@ -579,3 +596,28 @@ def test_opus_noninteractive_does_not_create_launcher_id(
         )
     assert error.value.code == 19
     assert capsys.readouterr().out == "本体出力\n"
+
+
+@pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
+@pytest.mark.parametrize("args", [["--resume"], ["-r", "session-a"], ["--continue"]])
+@pytest.mark.parametrize("fds", [{0, 1}, {0}, {1}])
+def test_claude_resume_checks_both_terminal_descriptors(
+    entrypoint: Entrypoint,
+    args: list[str],
+    fds: set[int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = []
+    monkeypatch.setattr(agent_launcher, "_run_completion_launcher", lambda *_: child.append(True) or 21)
+    with pytest.raises(SystemExit) as error:
+        entrypoint(
+            args,
+            home=tmp_path,
+            os_name="nt",
+            resolve=lambda *_: pathlib.Path("claude"),
+            isatty=lambda fd: fd in fds,
+            run=lambda _: 19,
+        )
+    assert error.value.code == (21 if fds == {0, 1} else 19)
+    assert bool(child) is (fds == {0, 1})
