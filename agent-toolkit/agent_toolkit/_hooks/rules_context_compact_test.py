@@ -148,14 +148,17 @@ def test_compact_delegation_wait_is_scoped_to_current_owner(tmp_path, monkeypatc
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
 def test_batch_compaction_names_current_analysis_and_only_unfinished(tmp_path, monkeypatch, capsys, host):
-    for session_id in ("first", "second"):
-        session_review.record({"hook_event_name": "SessionStart", "session_id": session_id}, host="codex")
+    for target_host in ("claude", "codex"):
+        assert session_review.record(
+            {"hook_event_name": "SessionStart", "session_id": "same", "transcript_path": str(tmp_path / "same.jsonl")},
+            host=target_host,
+        )
     path = tmp_path / "batch.json"
     writer = session_review.BatchWriter(path)
     writer.create({"run_id": "batch", "targets": session_review.pending(), "prepared": []})
     analysis = session_review_analysis.ensure(writer)
     text = analysis.read_text(encoding="utf-8")
-    analysis.write_text(text.replace("| first | 未着手 |", "| first | 完了 |"), encoding="utf-8")
+    analysis.write_text(text.replace("| claude:same | 未着手 |", "| claude:same | 完了 |"), encoding="utf-8")
     monkeypatch.setenv(session_review.BATCH_ENV, str(path))
     assert (
         rules_context.main(
@@ -165,4 +168,5 @@ def test_batch_compaction_names_current_analysis_and_only_unfinished(tmp_path, m
     )
     result = _output(capsys)
     assert str(analysis) in result
-    assert "未完了の対象: second。" in result
+    assert "未完了の対象: codex:same。" in result
+    assert "claude:same" not in result

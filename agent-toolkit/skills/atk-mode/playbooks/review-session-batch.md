@@ -26,13 +26,14 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
 
 ## 分析と保存
 
-短い起動目的から本節へ進み、今回のmanifest、自由記述、同一実行識別子、報告先はSessionStartの起動入力から取る。
+短い起動目的から本節へ進み、今回のmanifest、自由記述、同一実行識別子はSessionStartの起動入力から取る。
 中断から再開した時は同じmanifestの未完了の範囲を処理し、成功した時だけ手順5のfinishを実行する。
 回復できる残工程は続け、外部の前提の不足で終える場合は、未完了の対象と再開の条件を報告する。
 
 1. SessionStartの起動入力にある`batch_analysis`の分析記録を読む。
    起動元は、今回の固定対象のIDと準備結果の所在、状態、結論を書く行と、横断の集計欄を用意する。
-   報告用UWIは起動入力の`target_repo`へ保存し、各対象の分析先とは区別する。
+   冒頭の開始時刻を集計と計測に使い、報告用UWIは冒頭の報告先へ保存する。
+   同じIDの対象が別ホストにある場合は、表の `host:ID` で区別する。
    変更前に始まった実行を再開する場合は、[作業契約](../references/work-contract.md#作成と所有)の「確定した判断」が指す既存の記録を先に読む。
    起動元が用意した雛形へ、既存の記録から各対象の状態と結論、集計を移す。
    済んだ分析はやり直さない。
@@ -48,7 +49,7 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
      所在が未解決の記録の内容と件数は不明とし、文脈や操作の対応の判断も読めた範囲に限る。
      これらの項目が無ければ欠測の申告なし、`partial_analysis`が無ければfalseと読む。
    - 準備自体の失敗、分析の未完了、外部の前提の不足は、原因と未完了の範囲を報告する。
-   - 実行レビューの採否を`atk run-script review-adoption -- --since <manifestのstarted_atの7日前>`で直近7日間と前の7日間について集計し、不採用率の高いモデルやlevel、同じ理由区分の不採用の反復、前の期間からの増加を分析の候補にする。
+   - 実行レビューの採否を`atk run-script review-adoption -- --since <記録の開始時刻の7日前>`で直近7日間と前の7日間について集計し、不採用率の高いモデルやlevel、同じ理由区分の不採用の反復、前の期間からの増加を分析の候補にする。
      不採用の理由は`review-adoption-rejection`の行の管理表を読んで判断し、移管（`transferred`）は不採用率の候補から除く。
      判断主体のラベルが無い旧表（`判断主体不明`）と、判断記録と明示されていない過去の行は、集計だけで完全には識別できないものとして扱う。
      モデル不明の割合が増えたら当該期間の `unknown_model_tables` から1件選び、表名でセッション記録を探す。
@@ -78,7 +79,7 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
    部分分析の対象は、その限界と、欠測の記録ID・物理行・件数も同じ本文に書く。
 5. batchのメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`を読み、その工程で結果を報告用UWI 1件へ保存する。
    本文は`agent-toolkit:atk-mode/references/report-formats-retrospective.md`の振り返り結果報告の書式で書く。
-   `source`は`run-skill`、scopeは`agent-toolkit:review-session batch`、本文のfrontmatterは`run_skill_report: true`とし、manifestの`target_repo`を`--target-repo`へ明示する。
+   `source`は`run-skill`、scopeは`agent-toolkit:review-session batch`、本文のfrontmatterは`run_skill_report: true`とし、手順1の報告先を`--target-repo`へ明示する。
    同一実行の報告があれば同じUWIを更新して1件に保ち、report-completionをやり直す場合もこの報告を再利用する。
    同書の終了処理へ進む前に報告の保存を検収し、次の操作で分析の完了を記録する。
 

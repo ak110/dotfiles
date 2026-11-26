@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import json
 import pathlib
+from collections import Counter
 
 from agent_toolkit._common import atomic_file, markdown_headings, session_review
+
+
+def _analysis_ids(targets: list[session_review.PendingGeneration]) -> list[str]:
+    counts = Counter(target.session_id for target in targets)
+    return [f"{target.host}:{target.session_id}" if counts[target.session_id] > 1 else target.session_id for target in targets]
 
 
 def ensure(writer: session_review.BatchWriter) -> pathlib.Path:
@@ -12,9 +18,13 @@ def ensure(writer: session_review.BatchWriter) -> pathlib.Path:
         if path.exists():
             return path
         batch = writer.load()
+        manifest_fields = batch.model_extra or {}
         prepared = {(item.get("host"), item.get("session_id")): item for item in batch.prepared}
         lines = [
             f"# 振り返り分析記録: {batch.run_id}",
+            "",
+            f"- 開始時刻: {manifest_fields.get('started_at') or '不明'}",
+            f"- 報告先: {manifest_fields.get('target_repo') or '不明'}",
             "",
             "## 対象ごとの分析",
             "",
@@ -22,10 +32,10 @@ def ensure(writer: session_review.BatchWriter) -> pathlib.Path:
             " partial_analysis | mandatory_candidates | 欠測・回復した範囲 | 結論 |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
-        for target in batch.targets:
+        for target, analysis_id in zip(batch.targets, _analysis_ids(batch.targets), strict=True):
             item = prepared.get((target.host, target.session_id), {})
             fields = (
-                target.session_id,
+                analysis_id,
                 "未着手",
                 item.get("conversation_path"),
                 item.get("candidates_path"),
@@ -68,4 +78,4 @@ def unfinished(manifest: pathlib.Path, batch: session_review.ReviewBatch) -> tup
         if line.startswith("|") and line.count("|") >= 3:
             _, session_id, state, _ = line.split("|", 3)
             states.setdefault(session_id.strip(), []).append(state.strip())
-    return tuple(target.session_id for target in batch.targets if states.get(target.session_id) != ["完了"])
+    return tuple(analysis_id for analysis_id in _analysis_ids(batch.targets) if states.get(analysis_id) != ["完了"])

@@ -894,6 +894,11 @@ def cmd_add(
                 origin_reviews=tuple(getattr(args, "origin_review", None) or ()),
             )
             item_branches, resolved_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
+            if args.type == WI_TYPE_UWI and args.question_type == QUESTION_TYPE_REPORT:
+                for frontmatter, body in parsed_messages:
+                    raw_repo = frontmatter.get("target_repo")
+                    item_repo = resolve_repo_id_or_raise(raw_repo) if isinstance(raw_repo, str) else normalized_target_repo
+                    validate_retrospective_report(private_notes, body, {"scope": args.scope, "target_repo": item_repo})
             if draft_basis is not None:
                 _ensure_draft_destinations(draft_basis, parsed_messages, item_branches, resolved_branch)
                 draft_basis.verify(resolved_branch)

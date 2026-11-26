@@ -1,6 +1,6 @@
 # 振り返りの費用と所要時間の分析
 
-本書は、振り返りの担当が品質を保ったままユーザーの費用と待ち時間を減らせるよう、費用（読み込み、Skill、結果量、反復、トークンの上位）と所要時間を比べて改善案を選ぶ基準を定める。
+振り返りの担当は品質を保ちながらユーザーの費用と待ち時間を減らすため、費用（読み込み、Skill、結果量、反復、トークンの上位）と所要時間を本書の基準で比べて改善案を選ぶ。
 分析の手順書`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`を全文読み、費用を比べる時は「工程2」の手順7に従う。
 品質を保ち、その内側で費用と時間を比べる（原則2、`agent-basics:writing-standards/references/quality-principles-qcd.md`）。
 数値は観測した範囲だけを事実とし、未計測を推定で埋めない（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
@@ -73,9 +73,9 @@
 
 | 場面 | 起点 |
 | --- | --- |
-| batch | manifest（`AGENT_TOOLKIT_SESSION_REVIEW_BATCH`が指す実行情報JSON）の`started_at`。準備の時間も区間に入る |
+| batch | 分析記録の「開始時刻」。準備の時間も区間に入る |
 | batchで準備区間と分析区間の内訳が律速の判定に必要な場合 | `atk run-script session-review-evidence -- --claude-session-id <自身のセッションID> --elapsed-until <終点の時刻>`が返す`start`（Codexでは`--claude-session-id`の代わりに`--codex-thread-id <自身のthread ID>`） |
-| batchの再開 | `started_at`。中断の時間も経過に含まれるため、そのことを報告に注記する |
+| batchの再開 | 分析記録の「開始時刻」。中断の時間も経過に含まれるため、そのことを報告に注記する |
 | 通常（Claude Code） | `atk run-script session-review-evidence -- --claude-session-id <自身のセッションID> --tool-calls --tool Skill --input-regex 'review-session'`が返す`tool-call`の`timestamp`。該当が無ければ`--user-events --user-match-fixed review-session`が返す発話の時刻、それも無ければ`--elapsed-until`の`start`を使い、そのことを報告に注記する |
 | 通常（Codex） | `atk run-script session-review-evidence -- --codex-thread-id <自身のthread ID> --user-events --user-match-fixed review-session`が返す発話の時刻。該当が無ければ`--elapsed-until`の`start`を使い、そのことを報告に注記する |
 

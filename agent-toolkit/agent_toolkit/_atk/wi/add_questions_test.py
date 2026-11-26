@@ -295,3 +295,55 @@ def test_retrospective_handoff_required_in_all_review_scopes(tmp_path, scope):
     validate_retrospective_report(tmp_path, "# 報告: 振り返り\n\n### 未達・持ち越し\n\n- 未確定: 記録が追記された", metadata)
     for other in ("agent-toolkit:review-session architecture", "agent-toolkit:process-wi"):
         validate_retrospective_report(tmp_path, opening, {**metadata, "scope": other})
+
+
+@pytest.mark.parametrize("heading", ["### 未達・持ち越し", "### 未達・持ち越し  ", "### 未達・持ち越し ###"])
+def test_retrospective_handoff_ignores_equivalent_carryover_headings(tmp_path, heading):
+    metadata = {"scope": "agent-toolkit:review-session", "target_repo": "github.com/example/repo"}
+    body = f"# 報告: 振り返り\n\n{heading}\n\n- 未確定: 追記された"
+    validate_retrospective_report(tmp_path, body, metadata)
+    with pytest.raises(WebInputError, match="引き継ぎ"):
+        validate_retrospective_report(tmp_path, body + "\n\n### 他の節\n\n- 未確定: 別の問題", metadata)
+
+
+@pytest.mark.parametrize(
+    ("value", "valid"),
+    [
+        ("20261126-183408-001.md", True),
+        ("不要（対策の採否は原因に依存しない）", True),
+        ("20261126-183408-002.md", False),
+        ("不要（次の振り返りで調べる）", False),
+    ],
+)
+def test_report_dry_run_and_save_check_handoff_in_effective_repo(tmp_path, monkeypatch, capsys, value, valid):
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    awi = notes / "2026/11/20261126-183408-001.md"
+    awi.parent.mkdir(parents=True, exist_ok=True)
+    awi.write_text("---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/other\n---\n\n# 調査\n", encoding="utf-8")
+    body = tmp_path / "report.md"
+    body.write_text(
+        f"---\ntarget_repo: github.com/example/other\n---\n\n# 報告: 振り返り\n\n- 未確定: 再現しない; 検証の引き継ぎ: {value}",
+        encoding="utf-8",
+    )
+    args = [
+        "wi",
+        "add",
+        "--target-repo",
+        "github.com/example/repo",
+        "--type=uwi",
+        "--question-type=report",
+        "--scope",
+        "agent-toolkit:review-session batch",
+        "--source",
+        "test",
+        "--body-file",
+        str(body),
+    ]
+    for dry_run in (True, False):
+        with pytest.raises(SystemExit) as result:
+            atk.main([*args, *(["--dry-run"] if dry_run else [])], home=tmp_path, now=_FIXED_DT)
+        assert (result.value.code == 0) == valid
+        if not valid:
+            assert "未確定の問題の引き継ぎ" in capsys.readouterr().err
+        assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1 + int(valid and not dry_run)

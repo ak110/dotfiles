@@ -145,3 +145,35 @@ def test_analysis_template_preserves_existing_conclusions(tmp_path):
     assert session_review_analysis.ensure(writer) == path
     assert path.read_text(encoding="utf-8") == saved
     assert not session_review_analysis.unfinished(writer.path, writer.load())
+
+
+def test_finish_distinguishes_same_session_id_in_two_hosts(tmp_path, monkeypatch, capsys):
+    for host in ("claude", "codex"):
+        assert session_review.record(
+            {"hook_event_name": "SessionStart", "session_id": "same", "transcript_path": str(tmp_path / "same.jsonl")},
+            host=host,
+        )
+    writer = session_review.BatchWriter(tmp_path / "batch.json")
+    writer.create(
+        {
+            "run_id": "batch",
+            "targets": session_review.pending(),
+            "started_at": "2026-11-27T00:00:00Z",
+            "target_repo": "github.com/example/repo",
+            "prepared": [{"host": "codex", "session_id": "same", "partial_analysis": True}],
+        }
+    )
+    monkeypatch.setenv(session_review.BATCH_ENV, str(writer.path))
+    monkeypatch.setattr(session_review_state.add_reports, "check_run_report_sync", lambda *args, **kwargs: None)
+    path = session_review_analysis.ensure(writer)
+    text = path.read_text(encoding="utf-8")
+    assert "- 開始時刻: 2026-11-27T00:00:00Z" in text
+    assert "- 報告先: github.com/example/repo" in text
+    text = text.replace("| claude:same | 未着手 |", "| claude:same | 完了 |")
+    path.write_text(text, encoding="utf-8")
+    assert session_review_state.main(["finish"]) == 1
+    error = capsys.readouterr().err
+    assert "codex:same" in error and "claude:same" not in error
+    path.write_text(text.replace("| codex:same | 未着手 |", "| codex:same | 完了 |"), encoding="utf-8")
+    assert session_review_state.main(["finish"]) == 0
+    assert writer.load().analysis_succeeded

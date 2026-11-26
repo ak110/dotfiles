@@ -1,6 +1,7 @@
 import datetime
 import pathlib
 import re
+from collections.abc import Mapping
 
 import markdown_it
 
@@ -44,16 +45,23 @@ _CANDIDATE_SUFFIX = re.compile(r"\s*（c[0-9]+(?:[、,]\s*c[0-9]+)*）$")
 _UNCERTAIN_LINE = re.compile(r"(?:[-*+]\s+)?未確定:\s*(.*)")
 
 
-def validate_retrospective_report(private_notes: pathlib.Path, body: str, metadata: dict[str, object]) -> None:
+def validate_retrospective_report(private_notes: pathlib.Path, body: str, metadata: Mapping[str, object]) -> None:
     scope = metadata.get("scope")
     if not isinstance(scope, str) or scope not in _RETROSPECTIVE_SCOPES:
         return
     repo = metadata.get("target_repo")
     names: list[tuple[str, str]] = []
+    filtered = markdown_headings.without_literal_blocks(body)
+    headings = {
+        token.map[0]: (level, title)
+        for level in (2, 3)
+        for token, title in markdown_headings.top_level_atx_headings(filtered, level)
+        if token.map is not None
+    }
     in_carryover = False
-    for line in markdown_headings.without_literal_blocks(body).splitlines():
-        if line.startswith(("## ", "### ")):
-            in_carryover = line == "### 未達・持ち越し"
+    for index, line in enumerate(filtered.splitlines()):
+        if (heading := headings.get(index)) is not None:
+            in_carryover = heading == (3, "未達・持ち越し")
         if in_carryover or not (match := _UNCERTAIN_LINE.fullmatch(line.strip())):
             continue
         _, separator, value = match[1].rpartition("; 検証の引き継ぎ:")
