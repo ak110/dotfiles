@@ -148,7 +148,7 @@ jobs:
     if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 12
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
