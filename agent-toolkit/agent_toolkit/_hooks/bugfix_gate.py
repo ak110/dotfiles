@@ -54,8 +54,10 @@ _RECORD_LINE_RE = re.compile(
     re.MULTILINE,
 )
 _PENDING_SIMILAR_RE = re.compile(
-    r"(?:(?:[^、。；;\n]+(?:は|が))?未確認|(?:検索|確認)?予定)(?:[。．.]?|[ \t]*[：:].*|[ \t]*(?:（[^）]*）|\([^)]*\))[。．.]?)"
+    r"(?:(?:(?P<scope>[^、。；;\n]+)(?:は|が))?未確認|(?:検索|確認)?予定)"
+    r"(?:[。．.]?|[ \t]*[：:].*|[ \t]*(?:（[^）]*）|\([^)]*\))[。．.]?)"
 )
+_SIMILAR_RESULT_RE = re.compile(r"該当[ \t]*[0-9０-９]+[ \t]*件")
 
 _REPORT_STRUCTURE_RE = re.compile(r"^[ \t]*#{1,6}[ \t]+[^\n]*報告[ \t:：#]*$|AWI化ステータス[ \t]*[:：]", re.MULTILINE)
 
@@ -402,12 +404,17 @@ def _record_matches(message: object) -> list[re.Match[str]]:
     return list(_RECORD_LINE_RE.finditer(unquoted))
 
 
+def _is_pending_similar_review(body: str) -> bool:
+    pending = _PENDING_SIMILAR_RE.fullmatch(body)
+    return pending is not None and _SIMILAR_RESULT_RE.search(pending["scope"] or "") is None
+
+
 def _missing_record_labels(message: object) -> list[str]:
     present = {
         label
         for match in _record_matches(message)
         if (body := match["body"].strip())
-        and not ((label := match["label"]) == "類似見直し" and _PENDING_SIMILAR_RE.fullmatch(body))
+        and not ((label := match["label"]) == "類似見直し" and _is_pending_similar_review(body))
     }
     return [label for label in _RECORD_LABELS if label not in present]
 
