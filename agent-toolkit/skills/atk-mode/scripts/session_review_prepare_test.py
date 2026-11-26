@@ -154,6 +154,55 @@ def test_resumed_review_keeps_two_boundaries_and_does_not_commit_interrupted_wor
     assert "いま進めている新着" in latest and "二度目の再開までの依頼" not in latest
 
 
+def test_antigravity_resume_uses_its_own_completed_position(tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    session_ids = ("019a0000-1111-7222-8333-444444444444", "019a0000-1111-7222-8333-555555555555")
+    work = tmp_path / "work"
+    work.mkdir()
+    for sid in session_ids:
+        path = home / ".gemini/antigravity-cli/brain" / sid / ".system_generated/logs/transcript_full.jsonl"
+        support.write_jsonl(
+            path,
+            [
+                {
+                    "step_index": minute,
+                    "source": "USER_EXPLICIT",
+                    "type": "USER_INPUT",
+                    "status": "DONE",
+                    "content": f"<USER_REQUEST>\n{text}\n</USER_REQUEST>",
+                    "created_at": f"2026-09-06T12:0{minute}:01Z",
+                }
+                for minute, text in enumerate(("以前の区間", "次の区間", "いまの新着"))
+            ],
+        )
+
+    def prepared(sid, minute):
+        result = prepare.main(
+            ["--agy-session-id", sid, "--observation-boundary", f"2026-09-06T12:0{minute}:59Z", "--work-dir", str(work)],
+            now=_FIXED_NOW,
+        )
+        captured = capsys.readouterr()
+        assert result == 0, captured.err
+        prepared_json = json.loads(captured.out)
+        assert (prepared_json["host"], prepared_json["session_id"]) == ("agy", sid)
+        return prepared_json, pathlib.Path(prepared_json["conversation_path"]).read_text(encoding="utf-8")
+
+    first, text = prepared(session_ids[0], 0)
+    assert "以前の区間" in text and "次の区間" not in text
+    saved = work / "prepare.json"
+    session_review.write(saved, first)
+    assert session_review_state.main(["complete", "--prepared", str(saved)]) == 0
+    capsys.readouterr()
+    assert session_review_state.main(["show", "--target", "agy", session_ids[0]]) == 0
+    assert json.loads(capsys.readouterr().out)["processed_scope"]
+    _, resumed = prepared(session_ids[0], 1)
+    assert "次の区間" in resumed and "以前の区間" not in resumed and "いまの新着" not in resumed
+    _, other = prepared(session_ids[1], 1)
+    assert "次の区間" in other and "以前の区間" in other and "いまの新着" not in other
+
+
 def _hook_attachment(line_time: str, tool_use_id: str, notice: str) -> dict[str, object]:
     return {
         "type": "attachment",

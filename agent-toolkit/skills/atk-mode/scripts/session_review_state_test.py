@@ -1,10 +1,11 @@
 import json
+import os
 import pathlib
 
 import filelock
 import pytest
 import session_review_state
-from agent_toolkit._common import session_review, session_review_analysis
+from agent_toolkit._common import session_registry, session_review, session_review_analysis
 
 
 @pytest.mark.parametrize("condition", ["empty", "unconfirmed", "completed", "resolved", "running", "failed"])
@@ -180,7 +181,8 @@ def test_finish_distinguishes_same_session_id_in_two_hosts(tmp_path, monkeypatch
     assert writer.load().analysis_succeeded
 
 
-def test_show_target_avoids_running_batch_without_waiting(capsys):
+def test_show_target_avoids_running_batch_without_waiting(capsys, monkeypatch):
+    monkeypatch.setattr(session_review_state.config, "resolve_mutable_setting", lambda _key: "true")
     session_review.record({"hook_event_name": "SessionStart", "session_id": "mine"}, host="codex")
     root = session_review.directory()
     runs = root / "runs"
@@ -192,6 +194,16 @@ def test_show_target_avoids_running_batch_without_waiting(capsys):
         assert session_review_state.main(["show", "--target", host, session_id]) == 0
         return json.loads(capsys.readouterr().out)
 
+    assert status("codex", "mine")["status"] == "available"
+    writer.pause_for_usage_limit(9999999999.0, 3)
+    assert status("codex", "mine")["status"] == "batch"
+    monkeypatch.setattr(session_review_state.config, "resolve_mutable_setting", lambda _key: "false")
+    assert status("codex", "mine")["status"] == "available"
+    monkeypatch.setattr(session_review_state.config, "resolve_mutable_setting", lambda _key: "true")
+    writer.resume_usage_limited()
+    executor = session_registry.ProcessIdentity.of(os.getpid())
+    assert executor is not None
+    writer.attach(executor)
     assert status("codex", "mine") == {"status": "batch", "batch_run_id": "batch", "processed_scope": None}
     assert status("claude", "mine")["status"] == "available"
     with filelock.FileLock(root / "batch.lock"):

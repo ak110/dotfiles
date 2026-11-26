@@ -601,7 +601,7 @@ def _save_meta_failure(start: pathlib.Path, record: dict[str, Any]) -> bool:
     return saved
 
 
-def _live(manifest: dict[str, Any]) -> bool:
+def execution_live(manifest: dict[str, Any]) -> bool:
     stable = manifest.get("process_identities", [])
     processes = manifest.get("processes", [])
     if processes:
@@ -824,7 +824,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             resumed.timeout, resumed.run_id = record.remaining, record.input.run_id
             resumed.batch_manifest, resumed.resume_record = str(path), record
             return _resume_batch(resumed, execute)
-        if old["status"] == "running" and _live(old):
+        if old["status"] == "running" and execution_live(old):
             session_review.launch_result()
             return 1
         if (finished := run_skill_batch_finalize.resume_finished_analysis(old, path)) is not None:

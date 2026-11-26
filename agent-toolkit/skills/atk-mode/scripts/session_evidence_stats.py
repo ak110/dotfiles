@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import datetime
 import json
 import re
@@ -59,7 +60,12 @@ def _apply_observation_boundary(records: list[_Record], boundary: datetime.datet
 
 def _observation_prefix(records: list[_Record], boundary: datetime.datetime) -> list[_Record]:
     for index, record in enumerate(records):
-        if (timestamp := _record_timestamp(record)) is not None and timestamp > boundary:
+        timestamp = _record_timestamp(record)
+        created_at = record.entry.get("created_at")
+        if timestamp is None and "step_index" in record.entry and isinstance(created_at, str):
+            with contextlib.suppress(ValueError):
+                timestamp = _parse_timestamp(created_at)
+        if timestamp is not None and timestamp > boundary:
             return records[:index]
     return records
 

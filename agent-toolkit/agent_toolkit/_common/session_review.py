@@ -408,7 +408,7 @@ def timestamp() -> str:
 
 def key(host: str, session_id: str) -> str:
     """hostと会話IDをファイル名へ安全に対応付ける。"""
-    if host not in {"claude", "codex", "opencode"} or session_launchers.valid_launcher(session_id) is None:
+    if host not in {"claude", "codex", "agy", "opencode"} or session_launchers.valid_launcher(session_id) is None:
         raise ValueError("振り返り対象のhostまたは会話IDが不正")
     return f"{host}-{session_id}"
 

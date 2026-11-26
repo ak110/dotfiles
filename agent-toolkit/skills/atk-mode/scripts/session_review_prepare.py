@@ -80,6 +80,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--codex-home", type=pathlib.Path, metavar="DIR", help="Codexの記録の保存先。省略時はCODEX_HOMEか~/.codex。"
     )
+    session.add_argument("--agy-session-id", metavar="ID", help="Antigravityの会話ID。")
     session.add_argument("--opencode-session-id", metavar="ID", help="OpenCodeのses_で始まるセッションID。")
     session.add_argument("--agents-session-id", metavar="ID", help="agents_serverが起動した委譲先のsession ID。")
     parser.add_argument(
@@ -273,6 +274,11 @@ def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, A
 @session_evidence_execution.shell_parse_scope()
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.agy_session_id is not None:
+        record = session_record_paths.find_session_record(args.agy_session_id)
+        if record is None or record.engine != "agy" or len(record.paths) != 1:
+            return _missing("transcript_path", f"Antigravityの会話記録を一意に解決できない: {args.agy_session_id}")
+        args.transcript = str(record.paths[0])
     if args.agents_session_id is not None:
         try:
             resolution = session_registry.resolve(args.agents_session_id)
@@ -329,18 +335,20 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     if transcript_path is not None and not transcript_path.is_file():
         return _missing("transcript_path")
     target_repo = pathlib.Path(args.target_repo).expanduser().resolve() if args.target_repo is not None else None
-    session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id or args.opencode_session_id)
-    identity = session_review.prepare_identity(
-        "claude" if transcript_path is not None else "codex" if args.codex_thread_id else "opencode", session_id
-    )
+    if args.agy_session_id is not None:
+        host, session_id = "agy", args.agy_session_id
+    elif transcript_path is not None:
+        host, session_id = "claude", transcript_path.stem
+    elif args.codex_thread_id is not None:
+        host, session_id = "codex", args.codex_thread_id
+    else:
+        host, session_id = "opencode", str(args.opencode_session_id)
+    identity = session_review.prepare_identity(host, session_id)
     if args.work_dir is not None:
         work_dir = pathlib.Path(args.work_dir).expanduser()
         if not work_dir.is_absolute() or not work_dir.is_dir():
             return _missing("work_dir", f"既存の絶対ディレクトリではない: {work_dir}")
     else:
-        session_id = (
-            transcript_path.stem if transcript_path is not None else str(args.codex_thread_id or args.opencode_session_id)
-        )
         try:
             session_root = managed_temp.resolve_session_temp(session_id)
             work_dir = managed_temp.create_session_temp("session-review", session_root)

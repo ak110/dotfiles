@@ -11,6 +11,7 @@ import sys
 import time
 
 import filelock
+from agent_toolkit._atk import config, run_skill_batch
 from agent_toolkit._atk.wi import add_reports
 from agent_toolkit._common import next_action, session_review, session_review_analysis
 
@@ -39,12 +40,19 @@ def _review_owner(host: str, session_id: str) -> dict[str, str | None]:
                     batch = session_review.BatchWriter(path).load()
                 except FileNotFoundError:
                     continue
-                live = batch.status in {
-                    session_review.BatchStatus.RUNNING,
-                    session_review.BatchStatus.USAGE_LIMIT_PAUSED,
-                }
-                waiting = batch.status == session_review.BatchStatus.FAILED and batch.failure_key == failure_key
-                if (live or waiting) and any(item.key == key for item in batch.targets):
+                if not any(item.key == key for item in batch.targets):
+                    continue
+                live = batch.status == session_review.BatchStatus.RUNNING and run_skill_batch.execution_live(
+                    {**batch.model_dump(mode="json", exclude_unset=True), "manifest_path": str(path)}
+                )
+                deferred = (
+                    batch.status == session_review.BatchStatus.USAGE_LIMIT_PAUSED
+                    or batch.status == session_review.BatchStatus.FAILED
+                    and batch.failure_key == failure_key
+                    or batch.status == session_review.BatchStatus.RUNNING
+                    and batch.analysis_succeeded
+                )
+                if live or (deferred and config.resolve_mutable_setting("session_review_auto_start") != "false"):
                     return {**state, "status": "batch", "batch_run_id": batch.run_id}
     except filelock.Timeout:
         return {**state, "status": "batch-busy"}
