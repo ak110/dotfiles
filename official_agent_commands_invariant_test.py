@@ -1,6 +1,9 @@
+import os
 import pathlib
 import re
-import shlex
+import shutil
+import subprocess
+from collections.abc import Callable
 
 import pytest
 
@@ -12,71 +15,105 @@ _POLICY = (
 _OFFICIAL = r"(?:claude|codex)"
 
 
-_SHELL_SEPARATORS = "();&|\n"
-_COMMAND_BOUNDARIES = {"if", "then", "elif", "else", "do", "{", "!", "time", "command", "builtin"}
-_OFFICIAL_NAMES = {"claude", "codex"}
+@pytest.fixture
+def bash(host_environ: Callable[[], dict[str, str]]) -> tuple[str, dict[str, str]]:
+    host = host_environ()
+    if os.name == "nt":
+        # pyfltr: allow-comment -- System32のbash.exeはWSL起動用であり、Windows CIではGit Bashを使う。
+        paths = [
+            pathlib.Path(host[key]) / "Git" / "bin" / "bash.exe" for key in ("ProgramFiles", "ProgramW6432") if host.get(key)
+        ]
+        if git := shutil.which("git", path=host.get("PATH", "")):
+            paths.insert(0, pathlib.Path(git).parent.parent / "bin" / "bash.exe")
+        executable = next((str(path) for path in paths if path.is_file()), None)
+    else:
+        executable = shutil.which("bash", path=host.get("PATH", ""))
+    if executable is None:
+        if host.get("CI") == "true":
+            pytest.fail("CIではBash（WindowsではGit Bash）が必要。")
+        pytest.skip("公式名の起動設定を評価するBashが見つからない。")
+    env = {key: host[key] for key in ("SystemRoot", "WINDIR") if key in host}
+    return executable, env
 
 
-def _separator(token: str) -> bool:
-    return bool(token) and all(character in _SHELL_SEPARATORS for character in token)
+def _shell_overrides(bash: tuple[str, dict[str, str]], home: pathlib.Path, startup: str) -> list[str]:
+    executable, platform_env = bash
+    result = subprocess.run(
+        [
+            executable,
+            "--noprofile",
+            "--norc",
+            "-ic",
+            r"""
+source "./$1" || exit
+for name in claude codex; do
+    case "$(builtin type -t "$name")" in
+        alias|function) printf 'override:%s\n' "$name" ;;
+    esac
+done
+printf 'startup-checked\n'
+""",
+            "bash",
+            startup,
+        ],
+        cwd=home,
+        env={**platform_env, "HOME": home.as_posix(), "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "TERM": "dumb"},
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+        check=True,
+    )
+    lines = result.stdout.splitlines()
+    assert lines and lines[-1] == "startup-checked", f"Bashの検査が完了しなかった: {result.stderr}"
+    return [line.removeprefix("override:") for line in lines if line.startswith("override:")]
 
 
-def _overwrites_official_command(source: str) -> bool:
-    lexer = shlex.shlex(source, posix=True, punctuation_chars=_SHELL_SEPARATORS)
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    tokens = list(lexer)
-    at_command = True
-    alias = False
-    for index, token in enumerate(tokens):
-        if _separator(token):
-            at_command, alias = True, False
-            continue
-        if alias and token.partition("=")[0] in _OFFICIAL_NAMES and "=" in token:
-            return True
-        if not at_command or token in _COMMAND_BOUNDARIES:
-            continue
-        following = tokens[index + 1 : index + 3]
-        if token == "function" and following and following[0] in _OFFICIAL_NAMES:
-            return True
-        if token in _OFFICIAL_NAMES and (following[:1] == ["()"] or following == ["(", ")"]):
-            return True
-        at_command, alias = False, token == "alias"
-    return False
+@pytest.mark.windows
+@pytest.mark.parametrize("startup", [".bashrc", ".bash_profile"])
+def test_shell_startup_preserves_official_commands(
+    bash: tuple[str, dict[str, str]],
+    tmp_path: pathlib.Path,
+    startup: str,
+) -> None:
+    for name in (".bashrc", ".bash_profile"):
+        shutil.copyfile(_ROOT / ".chezmoi-source" / f"dot_{name[1:]}", tmp_path / name)
+    assert not _shell_overrides(bash, tmp_path, startup), _POLICY
 
 
-def test_shell_startup_preserves_official_commands() -> None:
-    for name in ("dot_bashrc", "dot_bash_profile"):
-        path = _ROOT / ".chezmoi-source" / name
-        assert not _overwrites_official_command(path.read_text(encoding="utf-8")), f"{path}: {_POLICY}"
-
-
+@pytest.mark.windows
 @pytest.mark.parametrize("command", ["claude", "codex"])
 @pytest.mark.parametrize(
     "source",
     [
         "{command}() {{ :; }}",
+        "{command}()\n{{\n  :\n}}",
         "if true; then function {command} {{ :; }}; fi",
         "if true; then alias {command}='echo wrapped'; fi",
         "alias other='echo other' {command}='echo wrapped'",
-        "alias other='echo other' \\n    {command}='echo wrapped'",
+        "alias other='echo other' " + chr(92) + "\n  {command}='echo wrapped'",
+        'name={command}; alias "$name=echo wrapped"',
     ],
 )
-def test_shell_guard_detects_overwrites(command: str, source: str) -> None:
-    assert _overwrites_official_command(source.format(command=command))
+def test_shell_guard_detects_overwrites(
+    bash: tuple[str, dict[str, str]],
+    tmp_path: pathlib.Path,
+    command: str,
+    source: str,
+) -> None:
+    (tmp_path / ".bashrc").write_text(source.format(command=command) + "\n", encoding="utf-8", newline="\n")
+    assert _shell_overrides(bash, tmp_path, ".bashrc") == [command]
 
 
-@pytest.mark.parametrize(
-    "source",
-    [
-        "# alias claude='echo wrapped'",
-        "alias myclaude='claude' mycodex='codex'",
-        "claude --version; codex --version",
-        'printf "%s" "alias claude=wrapped"',
-    ],
-)
-def test_shell_guard_allows_references(source: str) -> None:
-    assert not _overwrites_official_command(source)
+@pytest.mark.windows
+def test_shell_guard_allows_references(bash: tuple[str, dict[str, str]], tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".bashrc").write_text(
+        "# alias claude='echo wrapped'\nalias myclaude='claude' mycodex='codex'\ntype -t claude codex || :\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    assert not _shell_overrides(bash, tmp_path, ".bashrc")
 
 
 def test_bin_preserves_official_commands() -> None:
