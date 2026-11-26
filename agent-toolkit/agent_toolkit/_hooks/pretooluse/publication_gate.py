@@ -157,11 +157,17 @@ def _publication_targets(payload: dict, tool_name: str, tool_input: dict) -> fro
     cwd = tool_input.get("workdir") or payload.get("cwd")
     if tool_name not in _SHELL_TOOLS or not isinstance(command, str) or not isinstance(cwd, str) or not cwd:
         return None
-    direct = re.fullmatch(r"\s*git\s+push(?:\s+([A-Za-z0-9_.-]+)\s+([A-Za-z0-9_./:-]+))?\s*", command)
+    direct = re.fullmatch(
+        r"\s*git\s+push(?:\s+--force-with-lease=([A-Za-z0-9_./-]+):(?:[0-9a-f]{40}|[0-9a-f]{64}))?"
+        r"(?:\s+([A-Za-z0-9_.-]+)\s+([A-Za-z0-9_./:-]+))?\s*",
+        command,
+    )
     if direct is None:
         return _gh_target(command, cwd)
-    remote, refspec = direct.groups()
+    lease_ref, remote, refspec = direct.groups()
     if remote is None:
+        if lease_ref is not None:
+            return None
         upstream = git_command.run(
             ["rev-parse", "--symbolic-full-name", "@{push}"], cwd=cwd, capture_output=True, text=True, check=False, timeout=2
         )
@@ -174,6 +180,8 @@ def _publication_targets(payload: dict, tool_name: str, tool_input: dict) -> fro
     source, separator, destination = refspec.partition(":")
     ref = destination if separator else source
     if not ref or ref.startswith("-") or ":" in ref or (ref.startswith("refs/") and not ref.startswith("refs/heads/")):
+        return None
+    if lease_ref is not None and lease_ref.removeprefix("refs/heads/") != ref.removeprefix("refs/heads/"):
         return None
     result = git_command.run(
         ["remote", "get-url", "--push", "--all", remote], cwd=cwd, capture_output=True, text=True, check=False, timeout=2

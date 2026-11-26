@@ -145,7 +145,11 @@ def test_publication_uses_registered_baseline_after_session_temp_changes(tmp_pat
             assert denied is not None and late.name in denied[0]
 
 
-def test_publication_requires_recovery_of_the_same_circuit_baseline(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "push",
+    ["git push origin develop", f"git push --force-with-lease=refs/heads/develop:{'a' * 40} origin HEAD:refs/heads/develop"],
+)
+def test_publication_requires_recovery_of_the_same_circuit_baseline(tmp_path, monkeypatch, push):
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     repository = config.ConfiguredRepository("github.com/example/foo", tmp_path, tmp_path / ".git")
@@ -153,7 +157,7 @@ def test_publication_requires_recovery_of_the_same_circuit_baseline(tmp_path, mo
     owner = "active-publication"
     _register_circuit(tmp_path, monkeypatch, "previous-publication")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", owner)
-    command = {"command": "git push origin develop"}
+    command = {"command": push}
     payload = {"session_id": owner, "cwd": str(tmp_path)}
     for _ in range(2):
         denied = publication_gate.check(payload, owner, "Bash", command)
@@ -182,6 +186,26 @@ def test_publication_requires_recovery_of_the_same_circuit_baseline(tmp_path, mo
     recovered = publication_gate.check(delegated, child, "Bash", command)
     assert recovered is not None and late.name in recovered[0]
     assert publication_gate.check(delegated, child, "Bash", command) is None
+
+
+@pytest.mark.parametrize(
+    "push",
+    [
+        "git push --force-with-lease origin HEAD:develop",
+        "git push --force-with-lease=develop:abcd origin HEAD:develop",
+        f"git push --force-with-lease=refs/heads/other:{'a' * 40} origin HEAD:develop",
+        f"git push --force-with-lease=refs/heads/develop:{'a' * 40}",
+    ],
+)
+def test_publication_does_not_accept_ambiguous_lease(tmp_path, monkeypatch, push):
+    owner = "ambiguous-publication"
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", owner)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    payload = {"session_id": owner, "cwd": str(tmp_path)}
+    denied = publication_gate.check(payload, owner, "Bash", {"command": push})
+    assert denied is not None and "公開対象を確定できない" in denied[0]
+    assert "再発行すると実行" not in denied[1]
 
 
 def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path, monkeypatch):
