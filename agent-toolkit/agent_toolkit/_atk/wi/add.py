@@ -47,7 +47,15 @@ from agent_toolkit._atk.wi.add_validation import (
     require_cause_analysis_format,
     require_confirmed_cause,
 )
-from agent_toolkit._atk.wi.constants import DETAILED_KEY, WI_STATE_HOLD, WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import (
+    DETAILED_KEY,
+    QUESTION_TYPE_REPORT,
+    WI_STATE_ADOPTED,
+    WI_STATE_HOLD,
+    WI_STATE_INBOX,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
+)
 from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
@@ -447,10 +455,13 @@ def add_entries(
     `target_branch`はfrontmatterに`target_branch`の無い`target_repo`宛ての項目の宛先の系統とする。
     系統を登録したrepository宛てで省略した項目はdefault_branchの系統で保存し、登録に無い系統は保存前に拒否する。
     `initial_state`は保存する状態で、`WI_STATE_HOLD`なら保存した時点から自動処理の対象に入れない。
+    回答を求めない報告（`QUESTION_TYPE_REPORT`）は、`WI_STATE_INBOX`の指定を`WI_STATE_ADOPTED`へ読み替える。
     `target_commit`は`target_repo`と`target_branch`の解決結果が一致する項目にだけ記録する。
     `detailed`はAWIへ詳細化済みの印（`detailed: true`）を付け、計画を作る時点の詳細化の対象から外す。
     """
     started_at = time.time()
+    if question_type == QUESTION_TYPE_REPORT and initial_state == WI_STATE_INBOX:
+        initial_state = WI_STATE_ADOPTED
     choices = normalize_choices(choices)
     parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
         messages=messages,
@@ -532,16 +543,19 @@ def add_entries(
         submitter_session is not None
         and submitter_session == os.environ.get("CODEX_THREAD_ID")
         and entry_type == WI_TYPE_UWI
-        and question_type == "post-approval"
-        and initial_state == WI_STATE_INBOX
-        and any(_process_loop_session.is_report_opening(body) for _, body in parsed_messages)
+        and question_type == QUESTION_TYPE_REPORT
         and not _process_loop_session.record_codex_report_save(submitter_session, started_at, os.environ)
     ):
         _outcome.report_warning(
             "巡回の終了判定に使う報告用UWIの保存記録を残せなかった",
             next_action="保存を検収してから、送達と終了操作を行う",
         )
-    if submitter_session is not None and entry_type != WI_TYPE_AWI and not _uwi_watch.add(submitter_session, generated):
+    if (
+        submitter_session is not None
+        and entry_type != WI_TYPE_AWI
+        and question_type != QUESTION_TYPE_REPORT
+        and not _uwi_watch.add(submitter_session, generated)
+    ):
         _outcome.report_warning(
             f"回答の通知先を記録できなかった: {'、'.join(generated)}",
             next_action="回答の有無は`atk wi show <ファイル名>`で確かめる",
@@ -695,6 +709,7 @@ def cmd_add(
     """
     body_files = getattr(args, "body_file", None)
     hold = bool(getattr(args, "hold", False))
+    report = args.question_type == QUESTION_TYPE_REPORT
     if body_files:
         try:
             messages = read_body_files(body_files)
@@ -898,7 +913,9 @@ def cmd_add(
     inbox_dir = private_notes
     for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
-    _outcome.report_success(f"{count}件をholdへ保存した" if hold else f"{count}件をinboxへ投入した")
+    _outcome.report_success(
+        f"{count}件をholdへ保存した" if hold else f"{count}件を報告として保存した" if report else f"{count}件をinboxへ投入した"
+    )
     for filename in generated:
         print(f"  {shorten_home(_wi_entries.entry_path(private_notes, filename), home)}")
         print_entry_details(saved_details[filename])

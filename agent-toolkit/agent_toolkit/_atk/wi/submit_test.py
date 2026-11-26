@@ -75,9 +75,10 @@ try:
     atk.main(["wi", "submit", "--finish", str(result_path)])
 except SystemExit as error:
     assert error.code == 0
-add.add_entries(notes, messages=["---\\nrun_skill_report: true\\n---\\n\\n投入結果を確認した。\\n" + result.model_dump_json()],
+report_body = "---\\nrun_skill_report: true\\n---\\n\\n# 報告: 投入結果\\n\\n投入結果を確認した。\\n"
+add.add_entries(notes, messages=[report_body + result.model_dump_json()],
     target_repo=run["target_repo"], source="run-skill", now=datetime.datetime.now(datetime.UTC),
-    entry_type="uwi", scope=submit.SKILL, question_type="yes-no")
+    entry_type="uwi", scope=submit.SKILL, question_type="report")
 print(json.dumps({{"type": "result", "is_error": False}}))
 """
 
@@ -304,6 +305,7 @@ def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatc
         report = next(path for path in layout.iter_entry_paths(notes) if path.name == value["report_files"][0])
         assert all(item["request_id"] in report.read_text(encoding="utf-8") for item in requests)
         assert all(item["status"] in report.read_text(encoding="utf-8") for item in dispositions)
+        assert "state: adopted" in report.read_text(encoding="utf-8")
         entries = list(layout.iter_entry_paths(notes))
         assert len(entries) == 2
         resend = tmp_path / "resend.json"

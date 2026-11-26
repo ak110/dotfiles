@@ -215,7 +215,13 @@ QUESTION_TYPE_POST_APPROVAL = "post-approval"
 POST_APPROVAL_CHOICES = ("その対応で問題無い", "問題がある")
 """事後承認の表示と肯定完全一致の判定が共有する選択肢。"""
 
-NEW_QUESTION_TYPES = (QUESTION_TYPE_CHOICE, QUESTION_TYPE_YES_NO, QUESTION_TYPE_POST_APPROVAL)
+QUESTION_TYPE_REPORT = "report"
+"""回答を求めない作業結果の報告。保存した時点で`adopted`とし、未回答の一覧と選定の対象に入れない。  pyfltr: allow-comment"""
+
+REPORT_TITLE_PREFIX = "# 報告: "
+"""報告の1行目の接頭辞。質問のUWIと一覧で見分けるために必須とする。  pyfltr: allow-comment"""
+
+NEW_QUESTION_TYPES = (QUESTION_TYPE_CHOICE, QUESTION_TYPE_YES_NO, QUESTION_TYPE_POST_APPROVAL, QUESTION_TYPE_REPORT)
 """UWIを新規作成するときと、回答形式を変える本文編集で受理する回答形式。"""
 
 STORED_QUESTION_TYPES = (*NEW_QUESTION_TYPES, QUESTION_TYPE_FREE_FORM)

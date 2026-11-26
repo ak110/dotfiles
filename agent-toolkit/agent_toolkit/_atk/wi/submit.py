@@ -522,7 +522,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
             if not reports:
                 body = (
                     "---\nrun_skill_report: true\n---\n\n"
-                    "未完了の処置と再開先を確認したか？\n"
+                    "# 報告: 独立WI投入の処置が未完了\n\n"
                     f"独立WI投入の処置が未完了である。\n実行: {run['run_id']}\n"
                     f"受付: {', '.join(run['request_ids'])}\n理由: {run.get('failure')}\n"
                     f"記録: {path}\n同じ実行と保存済みWIを照会し、"
@@ -536,7 +536,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
                     now=datetime.datetime.now(datetime.UTC),
                     entry_type="uwi",
                     scope=SKILL,
-                    question_type="yes-no",
+                    question_type="report",
                     storage=sync.Storage(local_only=True, lock_timeout=30),
                 )
         run["report_committed"] = add.has_committed_run_report(notes, run_id=run["run_id"], scope=SKILL)

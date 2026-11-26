@@ -8,7 +8,6 @@ import datetime
 import json
 import os
 import re
-from pathlib import Path
 
 from agent_toolkit._hooks.notice import block_formatter
 lazy from agent_toolkit._atk.session_records import codex_shell_command, codex_shell_output, exit_session_in_entries
@@ -17,7 +16,6 @@ lazy from agent_toolkit._common import session_state, transcript
 lazy from agent_toolkit._common.process_loop_session import (
     REPORT_SAVED_AT_KEY,
     is_identified_process_loop_session,
-    is_report_opening,
 )
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
@@ -29,7 +27,7 @@ lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 _block = block_formatter("process_loop_exit_gate")
 
 
-_SAVE_SUCCESS = re.compile(r"^成功: 1件をinboxへ投入した\r?\n +[^\r\n]*[/\\][0-9]{8}-[0-9]{6}-[0-9]{3}\.md\r?$", re.M)
+_SAVE_SUCCESS = re.compile(r"^成功: 1件を報告として保存した\r?\n +[^\r\n]*[/\\][0-9]{8}-[0-9]{6}-[0-9]{3}\.md\r?$", re.M)
 
 
 def _save_args(command: object) -> tuple[str, ...]:
@@ -45,29 +43,10 @@ def _save_args(command: object) -> tuple[str, ...]:
         return ()
     if "--dry-run" in args or not all(
         f"{key}={value}" in args or (key, value) in zip(args[3:], args[4:], strict=False)
-        for key, value in (("--type", "uwi"), ("--question-type", "post-approval"))
+        for key, value in (("--type", "uwi"), ("--question-type", "report"))
     ):
         return ()
     return args[3:]
-
-
-def _has_compared_report_opening(args: tuple[str, ...]) -> bool:
-    for index, arg in enumerate(args):
-        if arg == "--compare-opening-file" and index + 1 < len(args):
-            value = args[index + 1]
-        elif arg.startswith("--compare-opening-file="):
-            value = arg.partition("=")[2]
-        else:
-            continue
-        path = Path(value)
-        try:
-            if path.is_absolute() and path.is_file():
-                with path.open(encoding="utf-8") as source:
-                    if is_report_opening(source.read(4096)):
-                        return True
-        except OSError, UnicodeError:
-            continue
-    return False
 
 
 def _save_succeeded(stdout: object) -> bool:
@@ -112,7 +91,7 @@ def _claude_report_saved(entries: list[dict]) -> bool:
                 args = pending.pop(identifier, None)
                 response = entry.get("toolUseResult")
                 if args and isinstance(response, dict) and response.get("interrupted") is False:
-                    reported |= _save_succeeded(response.get("stdout")) and _has_compared_report_opening(args)
+                    reported |= _save_succeeded(response.get("stdout"))
                 elif args == () and _accepted_request(response):
                     reported = False
     return reported
@@ -154,7 +133,6 @@ def _codex_report_saved(entries: list[dict]) -> bool:
             payload.get("type") in {"function_call_output", "custom_tool_call_output"}
             and (args := pending.pop(call_id, ()))
             and _save_succeeded(codex_shell_output(payload))
-            and _has_compared_report_opening(args)
         ):
             return True
     return False

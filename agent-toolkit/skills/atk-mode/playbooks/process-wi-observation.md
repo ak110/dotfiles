@@ -57,7 +57,8 @@ atk run-script pick-wi-check -- <選定YAML> --handoff-observation <WI名> --lan
    - 見出し行`### <ファイル名> [<状態>]`が`processing`の項目の計画を、`atk plans checkout`で`~/.claude/plans`へ戻す（同名のファイルが既にあれば除く）。
      観測で完成条件を満たせなかった項目の計画は、保存済みのまま残す。
    - 引き継ぎ記録には、`atk run-script plan-progress -- <記録先> --handoff`で実装commit、残る完成条件、観測の前提と手段、「反映後の観測だけが残る」旨の再開位置を記録する。
-   - 明示された要件を満たすのにユーザーの操作か追加の認可が必要な項目は、計画を戻した後にUWIを保存する。
+   - 明示された要件を満たすのに本人にしかできない操作か追加の認可が必要で、その結果で採否や対処が変わる項目だけ、計画を戻した後にUWIを保存する。
+     到達できない環境があることだけを理由に観測を依頼せず、届く環境と試験・CIで完成条件を判定し、満たさなければ再実装へ戻す。
      起草入力には、元WIの識別子、現行の完成条件と有効な変更要求、残る観測、再開記録の所在を含める。
      保存前に`agent-toolkit:atk-mode/references/draft-semantic-review.md`に従い、検収者が元WIから選んだ必要な結果と原稿を独立に比べる。
      書式は`agent-toolkit:atk-mode/references/uwi-format.md`に、保存の条件は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。

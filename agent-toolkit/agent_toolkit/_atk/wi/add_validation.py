@@ -9,7 +9,7 @@ from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import priority as _priority
 from agent_toolkit._atk.wi import uwi_body as _uwi
-from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import REPORT_TITLE_PREFIX, WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._plan import structure as _plan_structure
@@ -396,6 +396,15 @@ def _validate_add_entries(
                     f"frontmatterから{key}を除き、{_RESERVED_ADD_KEY_NEXT_ACTIONS[key]}" for key in rejected_keys
                 ),
             )
+        if (
+            entry_type == WI_TYPE_UWI
+            and question_type == _constants.QUESTION_TYPE_REPORT
+            and not body.lstrip().startswith(REPORT_TITLE_PREFIX)
+        ):
+            raise WebInputError(
+                "報告の1行目は`# 報告: `で始める",
+                next_action="本文の1行目を`# 報告: <要点>`にして再投入する",
+            )
         require_agent_awi_sections(
             body,
             frontmatter,
@@ -417,9 +426,15 @@ def _validate_add_entries(
             "choice形式には非空の選択肢が2件以上必要です",
             next_action="`--choices`で選択肢を2件以上指定するか、別のquestion_typeを選ぶ",
         )
-    if entry_type == WI_TYPE_UWI and question_type == _constants.QUESTION_TYPE_POST_APPROVAL and choices is not None:
+    if (
+        entry_type == WI_TYPE_UWI
+        and question_type in (_constants.QUESTION_TYPE_POST_APPROVAL, _constants.QUESTION_TYPE_REPORT)
+        and choices is not None
+    ):
         raise WebInputError(
-            "post-approval形式の選択肢は固定です",
+            "report形式は選択肢を持たない"
+            if question_type == _constants.QUESTION_TYPE_REPORT
+            else "post-approval形式の選択肢は固定です",
             next_action="--choicesを外して再投入する",
         )
     return parsed_messages, normalized_target_repo, normalized_cooldown

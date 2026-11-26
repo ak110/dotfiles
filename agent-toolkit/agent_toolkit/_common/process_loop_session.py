@@ -11,14 +11,7 @@ CLAIM_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM"
 _CLAIM_STATE_PREFIX = "process-loop-claim-"
 _CLAIMED_KEY = "claimed_session_id"
 REPORT_SAVED_AT_KEY = "process_loop_report_saved_at"
-# 実行日の表記は様式で固定していないため、日付の書式は照合しない。  pyfltr: allow-comment
-_REPORT_QUESTION = re.compile(r".+の作業結果について、この対応で問題ありませんか？")
 _TOKEN = re.compile(r"[A-Za-z0-9_-]+\Z")
-
-
-def is_report_opening(opening: str) -> bool:
-    lines = opening.lstrip().splitlines()
-    return bool(lines and _REPORT_QUESTION.fullmatch(lines[0]))
 
 
 def record_codex_report_save(session_id: str, started_at: float, environ: Mapping[str, str]) -> bool:

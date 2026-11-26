@@ -149,7 +149,7 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
    GitとCIを使う時は配布元のリポジトリで同じ日時境界を使う。
    件数から対策の量産や偏りが分かれば、振り返り自体の是正を同じ基準で検討する。
    確定済みのユーザー方針を変える時は先に事前承認型UWIで確かめる。
-7. 起動入力の報告先を使い、`agent-toolkit:atk-mode/playbooks/report-completion.md`で事後承認型の報告用UWIを1件保存する。
+7. 起動入力の報告先を使い、`agent-toolkit:atk-mode/playbooks/report-completion.md`で報告用UWIを1件保存する。
    `source: run-skill`、起動入力の`accepted_scopes`の先頭、`run_skill_report: true` を付ける。
    冒頭に束ごとの害、両期間の発生数、対策の件数と効果不足の区分、是正とAWI名を置く。
    比較の件数、効果を保存した件数、残る未分析の束の害とWI名、実行時間を続ける。

@@ -76,7 +76,7 @@ RESULT_UWI = {
         "各購読提案に対象・追加か削除か・根拠・実行するフラグと値を書き、同じUWIで選べるようにする。"
     ),
     "without_proposals": (
-        "提案が0件の回は、frontmatterに`run_skill_report: true`を持つ`--question-type=post-approval`の報告用UWIへ、"
+        "提案が0件の回は、frontmatterに`run_skill_report: true`を持つ`--question-type=report`の報告へ、"
         "読んだ情報源と件数を書く。"
     ),
     "common": (

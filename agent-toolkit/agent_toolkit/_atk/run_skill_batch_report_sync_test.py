@@ -41,13 +41,13 @@ scope = "review-session batch" if scenario == "unqualified-scope" else session_r
 def save(destination):
     add.add_entries(
         pathlib.Path(destination),
-        messages=["---\nrun_skill_report: true\n---\n# 振り返り結果\n\n確認した。"],
+        messages=["---\nrun_skill_report: true\n---\n# 報告: 振り返り結果\n\n確認した。"],
         target_repo=target_repo,
         source="run-skill",
         now=datetime.datetime.now(datetime.UTC),
         entry_type="uwi",
         scope=scope,
-        question_type="post-approval",
+        question_type="report",
     )
 
 def finish():

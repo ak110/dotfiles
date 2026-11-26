@@ -599,7 +599,7 @@ def _weekly_failed(definition: weekly_work.WeeklyWork, record: dict[str, Any], s
                 private_notes.default_private_notes(),
                 messages=[
                     "---\nrun_skill_report: true\n---\n\n"
-                    f"# {definition.title}（{record['slot']}）が{failures}回続けて失敗した\n\n"
+                    f"# 報告: {definition.title}（{record['slot']}）が{failures}回続けて失敗した\n\n"
                     f"最後の失敗は段階 `{stage}`、終了{code}である。"
                     "提案はまだ届いておらず、次の判定で同じ回を再実行する。この報告は同じ回で1回だけ届く。"
                     "起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログで原因を確かめる。"
@@ -609,7 +609,7 @@ def _weekly_failed(definition: weekly_work.WeeklyWork, record: dict[str, Any], s
                 source="run-skill",
                 scope=definition.scope,
                 entry_type=WI_TYPE_UWI,
-                question_type="post-approval",
+                question_type="report",
                 now=datetime.datetime.now(datetime.UTC),
             )
             record["failure_reported"] = True
