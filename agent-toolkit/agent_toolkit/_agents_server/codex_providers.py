@@ -95,13 +95,21 @@ async def select(
     providers = providers if isinstance(providers, dict) else {}
     quota_workspace = None
     usage = None
+    auth_error = None
+
+    async def read_account(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        result = await request(method, params)
+        value = result.get("account")
+        if "account" not in result or (value is not None and not isinstance(value, dict)):
+            raise ValueError("Codexの認証応答にアカウントがありません")
+        return result
+
     try:
-        auth = await codex_fast_mode.read_with_retry(request, "account/read", {"refreshToken": False})
+        auth = await codex_fast_mode.read_with_retry(read_account, "account/read", {"refreshToken": False})
     except (OSError, RuntimeError, ValueError) as error:
         usage = await codex_fast_mode.read_workspace_quota(request)
         quota_workspace = codex_fast_mode.quota_workspace_id(usage)
-        if quota_workspace is None:
-            raise AppServerError("現在のCodex認証を確認できないため、接続先を選べない") from error
+        auth_error = error
         auth = {}
     account = auth.get("account")
     account_type = "chatgpt" if quota_workspace is not None else account.get("type") if isinstance(account, dict) else None
@@ -110,15 +118,22 @@ async def select(
         entries = api_credits.order(entries, _entry_kind, engine="codex")
     diagnostics: list[str] = []
 
-    def usable(kind: str, candidate: str) -> bool:
-        if quota_workspace is not None:
-            definition = providers.get(candidate, {})
-            return (
-                kind == "subscription"
-                and isinstance(definition, dict)
-                and bool(definition.get("requires_openai_auth", candidate == "openai"))
-            )
+    def requires_subscription(candidate: str) -> bool:
+        definition = providers.get(candidate, {})
+        return isinstance(definition, dict) and bool(definition.get("requires_openai_auth", candidate == "openai"))
+
+    if auth_error is None:
+        await codex_fast_mode.observe_selection_auth(
+            tuple(candidate for kind, candidate in entries if kind == "subscription" and requires_subscription(candidate)),
+            auth,
+        )
+
+    def usable(kind: str, candidate: str) -> bool | None:
         if kind == "subscription":
+            if not requires_subscription(candidate):
+                return False
+            if auth_error is not None:
+                return True if quota_workspace is not None else None
             if account_type != "chatgpt":
                 if account_type is not None and codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC not in diagnostics:
                     diagnostics.append(codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC)
@@ -126,14 +141,24 @@ async def select(
                 return False
             return True
         definition = providers.get(candidate)
-        if candidate == "openai" and account_type == "apiKey":
-            return True
         if isinstance(definition, dict) and independent_api_auth(definition):
             return True
+        if candidate == "openai":
+            return None if auth_error is not None and quota_workspace is None else account_type == "apiKey"
         _LOG.info("Codex接続先を除外しました: provider=%s reason=undefined_or_no_independent_api_auth", candidate)
         return False
 
-    available = [candidate for kind, candidate in entries if usable(kind, candidate)]
+    available: list[str] = []
+    for kind, candidate in entries:
+        if candidate == primary:
+            continue
+        state = usable(kind, candidate)
+        if state is None:
+            if primary is None and not available:
+                raise AppServerError("現在のCodex認証を確認できないため、接続先を選べない") from auth_error
+            break
+        if state:
+            available.append(candidate)
     if primary is None:
         if not available:
             key = atk_config.connection_order_key("codex", role)
@@ -147,9 +172,7 @@ async def select(
     else:
         selected = primary
         remainder = [candidate for candidate in available if candidate != primary]
-    definition = providers.get(selected, {})
-    requires_auth = definition.get("requires_openai_auth", selected == "openai") if isinstance(definition, dict) else False
-    subscription = bool(requires_auth and account_type == "chatgpt" and (quota_workspace is None or selected in available))
+    subscription = requires_subscription(selected) and account_type == "chatgpt"
     allowed = None
     usage_limit_type = None
     usage_limit_resets_at = None

@@ -591,23 +591,22 @@ document.addEventListener("atk-screen-will-change", event => {
       !window.confirm("未保存の設定があります。この画面を離れますか？")) event.preventDefault();
 });
 
-function renderFastStart(data) {
+function renderFastStart(data, failed = false) {
   const start = data?.codex_fast_start;
   const known = start && typeof start === "object" && typeof start.speed === "string" && typeof start.source === "string";
   const scope = host || "ローカル";
-  let result = "読み込み中";
+  let result = failed ? "取得できませんでした" : "読み込み中";
   if (data) {
     result = known ? `${start.speed}（${start.source}）` :
       start === null ? "記録なし" : "このホストからは取得できません";
   }
+  if (data && failed) result += "（前回取得）";
   fastState.textContent = `Codexの起動時判定（${scope}）: ${result}`;
-  fastDetail.hidden = !known;
   if (known) {
     const minute = Number.isFinite(Date.parse(start.at)) ? formatLocalMinute(start.at).replace("T", " ") : "";
     fastReason.textContent = [minute, start.reason].filter(Boolean).join("、");
   } else {
-    fastReason.textContent = "";
-    fastDetail.open = false;
+    fastReason.textContent = result;
   }
 }
 
@@ -815,7 +814,10 @@ async function loadHost(background = false, retry = false) {
   fetching = true;
   loading = true;
   updateWriteControls();
-  if (!background) status.textContent = "読み込み中…";
+  if (!background) {
+    status.textContent = "読み込み中…";
+    if (!displayedData) renderFastStart();
+  }
   try {
     const displayedHost = host;
     const savedDrafts = hostDrafts.get(displayedHost);
@@ -880,6 +882,7 @@ async function loadHost(background = false, retry = false) {
   } catch (error) {
     if (generation !== loadGeneration) return;
     loading = Boolean(host) && Boolean(displayedData);
+    renderFastStart(displayedData, true);
     updateWriteControls();
     status.textContent = loading ? "最新の値が届くまで保存できません。" : "";
     setUpdateError("settings", "refresh", host ? `${host}: ${error.message}` : error.message, () => loadHost(background, background));
@@ -914,6 +917,7 @@ function selectHost(selected) {
   host = selected;
   hostPicker.value = host;
   displayedData = undefined;
+  fastDetail.open = false;
   renderFastStart();
   conflicts.clear();
   navigation.replaceChildren();

@@ -428,6 +428,7 @@ async def test_managed_start_and_order_change_keep_verified_subscription(tmp_pat
     original = client.request
     rpc_client = cast(subject.JsonRpcProcess, client)
     fail = False
+    logged_out = False
     workspace = "workspace"
 
     async def request(method, params=None, **kwargs):
@@ -438,12 +439,17 @@ async def test_managed_start_and_order_change_keep_verified_subscription(tmp_pat
         if method == "thread/unsubscribe":
             return {"status": "notLoaded"}
         if method == "account/read":
+            if logged_out:
+                return {"account": None}
             if fail:
                 if failure == "timeout":
                     await asyncio.sleep(60)
                 raise OSError("account/read")
             return {"account": {"type": "chatgpt", "planType": "business"}, "workspaceRouting": {"chatgptAccountId": workspace}}
-        return await original(method, params, **kwargs)
+        response = await original(method, params, **kwargs)
+        if method == "thread/start" and params is not None:
+            response["modelProvider"] = params["modelProvider"]
+        return response
 
     monkeypatch.setattr(client, "request", request)
     async with subject.AppServerManager({}, asyncio.Condition()) as manager:
@@ -451,7 +457,7 @@ async def test_managed_start_and_order_change_keep_verified_subscription(tmp_pat
         await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
         fail = True
         _thread, selection, *_ = await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
-        assert selection is not None and selection.candidates == ()
+        assert selection is not None and selection.candidates == ("paid",)
         assert [params["serviceTier"] for method, params in client.requests if method == "thread/start"] == ["priority"] * 2
         latest = codex_fast_mode.latest_start_decision()
         assert latest is not None and latest[1].source == "previous"
@@ -467,6 +473,26 @@ async def test_managed_start_and_order_change_keep_verified_subscription(tmp_pat
         assert await manager._switch_provider(resumed, client)
         assert client.requests[-1][0] == "thread/resume"
         assert client.requests[-1][1]["serviceTier"] == "priority"
+        entries = (("payg", "paid"), ("subscription", "openai"))
+        monkeypatch.setattr(connection, "provider_entries", lambda _role: entries)
+        await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+        assert client.requests[-1][1]["modelProvider"] == "paid"
+        assert client.requests[-1][1]["serviceTier"] == "default"
+        fail = False
+        await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+        assert client.requests[-1][1]["modelProvider"] == "paid"
+        entries = (("subscription", "openai"),)
+        logged_out = True
+        with pytest.raises(ValueError, match="利用可能な接続がありません"):
+            await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+        logged_out = False
+        fail = True
+        await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+        assert client.requests[-1][1]["serviceTier"] == "default"
+        fail = False
+        await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+        assert client.requests[-1][1]["serviceTier"] == "priority"
+        fail = True
         workspace = "different"
         await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
         assert client.requests[-1][1]["serviceTier"] == "default"

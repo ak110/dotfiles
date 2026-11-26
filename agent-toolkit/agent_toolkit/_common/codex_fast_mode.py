@@ -107,8 +107,6 @@ def _cache_decision(
     instant: datetime.datetime,
     decision: FastTier | None = None,
     deadline: datetime.datetime | None = None,
-    *,
-    clear: bool = False,
 ) -> FastTier | None:
     if provider is None:
         return None
@@ -128,35 +126,48 @@ def _cache_decision(
                 for name, record in loaded.items():
                     if _valid_record(record, instant):
                         records[name] = record
-            previous = records.get(key)
-            if previous is not None and datetime.datetime.fromisoformat(previous["at"]) > instant:
-                return None
-            if clear or identity is not None and previous is not None and previous["workspace"] != identity:
+            retained, result = _transition(records.get(key), identity, instant, decision, deadline)
+            if retained is None:
                 records.pop(key, None)
-                previous = None
-            if decision is not None and identity is not None and deadline is not None:
-                records[key] = {
-                    "workspace": identity,
-                    "until": min(instant + _REUSE_LIMIT, deadline).isoformat(),
-                    "at": instant.isoformat(),
-                    "tier": decision.tier,
-                    "explanation": decision.explanation,
-                }
+            else:
+                records[key] = retained
             if records != loaded:
                 newest = sorted(
                     records.items(), key=lambda entry: datetime.datetime.fromisoformat(entry[1]["at"]), reverse=True
                 )[:16]
                 atomic_file.atomic_write(path, json.dumps(dict(newest)))
-            if (
-                decision is None
-                and identity is not None
-                and previous is not None
-                and datetime.datetime.fromisoformat(previous["at"]) <= instant
-            ):
-                return FastTier(previous["tier"], previous["explanation"], "previous")
+            return result
     except OSError, filelock.Timeout:
         _LOG.debug("Codexの自動速度判定の成功値を読み書きできません", exc_info=True)
     return None
+
+
+def _transition(
+    previous: dict[str, Any] | None,
+    identity: str | None,
+    instant: datetime.datetime,
+    decision: FastTier | None,
+    deadline: datetime.datetime | None,
+) -> tuple[dict[str, Any] | None, FastTier | None]:
+    if previous is not None and not _valid_record(previous, instant):
+        previous = None
+    if previous is not None and datetime.datetime.fromisoformat(previous["at"]) > instant:
+        return previous, None
+    if decision is not None:
+        if identity is None or deadline is None or instant >= deadline:
+            return None, None
+        return {
+            "workspace": identity,
+            "until": min(instant + _REUSE_LIMIT, deadline).isoformat(),
+            "at": instant.isoformat(),
+            "tier": decision.tier,
+            "explanation": decision.explanation,
+        }, None
+    if previous is None or identity is None:
+        return previous, None
+    if previous["workspace"] != identity:
+        return None, None
+    return previous, FastTier(previous["tier"], previous["explanation"], "previous")
 
 
 def _valid_record(record: Any, instant: datetime.datetime) -> bool:
@@ -175,7 +186,38 @@ def _valid_record(record: Any, instant: datetime.datetime) -> bool:
 
 
 async def invalidate_provider(provider: str) -> None:
-    await asyncio.to_thread(_cache_decision, provider, None, datetime.datetime.now(datetime.UTC), clear=True)
+    await asyncio.to_thread(_cache_decision, provider, None, datetime.datetime.now(datetime.UTC), FastTier("default", ""))
+
+
+def _account_observation(
+    auth: dict[str, Any], instant: datetime.datetime
+) -> tuple[FastTier | None, str | None, datetime.datetime | None]:
+    account = auth.get("account")
+    if ("account" in auth and account is None) or isinstance(account, dict) and account.get("type") == "apiKey":
+        return FastTier("default", "ChatGPTアカウントで認証していない"), None, None
+    if not isinstance(account, dict) or account.get("type") != "chatgpt":
+        return None, None, None
+    workspace = workspace_id(auth)
+    active = [(plans, end) for plans, end, _source in _FREE_FAST_MODE_PERIODS if instant < end]
+    if not active:
+        return FastTier("default", "現在は提供期間外"), workspace, None
+    plan = account.get("planType")
+    if not isinstance(plan, str) or not re.fullmatch(r"[a-z_]{1,64}", plan):
+        return None, workspace, None
+    for plans, end in active:
+        if plan in plans:
+            return FastTier("priority", f"planType={plan}、提供終端={end.isoformat()}"), workspace, end
+    return FastTier("default", f"planType={plan}は提供対象外"), workspace, min(end for _, end in active)
+
+
+async def observe_selection_auth(providers: tuple[str, ...], auth: dict[str, Any]) -> None:
+    instant = datetime.datetime.now(datetime.UTC)
+    observed, workspace, _deadline = _account_observation(auth, instant)
+    for provider in providers:
+        if observed is not None and (observed.tier == "default" or workspace is None):
+            await asyncio.to_thread(_cache_decision, provider, workspace, instant, observed)
+        elif workspace is not None:
+            await asyncio.to_thread(_cache_decision, provider, workspace, instant)
 
 
 async def auto_service_tier(
@@ -189,9 +231,9 @@ async def auto_service_tier(
     quota_workspace: str | None = None,
 ) -> FastTier:
     instant = now if now is not None else datetime.datetime.now(datetime.UTC)
-    active = tuple((plans, expires) for plans, expires, _source in _FREE_FAST_MODE_PERIODS if instant < expires)
-    if not active or subscription is False:
-        decision = FastTier("default", "現在は提供期間外" if not active else "サブスクリプション接続ではない")
+    if subscription is False or not any(instant < end for _plans, end, _source in _FREE_FAST_MODE_PERIODS):
+        decision = FastTier("default", "サブスクリプション接続ではない" if subscription is False else "現在は提供期間外")
+        await asyncio.to_thread(_cache_decision, provider, None, instant, decision)
         return decision
     if subscription is None:
         try:
@@ -203,11 +245,12 @@ async def auto_service_tier(
             return FastTier("default", "実効接続を確認できない", "unavailable")
         current_provider = config["model_provider"]
         if current_provider != "openai" or provider not in (None, current_provider):
-            return FastTier("default", "サブスクリプション接続ではない")
+            decision = FastTier("default", "サブスクリプション接続ではない")
+            await asyncio.to_thread(_cache_decision, provider, None, instant, decision)
+            return decision
         provider = current_provider
 
     workspace = quota_workspace
-    plan = None
     for attempt in range(0 if quota_workspace is not None else 2):
         if auth is None or attempt:
             try:
@@ -215,40 +258,25 @@ async def auto_service_tier(
                     auth = await request("account/read", {"refreshToken": False})
             except Exception:  # pylint: disable=broad-exception-caught
                 continue
-        if "account" not in auth:
-            continue
-        account = auth["account"]
-        if account is None or isinstance(account, dict) and account.get("type") == "apiKey":
-            await asyncio.to_thread(_cache_decision, provider, None, instant, clear=True)
-            return FastTier("default", "ChatGPTアカウントで認証していない")
-        if isinstance(account, dict) and account.get("type") == "chatgpt":
-            workspace = workspace_id(auth)
-            value = account.get("planType")
-            if isinstance(value, str) and re.fullmatch(r"[a-z_]{1,64}", value):
-                plan = value
-                break
-    if workspace is None and plan is None and provider is not None:
-        workspace = quota_workspace_id(await read_workspace_quota(request))
-
-    instant = now if now is not None else datetime.datetime.now(datetime.UTC)
-    active = tuple((plans, expires) for plans, expires in active if instant < expires)
-    if not active:
-        decision = FastTier("default", "現在は提供期間外")
-        return decision
-    if plan is None:
-        previous = await asyncio.to_thread(_cache_decision, provider, workspace, instant)
-        return previous or FastTier(
-            "default",
-            "契約を取得できず、再利用できる判定がない"
-            if workspace and provider
-            else "認証済みワークスペースと実効接続の同一性を確認できない",
-            "unavailable",
-        )
-    for plans, expires in active:
-        if plan in plans:
-            decision = FastTier("priority", f"planType={plan}、提供終端={expires.isoformat()}")
-            await asyncio.to_thread(_cache_decision, provider, workspace, instant, decision, expires)
+        instant = now if now is not None else datetime.datetime.now(datetime.UTC)
+        decision, current_workspace, deadline = _account_observation(auth, instant)
+        if decision is not None:
+            await asyncio.to_thread(_cache_decision, provider, current_workspace, instant, decision, deadline)
             return decision
-    decision = FastTier("default", f"planType={plan}は提供対象外")
-    await asyncio.to_thread(_cache_decision, provider, workspace, instant, decision, min(expires for _, expires in active))
-    return decision
+        if current_workspace is not None:
+            workspace = current_workspace
+    if workspace is None and provider is not None:
+        workspace = quota_workspace_id(await read_workspace_quota(request))
+    instant = now if now is not None else datetime.datetime.now(datetime.UTC)
+    if not any(instant < end for _plans, end, _source in _FREE_FAST_MODE_PERIODS):
+        decision = FastTier("default", "現在は提供期間外")
+        await asyncio.to_thread(_cache_decision, provider, workspace, instant, decision)
+        return decision
+    previous = await asyncio.to_thread(_cache_decision, provider, workspace, instant)
+    return previous or FastTier(
+        "default",
+        "契約を取得できず、再利用できる判定がない"
+        if workspace and provider
+        else "認証済みワークスペースと実効接続の同一性を確認できない",
+        "unavailable",
+    )

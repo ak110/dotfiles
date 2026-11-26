@@ -18,7 +18,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _screen_harness_fixture,
     _ScreenHarness,
 )
-from agent_toolkit._common import usage_observation, usage_settings
+from agent_toolkit._common import codex_fast_mode, usage_observation, usage_settings
 
 pytestmark = [pytest.mark.browser]
 
@@ -465,9 +465,14 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     assert not calls
     await picker.select_option("uncached-host")
     await expect(page.locator("#update-status")).to_contain_text(failures["uncached-host"])
+    fast = page.locator("#settings-fast-state")
+    await expect(fast).to_contain_text("（uncached-host）: 取得できませんでした")
     await expect(editor).to_have_count(0)
     await expect(page.locator("#update-status").get_by_role("button", name="再取得")).to_be_enabled()
 
+    del failures["uncached-host"]
+    await page.locator("#update-status").get_by_role("button", name="再取得").click()
+    await expect(fast).to_contain_text("（uncached-host）: 記録なし")
     await picker.select_option("cached-host")
     await expect(field).to_have_value("cached-value")
     await picker.select_option("")
@@ -477,6 +482,7 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     await picker.select_option("cached-host")
     await expect(page.locator("#update-status")).to_contain_text(error)
     await expect(status).to_contain_text("最新の値が届くまで保存できません")
+    await expect(fast).to_contain_text("記録なし（前回取得）")
     await expect(field).to_have_value("cached-value")
     await expect(editor.get_by_role("button", name="保存", exact=True)).to_be_disabled()
 
@@ -636,15 +642,28 @@ async def test_settings_periodic_read_preserves_draft_and_detects_conflict(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     page = screen_harness.page
+    await page.set_viewport_size({"width": 1440, "height": 1000})
     await page.clock.install()
     await page.goto(screen_harness.base_url + "/settings")
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     editor = page.locator('[data-setting="serve_host"]')
     field = editor.get_by_label("保存値")
     await field.fill("draft-host")
+    expect = playwright.async_api.expect
+    fast = page.locator("#settings-fast-state")
+    await expect(fast).to_contain_text("記録なし")
+    comparison = page.locator("#settings-compare summary")
+    before = await comparison.evaluate("control => control.getBoundingClientRect().top")
+    field_before = await field.evaluate("control => control.getBoundingClientRect().top")
+    codex_fast_mode.record_start_decision(
+        datetime.datetime.now(datetime.UTC), codex_fast_mode.FastTier("priority", "契約を確認")
+    )
+    await page.clock.fast_forward(30_000)
+    await expect(fast).to_contain_text("高速（今回確認）")
+    assert await comparison.evaluate("control => control.getBoundingClientRect().top") == pytest.approx(before, abs=1)
+    assert await field.evaluate("control => control.getBoundingClientRect().top") == pytest.approx(field_before, abs=1)
     config.update_settings({"action": "set", "key": "serve_host", "value": "saved-host"})
     await page.clock.fast_forward(30_000)
-    expect = playwright.async_api.expect
     conflict = editor.locator("[data-conflict]")
     await expect(conflict.locator("p")).to_have_text(["取得中に保存値が変更されました。", "最新の保存値: saved-host"])
     await expect(field).to_have_value("draft-host")
