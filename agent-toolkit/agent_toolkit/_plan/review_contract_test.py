@@ -75,6 +75,37 @@ def test_numbered_reference_must_name_the_registered_original_and_item(tmp_path:
         )
 
 
+@pytest.mark.parametrize("second_marker", ["-", "4."])
+def test_bulleted_conditions_are_compared_with_the_assigned_number(tmp_path: pathlib.Path, second_marker: str) -> None:
+    number = "2" if second_marker == "-" else "4"
+    first = f"| {_FIRST} | 1 | 補足条件 | 先頭の文。<br>末尾も保つ。 | 完成条件 1 |"
+    second = f"| {_FIRST} | {number} | 補足条件 | 別の条件。 | 完成条件 {number} |"
+    table = _TABLE.replace(first, f"{first}\n{second}").replace(
+        f"| {_FIRST} | 2 | 主要完成状態", f"| {_FIRST} | 3 | 主要完成状態"
+    )
+    originals = {
+        **_ORIGINALS,
+        _FIRST: f"## 完成条件\n\n- 先頭の文。\n  末尾も保つ。\n\n{second_marker} 別の条件。\n",
+    }
+    required = {**_REQUIRED, _FIRST: (2, 1)}
+    source = tmp_path / _FIRST
+    paths = {_FIRST: source}
+    for content in ("先頭の文。<br>末尾も保つ。", f"参照: `{source}#完成条件1`"):
+        review_contract.validate(
+            table.replace("先頭の文。<br>末尾も保つ。", content), required, originals=originals, original_paths=paths
+        )
+    incorrect = [
+        (table.replace("<br>末尾も保つ。", ""), "補足条件 1 が原本の全文と一致しない"),
+        (table.replace("先頭の文。<br>末尾も保つ。", "別の条件。"), "補足条件 1 が原本の全文と一致しない"),
+        (table.replace(second, second.replace(f"| {number} |", "| 1 |")), "条件番号が不正または重複"),
+        (table + f"| {_FIRST} | 5 | 補足条件 | 新しい要件。 | 背景 |\n", "原本にない補足条件 5"),
+        (table.replace("先頭の文。<br>末尾も保つ。", f"参照: `{source}#完成条件{number}`"), "補足条件 1 が原本"),
+    ]
+    for text, diagnostic in incorrect:
+        with pytest.raises(ValueError, match=diagnostic):
+            review_contract.validate(text, required, originals=originals, original_paths=paths)
+
+
 def test_automatically_numbered_conditions_follow_item_order() -> None:
     originals = {**_ORIGINALS, _FIRST: _ORIGINALS[_FIRST] + "1. 後続の文。\n   最後まで保つ。\n"}
     table = _TABLE.replace(

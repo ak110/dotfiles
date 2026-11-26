@@ -39,7 +39,7 @@ def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, tuple[pa
         raise ValueError(f"評価用WI原本を読み込めない: {path}: {error}。一覧と保存本文を直して再準備する") from error
 
 
-def _labelled_conditions(original: str) -> list[tuple[int, str, bool]]:
+def completion_conditions(original: str) -> list[tuple[int, str]]:
     lines = last_h2_section_lines(original, "完成条件") or []
     items: list[tuple[int | None, str]] = []
     number: int | None = None
@@ -52,7 +52,7 @@ def _labelled_conditions(original: str) -> list[tuple[int, str, bool]]:
             if number is not None:
                 number += 1
     if not items:
-        return [(number, item, False) for number, item in enumerate(last_h2_section_items(original, "完成条件"), 1)]
+        return list(enumerate(last_h2_section_items(original, "完成条件"), 1))
 
     reserved = [number for number, _ in items if number is not None]
     used = set(reserved)
@@ -62,28 +62,17 @@ def _labelled_conditions(original: str) -> list[tuple[int, str, bool]]:
     next_number = 1
     for number, item in items:
         if number is not None:
-            conditions.append((number, item, True))
+            conditions.append((number, item))
         else:
             while next_number in used:
                 next_number += 1
-            conditions.append((next_number, item, False))
+            conditions.append((next_number, item))
             next_number += 1
     return conditions
 
 
-def completion_conditions(original: str) -> list[tuple[int, str]]:
-    return [(number, item) for number, item, _ in _labelled_conditions(original)]
-
-
-def _numbered_conditions(original: str) -> dict[str, tuple[str, str]]:
-    conditions = {}
-    for number, item, ordered in _labelled_conditions(original):
-        if not ordered:
-            continue
-        match = re.fullmatch(r"[0-9]+[.)][ \t]+(.+)", item, re.DOTALL)
-        if match is not None:
-            conditions[str(number)] = (" ".join(match[1].split()), " ".join(item.split()))
-    return conditions
+def _normalized_condition(text: str) -> str:
+    return " ".join(re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE).split())
 
 
 def excluded_reflections(original: str) -> set[int]:
@@ -148,7 +137,7 @@ def validate(
             reference = f"引用{index}"
             if sum(row[2] == "原文照合" and bool(row[3]) and row[4] == reference for row in own) != 1:
                 errors.append(f"{name}: {reference} に対応する原文照合行が無いか重複している")
-        numbered = _numbered_conditions(original)
+        numbered = {str(number): item for number, item in completion_conditions(original)}
         excluded = excluded_reflections(original)
         for row in own:
             reflections = {int(number) for number in re.findall(r"反映内容([1-9][0-9]*)", row[4])}
@@ -164,21 +153,26 @@ def validate(
                 and not re.search(r"除外|不採用|実施しない|対象外", row[3])
             ):
                 errors.append(f"{name}: 条件 {row[1]} は背景・比較候補・不実施の説明だけを実装義務の出典にしている")
-            if row[2] != "補足条件" or not numbered:
+            if row[2] != "補足条件" or originals is None or name not in originals:
                 continue
             number = row[1]
             if number not in numbered:
-                if len(numbered) == count:
-                    errors.append(f"{name}: 原本にない補足条件 {number}")
+                errors.append(f"{name}: 原本にない補足条件 {number}")
                 continue
-            content = " ".join(re.sub(r"<br\s*/?>", " ", row[3], flags=re.IGNORECASE).split())
-            expected, original_item = numbered[number]
-            if content not in {
+            content = _normalized_condition(row[3])
+            original_item = " ".join(numbered[number].split())
+            expected = re.sub(r"^(?:[0-9]+[.)]|[-+*]) ", "", original_item)
+            accepted = {
                 expected,
                 original_item,
                 f"{number}. {expected}",
                 f"{number}) {expected}",
-            } and not _condition_reference(content, (original_paths or {}).get(name), number):
+            }
+            if (
+                content not in accepted
+                and " ".join(row[3].split()) not in accepted
+                and not _condition_reference(content, (original_paths or {}).get(name), number)
+            ):
                 errors.append(f"{name}: 補足条件 {number} が原本の全文と一致しない")
         for number in numbered.keys() - {row[1] for row in own if row[2] == "補足条件"}:
             errors.append(f"{name}: 原本の補足条件 {number} が表にない")

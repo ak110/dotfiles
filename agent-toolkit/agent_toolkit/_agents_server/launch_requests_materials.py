@@ -411,7 +411,7 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
             kind=normalized_wi_type(metadata.get("type")),
             source=metadata.get("source"),
             sections=sections,
-            supplements=len(headings.last_h2_section_items(text, "完成条件")),
+            supplements=len(review_contract.completion_conditions(text)),
             reflections=len(headings.last_h2_section_items(text, "反映内容と反映先")),
         )
         if counts is not None:
