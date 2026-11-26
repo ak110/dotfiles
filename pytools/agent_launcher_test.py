@@ -631,6 +631,9 @@ def test_claude_entrypoints_keep_noninteractive_path(
         ["-r", "session-a"],
         ["--continue"],
         ["two words"],
+        ["--add-dir", "/one", "/two", "mcp"],
+        ["--resume", "mcp"],
+        ["--unknown-option", "hello"],
         ["--", "hello"],
         ["--", "--print"],
     ],
@@ -643,8 +646,15 @@ def test_claude_resume_checks_both_terminal_descriptors(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    child = []
-    monkeypatch.setattr(agent_launcher, "_run_completion_launcher", lambda *_: child.append(True) or 21)
+    from agent_toolkit._common.completion_exit import LAUNCH_ENV
+
+    launches: list[str] = []
+
+    def wait(_command: list[str], env: dict[str, str]) -> int:
+        launches.append(env[LAUNCH_ENV])
+        return 21
+
+    monkeypatch.setattr(agent_launcher, "_wait_for_claude", wait)
     with pytest.raises(SystemExit) as error:
         entrypoint(
             args,
@@ -655,9 +665,11 @@ def test_claude_resume_checks_both_terminal_descriptors(
             run=lambda _: 19,
         )
     assert error.value.code == (21 if fds == {0, 1} else 19)
-    assert bool(child) is (fds == {0, 1})
+    assert len(launches) == (1 if fds == {0, 1} else 0)
+    assert all(len(launch) == 32 for launch in launches)
 
 
+@pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
 @pytest.mark.parametrize(
     "args",
     [
@@ -670,13 +682,19 @@ def test_claude_resume_checks_both_terminal_descriptors(
         ["--desktop", "--resume", "session-a"],
         ["--debug", "hooks", "plugins", "list"],
         ["--plugin-url", "https://example.invalid/plugin.zip", "mcp", "list"],
-        ["--unknown-launch-mode"],
-        ["--unknown-launch-mode=value", "--continue"],
-        ["--unknown-launch-mode", "value", "mcp", "list"],
-        ["new-management-command"],
+        ["--model=sonnet", "mcp", "list"],
+        ["--unknown-option", "mcp", "list"],
+        ["--add-dir=/missing", "mcp", "list"],
+        ["--add-dir", "/one", "/two", "--debug", "hooks", "plugin", "list"],
+        ["--cloud"],
+        ["--environment", "remote-id"],
+        ["-p", "hello"],
+        ["--resume", "--print", "hello"],
+        ["-r", "-p", "hello"],
     ],
 )
-def test_claude_unclassified_launch_does_not_exit_or_append_on_its_own(
+def test_claude_noninteractive_launch_preserves_posix_execv(
+    entrypoint: Entrypoint,
     args: list[str],
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -684,14 +702,18 @@ def test_claude_unclassified_launch_does_not_exit_or_append_on_its_own(
 ) -> None:
     from agent_toolkit._common.completion_exit import LAUNCH_ENV
 
-    def wait(command: list[str], env: dict[str, str]) -> int:
-        assert command[-len(args) :] == args
-        assert env[LAUNCH_ENV]
-        print("本体出力")
-        return 19
+    monkeypatch.delenv(LAUNCH_ENV, raising=False)
 
-    monkeypatch.setattr(agent_launcher, "_wait_for_claude", wait)
+    def execv(path: str, command: list[str]) -> NoReturn:
+        assert path == str(tmp_path / "claude")
+        assert command[-len(args) :] == args
+        assert LAUNCH_ENV not in os.environ
+        print("本体出力")
+        raise SystemExit(19)
+
+    monkeypatch.setattr(agent_launcher.os, "execv", execv)
+    monkeypatch.setattr(agent_launcher, "_run_completion_launcher", lambda *_: pytest.fail("別画面・非対話の起動は待機しない"))
     with pytest.raises(SystemExit) as error:
-        agent_launcher.main_opus(args, home=tmp_path, resolve=lambda *_: pathlib.Path("claude"), isatty=lambda _: True)
+        entrypoint(args, home=tmp_path, os_name="posix", resolve=lambda *_: tmp_path / "claude", isatty=lambda _: True)
     assert error.value.code == 19
     assert capsys.readouterr().out == "本体出力\n"

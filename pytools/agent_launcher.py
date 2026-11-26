@@ -158,14 +158,111 @@ def _enable_model_completion(command_name: str) -> None:
     enable_completion(parser)
 
 
+# pyfltr: allow-comment -- Claude Code 2.1.332 の claude --help にある値付きのオプションと管理サブコマンド。
+_CLAUDE_LAUNCH_VALUE_OPTIONS = {
+    "--agent",
+    "--agents",
+    "--append-system-prompt",
+    "--autocompact",
+    "-d",
+    "--debug",
+    "--debug-file",
+    "--effort",
+    "--fallback-model",
+    "--from-pr",
+    "--input-format",
+    "--json-schema",
+    "--max-budget-usd",
+    "--model",
+    "-n",
+    "--name",
+    "--output-format",
+    "--permission-mode",
+    "--permission-prompts",
+    "--plugin-dir",
+    "--plugin-url",
+    "--prompt-suggestions",
+    "--remote-control",
+    "--remote-control-session-name-prefix",
+    "-r",
+    "--resume",
+    "--session-id",
+    "--setting-sources",
+    "--settings",
+    "--system-prompt",
+    "--system-prompt-snapshot",
+    "--teleport",
+    "-w",
+    "--worktree",
+}
+_CLAUDE_LAUNCH_VARIADIC_OPTIONS = {
+    "--add-dir",
+    "--allowedTools",
+    "--allowed-tools",
+    "--betas",
+    "--disallowedTools",
+    "--disallowed-tools",
+    "--file",
+    "--mcp-config",
+    "--tools",
+}
+_CLAUDE_MANAGEMENT_COMMANDS = {
+    "agents",
+    "attach",
+    "auth",
+    "auto-mode",
+    "doctor",
+    "gateway",
+    "import",
+    "install",
+    "kill",
+    "logs",
+    "mcp",
+    "plugin",
+    "plugins",
+    "purge",
+    "respawn",
+    "rm",
+    "setup-token",
+    "stop",
+    "ultrareview",
+    "update",
+    "upgrade",
+}
+_CLAUDE_NONTERMINAL_OPTIONS = {
+    "-p",
+    "--print",
+    "-v",
+    "--version",
+    "-h",
+    "--help",
+    "--desktop",
+    "--bg",
+    "--background",
+    "--cloud",
+    "--environment",
+}
+
+
 def _can_retain_claude_output(argv: list[str], isatty: TerminalChecker) -> bool:
     if not (isatty(0) and isatty(1)):
         return False
-    for token in argv:
-        if token == "--":
-            break
-        if token.partition("=")[0] in {"-p", "--print", "-v", "--version", "-h", "--help"}:
-            return False
+    separator = argv.index("--") if "--" in argv else len(argv)
+    options = argv[:separator]
+    if any(token.partition("=")[0] in _CLAUDE_NONTERMINAL_OPTIONS for token in options):
+        return False
+
+    index = 0
+    while index < len(options):
+        token = options[index]
+        if not token.startswith("-"):
+            return token not in _CLAUDE_MANAGEMENT_COMMANDS
+        index += 1
+        if token in _CLAUDE_LAUNCH_VALUE_OPTIONS and index < len(options) and not options[index].startswith("-"):
+            index += 1
+        elif token in _CLAUDE_LAUNCH_VARIADIC_OPTIONS:
+            while index < len(options) and not options[index].startswith("-"):
+                index += 1
     return True
 
 
