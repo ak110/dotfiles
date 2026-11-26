@@ -52,13 +52,15 @@ async def test_plan_copy_feedback_preserves_toolbar_positions(
             "() => { navigator.clipboard.writeText = async () => { throw new Error('clipboard unavailable'); }; }"
         )
     buttons = page.locator("#screen-plans main > .toolbar button")
-    before = await buttons.evaluate_all("elements => elements.map(element => element.getBoundingClientRect().toJSON())")
+    used_buttons = await buttons.evaluate_all("elements => elements.map(element => element.getBoundingClientRect().toJSON())")
     for selector in ("#copy-btn", "#copy-path-btn"):
         button = page.locator(selector)
         await button.click()
         await playwright.async_api.expect(button.locator(".short-label")).to_have_text("失敗" if failure else "完了")
         after = await buttons.evaluate_all("elements => elements.map(element => element.getBoundingClientRect().toJSON())")
-        assert after == before
+        assert [rect for rect, before in zip(after, used_buttons, strict=True) if before["width"]] == [
+            rect for rect in used_buttons if rect["width"]
+        ]
         assert await button.evaluate("element => element.scrollWidth <= element.clientWidth")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 

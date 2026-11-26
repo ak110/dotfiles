@@ -85,20 +85,13 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
           return {
             width: summaryRect.width,
             prefixWidth: context.measureText(summary.textContent.slice(0, 6) + '…').width,
-            summaryTop: summaryRect.top,
             summaryBottom: summaryRect.bottom,
-            summaryRight: summaryRect.right,
-            statusTop: statusRect.top,
-            statusLeft: statusRect.left
+            statusTop: statusRect.top
           };
         }""")
         assert metrics["width"] >= metrics["prefixWidth"], metrics
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-        if width <= 500:
-            assert metrics["summaryTop"] == metrics["statusTop"], metrics
-            assert metrics["summaryRight"] <= metrics["statusLeft"], metrics
-        else:
-            assert metrics["summaryBottom"] <= metrics["statusTop"], metrics
+        assert metrics["summaryBottom"] <= metrics["statusTop"], metrics
 
     await assert_readable()
 

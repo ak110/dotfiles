@@ -198,11 +198,10 @@ async def test_detail_loading_keeps_list_and_navigation_positions(browser_harnes
         await asyncio.wait_for(started.wait(), timeout=5)
         await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
         spinner = await page.locator("#loading-indicator").bounding_box()
-        filters = await page.locator("#screen-wi .filters").bounding_box()
-        pane = await page.locator("#screen-wi .entry-pane").bounding_box()
-        assert spinner is not None and filters is not None and pane is not None
-        spinner_center = spinner["x"] + spinner["width"] / 2
-        assert filters["x"] + filters["width"] <= spinner_center <= pane["x"]
+        list_toolbar = await page.locator("#screen-wi .entry-columns").bounding_box()
+        assert spinner is not None and list_toolbar is not None
+        assert list_toolbar["y"] <= spinner["y"] < before_row["y"]
+        assert list_toolbar["x"] <= spinner["x"] < list_toolbar["x"] + list_toolbar["width"]
 
         spinner_visible = await page.locator("#loading-indicator").evaluate(
             "element => { const style = getComputedStyle(element, '::before'); "

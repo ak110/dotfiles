@@ -607,7 +607,12 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     document.getElementById("session-reading").hidden = true;
     onSelect(selected);
     detailEl.replaceChildren();
-    detailTitleEl.textContent = "読み込み中...";
+    detailTitleEl.textContent = detailUsageEl.textContent = "";
+    const pendingStatus = document.createElement("p");
+    pendingStatus.className = "inline-loading";
+    pendingStatus.setAttribute("role", "status");
+    pendingStatus.textContent = "読み込み中";
+    detailEl.append(pendingStatus);
     const query = new URLSearchParams({ host, engine, path });
     const generation = ++detailGeneration;
     const operation = beginOperation("sessions", "open-session", {trigger: "click"});

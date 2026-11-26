@@ -18,11 +18,10 @@ export function createSettingsView({
 
   function section(parent, title, url) {
     const target = element("section");
-    const heading = element("h2", title);
-    heading.className = "page-heading";
+    const heading = element("h3", title, "page-heading");
     target.append(heading);
     if (url) {
-      const link = element("a", "ガイドを読む");
+      const link = element("a", "ガイドを読む", "settings-guide");
       link.href = guide + url;
       target.append(link);
     }
@@ -78,7 +77,7 @@ export function createSettingsView({
   }
 
   function submit(form, label) {
-    const control = element("button", label);
+    const control = element("button", label, "button-secondary");
     control.type = "submit";
     const actions = element("div", "", "form-actions");
     actions.append(control);
@@ -94,15 +93,17 @@ export function createSettingsView({
     block.dataset.editor = `setting:${key}`;
     block.className = "settings-row";
     const description = element("div");
-    description.append(element("h3", key));
+    description.append(element("h4", key, "setting-name"));
     block.append(description);
     const timing = key.startsWith("serve_") || key === "remote_hosts" ? "次回のatk serve起動" :
       key === "dotfiles_mode" ? "次のdotfiles更新" : "";
-    if (item.description) description.append(element("p", item.description));
-    const source = item.source ? `（出所: ${item.source}）` : "";
     const effective = key === "usage_reset_permissions" ? `${JSON.parse(item.effective || "[]").length}件の許可` :
       item.effective || "未指定";
-    description.append(element("p", `実効値: ${effective}${source}`));
+    const value = element("p", "", "setting-effective");
+    value.append("実効値: ", element("strong", effective));
+    if (item.source) value.append(element("span", `（出所: ${item.source}）`, "secondary-text"));
+    description.append(value);
+    if (item.description) description.append(element("p", item.description, "setting-description"));
     if (item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && state.host)) {
       description.append(element("p", key === "usage_reset_permissions" && state.host
         ? "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"
@@ -110,9 +111,9 @@ export function createSettingsView({
       parent.append(block);
       return block;
     }
-    if (item.shared) description.append(element("p", sharedScope(item.shared_sync)));
+    if (item.shared) description.append(element("p", sharedScope(item.shared_sync), "secondary-text"));
     if (timing) description.append(element("p", key === "remote_hosts" ?
-      "反映: 設定のホスト切替は保存後、計画とセッションは次回のatk serve起動" : `反映: ${timing}`));
+      "反映: 設定のホスト切替は保存後、計画とセッションは次回のatk serve起動" : `反映: ${timing}`, "secondary-text"));
     if (item.source === "一時指定" || item.source?.startsWith("AGENT_TOOLKIT_CONFIG_")) {
       description.append(element("p", "保存値を変更しても、この上書きが解除されるまで実効値は変わりません。"));
     }
@@ -308,7 +309,7 @@ export function createSettingsView({
     const target = element("div", "", "settings-scope");
     target.dataset.scope = name;
     target.dataset.group = id;
-    const label = element("p", title, "settings-scope-heading");
+    const label = element("p", title, "settings-scope-heading section-heading");
     label.id = `settings-scope-${id}-${name}`;
     target.setAttribute("role", "group");
     target.setAttribute("aria-labelledby", label.id);
@@ -517,11 +518,12 @@ export function createSettingsView({
     for (const [id, group] of Object.entries(groups)) {
       if (!group.parentNode) continue;
       group.id = `settings-group-${id}`;
-      const control = button(group.querySelector("h2").textContent, () => {
+      const control = button(group.querySelector("h3").textContent, () => {
         state.activeGroup = id;
         showGroup();
         content.closest("main").scrollTop = 0;
       });
+      control.classList.add("choice-button");
       control.dataset.group = id;
       control.setAttribute("aria-controls", group.id);
       navigation.append(control);
@@ -540,7 +542,7 @@ export function createSettingsView({
       target.hidden = searching ? !target.querySelector("[data-setting]:not([hidden])") : target.children.length === 1;
     }
     const available = groups.map(group => [...group.children].some(child =>
-      !child.hidden && !["H2", "A"].includes(child.tagName)));
+      !child.hidden && !child.matches(".page-heading, .settings-guide")));
     const active = controls.some((control, index) => available[index] && control.dataset.group === state.activeGroup) ?
       state.activeGroup : controls[available.indexOf(true)]?.dataset.group;
     for (const [index, control] of controls.entries()) {

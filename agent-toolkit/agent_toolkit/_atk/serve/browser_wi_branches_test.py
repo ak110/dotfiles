@@ -58,8 +58,9 @@ async def test_registered_repository_shows_branch_filters_by_it_and_creates_with
     await playwright.async_api.expect(rows.filter(has_text="plain.md").locator(".branch-badge")).to_have_count(0)
 
     branch_filter = page.locator("#target-branch-filter")
-    await playwright.async_api.expect(branch_filter).to_be_visible()
+    await playwright.async_api.expect(branch_filter).to_be_hidden()
     await page.get_by_label("条件検索").check()
+    await playwright.async_api.expect(branch_filter).to_be_visible()
     await branch_filter.select_option("maint")
     await playwright.async_api.expect(rows).to_have_count(1)
     await playwright.async_api.expect(rows.first).to_contain_text("stored.md")

@@ -307,3 +307,32 @@ async def test_detail_toolbars_use_the_same_tokens(screen_harness: _ScreenHarnes
         )
         assert float(observed[screen]["font"].removesuffix("px")) >= 16
     assert observed["plans"] == observed["sessions"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_workspace_headings_use_the_same_hierarchy(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.route("**/api/usage**", lambda route: route.abort())
+    observed = []
+    for screen, heading in (
+        ("/", "#entry-heading"),
+        ("/agents", "#agents-app .page-heading"),
+        ("/usage", "#usage-heading"),
+        ("/settings", "#settings-heading"),
+    ):
+        await page.goto(screen_harness.base_url + screen)
+        observed.append(
+            await page.locator(heading).evaluate(
+                """element => {
+                    const heading = getComputedStyle(element);
+                    const body = getComputedStyle(document.body);
+                    return {
+                        larger: parseFloat(heading.fontSize) > parseFloat(body.fontSize),
+                        size: heading.fontSize,
+                        weight: heading.fontWeight,
+                        line: heading.lineHeight
+                    };
+                }"""
+            )
+        )
+    assert all(item == observed[0] and item["larger"] for item in observed)

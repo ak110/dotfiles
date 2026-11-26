@@ -33,13 +33,14 @@ function agentRow(agent, depth) {
   const name = agent.name || agent.engine;
   const caption = agentText("text-clip", "");
   caption.title = [agent.id, name].filter(Boolean).join(" · ");
+  target.classList.add("agent-name");
   caption.append(target);
-  if (name) caption.append(` · ${name}`);
+  if (name) caption.append(" ", agentText("secondary-text", name));
   const action = agent.action?.startsWith("commandExecution:")
     ? agent.action.match(/(?:^|\s)command=([\s\S]*)$/)?.[1] || "コマンドを実行中"
     : agent.action;
   const subline = [action, agent.retry_detail, agent.retry_count, agent.record_error].filter(Boolean).join(" · ");
-  const actionText = agentText("agent-action text-clip", subline);
+  const actionText = agentText("agent-action secondary-text text-clip", subline);
   actionText.title = subline;
   identity.append(caption, actionText);
   row.append(identity);
@@ -91,7 +92,7 @@ function appendRoot(list, root) {
 function renderRoots(content, roots) {
   const focused = content.contains(document.activeElement) ? document.activeElement.closest("[data-agent-id]") : null;
   if (!roots.length) {
-    content.replaceChildren("稼働中の会話・委譲先はありません。");
+    content.replaceChildren(agentText("empty-state", "稼働中の会話・委譲先はありません。"));
     if (focused) checkbox.focus({preventScroll: true});
     return;
   }
@@ -130,7 +131,7 @@ function watchHost(content, host) {
     } catch {
       if (!active() || token !== generation) return;
       failed = true;
-      if (content.textContent === "読み込み中…") content.textContent = "";
+      content.querySelector(".inline-loading")?.remove();
       setDisplayedReadError("agents", host, `${host ?? "ローカル"}のエージェント一覧を取得できません。`, refresh);
     } finally {
       pending = false;
@@ -163,10 +164,12 @@ async function init() {
     for (const hostname of [null, ...data.remote]) {
       const section = document.createElement("section");
       const heading = document.createElement("h2");
-      heading.className = "agent-host-heading";
+      heading.className = "agent-host-heading section-heading";
       heading.textContent = hostname ?? `${data.local}（ローカル）`;
       const content = document.createElement("div");
-      content.textContent = "読み込み中…";
+      const loading = agentText("inline-loading", "読み込み中");
+      loading.setAttribute("role", "status");
+      content.append(loading);
       section.append(heading, content);
       hosts.append(section);
       watchHost(content, hostname);

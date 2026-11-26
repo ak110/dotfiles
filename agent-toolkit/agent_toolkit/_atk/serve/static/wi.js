@@ -42,7 +42,7 @@ async function synchronizeAndLoad() {
   let syncFailed = false;
   try {
     await (runPending('sync', {
-      container: document.querySelector('.app-header'), button: byId('refresh-button'), busyLabel: '同期中'
+      container: byId('wi-page-toolbar'), button: byId('refresh-button'), busyLabel: '同期中'
     }, async () => {
       let syncFailure = null;
       try {
@@ -180,7 +180,10 @@ function bindEvents() {
   byId('wi-mode-normal').addEventListener('change', () => {
     void handleFilterChange({mode: 'normal'});
   });
-  byId('wi-mode-search').addEventListener('change', () => { void handleFilterChange(); });
+  byId('wi-mode-search').addEventListener('change', () => {
+    document.querySelector('#screen-wi .filters details').open = true;
+    void handleFilterChange();
+  });
   byId('wi-mode-waiting').addEventListener('change', () => {
     void handleFilterChange({mode: 'waiting', reloadRepos: true});
   });

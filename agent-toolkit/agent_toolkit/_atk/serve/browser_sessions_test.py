@@ -362,7 +362,7 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
     await page.locator("#detail").evaluate(
         "element => { const spacer = document.createElement('div'); spacer.style.height = '600px'; element.append(spacer); }"
     )
-    toolbar = page.locator("#screen-sessions main > .toolbar").filter(has=page.locator("#detail-title"))
+    toolbar = page.locator("#detail-title")
     reading_toolbar = page.locator("#session-reading")
     before = await toolbar.bounding_box()
     assert before is not None

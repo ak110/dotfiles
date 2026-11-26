@@ -697,7 +697,7 @@ async def test_settings_search_and_unsaved_navigation(
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/settings")
     expect = playwright.async_api.expect
-    search = page.get_by_label("設定を絞り込む")
+    search = page.get_by_label("設定を検索")
     await search.fill("serve_host")
     editor = page.locator('[data-setting="serve_host"]')
     await expect(editor).to_be_visible()
@@ -820,7 +820,7 @@ async def test_shared_conflict_keeps_keyboard_choice_on_periodic_update(
     await page.route("**/api/settings**", lambda route: route.fulfill(json=snapshot))
     await page.clock.install()
     await page.goto(screen_harness.base_url + "/settings")
-    await page.get_by_label("設定を絞り込む").fill("execute_model")
+    await page.get_by_label("設定を検索").fill("execute_model")
     editor = page.locator('[data-scope="shared"] [data-setting="execute_model"]')
     field = editor.get_by_label("保存値")
     await field.fill(draft)

@@ -25,14 +25,14 @@
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: var(--space-row) var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 0;
   border-bottom: 1px solid var(--color-border);
   border-radius: 0;
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   text-decoration: none;
   cursor: pointer;
 }
@@ -112,6 +112,7 @@
 #screen-plans main {
   overflow: auto;
   box-sizing: border-box;
+  background: var(--color-surface);
 }
 #screen-plans .detail-toolbar {
   position: sticky;
@@ -145,15 +146,12 @@
   display: none;
 }
 #screen-plans main article {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: var(--space-4);
-  box-sizing: border-box;
+  padding-block: var(--space-6);
 }
 /* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
      通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
 #screen-plans main article:has(> .review-table) {
-  max-width: none;
+  max-inline-size: none;
 }
 #screen-plans .review-table {
   width: 100%;

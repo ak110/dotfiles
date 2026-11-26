@@ -55,42 +55,25 @@
 #screen-sessions main {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-inline-size: 0;
   overflow: auto;
+  background: var(--color-surface);
 }
 
-/* セッション名は見出しだけが示すため、狭い幅や拡大時も省略せず折り返して全文を表示する。 */
-#screen-sessions .detail-title {
-  min-inline-size: min(10ch, 100%);
-  flex: 1 1 12ch;
-  overflow-wrap: anywhere;
-  font-weight: var(--weight-label);
-}
-#screen-sessions #detail-usage {
-  flex: 0 1 auto;
-  min-inline-size: min(10ch, 100%);
-  overflow-wrap: anywhere;
-}
-/* 計画ファイル画面の本文と同じ最大幅と左右余白にそろえる。 */
+#screen-sessions .detail-toolbar:first-child { justify-content: flex-end; }
+.session-identity:has(h2:empty) { display: none; }
+.session-identity { padding-block: var(--space-5) var(--space-3); }
+.session-identity p { margin-block: var(--space-2) 0; }
+.session-identity p:empty { display: none; }
 #screen-sessions #detail {
   flex: none;
-  width: 100%;
-  max-width: 860px;
-  margin: 0 auto;
-  padding: var(--space-4);
-  box-sizing: border-box;
+  padding-block: var(--space-4);
 }
 
 /* サブエージェントの記録は左ペインの一覧に現れないため、委譲元へ戻る操作を本文の先頭へ置く。
    配色・境界・角丸・寸法は共通規則が定める。本規則は下の要素との間隔だけを指定する。 */
 #screen-sessions .detail-back {
   margin-block-end: var(--space-2);
-}
-/* 一覧が空のときの案内。対象rootの長いパスも枠内で折り返す。 */
-#screen-sessions #sessions-empty {
-  padding: var(--space-3);
-  color: var(--color-secondary-text);
-  overflow-wrap: anywhere;
 }
 #screen-sessions .subagents {
   margin-block-end: var(--space-2);
@@ -137,13 +120,14 @@
   white-space: nowrap;
 }
 #screen-sessions .event {
+  margin-block-start: var(--space-2);
   border-block-end: 1px solid var(--color-border);
   overflow: hidden;
 }
 #screen-sessions .event > summary {
   cursor: pointer;
   padding: var(--space-2) var(--space-3);
-  background: var(--color-background);
+  background: var(--color-surface);
   display: flex;
   gap: var(--space-2);
   align-items: center;
@@ -160,6 +144,7 @@
 #screen-sessions .event .event-time {
   flex: 0 0 auto;
   color: var(--color-secondary-text);
+  font-size: var(--font-size-secondary);
   white-space: nowrap;
 }
 #screen-sessions .event .event-input-summary {
@@ -236,15 +221,21 @@
 }
 
 #agents-app {
-  min-height: 0;
+  min-block-size: 0;
+  flex: 1;
   overflow: auto;
-  padding: var(--space-4);
   container: agents / inline-size;
 }
-#agents-app .agent-host-heading {
-  font-size: var(--font-size-heading);
-  overflow-wrap: anywhere;
+#agents-hosts { display: grid; gap: var(--space-4); }
+#agents-hosts > section {
+  min-inline-size: 0;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
 }
+#agents-hosts .agent-host-heading { margin-block-end: var(--space-3); }
+#agents-hosts .agent-name { font-weight: var(--weight-label); }
 #agents-app .agent-list {
   list-style: none;
   margin: 0;
@@ -263,7 +254,7 @@
   min-inline-size: 0;
   padding-inline-start: min(calc(var(--agent-depth) * 0.875rem), 20%);
 }
-#agents-app .agent-action { color: var(--color-secondary-text); }
+
 #agents-app .agent-status { grid-column: 2; }
 #agents-app .agent-elapsed { grid-column: 3; }
 #agents-app .agent-usage { grid-column: 4; }
@@ -292,21 +283,41 @@
 }
 
 #settings-app {
-  min-height: 0;
+  min-block-size: 0;
+  flex: 1;
   overflow: auto;
-  padding: var(--space-4);
 }
-.settings-toolbar {
+.settings-search,
+.settings-toolbar,
+.settings-host-details {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
-  padding: var(--space-3) var(--space-4) 0;
+}
+.settings-page-toolbar { margin-block-end: var(--space-3); }
+.settings-search { min-inline-size: 0; }
+.settings-search input { inline-size: min(100%, 20rem); }
+.settings-host-details {
+  align-items: baseline;
+  margin-block-end: var(--space-1);
+}
+.settings-host-details > p { margin: 0; }
+.settings-host-details summary { cursor: pointer; color: var(--color-primary); }
+@media (max-width: 48rem) {
+  .settings-page-toolbar { column-gap: var(--space-3); }
+  .settings-search { flex-basis: 100%; }
 }
 #settings-status {
-  flex-basis: 100%;
+  box-sizing: border-box;
+  flex: none;
   margin: 0;
+  border-inline: 0;
+  border-radius: 0;
+  background: var(--color-primary-quiet);
 }
+.settings-host-details > details { min-inline-size: 0; }
+.settings-host-details > details[open] { inline-size: 100%; }
 #settings-status:empty,
 #settings-content [role="alert"]:empty {
   display: none;
@@ -325,29 +336,28 @@
 #settings-nav[hidden] + #settings-content {
   grid-column: 1 / -1;
 }
-#settings-nav button {
-  text-align: start;
-}
-#settings-nav [aria-current="page"] {
-  color: var(--color-primary);
-  background: var(--color-primary-quiet);
-}
 #settings-content {
   min-inline-size: 0;
-  max-inline-size: 68rem;
   overflow-wrap: anywhere;
 }
-#settings-content section > h2 {
-  margin-block: 0 var(--space-2);
+#settings-content > section {
+  padding: var(--page-gutter);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
 }
+#settings-content > section > h3 { margin-block-end: var(--space-1); }
+#settings-content > section > a {
+  font-size: var(--font-size-secondary);
+}
+#settings-content > section > details { margin-block-start: var(--space-3); }
 #settings-content [data-editor]:not(section) {
   border-block-start: 1px solid var(--color-border);
-  margin-block-start: var(--space-3);
-  padding-block-start: var(--space-3);
+  padding-block: var(--space-4);
 }
 #settings-content .settings-format {
   color: var(--color-secondary-text);
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-secondary);
 }
 .permission-caption, .permission-actions { margin-block: var(--space-2); }
 .permission-actions {
@@ -356,18 +366,24 @@
   align-items: center;
   gap: var(--space-2);
 }
-#settings-content [data-setting] h3 {
+#settings-content .setting-name {
   margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--weight-label);
 }
 #settings-content .settings-scope {
   margin-block-start: var(--space-4);
 }
 #settings-content .settings-scope-heading {
-  margin-block: 0;
+  padding: var(--space-row);
+  background: var(--color-background);
 }
 #settings-content [data-setting] p {
   margin-block: var(--space-2);
 }
+#settings-content .setting-effective strong { font-weight: var(--weight-label); }
+#settings-content .setting-effective .secondary-text { margin-inline-start: var(--space-1); }
+#settings-content .setting-description { max-inline-size: 52ch; }
 .settings-field:not([hidden]) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -394,14 +410,14 @@
 .settings-field input[inputmode="numeric"] {
   inline-size: min(100%, 12ch);
 }
-@media (min-width: 48rem) {
+@media (min-width: 62rem) {
   .settings-layout {
-    grid-template-columns: 12rem minmax(0, 1fr);
+    grid-template-columns: minmax(11rem, 0.23fr) minmax(0, 1fr);
   }
   .settings-row:not([hidden]) {
     display: grid;
-    grid-template-columns: minmax(0, 21rem) minmax(0, 1fr);
-    gap: var(--space-3);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+    gap: var(--space-5);
   }
   #settings-nav {
     position: sticky;
@@ -411,8 +427,15 @@
   }
 }
 
-#settings-shared { overflow-wrap: anywhere; }
-#settings-shared > p { margin-block: var(--space-2); }
+#settings-shared {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  overflow-wrap: anywhere;
+  margin-block-end: var(--space-4);
+}
+#settings-shared:empty { display: none; }
+#settings-shared > p { margin: 0; }
 #settings-comparison { max-inline-size: 100%; max-block-size: 24rem; overflow: auto; }
 #settings-comparison th { text-align: start; background: var(--color-surface); padding: var(--space-2); }
 #settings-comparison thead th { position: sticky; inset-block-start: 0; z-index: 1; }

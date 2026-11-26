@@ -18,7 +18,6 @@ _GEOMETRY = {
     (".visually-hidden", "margin"),
     ("::highlight(session-search)", "background-color"),
     ("::highlight(session-search)", "color"),
-    ("#screen-wi .app-header", "padding-inline"),
     ("#agents-app .agent-identity", "padding-inline-start"),
 }
 _CONTROL_PROPERTY = re.compile(
@@ -48,6 +47,11 @@ _KEYWORDS = {
     "unset",
     "var",
 }
+_ROLE_SIZE_OWNERS = {
+    "var(--font-size-page)": {".page-heading"},
+    "var(--font-size-value)": {".metric-value"},
+}
+_ROLE_SIZE_SELECTORS = re.compile(r"\.(?:page-heading|metric-value)(?![\w-])")
 
 
 def _uses_shared_values(prop: str, value: str) -> bool:
@@ -84,6 +88,19 @@ def _unshared_declarations(css: str) -> list[tuple[str, str, str]]:
 @pytest.mark.parametrize("name", [name for name in assets.STYLES if name != "app_markdown.css"])
 def test_operation_style_uses_shared_tokens(name: str) -> None:
     assert not _unshared_declarations(assets.STYLES[name])
+
+
+@pytest.mark.parametrize("name", assets.STYLES)
+def test_page_title_and_quota_value_sizes_belong_to_shared_roles(name: str) -> None:
+    rules = _BLOCK.findall(_COMMENT.sub("", assets.STYLES[name]))
+    for selectors, body in rules:
+        for prop, value in _DECLARATION.findall(body):
+            if prop != "font-size":
+                continue
+            tokens = _ROLE_SIZE_OWNERS.get(value.strip(), set())
+            if tokens or _ROLE_SIZE_SELECTORS.search(selectors):
+                assert name == "app.css"
+                assert {selector.strip() for selector in selectors.split(",")} == tokens
 
 
 @pytest.mark.parametrize(

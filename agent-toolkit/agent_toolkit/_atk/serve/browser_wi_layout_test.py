@@ -127,11 +127,9 @@ async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: 
     assert filename_box is not None
     assert target_box is not None
     assert row_box is not None
-    assert summary_box["y"] <= status_box["y"] < summary_box["y"] + summary_box["height"]
-    assert filename_box["y"] >= max(summary_box["y"] + summary_box["height"], status_box["y"] + status_box["height"])
-    assert summary_box["x"] + summary_box["width"] <= status_box["x"]
-    assert filename_box["y"] == target_box["y"]
-    assert filename_box["x"] + filename_box["width"] <= target_box["x"]
+    assert summary_box["y"] + summary_box["height"] <= status_box["y"]
+    assert status_box["y"] + status_box["height"] <= filename_box["y"]
+    assert filename_box["y"] + filename_box["height"] <= target_box["y"]
     assert row_box["y"] >= 0
     assert row_box["y"] + row_box["height"] <= 844
 

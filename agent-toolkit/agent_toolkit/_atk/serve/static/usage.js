@@ -89,7 +89,7 @@ function quota(window, now) {
   const elapsed = (now - window.resets_at + window.duration_seconds) / window.duration_seconds;
   const expired = Number.isFinite(window.resets_at) && window.resets_at <= now;
   const prediction = expired ? {kind: "expired"} : forecast(window, now);
-  row.append(element("h3", title));
+  row.append(element("h4", title));
   const bar = element("div", "", "metric-track");
   const fraction = window.used_percent;
   const label = prediction.kind === "expired" ? "不明（前回の観測はリセット前）" :
@@ -112,7 +112,9 @@ function quota(window, now) {
   }
   if (Number.isFinite(window.resets_at) && Number.isFinite(elapsed) && elapsed >= 0 && elapsed < 1) {
     const marker = element("span", "現在", "metric-marker");
-    marker.style.insetInlineStart = `${100 * elapsed}%`;
+    const offset = `${100 * elapsed}%`;
+    marker.style.insetInlineStart = offset;
+    marker.style.setProperty("--metric-marker-position", offset);
     marker.title = `期間の${Math.round(100 * elapsed)}%が経過`;
     bar.append(marker);
   }
@@ -121,9 +123,6 @@ function quota(window, now) {
   const recovery = dateJst(window.resets_at);
   values(row, [
     ["次回リセット", window.resets_at > now ? `${recovery}（${remaining(window.resets_at - now)}）` : recovery],
-    ["観測", dateJst(window.observed_at) + (now - window.observed_at >= 3600 ? "（1時間以上前）" : "")],
-    ["使用率の観測", observed !== window.observed_at ? dateJst(observed) : null],
-    ["枠の識別子", window.window_id],
     ...(window.engine === "claude" ? claudeWindowStatus(window) : []),
   ]);
   const message = element("p", forecastText(prediction, window.resets_at));
@@ -132,6 +131,14 @@ function quota(window, now) {
     message.setAttribute("role", "status");
   }
   row.append(message);
+  const evidence = element("details", "", "metric-evidence");
+  evidence.append(element("summary", "計測の詳細"));
+  values(evidence, [
+    ["観測", dateJst(window.observed_at) + (now - window.observed_at >= 3600 ? "（1時間以上前）" : "")],
+    ["使用率の観測", observed !== window.observed_at ? dateJst(observed) : null],
+    ["枠の識別子", window.window_id],
+  ]);
+  row.append(evidence);
   return row;
 }
 
@@ -163,14 +170,16 @@ function render(payload, refreshed = false) {
   for (const engine of ["claude", "codex"]) {
     const section = element("section", "", "metric-section");
     const metadata = payload.metadata[engine] ?? {};
-    section.append(element("h2", names[engine], "page-heading"), link("公式の利用状況を開く", url[engine]));
+    const provider = element("header", "", "metric-provider");
+    provider.append(element("h3", names[engine], "section-heading"), link("公式の利用状況を開く", url[engine]));
+    section.append(provider);
     const rows = payload.windows.filter(window => window.engine === engine);
     const failed = payload.refresh_failures?.some(message => message.startsWith(names[engine] + ":"));
     const settled = (refreshed || payload.last_refresh_at) && !failed;
     values(section, [["プラン", metadata.contract || (settled ? "未取得" : null)]]);
     if (rows.length === 0 && settled) section.append(element("p", "利用枠の観測はありません。"));
     for (const window of rows) section.append(quota(window, now));
-    section.append(element("h3", "リセット権"));
+    section.append(element("h4", "リセット権", "section-heading"));
     if (engine === "claude") {
       extra(section, metadata);
       section.append(element("p", "在庫は手入力の値です。リセット権は公式の利用状況画面で使います。"));
@@ -192,7 +201,7 @@ function render(payload, refreshed = false) {
       }
     }
     const permissions = payload.permissions.filter(entry => entry.engine === engine);
-    section.append(element("h3", "リセットの許可"));
+    section.append(element("h4", "リセットの許可", "section-heading"));
     if (!permissions.length) section.append(element("p", "期間内または今後の許可はありません。"));
     for (const entry of permissions) {
       section.append(element("p", `${entry.scope} · ${entry.count}回 · ${dateJst(Date.parse(entry.from) / 1000)}〜${dateJst(Date.parse(entry.until) / 1000)}`));
@@ -216,6 +225,8 @@ async function update(force) {
   pending = true;
 
   refreshButton.disabled = true;
+  const loading = document.getElementById("usage-loading");
+  loading.hidden = Boolean(data);
   try {
     for (const delay of [0, 1500]) {
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
@@ -223,6 +234,7 @@ async function update(force) {
       try {
         if (!data) {
           data = await request("/api/usage");
+          loading.hidden = true;
           if (visible()) render(data);
         }
         if (!visible()) return;
@@ -244,6 +256,7 @@ async function update(force) {
   } finally {
     pending = false;
     refreshButton.disabled = false;
+    loading.hidden = true;
   }
 }
 

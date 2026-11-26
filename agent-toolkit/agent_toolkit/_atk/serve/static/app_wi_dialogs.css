@@ -58,7 +58,7 @@
 :is(#screen-wi, .wi-reference-layer) .dialog-footer {
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-background);
 }
 :is(#screen-wi, .wi-reference-layer) .detail-footer {
   justify-content: flex-start;
@@ -76,10 +76,32 @@
 :is(#screen-wi, .wi-reference-layer) .detail-more > summary {
   display: none;
 }
+:is(#screen-wi, .wi-reference-layer) .detail-more-actions > :is(.button-secondary, .button-danger) {
+  border-color: transparent;
+  background: transparent;
+}
+:is(#screen-wi, .wi-reference-layer) .detail-more-actions > button:hover {
+  background: var(--color-normal-hover);
+}
+@media (max-width: 700px) {
+  :is(#screen-wi, .wi-reference-layer) .detail-more > summary {
+    display: list-item;
+    padding: var(--space-2) var(--space-row);
+    color: var(--color-primary);
+    cursor: pointer;
+  }
+  :is(#screen-wi, .wi-reference-layer) .detail-more[open] { flex-basis: 100%; }
+}
 :is(#screen-wi, .wi-reference-layer) .detail-title-row {
-  justify-content: space-between;
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 :is(#screen-wi, .wi-reference-layer) .detail-title-row h3 {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--color-secondary-text);
+  font-weight: var(--weight-label);
   overflow-wrap: anywhere;
 }
 :is(#screen-wi, .wi-reference-layer) .detail-dialog .dialog-header h2 {
@@ -117,10 +139,7 @@
   margin-top: var(--space-4);
 }
 :is(#screen-wi, .wi-reference-layer) .entry-content {
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  background: var(--color-surface);
+  max-inline-size: var(--reading-width);
   overflow-wrap: anywhere;
 }
 .markdown-body {
@@ -289,32 +308,10 @@
     transform: rotate(360deg);
   }
 }
-@media (max-width: 940px) {
-  :is(#screen-wi, .wi-reference-layer) .app-header {
-    padding-inline: var(--space-2);
-  }
-}
-@media (max-width: 700px) {
-  :is(#screen-wi, .wi-reference-layer) .header-actions {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    width: 100%;
-  }
-  :is(#screen-wi, .wi-reference-layer) .app-layout {
-    grid-template-columns: 1fr;
-    padding: var(--space-2);
-  }
-  :is(#screen-wi, .wi-reference-layer) .entry-pane {
-    padding-inline: 0;
-  }
-  :is(#screen-wi, .wi-reference-layer) .filters {
-    padding: var(--space-3);
-  }
-  :is(#screen-wi, .wi-reference-layer) #clear-filters-button {
-    margin-block: var(--space-1);
-  }
-  :is(#screen-wi, .wi-reference-layer) .filter-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 48rem) {
+  #screen-wi .app-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding-block: var(--space-4);
   }
   :is(#screen-wi, .wi-reference-layer) dialog.dialog-shell {
     width: calc(100% - 1rem);
@@ -334,23 +331,7 @@
   :is(#screen-wi, .wi-reference-layer) .detail-footer {
     gap: var(--space-2);
   }
-  :is(#screen-wi, .wi-reference-layer) .detail-more > summary {
-    display: list-item;
-    padding: var(--space-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-small);
-    background: var(--color-normal);
-    cursor: pointer;
-  }
-  :is(#screen-wi, .wi-reference-layer) .detail-more > summary:hover {
-    background: var(--color-normal-hover);
-  }
-  :is(#screen-wi, .wi-reference-layer) .detail-more[open] {
-    flex-basis: 100%;
-  }
-  :is(#screen-wi, .wi-reference-layer) .detail-more-actions {
-    margin-block-start: var(--space-2);
-  }
+
 }
 /* 低い画面では折り返す操作欄が本文を押し潰すため、詳細全体を単一のスクロール領域にする。 */
 @media (max-height: 30rem) {

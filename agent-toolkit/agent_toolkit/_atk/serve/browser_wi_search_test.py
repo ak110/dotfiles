@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import re
+from typing import Literal
 
 import playwright.async_api
 import pytest
@@ -29,7 +30,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
-    assert await page.locator(".filters details").evaluate("element => element.open")
+    assert not await page.locator(".filters details").evaluate("element => element.open")
     await _open_filters(page)
 
     warning = page.get_by_role("alert").filter(has_text="一覧から除外したファイルの警告")
@@ -372,11 +373,16 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_work_item_filter_fit_order_and_computed_contrast(browser_harness: _BrowserHarness) -> None:
+@pytest.mark.parametrize("theme", ["light", "dark"])
+async def test_work_item_filter_fit_order_and_computed_contrast(
+    browser_harness: _BrowserHarness, theme: Literal["light", "dark"]
+) -> None:
     page = browser_harness.page
+    await page.emulate_media(color_scheme=theme)
     await page.set_viewport_size({"width": 1280, "height": 800})
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await _open_filters(page)
     metrics = await page.evaluate("""() => {
       const select = document.querySelector('#state-filter');
       const label = document.querySelector('label[for="state-filter"]');
@@ -403,7 +409,7 @@ async def test_work_item_filter_fit_order_and_computed_contrast(browser_harness:
         sidebarWidth: select.closest('.filters').clientWidth,
         labelAbove: label.getBoundingClientRect().bottom <= select.getBoundingClientRect().top,
         filterBeforeList: Boolean(search.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING),
-        textContrast: contrast(getComputedStyle(secondary).color, getComputedStyle(secondary.closest('.card')).backgroundColor),
+        textContrast: contrast(getComputedStyle(secondary).color, getComputedStyle(document.body).backgroundColor),
         borderContrast: contrast(getComputedStyle(select).borderTopColor, getComputedStyle(select).backgroundColor)
       };
     }""")

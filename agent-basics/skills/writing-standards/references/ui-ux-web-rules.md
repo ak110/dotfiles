@@ -21,6 +21,8 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 - 実行は`button`、遷移は`a`で書き、アイコンだけのボタンには`aria-label`などの名前、意味を持つ画像には`alt`を付け、装飾のアイコンは`aria-hidden="true"`で隠す
 - 入力欄にラベル（`label`、`aria-labelledby`）を関連付け、見出しを階層順に置き、スキップリンクを用意し、非同期の通知と検証結果は`aria-live`で伝える
 - フォーカスは`:focus-visible`で見せ、`outline`を消す時は同じ状態に同等以上の代替を付け、固定ヘッダーやオーバーレイに隠れないようにする
+- 色だけで選択・警告・成功を伝えず、状態を文言や形でも示す（[WCAG 2.2 SC 1.4.1](https://www.w3.org/TR/WCAG22/#use-of-color)）。
+  フォーカスの視認と遮蔽はSC 2.4.7・2.4.11、フォーカス表示や入力境界の対比はSC 1.4.11で判定する
 
 ## フォーム
 
@@ -31,7 +33,8 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 
 - 再訪や「戻る」で復元すべき状態（検索条件、フィルター条件、ページ番号など）は、URLのクエリーなどへ反映する
 - 非表示にしたモーダルやオーバーレイにはフォーカスが届かないよう、DOMから外すか`inert`を付ける
-- コンポーネントごとにdefault、hover、focus、active、disabled、loading、errorの状態をそろえ、読み込み中はスケルトン表示を優先する
+- コンポーネントごとにdefault、hover、focus、active、disabled、loading、errorの状態をそろえる。
+  取得中と完了はフォーカスを移さずに通知し、`role="status"`などで支援技術に伝える（[WCAG 2.2 SC 4.1.3](https://www.w3.org/TR/WCAG22/#status-messages)）
 - `overflow: hidden`や`auto`の祖先に切り取られる絶対配置のドロップダウンには、`dialog`、Popover API、portalなどを使う。
   fixed配置を選ぶ場合は、祖先が包含ブロックを作っていないかも確かめる
 
@@ -51,6 +54,8 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 ## テーマとローカライズ
 
 - ダークテーマなどの配色は、スクロールバー、フォームなどのネイティブ要素、選択範囲、キャレット、フォーカスリングにも適用する
+- テーマと操作状態ごとに、背景と文字（補足を含む）の対比をSC 1.4.3、操作要素の識別に必要な図形・境界と隣接色の対比をSC 1.4.11で確かめる。
+  [WCAG 2.2](https://www.w3.org/TR/WCAG22/)は適合判定に用い、原文や訳文は転載しない（[文書の許諾](https://www.w3.org/copyright/document-license-2023/)）
 - 下線は`text-underline-offset`で文字から離し、表の数値には`font-variant-numeric: tabular-nums`を使う
 - 日付と数値は`Intl`などで地域設定に合わせ、SSRとハイドレーションを併用する場合は日時の描画とイベントハンドラーがサーバーとクライアントで一致するかを確かめる
 
