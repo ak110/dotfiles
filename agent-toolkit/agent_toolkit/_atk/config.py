@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import hashlib
 import json
 import pathlib
@@ -185,7 +184,7 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 
 def _cmd_config_show(home: pathlib.Path) -> None:
     human = is_human_terminal()
-    settings = resolved_settings(home)
+    settings = resolved_settings(home, read_only=True)
     for key, value in settings.items():
         print(f"{key} {value}")
     if (path := _config_settings.shared_settings_path()) is not None:
@@ -207,27 +206,12 @@ def _cmd_config_show(home: pathlib.Path) -> None:
 
 
 def _auto_fast_report() -> str:
-    managed = connections_configured("codex")
-    if managed and not any("subscription" in connection_order("codex", role) for role in ("orchestrator", "worker")):
-        return "Codex自動速度: 通常（使用順にサブスクリプション接続がない）"
-
-    async def report() -> str:
-        cwd = str(pathlib.Path.cwd())
-
-        async def query(request):
-            return await codex_fast_mode.auto_service_tier(request, cwd, subscription=True if managed else None)
-
-        async with asyncio.timeout(5):
-            decision = await codex_models.with_app_server(query, cwd=cwd)
-        speed = "高速" if decision.tier == "priority" else "通常"
-        if managed:
-            return f"Codex自動速度: 接続ごとに判定（サブスクリプションは{speed}: {decision.explanation}、APIは通常）"
-        return f"Codex自動速度: {speed}（{decision.explanation}）"
-
-    try:
-        return asyncio.run(report())
-    except OSError, ValueError, TimeoutError:
-        return "Codex自動速度: 通常（判定に必要な接続情報を取得できない）"
+    previous = codex_fast_mode.latest_start_decision()
+    if previous is None:
+        return "Codex自動速度: 委譲の起動時に判定する"
+    instant, decision = previous
+    speed = "高速" if decision.tier == "priority" else "通常"
+    return f"Codex自動速度: 最後の起動時判定 {instant}、{speed}（{decision.explanation}）"
 
 
 def _pending_shared(local: dict[str, Any]) -> dict[str, Any]:
@@ -294,10 +278,11 @@ def _migrate_shared_settings(args: argparse.Namespace) -> None:
     notes = path.parent
     try:
         with wi_sync.repo_lock(notes):
-            wi_sync.ensure_mutation_allowed(notes)
-            wi_sync.run_git(["fetch"], notes)
-            git_sync.keep_remote_initial_file(notes, path.name, _config_settings.SHARED_SETTINGS_MIGRATION_MESSAGE)
-            wi_sync.run_git(["merge", "--ff-only", "@{u}"], notes)
+            if args.apply is not None:
+                wi_sync.ensure_mutation_allowed(notes)
+                wi_sync.run_git(["fetch"], notes)
+                git_sync.keep_remote_initial_file(notes, path.name, _config_settings.SHARED_SETTINGS_MIGRATION_MESSAGE)
+                wi_sync.run_git(["merge", "--ff-only", "@{u}"], notes)
             if git_command.output(["status", "--porcelain", "--ignored=matching", "--", path.name], notes):
                 raise _next_action.ActionableError(f"{path}に未保存の変更がある", next_action=_MIGRATION_NEXT_ACTION)
             local = _pending_shared(_config_settings.load_config_strict())

@@ -177,6 +177,7 @@ class CodexStartMixin:
                             tier = await _current_service_tier(
                                 client.request,
                                 cwd,
+                                record_start=True,
                                 subscription=(
                                     await run_file_operation(codex_connection.subscription_provider_for, candidate) is not None
                                 ),
@@ -198,7 +199,7 @@ class CodexStartMixin:
                     if thread_response is None:
                         raise AppServerError("Codex connection candidates were rejected: " + "; ".join(failures))
                 else:
-                    tier = await _current_service_tier(client.request, cwd, subscription=None)
+                    tier = await _current_service_tier(client.request, cwd, subscription=None, record_start=True)
                     thread_response = await client.request("thread/start", {**params, "serviceTier": tier})
         except TimeoutError as exc:
             diagnostic_method = getattr(client, "initialization_diagnostic", None)

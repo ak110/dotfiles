@@ -13,6 +13,9 @@ Codexの認証の所在と各エンジンの使用順は、`atk serve`の「設�
 接続の使用順と利用上限の待機方針は、同じprivate-notesを同期する環境で共有する。
 API認証とホスト固有のCodex provider IDは共有しない。
 共有設定ファイルの場所は`atk config show`の標準エラーで確認できる。
+`atk config migrate-shared` の比較は通信せずに手元の共有ファイルを読む。
+`--apply` で同期した結果、比較時から共有値が変わっていれば移行せずに止まる。
+再度比較して採用する値を選ぶ。
 特定のホストだけ変えるには`atk config temporary`か環境変数を使う。
 
 `agents_server`の委譲先と、`atk wi process-loop`・all-reposの統括担当（オーケストレーター）は、Claude・Codexのそれぞれで次の3種類の接続を役割ごとの順序で使い分けられる。

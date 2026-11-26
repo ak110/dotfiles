@@ -16,7 +16,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import codex_instructions, shared_roots, state
 from agent_toolkit._atk import config_settings
-from agent_toolkit._common import process_identity, session_registry, state_paths
+from agent_toolkit._common import codex_fast_mode, process_identity, session_registry, state_paths
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import _complete
@@ -57,6 +57,24 @@ async def test_auto_tier_requires_an_eligible_subscription(
         return {"account": {"type": account_type, "planType": plan}}
 
     assert await codex_instructions._current_service_tier(request, ".", subscription=subscription, now=now) == tier
+
+
+@pytest.mark.asyncio
+async def test_only_start_records_auto_decision(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "auto")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    request = AsyncMock(return_value={"account": {"type": "chatgpt", "planType": "business"}})
+    now = datetime.datetime(2026, 11, 26, tzinfo=datetime.UTC)
+    assert (
+        await codex_instructions._current_service_tier(request, ".", subscription=True, now=now, record_start=True)
+        == "priority"
+    )
+    latest = codex_fast_mode.latest_start_decision()
+    assert latest is not None
+    assert latest[0] == now.isoformat()
+    assert latest[1].tier == "priority"
+    assert await codex_instructions._current_service_tier(request, ".", subscription=False, now=now) == "default"
+    assert codex_fast_mode.latest_start_decision() == latest
 
 
 @pytest.mark.parametrize("failure", ["body", "graceful-close"])

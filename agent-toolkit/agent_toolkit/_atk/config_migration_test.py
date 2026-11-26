@@ -162,7 +162,7 @@ def test_config_recovery_invalid_explicit_value_never_changes_legacy_file(tmp_pa
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize("entry", ["show", "get", "resolve"])
+@pytest.mark.parametrize("entry", ["get", "resolve"])
 def test_migration_overwrites_stale_stage_values_and_removes_retired_keys(tmp_path, capsys, entry):
     old = {
         "base_engine": "claude,codex",

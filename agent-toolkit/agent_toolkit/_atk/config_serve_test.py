@@ -65,10 +65,15 @@ def test_legacy_serve_toml_is_migrated_once_and_renamed(tmp_path, capsys):
     legacy.write_text("unknown = 1\n" + _SERVE_TOML, encoding="utf-8")
 
     assert _main(tmp_path, "config", "show") == 0
+    capsys.readouterr()
+    assert legacy.exists()
+    assert not _config_file(tmp_path).exists()
+
+    assert _main(tmp_path, "config", "get", "serve_host") == 0
     captured = capsys.readouterr()
     assert "serve.toml.migrated" in captured.err
     assert "移行先の無いキーをスキップした: unknown" in captured.err
-    assert "serve_host toml-host\n" in captured.out
+    assert captured.out == "toml-host\n"
     assert not legacy.exists()
     assert (tmp_path / "config" / "serve.toml.migrated").read_text(encoding="utf-8") == "unknown = 1\n" + _SERVE_TOML
     assert _saved(tmp_path) == {
@@ -123,7 +128,7 @@ def test_legacy_serve_migration_failure_preserves_files_and_recovers(tmp_path, c
         _config_file(tmp_path).write_text(json_text, encoding="utf-8")
     before = {path.name: path.read_bytes() for path in legacy.parent.iterdir()}
 
-    assert _main(tmp_path, "config", "show") == 2
+    assert _main(tmp_path, "config", "get", "serve_host") == 2
     error = capsys.readouterr().err
     assert message in error
     assert "次の操作" in error
@@ -149,7 +154,7 @@ def test_legacy_serve_migration_save_failure_keeps_original_bytes(tmp_path, monk
         raise OSError("検証用の保存拒否")
 
     monkeypatch.setattr(_config_settings, "atomic_write", fail_write)
-    assert _main(tmp_path, "config", "show") == 2
+    assert _main(tmp_path, "config", "get", "serve_host") == 2
     assert "保存できない" in capsys.readouterr().err
     assert path.read_bytes() == before
     assert legacy.read_text(encoding="utf-8") == 'host = "toml-host"\n'

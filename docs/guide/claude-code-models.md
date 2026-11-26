@@ -80,7 +80,10 @@ atk config set review_model agy:gemini-4-argon/medium
 atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonnet/medium
 ```
 
-`atk config show`は現在値を一覧し、`atk config get <キー>`は指定キーの値を返す。
+`atk config show`は通信や設定の移行をせず、現在値を一覧する。
+`atk config get <キー>`は指定キーの値を返す。
+端末で `codex_fast_mode` が `auto` の場合、`atk config show` はこのホストでの最後の委譲起動時の自動判定と、その時刻を標準エラーに表示する。
+これは過去の判定であり、記録がなければ委譲の起動時に判定する旨を表示する。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数を設定すると保存値より優先する。
 保存済みのモデル候補は初期値を変えても書き換えない。
 以前の設定キー`usage_auto_allocation`は`atk config`で読み込むと削除する。

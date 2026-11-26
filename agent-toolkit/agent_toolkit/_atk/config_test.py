@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import io
 import json
 import pathlib
@@ -14,7 +15,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import claude_connection, codex_connection, config_settings
 from agent_toolkit._atk import config as config_module
 from agent_toolkit._atk.wi import sync
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import codex_fast_mode, state_paths
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.config_support import (
     _config_file,
@@ -83,8 +84,23 @@ def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_pat
     assert _saved(tmp_path)["codex_fast_mode"] == "true"
     assert _main(tmp_path, "config", "set", "write_model", "codex:sol/medium") != 0
     assert "migrate-shared" in capsys.readouterr().err
-    assert _main(tmp_path, "config", "migrate-shared") == 0
+    run_git = sync.run_git
+
+    def local_git(args, *positional, **kwargs):
+        assert args[0] not in {"fetch", "push", "pull", "ls-remote"}
+        return run_git(args, *positional, **kwargs)
+
+    with monkeypatch.context() as offline:
+        offline.setattr(sync, "run_git", local_git)
+        assert _main(tmp_path, "config", "migrate-shared") == 0
     preview = json.loads(capsys.readouterr().out)
+    if losing_migration:
+        assert preview["comparison"] == {"review_model": "equal", "codex_fast_mode": "local_only"}
+        assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) == 2
+        assert "比較後にローカルか共有の設定が変わった" in capsys.readouterr().err
+        assert _saved(tmp_path)["review_model"] == "claude:sonnet/medium"
+        assert _main(tmp_path, "config", "migrate-shared") == 0
+        preview = json.loads(capsys.readouterr().out)
     assert preview["comparison"] == {"review_model": "different", "codex_fast_mode": "local_only"}
     assert not preview["initial"]
     assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) != 0
@@ -112,6 +128,27 @@ def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_pat
     assert not _saved(tmp_path).keys() & {"review_model", "codex_fast_mode"}
 
 
+@pytest.mark.parametrize("previous", [False, True])
+def test_config_show_auto_fast_without_app_server(tmp_path, monkeypatch, capsys, previous):
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("設定参照でCodex app-serverを起動した")
+
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    monkeypatch.setattr(config_module.codex_models, "with_app_server", unexpected)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    instant = datetime.datetime(2026, 11, 26, tzinfo=datetime.UTC)
+    if previous:
+        codex_fast_mode.record_start_decision(instant, codex_fast_mode.FastTier("priority", "planType=business"))
+
+    assert _main(tmp_path, "config", "show") == 0
+    shown = capsys.readouterr()
+    assert "codex_fast_mode auto\n" in shown.out
+    expected = f"最後の起動時判定 {instant.isoformat()}、高速（planType=business）" if previous else "委譲の起動時に判定する"
+    assert f"Codex自動速度: {expected}\n" in shown.err
+    assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
+    assert capsys.readouterr().out == "auto\n"
+
+
 def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     value = "claude:opus/high,codex:sol/medium"
     assert _main(tmp_path, "config", "set", "write_model", value) == 0
@@ -125,44 +162,6 @@ def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.C
         capsys.readouterr()
         assert _main(tmp_path, "config", "get", key) == 0
         assert capsys.readouterr().out.rstrip("\n") == value
-
-
-def test_interactive_show_keeps_auto_setting_separate_from_decision(tmp_path, monkeypatch, capsys):
-    async def probe(operation, **_kwargs):
-        async def request(method, _params):
-            if method == "config/read":
-                return {"config": {"model_provider": "external-api"}}
-            raise AssertionError(method)
-
-        return await operation(request)
-
-    monkeypatch.setattr(config_module.codex_models, "with_app_server", probe)
-    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
-    assert _main(tmp_path, "config", "show") == 0
-    shown = capsys.readouterr()
-    assert "codex_fast_mode auto\n" in shown.out
-    assert "Codex自動速度: 通常" in shown.err
-
-
-def test_interactive_show_separates_managed_subscription_and_api_speed(tmp_path, monkeypatch, capsys):
-    _write_config(tmp_path, {"codex_worker_connections": "credits,subscription"})
-    seen: list[str] = []
-
-    async def probe(operation, **_kwargs):
-        async def request(method, _params):
-            seen.append(method)
-            return {"account": {"type": "chatgpt", "planType": "business"}}
-
-        return await operation(request)
-
-    monkeypatch.setattr(config_module.codex_models, "with_app_server", probe)
-    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
-    assert _main(tmp_path, "config", "show") == 0
-    shown = capsys.readouterr()
-    assert "codex_fast_mode auto\n" in shown.out
-    assert "接続ごとに判定" in shown.err
-    assert "APIは通常" in shown.err
-    assert seen == ["account/read"]
 
 
 def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeypatch, capsys):

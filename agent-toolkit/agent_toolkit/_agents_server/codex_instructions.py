@@ -44,12 +44,17 @@ async def _current_service_tier(
     *,
     subscription: bool | None,
     now: datetime.datetime | None = None,
+    record_start: bool = False,
 ) -> str:
     """現在の接続とアカウントから、Codexに明示する速度を決める。  pyfltr: allow-comment"""
     mode = await run_file_operation(_atk_config.resolve_mutable_setting, "codex_fast_mode")
     if mode != "auto":
         return "priority" if mode == "true" else "default"
-    return (await codex_fast_mode.auto_service_tier(request, cwd, subscription=subscription, now=now)).tier
+    instant = now if now is not None else datetime.datetime.now(datetime.UTC)
+    decision = await codex_fast_mode.auto_service_tier(request, cwd, subscription=subscription, now=instant)
+    if record_start:
+        await run_file_operation(codex_fast_mode.record_start_decision, instant, decision)
+    return decision.tier
 
 
 def _embedded_rule_paths() -> set[str]:

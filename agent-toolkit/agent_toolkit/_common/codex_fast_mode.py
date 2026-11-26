@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import datetime
+import json
 import logging
 import re
 from collections.abc import Awaitable, Callable
 from typing import Any
+
+from agent_toolkit._common import atomic_file, state_paths
 
 _LOG = logging.getLogger(__name__)
 
@@ -27,6 +30,30 @@ _FREE_FAST_MODE_PERIODS = (
 class FastTier:
     tier: str
     explanation: str
+
+
+def record_start_decision(instant: datetime.datetime, decision: FastTier) -> None:
+    path = state_paths.state_dir() / "codex-fast-start.json"
+    try:
+        atomic_file.atomic_write(path, json.dumps({"at": instant.isoformat(), **dataclasses.asdict(decision)}))
+    except OSError:
+        _LOG.debug("Codexの起動時判定を保存できません", exc_info=True)
+
+
+def latest_start_decision() -> tuple[str, FastTier] | None:
+    path = state_paths.state_dir() / "codex-fast-start.json"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(record, dict) or record.get("tier") not in ("priority", "default"):
+            return None
+        instant, explanation = record.get("at"), record.get("explanation")
+        if not isinstance(instant, str) or not isinstance(explanation, str):
+            return None
+        if datetime.datetime.fromisoformat(instant).tzinfo is None:
+            return None
+        return instant, FastTier(record["tier"], explanation)
+    except OSError, ValueError:
+        return None
 
 
 async def auto_service_tier(
