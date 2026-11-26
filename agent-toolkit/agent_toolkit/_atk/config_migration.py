@@ -267,32 +267,60 @@ _RESEARCH_REPOS = "weekly_research_repos"
 _RESEARCH_SUBSCRIPTIONS = {"accounts": "weekly_research_x_accounts", "queries": "weekly_research_x_queries"}
 
 
-def _migrate_research_settings(config: dict[str, str]) -> None:
-    raw_repos = config.get(_RESEARCH_REPOS, "[]")
+LEGACY_SETTING_GROUPS = {
+    "connection": tuple(_config_settings.RETIRED_CONNECTION_KEYS),
+    "process-loop-repositories": ("process_loop_repositories",),
+    "research-repositories": (_RESEARCH_REPOS,),
+    "model": tuple(_config_settings.RETIRED_MODEL_KEYS),
+    "remote-hosts": _config_settings.LEGACY_REMOTE_HOSTS_KEYS,
+    "retired": ("codex_auto_reset", "usage_auto_allocation", *_config_settings.RETIRED_SERVE_HOME_KEYS),
+    "fixed-state": tuple(_config_settings.RETIRED_FIXED_KEYS),
+    "research-subscriptions": tuple(_RESEARCH_SUBSCRIPTIONS.values()),
+}
+
+
+def _project_research_repositories(config: dict[str, str]) -> None:
     try:
-        old_repos = _config_settings.parse_string_list(raw_repos)
-        if old_repos:
-            raw = config.get("repositories", "{}")
-            repositories = config_repositories.parse(raw, check_paths=False)
-            for value in old_repos:
-                repo_id, path = config_repositories.identifier(value)
-                repositories.setdefault(repo_id, {"edit": "awi", **({"path": path} if path else {})})
-            config["repositories"] = json.dumps(repositories, ensure_ascii=False)
+        old_repos = _config_settings.parse_string_list(config.get(_RESEARCH_REPOS, "[]"))
+        if not old_repos:
+            return
+        repositories = config_repositories.parse(config.get("repositories", "{}"), check_paths=False)
+        for value in old_repos:
+            repo_id, path = config_repositories.identifier(value)
+            repositories.setdefault(repo_id, {"edit": "awi", **({"path": path} if path else {})})
+        config["repositories"] = json.dumps(repositories, ensure_ascii=False)
+    except (TypeError, ValueError) as error:
+        raise _next_action.ActionableError(
+            f"旧調査リポジトリを移行できない: {error}",
+            next_action="設定ファイルの旧調査リポジトリを有効なリポジトリ一覧に直して再実行する",
+        ) from error
+
+
+def _migrate_research_subscriptions(config: dict[str, str]) -> None:
+    try:
         initial = research_subscriptions.parse(
             {field: json.loads(config[key]) for field, key in _RESEARCH_SUBSCRIPTIONS.items() if key in config}
         )
     except (TypeError, ValueError) as error:
         raise _next_action.ActionableError(
             f"旧調査設定を移行できない: {error}",
-            next_action="設定ファイルの旧調査設定を確認し、有効なリポジトリ・Xアカウント・検索語に直して再実行する",
+            next_action="設定ファイルの旧調査設定を確認し、有効なXアカウント・検索語に直して再実行する",
         ) from error
     research_subscriptions.migrate({field: values for field, values in initial.items() if values})
     for key in _config_settings.RETIRED_RESEARCH_KEYS:
         config.pop(key, None)
 
 
-def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | None = None) -> dict[str, str]:
-    return _finish_legacy_migration(_legacy_values(config, updates=updates))
+def plan_legacy_migration(
+    config: dict[str, str], *, updates: dict[str, str] | None = None, preview_errors: dict[str, ValueError] | None = None
+) -> dict[str, str]:
+    migrated = _legacy_values(config, updates=updates, errors=preview_errors)
+    if _RESEARCH_REPOS in migrated:
+        with _conversion(("repositories",), preview_errors):
+            _project_research_repositories(migrated)
+    if preview_errors is None:
+        return _apply_legacy_side_effects(migrated)
+    return migrated
 
 
 def _legacy_values(
@@ -302,10 +330,8 @@ def _legacy_values(
     migrated = plan_connection_migration(config, changes, errors=errors)
     with _conversion(("repositories",), errors):
         migrated = config_repositories.migrate(migrated)
-    migrated.pop("codex_auto_reset", None)
-    migrated.pop("usage_auto_allocation", None)
     old_hosts = [migrated.pop(key) for key in _config_settings.LEGACY_REMOTE_HOSTS_KEYS if key in migrated]
-    for key in _config_settings.RETIRED_SERVE_HOME_KEYS:
+    for key in LEGACY_SETTING_GROUPS["retired"]:
         migrated.pop(key, None)
     if old_hosts and "remote_hosts" not in migrated and "remote_hosts" not in changes:
         with _conversion(("remote_hosts",), errors):
@@ -361,27 +387,16 @@ def _legacy_values(
     return {key: value for key, value in migrated.items() if key not in _config_settings.RETIRED_MODEL_KEYS}
 
 
-def _finish_legacy_migration(config: dict[str, str]) -> dict[str, str]:
+def _apply_legacy_side_effects(config: dict[str, str]) -> dict[str, str]:
     migrated = migrate_fixed_settings(config)
     if _config_settings.RETIRED_RESEARCH_KEYS.keys() & migrated.keys():
-        _migrate_research_settings(migrated)
+        _migrate_research_subscriptions(migrated)
     return migrated
 
 
 def has_legacy_settings(config: dict[str, Any]) -> bool:
-    legacy_keys = (
-        *_config_settings.RETIRED_MODEL_KEYS,
-        *_config_settings.RETIRED_CONNECTION_KEYS,
-        *_config_settings.RETIRED_FIXED_KEYS,
-        "process_loop_repositories",
-        *_config_settings.RETIRED_RESEARCH_KEYS,
-        "codex_auto_reset",
-        "usage_auto_allocation",
-        *_config_settings.LEGACY_REMOTE_HOSTS_KEYS,
-        *_config_settings.RETIRED_SERVE_HOME_KEYS,
-    )
     env = runtime_environment.environment()
-    return any(key in config for key in legacy_keys) or any(
+    return any(key in config for keys in LEGACY_SETTING_GROUPS.values() for key in keys) or any(
         env.get(_config_settings.config_env_name(key))
         for key in _config_settings.RETIRED_FIXED_KEYS
         if key != "usage_activity_mode"
@@ -485,7 +500,7 @@ def _legacy_serve_additions(config: dict[str, Any], values: dict[str, str]) -> d
 
 def preview_local_settings(config: dict[str, Any]) -> tuple[dict[str, str], dict[str, ValueError]]:
     errors: dict[str, ValueError] = {}
-    migrated = _legacy_values(config, errors=errors)
+    migrated = plan_legacy_migration(config, preview_errors=errors)
     serve_errors: dict[str, ValueError] = {}
     targets = set(_config_settings.LEGACY_SERVE_KEYS.values())
     with _conversion(targets, serve_errors):
