@@ -673,6 +673,8 @@ def test_claude_resume_checks_both_terminal_descriptors(
 @pytest.mark.parametrize(
     "args",
     [
+        ["--", "mcp", "list"],
+        ["--model", "sonnet", "--", "mcp", "list"],
         ["mcp", "list"],
         ["auth", "status"],
         ["auto-mode"],

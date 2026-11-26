@@ -263,7 +263,8 @@ def _can_retain_claude_output(argv: list[str], isatty: TerminalChecker) -> bool:
         elif token in _CLAUDE_LAUNCH_VARIADIC_OPTIONS:
             while index < len(options) and not options[index].startswith("-"):
                 index += 1
-    return True
+    # pyfltr: allow-comment -- Claude CLIは -- の直後の位置引数も管理コマンド名として解釈する。
+    return separator + 1 >= len(argv) or argv[separator + 1] not in _CLAUDE_MANAGEMENT_COMMANDS
 
 
 def _wait_for_claude(command: list[str], env: dict[str, str]) -> int:
