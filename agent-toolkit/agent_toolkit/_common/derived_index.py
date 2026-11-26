@@ -133,18 +133,20 @@ def refreshed[T](
         if index_path.is_file() and (size := index_path.stat().st_size) > checkpoint.max_bytes:
             _remove_oversized_index(index_path, checkpoint, size)
             return {key: value for key, path, _ in listed if (value := derive(key, path)) is not None}
-    saved = _load(index_path, code)
+    loaded = _load(index_path, code)
+    saved = loaded if loaded is not None else {}
     remaining = (
         {key: saved[key] for key, _, current in listed if isinstance(saved.get(key), list) and saved[key][:3] == current}
         if checkpoint is not None
         else {}
     )
-    if checkpoint is not None and index_path.is_file():
+    existing = checkpoint is not None and index_path.is_file()
+    if checkpoint is not None and existing:
         checkpoint.bytes_saved = index_path.stat().st_size
     recent = time.time_ns() - _RECENT_NS
     values: dict[str, T] = {}
     kept: dict[str, list[Any]] = {}
-    changed = False
+    changed = existing and loaded is None
     new_since_checkpoint = 0
     for key, path, current in listed:
         remaining.pop(key, None)
@@ -154,13 +156,13 @@ def refreshed[T](
             if checkpoint is not None:
                 checkpoint.digested += 1
                 new_since_checkpoint += 1
-            if (value := derive(key, path)) is None:
-                continue
+            value = derive(key, path)
         elif checkpoint is not None:
             checkpoint.reused += 1
-        values[key] = value
-        if current[1] < recent:
-            kept[key] = [*current, *encode(value)]
+        if value is not None:
+            values[key] = value
+            if current[1] < recent:
+                kept[key] = [*current, *encode(value)]
         if checkpoint is not None and new_since_checkpoint >= checkpoint.every:
             _store(index_path, code, remaining | kept, checkpoint)
             new_since_checkpoint = 0
@@ -182,16 +184,16 @@ def _decoded[T](cached: object, current: list[int], decode: Callable[[list[Any]]
         return None
 
 
-def _load(path: pathlib.Path, code: str) -> dict[str, Any]:
+def _load(path: pathlib.Path, code: str) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_bytes())
-    except OSError, ValueError:
-        return {}
+    except OSError, ValueError, RecursionError:
+        return None
     if (
         not isinstance(payload, dict)
         or payload.get("version") != _INDEX_VERSION
         or payload.get("code") != code
         or not isinstance(payload.get("entries"), dict)
     ):
-        return {}
+        return None
     return payload["entries"]

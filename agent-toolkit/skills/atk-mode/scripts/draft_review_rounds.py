@@ -179,11 +179,13 @@ def _request(timestamp: datetime, prompt: str) -> _Request:
     return _Request(timestamp, _hash_text(prompt), identity, prompt if identity is not None else None)
 
 
-def _extract(path: Path) -> _Record:
+def _extract(path: Path) -> _Record | None:
+    records = _load_records(str(path))
+    if records is None:
+        return None
     parents: dict[str, str] = {}
     reviewers: set[str] = set()
     requests: dict[str, list[_Request]] = defaultdict(list)
-    records = _load_records(str(path)) or []
     entries = {record.line: record for record in records}
     pending: dict[str, list[str]] = {}
     deliveries: dict[str, int] = defaultdict(int)
@@ -325,39 +327,74 @@ def _encode(record: _Record) -> list[Any]:
     ]
 
 
+def _string_map(value: Any) -> bool:
+    return isinstance(value, dict) and all(isinstance(item, str) for item in value.values())
+
+
+def _indexed_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        raise ValueError("派生索引の時刻にオフセットがない")
+    return parsed
+
+
+def _decode_receipt(row: Any) -> tuple[datetime, str, str, int, list[dict[str, str]]]:
+    if not isinstance(row, list):
+        raise ValueError("派生索引の返却が不正")
+    time, session, digest, revision, judgments = row
+    if (
+        not isinstance(session, str)
+        or not isinstance(digest, str)
+        or not isinstance(revision, int)
+        or isinstance(revision, bool)
+        or not isinstance(judgments, list)
+        or not all(_string_map(item) for item in judgments)
+    ):
+        raise ValueError("派生索引の返却が不正")
+    return _indexed_timestamp(time), session, digest, revision, judgments
+
+
+def _decode_request(row: Any) -> _Request:
+    if not isinstance(row, list):
+        raise ValueError("派生索引の依頼が不正")
+    time, digest, identity, prompt = row
+    if not isinstance(digest, str) or not (
+        (identity is None and prompt is None) or (isinstance(identity, str) and isinstance(prompt, str))
+    ):
+        raise ValueError("派生索引の依頼が不正")
+    return _Request(_indexed_timestamp(time), digest, identity, prompt)
+
+
 def _decode(fields: list[Any]) -> _Record:
     parents, reviewers, receipts, requests = fields
     if (
-        not isinstance(parents, dict)
+        not _string_map(parents)
         or not isinstance(reviewers, list)
+        or not all(isinstance(item, str) for item in reviewers)
         or not isinstance(receipts, list)
         or not isinstance(requests, dict)
+        or not all(isinstance(rows, list) for rows in requests.values())
     ):
         raise ValueError("派生索引の値が不正")
     return _Record(
         parents,
         set(reviewers),
-        [
-            (datetime.fromisoformat(time), session, digest, revision, judgments)
-            for time, session, digest, revision, judgments in receipts
-        ],
-        {
-            session: [
-                _Request(datetime.fromisoformat(time), digest, identity, prompt) for time, digest, identity, prompt in rows
-            ]
-            for session, rows in requests.items()
-        },
+        [_decode_receipt(row) for row in receipts],
+        {session: [_decode_request(row) for row in rows] for session, rows in requests.items()},
     )
 
 
 def _indexed_records(paths: list[Path], index: Path) -> dict[str, _Record]:
     listed = []
-    unreadable = {}
+    unlisted = {}
+    unlisted_count = 0
     for path in paths:
         try:
             listed.append((str(path), path, derived_index.identity(path.stat())))
         except OSError:
-            unreadable[str(path)] = _extract(path)
+            unlisted_count += 1
+            if (record := _extract(path)) is not None:
+                unlisted[str(path)] = record
     checkpoint = derived_index.Checkpoint(every=_CHECKPOINT_RECORDS, max_bytes=_INDEX_MAX_BYTES)
     code = derived_index.code_version(__name__, script_root=Path(__file__).resolve().parent)
     index.parent.mkdir(parents=True, exist_ok=True)
@@ -366,12 +403,12 @@ def _indexed_records(paths: list[Path], index: Path) -> dict[str, _Record]:
             index, code, listed, lambda _key, path: _extract(path), _encode, _decode, checkpoint=checkpoint
         )
     print(
-        f"投入前レビュー索引: 解析={len(paths) if checkpoint.overflow else checkpoint.digested + len(unreadable)}件、"
+        f"投入前レビュー索引: 解析={len(paths) if checkpoint.overflow else checkpoint.digested + unlisted_count}件、"
         f"再利用={0 if checkpoint.overflow else checkpoint.reused}件、"
         f"容量={0 if checkpoint.overflow else checkpoint.bytes_saved} bytes、上限={checkpoint.max_bytes} bytes",
         file=sys.stderr,
     )
-    return records | unreadable
+    return records | unlisted
 
 
 def index_path(roots: list[Path]) -> Path:
@@ -392,7 +429,9 @@ def collect(roots: list[Path], *, index: Path | None = None) -> _Collected:
         except (OSError, filelock.Timeout) as error:
             print(f"投入前レビュー索引を利用できないため全件を読む: {error}", file=sys.stderr)
     for path in paths:
-        record = indexed[str(path)] if indexed is not None else _extract(path)
+        record = indexed.get(str(path)) if indexed is not None else _extract(path)
+        if record is None:
+            continue
         parents.update(record.parents)
         reviewers.update(record.reviewers)
         for session, rows in record.requests.items():

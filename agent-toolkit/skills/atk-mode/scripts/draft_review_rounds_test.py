@@ -466,3 +466,82 @@ def test_code_version_follows_transitive_script_imports(tmp_path):
     detail.write_text("value = 2\n", encoding="utf-8")
     version.cache_clear()
     assert version("entry", script_root=tmp_path) != first
+
+
+def test_index_retries_only_unreadable_records(tmp_path, monkeypatch, capsys):
+    log = _Log(tmp_path / "source.jsonl")
+    log.start("reviewer", subagent_md_path=_ROLE)
+    log.wait("reviewer", _judgment("/draft.md", "修正要"))
+    log.wait("reviewer", _judgment("/draft.md", "合格"), day=27)
+    log.collect()
+    empty = tmp_path / "empty.jsonl"
+    empty.touch()
+    for path in (log.path, empty):
+        os.utime(path, (1, 1))
+    index = tmp_path / "index.json"
+    opened = Path.open
+
+    def inaccessible(path, *args, **kwargs):
+        if path == log.path:
+            raise PermissionError(path)
+        return opened(path, *args, **kwargs)
+
+    with monkeypatch.context() as denied:
+        denied.setattr(Path, "open", inaccessible)
+        assert not draft_review_rounds.collect([tmp_path], index=index).receipts
+    expected = draft_review_rounds.collect([tmp_path])
+    assert draft_review_rounds.period(expected, _time(26), _time(27))["passed"] == 1
+    assert draft_review_rounds.collect([tmp_path], index=index) == expected
+    assert "解析=1件、再利用=1件" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        (0, {"child": ["parent"]}),
+        (1, [{}]),
+        (2, [["2026-11-26T10:00:00+00:00", "reviewer", "digest", 1, None]]),
+        (2, [["2026-11-26T10:00:00", "reviewer", "digest", 1, []]]),
+        (2, [["2026-11-26T10:00:00+00:00", [], "digest", 1, []]]),
+        (2, [["2026-11-26T10:00:00+00:00", "reviewer", "digest", 1, [{"判定": []}]]]),
+        (3, {"reviewer": [["2026-11-26T10:00:00+00:00", "digest", 42, "prompt"]]}),
+    ],
+)
+def test_index_rebuilds_corrupted_derived_values(tmp_path, capsys, field, replacement):
+    log = _Log(tmp_path / "source.jsonl")
+    log.start("reviewer", subagent_md_path=_ROLE, prompt="要求識別子: item")
+    log.wait("reviewer", _judgment("/draft.md", "合格"))
+    expected = log.collect()
+    os.utime(log.path, (1, 1))
+    index = tmp_path / "index.json"
+    assert draft_review_rounds.collect([log.path], index=index) == expected
+    capsys.readouterr()
+    saved = json.loads(index.read_text(encoding="utf-8"))
+    saved["entries"][str(log.path)][3 + field] = replacement
+    index.write_text(json.dumps(saved), encoding="utf-8")
+    assert draft_review_rounds.collect([log.path], index=index) == expected
+    assert "解析=1件、再利用=0件" in capsys.readouterr().err
+    assert draft_review_rounds.collect([log.path], index=index) == expected
+    assert "解析=0件、再利用=1件" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_invalid_index_drops_deleted_record_even_when_no_records_remain(tmp_path, monkeypatch, broken):
+    log = _Log(tmp_path / "source.jsonl")
+    log.start("reviewer", subagent_md_path=_ROLE, prompt="要求識別子: item\n削除する依頼本文")
+    log.collect()
+    os.utime(log.path, (1, 1))
+    index = tmp_path / "index.json"
+    draft_review_rounds.collect([log.path], index=index)
+    prior = index.read_text(encoding="utf-8")
+    assert "削除する依頼本文" in prior
+    temporary = tmp_path / ".index.json.interrupted.tmp"
+    temporary.write_text(prior, encoding="utf-8")
+    if broken:
+        index.write_text(prior[:-1], encoding="utf-8")
+    else:
+        monkeypatch.setattr(draft_review_rounds.derived_index, "code_version", lambda *args, **kwargs: "new")
+    log.path.unlink()
+    assert draft_review_rounds.collect([log.path], index=index) == draft_review_rounds.collect([log.path])
+    assert json.loads(index.read_text(encoding="utf-8"))["entries"] == {}
+    assert not temporary.exists()
