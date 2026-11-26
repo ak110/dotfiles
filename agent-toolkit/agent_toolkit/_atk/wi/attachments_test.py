@@ -14,6 +14,7 @@ from agent_toolkit._testing.wi_entry_files import entry_path
 leaf_git_commands = git.leaf_git_commands
 
 _NAME = "20261125-101303-001.md"
+_MIB = 1024 * 1024
 
 
 def _command(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *args: str) -> None:
@@ -72,9 +73,9 @@ def test_attachments_sync_and_remove(
 @pytest.mark.parametrize(
     ("key", "sizes"),
     [
-        ("wi_attachment_file_mib", [1048577]),
-        ("wi_attachment_item_mib", [600000, 600000]),
-        ("wi_attachment_total_mib", [600000, 600000]),
+        ("wi_attachment_file_mib", [_MIB + 1]),
+        ("wi_attachment_item_mib", [1, _MIB]),
+        ("wi_attachment_total_mib", [1, _MIB]),
     ],
 )
 def test_rejects_over_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, key: str, sizes: list[int]) -> None:
@@ -82,7 +83,7 @@ def test_rejects_over_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPa
     sources = []
     for i, size in enumerate(sizes):
         source = tmp_path / f"log{i}.txt"
-        source.write_bytes((b"test log\n" * size)[:size])
+        source.write_bytes(b"x" * size)
         sources.append(source)
     with pytest.raises(ValueError, match=key):
         attachments._add(tmp_path, _NAME, sources)  # noqa: SLF001
