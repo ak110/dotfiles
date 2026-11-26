@@ -65,37 +65,47 @@ def _toolkit(root: pathlib.Path, version: str) -> pathlib.Path:
     return root
 
 
+_SERVER_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize("starting", [True, False], ids=["start", "continue"])
 @pytest.mark.parametrize(
     ("caller_version", "delegated", "expected"),
     [
-        ("2.305.2", False, True),
-        ("2.308.0", False, False),
-        ("2.305.2", True, False),
-        (None, False, False),
+        ("2.305.2", False, "caller"),
+        ("9999.0.0", False, "caller"),
+        ("same", False, None),
+        (None, False, "unknown"),
+        ("2.305.2", True, None),
     ],
-    ids=["older-caller", "same-version", "delegated-caller", "no-caller-root"],
+    ids=["older-caller", "newer-caller", "same-version", "old-forwarder", "delegated-caller"],
 )
-def test_caller_runtime_instructions_name_caller_launcher_on_version_skew(
-    tmp_path: pathlib.Path, caller_version: str | None, delegated: bool, expected: bool
+def test_resource_instructions_name_caller_launcher_on_version_skew(
+    tmp_path: pathlib.Path, starting: bool, caller_version: str | None, delegated: bool, expected: str | None
 ) -> None:
-    server = _toolkit(tmp_path / "server", "2.308.0")
+    server_version = launch_prompts._plugin_version(_SERVER_ROOT)
+    assert server_version is not None
     environment = {}
+    caller = tmp_path / "caller"
     if caller_version is not None:
-        caller = _toolkit(tmp_path / "caller", caller_version)
+        _toolkit(caller, server_version if caller_version == "same" else caller_version)
         environment[delegated_session.CALLER_PLUGIN_ROOT_ENV] = str(caller)
     if delegated:
         environment[delegated_session.OWNER_SESSION_ENV] = "parent"
     with runtime_environment.bind(runtime_environment.CallerContext(environment, tmp_path)):
-        notice = launch_prompts.caller_runtime_instructions(server)
-    if not expected:
-        assert notice is None
+        text = launch_prompts.plugin_resource_instructions(_SERVER_ROOT, "claude", str(tmp_path), starting=starting)
+    if expected is None:
+        assert 'kind="caller-runtime"' not in text
         return
-    assert notice is not None
-    assert 'kind="caller-runtime"' in notice
-    assert "版2.305.2" in notice
-    assert "版2.308.0" in notice
-    command, _note = launch_prompts.plugin_environment.launcher_command(tmp_path / "caller")
-    assert command in notice
+    assert 'kind="caller-runtime"' in text
+    server_command, _note = launch_prompts.plugin_environment.launcher_command(_SERVER_ROOT)
+    if expected == "caller":
+        caller_command, _note = launch_prompts.plugin_environment.launcher_command(caller)
+        assert f"版{caller_version}（起動部分: {caller_command}）" in text
+        assert f"版{server_version}" in text
+    else:
+        assert "委譲元のCLIの版は不明" in text
+        assert f"版{server_version}、起動部分: {server_command}" in text
 
 
 _MARKERS = {

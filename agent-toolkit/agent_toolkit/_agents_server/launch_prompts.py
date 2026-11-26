@@ -275,15 +275,27 @@ def _plugin_version(root: pathlib.Path) -> str | None:
 def caller_runtime_instructions(toolkit_root: pathlib.Path) -> str | None:
     """委譲元の`atk`が委譲先と異なる版の時、委譲元の起動部分を伝える本文を返す。
 
-    共有の管理サービスは接続元のうち最も新しい版の世代が受け付けるため、委譲元のCLIより新しい版で
-    委譲先が動く場合がある。委譲元が自分のCLIでやり直す検査を委譲先が別の版で行うと結果が一致しないため、
-    その検査に使う起動部分を伝える。委譲先から起動された接続は管理サービスと同じ配布物を案内されるため対象外とする。
+    受付中の管理サービスの世代は委譲元のCLIと版が異なる場合がある。委譲元が自分のCLIでやり直す検査を
+    委譲先が別の版で行うと結果が一致しないため、その検査に使う起動部分を伝える。
+    接続元の配布物を渡さない旧版の転送側からの接続では委譲元の版が分からないため、検査結果へ自分の版を併記させる。
+    委譲先から起動された接続は管理サービスと同じ配布物を案内されるため対象外とし、転送を介さない直接起動は
+    接続元と同じ配布物で動くため対象外とする。
     pyfltr: allow-comment
     """
-    environment = runtime_environment.environment()
-    value = environment.get(delegated_session.CALLER_PLUGIN_ROOT_ENV)
-    if not value or delegated_session.is_delegated(environment):
+    caller = runtime_environment.current()
+    if caller is None or delegated_session.is_delegated(caller.environment):
         return None
+    environment = caller.environment
+    value = environment.get(delegated_session.CALLER_PLUGIN_ROOT_ENV)
+    if not value:
+        server_version = _plugin_version(toolkit_root) or "不明"
+        command, _argument_note = plugin_environment.launcher_command(toolkit_root)
+        return _normative(
+            f"委譲元のCLIの版は不明であり、この委譲先の配布物（版{server_version}、起動部分: {command}）と異なる場合がある。\n"
+            "委譲元が自分のCLIでやり直す検査（WIの原稿のdry-run、保存時の書式の検査など）の結果を返す時は、"
+            "実行した版と起動部分を併記せよ。",
+            kind="caller-runtime",
+        )
     caller_root = pathlib.Path(value)
     if not caller_root.is_absolute():
         return None
