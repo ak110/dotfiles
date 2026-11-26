@@ -79,20 +79,24 @@
      `--check-argv`の終了0は実際の実行の成功、版、cwd、HEADとindex、実行後の不変を確かめないため、verify-runは省かない。
    - 統合後・公開前に足した是正（統合時の検証失敗、CI失敗、案内文や構成の追随など）では、変えた文言・ジョブ名・設定キーの旧値を固定文字列で探し、それを期待するテスト（`ci_workflow*_test.py`、`<hook名>_test.py`など）を是正後のHEADで実行してから公開する。
    - 最終の検証が失敗したらfast-forwardせず、是正、必要な再レビュー、統合の再開へ戻る。
-   - 検証がmise管理のツールを使う場合は、追随後のレーンworktreeで `mise which <tool>` を実行して設定が選ぶ実行ファイルを確認し、検証と同じPATHから対象コマンドを `--version` など副作用のない引数で起動する。
-     どちらかが失敗したら検証へ進まず、実行ディレクトリ、ツール名、miseと起動の診断を記録する。
-     ツールが未導入なら `MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install` を案内し、実体が見つかっても起動できない場合はPATHの順序とshimの参照先を確認する。
+   - 検証がプロジェクトのmiseツールを使う場合は、追随後のレーンworktreeで `uv run --frozen python scripts/prepare_verification_tools.py --tool <miseの設定名> <実行名> -- pyfltr run ...` を実行する。
+     選択済みの検証が使うツールだけを、1つのツールにつき1つの `--tool` で渡す。
+     `mise which` と導入状況を調べ、不足した設定名に限って `MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install <不足した設定名...>` で用意する。
+     導入済みなら再導入せず、候補の選んだ実行ファイルを同じPATHから `--version` で起動してから検証する。
+     用意や起動に失敗した場合はcwd・ツール・診断を返し、検証や記録の受理へ進まない。
+     `make sync` はPython環境の同期だけを行い、仮想環境の `prek` を使う試験にmiseの `prek` を追加しない。
    - manifestへ渡す場合は、追随後のレーンworktreeでの `make sync`、実行の成功、run_idの取得、同じ入力のverify-runの成功を、失敗が伝わる1操作にまとめる。
      次のスクリプトを自分のmanaged-tempへ保存し、manifestのverificationに次の配列を1項目として渡す。
 
      ```json
-     ["bash", "<スクリプト>", "<ログprefix>", "<判定JSON>", "refs/heads/<統合先branch>", "--no-fix", "--no-always-targets", "--commands=<全チェック>", "<対象パス>"]
+     ["bash", "<スクリプト>", "<ログprefix>", "<判定JSON>", "refs/heads/<統合先branch>", "--tool", "shellcheck", "shellcheck", "--", "--no-fix", "--no-always-targets", "--commands=<全チェック>", "<対象パス>"]
      ```
 
      山括弧は実在の絶対パスと値へ置き換え、複数の対象パスは別々の要素にする。
      判定JSONが不要な場合は、その入力と`--consumer-review`を省いたスクリプトを使う。
-     mise管理ツールが必要な場合に限り、上記の照会と起動確認を、同じ検証argvが呼ぶ下のスクリプト内の `make sync` と `pyfltr run` の間に入れる。
-     manifestを渡す前の照会では、追随後のlockと検証時のPATHを確認できない。
+     `--` の前に実際に選んだツールを渡す。
+     例の `shellcheck` は選定した場合だけ指定し、mise管理ツールがなければ `--tool` の指定を省く。
+     manifestを渡す前の照会で代用せず、追随後のlockと選んだPATHで準備して同じ候補を検証する。
 
      ```bash
      #!/usr/bin/env bash
@@ -101,9 +105,20 @@
      consumer_review=$2
      integration_base=$(git rev-parse --verify "$3^{commit}")
      shift 3
+     mise_tools=()
+     while [[ $# -ge 3 && $1 == --tool ]]; do
+         mise_tools+=("$1" "$2" "$3")
+         shift 3
+     done
+     [[ ${1-} == -- ]] || { echo "検証引数の前に -- が必要" >&2; exit 2; }
+     shift
      make sync
-     # mise管理ツールが必要なら、ここで照会・起動確認する。
-     uv run --frozen pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err"
+     uv run --frozen python scripts/prepare_verification_tools.py "${mise_tools[@]}" -- \
+         pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err" || {
+         code=$?
+         cat "$log_prefix.err" >&2
+         exit "$code"
+     }
      run_id=$(jq -er 'select(.kind == "header") | .run_id' "$log_prefix.out")
      uv run --frozen python scripts/pyfltr_precommit.py --verify-run "$run_id" --consumer-review "$consumer_review" --against "$integration_base"
      ```
