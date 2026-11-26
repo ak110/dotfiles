@@ -116,6 +116,8 @@ startup_documents:
 
 外部資料を原本に持つimplementでは、承認の質問や起票が無い経路でも、原本と対応表を比べる。
 表の有無、主張の網羅、差分の具体、「なし」が指す箇所の意味を検収する。
+`agent-toolkit:atk-mode/playbooks/request-intake.md`手順6の合格は、表・資料の対象と内容・比較先の版と参照先の一致を確かめられる範囲だけ再利用する。
+変更か未確認の影響範囲は再照合する。
 
 検証は保存済みの検証証拠を先に読み、レビュー対象HEADと本文・対象・依存・実行条件が一致する成功を再利用する（`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」）。
 自分で実行するのは、その成功が覆わない検証と、判定に追加の観測が必要なものに限る。

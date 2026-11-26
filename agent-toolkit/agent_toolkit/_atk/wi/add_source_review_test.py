@@ -11,10 +11,12 @@ from agent_toolkit._common import external_source_review, session_review
 _URL = "https://example.com/first"
 
 
-def _write_table(directory: pathlib.Path, url: str) -> None:
-    header = "| " + " | ".join(external_source_review.COLUMNS) + " |\n"
-    separator = "| " + " | ".join(["---"] * len(external_source_review.COLUMNS)) + " |\n"
-    row = f"| {url} | 主張 | 既存 | 新しい条件 | 規定を統合する | 採用 |\n"
+def _write_table(directory: pathlib.Path, url: str, coverage: str | None = "配布規範に統合") -> None:
+    columns = [column for column in external_source_review.COLUMNS if coverage is not None or column != "配布先での扱い"]
+    header = "| " + " | ".join(columns) + " |\n"
+    separator = "| " + " | ".join(["---"] * len(columns)) + " |\n"
+    deployment = f" {coverage} |" if coverage is not None else ""
+    row = f"| {url} | 主張 | 既存 | 新しい条件 | 規定を統合する |{deployment} 採用 |\n"
     (directory / external_source_review.TABLE_NAME).write_text(header + separator + row, encoding="utf-8")
 
 
@@ -29,6 +31,10 @@ def test_explicit_contract_controls_case_and_table(tmp_path: pathlib.Path) -> No
     _write_table(tmp_path, "https://example.com/another")
     error = add_cli._check_external_source_review(args, ["# 原稿\n"], tmp_path)
     assert error and _URL in error
+    for coverage in (None, ""):
+        _write_table(tmp_path, _URL, coverage)
+        error = add._check_external_source_review(args, ["# 原稿\n"], tmp_path)
+        assert error and "配布先での扱い" in error
     _write_table(tmp_path, _URL)
     assert add_cli._check_external_source_review(args, ["# 原稿\n"], tmp_path) is None
 

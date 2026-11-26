@@ -490,22 +490,31 @@ def test_policy_question_requires_all_external_sources(
     table = tmp_path / "external-source-review.md"
     comparison = "削る・まとめる・置き換える案"
     header = (
-        f"| 採否と理由 | {comparison} | 資料URL | 既存の対応箇所 | 資料の主張（原文の抜粋） | 既存との差分 |\n"
-        "| --- | --- | --- | --- | --- | --- |\n"
+        f"| 採否と理由 | {comparison} | 資料URL | 既存の対応箇所 | 資料の主張（原文の抜粋） | 既存との差分 | 配布先での扱い |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
     )
     good = "なし。既存の設計手順を調べ、重複が無かった"
     for value in ("", " **なし。** ", "——"):
         table.write_text(
-            header + f"| 不採用 | {value} | https://example.com/a | 設計手順 | 原文 | 新しい手段 |\n", encoding="utf-8"
+            header + f"| 不採用 | {value} | https://example.com/a | 設計手順 | 原文 | 新しい手段 | 配布規範にも照合 |\n",
+            encoding="utf-8",
         )
         reason = _question_decision(tmp_path, question)
         assert "3行目" in reason and comparison in reason
-    a = header + f"| 不採用 | {good} | https://example.com/a | 設計手順 | 原文 | 新しい手段 |\n"
+    a = header + f"| 不採用 | {good} | https://example.com/a | 設計手順 | 原文 | 新しい手段 | 配布規範にも照合 |\n"
+    legacy = a.replace(" 配布先での扱い |", "").replace(" 配布規範にも照合 |", "")
+    blank = a.replace("配布規範にも照合", "")
+    for incomplete in (legacy, blank):
+        table.write_text(incomplete, encoding="utf-8")
+        assert "配布先での扱い" in _question_decision(tmp_path, question)
+        assert not _question_decision(tmp_path, {"question": "どの系統を選びますか？"})
     table.write_text(a, encoding="utf-8")
     assert not _question_decision(tmp_path, question)
     contract.write_text("# 作業契約\n## 原本\n- https://example.com/b\n", encoding="utf-8")
     assert "https://example.com/b" in _question_decision(tmp_path, question)
-    table.write_text(a + f"| 不採用 | {good} | https://example.com/b | 設計手順 | 原文 | 新しい手段 |\n", encoding="utf-8")
+    table.write_text(
+        a + f"| 不採用 | {good} | https://example.com/b | 設計手順 | 原文 | 新しい手段 | 配布規範にも照合 |\n", encoding="utf-8"
+    )
     assert not _question_decision(tmp_path, question)
     assert not _question_decision(tmp_path, {"question": "どの系統を選びますか？"})
 
@@ -542,9 +551,10 @@ def test_external_source_markup_boundaries(
     prompt = f"/atk-mode {work} {source.format(url=url)}"
     assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
     (tmp_path / "external-source-review.md").write_text(
-        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） | 既存との差分 |\n"
-        "| --- | --- | --- | --- | --- | --- |\n"
-        f"| <{url}> | 設計手順 | {comparison} | 不採用 | 原文 | 新しい手段 |\n",
+        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） |"
+        " 既存との差分 | 配布先での扱い |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        f"| <{url}> | 設計手順 | {comparison} | 不採用 | 原文 | 新しい手段 | 配布規範にも照合 |\n",
         encoding="utf-8",
     )
     reason = _question_decision(tmp_path, _APPROVAL)
@@ -586,9 +596,10 @@ def test_external_source_url_boundaries(
     assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
     table = tmp_path / "external-source-review.md"
     table.write_text(
-        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） | 既存との差分 |\n"
-        "| --- | --- | --- | --- | --- | --- |\n"
-        + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 | 原文 | 新しい手段 |\n" for url in urls),
+        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） |"
+        " 既存との差分 | 配布先での扱い |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 | 原文 | 新しい手段 | 配布規範にも照合 |\n" for url in urls),
         encoding="utf-8",
     )
     assert not _question_decision(tmp_path, _APPROVAL)
@@ -620,9 +631,12 @@ def test_external_source_url_identity(
     assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
     entries = {"complete": urls, "prefix-only": [prefix], "one-missing": urls[:1]}[rows]
     (tmp_path / "external-source-review.md").write_text(
-        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） | 既存との差分 |\n"
-        "| --- | --- | --- | --- | --- | --- |\n"
-        + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 | 原文 | 新しい手段 |\n" for url in entries),
+        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） |"
+        " 既存との差分 | 配布先での扱い |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        + "".join(
+            f"| <{url}> | 設計手順 | 重複を統合する | 採用 | 原文 | 新しい手段 | 配布規範にも照合 |\n" for url in entries
+        ),
         encoding="utf-8",
     )
     reason = _question_decision(tmp_path, _APPROVAL)

@@ -17,7 +17,7 @@ def test_no_difference_requires_a_real_reference(tmp_path: pathlib.Path, referen
     (docs / "rule.md").write_text("見出し\n本文\n", encoding="utf-8")
     table = "| " + " | ".join(COLUMNS) + " |\n"
     table += "| " + " | ".join(["---"] * len(COLUMNS)) + " |\n"
-    table += f"| {_URL} | 原文 | {reference} | なし | 現行の節へ統合 | 採用 |\n"
+    table += f"| {_URL} | 原文 | {reference} | なし | 現行の節へ統合 | 配布規範の設計節へ統合 | 採用 |\n"
     error = table_error(table, {_URL}, tmp_path)
     assert (error is None) == valid
     if not valid:
@@ -36,7 +36,7 @@ def test_legacy_table_and_a_table_for_a_different_case_are_rejected(tmp_path: pa
 
     other = "| " + " | ".join(COLUMNS) + " |\n"
     other += "| " + " | ".join(["---"] * len(COLUMNS)) + " |\n"
-    other += f"| {_URL} | 原文 | 既存 | 差 | 統合 | 採用 |\n"
+    other += f"| {_URL} | 原文 | 既存 | 差 | 統合 | 配布規範に統合 | 採用 |\n"
     error = table_error(other, {_URL + "/other"}, tmp_path)
     assert error is not None
     assert _URL + "/other" in error
