@@ -287,7 +287,6 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   let searchMatches = [];
   let searchPosition = -1;
   let updateScrollEdges = () => {};
-
   function eventUrl(event, inConversation = conversationOnly) {
     const url = new URL(BASE_PATH + "/sessions", location.href);
     url.search = new URLSearchParams({
@@ -299,12 +298,24 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
 
   function detailEvents(detail) {
     if (conversationOnly) return (detail.conversation ?? []).flatMap(row => {
-      const event = detail.events[row.index];
-      return event ? [{index: row.index, event: {...event, text: row.text, conversationLabel: row.label}}] : [];
+      const source = detail.events[row.index];
+      if (!source) return [];
+      const event = {...source, text: row.text};
+      if (row.rank === 1) {
+        event.conversationLabel = source.kind === "user" || source.kind === "injected" ? "委譲元からの依頼" :
+          row.text ? "委譲先の最終発話" : "委譲先の発話未観測";
+        if (!row.text) {
+          event.kind = "injected";
+          delete event.detail;
+          delete event.html;
+        }
+      } else if (row.rank === 3) {
+        event.conversationLabel = row.label.replace(/^- /u, "").replace(/ record:\d+/u, "").replace(/: $/u, "");
+      }
+      return [{index: row.index, event}];
     });
     return detail.events.flatMap((event, index) => event.report_index == null ? [{event, index}] : []);
   }
-
   function appendEvents(end, preserved) {
     for (const {event, index} of visibleEvents.slice(renderedCount, end)) {
       const block = renderEvent(event, index);
@@ -315,13 +326,11 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     renderedCount = Math.min(end, visibleEvents.length);
     updateScrollEdges();
   }
-
   function currentPosition() {
     const top = detailScroller().getBoundingClientRect().top + document.getElementById("session-reading").offsetHeight;
     return [...detailEl.querySelectorAll(":scope > [data-event-index]")]
       .find(block => block.getBoundingClientRect().bottom > top)?.dataset.eventIndex ?? 0;
   }
-
   function moveToEvent(index) {
     const position = visibleEvents.findIndex(item => item.index === index ||
       (!conversationOnly && item.event.result_index === index));
@@ -347,7 +356,6 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     target[0]?.scrollIntoView({block: "start"});
   }
   function currentSearch() { return document.getElementById("session-search").value.trim(); }
-
   function refreshSearch(move = false) {
     const needle = currentSearch().toLowerCase();
     const inputs = conversationOnly ? visibleEvents : (currentDetail?.events ?? []).map((event, index) => ({event, index}));

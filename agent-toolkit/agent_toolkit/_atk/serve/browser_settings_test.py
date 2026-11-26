@@ -685,7 +685,9 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
     button = editor.get_by_role("button", name="保存")
     for width in (1440, 400):
         await page.set_viewport_size({"width": width, "height": 900})
-        assert await button.evaluate("button => getComputedStyle(button.parentElement).justifyContent") == "flex-end"
+        assert await button.evaluate(
+            "button => Math.abs(button.getBoundingClientRect().right - button.parentElement.getBoundingClientRect().right) < 1"
+        )
     await button.click()
     await expect(editor.get_by_role("alert")).to_contain_text("設定を保存しました")
     assert posts == [{"action": "set", "key": "execute_model", "value": "codex:sol/high"}]
