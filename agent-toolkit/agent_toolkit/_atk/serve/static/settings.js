@@ -141,6 +141,7 @@ function rememberSettingFocus(active) {
   if (!editor || !label) return null;
   return {
     editor: editor.dataset.editor,
+    shared: shared.contains(editor),
     label,
     start: active.selectionStart,
     end: active.selectionEnd,
@@ -154,7 +155,7 @@ function restoreSettingFocus(focus) {
     navigation.querySelector(`[data-group="${CSS.escape(focus.group)}"]`)?.focus({preventScroll: true});
     return;
   }
-  const editor = content.querySelector(`[data-editor="${CSS.escape(focus.editor)}"]`);
+  const editor = (focus.shared ? shared : content).querySelector(`[data-editor="${CSS.escape(focus.editor)}"]`);
   if (!editor) return;
   const fields = editorFields(editor).filter(field => field.labels[0]?.textContent === focus.label);
   const [target] = fields;
@@ -395,6 +396,7 @@ async function saveShared(payload, output) {
 function renderShared(savedKey) {
   const data = localData;
   if (!data) return;
+  const focus = rememberSettingFocus(document.activeElement);
   const old = new Map([...shared.querySelectorAll("[data-setting]")].map(node => [node.dataset.setting, node]));
   const note = element("p", "保存先: private-notesの共有設定ファイル");
   const nodes = [note];
@@ -415,7 +417,7 @@ function renderShared(savedKey) {
       const field = editorFields(prior)[0];
       if (field.dataset.initialValue !== item.saved) {
         prior.querySelector(".settings-shared-conflict")?.remove();
-        const conflict = element("p", "共有の保存値が変わりました。");
+        const conflict = element("p", `共有の保存値が変わりました。最新の保存値: ${item.saved}`);
         conflict.className = "settings-shared-conflict";
         conflict.setAttribute("role", "alert");
         const resolve = keep => {
@@ -457,6 +459,7 @@ function renderShared(savedKey) {
     note.append(element("span", ` · ${name}: ${summary}`));
   }
   shared.replaceChildren(...nodes);
+  if (focus?.shared) restoreSettingFocus(focus);
 }
 
 async function retryComparison() {
@@ -770,7 +773,7 @@ function renderConflicts() {
 }
 
 async function loadHost(background = false, retry = false) {
-  if (busy || (background && (fetching || displayedData?.legacy || displayedData?.automatic_unsupported?.includes(host)))) return;
+  if (busy || (background && fetching)) return;
   const generation = ++loadGeneration;
   fetching = true;
   loading = true;
@@ -785,6 +788,15 @@ async function loadHost(background = false, retry = false) {
       if (generation !== loadGeneration) return;
       localData = local;
       renderShared();
+      renderComparison(local);
+      filterSettings();
+      const failures = Object.entries(local.automatic_errors ?? {}).map(([name, reason]) => `${name}: ${reason}`);
+      setUpdateError("settings", "automatic", failures.join(" / "), retryComparison);
+      if (displayedData?.legacy || local.automatic_unsupported?.includes(displayedHost)) {
+        loading = false;
+        updateWriteControls();
+        return;
+      }
     }
     const initial = await request(undefined, !background && Boolean(host) && !displayedData, background, retry && !displayedHost);
     if (generation !== loadGeneration) return;
@@ -827,7 +839,8 @@ async function loadHost(background = false, retry = false) {
     loading = false;
     updateWriteControls();
     const failures = Object.entries(data.automatic_errors ?? {}).map(([name, reason]) => `${name}: ${reason}`);
-    setUpdateError("settings", "refresh", failures.join(" / "), () => loadHost(true, true));
+    setUpdateError("settings", "refresh");
+    if (data.automatic_errors) setUpdateError("settings", "automatic", failures.join(" / "), retryComparison);
     status.textContent = data.legacy || data.automatic_unsupported?.includes(host) ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
   } catch (error) {
     if (generation !== loadGeneration) return;

@@ -264,11 +264,14 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 snapshot = snapshots.get(host)
                 if snapshot is None or host in errors:
                     raise ValueError(errors.get(host, "リモート設定の自動取得を待っています"))
+                hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
                 return json_no_store(
                     {
                         **snapshot,
-                        "hosts": await asyncio.to_thread(_remote_hosts, read_only=True),
-                        "automatic_unsupported": sorted(unsupported),
+                        "hosts": hosts,
+                        "automatic_errors": {key: errors[key] for key in hosts if key in errors},
+                        "automatic_unsupported": sorted(unsupported.intersection(hosts)),
+                        "comparison": comparison(hosts),
                     }
                 )
             if host and quart.request.args.get("cached") == "1" and host in snapshots:
