@@ -123,7 +123,7 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
         await create_dialog.get_by_role("button", name="追加").click()
     await create_dialog.wait_for(state="hidden")
     assert harness.operations.add_calls[-1]["target_repo"] is None
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail).to_be_hidden()
     await page.locator("#entry-list .entry-select").filter(has_text="frontmatter指定の本文").wait_for(state="visible")
 
@@ -319,7 +319,7 @@ async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
         else:
             key = "long-entry.md" if case == "edit" else "question.md"
             await page.locator(f'.entry-select[data-key="{key}"]').click()
-            dialog = page.get_by_role("dialog", name="詳細")
+            dialog = page.locator("#detail-dialog")
             if case == "edit":
                 await dialog.get_by_role("button", name="編集", exact=True).click()
             input_id = "edit-content" if case == "edit" else "answer-input"

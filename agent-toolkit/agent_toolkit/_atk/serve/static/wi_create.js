@@ -158,7 +158,9 @@ export async function createEntry(event) {
     })));
     closeDialog(byId('create-dialog'));
     await (clearFilters({timing: operation.timing}));
-    deliverOperationMessage(createResultMessage(isBatch, result));
+    const filenames = Array.isArray(result.filenames) ? result.filenames : [];
+    const skipped = Array.isArray(result.skipped) ? result.skipped : [];
+    deliverOperationMessage(createResultMessage(isBatch, result), false, [...filenames, ...Object.values(result.mapping || {}), ...skipped]);
   } catch (error) {
     if (error.payload?.code === 'sync_incomplete') {
       outcome = 'sync-incomplete';

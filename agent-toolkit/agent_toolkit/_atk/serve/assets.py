@@ -34,7 +34,11 @@ def _read_static_text(filename: str) -> str:
     return (_STATIC_DIR / filename).read_text(encoding="utf-8")
 
 
-HTML = _read_static_text("index.html").removesuffix("\n")
+HTML = (
+    _read_static_text("index.html")
+    .removesuffix("\n")
+    .replace("__ICON_SPRITE__", _read_static_text("icons.svg").removesuffix("\n"))
+)
 
 STYLES = {
     filename: _read_static_text(filename)
@@ -45,6 +49,8 @@ STYLES = {
         "app_markdown.css",
         "app_plans.css",
         "app_sessions.css",
+        "app_monitoring.css",
+        "app_settings.css",
     )
 }
 CSS = "".join(STYLES.values()).removesuffix("\n")
@@ -54,6 +60,7 @@ SCRIPTS = {
     for filename in (
         "shell.js",
         "common.js",
+        "events_worker.js",
         "wi_state.js",
         "wi_feedback.js",
         "wi_list_render.js",
@@ -66,6 +73,7 @@ SCRIPTS = {
         "wi_create.js",
         "wi.js",
         "plans.js",
+        "plans_preview.js",
         "sessions.js",
         "sessions_detail.js",
         "agents.js",

@@ -36,7 +36,7 @@ async def test_answer_save_records_whole_operation_linked_to_requests(browser_ha
     path = _entry_path(harness.root, "target.md")
     path.write_text(_POST_APPROVAL_UWI, encoding="utf-8")
     await page.goto(f"{harness.base_url}/?filename=target.md")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.wait_for(state="visible")
     footer = detail.locator("#detail-footer")
     await footer.locator("#answer-choices button").first.click()

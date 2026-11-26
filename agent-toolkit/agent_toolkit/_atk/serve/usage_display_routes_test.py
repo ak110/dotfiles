@@ -65,10 +65,14 @@ async def test_display_refresh_at_five_minutes_without_permissions(usage_client,
     initial = await usage_client.post("/api/usage/refresh", json={"force": False})
     assert initial.status_code == 200
     now += 299
+    cached = await usage_client.get("/api/usage")
+    assert (await cached.get_json())["refresh_due"] is False
     recent = await usage_client.post("/api/usage/refresh", json={"force": False})
     assert (await recent.get_json())["last_refresh_at"] == now - 299
     assert calls == [now - 299]
     now += 1
+    cached = await usage_client.get("/api/usage")
+    assert (await cached.get_json())["refresh_due"] is True
     stale = await usage_client.post("/api/usage/refresh", json={"force": False})
     assert (await stale.get_json())["last_refresh_at"] == now
     assert calls == [now - 300, now]

@@ -93,7 +93,7 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
     assert await badge.evaluate(style) == await processing_badge.evaluate(style)
 
     await row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認待ち")
     await detail.locator("#delete-button").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
@@ -134,7 +134,7 @@ async def test_answered_badge_replaces_inbox_for_answered_uwi(browser_harness: _
     assert await badge.evaluate(style) == await unanswered_badge.evaluate(style)
 
     await row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("回答済み")
     await detail.locator("#detail-more summary").click()
     await detail.locator("#delete-button").click()
@@ -200,7 +200,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     }""")
     await question.focus()
     await page.keyboard.press("Enter")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("受信")
     # 保存済みの期限は詳細のメタデータに保存値のまま残り、解除日時としては示さない。
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text(deadline)
@@ -212,7 +212,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await deletion.locator("#delete-close-button").click()
     await detail.locator("#detail-close-button").click()
     await page.locator('.entry-select[data-key="verify.md"]').click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("再開待ち")
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
     await detail.locator("#detail-more > summary").click()

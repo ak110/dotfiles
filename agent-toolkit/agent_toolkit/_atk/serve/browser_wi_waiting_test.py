@@ -68,7 +68,7 @@ async def test_waiting_keyboard_save_skip_page_boundary_and_last_item(browser_ha
     await page.locator(".entry-select").last.click()
     await page.get_by_role("button", name="保存せず次へ", exact=True).focus()
     await page.keyboard.press("Enter")
-    await playwright.async_api.expect(page.get_by_role("dialog", name="詳細", exact=True)).not_to_be_visible()
+    await playwright.async_api.expect(page.locator("#detail-dialog")).not_to_be_visible()
     assert harness.operations.answer_calls == 1
     await page.get_by_role("radio", name="通常表示", exact=True).check()
     await playwright.async_api.expect(page.locator("#wi-effective-conditions")).to_contain_text("直近2週間")

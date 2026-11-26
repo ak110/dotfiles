@@ -56,13 +56,13 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     empty_row = page.locator("#entry-list .entry-select").filter(has_text="empty.md")
     assert await empty_row.locator(".plan-badge").count() == 0
     await empty_row.click()
-    empty_dialog = page.get_by_role("dialog", name="詳細")
+    empty_dialog = page.locator("#detail-dialog")
     assert await empty_dialog.locator("#detail-content").inner_html() == ""
     assert await empty_dialog.locator("#detail-content table.frontmatter").count() == 0
     await page.keyboard.press("Escape")
 
     row = await _open_question(page)
-    dialog = page.get_by_role("dialog", name="詳細")
+    dialog = page.locator("#detail-dialog")
     assert await dialog.locator("#detail-content").is_visible()
     await dialog.get_by_role("button", name="A", exact=True).click()
     answer = dialog.locator("#answer-input")
@@ -76,7 +76,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert harness.operations.answer_calls == 1
 
     await awi_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.get_by_role("button", name="編集", exact=True).click()
     edit_input = detail.locator("#edit-content")
     await edit_input.fill((await edit_input.input_value()) + "\n追記")
@@ -84,14 +84,14 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
     await playwright.async_api.expect(detail).to_be_hidden()
     await awi_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
 
     await detail.get_by_role("button", name="削除").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
     await delete_dialog.wait_for(state="visible")
     await playwright.async_api.expect(delete_dialog.get_by_role("button", name="閉じる")).to_be_focused()
     await page.keyboard.press("Escape")
-    assert await page.get_by_role("dialog", name="詳細").is_visible()
+    assert await page.locator("#detail-dialog").is_visible()
     await page.keyboard.press("Escape")
 
     await page.locator("#kind-filter").select_option("awi")
@@ -349,7 +349,7 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     await page.locator("#answer-filter").select_option("no")
     question_row = page.locator('#entry-list .entry-select[data-kind="uwi"]')
     await question_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.locator("#answer-input").fill("回答済みにする")
     await detail.get_by_role("button", name="回答を保存").click()
     await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
@@ -360,7 +360,7 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     await page.locator("#empty-clear-button").click()
     awi_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="awi.md")
     await awi_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.get_by_role("button", name="削除").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
     await delete_dialog.get_by_role("button", name="削除する").click()
@@ -425,7 +425,7 @@ async def test_work_item_important_toggle_badge_and_filter(
     page = browser_harness.page
     await page.set_viewport_size({"width": 320, "height": 800})
     await page.goto(browser_harness.base_url + "/?filename=" + filename)
-    detail = page.get_by_role("dialog", name="詳細", exact=True)
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail).to_be_visible()
     await detail.locator("#detail-more > summary").click()
     await page.get_by_role("button", name="重要設定", exact=True).click()

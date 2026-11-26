@@ -24,11 +24,33 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
   見られなかった例は別の例を探すか未確認とする
 - 新規・刷新では提示画像と見本の実物から、配置・文字・色・密度のうち参考にする点を選ぶ。
   画像が無くても設計は続け、共通スタイルが無ければ必要な決定だけを既存の資料へ置く
-- 既存画面の変更では、代表作業・開始データ・幅をそろえ、変更前の利点を保つか比べる。
-  各領域を「何を判断する場所か」で説明し、一緒に見る値と操作をまとめる。
-  判断を変えない反復や入力は、外した案と比べる
 
 参考: [Art Direction](https://github.com/RNA4219/anything-frontend-art-direction/blob/046e42c7de149373993109cf4a211a577b1c3bcc/references/visual-direction.md)と[Product Design](https://github.com/RNA4219/anything-frontend-product-design/blob/af656d5fafc982daabcbccffe5a331802977f492/modules/product-information-architecture/SKILL.md)（RNA4219、MIT）。
+
+## ユーザーの作業から画面を分ける
+
+刷新では、入口と通常到達する表示・共通部を列挙し、ユーザーの通常の開始状態、判断する情報と変更する対象、何をもって完了とするかを作業別に整理する。
+利用頻度と誤りの影響から代表作業を選び、開始、対象の探索、判断・操作、結果の確認までを新旧の画面構成で比べる。
+既存画面を変える時は開始データと幅をそろえて利点を保つかを確かめる。
+各領域には一緒に見る値と操作を置き、判断を変えない反復や入力は外した案と比べる。
+同じ対象を見比べる作業は検索・一覧・詳細の文脈を保ち、別の目的や異なる対象範囲の作業は入口を分ける。
+既存のタブやデータの分類をそのままユーザーの分類にしない。
+出発点で次の場所を選べない、別の場所に移ると条件や選択を失う、結果確認に不要な往復を要する構成は、部品が統一されていても見直す。
+
+## 判断と観測に使う一次資料
+
+| 観点と出典 | 設計で決めること・適用条件 | 実描画と操作で見る合否 |
+| --- | --- | --- |
+| 情報構成：[NN/gのヒューリスティクス](https://www.nngroup.com/articles/ten-usability-heuristics/)、[USWDSの設計原則](https://designsystem.digital.gov/design-principles/)、[Material DesignのList-detail](https://developer.android.com/develop/adaptive-apps/guides/canonical-layouts#list-detail) | 実際の作業とユーザーの語彙で入口を分ける。対象を繰り返し比較する場面は一覧と詳細の並置を候補とし、比較が要らない作業に強制しない | 説明や記憶に頼らず入口と対象を選べ、狭い幅で一覧へ戻っても条件と選択を失わない |
+| 主内容・視線：[NN/gの視覚的階層](https://www.nngroup.com/articles/visual-hierarchy-ux-definition/)、[Apple HIGのLayout](https://developer.apple.com/design/human-interface-guidelines/layout) | 大きさ・対比・まとまりで主内容から次の判断へ導く。ナビゲーションで分かる名称や同じ値の再掲より本文・値・操作に面積を使い、意味のある見出しと現在地は保つ | 最初に目が行く内容から次の操作と結果をたどれる。大見出しの重複、補助操作の強調、片側だけに余る空白で主内容が押し出されない |
+| 段階的開示：[NN/gの段階的開示](https://www.nngroup.com/articles/progressive-disclosure/)、[GOV.UK Details](https://design-system.service.gov.uk/components/details/)、[Carbon Disclosures](https://www.carbondesignsystem.com/building-blocks/core/patterns/disclosures) | 低頻度の条件・操作・補足は使う場所から開けるようにし、その面積を常時取らない。通常の判断・危険の回避に必要な情報や有効な条件と解除を隠さない | 閉じた状態で主作業が進み、必要時は入口を見つけて開閉できる。補助の検索欄などが、通常読む内容より画面を占めない |
+| 内容に合う幅：[GOV.UK Layout](https://design-system.service.gov.uk/styles/layout/#screen-size)・[Table](https://design-system.service.gov.uk/components/table/)、[Carbon Data table](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines) | 読み物は行長、比較表は列の整列と必要な幅を優先する。記事の幅や製品固有の寸法を表に流用せず、表に作用する操作はその近くに置く | 通常と長いデータで本文の次行・表の主要列・次の操作を追える。列名・識別に必要な部分は押しつぶされず、補助操作が表より目立たない |
+| 状態と回復：[NN/gのヒューリスティクス 1・3・5・9](https://www.nngroup.com/articles/ten-usability-heuristics/)、[Carbon Inline loading](https://www.carbondesignsystem.com/building-blocks/core/components/inline-loading/guidelines)、[USWDS Alert](https://designsystem.digital.gov/components/alert/#guidance) | 対象近くの進捗・無効状態・結果で伝え、部品だけでは不明な差、影響、次の行動だけを説明する。続行が危険な判断以外は通常の通知で割り込まない | 長文を読まずに待機・完了・空・失敗を見分け、必要なら入力を保ったまま回復できる。簡潔な状態表示や重要な注意は残す |
+| 通常の表示切替：[W3C APG Tabs](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/#keyboard_interaction) | 遅延なく表示できる範囲を先に準備する。適用はWeb規則の「コンテンツ、状態、画面遷移」に従い、ページリンクにタブのロールを強制しない | 準備後の最初の切替と再訪で、背景更新とは別に切替が取得や組み立てを起こして待たせない |
+| 入力とアイコン：[Apple HIGのIcons](https://developer.apple.com/design/human-interface-guidelines/icons)・[macOSの入力](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos)、[WCAG 2.2](https://www.w3.org/TR/WCAG22/)、[ARIA APG Dialog](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) | 見慣れた図形で操作と対象を見分けられるなら線幅・大きさ・重さをそろえたアイコンを使う。文脈で足りない意味は文字とアクセシブルな名前で保つ。OS固有の外見は模倣せず、適合条件と実装例を区別する | ポインター・キー・提供する他の入力手段で意味と操作を確かめられる。モーダルを閉じて起点か結果へ戻り、拡大や狭い幅でも操作を失わない |
+
+[unslop-ui 1.0.2](https://github.com/felipebasurto/unslop-ui/blob/v1.0.2/skills/unslop-ui/SKILL.md)は、重複した補足、状態の根拠、整列、図の直接ラベルを検討する比較例とする。
+固定の語数や系列数、固定表示を一律に装飾とする判断、入力ラベルの代替、専用の確認工程は採らない。
 
 ## 判断の順序
 
@@ -66,7 +88,8 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
 操作の結果、現在の状態、取り消し方、エラーからの復旧手順は、ひと目で分かる位置に示し、文言はエンドユーザーが使う用語に合わせる。
 
 - スローガン調の副題、見出し直下の冗長な解説、見れば分かる操作を言い直す補助テキストは省く。
-  補足は、レイアウトとラベルで伝わらない制約、不可逆な影響、単位に限る
+  補足は、配置とラベルから分からない対象範囲、入力形式、制約、不可逆な影響、単位に限る。
+  操作の判断に必須ならラベルか近くの常時表示で伝える
 - 取り消せない操作はよく使う操作から離し、影響に応じて確認か取り消しの猶予を設ける
 - 入力途中のデータは保持し、安全に再開できるようにする
 
@@ -83,7 +106,7 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
 - 極端に短いデータ、一般的なデータ、表示幅を超える長いデータで、画面全体の情報と操作に到達できるようにする
 - サンプル・初期データ・デモの文言は、ダミーの欧文や仮の文言（「見出しをここに」など）ではなく、製品のエンドユーザーと用途に合う実際の文で書く
 - サンプルの人名・組織名・数値・日付は利用場面に合う自然な値にし、不自然に丸い数値や同じ値の繰り返しを避け、名前は実在と取り違えられない架空のものにする
-- 操作できないボタンを無効化（disabled）する場合は、無効の理由を示す
+- 操作できないボタンは無効にし、対象近くの進捗などで理由が自明でない場合は、理由と次にできることを示す
 
 ## 視覚と構造
 
@@ -95,7 +118,8 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
    長い一覧や説明を一律に太字にせず、見出しと判断を左右する値だけを太くする。
 2. 余白の基準単位と段を決める。
    例えば4pxか8pxの倍数を使い、ラベルと値は近く、別の項目はその間より離し、区画の間はさらに離す。
-   同じ役割は基準線・間隔・外見を繰り返し、別の役割は対比で示す。
+   枠の端と文字の始点を区別し、同じ役割の文字・アイコン・行末操作は対応する基準線にそろえる。
+   別の役割は対比で示す。
    囲みや面は、余白と整列だけでは関係が伝わらない場合に使う。
 3. 背景、文字、補足、区切りには中立色を使い、現在地や主操作には用途を決めた強調色、成功や警告には状態色を使う。
    共通スタイルも参考例も無い業務画面ではアクセント色を1つとする。
@@ -106,7 +130,7 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
 読み物の本文や見出しなど、既に大きい文字は縮めない。
 日時・件数・補足などの補助情報とバッジは14px（既定の0.875rem）を下回らない。
 区切りは薄い線と余白で示し、役割の無いカードの入れ子や強い影は省く。
-状態は薄い背景の小さなバッジと状態名で示す。
+状態の区分を併記する場合は、薄い背景の小さなバッジと状態名で示す。
 選択やホバーの面の上でも、バッジの状態名と境界を読み分けられるようにする。
 一覧は1件を少ない行に収める。
 副情報を1行へ置く場合は、区切りを次の行に残さず、短い表示と詳細で読める完全な値を使い分ける。
@@ -125,7 +149,8 @@ GOV.UKの[Check answers](https://design-system.service.gov.uk/patterns/check-ans
 対象が同じなら直前の成功値と編集中の入力を保つ。
 期限付きの取得と間隔を延ばす自動で再試行し、初回と再試行の失敗が続いた時だけ短い案内と同じ対象を再取得する1つの操作を示す。
 確定した空や恒久的な制約、保存の成否とは区別する。
-最後に得た値を表示し続ける場合は、値が最新でないことと最後に取得できた時刻を、対象の近くに示す。
+観測元と最後の成功時点を基に、未取得・有効な現在値・前回値を区別する。
+最新でない値を残す場合はその旨と最後に取得できた時刻を対象の近くに示し、意味のある固定区分は鮮度と混同しない。
 
 ### 表現と表示環境
 

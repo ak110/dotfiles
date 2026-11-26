@@ -131,6 +131,53 @@ async def test_multiple_roots_keep_selection_search_update_and_copy_portable_pat
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize(
+    ("path", "source"),
+    [
+        ("same.md", ""),
+        ("unique.md", ""),
+        ("same.md", serve_plans.NEW_SOURCE_ID),
+        ("same.md", serve_plans.LEGACY_SOURCE_ID),
+    ],
+)
+async def test_plan_link_resolves_source_before_selecting_file(
+    multi_root_harness: _MultiRootHarness, path: str, source: str
+) -> None:
+    harness = multi_root_harness
+    page = harness.page
+    query = {"host": "browser-multi", "path": path}
+    if source:
+        query["source"] = source
+    if path == "unique.md":
+        (harness.new_plan.parent / path).write_text("# 一意の計画\n", encoding="utf-8")
+    await page.goto(harness.base_url + "/plans?" + urllib.parse.urlencode(query))
+    expected = {
+        "一意の計画": serve_plans.NEW_SOURCE_ID,
+        "新root": serve_plans.NEW_SOURCE_ID,
+        "旧root": serve_plans.LEGACY_SOURCE_ID,
+    }
+    items = page.locator("#files .file")
+    selected = page.locator('#files .file[aria-current="true"]')
+    await playwright.async_api.expect(selected).to_have_count(1)
+    await playwright.async_api.expect(page.locator("#preview h1")).to_be_visible()
+    selected_source = urllib.parse.parse_qs(urllib.parse.urlsplit(page.url).query)["source"][0]
+    if source:
+        assert selected_source == source
+    else:
+        assert await selected.get_attribute("href") == await items.filter(has_text=path).first.get_attribute("href")
+    heading = await page.locator("#preview h1").inner_text()
+    assert expected[heading] == selected_source
+    if path == "unique.md":
+        assert heading == "一意の計画"
+    else:
+        assert heading in {"新root", "旧root"}
+    await page.get_by_role("button", name="パスをコピー").click()
+    root = serve_plans.NEW_PORTABLE_ROOT if selected_source == serve_plans.NEW_SOURCE_ID else serve_plans.LEGACY_PORTABLE_ROOT
+    assert await page.evaluate("navigator.clipboard.readText()") == f"{root}/{path}"
+    await playwright.async_api.expect(page.locator("#prev-btn:enabled, #next-btn:enabled").first).to_be_enabled()
+
+
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("select_during_initial_fetch", [False, True])
 async def test_initial_plan_restore_preserves_earlier_selection(
     screen_harness: _ScreenHarness, select_during_initial_fetch: bool
@@ -293,7 +340,7 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
     assert await harness.page.title() == "計画ファイル - atk serve"
     assert not await harness.page.locator("#copy-btn").is_disabled()
     assert not await harness.page.locator("#copy-path-btn").is_disabled()
-    assert await harness.page.locator("#meta-mobile .meta-path").text_content() == "second.md"
+    assert await harness.page.locator("#plan-title").text_content() == "second.md"
     prev_disabled = await harness.page.locator("#prev-btn").is_disabled()
     next_disabled = await harness.page.locator("#next-btn").is_disabled()
     assert not (prev_disabled and next_disabled)

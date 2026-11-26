@@ -2,11 +2,17 @@ import {readFailure} from "./common.js";
 import {BASE_PATH, recordUpdateSuccess, setUpdateError, setDisplayedReadError, recoverRead} from "./common.js";
 import {formatLocalMinute} from "./reset_permissions.js";
 import {registerScreen} from "./shell.js";
-import {createSettingsView, settingName} from "./settings_view.js";
+import {createSettingsView, savedSettingMessage, settingName} from "./settings_view.js";
 
 const status = document.getElementById("settings-status");
 const content = document.getElementById("settings-content");
 const hostPicker = document.getElementById("settings-host");
+const hostProgress = document.createElement("progress");
+hostProgress.id = "settings-host-progress";
+hostProgress.className = "settings-host-progress";
+hostProgress.setAttribute("aria-label", "設定の取得");
+hostProgress.hidden = true;
+hostPicker.after(hostProgress);
 const fastState = document.getElementById("settings-fast-state");
 const fastDetail = document.getElementById("settings-fast-detail");
 const fastReason = document.getElementById("settings-fast-reason");
@@ -27,10 +33,10 @@ let loading = false;
 let fetching = false;
 let loadGeneration = 0;
 let displayedData;
-let refreshTimer;
+let openPermissionsOnLoad = false;
 const hostDrafts = new Map();
 const conflicts = new Map();
-const {button, element, renderComparison, renderHost, renderShared, renderSharedComparison, showGroup} = createSettingsView({
+const {button, element, renderComparison, renderHost, renderShared, renderSharedComparison, showGroup, getActionControl} = createSettingsView({
   content, shared, comparison, hostPicker, navigation,
   state: {
     get host() { return host; },
@@ -43,13 +49,17 @@ const {button, element, renderComparison, renderHost, renderShared, renderShared
   rememberSettingFocus, restoreSettingFocus, editorFields,
 });
 
-async function request(payload, cached = false, background = false, retry = false, target = host, observeUsage = false) {
+async function request(payload, {background = false, retry = false, target = host, observeUsage = false, selection} = {}) {
   const parameters = new URLSearchParams();
   if (target) parameters.set("host", target);
-  if (cached) parameters.set("cached", "1");
   if (background) parameters.set("background", "1");
   if (observeUsage) parameters.set("observe_usage", "1");
   if (retry) parameters.set("retry", "1");
+  if (selection) {
+    parameters.set("selection", "1");
+    if (selection.after) parameters.set("after", selection.after);
+    if (selection.wait) parameters.set("wait", "1");
+  }
   const query = parameters.size ? "?" + parameters : "";
   const url = BASE_PATH + "/api/settings" + query;
   const response = background && !payload ? await recoverRead("settings", url, {}, observeUsage ? 115_000 : undefined) : await fetch(url, payload ? {
@@ -73,6 +83,7 @@ function rememberEditors(savedSlot) {
     editor.dataset.editor,
     {
       open: editor.open,
+      settingDetailsOpen: editor.querySelector(".settings-setting-details")?.open,
       directAccountOpen: editor.querySelector("[data-permission-direct]")?.closest("details")?.open,
       values: editor.dataset.editor === savedSlot ? [] : editorFields(editor).map(input => {
         const instant = input.dataset.instantDisplay === input.value ? input.dataset.instant : "";
@@ -87,7 +98,7 @@ function rememberEditors(savedSlot) {
   ]));
 }
 
-function revealSettingResult(output, message, stayedAtOrigin) {
+function revealSettingResult(output, message, stayedAtOrigin, failed = false) {
   if (!stayedAtOrigin || !output?.isConnected || output.closest("[hidden], details:not([open])")) {
     const active = document.activeElement;
     const scroller = content.closest("main");
@@ -101,6 +112,7 @@ function revealSettingResult(output, message, stayedAtOrigin) {
     return;
   }
   status.textContent = "";
+  output.setAttribute("role", failed ? "alert" : "status");
   output.textContent = message;
   output.tabIndex = -1;
   output.focus({preventScroll: true});
@@ -113,6 +125,9 @@ function rememberSettingFocus(active) {
   const editor = active.closest("[data-editor]");
   const label = active.labels?.[0]?.textContent;
   if (!editor || !content.contains(active)) return null;
+  if (active.matches("summary") && active.parentElement === editor) {
+    return {editor: editor.dataset.editor, shared: inSharedScope(editor), summary: true};
+  }
   const sharedAction = active.dataset.sharedConflictAction;
   if (sharedAction) return {editor: editor.dataset.editor, shared: true, sharedAction};
   if (!label) return null;
@@ -139,7 +154,13 @@ function restoreSettingFocus(focus) {
   }
   const slot = `[data-editor="${CSS.escape(focus.editor)}"]`;
   const editor = content.querySelector(focus.shared ? `${SHARED_SCOPE} ${slot}` : `${HOST_EDITOR}${slot}`);
-  if (!editor) return;
+  if (!editor || editor.closest("[hidden]")) return;
+  if (focus.summary) {
+    if (editor !== document.activeElement?.parentElement) {
+      editor.querySelector(":scope > summary")?.focus({preventScroll: true});
+    }
+    return;
+  }
   if (focus.sharedAction) {
     editor.querySelector(`[data-shared-conflict-action="${CSS.escape(focus.sharedAction)}"]`)?.focus({preventScroll: true});
     return;
@@ -154,19 +175,39 @@ function restoreSettingFocus(focus) {
   if (focus.start != null && target.selectionStart != null) target.setSelectionRange(focus.start, focus.end, focus.direction);
 }
 
+function saveErrorMessage(error, saved) {
+  return saved ? "保存済みです。最新の値を取得できなかったため、設定画面を再読み込みして確認してください。" : error.message;
+}
+
+function startSaving() {
+  const control = getActionControl();
+  const label = control?.getAttribute("aria-label");
+  control?.setAttribute("data-saving", "");
+  control?.setAttribute("aria-label", `${label ?? control.textContent}: 保存中`);
+  return () => {
+    control?.removeAttribute("data-saving");
+    if (label == null) control?.removeAttribute("aria-label");
+    else control?.setAttribute("aria-label", label);
+  };
+}
+
 async function operate(payload, output, submittedEditor = null) {
   if (busy || loading || staleSnapshotHost === host || conflicts.has(output.closest("[data-editor]")?.dataset.editor)) return;
   const trigger = document.activeElement;
+  const stopSaving = startSaving();
   const stayedAtOrigin = () => document.activeElement === trigger || document.activeElement === document.body;
   busy = true;
   hostPicker.disabled = true;
+  const before = displayedData;
   const oldEditor = output.closest("[data-editor]");
   const editorKey = oldEditor?.dataset.editor;
-  status.textContent = "設定を保存中…";
+  status.textContent = "";
   output.textContent = "";
   updateWriteControls();
+  let saved = false;
   try {
-    await request(payload);
+    await request(host && before?.fetched_at ? {...payload, settings_revision: before.fetched_at} : payload);
+    saved = true;
     const data = await request();
     const stayed = stayedAtOrigin();
     const focus = stayed ? null : rememberSettingFocus(document.activeElement);
@@ -183,10 +224,15 @@ async function operate(payload, output, submittedEditor = null) {
     const notice = savedEditor?.querySelector("[data-settings-result]");
     scroll.scrollTop = scrollTop;
     restoreSettingFocus(focus);
-    revealSettingResult(notice, "設定を保存しました。", stayed);
+    revealSettingResult(notice, savedSettingMessage(payload, before, data), stayed);
   } catch (error) {
-    revealSettingResult(output, error.message, stayedAtOrigin());
+    if (host && (saved || error.status === 409)) {
+      staleSnapshotHost = host;
+      setDisplayedReadError("settings", "refresh", "最新の設定を取得し直してから保存してください。", () => loadHost(true, true));
+    }
+    revealSettingResult(output, saveErrorMessage(error, saved), stayedAtOrigin(), true);
   } finally {
+    stopSaving();
     busy = false;
     hostPicker.disabled = false;
     updateWriteControls();
@@ -198,6 +244,8 @@ function restoreEditors(drafts, editorKey) {
   for (const editor of content.querySelectorAll(HOST_EDITOR)) {
     const previous = drafts.get(editor.dataset.editor);
     if (previous?.open) editor.open = true;
+    const settingDetails = editor.querySelector(".settings-setting-details");
+    if (settingDetails && previous?.settingDetailsOpen) settingDetails.open = true;
     if (editor.dataset.editor === "temporary" && previous?.values[0] != null) {
       const key = editor.querySelector("select");
       key.value = previous.values[0].value;
@@ -226,11 +274,13 @@ function restoreEditors(drafts, editorKey) {
 }
 
 async function migrateShared(payload, output) {
-  if (busy || loading) return null;
+  if (busy || loading || staleSnapshotHost === host || migrationReadFailed) return null;
   busy = true;
+  hostPicker.disabled = true;
+  const stopSaving = startSaving();
   updateWriteControls();
   const target = host;
-  status.textContent = payload.action === "apply" ? "共有先に保存中…" : "差を確認中…";
+  status.textContent = "";
   output.textContent = "";
   try {
     const query = target ? "?" + new URLSearchParams({host: target}) : "";
@@ -248,31 +298,47 @@ async function migrateShared(payload, output) {
     return null;
   } catch (error) {
     status.textContent = "";
-    revealSettingResult(output, error.message, true);
+    revealSettingResult(output, error.message, true, true);
     return null;
   } finally {
+    stopSaving();
     busy = false;
+    hostPicker.disabled = false;
     updateWriteControls();
   }
 }
 
 async function saveShared(payload, output) {
-  if (busy || staleSnapshotHost === host || output.closest("[data-setting]")?.querySelector(".settings-shared-conflict")) return;
+  if (busy || (host && loading) || staleSnapshotHost === host ||
+      output.closest("[data-setting]")?.querySelector(".settings-shared-conflict")) return;
+  const trigger = document.activeElement;
+  const stopSaving = startSaving();
+  const before = localData;
+  const editorKey = output.closest("[data-editor]")?.dataset.editor;
+  const stayedAtOrigin = () => document.activeElement === trigger || document.activeElement === document.body;
   busy = true;
+  hostPicker.disabled = true;
+  status.textContent = "";
+  output.textContent = "";
   updateWriteControls();
+  let saved = false;
   try {
-    await request(payload, false, false, false, "");
-    const updated = await request(undefined, false, false, false, "");
+    await request(payload, {target: ""});
+    saved = true;
+    const updated = await request(undefined, {target: ""});
+    const stayed = stayedAtOrigin();
     localData = updated;
     renderComparison(displayedData ?? updated);
-    renderShared(output.closest("[data-setting]")?.dataset.setting);
+    renderShared(output.closest("[data-setting]")?.dataset.setting, editorKey);
     filterSettings();
-    const notice = content.querySelector(`${SHARED_SCOPE} [data-setting="${CSS.escape(payload.key ?? "")}"] [data-settings-result]`);
-    if (notice) revealSettingResult(notice, "設定を保存しました。", true);
+    const notice = content.querySelector(`${SHARED_SCOPE} [data-editor="${CSS.escape(editorKey ?? "")}"] [data-settings-result]`);
+    revealSettingResult(notice, savedSettingMessage(payload, before, updated), stayed);
   } catch (error) {
-    revealSettingResult(output, error.message, true);
+    revealSettingResult(output, saveErrorMessage(error, saved), stayedAtOrigin(), true);
   } finally {
+    stopSaving();
     busy = false;
+    hostPicker.disabled = false;
     updateWriteControls();
     updateUnsaved();
   }
@@ -305,7 +371,7 @@ function showAutomaticErrors(data, retried = false) {
 
 async function retryComparison() {
   try {
-    localData = await request(undefined, false, true, true, "");
+    localData = await request(undefined, {background: true, retry: true, target: ""});
     renderShared();
     renderComparison(localData);
     setUpdateError("settings", "comparison");
@@ -325,7 +391,7 @@ function filterSettings() {
   }
   showGroup(Boolean(needle));
   document.getElementById("settings-search-clear").hidden = !needle;
-  document.getElementById("settings-no-matches").hidden = !needle || count > 0;
+  document.getElementById("settings-no-matches").hidden = !needle || !displayedData || count > 0;
 }
 
 function draftLabel(slot) {
@@ -343,7 +409,10 @@ function updateUnsaved() {
     [...editors].filter(([, draft]) => draft.values.some(Boolean)).map(([slot]) => [name, slot]));
   const changed = new Set(drafts);
   for (const editor of content.querySelectorAll("[data-editor]")) {
-    editor.toggleAttribute("data-unsaved", changed.has(editor));
+    const unsaved = changed.has(editor);
+    editor.toggleAttribute("data-unsaved", unsaved);
+    const label = editor.querySelector(":scope > summary .settings-draft-state");
+    if (label) label.hidden = !unsaved;
   }
   const count = drafts.length + other.length;
   list.replaceChildren();
@@ -358,12 +427,18 @@ function updateUnsaved() {
     if (group) activeGroup = group.id.replace("settings-group-", "");
     search.value = "";
     filterSettings();
-    if (editor.tagName === "DETAILS") editor.open = true;
+    for (let detail = editor.closest("details:not([open])"); detail; detail = detail.closest("details:not([open])")) {
+      detail.open = true;
+    }
     editorFields(editor)[0]?.focus();
   }));
   for (const [name, slot] of other) list.append(button(`${name || "ローカル"}の設定を開く（${draftLabel(slot)}が未保存）`, () => selectHost(name)));
   list.append(button("未保存の変更を取り消す", () => {
-    for (const editor of drafts) for (const input of editorFields(editor)) input.value = input.dataset.initialValue;
+    for (const editor of drafts) {
+      for (const input of editorFields(editor)) input.value = input.dataset.initialValue;
+      const result = (editor.closest("[data-setting]") ?? editor).querySelector("[data-settings-result]");
+      if (result?.getAttribute("role") === "alert") result.textContent = "";
+    }
     hostDrafts.clear();
     updateUnsaved();
   }));
@@ -387,21 +462,45 @@ document.addEventListener("atk-screen-will-change", event => {
 
 function renderFastStart(data, failed = false) {
   const start = data?.codex_fast_start;
-  const known = start && typeof start === "object" && typeof start.speed === "string" && typeof start.source === "string";
+  const known = start && typeof start === "object" && ["通常", "高速"].includes(start.speed);
   const scope = host || "ローカル";
-  let result = failed ? "取得できませんでした" : "読み込み中";
-  if (data) {
-    result = known ? `${start.speed}（${start.source}）` :
-      start === null ? "記録なし" : "このホストからは取得できません";
-  }
-  if (data && failed) result += "（前回取得）";
-  fastState.textContent = `Codexの起動時判定（${scope}）: ${result}`;
+  let result;
+  let detail;
   if (known) {
     const minute = Number.isFinite(Date.parse(start.at)) ? formatLocalMinute(start.at).replace("T", " ") : "";
-    fastReason.textContent = [minute, start.reason].filter(Boolean).join("、");
+    if (start.source === "今回確認") {
+      result = start.speed;
+      detail = [minute, start.reason].filter(Boolean).join("、");
+    } else if (start.source === "直前の成功判定") {
+      result = "前回の判定を使用";
+      detail = [minute, `使用した速度: ${start.speed}`, start.reason].filter(Boolean).join("、");
+    } else if (start.source === "確認不能") {
+      result = "自動判定は未確認";
+      detail = [minute, `この起動で使った速度: ${start.speed}`, start.reason].filter(Boolean).join("、");
+      detail += "。次の起動後に判定を確認してください。";
+    } else {
+      result = "判定根拠の記録なし";
+      detail = [minute, `記録上の速度: ${start.speed}`, start.reason].filter(Boolean).join("、");
+    }
+  } else if (start === null) {
+    result = "記録なし";
+    detail = "このホストで自動判定を使ってCodexを開始すると、結果を確認できます。";
+  } else if (failed) {
+    result = "取得できませんでした";
+    detail = "設定を再取得すると、判定の記録も確認できます。";
+  } else if (data) {
+    result = "判定を取得できません";
+    detail = data.legacy ? "接続先のatkを更新してください。" : "このホストは判定の記録を返していません。";
   } else {
-    fastReason.textContent = result;
+    result = "未取得";
+    detail = "";
   }
+  if (data && failed) {
+    result += "（前回取得）";
+    detail += " 最新の記録は、設定を再取得すると確認できます。";
+  }
+  fastState.textContent = `Codexの起動時判定（${scope}）: ${result}`;
+  fastReason.textContent = detail;
 }
 
 function render(data) {
@@ -425,29 +524,33 @@ function setWriteUnavailable(control, unavailable) {
   syncWriteControl(control);
 }
 
+let migrationReadFailed = false;
+
 function updateWriteControls() {
   for (const control of content.querySelectorAll("[data-observed-deadline]")) {
     control.toggleAttribute("data-write-blocked", Boolean(host) && (loading || staleSnapshotHost === host));
     syncWriteControl(control);
   }
+  const awaitingMigrationRead = loading || migrationReadFailed || staleSnapshotHost === host;
   for (const control of content.querySelectorAll("[data-shared-migration] button")) {
-    if (busy || loading) control.setAttribute("aria-disabled", "true");
+    control.disabled = control.hasAttribute("data-saving");
+    if (busy || awaitingMigrationRead) control.setAttribute("aria-disabled", "true");
     else control.removeAttribute("aria-disabled");
-    if (loading) control.setAttribute("aria-describedby", "settings-migration-wait");
+    if (awaitingMigrationRead) control.setAttribute("aria-describedby", "settings-migration-wait");
     else control.removeAttribute("aria-describedby");
   }
   const migrationWait = content.querySelector("[data-migration-wait]");
-  if (migrationWait) migrationWait.hidden = !loading;
+  if (migrationWait) migrationWait.hidden = !awaitingMigrationRead;
   for (const control of content.querySelectorAll("button:not([data-conflict-action])")) {
     if (control.hasAttribute("data-local-edit") && !inSharedScope(control)) continue;
     const editor = control.closest("[data-editor]");
     if (!editor) continue;
     const setting = control.closest("[data-setting]") || editor;
-    const blocked = busy || staleSnapshotHost === host || setting.querySelector(".settings-shared-conflict") ||
+    const blocked = busy || (host && loading) || staleSnapshotHost === host || setting.querySelector(".settings-shared-conflict") ||
       (!inSharedScope(control) && (loading || conflicts.has(setting.dataset.editor)));
     if (blocked) {
       control.dataset.writeBlocked = "";
-      const reason = busy || loading ? "settings-status" : setting.querySelector("[data-conflict]")?.id;
+      const reason = loading ? (hostProgress.hidden ? "settings-status" : hostProgress.id) : setting.querySelector("[data-conflict]")?.id;
       if (reason) control.setAttribute("aria-describedby", reason);
       else control.removeAttribute("aria-describedby");
     } else if (control.hasAttribute("data-write-blocked")) {
@@ -464,7 +567,9 @@ function resolveConflict(slot, keepDraft) {
   const drafts = rememberEditors();
   conflicts.delete(slot);
   if (!keepDraft) {
-    for (const key of drafts.keys()) if (key === slot || key.startsWith(conflict.key + ":")) drafts.delete(key);
+    const setting = drafts.get(slot);
+    if (setting) drafts.set(slot, {...setting, values: []});
+    for (const key of drafts.keys()) if (key.startsWith(conflict.key + ":")) drafts.delete(key);
     displayedData.settings[conflict.key] = conflict.latest;
     render(displayedData);
     restoreEditors(drafts);
@@ -506,7 +611,7 @@ async function observeUsage() {
   if (document.body.dataset.screen !== "settings" || busy || fetching) return;
   const target = host;
   if (observingHost === target || (target && !displayedData?.can_observe_usage)) return;
-  let generation = loadGeneration;
+  const generation = loadGeneration;
   observingHost = target;
   if (target) {
     staleSnapshotHost = target;
@@ -517,15 +622,12 @@ async function observeUsage() {
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
       if (host !== target || generation !== loadGeneration) return;
       try {
-        const data = await request(undefined, false, true, false, target, true);
+        const data = await request(undefined, {background: true, target, observeUsage: true});
         if (host !== target || generation !== loadGeneration || busy || document.body.dataset.screen !== "settings") return;
         const failed = data.reset_editor?.refresh_failed;
         if (failed && !delay && !target) continue;
         const changed = JSON.stringify(data.reset_editor) !== JSON.stringify(displayedData?.reset_editor);
-        if (target || changed) {
-          await loadHost(true);
-          generation = loadGeneration;
-        }
+        if (target || changed) applyHostSnapshot(data, displayedData, rememberEditors());
         if (!failed) {
           setUpdateError("settings", "usage");
           return;
@@ -545,22 +647,61 @@ async function observeUsage() {
   }
 }
 
+function applyHostSnapshot(data, previous, drafts) {
+  const scroll = content.closest("main");
+  const scrollTop = scroll.scrollTop;
+  const focus = rememberSettingFocus(document.activeElement);
+  const rendered = {...data, settings: {...data.settings}};
+  for (const [key, latest] of Object.entries(data.settings)) {
+    const slot = `setting:${key}`;
+    const old = previous?.settings[key];
+    const edited = Array.from(drafts).some(([name, draft]) =>
+      (name === slot || name.startsWith(key + ":")) && draft.values.some(Boolean));
+    if (conflicts.has(slot)) {
+      const conflict = conflicts.get(slot);
+      conflicts.set(slot, {...conflict, latest});
+      rendered.settings[key] = conflict.old;
+      continue;
+    }
+    if (!old || latest.read_only || old.saved === latest.saved || !edited) continue;
+    conflicts.set(slot, {key, old, latest});
+    rendered.settings[key] = old;
+  }
+  render(rendered);
+  restoreEditors(drafts);
+  applyPermissionsShortcut();
+  renderConflicts();
+  updateUnsaved();
+  scroll.scrollTop = scrollTop;
+  staleSnapshotHost = undefined;
+  migrationReadFailed = false;
+  loading = false;
+  updateWriteControls();
+  restoreSettingFocus(focus);
+  recordUpdateSuccess("settings", "refresh");
+  showAutomaticErrors(data);
+  const legacy = data.legacy || data.automatic_unsupported?.includes(host);
+  status.textContent = legacy ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
+}
+
 async function loadHost(background = false, retry = false) {
   if (busy || (background && fetching)) return;
   const generation = ++loadGeneration;
   fetching = true;
   loading = true;
+  hostProgress.hidden = false;
   updateWriteControls();
   if (!background) {
-    status.textContent = "読み込み中…";
+    if (!host || !displayedData) status.textContent = "";
     if (!displayedData) renderFastStart();
   }
+  let selectedLegacy = false;
   try {
     const displayedHost = host;
     const savedDrafts = hostDrafts.get(displayedHost);
     const editingSnapshot = displayedData ?? savedDrafts?.snapshot;
-    if (background && displayedHost) {
-      const local = await request(undefined, false, true, retry, "");
+    if (background && displayedHost && !retry) {
+      const local = await request(undefined, {background: true, target: ""});
       if (generation !== loadGeneration) return;
       localData = local;
       renderShared();
@@ -573,93 +714,117 @@ async function loadHost(background = false, retry = false) {
         return;
       }
     }
-    let initial;
-    try {
-      initial = await request(undefined, !background && !retry && Boolean(host) && !displayedData, background, retry);
-    } catch (error) {
-      const transient = readFailure(error.status) === "temporary";
-      if (retry || !transient || generation !== loadGeneration) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    let data;
+    if (displayedHost && (!background || retry)) {
+      data = await request(undefined, {retry, target: displayedHost, selection: {after: editingSnapshot?.fetched_at}});
       if (generation !== loadGeneration) return;
-      initial = await request(undefined, false, true, Boolean(displayedHost), displayedHost);
-    }
-    if (generation !== loadGeneration) return;
-    const scroll = content.closest("main");
-    const scrollTop = scroll.scrollTop;
-    const prior = displayedData ? rememberEditors() : savedDrafts?.editors ?? new Map();
-    let data = initial;
-    if (initial.cached) {
-      render(initial);
-      restoreEditors(prior);
-      status.textContent = "更新中。最新の値が届くまで保存できません。";
-      data = await request(undefined, false, true, true, displayedHost);
-      if (generation !== loadGeneration) return;
-    }
-    const drafts = initial.cached ? rememberEditors() : prior;
-    const previous = editingSnapshot ?? (initial.cached ? initial : undefined);
-    const focus = rememberSettingFocus(document.activeElement);
-    const rendered = {...data, settings: {...data.settings}};
-    for (const [key, latest] of Object.entries(data.settings)) {
-      const slot = `setting:${key}`;
-      const old = previous?.settings[key];
-      const edited = Array.from(drafts).some(([name, draft]) =>
-        (name === slot || name.startsWith(key + ":")) && draft.values.some(Boolean));
-      if (conflicts.has(slot)) {
-        const conflict = conflicts.get(slot);
-        conflicts.set(slot, {...conflict, latest});
-        rendered.settings[key] = conflict.old;
-        continue;
+      if (data.settings_state && data.settings_state !== "ready" && data.settings && !displayedData) {
+        render(data);
+        restoreEditors(savedDrafts?.editors ?? new Map());
+        updateUnsaved();
+        updateWriteControls();
       }
-      if (!old || latest.read_only || old.saved === latest.saved || !edited) continue;
-      conflicts.set(slot, {key, old, latest});
-      rendered.settings[key] = old;
+      if (data.settings_state === "pending") {
+        if (displayedData) status.textContent = "前回取得した設定を表示中。最新の設定を取得しています。";
+        data = await request(undefined, {target: displayedHost, selection: {wait: true}});
+        if (generation !== loadGeneration) return;
+      }
+      if (data.settings_state === "legacy" || data.settings_state === "error") {
+        showAutomaticErrors(data);
+        if (localData && data.comparison) {
+          localData = {...localData, comparison: data.comparison};
+          renderSharedComparison();
+        }
+        selectedLegacy = data.settings_state === "legacy";
+        throw new Error("");
+      }
+    } else {
+      try {
+        data = await request(undefined, {background, retry, target: displayedHost});
+      } catch (error) {
+        const transient = readFailure(error.status) === "temporary";
+        if (retry || !transient || generation !== loadGeneration) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        if (generation !== loadGeneration) return;
+        data = await request(undefined, {background: true, retry: Boolean(displayedHost), target: displayedHost});
+      }
+      if (generation !== loadGeneration) return;
     }
-    render(rendered);
-    restoreEditors(drafts);
-    renderConflicts();
-    updateUnsaved();
-    scroll.scrollTop = scrollTop;
-    staleSnapshotHost = undefined;
-    loading = false;
-    updateWriteControls();
-    restoreSettingFocus(focus);
-    recordUpdateSuccess("settings", "refresh");
-    showAutomaticErrors(data);
-    status.textContent = data.legacy || data.automatic_unsupported?.includes(host) ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
+    const drafts = displayedData ? rememberEditors() : savedDrafts?.editors ?? new Map();
+    applyHostSnapshot(data, editingSnapshot ?? displayedData, drafts);
   } catch (error) {
     if (generation !== loadGeneration) return;
     if (host) staleSnapshotHost = host;
+    migrationReadFailed = true;
     loading = Boolean(host) && Boolean(displayedData);
     renderFastStart(displayedData, true);
+    hostProgress.hidden = true;
     updateWriteControls();
-    status.textContent = loading ? "最新の値が届くまで保存できません。" : "";
-    setDisplayedReadError("settings", "refresh", host ? `${host}の設定を取得できません。` : error.message, () => loadHost(true, true), () => loadHost(false, true));
+    const snapshotStatus = loading ? "前回取得した設定を表示中。保存するには再取得してください。" : "";
+    const hostStatus = selectedLegacy ? "SSH先のatkが旧版です。設定を確認するにはSSH先のatkを更新してください。" : "";
+    const messageStatus = [hostStatus, snapshotStatus].filter(Boolean).join(" ");
+    if (status.textContent !== messageStatus) status.textContent = messageStatus;
+    const message = host ? [`${host}の設定を取得できません。`, error.message].filter(Boolean).join(" ") : error.message;
+    setDisplayedReadError("settings", "refresh", message, () => loadHost(true, true), () => loadHost(false, true));
   } finally {
     if (generation === loadGeneration) {
       fetching = false;
+      hostProgress.hidden = true;
       hostPicker.disabled = false;
     }
   }
 }
 
-async function enter() {
-  clearInterval(refreshTimer);
+function applyPermissionsShortcut() {
+  if (!openPermissionsOnLoad || host) return;
+  const editor = content.querySelector('[data-setting="usage_reset_permissions"]');
+  if (!editor) return;
+  editor.open = true;
+  openPermissionsOnLoad = false;
+}
+
+function restoreSettingsFromUrl() {
   if (document.body.dataset.screen !== "settings") return;
-  refreshTimer = setInterval(() => {
-    if (content.querySelector('details[data-editor^="usage_reset_permissions:"][open]')) void observeUsage();
-    else void loadHost(true);
-  }, 30_000);
   const query = new URLSearchParams(location.search);
   if (query.get("group") === "usage") activeGroup = "usage";
+  openPermissionsOnLoad = query.get("group") === "usage" && query.get("host") === "";
+  if (openPermissionsOnLoad) search.value = "";
   if (query.get("host") === "" && host) {
     selectHost("");
     return;
   }
-  if (content.hasChildNodes()) {
-    showGroup();
-    return;
+  if (displayedData && query.get("group") === "usage") {
+    filterSettings();
+    applyPermissionsShortcut();
   }
-  await loadHost();
+}
+
+async function refreshSettings() {
+  if (document.hidden || busy || fetching) return;
+  const refresh = loadHost(true);
+  const generation = loadGeneration;
+  await refresh;
+  prepareRemotes();
+  if (generation === loadGeneration && content.querySelector('details[data-editor^="usage_reset_permissions:"][open]')) {
+    await observeUsage();
+  }
+}
+
+let preparation;
+function prepareRemotes() {
+  if (preparation || !localData?.hosts?.length) return;
+  preparation = fetch(BASE_PATH + "/api/settings/prepare", {method: "POST"}).then(response => {
+    if (!response.ok) preparation = undefined;
+  }, () => { preparation = undefined; });
+}
+
+function init() {
+  // pyfltr: allow-comment /settings の直ロードではサーバー側で先行取得を始めている。
+  if (document.body.dataset.screen === "settings") preparation = Promise.resolve();
+  restoreSettingsFromUrl();
+  window.addEventListener("popstate", restoreSettingsFromUrl);
+  setInterval(() => void refreshSettings(), 30_000);
+  return loadHost().then(prepareRemotes);
 }
 
 function selectHost(selected) {
@@ -669,21 +834,27 @@ function selectHost(selected) {
   setUpdateError("settings", "usage");
   host = selected;
   hostPicker.value = host;
+  const cached = hostDrafts.get(host);
   displayedData = undefined;
   fastDetail.open = false;
   renderFastStart();
   conflicts.clear();
-  renderHost({settings: {}, paths: {}, hosts: localData?.hosts, loadingHost: true});
+  loading = true;
+  staleSnapshotHost = host || undefined;
+  if (host && cached) {
+    render({...cached.snapshot, comparison: localData?.comparison});
+    restoreEditors(cached.editors);
+    status.textContent = "前回取得した設定を表示中。最新の設定を取得しています。";
+  } else {
+    renderHost({settings: {}, paths: {}, hosts: localData?.hosts, loadingHost: true});
+  }
   updateUnsaved();
   void loadHost();
 }
 
 hostPicker.addEventListener("change", () => selectHost(hostPicker.value));
 
-registerScreen("settings", {init: () => {
-  document.addEventListener("atk-screen-change", enter);
-  return enter();
-}});
+registerScreen("settings", {init});
 
 content.addEventListener("click", event => {
   if (event.target.closest('details[data-editor^="usage_reset_permissions:"] > summary')) {

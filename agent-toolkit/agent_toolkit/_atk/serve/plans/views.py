@@ -310,9 +310,15 @@ def review_table_html(text: str) -> str:
     except ValueError:
         return f"<pre>{html_lib.escape(text)}</pre>\n"
 
-    head = "".join(f"<th>{html_lib.escape(header)}</th>" for header in _review_table_format.COLUMN_LABELS)
-    body = "".join("<tr>" + "".join(f"<td>{html_lib.escape(cell)}</td>" for cell in row) + "</tr>" for row in rows)
-    return f'<table class="review-table">\n<thead><tr>{head}</tr></thead>\n<tbody>{body}</tbody>\n</table>\n'
+    order = ("issue", "response", "location", "level", "round", "track", "no-response-reason")
+    indices = [_review_table_format.COLUMNS.index(name) for name in order]
+    columns = "".join(f'<col class="review-{name}">' for name in order)
+    head = "".join(f'<th scope="col">{html_lib.escape(_review_table_format.COLUMN_LABELS[i])}</th>' for i in indices)
+    body = "".join("<tr>" + "".join(f"<td>{html_lib.escape(row[i])}</td>" for i in indices) + "</tr>" for row in rows)
+    return (
+        f'<table class="review-table">\n<colgroup>{columns}</colgroup>\n'
+        f"<thead><tr>{head}</tr></thead>\n<tbody>{body}</tbody>\n</table>\n"
+    )
 
 
 def is_review_table_path(rel: str) -> bool:

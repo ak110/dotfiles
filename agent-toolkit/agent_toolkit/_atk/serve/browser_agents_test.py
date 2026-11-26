@@ -10,7 +10,8 @@ import playwright.async_api
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk.serve import sessions_local
+from agent_toolkit._atk import usage_refresh
+from agent_toolkit._atk.serve import sessions_local, sessions_remote
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_app,
     _browser_fixture,
@@ -25,6 +26,19 @@ from agent_toolkit._testing.agents_server_commands_support import _write_complet
 pytestmark = [pytest.mark.browser]
 
 
+@pytest.fixture(autouse=True)
+def isolate_background_backends(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def skip_resident_connection(_client: sessions_remote.RemoteSessionClient) -> None:
+        pass
+
+    monkeypatch.setattr(sessions_remote.RemoteSessionClient, "run", skip_resident_connection)
+    monkeypatch.setattr(usage_refresh, "refresh_for_display", lambda *, force=False: {})
+
+
+@pytest.mark.cpu_limit(
+    0.65,
+    reason="ホストの失敗通知からキーボードで移動し、独立して更新される記録への遷移まで実ブラウザーで確認する",
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_agent_record_link_and_independent_remote_failure(
     browser: playwright.async_api.Browser, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -38,7 +52,7 @@ async def test_agent_record_link_and_independent_remote_failure(
                 "id": session_id,
                 "status": "終了" if exited.is_set() else "稼働中",
                 "engine": "claude",
-                "children": [{"id": "not-recorded", "tree_label": "└─ not-recorded", "engine": "agy", "running": False}],
+                "children": [{"id": "not-recorded", "tree_label": "└─ not-recorded", "engine": "agy", "status": "completed"}],
             }
         ]
 
@@ -58,7 +72,14 @@ async def test_agent_record_link_and_independent_remote_failure(
         await playwright.async_api.expect(page.locator("#screen-agents > header + #update-status")).to_be_visible()
         await playwright.async_api.expect(banner).not_to_contain_text("前回取得")
         await playwright.async_api.expect(banner.get_by_role("button", name="再取得")).to_be_visible()
-        await playwright.async_api.expect(panel).to_contain_text("セッション画面で扱いません")
+        failed_host = page.locator("#agents-attention").get_by_role("button", name="old-host", exact=True)
+        await failed_host.press("Enter")
+        await playwright.async_api.expect(panel.get_by_role("heading", name="old-host", exact=True)).to_be_focused()
+        await playwright.async_api.expect(panel.get_by_text("一覧は未取得です。")).to_be_visible()
+        unsupported = panel.locator('[data-agent-id="not-recorded"]')
+        await playwright.async_api.expect(unsupported).to_contain_text("セッション画面で扱いません")
+        await playwright.async_api.expect(unsupported.get_by_text("記録を開けない", exact=True)).to_have_count(0)
+        await playwright.async_api.expect(page.locator("#agents-attention button:visible")).to_have_count(1)
         await playwright.async_api.expect(panel).not_to_contain_text(re.compile(r"[\u2500-\u257f]"))
         record = panel.get_by_role("link", name=session_id, exact=True)
         await record.focus()
@@ -92,6 +113,7 @@ async def test_agent_remote_record_lookup_failure_preserves_agent_rows(
         row = page.locator('[data-agent-id="remote-agent"]')
         await playwright.async_api.expect(row).to_contain_text("稼働中")
         await playwright.async_api.expect(row).to_contain_text("記録の所在を確認できません")
+        await playwright.async_api.expect(page.locator("#agents-attention li:visible")).to_contain_text("記録を開けない 1件")
         await playwright.async_api.expect(row.get_by_role("link")).to_have_count(0)
 
 
@@ -179,23 +201,34 @@ async def test_agent_activity_records_drive_root_states(
         await playwright.async_api.expect(grandchild.locator(".agent-action")).to_have_text(
             "API再試行 overloaded · HTTP 529 · 3回"
         )
+        await playwright.async_api.expect(page.locator("#agents-attention")).to_contain_text("再試行 1件")
+        await playwright.async_api.expect(page.locator("#agents-attention")).to_contain_text("状態不明 2件")
+        await playwright.async_api.expect(panel.get_by_text("完了", exact=True)).to_be_visible()
+        action = grandchild.locator("summary")
+        await action.press("Space")
+        await playwright.async_api.expect(grandchild.locator("details[open] > p")).to_have_text(
+            "API再試行 overloaded · HTTP 529 · 3回"
+        )
         await playwright.async_api.expect(child.locator(":scope > .agent-row .agent-usage .agent-value")).to_have_text(
             "2.0k/25%"
         )
         await playwright.async_api.expect(grandchild.locator(".agent-usage .agent-value")).to_have_text("92.5k/11%")
         for width in (1280, 360):
             await page.set_viewport_size({"width": width, "height": 900})
-            for column in ("status", "elapsed", "usage"):
-                selector = f":scope > .agent-row .agent-{column}"
-                parent_cell = child.locator(selector)
-                child_cell = grandchild.locator(selector)
-                parent_box = await parent_cell.bounding_box()
-                child_box = await child_cell.bounding_box()
-                assert parent_box is not None and child_box is not None
-                assert (parent_box["x"], parent_box["width"]) == pytest.approx((child_box["x"], child_box["width"]))
+            parent_boxes, child_boxes = await panel.evaluate("""(panel) =>
+                ["live-child", "live-grandchild"].map(id => ["status", "elapsed", "usage"].map(column => {
+                  const cell = panel.querySelector(`[data-agent-id="${id}"] > .agent-row .agent-${column}`);
+                  const {x, width} = cell.getBoundingClientRect();
+                  return [x, width];
+                }))""")
+            for parent_box, child_box in zip(parent_boxes, child_boxes, strict=True):
+                assert parent_box[1] > 0 and child_box[1] > 0
+                assert parent_box == pytest.approx(child_box)
             await playwright.async_api.expect(grandchild.locator(".agent-elapsed")).to_have_css(
                 "font-variant-numeric", "tabular-nums"
             )
+            await grandchild.locator(".agent-status").scroll_into_view_if_needed()
+            await playwright.async_api.expect(grandchild.locator(".agent-status")).to_be_in_viewport()
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -221,3 +254,48 @@ async def test_agent_filter_abandons_old_failure(screen_harness: _ScreenHarness)
         await playwright.async_api.expect(page.locator("#update-status")).to_be_hidden()
     finally:
         release.set()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_agent_progress_and_last_success_survive_a_read_failure(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    release = asyncio.Event()
+    roots: list[dict[str, object]] | None = None
+
+    async def agents(route: playwright.async_api.Route) -> None:
+        await release.wait()
+        payload = {"error": "一覧を返せません"} if roots is None else {"roots": roots}
+        await route.fulfill(json=payload)
+
+    await page.route("**/api/agents/list?*", agents)
+    expect = playwright.async_api.expect
+    await page.clock.install()
+    panel = page.locator("#agents-hosts")
+    banner = page.locator("#update-status")
+    progress = panel.get_by_role("progressbar", name=re.compile("エージェント一覧を取得中"))
+    try:
+        await page.goto(screen_harness.base_url + "/agents")
+        await expect(progress).to_be_visible()
+        await expect(panel.get_by_text("読み込み中", exact=True)).to_have_count(0)
+    finally:
+        release.set()
+    await expect(progress).to_have_count(0)
+    await expect(panel.get_by_text("一覧は未取得です。")).to_be_visible()
+    await expect(banner).not_to_contain_text("前回取得")
+
+    roots = [{"id": "fixture-root", "status": "running", "engine": "codex", "children": []}]
+    await banner.get_by_role("button", name="再取得").click()
+    row = panel.locator('[data-agent-id="fixture-root"]')
+    await expect(row).to_contain_text("稼働中")
+    await expect(banner).to_be_hidden()
+
+    roots = None
+    await page.clock.fast_forward(2100)
+    await expect(banner).to_contain_text("前回取得")
+    await expect(row).to_contain_text("稼働中")
+    await expect(panel.get_by_text("一覧は未取得です。")).to_have_count(0)
+
+    roots = [{"id": "fixture-root", "status": "completed", "engine": "codex", "children": []}]
+    await banner.get_by_role("button", name="再取得").click()
+    await expect(row).to_contain_text("完了")
+    await expect(banner).to_be_hidden()

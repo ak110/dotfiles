@@ -113,13 +113,11 @@ export function renderResetPermissions(parent, entries, model, save, ui, reissua
     const box = element("details");
     box.dataset.editor = `usage_reset_permissions:${entry?.id ?? ""}`;
     const summary = element("summary", entry ? permissionSummary(entry, model) : "許可を追加");
-    summary.className = "permission-caption text-clip";
-    summary.title = summary.textContent;
+    summary.className = "permission-caption monitor-permission-caption";
     box.append(summary);
     if (entry && Object.hasOwn(reissuable, entry.id)) {
       const remaining = reissuable[entry.id];
       summary.textContent += " · 消費を停止中";
-      summary.title = summary.textContent;
       if (remaining === null) {
         box.append(element("p", "消費を停止中: この端末の消費記録を確認できないため、再発行できません。"));
       } else {
@@ -193,9 +191,13 @@ export function renderResetPermissions(parent, entries, model, save, ui, reissua
       recalculate();
     });
     apply.dataset.observedDeadline = "";
+    const suggestion = element("div");
+    suggestion.className = "monitor-permission-suggestion";
+    suggestion.append(advice, apply);
     const invalid = element("p");
     invalid.setAttribute("role", "alert");
-    editor.append(weekly, explanation, duration, advice, apply, invalid);
+    editor.insertBefore(suggestion, count.parentElement);
+    editor.append(weekly, explanation, duration, invalid);
     const saveButton = submit(editor, entry ? "保存" : "追加");
     if (entry) box.append(button("許可を削除", () => save(entries.filter((_, position) => position !== index), box)));
     parent.append(box);
@@ -254,10 +256,12 @@ export function renderResetPermissions(parent, entries, model, save, ui, reissua
       const {until: automatic, reason} = selectedCutoff();
       weekly.textContent = `次の週次リセットの${grace.value}日前まで`;
       setWriteUnavailable(weekly, !automatic);
-      explanation.textContent = reason || (automatic ? `${quotaName(window)}: ${dateJst(window.resets_at)}にリセット予定。` : "");
+      explanation.textContent = reason || (automatic ? `${quotaName(window)}: ${dateJst(window.resets_at)}にリセット予定。` :
+        "週次リセット日時を確認できません。終了日時を入力するか、下の目安を使ってください。");
       const proposal = recommendation(engine.value, selectedAccount(), selectedScope(), model, entries, Number(grace.value), Date.now() / 1000);
       advice.textContent = proposal.reason;
       apply.hidden = !proposal.until;
+      suggestion.hidden = !proposal.reason;
       codexScope.hidden = engine.value !== "codex" || selectedScope() === "codex";
       setWriteUnavailable(saveButton, !selectedScope());
     }

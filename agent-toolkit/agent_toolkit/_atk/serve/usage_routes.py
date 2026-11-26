@@ -69,7 +69,14 @@ def _display_data(refresh: dict[str, Any] | None = None) -> dict[str, Any]:
         ],
     }
     if state.get("refresh_context") == usage_settings.context_id():
-        result.update(last_refresh_at=state.get("last_refresh_at"), refresh_failures=state.get("refresh_failures", []))
+        observed_at = state.get("last_refresh_at")
+        failures = state.get("refresh_failures", [])
+        reuse = (
+            isinstance(observed_at, (int, float))
+            and not failures
+            and now - observed_at < usage_refresh.DISPLAY_REFRESH_INTERVAL_SEC
+        )
+        result.update(last_refresh_at=observed_at, refresh_failures=failures, refresh_due=not reuse)
     return result
 
 

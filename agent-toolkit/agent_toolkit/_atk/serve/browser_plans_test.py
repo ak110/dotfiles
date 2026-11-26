@@ -51,12 +51,15 @@ async def test_plan_copy_feedback_preserves_toolbar_positions(
         await page.evaluate(
             "() => { navigator.clipboard.writeText = async () => { throw new Error('clipboard unavailable'); }; }"
         )
-    buttons = page.locator("#screen-plans main > .toolbar button")
+    buttons = page.locator("#screen-plans .detail-toolbar button")
     used_buttons = await buttons.evaluate_all("elements => elements.map(element => element.getBoundingClientRect().toJSON())")
-    for selector in ("#copy-btn", "#copy-path-btn"):
+    for selector, label in (("#copy-btn", "本文"), ("#copy-path-btn", "パス")):
         button = page.locator(selector)
         await button.click()
-        await playwright.async_api.expect(button.locator(".short-label")).to_have_text("失敗" if failure else "完了")
+        if failure:
+            await playwright.async_api.expect(page.locator("#preview .copy-error")).to_contain_text("コピーに失敗")
+        else:
+            await playwright.async_api.expect(page.locator("#plan-copy-status")).to_have_text(f"{label}をコピーしました")
         after = await buttons.evaluate_all("elements => elements.map(element => element.getBoundingClientRect().toJSON())")
         assert [rect for rect, before in zip(after, used_buttons, strict=True) if before["width"]] == [
             rect for rect in used_buttons if rect["width"]
@@ -81,6 +84,28 @@ async def test_plan_filename_link_supports_get_and_shift_click(screen_harness: _
     assert query["path"] == ["plan.md"]
 
     assert not await _shift_click_default_prevented(link)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_plan_list_shows_the_distinguishing_end_of_long_filenames(screen_harness: _ScreenHarness) -> None:
+    harness = screen_harness
+    prefix = "serve-implementation-plan-with-a-common-prefix-"
+    for end in ("settings.md", "sessions.md"):
+        (harness.root / (prefix + end)).write_text("# 計画\n", encoding="utf-8")
+    page = harness.page
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await page.goto(harness.base_url + "/plans")
+    for end in ("settings.md", "sessions.md"):
+        link = page.get_by_role("link", name=prefix + end, exact=False)
+        name = link.locator(".name")
+        await playwright.async_api.expect(name).to_have_text(prefix + end)
+        assert await name.evaluate(
+            """name => {
+                const [leading, trailing] = name.children;
+                return leading.scrollWidth > leading.clientWidth
+                    && trailing.getBoundingClientRect().right <= name.getBoundingClientRect().right;
+            }"""
+        )
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -141,15 +166,14 @@ async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile
     await page.set_viewport_size({"width": 320, "height": 720})
     await page.route("**/api/plans/events", lambda route: route.abort())
     await page.goto(harness.base_url + "/plans")
-    await page.locator("#plans-menu-btn").click()
     first = page.locator('#files .file[href*="path=plan.md"]')
     await first.wait_for(state="visible")
 
     harness.plan_path.unlink()
     await first.click()
     message = "選択した計画ファイルは移動または削除されたため表示できません。一覧を更新しました。"
-    await playwright.async_api.expect(page.locator("#preview").get_by_role("status")).to_contain_text(message)
-    await page.locator("#plans-menu-btn").click()
+    await playwright.async_api.expect(page.locator("#plans-sidebar")).to_be_visible()
+    await playwright.async_api.expect(page.locator("#plans-app main")).to_be_hidden()
 
     sidebar_status = page.locator("#plans-selection-status")
     opening_bounds = await sidebar_status.bounding_box()
@@ -174,7 +198,7 @@ async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile
 
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("pending", ["list", "detail"])
-async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
+async def test_mobile_plan_keeps_list_visible_after_return_during_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
     started = asyncio.Event()
@@ -185,36 +209,33 @@ async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_ha
     try:
         await page.goto(screen_harness.base_url + "/plans?host=browser-test&path=plan.md", wait_until="domcontentloaded")
         await asyncio.wait_for(started.wait(), timeout=10)
-        screen = page.locator("#screen-plans")
-        menu = page.locator("#plans-menu-btn")
-        sidebar = page.locator("#plans-app > aside")
-        assert not await screen.evaluate("element => element.classList.contains('drawer-open')")
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "false")
-        await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
-
-        await menu.click()
-        assert await screen.evaluate("element => element.classList.contains('drawer-open')")
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
-        assert not await sidebar.evaluate("element => element.inert")
-        async with page.expect_response("**/api/plans/file?*"):
-            release.set()
-        item = page.locator("#files .file").first
-        await item.wait_for(state="visible")
-        await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-        assert await screen.evaluate("element => element.classList.contains('drawer-open')")
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
-        assert not await sidebar.evaluate("element => element.inert")
+        expect = playwright.async_api.expect
+        sidebar = page.locator("#plans-sidebar")
+        preview = page.locator("#preview")
+        await expect(sidebar).to_be_hidden()
+        await page.locator("#plans-menu-btn").click()
+        await expect(sidebar).to_be_visible()
+        await expect(page.locator("#plans-app main")).to_be_hidden()
+        if pending == "list":
+            await expect(page.locator("#plans-list-loading")).to_be_visible()
+            await expect(page.locator("#plans-filter")).to_be_focused()
+        release.set()
+        await expect(preview.locator("h1")).to_have_text("初回")
+        item = sidebar.locator(".file").first
+        await expect(item).to_be_visible()
+        await expect(page.locator("#plans-app main")).to_be_hidden()
         await item.click()
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "false")
-        await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
+        await expect(sidebar).to_be_hidden()
+        await expect(page.locator("#plan-title")).to_be_focused()
+        await expect(preview.locator("h1")).to_be_visible()
     finally:
         release.set()
         await page.unroute(pattern, route_handler)
 
     await page.reload()
     await page.locator("#files .file").first.wait_for(state="attached")
-    await playwright.async_api.expect(page.locator("#plans-menu-btn")).to_have_attribute("aria-expanded", "false")
-    await playwright.async_api.expect(page.locator("#plans-app > aside")).to_have_attribute("inert", "")
+    await playwright.async_api.expect(page.locator("#plans-sidebar")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#preview h1")).to_be_visible()
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -224,21 +245,14 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(screen_harness.base_url + "/plans")
     await page.locator("#files .file").first.wait_for(state="visible")
-    await page.locator("#plans-menu-btn").click()
-    await playwright.async_api.expect(page.locator("#plans-menu-btn")).to_have_attribute("aria-expanded", "true")
     await page.locator("#files .file").first.click()
     await page.locator("#preview h1").wait_for(state="visible")
 
-    for selector in ("#copy-btn", "#copy-path-btn"):
-        button = page.locator(selector)
-        assert await button.locator(".short-label").evaluate(
-            """element => {
-              const range = document.createRange();
-              range.selectNodeContents(element);
-              return range.getClientRects().length === 1;
-            }"""
-        )
-        assert await button.locator(".short-label").evaluate("element => element.getClientRects().length") == 1
+    body = page.get_by_role("button", name="本文をコピー", exact=True)
+    path = page.get_by_role("button", name="ファイルのパスをコピー", exact=True)
+    for button in (body, path):
+        await playwright.async_api.expect(button.locator("svg")).to_be_visible()
+    assert await body.evaluate("button => button.offsetTop") == await path.evaluate("button => button.offsetTop")
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -361,7 +375,6 @@ class TestPlanOperationTimings:
         # 未選択時の一覧更新を先に記録し、同名の操作があっても本文更新を取り違えないことを確かめる。 pyfltr: allow-comment
         await harness.notify_file_update(_valid_diagram_markdown("選択前"))
         await wait_for_operation("external-reload", "sse", {"/api/plans/files"}, set())
-        await page.locator("#plans-menu-btn").click()
         await page.locator("#files .file", has_text=harness.plan_path.name).click()
         await page.locator("#preview .diagram-mermaid svg", has_text="選択前").wait_for(state="visible")
         opened_request_ids = await body_request_ids("選択前")
@@ -381,8 +394,11 @@ async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
 ) -> None:
     harness = screen_harness
     review_row = '"1"\t"implementation-review"\t"a.py:1"\t"指摘"\t"要"\t"対応済み"\t""\n'
-    (harness.root / "plan.exec-review.tsv").write_text(review_row, encoding="utf-8")
-    await harness.page.set_viewport_size({"width": 1600, "height": 900})
+    (harness.root / "plan.exec-review.tsv").write_text(
+        "".join(review_row.replace("a.py:1", f"src/long-component/review/actions.py:{n}") for n in range(1, 24)),
+        encoding="utf-8",
+    )
+    await harness.page.set_viewport_size({"width": 1280, "height": 900})
     await harness.page.goto(harness.base_url + "/plans")
 
     normal_widths = await harness.page.locator("#preview").evaluate(
@@ -409,6 +425,29 @@ async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
         })""",
     )
     assert review_widths["preview"] == pytest.approx(review_widths["main"], abs=1)
+    review = harness.page.get_by_role("region", name="レビュー指摘一覧")
+    headers = review.get_by_role("columnheader")
+    expect = playwright.async_api.expect
+    await expect(headers.nth(0)).to_have_text("指摘内容")
+    await expect(headers.nth(1)).to_have_text("対応内容")
+    widths = await review.evaluate(
+        """region => {
+            const cells = [...region.querySelectorAll("th")];
+            return {full: region.scrollWidth, visible: region.clientWidth,
+                    columns: cells.map(cell => cell.getBoundingClientRect().width)};
+        }""",
+    )
+    assert widths["full"] == widths["visible"]
+    assert min(widths["columns"][:2]) > max(widths["columns"][2:])
+    await expect(headers.last).to_have_text("対応不要理由")
+    await expect(headers.last).to_be_in_viewport(ratio=0.99)
+    await review.focus()
+    await harness.page.keyboard.press("End")
+    await expect(headers.nth(0)).to_be_in_viewport()
+    await expect(headers.nth(1)).to_be_in_viewport()
+    await harness.page.wait_for_function("document.querySelector('.review-scroll').scrollTop > 0")
+    await harness.page.get_by_role("button", name="先頭へ").click()
+    assert await review.evaluate("(table) => table.scrollTop") == 0
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -500,12 +539,13 @@ async def test_plan_wi_links_open_here_and_support_middle_click(screen_harness: 
     await expect(preview.get_by_role("link", name="AGENTS.md")).to_have_count(0)
     await expect(preview.get_by_role("link", name="20261011-203736-1001.md")).to_be_visible()
     await related.click()
-    first = page.get_by_role("dialog", name="参照先のワークアイテム").first
-    await expect(first.get_by_role("heading", name=filename, exact=True)).to_be_visible()
+    first = page.locator(".wi-reference-dialog").first
+    await expect(first.get_by_role("heading", name=f"本文から `{legacy}` を参照。", exact=True)).to_be_visible()
+    await expect(first.get_by_text(filename, exact=True)).to_be_visible()
     if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
         await page.screenshot(path=Path(directory) / "005-plan-dialog.png")
     await first.get_by_role("link", name=legacy).click()
-    await expect(page.get_by_role("dialog", name="参照先のワークアイテム").last).to_contain_text("旧式の本文")
+    await expect(page.locator(".wi-reference-dialog").last).to_contain_text("旧式の本文")
     await page.keyboard.press("Escape")
     await page.keyboard.press("Escape")
     await expect(related).to_be_focused()

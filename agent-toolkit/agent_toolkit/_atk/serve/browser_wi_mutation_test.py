@@ -91,7 +91,7 @@ async def test_pending_edit_and_closed_delete_route_results(browser_harness: _Br
 
     awi_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="awi.md")
     await awi_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.get_by_role("button", name="編集", exact=True).click()
     edit_input = detail.locator("#edit-content")
     await edit_input.fill((await edit_input.input_value()) + "\n追記")
@@ -110,7 +110,7 @@ async def test_pending_edit_and_closed_delete_route_results(browser_harness: _Br
     await page.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
 
     await awi_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.get_by_role("button", name="削除").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
     harness.operations.arm_remove_delay()
@@ -134,7 +134,7 @@ async def test_edit_success_does_not_depend_on_auxiliary_detail_get(
     await page.goto(harness.base_url + "/")
     awi_row = page.locator('.entry-select[data-key="awi.md"]')
     await awi_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.get_by_role("button", name="編集", exact=True).click()
     edit_input = detail.locator("#edit-content")
     await edit_input.fill((await edit_input.input_value()) + "\n保存追記")
@@ -164,7 +164,7 @@ async def test_detail_mutation_self_write_does_not_warn(browser_harness: _Browse
     (_entry_path(harness.root, "target.md")).write_text(_state_text(case.content, case.state), encoding="utf-8")
     key = "target.md"
     await page.goto(f"{harness.base_url}/?filename=target.md")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await _record_self_write_warnings(page)
@@ -247,7 +247,7 @@ async def _detail_conflict(harness: _BrowserHarness, mode_button: str | None, fi
     path = _entry_path(harness.root, "target.md")
     path.write_text(_FREE_FORM_UWI, encoding="utf-8")
     await page.goto(f"{harness.base_url}/?filename=target.md")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     if mode_button is not None:
@@ -296,7 +296,7 @@ async def test_edit_conflict_recovery_preserves_saved_input_and_external_change(
     page = harness.page
     await page.set_viewport_size({"width": width, "height": height})
     await _detail_conflict(harness, "#edit-button", "#edit-content", "#save-entry-button", "を保存できませんでした。")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     field = detail.locator("#edit-content")
 
     await page.evaluate(
@@ -347,7 +347,7 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
 
     answer_row = page.locator('.entry-select[data-key="answer-same.md"]')
     await answer_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     answer = detail.get_by_role("textbox", name="質問への回答（必須）")
     await playwright.async_api.expect(answer).to_have_attribute("placeholder", "回答を入力")
     await answer.fill("未処理側だけへの回答")
@@ -399,7 +399,7 @@ async def test_answer_rebase_in_progress_shows_recovery(
 
     monkeypatch.setattr(harness.operations, "answer_uwi", answer_unless_rebasing)
     await page.goto(harness.base_url + "/")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await page.locator('.entry-select[data-key="question.md"]').click()
     field = detail.locator("#answer-input")
     await field.fill("解消後に保存する回答")
@@ -432,7 +432,7 @@ async def test_save_failure_message_stays_at_scrolled_dialog_top(browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator('.entry-select[data-key="long-entry.md"]').click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.get_by_role("button", name="編集", exact=True).click()
     body = detail.locator(".dialog-body")
     await body.evaluate("element => { element.scrollTop = element.scrollHeight; }")

@@ -18,7 +18,7 @@ import pytest
 import pytest_asyncio
 
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._atk import config_migration, config_settings
+from agent_toolkit._atk import config_migration, config_settings, usage_refresh
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import config, entry_index, timings, wi_operations
 from agent_toolkit._atk.serve import plans as serve_plans
@@ -318,6 +318,7 @@ async def _browser_fixture(
     _isolate_creation_time_index(tmp_path, monkeypatch)
     evidence = Path(tempfile.mkdtemp(prefix="browser-failure-", dir=browser_evidence_root))
     request.node.stash[_BROWSER_EVIDENCE] = evidence
+    monkeypatch.setattr(usage_refresh, "refresh", lambda **_options: [])
     browser = shared_serve_browser
     create_context = browser.new_context
     contexts: list[playwright.async_api.BrowserContext] = []
@@ -391,7 +392,7 @@ async def _browser_harness_fixture(
 async def _open_question(page: playwright.async_api.Page) -> playwright.async_api.Locator:
     row = page.locator('#entry-list .entry-select[data-kind="uwi"]')
     await row.click()
-    await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    await page.locator("#detail-dialog").wait_for(state="visible")
     return row
 
 

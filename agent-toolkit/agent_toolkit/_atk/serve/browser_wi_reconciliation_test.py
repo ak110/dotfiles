@@ -26,7 +26,7 @@ async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entr
     await page.goto(harness.base_url + "/")
     awi_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="awi.md")
     await awi_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.wait_for(state="visible")
 
     awi_path.write_text(
@@ -72,7 +72,7 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
 
     processing_row = page.locator('.entry-select[data-key="processing-same.md"]')
     await processing_row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("処理中")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
     harness.current_state.publish()
@@ -129,7 +129,7 @@ async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
         )
     await page.goto(harness.base_url + "/")
 
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
     sse_first = page.locator('.entry-select[data-key="sse-first.md"]')
     await sse_first.click()
@@ -169,7 +169,7 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
 
     async def exercise(
         filename: str,
@@ -252,7 +252,7 @@ async def test_delete_confirmation_closes_on_detail_failure_and_content_conflict
     failure_path.write_text(original, encoding="utf-8")
     conflict_path.write_text(original, encoding="utf-8")
     await page.goto(harness.base_url + "/")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
 
     await page.locator('.entry-select[data-key="dialog-failure.md"]').click()
@@ -313,7 +313,7 @@ async def test_selecting_deleted_entry_refreshes_list_without_error(
     await stale_row.click()
 
     notice = page.locator("#operation-notice")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     if external_change == "delete":
         await playwright.async_api.expect(page.locator("#operation-notice-message")).to_have_text(
             "stale.mdは削除されたため表示できません。一覧を更新しました。"

@@ -1,10 +1,10 @@
 import {readFailure} from "./common.js";
-import {decorateWiReferences} from "./wi_reference.js";
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs, attachScrollEdges, recordUpdateSuccess, setUpdateError, createReadRecovery, setDisplayedReadError
+  resyncWhenVisible, updateNavButtons, timedFetch, beginOperation, notifyDelayMs, attachScrollEdges, recordUpdateSuccess, setUpdateError, createReadRecovery, setDisplayedReadError
 } from "./common.js";
+import {createPlanPreview, planPreviewScroller} from "./plans_preview.js";
 import {registerScreen} from "./shell.js";
 
 // ページロード時の初期値は単一HTMLのJSONブロックへ埋め込み、初回の`init`で読み取る。
@@ -16,14 +16,7 @@ let ROOT_DIRS = {};
 let hostInfoEventCounter = 0;
 
 let files = [];
-// ホスト名・保存元ID・root相対パスの組で一意に識別する。
-let selectedHost = null;
-let selectedSource = "";
-let selectedPath = null;
-// 図の描画まで完了した直近のプレビューHTML。再同期で同じHTMLを受け取った場合は再描画を省き、
-// 開いた要素・描画済みの図・スクロール位置を保つ。描画が後続の世代に中断された場合は`null`のままとし、
-// 次の再同期で描画し直す。
-let appliedPreviewHtml = null;
+let listLoaded = false;
 // ホスト別の接続状態。connected / connecting / disconnected。
 const hostStatus = {};
 // ホスト・保存元別のroot警告。source IDは表示せず、エンドユーザーが復旧判断できる本文だけを表示する。
@@ -32,20 +25,9 @@ let rootStatus = {};
 // ↑↓ナビゲーションは選択中項目の前後インデックスをこの列から算出する。
 // DOM化対象は先頭から`visibleLimit`件のみで、残りは末尾の番兵をIntersectionObserverで検出して段階的に描画する。
 let visibleFiles = [];
-let mermaidLoadPromise = null;
-const MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js";
-const MERMAID_CDN_INTEGRITY = "sha384-xzghz1GQ5u9HCpVskeDPqMsdogD1yvuMQbEK53+wi+G70+6J1AG0L2cfi9PHjDWI";
-// CDNが応答を返さないと読込は完了も失敗もせず、プレビューが描画中のまま戻らない。上限を過ぎたら図の位置へエラーを表示する。
-const MERMAID_LOAD_TIMEOUT_MS = 30000;
-const PREVIEW_LOADING_DELAY_MS = 500;
-const MISSING_SELECTION_MESSAGE = "選択した計画ファイルは移動または削除されたため表示できません。一覧を更新しました。";
-let previewGeneration = 0;
-let previewLoadingTimer = null;
-// 画面内の描画順序の逆転は`previewGeneration`で判定する。
-let previewObjectUrls = new Set();
 let searchTimer = null;
-let serverSearchKeys = null;
 let searchComplete = true;
+let serverSearchKeys = null;
 let lastSearchQuery = "";
 let lastSearchKeys;
 let lastSearchEntries;
@@ -65,6 +47,11 @@ let visibleLimit = VISIBLE_FILES_INITIAL;
 let sentinelObserver = null;
 
 const hostFailures = new Map();
+
+const planPreview = createPlanPreview({
+  filePageUrl, fileQuery, fileSelectionFromUrl, fileSource, getFiles: () => files, getRootDirs: () => ROOT_DIRS,
+  isMobileViewport, refreshFiles, renderFiles, showPlanList,
+});
 
 function updateHostState(host, status) {
   if (status === "disconnected" && hostStatus[host] !== status) {
@@ -114,79 +101,30 @@ function isPlainPrimaryClick(event) {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
-function rootEntries(host) {
-  const value = ROOT_DIRS[host];
-  if (!value) return {};
-  if (value.root || value.portable_root || value.source_id) {
-    return {[value.source_id || ""]: value};
-  }
-  return value;
-}
-
-function rootInfo(host, source) {
-  return rootEntries(host)[source || ""] || null;
-}
-
-function planTarget(host = selectedHost, source = selectedSource, path = selectedPath) {
-  const info = rootInfo(host, source);
-  const root = info?.portable_root || info?.root || "保存元未取得";
-  return path ? `${root}/${path}` : root;
-}
-
-function planDiagnostic(reason, browser = false) {
-  const target = browser ? `${selectedHost} / ${planTarget()}` : planTarget();
-  return diagnostic("計画", browser ? "ブラウザー" : selectedHost, target, reason);
-}
-
-function updateCopyPathButton(host, source) {
-  if (!source) {
-    // 旧単一root形式との互換。source IDが無い要求では従来のホスト判定を使う。
-    document.getElementById("copy-path-btn").disabled = !(host in ROOT_DIRS);
-    return;
-  }
-  document.getElementById("copy-path-btn").disabled = !rootInfo(host, source);
-}
-
 function isSelectedFile(file) {
-  const selection = selectedHost && selectedPath ? {host: selectedHost, source: selectedSource, path: selectedPath} : null;
-  return isSelected(selection, {host: file.host, source: fileSource(file), path: file.path});
+  return isSelected(planPreview.selection, {host: file.host, source: fileSource(file), path: file.path});
 }
 
 function isMobileViewport() {
   return window.matchMedia("(max-width: 768px)").matches;
 }
 
-function updateMetaMobile() {
-  const block = document.getElementById("meta-mobile");
-  if (!block) return;
-  if (!selectedHost || !selectedPath) {
-    block.classList.add("empty");
-    block.textContent = "";
-    return;
+function showPlanList({focus = false} = {}) {
+  document.getElementById("plans-app").dataset.view = "list";
+  if (focus) {
+    const sidebar = document.getElementById("plans-sidebar");
+    (sidebar.querySelector('[aria-current="true"]') ?? document.getElementById("plans-filter")).focus();
   }
-  const selected = files.find(f => f.host === selectedHost && fileSource(f) === selectedSource && f.path === selectedPath);
-  block.classList.remove("empty");
-  block.innerHTML = "";
-  const hostSpan = document.createElement("span");
-  hostSpan.className = "meta-host";
-  hostSpan.textContent = selectedHost;
-  const ctimeSpan = document.createElement("span");
-  ctimeSpan.className = "meta-ctime";
-  ctimeSpan.textContent = selected ? selected.ctime : "";
-  const pathSpan = document.createElement("span");
-  pathSpan.className = "meta-path";
-  pathSpan.textContent = selectedPath;
-  block.append(pathSpan, hostSpan, ctimeSpan);
 }
 
-// 遷移先がDOM未描画領域なら、必要分まで表示上限をステップ単位で拡張してから再描画する。
-// 段階展開（先頭`VISIBLE_FILES_INITIAL`件のみDOM化）と↑↓ナビゲーションの整合を取るための処理。
+// 段階展開前の項目へ移る時は、一覧にも選択した行が現れるまで表示範囲を広げる。 pyfltr: allow-comment
 function openRelativeFile(target, position) {
   if (position >= visibleLimit) {
     visibleLimit = Math.ceil((position + 1) / VISIBLE_FILES_STEP) * VISIBLE_FILES_STEP;
     renderFiles();
   }
-  openFile(target.host, target.path, fileSource(target));
+  history.pushState({atkPlan: true}, "", filePageUrl(target.host, target.path, fileSource(target)));
+  void planPreview.openFile(target.host, target.path, fileSource(target));
 }
 
 function createFileItem(file) {
@@ -194,6 +132,9 @@ function createFileItem(file) {
   const item = document.createElement("a");
   const name = document.createElement("div");
   name.className = "name pane-item-title";
+  const prefix = document.createElement("span");
+  prefix.className = "file-name-prefix";
+  name.append(prefix, document.createElement("span"));
   const meta = document.createElement("div");
   meta.className = "meta pane-item-meta";
   const hostSpan = document.createElement("span");
@@ -208,7 +149,7 @@ function createFileItem(file) {
     if (!isPlainPrimaryClick(event) || item.target) return;
     event.preventDefault();
     history.pushState({atkPlan: true}, "", item.href);
-    void openFile(file.host, file.path, fileSource(file));
+    void planPreview.openFile(file.host, file.path, fileSource(file));
   });
   return item;
 }
@@ -220,7 +161,13 @@ function updateFileItem(item, file) {
   else item.removeAttribute("aria-current");
   item.href = filePageUrl(file.host, file.path, fileSource(file));
   const name = item.querySelector(".name");
-  if (name) name.textContent = file.path;
+  const filename = file.path.split(/[\\/]/u).at(-1) || file.path;
+  const letters = Array.from(filename);
+  const suffixLength = 14;
+  name.firstElementChild.textContent = letters.slice(0, -suffixLength).join("");
+  name.lastElementChild.textContent = letters.slice(-suffixLength).join("");
+  item.setAttribute("aria-label", [filename, file.host, file.ctime].filter(Boolean).join("、"));
+  item.title = file.path;
   const hostSpan = item.querySelector(".host");
   if (hostSpan) {
     hostSpan.textContent = file.host;
@@ -260,12 +207,12 @@ function renderFiles() {
   updateNavButtons(
     document.getElementById("prev-btn"), document.getElementById("next-btn"), visibleFiles, isSelectedFile
   );
-  updateMetaMobile();
+  planPreview.updatePlanIdentity();
   renderRootWarnings();
   const empty = document.getElementById("plans-empty");
-  empty.hidden = visibleFiles.length > 0 || !searchComplete;
+  empty.hidden = !listLoaded || visibleFiles.length > 0 || !searchComplete;
   empty.querySelector("p").textContent = files.length === 0
-    ? `計画ファイルがありません。対象root: ${Object.values(ROOT_DIRS).flatMap(value => typeof value === "string" ? [value] : Object.values(value || {})).join("、")}`
+    ? "計画ファイルはまだありません。"
     : "一致する計画ファイルはありません。";
   empty.querySelector("button").hidden = !document.getElementById("plans-filter").value;
 }
@@ -276,7 +223,7 @@ function renderRootWarnings() {
     for (const source of Object.keys(rootStatus[host] || {})) {
       const status = rootStatus[host][source];
       if (status && status.status === "warning" && status.message) {
-        messages.push(diagnostic("計画", host, planTarget(host, source, null), "計画rootを利用できません: " + status.message));
+        messages.push(diagnostic("計画", host, planPreview.planTarget(host, source, null), "計画rootを利用できません: " + status.message));
       }
     }
   }
@@ -306,10 +253,13 @@ async function refreshFiles(timing = {}) {
     const res = await timedFetch("plans", BASE_PATH + "/api/plans/files", {}, timing);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     files = await res.json();
+    listLoaded = true;
     recordUpdateSuccess("plans", "list");
     renderFiles();
   } catch (error) {
     if (error.name !== "AbortError") setDisplayedReadError("plans", "list", "計画一覧を取得できません。", refreshFiles);
+  } finally {
+    document.getElementById("plans-list-loading").hidden = true;
   }
 }
 
@@ -326,7 +276,7 @@ function scheduleFullTextSearch() {
   serverSearchKeys = query ? (query === lastSearchQuery ? lastSearchKeys : new Set()) : null;
   visibleLimit = VISIBLE_FILES_INITIAL;
   renderFiles();
-  if (!query || document.body.dataset.screen !== "plans") return;
+  if (!query) return;
   const controller = new AbortController();
   searchController = controller;
   const {signal} = controller;
@@ -424,7 +374,7 @@ async function refreshHostInfo() {
       if (!(host in info)) delete ROOT_DIRS[host];
     }
     Object.assign(ROOT_DIRS, info);
-    if (selectedHost) updateCopyPathButton(selectedHost, selectedSource);
+    if (planPreview.selection.host) planPreview.updateCopyPathButton(planPreview.selection.host, planPreview.selection.source);
     return;
   }
 }
@@ -437,302 +387,6 @@ async function refreshRootStatus() {
   }
 }
 
-async function applyPreviewHtml(html, scrollTop, generation) {
-  if (generation !== previewGeneration) return;
-  revokePreviewObjectUrls();
-  const preview = document.getElementById("preview");
-  preview.innerHTML = html;
-  decorateWiReferences(preview);
-  appliedPreviewHtml = null;
-  for (const link of preview.querySelectorAll("a[data-plan-path]")) {
-    link.href = filePageUrl(selectedHost, link.dataset.planPath, selectedSource);
-  }
-  await (renderDiagrams(preview, generation));
-  if (generation !== previewGeneration) return;
-  appliedPreviewHtml = html;
-  const main = document.querySelector("#screen-plans main");
-  if (main) main.scrollTop = scrollTop;
-}
-
-async function renderDiagrams(preview, generation) {
-  renderSvgDiagrams(preview.querySelectorAll(".diagram-svg"));
-  await (renderMermaidDiagrams(preview.querySelectorAll(".mermaid-output"), generation));
-}
-
-function loadMermaid() {
-  if (mermaidLoadPromise) return mermaidLoadPromise;
-  const loading = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    const timer = setTimeout(() => {
-      // 上限を過ぎた要素の遅れた完了は、次の読込と重ねて初期化しないよう無視する。
-      script.onload = null;
-      script.onerror = null;
-      script.remove();
-      reject(new Error(`Mermaidの読み込みが${MERMAID_LOAD_TIMEOUT_MS / 1000}秒以内に終わりませんでした`));
-    }, MERMAID_LOAD_TIMEOUT_MS);
-    script.src = MERMAID_CDN_URL;
-    script.integrity = MERMAID_CDN_INTEGRITY;
-    script.crossOrigin = "anonymous";
-    script.onload = () => {
-      clearTimeout(timer);
-      window.mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-      });
-      resolve(window.mermaid);
-    };
-    script.onerror = () => {
-      clearTimeout(timer);
-      reject(new Error("Mermaidの読み込みに失敗しました"));
-    };
-    document.head.appendChild(script);
-  });
-  // 失敗した読込は保持せず、次の描画で読み込み直す。一時的な失敗の後も、再表示で図を描画できる。
-  mermaidLoadPromise = loading.catch((error) => {
-    mermaidLoadPromise = null;
-    throw error;
-  });
-  return mermaidLoadPromise;
-}
-
-async function renderMermaidDiagrams(nodes, generation) {
-  if (nodes.length === 0) return;
-  let api;
-  try {
-    api = await (loadMermaid());
-  } catch (error) {
-    if (generation !== previewGeneration) return;
-    for (const node of nodes) showDiagramError(node.closest("figure"), error.message);
-    return;
-  }
-  if (generation !== previewGeneration) return;
-  for (const node of nodes) {
-    const source = node.textContent;
-    try {
-      await (api.run({nodes: [node]}));
-      disableMermaidNavigation(node);
-      if (generation !== previewGeneration) return;
-    } catch (_) {
-      if (generation !== previewGeneration) return;
-      node.textContent = source;
-      showDiagramError(node.closest("figure"), "Mermaid図を描画できませんでした");
-    }
-  }
-}
-
-function disableMermaidNavigation(node) {
-  for (const anchor of node.querySelectorAll("a")) {
-    anchor.removeAttribute("href");
-    anchor.removeAttribute("xlink:href");
-    anchor.removeAttribute("target");
-  }
-}
-
-function renderSvgDiagrams(figures) {
-  const target = fileQuery(selectedHost, selectedPath, selectedSource);
-  for (const figure of figures) {
-    const source = figure.querySelector(".diagram-source pre").textContent;
-    const image = figure.querySelector(".svg-output");
-    const url = URL.createObjectURL(new Blob([source], {type: "image/svg+xml"}));
-    previewObjectUrls.add(url);
-    image.onerror = () => {
-      // 同じHTMLの再同期では画像DOMとURLを再利用し、要求の世代だけが進む。
-      if (figure.isConnected && target === fileQuery(selectedHost, selectedPath, selectedSource)) {
-        showDiagramError(figure, "SVG図を描画できませんでした");
-      }
-    };
-    image.src = url;
-  }
-}
-
-function revokePreviewObjectUrls() {
-  for (const url of previewObjectUrls) URL.revokeObjectURL(url);
-  previewObjectUrls.clear();
-}
-
-function showDiagramError(figure, message) {
-  let error = figure.querySelector(".diagram-error");
-  if (!error) {
-    error = document.createElement("p");
-    error.className = "diagram-error";
-    figure.appendChild(error);
-  }
-  error.textContent = planDiagnostic(message, true);
-  error.hidden = false;
-}
-
-function beginPreviewLoading(generation) {
-  if (previewLoadingTimer !== null) clearTimeout(previewLoadingTimer);
-  const indicator = document.getElementById("plans-loading-indicator");
-  const preview = document.getElementById("preview");
-  indicator.hidden = true;
-  preview.setAttribute("aria-busy", "true");
-  previewLoadingTimer = setTimeout(() => {
-    if (generation !== previewGeneration) return;
-    previewLoadingTimer = null;
-    indicator.hidden = false;
-  }, PREVIEW_LOADING_DELAY_MS);
-}
-
-function endPreviewLoading(generation) {
-  if (generation !== previewGeneration) return;
-  if (previewLoadingTimer !== null) clearTimeout(previewLoadingTimer);
-  previewLoadingTimer = null;
-  document.getElementById("plans-loading-indicator").hidden = true;
-  document.getElementById("preview").setAttribute("aria-busy", "false");
-}
-
-function showPreviewError(retry, code = 503) {
-  if (readFailure(code) === "temporary") {
-    setDisplayedReadError("plans", "preview", "計画の本文を取得できません。", retry);
-    return;
-  }
-  setUpdateError("plans", "preview");
-  document.getElementById("preview").replaceChildren();
-  appliedPreviewHtml = null;
-  const status = document.getElementById("plans-selection-status");
-  status.textContent = code === 403 ? "計画の本文を読む権限がありません。" : "計画の本文を取得できません。";
-  status.hidden = false;
-  const alert = document.createElement("p");
-  alert.setAttribute("role", "status");
-  alert.textContent = status.textContent;
-  document.getElementById("preview").append(alert);
-}
-
-function showCopyError(message) {
-  const preview = document.getElementById("preview");
-  let alert = preview.querySelector(".copy-error");
-  if (!alert) {
-    alert = document.createElement("p");
-    alert.className = "copy-error";
-    alert.setAttribute("role", "alert");
-    preview.prepend(alert);
-  }
-  alert.textContent = message;
-}
-
-// 一覧の項目は外部操作（計画の保存による別rootへの移動や削除）で消え得る。同じ対象へは再試行しない。
-function showMissingSelection() {
-  setUpdateError("plans", "preview");
-  const message = planDiagnostic(MISSING_SELECTION_MESSAGE);
-  selectedHost = null;
-  selectedSource = "";
-  selectedPath = null;
-  document.getElementById("copy-btn").disabled = true;
-  document.getElementById("copy-path-btn").disabled = true;
-  if (fileSelectionFromUrl()) history.replaceState({atkPlan: true}, "", `${BASE_PATH}/plans`);
-  const preview = document.getElementById("preview");
-  preview.replaceChildren();
-  appliedPreviewHtml = null;
-  const status = document.createElement("div");
-  status.setAttribute("role", "status");
-  status.textContent = message;
-  preview.append(status);
-  const sidebarStatus = document.getElementById("plans-selection-status");
-  sidebarStatus.textContent = message;
-  sidebarStatus.hidden = false;
-  if (isMobileViewport()) document.getElementById("plans-sidebar").scrollTop = 0;
-  void refreshFiles();
-}
-
-async function updatePreview(timing = {}) {
-  if (!selectedPath || !selectedHost) return;
-  const main = document.querySelector("#screen-plans main");
-  const scrollTop = main ? main.scrollTop : 0;
-  const generation = ++previewGeneration;
-  beginPreviewLoading(generation);
-  try {
-    const res = await timedFetch(
-      "plans", BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource), {fresh: true}, timing
-    );
-    if (generation !== previewGeneration) return;
-    if (res.status === 404) {
-      showMissingSelection();
-      return;
-    }
-    if (!res.ok) {
-      showPreviewError(updatePreview, res.status);
-      return;
-    }
-    const html = await (res.text());
-    if (generation !== previewGeneration) return;
-    setUpdateError("plans", "preview");
-    document.getElementById("plans-selection-status").hidden = true;
-    if (html === appliedPreviewHtml) return;
-    await (applyPreviewHtml(html, scrollTop, generation));
-  } catch (error) {
-    if (generation === previewGeneration) showPreviewError(updatePreview);
-  } finally {
-    endPreviewLoading(generation);
-  }
-}
-
-async function openFile(host, path, source, closeDrawer = true) {
-  // ファイル一覧はSSE経由で常時同期されているため、選択操作のたびに/api/filesを再取得する必要はない。
-  // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
-  if (host !== selectedHost || path !== selectedPath || (source || "") !== selectedSource) {
-    setUpdateError("plans", "preview");
-    document.getElementById("preview").replaceChildren();
-    appliedPreviewHtml = null;
-  }
-  selectedHost = host;
-  selectedSource = source || "";
-  selectedPath = path;
-  const sidebarStatus = document.getElementById("plans-selection-status");
-  sidebarStatus.hidden = true;
-  sidebarStatus.textContent = "";
-  const selected = source
-    ? files.find(f => f.host === host && fileSource(f) === selectedSource && f.path === path)
-    : files.find(f => f.host === host && f.path === path);
-  if (selected) selectedSource = fileSource(selected);
-  if (fileSelectionFromUrl()) {
-    history.replaceState({atkPlan: true}, "", filePageUrl(host, path, selectedSource));
-  }
-  document.getElementById("copy-btn").disabled = false;
-  // 選択したrootの情報が未取得の間（リモート接続の確立前）はdisabledのまま保つ。
-  updateCopyPathButton(host, selectedSource);
-  renderFiles();
-  // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
-  if (closeDrawer && isMobileViewport()) setDrawerOpen("plans", false);
-  const main = document.querySelector("#screen-plans main");
-  const generation = ++previewGeneration;
-  beginPreviewLoading(generation);
-  // 所要は選択からプレビューの表示（Mermaidなどの非同期の図の描画を含む）までを1件の操作として残す。
-  const operation = beginOperation("plans", "open-file", {trigger: "click"});
-  let outcome = "ok";
-  try {
-    const res = await timedFetch("plans", BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource), {}, operation.timing);
-    if (generation !== previewGeneration) {
-      outcome = "superseded";
-      return;
-    }
-    if (res.status === 404) {
-      showMissingSelection();
-      if (main) main.scrollTop = 0;
-      return;
-    }
-    if (!res.ok) {
-      showPreviewError(updatePreview, res.status);
-      if (main) main.scrollTop = 0;
-      return;
-    }
-    const html = await (res.text());
-    if (generation !== previewGeneration) {
-      outcome = "superseded";
-      return;
-    }
-    setUpdateError("plans", "preview");
-    await (applyPreviewHtml(html, 0, generation));
-    if (generation !== previewGeneration) outcome = "superseded";
-  } catch (error) {
-    outcome = "error";
-    if (generation === previewGeneration) showPreviewError(updatePreview);
-  } finally {
-    endPreviewLoading(generation);
-    operation.end(outcome);
-  }
-}
-
 // 所要は契機（変更通知・再接続・表示復帰）の受信から、一覧とプレビューの再描画までを1件の操作として残す。
 async function resyncFromServer({trigger = "resync", event = null, receivedAt} = {}) {
   const operation = beginOperation("plans", "external-reload", {
@@ -740,85 +394,13 @@ async function resyncFromServer({trigger = "resync", event = null, receivedAt} =
   });
   try {
     await refreshFiles(operation.timing);
-    if (!selectedPath || !selectedHost) return;
+    if (!planPreview.selection.path || !planPreview.selection.host) return;
     // 更新時刻は同じ時刻刻み内の連続した書き換えで変わらないため、本文の変化の判定には使わない。
     // 本文を毎回取り直し、変化の有無は`updatePreview`が適用済みHTMLとの比較で判定する。
-    if (files.some(isSelectedFile)) await (updatePreview(operation.timing));
+    if (files.some(isSelectedFile)) await (planPreview.updatePreview(operation.timing));
   } finally {
     operation.end();
   }
-}
-
-async function copySelectedRaw() {
-  if (!selectedPath || !selectedHost) return;
-  const target = planTarget();
-  const host = selectedHost;
-  let copying = false;
-  const btn = document.getElementById("copy-btn");
-  const wideLabel = btn.querySelector(".wide-label");
-  const shortLabel = btn.querySelector(".short-label");
-  const originalWide = btn.dataset.wideLabel || wideLabel.textContent;
-  const originalShort = btn.dataset.shortLabel || shortLabel.textContent;
-  btn.dataset.wideLabel = originalWide;
-  btn.dataset.shortLabel = originalShort;
-  try {
-    const res = await timedFetch("plans", BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
-    if (!res.ok) throw new Error("status " + res.status);
-    const text = await (res.text());
-    copying = true;
-    await (navigator.clipboard.writeText(text));
-    wideLabel.textContent = "コピーしました";
-    shortLabel.textContent = "完了";
-  } catch (e) {
-    wideLabel.textContent = "コピーに失敗しました";
-    shortLabel.textContent = "失敗";
-    showCopyError(diagnostic("計画", copying ? "ブラウザー" : host, copying ? `${host} / ${target}` : target, `コピーに失敗しました: ${e.message}`));
-  }
-  setTimeout(() => {
-    wideLabel.textContent = originalWide;
-    shortLabel.textContent = originalShort;
-  }, 2000);
-}
-
-async function copySelectedPath() {
-  if (!selectedPath || !selectedHost) return;
-  const info = rootInfo(selectedHost, selectedSource);
-  if (!info) return;
-  const target = `${selectedHost} / ${planTarget()}`;
-  const btn = document.getElementById("copy-path-btn");
-  const wideLabel = btn.querySelector(".wide-label");
-  const shortLabel = btn.querySelector(".short-label");
-  const originalWide = btn.dataset.wideLabel || wideLabel.textContent;
-  const originalShort = btn.dataset.shortLabel || shortLabel.textContent;
-  btn.dataset.wideLabel = originalWide;
-  btn.dataset.shortLabel = originalShort;
-  // ホスト種別に応じてチルダ表記（POSIX）または%USERPROFILE%表記（Windows）へ変換する。
-  // 置換基準はinfo.homeとする（info.rootはplansディレクトリ等のroot直下パスであり
-  // ホームディレクトリと一致しない場合があるため）。
-  let absolutePath;
-  if (info.portable_root) {
-    absolutePath = info.portable_root + "/" + selectedPath;
-  } else if (info.os_type === "nt") {
-    const winRoot = info.root.split("/").join("\\\\");
-    const winHome = info.home.split("/").join("\\\\");
-    const winRelative = selectedPath.split("/").join("\\\\");
-    absolutePath = (winRoot + "\\\\" + winRelative).replace(winHome, "%USERPROFILE%");
-  } else {
-    absolutePath = (info.root + "/" + selectedPath).replace(info.home, "~");
-  }
-  try {
-    await (navigator.clipboard.writeText(absolutePath));
-    wideLabel.textContent = "コピーしました";
-    shortLabel.textContent = "完了";
-  } catch (e) {
-    wideLabel.textContent = "コピーに失敗しました";
-    shortLabel.textContent = "失敗";
-    showCopyError(diagnostic("計画", "ブラウザー", target, `コピーに失敗しました: ${e.message}`));
-  }
-  setTimeout(() => {
-    wideLabel.textContent = originalWide;
-    shortLabel.textContent = originalShort;
-  }, 2000);
 }
 
 function applyRootInfoUpdate(payload) {
@@ -828,7 +410,7 @@ function applyRootInfoUpdate(payload) {
   } else {
     ROOT_DIRS[payload.host] = payload.info;
   }
-  if (selectedHost === payload.host) updateCopyPathButton(selectedHost, selectedSource);
+  if (planPreview.selection.host === payload.host) planPreview.updateCopyPathButton(planPreview.selection.host, planPreview.selection.source);
 }
 
 // 名前の無い通知の種類ごとの処理。旧形式（dataが"refresh"文字列固定）と、処理を持たない種類と
@@ -880,31 +462,20 @@ async function forceResync() {
 }
 
 function bindScreenEvents() {
-  document.addEventListener("atk-screen-change", () => {
-    if (document.body.dataset.screen !== "plans") {
-      searchController?.abort();
-      document.getElementById("search-status").textContent = "";
-      clearTimeout(searchTimer);
-      setUpdateError("plans", "search");
-    } else if (!searchComplete) scheduleFullTextSearch();
-  });
   document.getElementById("plans-filter").addEventListener("input", () => {
     // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
     // 段階展開で伸びた上限を保ったままにすると、フィルタ後の結果が少なくても無駄な走査が残るため。
     scheduleFullTextSearch();
   });
-  document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
-  document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath);
+  document.getElementById("copy-btn").addEventListener("click", planPreview.copySelectedRaw);
+  document.getElementById("copy-path-btn").addEventListener("click", planPreview.copySelectedPath);
   document.getElementById("prev-btn").addEventListener("click", () => {
     navigateRelative(visibleFiles, isSelectedFile, -1, openRelativeFile);
   });
   document.getElementById("next-btn").addEventListener("click", () => {
     navigateRelative(visibleFiles, isSelectedFile, 1, openRelativeFile);
   });
-  document.getElementById("plans-menu-btn").addEventListener("click", () => {
-    setDrawerOpen("plans", !document.getElementById("screen-plans").classList.contains("drawer-open"));
-  });
-  document.getElementById("plans-drawer-backdrop").addEventListener("click", () => setDrawerOpen("plans", false));
+  document.getElementById("plans-menu-btn").addEventListener("click", () => showPlanList({focus: true}));
   document.getElementById("plans-clear-filter").addEventListener("click", () => {
     document.getElementById("plans-filter").value = "";
     scheduleFullTextSearch();
@@ -917,56 +488,67 @@ function bindScreenEvents() {
     if (!link || !isPlainPrimaryClick(event) || link.target) return;
     event.preventDefault();
     history.pushState({atkPlan: true}, "", link.href);
-    void openFile(selectedHost, link.dataset.planPath, selectedSource);
+    void planPreview.openFile(planPreview.selection.host, link.dataset.planPath, planPreview.selection.source);
   });
 }
 
-async function restoreFileFromUrl(closeDrawer = true) {
+async function restoreFileFromUrl() {
   if (location.pathname !== `${BASE_PATH}/plans`) return;
   const selection = fileSelectionFromUrl();
-  const target = selection && files.find(file =>
-    file.host === selection.host && file.path === selection.path &&
-    (!selection.source || fileSource(file) === selection.source)
-  );
-  if (target) {
-    await openFile(target.host, target.path, fileSource(target), closeDrawer);
-  } else if (files.length > 0 && !isMobileViewport()) {
-    await openFile(files[0].host, files[0].path, fileSource(files[0]), closeDrawer);
+  if (!selection) {
+    showPlanList({focus: isMobileViewport()});
+    return;
   }
+  const current = planPreview.selection;
+  if (current.host === selection.host && current.path === selection.path && current.source === selection.source) return;
+  await planPreview.openFile(selection.host, selection.path, selection.source);
 }
 
 async function init() {
-  const initialPreviewGeneration = previewGeneration;
+  const initialPreviewGeneration = planPreview.generation;
   const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
   ROOT_DIRS = bootstrap.root_dirs;
   bindScreenEvents();
   const preview = document.getElementById("preview");
   const main = preview.closest("main");
-  attachScrollEdges(main, main.querySelector(".toolbar"), preview);
+  attachScrollEdges(main, main.querySelector(".detail-toolbar"), preview, {
+    icons: true, scrollTarget: planPreviewScroller,
+  });
   // バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
   // 抑制するため、通知のみに依存するとタブ復帰時に溜まったイベントの処理が数秒遅れる。
   resyncWhenVisible(forceResync);
   globalThis.addEventListener?.("popstate", () => { void restoreFileFromUrl(); });
-  setDrawerOpen("plans", false);
 
+  const selection = fileSelectionFromUrl();
   subscribeEvents();
   await Promise.race([firstSubscription, new Promise(resolve => setTimeout(resolve, INITIAL_SUBSCRIBE_WAIT_MS))]);
   initialLoadStarted = true;
+  let explicitPreview;
+  if (selection && planPreview.generation === initialPreviewGeneration) {
+    document.getElementById("plans-app").dataset.view = "detail";
+    if (selection.source) {
+      explicitPreview = planPreview.openFile(selection.host, selection.path, selection.source, false);
+    } else {
+      // 保存元を省いた直リンクは、同じパスが複数の保存元にあると本文を取得できない。 pyfltr: allow-comment
+      preview.replaceChildren();
+      planPreview.beginPreviewLoading(initialPreviewGeneration);
+    }
+  }
   await (refreshHostStatus());
   await (refreshHostInfo());
   await (refreshRootStatus());
   await (refreshFiles());
+  setupSentinelObserver();
   // 初期取得より先に始まった閲覧を、自動選択で開き直さない。
-  if (previewGeneration !== initialPreviewGeneration) {
-    setupSentinelObserver();
+  if (explicitPreview || planPreview.generation !== initialPreviewGeneration) {
+    await explicitPreview;
     return;
   }
-  if (location.pathname === `${BASE_PATH}/plans`) {
-    await restoreFileFromUrl(false);
+  if (selection) {
+    await planPreview.openFile(selection.host, selection.path, selection.source, false);
   } else if (files.length > 0 && !isMobileViewport()) {
-    await openFile(files[0].host, files[0].path, fileSource(files[0]));
+    await planPreview.openFile(files[0].host, files[0].path, fileSource(files[0]));
   }
-  setupSentinelObserver();
 }
 
 registerScreen("plans", {init});

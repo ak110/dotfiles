@@ -3,6 +3,7 @@ import base64
 import json
 import re
 import subprocess
+import threading
 
 import pytest
 import quart
@@ -215,6 +216,8 @@ async def test_opening_settings_prefetches_unselected_hosts_without_migrating_th
     try:
         client = app.test_client()
         assert (await client.get("/api/settings")).status_code == 200
+        assert not calls
+        assert (await client.post("/api/settings/prepare")).status_code == 200
         async with asyncio.timeout(3):
             while True:
                 listing = await (await client.get("/api/settings?background=1")).get_json()
@@ -228,5 +231,67 @@ async def test_opening_settings_prefetches_unselected_hosts_without_migrating_th
         assert set(calls) == {
             (host, operation) for host in ("current", "legacy") for operation in ("uname -s", "atk config snapshot --read-only")
         } | {("legacy", "atk config snapshot --help")}
+    finally:
+        await app.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_selection_joins_one_read_and_rejects_saving_the_previous_snapshot(monkeypatch):
+    host = "current"
+    endpoint = f"/api/settings?host={host}"
+    release = threading.Event()
+    started = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    reads: list[str] = []
+    updates: list[dict] = []
+    monkeypatch.setattr(settings_routes, "_remote_hosts", lambda *, read_only=False: (host,))
+
+    def snapshot(target, *, read_only):
+        assert read_only
+        reads.append(target)
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(5)
+        return {"settings": {"serve_host": {"saved": str(len(reads))}}}, None
+
+    monkeypatch.setattr(settings_routes, "_remote_snapshot", snapshot)
+    monkeypatch.setattr(settings_routes, "_remote_update", lambda _host, payload: updates.append(payload))
+    app = quart.Quart(__name__)
+    shell_routes.register_error_handlers(app)
+    settings_routes.register_settings_routes(app, ServeConfig("127.0.0.1", 8080))
+    await app.startup()
+    try:
+        client = app.test_client()
+        assert (await client.post("/api/settings/prepare")).status_code == 200
+        try:
+            await asyncio.wait_for(started.wait(), 3)
+            initial = await (await client.get(endpoint + "&selection=1")).get_json()
+            assert initial["settings_state"] == "pending"
+            assert "settings" not in initial
+        finally:
+            release.set()
+        ready = await (await client.get(endpoint + "&selection=1&wait=1")).get_json()
+        assert ready["settings_state"] == "ready"
+        assert reads == [host]
+        release.clear()
+        started.clear()
+        try:
+            old = ready["fetched_at"]
+            cached = await (
+                await client.get("/api/settings", query_string={"host": host, "selection": "1", "after": old})
+            ).get_json()
+            assert cached["settings_state"] == "pending"
+            assert cached["settings"] == ready["settings"]
+            await asyncio.wait_for(started.wait(), 3)
+            payload = {"action": "set", "key": "serve_host", "value": "updated"}
+            assert (await client.post(endpoint, json={**payload, "settings_revision": old})).status_code == 409
+        finally:
+            release.set()
+        latest = await (await client.get(endpoint + "&selection=1&wait=1")).get_json()
+        assert latest["settings_state"] == "ready"
+        assert latest["settings"] != cached["settings"]
+        assert (await client.post(endpoint, json={**payload, "settings_revision": old})).status_code == 409
+        assert (await client.post(endpoint, json={**payload, "settings_revision": latest["fetched_at"]})).status_code == 200
+        assert updates == [payload]
+        assert reads == [host, host]
     finally:
         await app.shutdown()

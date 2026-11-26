@@ -14,7 +14,6 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
 )
 from agent_toolkit._testing.serve_browser_shell_support import (
     _SCREEN_STREAMS,
-    _assert_other_streams_unrequested,
     _open_screen,
     _request_count,
     _resynchronize_visible,
@@ -23,6 +22,62 @@ from agent_toolkit._testing.serve_browser_shell_support import (
 pytestmark = [
     pytest.mark.browser,
 ]
+
+
+@pytest.mark.cpu_limit(1.5, reason="実Chromiumの2タブでHTTP接続の共有と購読の引き継ぎを確認する")
+@pytest.mark.asyncio(loop_scope="session")
+async def test_browser_tabs_share_event_streams_and_transfer_ownership(screen_harness: _ScreenHarness) -> None:
+    first = screen_harness.page
+    context = first.context
+    await _open_screen(screen_harness, "wi")
+    lock_names = [f"atk serve SSE: {path}" for path, _ in _SCREEN_STREAMS.values()]
+    await first.wait_for_function(
+        "async names => { const {held} = await navigator.locks.query(); "
+        "return names.every(name => held.some(lock => lock.name === name)); }",
+        arg=lock_names,
+    )
+    opened_streams: list[str] = []
+    transferred = asyncio.Event()
+    second = await context.new_page()
+
+    def observe(request: playwright.async_api.Request) -> None:
+        path = urllib.parse.urlsplit(request.url).path
+        if any(path == stream for stream, _ in _SCREEN_STREAMS.values()) and request.frame.page is second:
+            opened_streams.append(path)
+        if len(opened_streams) == len(lock_names):
+            transferred.set()
+
+    context.on("request", observe)
+    try:
+        await second.goto(screen_harness.base_url + "/?filename=awi.md")
+        await playwright.async_api.expect(second.locator("#detail-filename")).to_have_text("awi.md")
+        await playwright.async_api.expect(second.locator("#connection-status")).to_have_attribute("data-connected", "true")
+        assert not opened_streams
+        await first.close()
+        await asyncio.wait_for(transferred.wait(), timeout=5)
+        for stream in (path for path, _ in _SCREEN_STREAMS.values()):
+            assert opened_streams.count(stream) == 1
+    finally:
+        await second.close()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_browser_tabs_can_open_work_item_links_on_plain_http(screen_harness: _ScreenHarness) -> None:
+    first = screen_harness.page
+    base = screen_harness.base_url.replace("127.0.0.1", "0.0.0.0")
+    expect = playwright.async_api.expect
+    await first.goto(base + "/")
+    assert await first.evaluate("window.isSecureContext") is False
+    await expect(first.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await expect(first.locator("#preview")).to_contain_text("本文-初回")
+    await expect(first.locator("#detail .event-kind").first).to_be_attached()
+    second = await first.context.new_page()
+    try:
+        await second.goto(base + "/?filename=awi.md")
+        await expect(second.locator("#detail-filename")).to_have_text("awi.md")
+        await expect(second.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    finally:
+        await second.close()
 
 
 @pytest.mark.cpu_limit(
@@ -54,7 +109,6 @@ async def test_initial_screen_acquisition_is_consumed_before_observation(
         await asyncio.wait_for(started.wait(), timeout=5)
         if delayed_path == "/api/entries":
             await page.wait_for_function("window.__screenRequests.opened['/api/events'] > 0")
-        _assert_other_streams_unrequested(screen_harness, "wi")
         assert not ready.done(), "初期処理の消費前に観測区間へ進んだ"
     finally:
         release.set()
@@ -91,35 +145,75 @@ async def test_visibility_observation_rejects_a_disabled_update_path(
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_revisiting_screens_resubscribes_without_repeating_initial_sync(screen_harness: _ScreenHarness) -> None:
+async def test_switching_and_revisiting_screens_keeps_the_prepared_views(
+    screen_harness: _ScreenHarness,
+) -> None:
     harness = screen_harness
     page = harness.page
+    expect = playwright.async_api.expect
     await _open_screen(harness, "wi")
-    await page.wait_for_function("window.__screenRequests.completed['/api/plans/files'] >= 1")
-    before_sync = _request_count(harness, "/api/sync")
-    for screen, label in (
-        ("plans", "計画ファイル"),
-        ("sessions", "セッション"),
-        ("wi", "ワークアイテム"),
-        ("plans", "計画ファイル"),
-        ("sessions", "セッション"),
-    ):
-        events, listing = _SCREEN_STREAMS[screen]
-        before = await page.evaluate(
-            "([events, listing]) => [window.__screenRequests.subscribed[events] || 0, "
-            "window.__screenRequests.completed[listing] || 0]",
-            [events, listing],
-        )
-        inactive = {path: _request_count(harness, path) for path, _ in _SCREEN_STREAMS.values() if path != events}
-        await page.locator("nav.app-nav").get_by_role("link", name=label).click()
-        await page.wait_for_function(
-            "([events, listing, opens, completed]) => window.__screenRequests.subscribed[events] > opens "
-            "&& window.__screenRequests.completed[listing] > completed",
-            arg=[events, listing, *before],
-        )
-        assert {path: _request_count(harness, path) for path in inactive} == inactive
+    targets = (
+        ("plans", "計画ファイル", "#preview :text-is('本文-初回')"),
+        ("sessions", "セッション", "#detail .event-kind"),
+        ("agents", "エージェント", "#agents-hosts section"),
+        ("usage", "利用枠", "#usage-content .metric-section"),
+        ("settings", "設定", "#settings-content [data-setting]"),
+        ("wi", "ワークアイテム", "#entry-list .entry-row"),
+    )
+    for _, _, ready in targets:
+        await expect(page.locator(ready).first).to_be_attached(timeout=10_000)
+    paths = {path for pair in _SCREEN_STREAMS.values() for path in pair}
+    paths.update(
+        {
+            "/api/plans/file",
+            "/api/sessions/detail",
+            "/api/agents/hosts",
+            "/api/agents/list",
+            "/api/usage",
+            "/api/usage/refresh",
+            "/api/settings",
+            "/api/settings/prepare",
+            "/api/sync",
+        }
+    )
+    await page.wait_for_function("window.__screenRequests.pending === 0")
+    before = {path: _request_count(harness, path) for path in paths}
+    for _ in range(2):
+        for screen, label, ready in targets:
+            await page.locator("nav.app-nav").get_by_role("link", name=label).click()
+            await expect(page.locator(f"#screen-{screen}")).to_be_visible()
+            await expect(page.locator(ready).first).to_be_visible()
+    await page.go_back()
+    await expect(page.locator("#screen-settings")).to_be_visible()
+    await page.go_forward()
+    await expect(page.locator("#screen-wi")).to_be_visible()
+    assert {path: _request_count(harness, path) for path in paths} == before
 
-    assert _request_count(harness, "/api/sync") == before_sync
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_switching_reuses_a_delayed_background_request(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    expect = playwright.async_api.expect
+    started, release = asyncio.Event(), asyncio.Event()
+    path = "/api/settings"
+
+    async def hold_settings(route: playwright.async_api.Route) -> None:
+        await _hold_route(route, started=started, release=release)
+
+    await page.route(lambda url: urllib.parse.urlsplit(url).path == path, hold_settings)
+    try:
+        await page.goto(screen_harness.base_url + "/")
+        await asyncio.wait_for(started.wait(), timeout=5)
+        navbar = page.get_by_role("navigation", name="画面")
+        await navbar.get_by_role("link", name="設定").click()
+        await expect(page.locator("#screen-settings")).to_be_visible()
+        await navbar.get_by_role("link", name="ワークアイテム").click()
+        await navbar.get_by_role("link", name="設定").click()
+        assert _request_count(screen_harness, path) == 1
+    finally:
+        release.set()
+    await expect(page.locator("#settings-content [data-setting]").first).to_be_visible()
+    assert _request_count(screen_harness, path) == 1
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -184,7 +278,6 @@ async def test_silent_sse_is_reconnected_and_lists_are_refetched(
         "&& window.__screenRequests.completed[listing] > completed",
         arg=[events, listing, *before],
     )
-    _assert_other_streams_unrequested(screen_harness, screen)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -204,7 +297,6 @@ async def test_regular_heartbeat_keeps_sse_without_refetching(
         arg=[events, beats],
     )
     assert {path: _request_count(screen_harness, path) for path in before} == before
-    _assert_other_streams_unrequested(screen_harness, screen)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -229,7 +321,6 @@ async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harn
         "&& window.__screenRequests.completed[listing] > completed",
         arg=[events, listing, *before],
     )
-    _assert_other_streams_unrequested(screen_harness, screen)
 
 
 @pytest.mark.parametrize(
@@ -238,7 +329,7 @@ async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harn
         ("plans", "**/api/plans/files", "#files .file"),
         ("sessions", "**/api/sessions/list", "#sessions .session-item"),
         ("wi", "**/api/entries?*", "#entry-list .entry-select"),
-        ("settings", "**/api/settings*", "#settings-nav button"),
+        ("settings", "**/api/settings*", "#settings-content [data-setting]"),
         ("agents", "**/api/agents/hosts", "#agents-hosts section"),
     ],
 )

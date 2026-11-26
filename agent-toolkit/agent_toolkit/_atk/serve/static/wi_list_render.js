@@ -11,6 +11,7 @@ import {
 import {
   api, runPending, setGlobalError, setTextMessage, withNextAction
 } from "./wi_feedback.js";
+import {decorateWiReferences, entryPageUrl} from "./wi_reference.js";
 import {
   loadEntries, renderPagination
 } from "./wi_list.js";
@@ -115,9 +116,8 @@ function targetRepoDisplay(value) {
   return value?.split('/').slice(-2).join('/') || '—';
 }
 
-export function entryPageUrl(entry) {
-  const query = new URLSearchParams({filename: entry.filename});
-  return `${BASE_PATH}/?${query.toString()}`;
+export function entryTitle(entry) {
+  return entry.summary?.replace(/^#{1,6}\s+/, '') || entry.filename;
 }
 
 export function entrySelectionFromUrl() {
@@ -144,8 +144,9 @@ function renderEntry(entry) {
   button.dataset.unansweredUwi = String(unanswered);
   button.setAttribute('aria-current', String(entryKey(wiState.currentEntry) === entryKey(entry)));
 
-  const summary = entry.summary?.replace(/^#{1,6}\s+/, '') || entry.filename;
-  appendTextCell(button, 'summary-cell text-clip', summary).title = summary;
+  const summary = entryTitle(entry);
+  const summaryCell = appendTextCell(button, 'summary-cell text-clip', summary);
+  summaryCell.title = summary;
   const meta = appendCell(button, 'entry-meta');
   appendTextCell(meta, 'filename-cell text-clip', entry.filename).title = entry.filename;
   const targetRepo = appendTextCell(meta, 'target-repo-cell text-clip', targetRepoDisplay(entry.target_repo));
@@ -212,22 +213,17 @@ function renderEntry(entry) {
   copy.dataset.key = key;
   copy.dataset.copied = String((copiedLabelDeadlines.get(key) ?? 0) > Date.now());
   copy.title = '要約をコピー';
-  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  icon.setAttribute('viewBox', '0 0 24 24');
+  const svgNamespace = 'http://www.w3.org/2000/svg';
+  const icon = document.createElementNS(svgNamespace, 'svg');
+  icon.classList.add('app-icon');
   icon.setAttribute('aria-hidden', 'true');
-  icon.setAttribute('fill', 'none');
-  icon.setAttribute('stroke', 'currentColor');
-  icon.setAttribute('stroke-width', '2');
-  for (const [name, path] of [['ready', 'M9 9h11v11H9z M5 16H4V4h12v1'], ['done', 'm5 12 4 4L19 6']]) {
-    const shape = document.createElementNS(icon.namespaceURI, 'path');
+  for (const [name, id] of [['ready', 'copy'], ['done', 'check']]) {
+    const shape = document.createElementNS(svgNamespace, 'use');
     shape.setAttribute(`data-copy-${name}`, '');
-    shape.setAttribute('d', path);
+    shape.setAttribute('href', `#icon-${id}`);
     icon.append(shape);
   }
-  const label = document.createElement('span');
-  label.className = 'copy-label';
-  label.textContent = 'コピー';
-  copy.append(icon, label);
+  copy.append(icon);
   copy.setAttribute('aria-label', `${entry.filename}の要約をコピー`);
   copy.addEventListener('click', async () => {
     try {
@@ -248,6 +244,9 @@ function renderEntry(entry) {
     }
   });
   item.append(button, copy);
+  if (summary !== entry.filename) {
+    decorateWiReferences(summaryCell, {filename: entry.filename, beforeLink: () => button.before(summaryCell)});
+  }
   return item;
 }
 
@@ -319,7 +318,7 @@ export function renderEntries(warnings = [], announce = false) {
     (entryButtonForKey(focusedKey) || list.querySelector('.entry-select') || byId('empty-clear-button')).focus();
   }
   const unanswered = wiState.entries.filter(entry => entry.kind === 'uwi' && entry.answered === false).length;
-  byId('entry-count').textContent = `${wiState.entries.length}件（未回答の質問 ${unanswered}件）`;
+  byId('entry-count').textContent = `表示中: ${wiState.entries.length}件（未回答の質問 ${unanswered}件）`;
   // フィルター欄を折りたたむ狭い幅でも、一覧が期間で限られていることを見出しの近くで示す。
   const periodLabel = PERIOD_LABELS[buildQuery().get('period')];
   byId('entry-period').textContent = periodLabel ? `${periodLabel}に作成` : '';
@@ -368,10 +367,10 @@ export async function copyAllEntries() {
   if (wiState.pendingOperations.has('copy-all')) return;
   const query = buildQuery();
   query.delete('page');
-  setTextMessage('copy-all-status', '現在のフィルターに一致する全ページを取得中');
+  setTextMessage('copy-all-status', '');
   try {
     await runPending('copy-all', {
-      container: byId('copy-all-button').parentElement, button: byId('copy-all-button'), busyLabel: '取得中'
+      container: byId('copy-all-button').parentElement, button: byId('copy-all-button')
     }, async () => {
       const payload = await api(`/api/entries?${query.toString()}`);
       const selected = payload.entries;

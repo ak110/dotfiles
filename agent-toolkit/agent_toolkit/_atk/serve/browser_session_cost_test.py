@@ -120,15 +120,14 @@ async def test_parent_child_and_delegate_cost_scope(screen_harness: _ScreenHarne
     await _observe_screen_requests(page)
     await page.set_viewport_size({"width": width, "height": 900})
     await page.goto(harness.base_url + "/sessions")
-    if width == 320:
-        await page.locator("#sessions-menu-btn").click()
     await page.locator('#sessions .session-item[data-engine="claude"]').first.click()
     await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$3.0007 USD")
-    await playwright.async_api.expect(page.locator("#detail")).to_contain_text(f"料金表基準日: {PRICE_DATE}")
-    await playwright.async_api.expect(page.locator("#detail")).to_contain_text("子孫を含む")
+    await playwright.async_api.expect(page.locator("#session-record-meta")).to_contain_text(f"料金表基準日: {PRICE_DATE}")
+    await playwright.async_api.expect(page.locator("#session-record-meta")).to_contain_text("子孫を含む")
+    await page.locator("#detail .subagents > summary").click()
     await page.locator("#detail .subagent-item").first.click()
     await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$0.006 USD")
-    await playwright.async_api.expect(page.locator("#detail")).to_contain_text("この記録")
+    await playwright.async_api.expect(page.locator("#session-record-meta")).to_contain_text("この記録")
     await page.locator("#detail .detail-back").click()
     await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$3.0007 USD")
     await _wait_screen_requests_consumed(page, ("/api/sessions/events",))
@@ -159,7 +158,7 @@ async def test_parent_child_and_delegate_cost_scope(screen_harness: _ScreenHarne
     await page.locator("#sessions .session-tree-toggle").first.click()
     await page.locator('#sessions .session-item[data-engine="codex"]').click()
     await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$0.0014 USD")
-    await playwright.async_api.expect(page.locator("#detail")).to_contain_text("この記録")
+    await playwright.async_api.expect(page.locator("#session-record-meta")).to_contain_text("この記録")
     assert not await page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
 
 

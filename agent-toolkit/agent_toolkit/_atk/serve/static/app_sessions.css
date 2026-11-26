@@ -1,6 +1,8 @@
 
 /* セッション画面の2ペイン表示。左ペインで記録を選び、右ペインへ発話を時系列に表示する。 */
 
+:root { --session-indent-limit: 20%; }
+
 #screen-sessions {
   margin: 0;
   padding: 0;
@@ -13,9 +15,11 @@
 }
 /* 区切り線は木構造の行が1本だけ持ち、行内の項目は下線を持たない。 */
 #screen-sessions .session-tree-row {
+  --session-row-indent: min(calc(var(--session-depth) * var(--space-3)), var(--session-indent-limit));
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid var(--color-border);
+  border-block-end: 1px solid var(--color-border);
+  padding-inline-start: var(--session-row-indent);
 }
 #screen-sessions .session-tree-row .pane-item {
   border-bottom: 0;
@@ -25,20 +29,19 @@
   box-shadow: var(--shadow-selection);
   background: var(--color-primary-quiet);
 }
-#screen-sessions .session-tree-row .pane-item[aria-current="true"] { background-image: none; }
+#screen-sessions .session-tree-row .pane-item[aria-current="true"] { box-shadow: none; }
 #screen-sessions .session-tree-toggle {
-  flex: 0 0 2rem;
+  flex: 0 0 var(--control-height);
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
 }
+#screen-sessions .session-tree-toggle[aria-expanded="false"] .app-icon {
+  rotate: -90deg;
+}
 #screen-sessions .session-tree-leaf {
-  flex: 0 0 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.55;
+  flex: 0 0 var(--control-height);
 }
 #screen-sessions .session-tree-row .session-item {
   min-width: 0;
@@ -48,6 +51,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+#screen-sessions .session-tree-row:has(> .session-cwd) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+#screen-sessions .session-tree-row > .session-cwd {
+  grid-column: 1;
+  padding: var(--space-row) var(--space-4) 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+#screen-sessions .session-tree-row:has(> .session-cwd) > .session-item {
+  grid-column: 1;
+}
+#screen-sessions .session-tree-row:has(> .session-cwd) > :is(.session-tree-toggle, .session-tree-leaf) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  inline-size: var(--control-height);
 }
 #screen-sessions .session-item .session-warning {
   color: var(--color-warning);
@@ -61,24 +82,14 @@
   background: var(--color-surface);
 }
 
-#screen-sessions .detail-toolbar:first-child {
-  justify-content: flex-start;
-  inline-size: 100%;
-  box-sizing: border-box;
-  padding-inline: var(--page-gutter);
-  border-block-end: 0;
-}
-#screen-sessions main:has(#detail-title:empty) .detail-navigation,
-.session-identity:has(h2:empty) { display: none; }
-@media (min-width: 769px) {
-  #screen-sessions main:has(#detail-title:empty) > .detail-toolbar:first-child { display: none; }
-}
-.session-identity { padding-block: var(--space-5) var(--space-3); }
-.session-identity p { margin-block: var(--space-2) 0; }
-.session-identity p:empty { display: none; }
+#screen-sessions main > :is(.session-identity, .reading-toolbar) { flex: none; }
+#session-record-meta p { margin-block: var(--space-2) 0; }
+#session-record-meta p:empty,
+#sessions-selection-status:empty { display: none; }
+#sessions-selection-status { padding-inline: var(--space-3); }
 #screen-sessions #detail {
   flex: none;
-  padding-block: var(--space-4);
+  padding-block: 0 var(--space-4);
 }
 
 /* サブエージェントの記録は左ペインの一覧に現れないため、委譲元へ戻る操作を本文の先頭へ置く。
@@ -88,16 +99,14 @@
 }
 #screen-sessions .subagents {
   margin-block-end: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-medium);
-  overflow: hidden;
 }
-#screen-sessions .subagents h2 {
+#screen-sessions .subagents > summary {
+  cursor: pointer;
   margin: 0;
-  padding: var(--space-row) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-background);
-  font-size: var(--font-size-base);
+  min-block-size: var(--control-height);
+  align-content: center;
+  color: var(--color-secondary-text);
+  font-size: var(--font-size-secondary);
 }
 
 /* 左余白は`spawn_depth`に応じて描画側が設定する。 */
@@ -119,6 +128,22 @@
 }
 #screen-sessions .subagent-item:hover:not(:disabled) {
   background: var(--color-primary-quiet);
+}
+#screen-sessions .subagent-reference-row {
+  display: flex;
+  align-items: baseline;
+  border-block-end: 1px solid var(--color-border);
+}
+#screen-sessions .subagent-reference-row:last-child { border-block-end: 0; }
+#screen-sessions .subagent-reference-row > .subagent-item {
+  inline-size: auto;
+  border-block-end: 0;
+}
+#screen-sessions .subagent-reference-row > .subagent-description {
+  min-inline-size: 0;
+  padding-inline-end: var(--space-3);
+  color: var(--color-secondary-text);
+  overflow-wrap: anywhere;
 }
 #screen-sessions .subagent-item .subagent-type {
   flex: none;
@@ -164,6 +189,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#screen-sessions .event .event-input-summary:has(a) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 /* 整形しない本文の`<pre>`に限る。整形したアシスタントの発言の中のコードブロックへ及ぼさない。 */
 #screen-sessions .event > pre {
   margin: 0;
@@ -191,46 +220,6 @@
   color: var(--color-secondary-text);
   font-style: normal;
 }
-#screen-sessions #sessions-menu-btn {
-  display: none;
-}
-#screen-sessions #sessions-drawer-backdrop {
-  display: none;
-}
-@media (max-width: 768px) {
-  #screen-sessions #sessions-app {
-    grid-template-columns: 1fr;
-  }
-
-  /* 一覧のドロワーは計画ファイル画面と同じく画面全体を覆う。 */
-  #screen-sessions :is(aside) {
-    position: fixed;
-    z-index: 20;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: var(--two-pane-sidebar-width);
-    max-width: 85vw;
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
-  }
-  #screen-sessions.drawer-open aside {
-    transform: translateX(0);
-  }
-  #screen-sessions.drawer-open #sessions-drawer-backdrop {
-    display: block;
-    position: fixed;
-    z-index: 15;
-    inset: 0;
-    background: var(--color-backdrop);
-  }
-
-  /* 配色・境界・角丸・寸法は共通規則が定める。本規則は表示の切り替えだけを指定する。 */
-  #screen-sessions #sessions-menu-btn {
-    display: inline-block;
-  }
-}
-
 #agents-app {
   min-block-size: 0;
   flex: 1;
@@ -497,15 +486,30 @@
 
 #screen-sessions .reading-toolbar[hidden] { display: none; }
 #screen-sessions .reading-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: var(--space-4);
   background: var(--color-surface);
-  padding-block-end: var(--space-3);
 }
-.reading-controls { border-block-end: 1px solid var(--color-border); }
-.reading-controls > summary { cursor: pointer; padding-block: var(--space-1); }
-.reading-tools { display: grid; gap: var(--space-2); padding-block: var(--space-2); }
+.reading-toolbar > details[open] { flex-basis: 100%; }
+.reading-controls > summary {
+  cursor: pointer;
+  color: var(--color-secondary-text);
+  min-block-size: var(--control-height);
+  align-content: center;
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height-base);
+}
+.reading-active:not(:empty) {
+  margin-inline-start: var(--space-2);
+  color: var(--color-primary);
+}
+.reading-tools { display: grid; gap: var(--space-1); padding-block: var(--space-1); }
+.reading-jumps > summary { cursor: pointer; }
+.reading-options { display: flex; gap: var(--space-2) var(--space-3); flex-wrap: wrap; align-items: baseline; }
+.reading-options:has(.reading-jumps[open]) { display: grid; }
+.reading-search:has(output:empty) :is(output, #session-search-prev, #session-search-next) { display: none; }
 .reading-search, .reading-navigation, .session-detail-meta {
   display: flex;
   flex-wrap: wrap;
@@ -514,11 +518,14 @@
 }
 .reading-search input { flex: 1 1 10ch; }
 .session-detail-meta { margin-block: var(--space-2); overflow-wrap: anywhere; }
-#screen-sessions main > .detail-toolbar { max-inline-size: var(--reading-width); margin-inline: auto; }
 #screen-sessions .event > :is(pre, .event-markdown) {
   border: 0;
   border-radius: 0;
   font-family: var(--font-family-base);
+}
+#screen-sessions .event:is(.kind-user, .kind-assistant) > :is(pre, .event-markdown) {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
 }
 #screen-sessions .event:is(.kind-tool_result, .kind-tool_call, .kind-injected) > pre { font-family: var(--font-family-code); }
 #screen-sessions .event-link { text-decoration: none; color: var(--color-secondary-text); }
@@ -528,9 +535,14 @@
   font-size: var(--font-size-secondary);
 }
 #screen-sessions .event-payload summary { cursor: pointer; }
-#screen-sessions .event-link:hover { color: var(--color-primary); }
+#screen-sessions .event-link:is(:hover, :focus-visible) {
+  color: var(--color-primary);
+  background: var(--color-primary-quiet);
+  border-radius: var(--radius-small);
+  outline-offset: -2px;
+}
+#screen-sessions .event:has(.event-link:is(:hover, :focus-visible)) { overflow: visible; }
 #screen-sessions .event > summary:hover { background: var(--color-normal-hover); }
-#screen-sessions .detail-pricing:not(:empty) { margin-block: var(--space-3); }
 #screen-sessions .detail-pricing:empty { display: none; }
 #screen-sessions .kind-tool_result .event-kind {
   color: var(--color-primary);
@@ -538,7 +550,28 @@
 }
 #screen-sessions .event-link { font-size: var(--font-size-secondary); }
 #screen-sessions .reading-toolbar input[type="search"] { min-inline-size: 0; }
-#screen-sessions .event { scroll-margin-top: calc(var(--reading-height, 0px) + var(--space-2)); }
+#screen-sessions .event { scroll-margin-block-start: var(--space-2); }
+@media (min-width: 769px) {
+  #screen-sessions .reading-toolbar:has(.reading-controls[open]) {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    max-block-size: 45%;
+    overflow-y: auto;
+  }
+  #screen-sessions main:has(.reading-controls[open]) .event { scroll-margin-block-start: calc(var(--reading-height, 0px) + var(--space-2)); }
+}
 #screen-sessions .event-linked, #screen-sessions .event-search-match { outline: 2px solid var(--color-primary); }
 #screen-sessions .event-link { margin-inline-start: auto; flex: none; white-space: nowrap; }
+#screen-sessions .event-link-caption { display: none; }
+@media (hover: none), (pointer: coarse) {
+  #screen-sessions .event-link.browse-icon-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    inline-size: auto;
+    padding-inline: var(--space-1);
+  }
+  #screen-sessions .event-link-caption { display: inline; }
+}
 ::highlight(session-search) { background-color: Mark; color: MarkText; }

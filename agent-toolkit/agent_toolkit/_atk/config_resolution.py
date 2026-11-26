@@ -61,6 +61,8 @@ def resolve_mutable_setting(
     read_only: bool = False,
     local: Mapping[str, str] | None = None,
     local_error: ValueError | None = None,
+    shared: Mapping[str, str] | None = None,
+    temporary: Mapping[str, str] | None = None,
 ) -> str:
     if key not in config_settings.MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
@@ -74,11 +76,11 @@ def resolve_mutable_setting(
         if key == "remote_hosts"
         else (runtime_environment.environment().get(env_name, ""), env_name)
     )
-    value = env_value or temporary_settings().get(key)
+    value = env_value or (temporary_settings() if temporary is None else temporary).get(key)
     if value is None:
         if local_error is not None:
             raise local_error
-        value = config_settings.raw_mutable_setting(key, fallback=fallback, local=local)
+        value = config_settings.raw_mutable_setting(key, fallback=fallback, local=local, shared=shared)
     try:
         config_settings.validate_mutable_setting(key, value)
     except ValueError as error:

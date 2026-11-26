@@ -22,6 +22,47 @@ pytestmark = [
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("width", [1366, 390])
+async def test_user_comment_keeps_item_heading_and_save_by_input(browser_harness: _BrowserHarness, width: int) -> None:
+    page = browser_harness.page
+    path = _entry_path(browser_harness.root, "awi.md")
+    title = "コメントの配置と本文の読みやすさを確認する項目"
+    path.write_text(
+        f"---\ntype: awi\nstate: inbox\nsource: session-review\n---\n\n# {title}\n\n"
+        + "## 本来の節\n\n"
+        + "隔離した作業項目の本文。\n\n" * 30,
+        encoding="utf-8",
+    )
+    await page.set_viewport_size({"width": width, "height": 760})
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator('.entry-select[data-key="awi.md"]').click()
+    detail = page.get_by_role("dialog", name=title, exact=True)
+    heading = detail.get_by_role("heading", name=title, exact=True)
+    expect = playwright.async_api.expect
+    await expect(heading).to_have_count(1)
+    await expect(detail.get_by_role("heading", name="本文", exact=True)).to_have_count(0)
+    await expect(detail.get_by_role("heading", name="本来の節", exact=True)).to_be_in_viewport()
+    content = await detail.locator("#detail-content").bounding_box()
+    state_metadata = await detail.locator("#detail-metadata").bounding_box()
+    assert content is not None and state_metadata is not None
+    assert content["x"] + content["width"] == pytest.approx(state_metadata["x"] + state_metadata["width"], abs=1)
+    more = detail.locator("#detail-more")
+    if width == 390:
+        await more.locator("summary").click()
+    await detail.get_by_role("button", name="ユーザーコメント", exact=True).click()
+    comment = detail.get_by_role("textbox", name="ユーザーコメント")
+    save = detail.get_by_role("button", name="コメントを保存")
+    await expect(heading).to_be_in_viewport()
+    await expect(comment).to_be_focused()
+    await expect(save).to_be_in_viewport()
+    input_box = await comment.bounding_box()
+    save_box = await save.bounding_box()
+    assert input_box is not None and save_box is not None
+    assert input_box["y"] + input_box["height"] <= save_box["y"]
+    assert input_box["x"] + input_box["width"] == pytest.approx(save_box["x"] + save_box["width"], abs=1)
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_user_comment_ui_empty_save_removes_section(browser_harness: _BrowserHarness) -> None:
     harness = browser_harness
     page = harness.page
@@ -29,7 +70,7 @@ async def test_user_comment_ui_empty_save_removes_section(browser_harness: _Brow
     kept = "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\nsource: session-review\n---\n\n通常本文\n"
     path.write_text(kept + "\n## ユーザーコメント\n\n削除対象のコメント\n", encoding="utf-8")
     await page.goto(harness.base_url + "/")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
 
     await page.locator('.entry-select[data-key="awi.md"]').click()
     await detail.wait_for(state="visible")
@@ -68,7 +109,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     original = "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\nsource: session-review\n---\n\n通常本文\n"
     path.write_text(original, encoding="utf-8")
     await page.goto(harness.base_url + "/")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
 
     await page.locator('.entry-select[data-key="empty.md"]').click()
     await playwright.async_api.expect(detail).to_be_visible()
@@ -173,7 +214,7 @@ async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_processing(
     )
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await page.locator('.entry-select[data-key="awi.md"]').click()
     await detail.get_by_role("button", name="ユーザーコメント", exact=True).click()
     comment_input = detail.locator("#user-comment-input")

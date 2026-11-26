@@ -64,7 +64,8 @@ async def test_session_detail_title_shows_engine_and_session_name(
     async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
         title = page.locator("#detail-title")
         await _open_session(page, base_url, "browser-test", named)
-        await playwright.async_api.expect(title).to_have_text("Claude Code / 名前付きセッション")
+        await playwright.async_api.expect(title).to_have_text("名前付きセッション")
+        await playwright.async_api.expect(page.locator("#session-context")).to_contain_text("Claude Code")
         item = page.locator(f'#sessions .session-item[data-path="{named}"]')
 
         assert "/home/aki/md" in await item.inner_text()
@@ -73,7 +74,7 @@ async def test_session_detail_title_shows_engine_and_session_name(
         await playwright.async_api.expect(title).to_have_text("Claude Code")
 
         await _open_session(page, base_url, "browser-test", long_named)
-        await playwright.async_api.expect(title).to_have_text(f"Claude Code / {long_name}")
+        await playwright.async_api.expect(title).to_have_text(long_name)
         await page.set_viewport_size({"width": 320, "height": 720})
         metrics = await title.evaluate(
             "element => ({scroll: element.scrollWidth, client: element.clientWidth,"

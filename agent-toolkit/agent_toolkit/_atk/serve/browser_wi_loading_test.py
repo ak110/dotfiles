@@ -36,10 +36,15 @@ async def test_initial_sync_shows_work_item_loading(browser_harness: _BrowserHar
         await page.goto(browser_harness.base_url + "/")
         await asyncio.wait_for(entries_started.wait(), timeout=5)
         await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+        await playwright.async_api.expect(page.locator("#loading-indicator .visually-hidden")).to_have_text("読み込み中")
+        await playwright.async_api.expect(page.locator("#wi-effective-conditions")).to_be_visible()
+        await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "true")
+        await playwright.async_api.expect(page.locator("#pagination")).to_be_hidden()
     finally:
         release_entries.set()
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#pagination")).to_be_visible()
     assert not sync_calls
 
 

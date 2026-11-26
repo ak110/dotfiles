@@ -86,13 +86,14 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
     画面の登録先の`shell.js`は文書全体のナビゲーションを扱うため読み込まず、登録関数だけを代替する。
     `environment`を指定した呼び出し元は、隔離を避けるために子のNodeへ渡す環境を明示する。
     """
+    reference_exports = "closeWiReferences, configureWiReferences, decorateWiReferences, entryPageUrl, linkWiReferences, wiLink"
     executable = (
         "(() => {\n"
         + _module_body(assets.SCRIPTS["common.js"])
         + "\nfunction registerScreen() {}\n"
-        + "const {closeWiReferences, configureWiReferences, linkWiReferences, wiLink} = (() => {\n"
+        + f"const {{{reference_exports}}} = (() => {{\n"
         + _module_body(assets.SCRIPTS["wi_reference.js"])
-        + "\nreturn {closeWiReferences, configureWiReferences, linkWiReferences, wiLink};\n})();\n"
+        + f"\nreturn {{{reference_exports}}};\n}})();\n"
         + "\n".join(
             _module_body(assets.SCRIPTS[name])
             for name in (
@@ -153,7 +154,12 @@ class Element {{
         const values = this.className.split(/\\s+/).filter(name => name && !names.includes(name));
         this.className = values.join(' ');
       }},
-      contains: name => this.className.split(/\\s+/).includes(name)
+      contains: name => this.className.split(/\\s+/).includes(name),
+      toggle: (name, force = !this.classList.contains(name)) => {{
+        if (force) this.classList.add(name);
+        else this.classList.remove(name);
+        return force;
+      }}
     }};
   }}
   // DOMと同じく、子を持つ要素の`textContent`は子孫の文字列を連結し、代入は子を取り除く。
@@ -169,6 +175,7 @@ class Element {{
     return siblings[siblings.indexOf(this) + 1] ?? null;
   }}
   get nextElementSibling() {{ return this.nextSibling; }}
+  before(node) {{ this.parentElement?.insertBefore(node, this); }}
   after(node) {{ this.parentElement?.insertBefore(node, this.nextElementSibling); }}
   adopt(child) {{
     if (typeof child.remove === 'function') child.remove();
@@ -207,7 +214,10 @@ class Element {{
     this.append(...children);
   }}
   contains(node) {{ return this === node || this.children.some(child => child.contains?.(node)); }}
-  closest() {{ return null; }}
+  closest(selector) {{
+    if (selector !== 'a') return null;
+    return this.tagName === 'A' ? this : this.parentElement?.closest(selector) ?? null;
+  }}
   setAttribute(name, value) {{ this.attributes[name] = String(value); }}
   getAttribute(name) {{ return this.attributes[name] ?? null; }}
   removeAttribute(name) {{ delete this.attributes[name]; }}
@@ -262,6 +272,7 @@ globalThis.controlGroups = Object.fromEntries(
 );
 globalThis.controlGroups['app-header'] = appHeader.querySelectorAll('input, select, textarea, button');
 globalThis.CSS = {{ escape: value => String(value).replace(/[^a-zA-Z0-9_-]/g, char => String.fromCharCode(92) + char) }};
+globalThis.NodeFilter = {{ SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 }};
 globalThis.document = {{
   body: nodes.find(node => node.tagName === 'BODY'),
   activeElement: null,
@@ -275,6 +286,33 @@ globalThis.document = {{
     return element;
   }},
   createTextNode(text) {{ const node = new Element('', '#TEXT'); node.textContent = text; return node; }},
+  createDocumentFragment() {{
+    const segment = new Element('', '#FRAGMENT');
+    const append = segment.append.bind(segment);
+    segment.append = (...items) => append(...items.map(item => typeof item === 'string' ? this.createTextNode(item) : item));
+    return segment;
+  }},
+  createTreeWalker(root, _what, filter) {{
+    const texts = [];
+    function visit(element) {{
+      if (element.ownText) {{
+        const node = {{
+          data: element.ownText,
+          parentElement: element,
+          replaceWith(fragment) {{
+            element.ownText = '';
+            const first = element.firstChild;
+            for (const child of [...fragment.children]) element.insertBefore(child, first);
+          }},
+        }};
+        if (filter.acceptNode(node) === NodeFilter.FILTER_ACCEPT) texts.push(node);
+      }}
+      element.children.forEach(visit);
+    }}
+    visit(root);
+    let index = -1;
+    return {{ get currentNode() {{ return texts[index]; }}, nextNode() {{ return texts[++index] ?? null; }} }};
+  }},
   querySelector(selector) {{
     if (selector.startsWith('#screen-')) {{
       const [id, descendant] = selector.split(' ');
@@ -285,7 +323,7 @@ globalThis.document = {{
   querySelectorAll(selector) {{
     if (selector === 'dialog' || selector === 'dialog[open]') return this.body.querySelectorAll(selector);
     if (selector !== '.entry-select') return [];
-    return elements['entry-list'].children.flatMap(item => item.children);
+    return elements['entry-list'].querySelectorAll(selector);
   }}
 }};
 document.body.dataset.screen = 'wi';

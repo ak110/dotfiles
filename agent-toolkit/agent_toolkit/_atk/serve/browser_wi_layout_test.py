@@ -63,7 +63,7 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         assert await page.locator(".entry-copy").first.evaluate("element => element.scrollWidth <= element.clientWidth")
         row = await _open_question(page)
-        dialog = page.get_by_role("dialog", name="詳細")
+        dialog = page.locator("#detail-dialog")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text("priority")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text('"branch": "main"')
         assert await dialog.locator("#detail-metadata dt").filter(has_text=_LONG_UNKNOWN_FRONTMATTER_KEY).count() == 1
@@ -231,7 +231,7 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await _open_question(page)
 
-    dialog = page.get_by_role("dialog", name="詳細")
+    dialog = page.locator("#detail-dialog")
     long_key_term = dialog.locator("#detail-metadata dt").filter(has_text=_LONG_UNKNOWN_FRONTMATTER_KEY)
     await playwright.async_api.expect(long_key_term).to_have_count(1)
 
@@ -411,7 +411,7 @@ async def test_active_awi_detail_highlights_adoption_without_highlighting_edit(b
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator('.entry-select[data-key="awi.md"]').click()
-    dialog = page.get_by_role("dialog", name="詳細")
+    dialog = page.locator("#detail-dialog")
     expected = playwright.async_api.expect
     adopt = dialog.get_by_role("button", name="採用", exact=True)
     edit = dialog.get_by_role("button", name="編集", exact=True)

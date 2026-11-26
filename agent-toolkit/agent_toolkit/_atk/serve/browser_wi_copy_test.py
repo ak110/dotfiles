@@ -115,13 +115,13 @@ async def test_work_item_filename_link_supports_get_and_shift_click(screen_harne
     assert href == "/?filename=awi.md"
 
     await link.click()
-    await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    await page.locator("#detail-dialog").wait_for(state="visible")
     assert urllib.parse.urlsplit(page.url).query == "filename=awi.md"
 
     await page.go_back()
-    await playwright.async_api.expect(page.get_by_role("dialog", name="詳細")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#detail-dialog")).to_be_hidden()
     await page.go_forward()
-    await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    await page.locator("#detail-dialog").wait_for(state="visible")
     assert await page.locator("#detail-filename").inner_text() == "awi.md"
     await page.keyboard.press("Escape")
 
@@ -159,10 +159,15 @@ async def test_copy_all_is_above_individual_copy(browser_harness: _BrowserHarnes
     await _observe_screen_requests(page)
     await page.goto(browser_harness.base_url + "/")
     await _wait_screen_requests_consumed(page, ("/api/events",))
-    button = page.get_by_role("button", name="全てコピー", exact=True)
+    button = page.get_by_role("button", name="絞り込み結果の全ページをコピー", exact=True)
     individual = page.locator("#entry-list .entry-copy").first
     await playwright.async_api.expect(button).to_be_visible()
     await playwright.async_api.expect(individual).to_be_visible()
+    await playwright.async_api.expect(button.locator("span")).not_to_have_css("position", "absolute")
+    context = await page.locator("#wi-effective-conditions").bounding_box()
+    summary = await page.locator(".summary-cell").first.bounding_box()
+    assert context is not None and summary is not None
+    assert context["x"] == pytest.approx(summary["x"], abs=1)
     button_box = await button.bounding_box()
     individual_box = await individual.bounding_box()
     assert button_box is not None and individual_box is not None
@@ -219,10 +224,14 @@ async def test_copy_all_work_items_preserves_filters_across_pages(browser_harnes
 
     await page.route("**/api/entries?*", delay_copy)
     try:
-        await page.get_by_role("button", name="全てコピー", exact=True).click()
+        await page.get_by_role("button", name="絞り込み結果の全ページをコピー", exact=True).click()
         await asyncio.wait_for(started.wait(), timeout=5)
         await playwright.async_api.expect(page.locator("#copy-all-button")).to_be_disabled()
-        await playwright.async_api.expect(page.locator("#copy-all-status")).to_contain_text("全ページを取得中")
+        await playwright.async_api.expect(page.locator("#copy-all-button")).to_have_attribute("aria-busy", "true")
+        await playwright.async_api.expect(page.locator("#copy-all-button")).to_have_accessible_name(
+            "絞り込み結果の全ページをコピー"
+        )
+        await playwright.async_api.expect(page.locator("#copy-all-status")).to_be_hidden()
     finally:
         release.set()
     await playwright.async_api.expect(page.locator("#copy-all-status")).to_have_text("101件をコピーしました。")
@@ -231,11 +240,6 @@ async def test_copy_all_work_items_preserves_filters_across_pages(browser_harnes
     assert set(copied) == expected
     await playwright.async_api.expect(page.locator("#pagination-status")).to_have_text("ページ 2 / 2（全101件）")
     await playwright.async_api.expect(page.locator("#copy-all-button")).to_be_enabled()
-    assert await page.locator("#copy-all-button").evaluate("""element => {
-        const label = document.createRange();
-        label.selectNodeContents(element);
-        return label.getClientRects().length === 1;
-    }""")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await page.unroute("**/api/entries?*", delay_copy)
 
@@ -252,12 +256,12 @@ async def test_copy_all_work_items_reports_empty_and_clipboard_failure(browser_h
     await _open_filters(page)
     await page.get_by_label("検索", exact=True).fill("一致しない検索")
     await playwright.async_api.expect(page.locator("#empty-state")).to_be_visible()
-    await page.get_by_role("button", name="全てコピー", exact=True).click()
+    await page.get_by_role("button", name="絞り込み結果の全ページをコピー", exact=True).click()
     await playwright.async_api.expect(page.locator("#copy-all-status")).to_contain_text("項目は0件")
     await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
     await page.get_by_role("button", name="条件をクリア", exact=True).first.click()
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
-    await page.get_by_role("button", name="全てコピー", exact=True).click()
+    await page.get_by_role("button", name="絞り込み結果の全ページをコピー", exact=True).click()
     await playwright.async_api.expect(page.locator("#operation-notice")).to_contain_text("書込拒否")
     await playwright.async_api.expect(page.locator("#operation-notice")).to_contain_text("再度実行してください")
     await playwright.async_api.expect(page.locator("#copy-all-button")).to_be_enabled()

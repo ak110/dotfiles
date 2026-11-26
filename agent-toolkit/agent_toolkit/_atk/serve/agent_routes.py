@@ -24,6 +24,7 @@ def _attach_record(
         row["record"] = {**candidates[0], "host": host}
     elif engine and engine not in {"claude", "codex"}:
         row["record_error"] = "このエンジンの記録はセッション画面で扱いません。"
+        row["record_unsupported"] = True
     elif unavailable:
         row["record_error"] = "記録の所在を確認できません。次の一覧取得で再確認します。"
     elif candidates:

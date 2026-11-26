@@ -25,12 +25,63 @@ export function settingName(key) {
   return displayName(SETTING_NAMES, key);
 }
 
+const FAST_MODE_LABELS = {auto: "自動判定", true: "高速", false: "通常"};
+const BOOLEAN_LABELS = {true: "有効", false: "無効"};
+
+function choiceLabels(key, item) {
+  if (key === "codex_fast_mode") return FAST_MODE_LABELS;
+  return item.choices?.length === 2 && item.choices.includes("true") && item.choices.includes("false") ? BOOLEAN_LABELS : {};
+}
+
+function valueLabel(key, item, value) {
+  if (!value) return "未指定";
+  if (key === "usage_reset_permissions") return `${JSON.parse(value).length}件の許可`;
+  if (item.array) return JSON.parse(value).join("、") || "なし";
+  return displayName(choiceLabels(key, item), value);
+}
+
+function reflection(key, item, data) {
+  const {source} = item;
+  if (source === "一時指定" || source?.startsWith("AGENT_TOOLKIT_CONFIG_")) return "上書きの解除後";
+  if (data.listen?.[key] && data.listen[key][1] !== "atk config") return "起動時の指定を外して再起動した後";
+  if (key === "remote_hosts") return "設定は保存後、計画・セッションは次回起動時";
+  if (key.startsWith("serve_")) return "次回のatk serve起動時";
+  if (key === "dotfiles_mode") return "次のdotfiles更新時";
+  return null;
+}
+
+export function savedSettingMessage(payload, before, after) {
+  const {key} = payload;
+  const old = before?.settings[key];
+  const item = after.settings[key];
+  if (!old || !item || payload.action === "reset-reissue") return "設定を保存しました。";
+  const from = valueLabel(key, old, old.saved);
+  const to = valueLabel(key, item, item.saved);
+  const change = from === to ? to : `${from} → ${to}`;
+  const target = item.shared ? (item.shared_sync ? "共有" : "このホストの共有ファイル") : "このホスト";
+  const timing = reflection(key, item, after) ?? "次にこの設定を使うとき";
+  if (key === "usage_reset_permissions" && from === to && old.saved !== item.saved) {
+    return `許可を更新しました（${target}）。反映: ${timing}。`;
+  }
+  return `保存済み（${target}）: ${change}。反映: ${timing}。`;
+}
+
 export function createSettingsView({
   content, shared, comparison, hostPicker, navigation, state,
   operate, saveShared, migrateShared, selectHost, filterSettings, updateUnsaved, updateWriteControls, setWriteUnavailable,
   rememberSettingFocus, restoreSettingFocus, editorFields,
 }) {
   let fieldCount = 0;
+  let actionControl;
+
+  function performAction(control, action) {
+    actionControl = control;
+    try {
+      return action();
+    } finally {
+      actionControl = undefined;
+    }
+  }
   const guide = "https://github.com/ak110/dotfiles/blob/master/docs/guide/";
 
   function element(tag, text = "", className = "") {
@@ -56,12 +107,13 @@ export function createSettingsView({
   function button(text, action) {
     const result = element("button", text);
     result.type = "button";
-    result.addEventListener("click", action);
+    result.addEventListener("click", () => performAction(result, action));
     return result;
   }
 
   const categoryPicker = document.getElementById("settings-group-picker");
   const categoryLinks = document.getElementById("settings-group-links");
+  const migrationShortcut = document.getElementById("settings-migration-shortcut");
 
   const compactCategories = matchMedia("(max-width: 48rem)");
   compactCategories.addEventListener("change", () => updateCategories());
@@ -70,8 +122,16 @@ export function createSettingsView({
   function updateCategories() {
     categoryPicker.replaceChildren(...(compactCategories.matches ? categoryOptions : []));
     categoryPicker.value = currentCategory;
+    migrationShortcut.hidden = !compactCategories.matches || currentCategory === "migration" ||
+      !categoryLinks.querySelector("[data-needs-choice]");
   }
   categoryPicker.addEventListener("change", () => chooseGroup(categoryPicker.value));
+  migrationShortcut.addEventListener("click", () => {
+    chooseGroup("migration");
+    const heading = document.querySelector("#settings-group-migration h3");
+    heading.tabIndex = -1;
+    heading.focus();
+  });
 
   function chooseGroup(id) {
     state.activeGroup = id;
@@ -79,7 +139,6 @@ export function createSettingsView({
     content.closest("main").scrollTop = 0;
   }
 
-  const FAST_MODE_LABELS = {auto: "自動判定（auto）", true: "高速（true）", false: "通常（false）"};
   function sharedScope(syncs) {
     return syncs
       ? "保存先: 同じprivate-notesを使うホストで共有されます。このホストだけ変えるには一時指定を使ってください。"
@@ -106,7 +165,7 @@ export function createSettingsView({
   function settingResult() {
     const output = element("p");
     output.dataset.settingsResult = "";
-    output.setAttribute("role", "alert");
+    output.setAttribute("role", "status");
     return output;
   }
 
@@ -114,7 +173,7 @@ export function createSettingsView({
     const result = element("form");
     result.addEventListener("submit", event => {
       event.preventDefault();
-      perform();
+      performAction(event.submitter, perform);
     });
     parent.append(result);
     return result;
@@ -131,50 +190,71 @@ export function createSettingsView({
 
   function keyEditor(parent, key, item, data, save = operate) {
     const listen = data.listen ?? {};
-    const block = element("div");
-    block.dataset.setting = key;
-    block.dataset.search = `${key} ${item.description ?? ""}`.toLowerCase();
-    block.dataset.editor = `setting:${key}`;
-    block.className = "settings-row";
-    const description = element("div");
+    const block = element("details", "", "settings-row");
     const title = settingName(key);
+    block.dataset.setting = key;
+    block.dataset.search = `${title} ${key} ${item.description ?? ""}`.toLowerCase();
+    block.dataset.editor = `setting:${key}`;
     block.dataset.editorLabel = title;
-    description.append(element("h4", title, "setting-name"));
-    if (title !== key) description.append(element("code", key, "secondary-text setting-key"));
-    block.append(description);
-    const timing = key.startsWith("serve_") || key === "remote_hosts" ? "次回のatk serve起動" :
-      key === "dotfiles_mode" ? "次のdotfiles更新" : "";
-    const effective = key === "usage_reset_permissions" ? `${JSON.parse(item.effective || "[]").length}件の許可` :
-      item.effective || "未指定";
-    const value = element("p", "", "setting-effective");
-    value.append("実効値: ", element("strong", effective));
-    description.append(value);
-    if (item.source) description.append(element("p", `出所: ${item.source}`, "secondary-text"));
-    if (item.description) description.append(element("p", item.description, "setting-description"));
+    const summary = element("summary");
+    const overview = element("span", "", "settings-row-overview");
+    const name = element("span", "", "settings-row-label");
+    name.append(element("strong", title));
+    const unsaved = element("span", "未保存", "settings-draft-state secondary-text");
+    unsaved.hidden = true;
+    name.append(unsaved);
+    const readOnly = item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && state.host);
+    if (item.invalid_local) name.append(element("span", "設定値に問題あり", "secondary-text"));
+    else if (readOnly) name.append(element("span", "読み取り専用", "secondary-text"));
+    const current = element("span", "", "settings-current-values");
+    const labels = choiceLabels(key, item);
+    const running = listen[key];
+    const differs = item.saved !== item.effective;
+    const hasDistinctRunningValue = running && String(running[0]) !== item.effective;
+    function appendPreview(label, value, showLabel) {
+      const line = element("span", "", "settings-value-line");
+      line.append(element("span", label, showLabel ? "secondary-text" : "visually-hidden"),
+        element("span", valueLabel(key, item, value)));
+      current.append(line);
+    }
+    if (hasDistinctRunningValue) {
+      appendPreview("実行中: ", String(running[0]), true);
+      const nextLabel = running[1] === "atk config" ? "次回起動: " : "起動時の指定を外すと: ";
+      appendPreview(nextLabel, item.effective, true);
+    } else {
+      appendPreview("実効値: ", item.effective, differs);
+    }
+    if (differs) appendPreview("保存済み: ", item.saved, true);
+    overview.append(name, current);
+    summary.append(overview);
+    block.append(summary);
+    const description = element("div", "", "settings-setting-info");
+    const details = element("details", "", "settings-setting-details secondary-text");
+    details.append(element("summary", "形式・出所"));
+    if (title !== key) details.append(element("code", key, "setting-key"));
+    if (item.description) details.append(element("p", item.description, "setting-description"));
+    if (item.source) details.append(element("p", `出所: ${item.source}`));
+    if (running) details.append(element("p", `実行中の待受: ${running[0]}（${running[1]}）`));
+    if (item.format) details.append(element("p", `形式: ${item.format}`));
+    if (item.default !== undefined) details.append(element("p", `初期値: ${item.default || "未指定"}`));
+    if (item.shared) details.append(element("p", sharedScope(item.shared_sync)));
     if (item.invalid_local) {
       description.append(element("p", "この端末のconfig.jsonに無効な値があります。共有値を変更する前に、端末の設定ファイルを修正してください。", "notice notice-warning"));
+      description.append(details);
+      block.append(description);
       parent.append(block);
       return block;
     }
-    if (item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && state.host)) {
-      description.append(element("p", key === "usage_reset_permissions" && state.host
-        ? "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"
-        : "読み取り専用"));
+    if (readOnly) {
+      if (key === "usage_reset_permissions" && state.host) {
+        description.append(element("p", "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"));
+      }
+      description.append(details);
+      block.append(description);
       parent.append(block);
       return block;
     }
-    if (item.shared) description.append(element("p", sharedScope(item.shared_sync), "secondary-text"));
-    if (timing) description.append(element("p", key === "remote_hosts" ?
-      "反映: 設定のホスト切替は保存後、計画とセッションは次回のatk serve起動" : `反映: ${timing}`, "secondary-text"));
-    if (item.source === "一時指定" || item.source?.startsWith("AGENT_TOOLKIT_CONFIG_")) {
-      description.append(element("p", "保存値を変更しても、この上書きが解除されるまで実効値は変わりません。"));
-    }
-    if (listen[key] && (String(listen[key][0]) !== item.effective || listen[key][1] !== "atk config")) {
-      const [value, source] = listen[key];
-      description.append(element("p", `実行中の待受: ${value}（出所: ${source}）、保存値: ${item.saved}。`));
-      if (source !== "atk config") description.append(element("p", "同じ指定で再起動する場合、保存値は使われません。"));
-    }
-    const controls = element("div");
+    const controls = element("div", "", "settings-setting-controls");
     block.append(controls);
     const output = settingResult();
     if (key === "usage_reset_permissions") {
@@ -196,20 +276,18 @@ export function createSettingsView({
       submit(editor, "追加");
     } else if (key !== "repositories") {
       const editor = form(controls, () => save({action: "set", key, value: input.value}, output));
+      editor.classList.add("settings-scalar-form");
       const input = field(editor, "保存値", item.saved, item.choices,
-        !item.choices && item.saved?.length > (key.endsWith("_model") ? 30 : 48) ? "multiline" : "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
+        !item.choices && item.saved?.length > (key.endsWith("_model") ? 30 : 48) ? "multiline" : "text", labels);
       if (key === "serve_port") input.inputMode = "numeric";
-      if (!item.choices && item.format) {
-        const hint = element("small", `形式: ${item.format}。${item.default === undefined ? "" : ` 初期値: ${item.default || "未指定"}`}`);
-        hint.id = `${input.id}-format`;
-        hint.className = "settings-format";
-        input.parentElement.append(hint);
-        input.setAttribute("aria-describedby", `${hint.id} ${input.id}-result`);
-      }
       output.id = `${input.id}-result`;
+      input.setAttribute("aria-describedby", output.id);
       submit(editor, "保存");
     }
     controls.append(output);
+    const timing = reflection(key, item, data);
+    if (timing) controls.append(element("p", `反映: ${timing}`, "secondary-text settings-reflection"));
+    controls.append(details);
     parent.append(block);
     return block;
   }
@@ -339,7 +417,7 @@ export function createSettingsView({
       box.append(element("p", `${migrationItemName(item)}: ${item.error} ${migrationRepair(item, data)}`, "notice notice-warning"));
     }
     if (plan.required.length) {
-      const apply = element("button", "選んだ値を保存");
+      const apply = element("button", "選んだ値を保存", "button-primary");
       apply.type = "submit";
       apply.dataset.migrationFocus = "save";
       const wait = element("p", "最新の共有設定を確認できるまで保存できません。", "notice");
@@ -350,7 +428,7 @@ export function createSettingsView({
       box.addEventListener("submit", async event => {
         event.preventDefault();
         if (apply.getAttribute("aria-disabled") === "true" || plan.required.some(key => !choices[key])) return;
-        await migrateShared({action: "apply", revision: plan.revision, choices}, output);
+        await performAction(apply, () => migrateShared({action: "apply", revision: plan.revision, choices}, output));
       });
       const actions = element("div", "", "form-actions");
       actions.append(apply);
@@ -361,7 +439,7 @@ export function createSettingsView({
 
   function sameSharedSetting(data, key) {
     const here = state.localData?.settings[key];
-    const there = data.settings[key];
+    const there = data.settings?.[key];
     return Boolean(state.localData?.shared_identity && data.shared_identity === state.localData.shared_identity &&
       here?.shared && !here.migration_pending && there?.shared && !there.migration_pending);
   }
@@ -382,16 +460,20 @@ export function createSettingsView({
     const target = element("div", "", "settings-scope");
     target.dataset.scope = name;
     target.dataset.group = id;
-    const label = element("p", title, "settings-scope-heading section-heading");
+    const header = element("div", "", "settings-scope-heading");
+    const label = element("p", title, "section-heading");
+    const valueColumn = element("span", "設定の値", "settings-value-heading secondary-text");
+    valueColumn.setAttribute("aria-hidden", "true");
+    header.append(label, valueColumn);
     label.id = `settings-scope-${id}-${name}`;
     target.setAttribute("role", "group");
     target.setAttribute("aria-labelledby", label.id);
-    target.append(label);
+    target.append(header);
     group.append(target);
     return target;
   }
 
-  function renderShared(savedKey) {
+  function renderShared(savedKey, savedEditorKey) {
     const data = state.localData;
     if (!data || !content.querySelector("[data-scope=\"shared\"]")) return;
     const focus = rememberSettingFocus(document.activeElement);
@@ -400,11 +482,9 @@ export function createSettingsView({
     for (const target of content.querySelectorAll("[data-scope=\"shared\"]")) target.replaceChildren(target.firstChild);
     const note = element("p");
     note.dataset.sharedComparison = "";
-    let count = 0;
     for (const [key, item] of Object.entries(data.settings)) {
       if (!item.shared) continue;
       const target = scope(groupId(key), "shared");
-      count++;
       const prior = old.get(key);
       if (prior && !item.invalid_local && key !== savedKey &&
           editorFields(prior).some(field => field.value !== field.dataset.initialValue)) {
@@ -433,15 +513,19 @@ export function createSettingsView({
         }
         sharedEditors.set(key, prior);
       } else {
-        sharedEditors.set(key, keyEditor(target, key, item, data, saveShared));
+        const editor = keyEditor(target, key, item, data, saveShared);
+        editor.open = prior?.open ?? false;
+        const details = editor.querySelector(".settings-setting-details");
+        if (details && prior?.querySelector(".settings-setting-details")?.open) details.open = true;
+        sharedEditors.set(key, editor);
       }
     }
-    const nodes = [note];
-    if (count === 0) nodes.push(element("p", "共有設定はありません。"));
     const sharedPresets = scope("models", "shared");
     for (const [preset, values] of Object.entries(data.presets ?? {})) {
       if (!Object.keys(values).length || !Object.keys(values).every(key => data.settings[key]?.shared)) continue;
       const detail = element("details");
+      detail.dataset.editor = `preset:${preset}`;
+      detail.open = detail.dataset.editor === savedEditorKey;
       detail.append(element("summary", preset));
       for (const [key, value] of Object.entries(values)) detail.append(element("p", `${key}: ${value}`));
       const output = settingResult();
@@ -450,7 +534,7 @@ export function createSettingsView({
       detail.append(actions, output);
       sharedPresets?.append(detail);
     }
-    shared.replaceChildren(...nodes);
+    shared.replaceChildren(note);
     renderSharedComparison();
     if (focus?.shared) restoreSettingFocus(focus);
   }
@@ -459,17 +543,21 @@ export function createSettingsView({
     const note = shared.querySelector("[data-shared-comparison]");
     const data = state.localData;
     if (!note || !data) return;
-    note.replaceChildren("保存先: private-notesの共有設定ファイル");
+    const hasShared = Object.values(data.settings).some(item => item.shared);
+    note.replaceChildren(...(hasShared ? ["共有の保存先: private-notes"] : []));
     for (const [name, peer] of Object.entries(data.comparison ?? {})) {
       const common = Object.keys(data.settings).filter(key => sameSharedSetting(peer, key));
       const failed = peer.state === "error" && state.confirmedComparisonFailures.has(name);
+      if (peer.state === "ready" && !hasShared) continue;
       if (!failed && !Object.keys(peer.settings ?? {}).length && ["pending", "error"].includes(peer.state)) continue;
+      const different = common.filter(key => data.settings[key].saved !== peer.settings[key].saved);
       const summary = failed ? "取得失敗" :
         peer.state === "legacy" ? "旧版のため自動取得なし" :
-        common.length === 0 ? "共有設定の一致を確認できません" :
-        common.some(key => data.settings[key].saved !== peer.settings[key].saved) ? "値が異なります（同期の遅れの可能性）" :
-        "同じ共有設定を使用";
-      note.append(element("span", ` · ${name}: ${summary}`));
+        peer.state !== "ready" || common.length === 0 ? "共有先の一致は未確認" :
+        different.length ? `共有値に差あり（${different.map(settingName).join("、")}）` :
+        "共有値は一致";
+      const separator = note.hasChildNodes() ? " · " : "";
+      note.append(element("span", `${separator}${name}: ${summary}`));
     }
     for (const old of shared.querySelectorAll("[data-provider-warning]")) old.remove();
     const warnings = [["ローカル", data.provider_warnings ?? []],
@@ -501,8 +589,20 @@ export function createSettingsView({
   }
 
   function renderComparison(data) {
+    const prior = comparison.querySelector(".settings-comparison-scroll");
+    const scrollLeft = prior?.scrollLeft ?? 0;
+    const active = document.activeElement;
+    const focusedHost = comparison.contains(active) ? active.dataset.comparisonHost : undefined;
     const hosts = [ ["", {state: "ready", ...state.localData}], ...Object.entries(data.comparison ?? state.localData?.comparison ?? {}) ];
+    if (hosts.length === 1) {
+      comparison.replaceChildren(element("p", "比較できるホストがありません。接続先ホストを追加すると比較できます。"));
+      if (active === prior || focusedHost !== undefined) {
+        comparison.closest("details")?.querySelector("summary")?.focus({preventScroll: true});
+      }
+      return;
+    }
     const table = element("table");
+    table.createCaption().textContent = "ホストごとの保存値";
     const headers = table.createTHead().insertRow();
     const label = element("th", "設定");
     label.scope = "col";
@@ -529,7 +629,6 @@ export function createSettingsView({
       row.append(heading);
       for (const [index, value] of values.entries()) {
         const cell = row.insertCell();
-        cell.append(element("span", hosts[index][0] || "ローカル", "comparison-host"));
         const displayed = value ? comparisonValue(key, value.setting, value.info) : "共有設定を使用";
         for (const [part, segment] of displayed.split(/(?<=[,/])/u).entries()) {
           if (part > 0) cell.append(element("wbr"));
@@ -541,8 +640,22 @@ export function createSettingsView({
       }
     }
     const actions = element("div", "", "form-actions");
-    for (const [name] of hosts) actions.append(button(`${name || "ローカル"}の設定を開く`, () => selectHost(name)));
-    comparison.replaceChildren(table, actions);
+    let restoreFocus;
+    for (const [name] of hosts) {
+      const open = button(`${name || "ローカル"}の設定を開く`, () => selectHost(name));
+      open.dataset.comparisonHost = name;
+      if (name === focusedHost) restoreFocus = open;
+      actions.append(open);
+    }
+    const scroll = element("div", "", "settings-comparison-scroll");
+    scroll.tabIndex = 0;
+    scroll.setAttribute("role", "region");
+    scroll.setAttribute("aria-label", "ホストごとの保存値");
+    scroll.append(table);
+    comparison.replaceChildren(scroll, actions);
+    scroll.scrollLeft = scrollLeft;
+    if (active === prior) scroll.focus({preventScroll: true});
+    else restoreFocus?.focus({preventScroll: true});
   }
 
   function renderHost(data) {
@@ -622,6 +735,7 @@ export function createSettingsView({
       const control = button(group.querySelector("h3").textContent, () => chooseGroup(id));
       control.classList.add("choice-button");
       control.dataset.group = id;
+      control.toggleAttribute("data-needs-choice", id === "migration" && Boolean(data.shared_migration?.plan?.required?.length));
       control.setAttribute("aria-controls", group.id);
       categoryLinks.append(control);
     }
@@ -654,7 +768,6 @@ export function createSettingsView({
     currentCategory = active ?? "";
     updateCategories();
     navigation.hidden = searching || !available.some(Boolean);
-
   }
 
   function renderTemporary(temporary, data) {
@@ -677,8 +790,7 @@ export function createSettingsView({
     const key = field(editor, "キー", keys[0], keys);
     function valueField(parent) {
       const setting = data.settings[key.value];
-      return field(parent, "値", setting.effective, setting.choices, "text",
-        key.value === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
+      return field(parent, "値", setting.effective, setting.choices, "text", choiceLabels(key.value, setting));
     }
     let value = valueField(editor);
     key.addEventListener("change", () => {
@@ -693,5 +805,6 @@ export function createSettingsView({
     temporary.append(output);
   }
 
-  return {button, element, renderComparison, renderHost, renderShared, renderSharedComparison, showGroup};
+  return {button, element, renderComparison, renderHost, renderShared, renderSharedComparison, showGroup,
+    getActionControl: () => actionControl};
 }

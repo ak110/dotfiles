@@ -1,5 +1,5 @@
 import {decorateWiReferences} from "./wi_reference.js";
-import {BASE_PATH, attachScrollEdges, beginOperation, isSelected, setDrawerOpen, timedFetch, readFailure, recordUpdateSuccess, setUpdateError, setDisplayedReadError} from "./common.js";
+import {BASE_PATH, attachScrollEdges, beginOperation, isSelected, timedFetch, readFailure, recordUpdateSuccess, setUpdateError, setDisplayedReadError} from "./common.js";
 
 const KIND_LABELS = {
   user: "ユーザー",
@@ -25,7 +25,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   const RENDER_AHEAD_PX = 400;
 
   let selected = null;
-  let detailEl, detailTitleEl, detailUsageEl;
+  let detailEl, detailTitleEl, detailUsageEl, detailPricingEl, recordMeta, recordFacts, readingDisclosure, readingActive;
   function usageText(usage) {
     if (!usage) return "";
     const parts = [];
@@ -115,8 +115,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     time.textContent = event.timestamp ? formatTime(event.timestamp) : "時刻なし";
     summary.append(kind, time);
     if (block.dataset.exclusiveEvent) {
-      summary.addEventListener("click", () => {
-        if (block.open) return;
+      summary.addEventListener("click", event => {
+        if (block.open || event.target.closest("a")) return;
         for (const other of detailEl.querySelectorAll('details[data-exclusive-event="true"]')) {
           if (other !== block) other.open = false;
         }
@@ -126,6 +126,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       const name = document.createElement("span");
       name.textContent = event.name;
       summary.append(name);
+      decorateWiReferences(name);
     }
     const preview = event.kind === "tool_call" ? toolInputSummary(event) :
       !block.open && !nested && (event.kind === "tool_result" || event.kind === "injected") ?
@@ -137,15 +138,20 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       excerpt.textContent = preview;
       excerpt.title = preview;
       summary.append(excerpt);
+      decorateWiReferences(excerpt);
     }
     if (event.line != null && selected) {
       const link = document.createElement("a");
       link.className = "event-link";
-      link.href = eventUrl(event, conversationOnly && event.kind !== "tool_call");
-      link.textContent = event.kind === "tool_call" && conversationOnly ? "全イベントで開く" : "発話リンク";
-      if (link.textContent === "発話リンク") {
-        link.title = "この発話へのリンク";
-        link.setAttribute("aria-label", "この発話へのリンク");
+      const allEvents = event.kind === "tool_call" && conversationOnly;
+      link.href = eventUrl(event, conversationOnly && !allEvents);
+      if (allEvents) {
+        link.textContent = "全イベントで開く";
+      } else {
+        link.classList.add("browse-icon-action");
+        link.dataset.tooltip = "この発話を開く";
+        link.setAttribute("aria-label", "この発話を開く");
+        link.innerHTML = '<svg class="app-icon" aria-hidden="true"><use href="#icon-link"></use></svg><span class="event-link-caption">発話を開く</span>';
       }
       summary.append(link);
     }
@@ -179,6 +185,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
         payload.append(label, source);
         block.append(body, payload);
         decorateWiReferences(body);
+        decorateWiReferences(source);
         return block;
       }
     } else if (event.detail !== null && event.detail !== undefined) {
@@ -191,11 +198,13 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     return block;
   }
 
-  function renderSubagents(detail) {
-    const container = document.createElement("div");
+  function renderSubagents(detail, expanded) {
+    const container = document.createElement("details");
     container.className = "subagents";
-    const heading = document.createElement("h2");
-    heading.textContent = "サブエージェント";
+    container.open = Boolean(expanded);
+    const heading = document.createElement("summary");
+    heading.dataset.focusKey = "subagent-records";
+    heading.textContent = `サブエージェント（${detail.subagents.length}件）`;
     container.append(heading);
     for (const subagent of detail.subagents) {
       const item = document.createElement("button");
@@ -222,6 +231,14 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
         item.append(status);
       }
       container.append(item);
+      decorateWiReferences(description, {beforeLink: () => {
+        const row = document.createElement("div");
+        row.className = "subagent-reference-row";
+        item.before(row);
+        row.append(item, description);
+        item.setAttribute("aria-label", [type.textContent, description.textContent, !subagent.path && "記録なし"]
+          .filter(Boolean).join(" "));
+      }});
     }
     return container;
   }
@@ -244,7 +261,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     for (const block of detailEl.querySelectorAll("details[data-event-index]")) {
       openStates.set(block.dataset.eventIndex, block.open);
     }
-    return {openStates, focus: captureDetailFocus(), renderLimit, scrollTop: detailEl.parentElement.scrollTop};
+    return {openStates, focus: captureDetailFocus(), renderLimit, scrollTop: detailEl.parentElement.scrollTop,
+      subagentsOpen: detailEl.querySelector(".subagents")?.open};
   }
 
   function focusMatches(scope, target) {
@@ -278,10 +296,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   function renderCost(detail) {
     const cost = detailCost(detail);
     detailUsageEl.textContent = costText(cost, Boolean(detail.cost_pending));
-    const pricing = detailEl.querySelector(".detail-pricing");
-    if (!pricing) return;
-    pricing.hidden = !cost;
-    pricing.textContent = cost
+    detailPricingEl.hidden = !cost;
+    detailPricingEl.textContent = cost
       ? `推定費用（API料金換算）: ${cost.own ? "この記録" : "子孫を含む"} / 料金表基準日: ${cost.pricing?.as_of || "取得不能"}`
       : "";
   }
@@ -405,7 +421,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     updateScrollEdges();
   }
   function currentPosition() {
-    const top = detailScroller().getBoundingClientRect().top + document.getElementById("session-reading").offsetHeight;
+    const scrollerTop = detailScroller().getBoundingClientRect().top;
+    const top = Math.max(scrollerTop, document.getElementById("session-reading").getBoundingClientRect().bottom);
     return [...detailEl.querySelectorAll(":scope > [data-event-index]")]
       .find(block => block.getBoundingClientRect().bottom > top)?.dataset.eventIndex ?? 0;
   }
@@ -442,13 +459,15 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   }
   function showSearch(move) {
     const count = document.getElementById("session-search-count");
+    readingActive.textContent = [currentSearch() ? "検索中" : "", conversationOnly ? "会話のみ" : ""]
+      .filter(Boolean).join(" · ");
     count.textContent = currentSearch() ? `${searchPosition + 1} / ${searchMatches.length}件` : "";
     for (const id of ["session-search-prev", "session-search-next"]) document.getElementById(id).disabled = !searchMatches.length;
     CSS.highlights?.delete("session-search");
+    detailEl.querySelector(".event-search-match")?.classList.remove("event-search-match");
     if (!move || searchPosition < 0) return;
     const target = moveToEvent(searchMatches[searchPosition]);
     if (!target) return;
-    detailEl.querySelector(".event-search-match")?.classList.remove("event-search-match");
     target.classList.add("event-search-match");
     if (!CSS.highlights || typeof Highlight === "undefined") return;
     const query = currentSearch().toLowerCase();
@@ -490,39 +509,35 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
 
   function renderDetail(detail, preserved = null) {
     currentDetail = detail;
-    // ホスト名と作業ディレクトリは左ペインの一覧項目が示すため、見出しはエンジン名と取得できたセッション名に限る。  // pyfltr: allow-comment
     const engineLabel = ENGINE_LABELS[detail.engine] || detail.engine;
-    detailTitleEl.textContent = detail.session_name ? `${engineLabel} / ${detail.session_name}` : engineLabel;
+    const entry = getSessions().find(item => isSelected(selected, item));
+    detailTitleEl.textContent = detail.session_name || entry?.label || engineLabel;
+    document.getElementById("session-context").textContent =
+      [detail.session_name || entry?.label ? engineLabel : "", detail.host, detail.cwd || entry?.cwd].filter(Boolean).join(" · ");
     detailEl.replaceChildren();
 
     if (parentTrail.length > 0) {
       detailEl.append(renderBack());
     }
 
-    const meta = document.createElement("div");
-    meta.className = "secondary-text";
-    meta.classList.add("session-detail-meta");
+    recordFacts.replaceChildren();
     for (const value of [
       detail.started_at ? `開始: ${formatTime(detail.started_at)}` : "",
       usageText(detail.usage),
     ].filter(Boolean)) {
       const item = document.createElement("span");
       item.textContent = value;
-      meta.append(item);
+      recordFacts.append(item);
     }
-    const id = document.createElement("details");
-    const title = document.createElement("summary");
-    title.textContent = "記録の識別子";
-    id.append(title, detail.session_id);
-    meta.append(id);
-    detailEl.append(meta);
-    const pricing = document.createElement("div");
-    pricing.className = "secondary-text detail-pricing";
-    detailEl.append(pricing);
+    if (detail.session_id) {
+      const id = document.createElement("span");
+      id.textContent = "識別子: " + detail.session_id;
+      recordFacts.append(id);
+    }
     renderCost(detail);
 
     if (Array.isArray(detail.subagents) && detail.subagents.length > 0) {
-      detailEl.append(renderSubagents(detail));
+      detailEl.append(renderSubagents(detail, preserved?.subagentsOpen));
     } else if (detail.subagents_unavailable) {
       // サブエージェントが無い場合は何も表示しないため、有無を判定できなかったことは明示して区別する。  // pyfltr: allow-comment
       const note = document.createElement("div");
@@ -532,14 +547,24 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     }
 
     if (detail.broken_lines > 0) {
-      const broken = document.createElement("div");
-      broken.className = "session-warning";
-      broken.textContent = sessionDiagnostic(detail, `解析できない行が${detail.broken_lines}件あります`);
+      const broken = document.createElement("details");
+      broken.className = "session-warning secondary-text";
+      const summary = document.createElement("summary");
+      summary.textContent = `解析できない行が${detail.broken_lines}件あります`;
+      const note = document.createElement("p");
+      note.textContent = sessionDiagnostic(detail, "該当する行は記録本文に表示していません。");
+      broken.append(summary, note);
       detailEl.append(broken);
     }
 
     visibleEvents = detailEvents(detail);
     renderLimit = 0;
+    if (!visibleEvents.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = conversationOnly ? "表示できる会話はありません。" : "表示できる発話や操作はありません。";
+      detailEl.append(empty);
+    }
     document.getElementById("session-reading").hidden = false;
     appendEvents(preserved ? preserved.renderLimit : DETAIL_PAGE_SIZE, preserved);
     restoreDetailFocus(preserved?.focus);
@@ -572,7 +597,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
 
   function showDetailFailure(status) {
     setUpdateError("sessions", "detail");
-    detailTitleEl.textContent = "セッションの詳細";
+    currentDetail = null;
     document.getElementById("session-reading").hidden = true;
     detailEl.replaceChildren();
     const alert = document.createElement("p");
@@ -625,8 +650,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   }
 
   // `trail`は開こうとする記録の委譲元を古い順に並べる。左ペインから選んだ記録には委譲元が無いため、省略した場合は空とする。  // pyfltr: allow-comment
-  async function openSession(host, engine, path, trail = [], updateUrl = true, closeDrawer = true) {
-    if (closeDrawer) setDrawerOpen("sessions", false);
+  async function openSession(host, engine, path, trail = [], updateUrl = true, focusDetail = true, initialList = null) {
     cancelOtherCost(host, engine, path);
     selected = { host, engine, path };
     if (updateUrl && location.pathname.endsWith("/sessions")) {
@@ -641,19 +665,32 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     conversationOnly = new URLSearchParams(location.search).get("view") === "conversation";
     document.getElementById("session-conversation").checked = conversationOnly;
     document.getElementById("session-reading").hidden = true;
+    readingDisclosure.open = false;
+    recordMeta.open = false;
     onSelect(selected);
     detailEl.replaceChildren();
-    detailTitleEl.textContent = detailUsageEl.textContent = "";
+    const entry = getSessions().find(item => isSelected(selected, item));
+    detailTitleEl.textContent = entry?.label || ENGINE_LABELS[engine] || engine;
+    document.getElementById("session-context").textContent = [host, entry?.cwd].filter(Boolean).join(" · ");
+    detailUsageEl.textContent = "";
+    detailScroller().scrollTop = 0;
+    if (focusDetail && matchMedia("(max-width: 768px)").matches) detailTitleEl.focus();
     const pendingStatus = document.createElement("p");
     pendingStatus.className = "inline-loading";
     pendingStatus.setAttribute("role", "status");
-    pendingStatus.textContent = "読み込み中";
+    pendingStatus.textContent = "記録を読み込み中…";
     detailEl.append(pendingStatus);
     const query = new URLSearchParams({ host, engine, path });
     const generation = ++detailGeneration;
     const operation = beginOperation("sessions", "open-session", {trigger: "click"});
     let outcome = "ok";
     try {
+      // 明示URLは一覧取得前でも閲覧領域を開くが、費用の集計範囲を決める親子関係は一覧から得る。  // pyfltr: allow-comment
+      if (initialList) await initialList;
+      if (generation !== detailGeneration) {
+        outcome = "superseded";
+        return;
+      }
       const response = await (timedFetch("sessions", `${BASE_PATH}/api/sessions/detail?${query.toString()}`, {}, operation.timing));
       if (!response.ok) {
         const error = new Error(`記録を取得できません (${response.status})`);
@@ -665,6 +702,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
         outcome = "superseded";
         return;
       }
+      recordUpdateSuccess("sessions", "detail");
       renderDetail(detail);
       moveToUrlEvent();
       void loadDeferredCost(detail);
@@ -675,7 +713,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
         return;
       }
       if (readFailure(error.status) === "temporary") {
-        detailTitleEl.textContent = "";
+        pendingStatus.remove();
         setDisplayedReadError("sessions", "detail", "セッションの詳細を取得できません。", refreshSelectedDetail);
         return;
       }
@@ -688,13 +726,17 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     detailEl = document.getElementById("detail");
     detailTitleEl = document.getElementById("detail-title");
     detailUsageEl = document.getElementById("detail-usage");
+    recordMeta = document.getElementById("session-record-meta");
+    recordFacts = document.getElementById("session-record-facts");
+    detailPricingEl = recordMeta.querySelector(".detail-pricing");
     const controls = document.getElementById("session-reading");
     new ResizeObserver(() => detailEl.style.setProperty("--reading-height", `${controls.offsetHeight}px`)).observe(controls);
-    const disclosure = controls.querySelector(".reading-controls");
-    const compact = matchMedia("(max-width: 48rem)");
-    disclosure.open = !compact.matches;
-    compact.addEventListener("change", event => { disclosure.open = !event.matches; });
+    readingDisclosure = controls.querySelector(".reading-controls");
+    readingActive = document.createElement("span");
+    readingActive.className = "reading-active";
+    readingDisclosure.querySelector("summary").append(readingActive);
     updateScrollEdges = attachScrollEdges(detailScroller(), controls.querySelector(".reading-navigation"), detailEl, {
+      icons: true,
       beforeEnd: () => appendEvents(visibleEvents.length),
       hasMore: () => renderLimit < visibleEvents.length,
     });
@@ -716,7 +758,9 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     selected = currentDetail = null;
     parentTrail = [];
     detailGeneration++;
-    detailTitleEl.textContent = detailUsageEl.textContent = "";
+    detailTitleEl.textContent = "セッションを選ぶ";
+    detailUsageEl.textContent = "";
+    document.getElementById("session-context").textContent = "";
     detailEl.textContent = message;
     document.getElementById("session-reading").hidden = true;
   }

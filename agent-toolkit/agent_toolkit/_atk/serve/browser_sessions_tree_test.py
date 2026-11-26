@@ -34,6 +34,8 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
     await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
 
     items = harness.page.locator(".subagent-item")
+    await playwright.async_api.expect(items.first).to_be_hidden()
+    await harness.page.locator("#detail .subagents > summary").click()
     await items.first.wait_for(state="visible")
     assert await items.count() == 2
     assert "所在の調査" in await items.nth(0).inner_text()
@@ -68,6 +70,7 @@ async def test_remote_subagents_are_shown_or_reported_as_unavailable(
     await harness.page.locator("#sessions .session-item").nth(1).wait_for(state="visible")
 
     await harness.page.locator(f'#sessions .session-item[data-host="{_NEW_REMOTE_HOST}"]').click()
+    await harness.page.locator("#detail .subagents > summary").click()
     await harness.page.locator(".subagent-item").first.wait_for(state="visible")
     assert "リモートの調査" in await harness.page.locator("#detail").inner_text()
     assert await harness.page.locator("#detail .unavailable").count() == 0
