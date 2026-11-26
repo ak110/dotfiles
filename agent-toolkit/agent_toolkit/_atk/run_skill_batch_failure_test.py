@@ -118,6 +118,26 @@ def test_missing_record_does_not_discard_reregistered_generation(tmp_path, monke
 
 
 @pytest.mark.usefixtures("leaf_git_commands")
+def test_removed_codex_rollouts_do_not_fail_batch_preparation(tmp_path, monkeypatch):
+    notes = run_skill_batch_test._notes()  # pylint: disable=protected-access
+    monkeypatch.setattr(run_skill_batch.session_record_paths, "find_codex_records", lambda session_id: ())
+    for session_id in ("removed-first", "removed-second"):
+        transcript = tmp_path / "isolated-codex" / "sessions" / "2026" / "11" / "26" / f"rollout-date-{session_id}.jsonl"
+        session_review.record(
+            {"hook_event_name": "SessionStart", "session_id": session_id, "transcript_path": str(transcript)},
+            host="codex",
+        )
+    assert len(session_review.pending()) == 2
+
+    def dispatch_model(_args):
+        pytest.fail("記録が残っていない対象でモデルを起動した")
+
+    assert run_skill_batch.dispatch(run_skill_batch_test._args("manual"), dispatch_model) == 0  # pylint: disable=protected-access
+    assert not session_review.pending()
+    assert not run_skill_batch_test._failure_awis(notes)  # pylint: disable=protected-access
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     1.0,
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.352秒。"),

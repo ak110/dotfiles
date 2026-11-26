@@ -236,8 +236,7 @@ def weekly_auto_start_due(work: str, *, now: float) -> bool:
 
 
 def _lacks_record(target: dict[str, Any]) -> bool:
-    """Claudeの対象の記録ファイルが存在しないかを返す。記録の所在を別の識別子で解決するhostは対象外とする。"""
-    if target["host"] != "claude":
+    if target["host"] not in {"claude", "codex"} or target.get("lane_parent_session_id"):
         return False
     path = target.get("transcript_path")
     if not isinstance(path, str) or not path:
@@ -245,7 +244,7 @@ def _lacks_record(target: dict[str, Any]) -> bool:
     try:
         pathlib.Path(path).lstat()
     except FileNotFoundError:
-        return True
+        return target["host"] == "claude" or not session_record_paths.find_codex_records(target["session_id"])
     except OSError:
         # 読取権限や形式の問題は、不在として待ちを消さずprepareの診断へ渡す。
         return False
@@ -269,8 +268,6 @@ def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
         if session_activity.review_activity({target["session_id"]}).has_activity:
             continue
         if _lacks_record(target):
-            # 発話せずに終了した会話は開始時に待ちへ登録されるが、記録ファイルは作られない。
-            # 準備へ渡すと不足の失敗として報告と抑止の対象になるため、振り返る内容の無い対象として待ちから外す。
             if session_review.discard_pending(target):
                 print(f"記録ファイルの無い対象を振り返りの待ちから外した: {target['session_id']}", file=sys.stderr)
             continue
