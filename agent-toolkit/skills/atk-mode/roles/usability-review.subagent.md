@@ -20,6 +20,7 @@ startup_documents:
 
 # ユーザビリティレビュータスク
 
+変更画面を独立した担当として描画・操作し、エンドユーザーが迷わず理解して作業を完了できるかを評価する。
 着手時に`agent-basics:review-standards`を起動し、届いた`reviewer-usability.md`で変更画面を独立評価する。
 指摘の範囲と内容は同スキルの`reviewer.md`に従う。
 

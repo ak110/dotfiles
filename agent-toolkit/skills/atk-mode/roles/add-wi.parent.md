@@ -4,6 +4,7 @@
 起動対象: add-wi.subagent.md
 ```
 
+委譲元が、WIの起草を独立した担当へ任せても、ユーザーの要求の意味を保った原稿だけを検収して登録させるための文書である。
 AWIやUWIの作成・更新で、成立性の調査と起草をWI投入担当へ委ねる委譲元が、起動、入力の受け渡し、返却の検収に使う。
 `agent-toolkit:atk-mode`の作業`process-wi`のレーン工程で上流リポジトリへの投入を要する項目も、この委譲で扱う。
 担当の手順と返却形式は`agent-toolkit:atk-mode/roles/add-wi.subagent.md`が定める。

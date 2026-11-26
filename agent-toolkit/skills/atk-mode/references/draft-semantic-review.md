@@ -1,5 +1,7 @@
 # WI原稿の意味の確認
 
+WIの原稿を確かめる担当が、保存の前に原稿の意味を元の要求と現物に照らして独立に確かめ、処理担当がユーザーの意図と違う作業を始めないようにする。
+
 WIの原稿を保存する前に、その意味を確かめる観点である。
 通常AWIと、報告用を除くUWIに当てる。
 報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。

@@ -1,5 +1,6 @@
 # WI処理の運用概要
 
+WI処理を分析・変更・説明する担当が全体像を把握し、1つの工程の変更でユーザーの作業の流れを壊さないようにするための資料である。
 複数のセッションとユーザーの操作にまたがるWI処理の全体像である。
 WI処理の工程や運用に関わる問題の原因分析と対策、運用工程や自動化の変更計画、ユーザーへの運用説明の前に読む。
 各工程の入力と出口は`agent-toolkit:atk-mode/references/workflow-phases.md`、各工程の手順は`agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の手順書が定める。

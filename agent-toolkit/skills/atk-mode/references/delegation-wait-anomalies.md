@@ -1,5 +1,6 @@
 # 待機の異常
 
+委譲元が、待機の異常でも委譲先の結果を取りこぼさず、同じ結果の二重受領や回収されないセッションを残さずに作業を続けるための資料である。
 `atk agents wait`の終了コード、待機を開始できない場合、ホストによる待機の停止、役割資源の版の違いへの対処を定める。
 平常の待機と停滞は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`、MCPサーバーの再起動からの回復は`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`が扱う。
 

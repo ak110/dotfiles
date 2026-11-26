@@ -1,5 +1,6 @@
 # 報告のフォーマット：振り返り結果報告のフォーマット
 
+ユーザーが振り返りの結論と投入されたAWIを短く把握できるよう、振り返りの担当が報告を書くための書式である。
 `/atk-mode review-session`と`/atk-mode review-session batch`が出す振り返り結果報告とAWI投入結果報告、報告用UWIの`### 振り返り`の書式を定める。
 共通の書き方と検証結果の書き方は`agent-toolkit:atk-mode/references/report-formats.md`に従う。
 

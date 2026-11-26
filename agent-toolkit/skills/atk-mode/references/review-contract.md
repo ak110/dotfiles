@@ -1,5 +1,6 @@
 # 実行レビューの契約
 
+実行レビューの起動元が、計画とWIの本文に無い要求と認可をレビュー担当へ漏れなく渡し、ユーザーの要求ごとの合否を独立に判定させるための契約である。
 実行レビューへ渡す`review_contract`の生成、書式、条件表の行の定義である。
 実行レビューの起動元が契約を作る前と、実行レビュー担当が契約と条件表を読んで判定行を作る前、統合を担う担当が条件の番号を突き合わせる前に読む。
 判定行と根拠の形式は`agent-toolkit:atk-mode/references/review-record.md`と`agent-toolkit:atk-mode/references/review-record-verdicts.md`にある。

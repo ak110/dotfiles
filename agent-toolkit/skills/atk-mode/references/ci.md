@@ -1,5 +1,7 @@
 # CIの判定・待機・失敗の扱い
 
+公開を担当するエージェントが、CIの結果を観測して失敗を直してから完了とし、壊れた変更が公開されたまま残らないようにする。
+
 公開先のCI定義の有無の判定、`wait_ci.py`（`atk run-script wait-ci`）による待機、CIの失敗の証拠の取得と修正の公開を定める。
 `agent-toolkit:atk-mode/playbooks/publish.md`の「push前」「pushと監視」の段から使う。
 CIの失敗を認識したら`agent-basics:bugfix`を起動し、失敗の分類と対処は同スキルの`references/ci-failures.md`に従う。

@@ -17,6 +17,7 @@ writes_worktree: true
 
 # レーン統合タスク
 
+レーンの採否によらず統合と終端の操作を同じ担当がそろえて行い、委譲元がpushと公開へ取り違えなく進めるようにする。
 計画の起草と実装を担当したレーン担当のthreadが、専用branchの統合と作成した計画の最終化を行い、AWIの採否を確定する。
 リモートへのpushは委譲元が担う。
 入力の意味、`atk lane integrate`の引数とmanifest、計画の最終化、AWI行の終了は`agent-toolkit:atk-mode/references/lane-integration-format.md`にあり、統合の前に全文を読む。

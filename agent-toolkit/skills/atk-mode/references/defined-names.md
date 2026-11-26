@@ -1,5 +1,7 @@
 # 定義済みの名前の一覧
 
+名前を使うエージェントが、同じ対象を同じ名前で指し、読み手が対象を取り違えないようにする。
+
 agent-toolkitの用語の索引である。
 既存の対象を名前で指す時と新しい名前を付ける時に読む。
 名前の選び方の基準は`agent-basics:writing-standards/references/defined-names.md`にある。

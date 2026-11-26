@@ -4,6 +4,7 @@
 起動対象: usability-review.subagent.md
 ```
 
+エンドユーザーが変更画面の意味を迷わず理解して作業を完了できるかを、実装者から独立した担当に確かめさせるための文書である。
 画面差分がある時の並列画面レビュー（`agent-toolkit:atk-mode/references/workflow-phases.md`「用語」）で、実行レビューを起動する者（レーン工程ではレーン担当）がユーザビリティレビュー担当を起動・検収する手順である。
 判定の基準は`agent-basics:review-standards/references/reviewer-usability.md`「ユーザビリティレビューの判定」にあり、本書は入力、起動、受領を定める。
 見た目の完全一致を求められた移行の検収は、本書ではなく`agent-toolkit:atk-mode/playbooks/visual-parity.md`に従う。

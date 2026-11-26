@@ -1,5 +1,7 @@
 # WIとcommitの対応の記録
 
+AWIを完了させるエージェントが、どのcommitがどのWIを実装したかを推測でなく記録から示し、ユーザーと後続の担当が変更の由来を追えるようにする。
+
 WIを実装したcommitとAWIの対応を記録し、取得する定義である。
 履歴の書き換えでOIDが変わった後の引き継ぎは`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」にある。
 対応は、計画（計画が無ければ引き継ぎ記録）と同じディレクトリ、同じファイル幹（stem）の`<stem>.wi-commits.jsonl`だけに記録する。

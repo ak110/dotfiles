@@ -1,5 +1,6 @@
 # `CI記録`だけを基準とする実行レビューの起動
 
+CI失敗の修正を独立にレビューさせる起動側が、計画の無い修正でも原因commitの担当が持っていた前提をレビュー担当へ届け、ユーザーへ渡す修正の誤りを見逃させないための資料である。
 実行レビューの起動側が`CI記録`だけの基準で起動する時に、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「起動」の手順へ足す前提と例外である。
 
 レビュー基準が`CI記録`だけの起動は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正系列」の手順4が起動の条件と渡す値（CI記録の7項目、`修正系列の開始時のHEAD`、`原因commitOID`、`review_contract`）を定める。

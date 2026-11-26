@@ -1,5 +1,6 @@
 # レーン統合の形式
 
+レーン担当とメインが、レーンの変更を漏れなく統合し、計画とAWIの採否を実際の成果どおりに確定して、ユーザーが統合結果を信頼できるようにするための定義である。
 レーンの統合（役割`lane-integration`）の入力、`atk lane integrate`の引数とmanifest、計画の最終化、AWI行の終了を定める唯一の定義である。
 計画と実装を担当したレーン担当のthreadが、専用branchの統合と計画の最終化、AWIの採否の確定に使い、メインが自分でCLIを呼ぶ場合と統合の受領の時も同じ定義を使う。
 リモートへのpushは委譲元が担い、専用worktreeとbranchは統合・最終化の検収と利用の工程の後に`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」に従って回収する。
