@@ -47,26 +47,30 @@ def _required(facts: dict[str, dict[str, Any]]) -> set[str]:
     return facts.keys() - {"00-wait.md"}
 
 
+def _check(facts: dict[str, dict[str, Any]], selected: set[str], excluded: set[str]):
+    return selection_contract._confirm_exclusions(  # pylint: disable=protected-access
+        {"除外候補": sorted(excluded)}, facts, selected, frozenset(), additional=False, full_candidates=False
+    )
+
+
 def test_all_ready_and_processing_candidates_are_accepted() -> None:
     facts = _facts()
-    selection_contract._check_ready_selection(facts, _required(facts), set())  # pylint: disable=protected-access
+    assert _check(facts, _required(facts), set()) == (set(), None)
 
 
 def test_selecting_only_the_prefix_is_rejected() -> None:
     with pytest.raises(ValueError, match="02-old.md.*03-old.md"):
-        selection_contract._check_ready_selection(  # pylint: disable=protected-access
-            _facts(), {"05-answered.md", "04-processing.md", "01-old.md", "08-urgent.md"}, set()
-        )
+        _check(_facts(), {"05-answered.md", "04-processing.md", "01-old.md", "08-urgent.md"}, set())
 
 
 def test_excluded_candidate_is_not_required() -> None:
     facts = _facts()
     excluded = {"01-old.md"}
-    selection_contract._check_ready_selection(facts, _required(facts) - excluded, excluded)  # pylint: disable=protected-access
+    assert _check(facts, _required(facts) - excluded, excluded) == (excluded, None)
 
 
 def test_urgent_without_reason_is_rejected() -> None:
     facts = _facts()
     facts["08-urgent.md"]["priority_reason"] = " "
     with pytest.raises(ValueError, match="08-urgent.md"):
-        selection_contract._check_ready_selection(facts, {"01-old.md"}, set())  # pylint: disable=protected-access
+        _check(facts, {"01-old.md"}, set())

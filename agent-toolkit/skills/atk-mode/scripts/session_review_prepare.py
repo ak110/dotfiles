@@ -277,7 +277,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     if args.agy_session_id is not None:
         record = session_record_paths.find_session_record(args.agy_session_id)
         if record is None or record.engine != "agy" or len(record.paths) != 1:
-            return _missing("transcript_path", f"Antigravityの会話記録を一意に解決できない: {args.agy_session_id}")
+            return _missing("transcript_path", f"Antigravityのセッション記録を一意に解決できない: {args.agy_session_id}")
         args.transcript = str(record.paths[0])
     if args.agents_session_id is not None:
         try:

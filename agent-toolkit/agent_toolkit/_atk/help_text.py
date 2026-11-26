@@ -657,6 +657,7 @@ HELP["atk agents"]["description"] += (
     "\n操作の分担: 開始はMCPサーバーagents_serverのstart、追送はsend_message、実行中turnの中断はkill、"
     "終了済みsessionの破棄はstopを呼び出す。引数は各MCPツールの公開説明で確認する。"
     "操作権限の要求・取消はpermissions、ユーザー画面への本文表示はsend_to_user、"
+    "表示前の確認はsend_to_user_preflight、"
     "会話圧縮の予約はcompact_conversation、同一会話への変更反映予約はapply_runtime_changesを使う。"
     "正式に引き継いだ子の通知・終了結果はcollect_handoffで回収する。"
     "これらはCLIから実行できない。CLIはwaitで自分が起動した子の待機・回収、notifyで委譲元への通知、"

@@ -32,10 +32,10 @@ async def test_mobile_session_keeps_list_visible_after_return_during_fetch(
 ) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
-    await page.goto(screen_harness.base_url + "/sessions")
-    item = page.locator("#sessions .session-item").first
-    await item.wait_for(state="attached")
-    query = await item.evaluate("element => new URLSearchParams(element.dataset).toString()")
+    (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
+    record_path = record.as_posix()
+    item = page.locator(f'#sessions .session-item[data-path="{record_path}"]')
+    query = urlencode({"host": "browser-test", "engine": "claude", "path": record_path})
     started = asyncio.Event()
     release = asyncio.Event()
     pattern = "**/api/sessions/list" if pending == "list" else "**/api/sessions/detail?*"

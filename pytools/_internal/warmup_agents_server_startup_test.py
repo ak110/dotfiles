@@ -13,7 +13,7 @@ import psutil
 import pytest
 from agent_toolkit._agents_server import service_forward, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
-from agent_toolkit._common import plugin_environment, process_tree, windows_job
+from agent_toolkit._common import delegated_session, plugin_environment, process_tree, windows_job
 from agent_toolkit._common.runtime_environment import CallerContext
 from agent_toolkit._testing import isolation
 from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT
@@ -94,6 +94,7 @@ def test_published_service_outlives_startup_check(
         LOCALAPPDATA=str(tmp_path / "state"),
         AGENT_TOOLKIT_PRIVATE_NOTES=str(tmp_path / "notes"),
     )
+    environment.pop(delegated_session.CALLER_PLUGIN_ROOT_ENV, None)
     monkeypatch.setattr(os, "environ", environment)
     monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 120.0)
 

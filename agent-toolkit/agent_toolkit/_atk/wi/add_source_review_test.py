@@ -33,7 +33,7 @@ def test_explicit_contract_controls_case_and_table(tmp_path: pathlib.Path) -> No
     assert error and _URL in error
     for coverage in (None, ""):
         _write_table(tmp_path, _URL, coverage)
-        error = add._check_external_source_review(args, ["# 原稿\n"], tmp_path)
+        error = add_cli._check_external_source_review(args, ["# 原稿\n"], tmp_path)
         assert error and "配布先での扱い" in error
     _write_table(tmp_path, _URL)
     assert add_cli._check_external_source_review(args, ["# 原稿\n"], tmp_path) is None

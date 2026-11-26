@@ -5,6 +5,7 @@ import json
 import pathlib
 
 from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.output_policy import REVIEW_RECEIPT_STATE, current_document_read
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
@@ -34,7 +35,7 @@ def _wait_delivery(text: str) -> tuple[set[str], set[str]]:
     result: set[str] = set()
     presented: set[str] = set()
     in_body = False
-    for line in text.splitlines():
+    for line in split_lines(text):
         if line.startswith("本文開始:"):
             in_body = True
         elif line.startswith("本文終了:"):

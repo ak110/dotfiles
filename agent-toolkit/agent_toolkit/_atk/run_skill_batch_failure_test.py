@@ -140,7 +140,7 @@ def test_removed_codex_rollouts_do_not_fail_batch_preparation(tmp_path, monkeypa
 
 
 @pytest.mark.usefixtures("leaf_git_commands")
-@pytest.mark.cpu_limit(1.25, reason="実Gitと準備スクリプトで別のCodexホームから報告確定まで検証する。")
+@pytest.mark.cpu_limit(1.25, reason="実Gitと`atk run-script session-review-prepare`で別のCodexホームから報告確定まで検証する。")
 @pytest.mark.parametrize("archived", [False, True])
 def test_batch_resolves_registered_rollout_in_other_codex_home(tmp_path, monkeypatch, archived):
     # pylint: disable=protected-access

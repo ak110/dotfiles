@@ -244,10 +244,10 @@ def _confirmed_free_review_tables(text: str, requested: set[str]) -> set[str]:
             message = "\n".join(
                 block["text"] for block in content if isinstance(block, dict) and isinstance(block.get("text"), str)
             )
-            message = "\n".join(line.rstrip() for line in message.splitlines())
+            message = "\n".join(line.rstrip() for line in split_lines(message))
             if _formal_result(message):
                 completed.update(_reported_paths(_RESULT_TABLE, message) & requested & registered)
-            if "状態: completed" in message.splitlines():
+            if "状態: completed" in split_lines(message):
                 for path in _reported_paths(_RESULT_ORIGINAL, message):
                     completed.update(inspected.get(path, set()) & registered)
             continue
