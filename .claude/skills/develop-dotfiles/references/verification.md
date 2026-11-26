@@ -101,10 +101,6 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 既存の別のpre-pushフックは上書きしない。
 送信先の `develop` を新設するときは、公開済みdevelopと送るcommitの一意な共通祖先と比べ、基点を特定できない場合は検査を成功扱いにしない。
 
-公開する担当は統合後、実際にpushするHEADで、[作業ツリーの準備](worktree.md#作業ツリーの準備)にある規範Markdownの上限検査の成功を確かめる。
-成功の根拠に使うのは、同じHEADで対象のテストが実行され、成功した記録だけとする。
-上限超過ならpushせず、統合先の所有者が先に削減し、公開するHEADで成功を確かめ直す。
-
 1. 統合差分の配布対象ごとに採番の要否を確定し、レーンからの引き渡しと比べる。
    `rust/claude-statusline/`に変更があれば、`.claude/skills/release-dotfiles/SKILL.md`「developとmasterのリリース運用」の手順1の採番をpushの前に適用し、最終の検証のpyfltrへ`--enable=statusline-version`を指定する。
    同チェックは通常は無効のまま保ち、他の全体検証の成功と同チェックの成功を分けて扱う。

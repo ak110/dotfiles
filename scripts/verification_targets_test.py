@@ -83,7 +83,7 @@ def test_empty_result_and_failed_listing_are_distinct(tmp_path: pathlib.Path, mo
             "agent-toolkit/skills/atk-mode/SKILL.md",
             "# 前\n",
             "# 次\n",
-            ["markdown_link_anchor_invariant_test.py", "norm_size_budget_invariant_test.py", "retired_terms_invariant_test.py"],
+            ["markdown_link_anchor_invariant_test.py", "retired_terms_invariant_test.py"],
         ),
         (
             "agent-toolkit/agent_toolkit/_atk/run_skill.py",

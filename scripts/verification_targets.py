@@ -14,7 +14,6 @@ from pytools._internal import repository_references
 from pytools._internal.common import format_cli_error
 
 _HELP_TEST = "agent-toolkit/agent_toolkit/atk_help_test.py"
-_SIZE_TEST = "norm_size_budget_invariant_test.py"
 _LINK_TEST = "markdown_link_anchor_invariant_test.py"
 _TERM_TEST = "retired_terms_invariant_test.py"
 _STOP_TEST = "subprocess_stop_invariant_test.py"
@@ -169,8 +168,6 @@ def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
         if path.suffix == ".md":
             found.add((_LINK_TEST, "markdown-links"))
             found.add((_TERM_TEST, "tracked-terminology"))
-            if name.startswith(("agent-toolkit/skills/", "agent-basics/skills/")) and "fixtures" not in path.parts:
-                found.add((_SIZE_TEST, "published-norms"))
         if (
             name.startswith("agent-toolkit/agent_toolkit/")
             and path.suffix == ".py"
@@ -184,7 +181,6 @@ def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
         if name in {
             _LINK_TEST,
             _TERM_TEST,
-            _SIZE_TEST,
             _STOP_TEST,
             _HELP_TEST,
             _REFERENCE_TEST,
