@@ -415,8 +415,8 @@ function renderShared(savedKey) {
     if (prior && key !== savedKey && editorFields(prior).some(field => field.value !== field.dataset.initialValue)) {
       target.append(prior);
       const field = editorFields(prior)[0];
+      prior.querySelector(".settings-shared-conflict")?.remove();
       if (field.dataset.initialValue !== item.saved) {
-        prior.querySelector(".settings-shared-conflict")?.remove();
         const conflict = element("p", `共有の保存値が変わりました。最新の保存値: ${item.saved}`);
         conflict.className = "settings-shared-conflict";
         conflict.setAttribute("role", "alert");
@@ -462,12 +462,19 @@ function renderShared(savedKey) {
   if (focus?.shared) restoreSettingFocus(focus);
 }
 
+function showAutomaticErrors(data) {
+  if (!data.automatic_errors) return;
+  const failures = Object.entries(data.automatic_errors).map(([name, reason]) => `${name}: ${reason}`);
+  setUpdateError("settings", "automatic", failures.join(" / "), retryComparison);
+}
+
 async function retryComparison() {
   try {
     localData = await request(undefined, false, true, true, "");
     renderShared();
     renderComparison(localData);
     setUpdateError("settings", "comparison");
+    showAutomaticErrors(localData);
     filterSettings();
   } catch (error) {
     setUpdateError("settings", "comparison", error.message, retryComparison);
@@ -790,8 +797,7 @@ async function loadHost(background = false, retry = false) {
       renderShared();
       renderComparison(local);
       filterSettings();
-      const failures = Object.entries(local.automatic_errors ?? {}).map(([name, reason]) => `${name}: ${reason}`);
-      setUpdateError("settings", "automatic", failures.join(" / "), retryComparison);
+      showAutomaticErrors(local);
       if (displayedData?.legacy || local.automatic_unsupported?.includes(displayedHost)) {
         loading = false;
         updateWriteControls();
@@ -838,9 +844,8 @@ async function loadHost(background = false, retry = false) {
     restoreSettingFocus(focus);
     loading = false;
     updateWriteControls();
-    const failures = Object.entries(data.automatic_errors ?? {}).map(([name, reason]) => `${name}: ${reason}`);
     setUpdateError("settings", "refresh");
-    if (data.automatic_errors) setUpdateError("settings", "automatic", failures.join(" / "), retryComparison);
+    showAutomaticErrors(data);
     status.textContent = data.legacy || data.automatic_unsupported?.includes(host) ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
   } catch (error) {
     if (generation !== loadGeneration) return;
