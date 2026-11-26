@@ -296,3 +296,58 @@ def test_reissue_transfers_only_remaining_known_count(hosts):
     assert refreshed["count"] == 1
     assert reset_reservations.ISSUED not in refreshed
     assert reset_reservations.is_issued(hosts.notes["b"], refreshed)
+
+
+@pytest.mark.parametrize("case", ["equal", "mixed", "changed", "retired"])
+def test_migration_preserves_only_the_same_issued_codex_permission(hosts, case):
+    key = reset_reservations.PERMISSIONS
+    identifier = "shared-permission"
+    grant = {
+        "id": identifier,
+        "engine": "codex",
+        "account": "example@example.invalid",
+        "scope": "codex",
+        "count": 1,
+        "from": "2020-01-01T00:00:00Z",
+        "until": "2099-01-01T00:00:00Z",
+    }
+    hosts.use("a")
+    if case == "retired":
+        hosts.write_local("a", {key: json.dumps([grant])})
+        plan = config_shared_migration.compare()
+        config_shared_migration.apply(plan["revision"], {})
+        assert _main(hosts.tmp_path, "config", "reissue-reset", identifier) == 0
+    else:
+        assert _main(hosts.tmp_path, "config", "set", key, json.dumps([grant])) == 0
+
+    hosts.use("b")
+    selected = [grant]
+    if case == "mixed":
+        selected.append(dict(grant, id="legacy-permission", account="legacy@example.invalid"))
+    elif case == "changed":
+        selected = [dict(grant, count=2)]
+    original = {key: reset_reservations.encode_permissions(selected)}
+    hosts.write_local("b", original)
+    plan = config_shared_migration.compare()
+    assert plan["required"] == ([] if case == "equal" else [key])
+    choices: dict[str, config_shared_migration.Choice] = {} if case == "equal" else {key: "local"}
+    if case == "retired":
+        with pytest.raises(ValueError, match="発行し直した旧許可は復元できません"):
+            config_shared_migration.apply(plan["revision"], choices)
+        assert hosts.local("b") == original
+        assert config_shared_migration.apply(plan["revision"], {key: "shared"}) == 1
+    else:
+        assert config_shared_migration.apply(plan["revision"], choices) == 1
+    assert hosts.local("b") == {}
+
+    for name in ("b", "a"):
+        hosts.use(name)
+        visible = json.loads(config_module.resolve_mutable_setting(key))
+        if case == "retired":
+            assert len(visible) == 1 and visible[0]["id"] != identifier
+            assert reset_reservations.is_issued(hosts.notes[name], visible[0])
+        else:
+            assert visible == selected
+            assert reset_reservations.is_issued(hosts.notes[name], visible[0]) == (case != "changed")
+            if case == "mixed":
+                assert not reset_reservations.is_issued(hosts.notes[name], visible[1])

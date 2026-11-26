@@ -51,16 +51,14 @@ def encode_permissions(entries: list[dict[str, Any]]) -> str:
     return json.dumps(entries, ensure_ascii=False, sort_keys=True)
 
 
+def _public_grant(grant: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in grant.items() if key not in {ISSUED, RETIRED}}
+
+
 def public_permissions(value: str) -> str:
     entries = json.loads(value)
     if any(ISSUED in item or RETIRED in item for item in entries):
-        return encode_permissions(
-            [
-                {key: val for key, val in item.items() if key not in {ISSUED, RETIRED}}
-                for item in entries
-                if item.get(RETIRED) is not True
-            ]
-        )
+        return encode_permissions([_public_grant(item) for item in entries if item.get(RETIRED) is not True])
     return value
 
 
@@ -80,7 +78,16 @@ def _with_retirements(current: dict[str, str], entries: list[dict[str, Any]]) ->
 
 
 def migrate_permissions(current: dict[str, str], value: str) -> str:
-    return _with_retirements(current, json.loads(public_permissions(value)))
+    issued = {
+        grant["id"]: grant
+        for grant in permission_entries(current)
+        if grant.get(ISSUED) is True and grant.get(RETIRED) is not True
+    }
+    entries = []
+    for item in json.loads(public_permissions(value)):
+        grant = issued.get(item["id"])
+        entries.append(grant if grant is not None and _public_grant(grant) == item else item)
+    return _with_retirements(current, entries)
 
 
 def mark_new_permissions(current: dict[str, str], value: str) -> str:
@@ -100,7 +107,7 @@ def _active_grant(notes: pathlib.Path, permission: dict[str, Any], *, upstream: 
     else:
         current = config_settings.load_shared_settings(path)
     for entry in permission_entries(current):
-        if entry.get(RETIRED) is not True and {key: value for key, value in entry.items() if key != ISSUED} == permission:
+        if entry.get(RETIRED) is not True and _public_grant(entry) == permission:
             return entry
     return {}
 
