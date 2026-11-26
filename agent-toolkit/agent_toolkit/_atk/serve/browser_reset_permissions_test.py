@@ -185,7 +185,7 @@ async def test_permission_draft_survives_host_switch_and_remote_unknown_has_no_c
     )
     remote = config.settings_snapshot(isolated_permissions)
     remote["reset_editor"]["accounts"]["codex"]["account"] = "unknown:synthetic"
-    monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host: (remote, None))
+    monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host, **_kwargs: (remote, None))
 
     section = await _open_add(screen_harness)
     account = section.get_by_label("アカウント", exact=True)

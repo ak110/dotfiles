@@ -151,6 +151,11 @@ export function createSettingsView({
     description.append(value);
     if (item.source) description.append(element("p", `出所: ${item.source}`, "secondary-text"));
     if (item.description) description.append(element("p", item.description, "setting-description"));
+    if (item.invalid_local) {
+      description.append(element("p", "この端末のconfig.jsonに無効な値があります。共有値を変更する前に、端末の設定ファイルを修正してください。", "notice notice-warning"));
+      parent.append(block);
+      return block;
+    }
     if (item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && state.host)) {
       description.append(element("p", key === "usage_reset_permissions" && state.host
         ? "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"
@@ -224,14 +229,16 @@ export function createSettingsView({
       Object.entries(attributes.merge_from ?? {}).map(([target, source]) => `${target}=${source}`).join(","));
     const output = settingResult();
     box.append(button(repo ? "属性を保存" : "追加", () => {
-      const data = {
-        action: "repo", operation: repo ? "set" : "add", repo: repo || identifier.value,
-        edit: edit.value, process_loop: loop.value === "true", platforms: platforms.value,
-      };
-      if (repo || path.value) data.path = path.value;
+      const data = {action: "repo", operation: repo ? "set" : "add", repo: repo || identifier.value};
+      if (!repo || edit.value !== attributes.edit) data.edit = edit.value;
+      if (loop.value !== String(attributes.process_loop ?? false)) data.process_loop = loop.value === "true";
+      if (platforms.value !== (attributes.platforms ?? ["linux", "windows"]).join(",")) data.platforms = platforms.value;
+      if (path.value !== (attributes.path ?? "")) data.path = path.value;
       if (branches.value !== (attributes.branches ?? []).join(",")) data.branches = branches.value;
-      if (defaultBranch.value && branches.value) data.default_branch = defaultBranch.value;
-      if (mergeFrom.value || Object.keys(attributes.merge_from ?? {}).length) data.merge_from = mergeFrom.value;
+      if (defaultBranch.value !== (attributes.default_branch ?? "") && branches.value) data.default_branch = defaultBranch.value;
+      if (mergeFrom.value !== Object.entries(attributes.merge_from ?? {}).map(([target, source]) => `${target}=${source}`).join(",")) {
+        data.merge_from = mergeFrom.value;
+      }
       void operate(data, output);
     }));
     if (repo) box.append(button("登録を削除", () => {
@@ -248,89 +255,107 @@ export function createSettingsView({
 
   // 画面の定期更新で描き直しても、確認済みの差と選択を残す。 pyfltr: allow-comment
   const migrationPlans = new Map();
-  const migrationPreviews = new Set();
-
   function migrationPanel(parent, data) {
-    const pending = data.shared_migration?.pending ??
+    const migration = data.shared_migration;
+    const available = migration?.plan;
+    const pending = migration?.pending ??
       Object.entries(data.settings).filter(([, item]) => item.migration_pending).map(([key]) => key);
-    if (!pending.length) {
-      migrationPlans.delete(state.host);
-      migrationPreviews.delete(state.host);
+    const host = state.host;
+    if (!available && !pending.length && !migration?.sync_failed) {
+      migrationPlans.delete(host);
       return false;
     }
     const target = element("div");
     target.dataset.sharedMigration = "";
     parent.append(target);
-    if (!data.shared_migration) {
-      target.append(element("p", "このホストのatkは旧版のため、画面から移行できません。atkを更新してください。"));
+    if (migration?.sync_failed) {
+      target.append(element("p", "共有先を確認できません。確認できていない値は端末に残っています。", "notice notice-warning"));
+      if (!available) return true;
+    }
+    if (!available) {
+      target.append(element("p", "この端末のatkは旧版です。設定の競合を解決するにはatkを更新してください。"));
       return true;
     }
     if (data.shared_identity && state.localData?.shared_identity && data.shared_identity !== state.localData.shared_identity) {
-      target.append(element("p", "このホストの共有先はローカルと別です。移行はこのホストの共有先へ行います。"));
+      target.append(element("p", "ここで選んだ値は、この端末の共有先に保存します。"));
     }
-    target.append(element("p", `未移行: ${pending.join("、")}`));
+    if (migrationPlans.get(host)?.plan.revision !== available.revision) {
+      migrationPlans.set(host, {plan: available, choices: {}});
+    }
     const output = settingResult();
-    const host = state.host;
-    const compare = button("差を確認", async () => {
-      const plan = await migrateShared({action: "compare"}, output);
-      if (plan) {
-        migrationPlans.set(host, {plan, choices: {}});
-        renderPlan(target, migrationPlans.get(host), output);
-      }
-    });
-    compare.dataset.migrationPreview = "";
-    target.append(compare, output);
-    if (migrationPlans.has(host)) renderPlan(target, migrationPlans.get(host), output);
+    target.append(output);
+    renderPlan(target, migrationPlans.get(host), data, output);
     return true;
   }
 
-  function renderPlan(target, {plan, choices}, output) {
+  function migrationItemName(item) {
+    if (item.repo) {
+      const names = {edit: "編集可否", platforms: "検証OS", branches: "作業する系統", github_issues: "GitHubの取り込み"};
+      const field = item.fields?.[0];
+      return field ? `${item.repo} · ${displayName(names, field)}` : item.repo;
+    }
+    const names = {codex_connections: "Codexの接続順と接続先", claude_connections: "Claudeの接続順"};
+    return Object.hasOwn(names, item.key) ? names[item.key] : settingName(item.key);
+  }
+
+  function migrationRepair(item, data) {
+    if (item.repo || item.key === "repositories") {
+      return "この端末のconfig.jsonで、リポジトリの登録を修正してください。";
+    }
+    if ((item.fields ?? [item.key]).some(key => data.settings[key]?.invalid_local)) {
+      return "まずこの端末のconfig.jsonで無効な値だけを修正してください。";
+    }
+    return "共有先のatk-config.jsonで、エラーに示された保存値を確認してください。";
+  }
+
+  function renderPlan(target, {plan, choices}, data, output) {
     target.querySelector("[data-migration-plan]")?.remove();
     const box = element("form");
     box.dataset.migrationPlan = "";
-    box.addEventListener("submit", event => event.preventDefault());
-    const same = plan.items.filter(item => item.kind !== "different");
+    box.setAttribute("aria-label", "共有設定の選択");
     for (const item of plan.items.filter(item => item.kind === "different")) {
       const group = element("fieldset");
-      group.append(element("legend", item.label));
+      group.append(element("legend", migrationItemName(item)));
       for (const [choice, label, value] of [
         ["local", "この端末の値", item.local], ["shared", "共有の値", item.shared ?? item.shared_effective],
       ]) {
-        const wrapper = element("label");
+        const wrapper = element("label", "", "settings-migration-option");
         const radio = element("input");
         radio.type = "radio";
         radio.name = `migration-${item.key}`;
+        radio.dataset.migrationFocus = `${item.key}:${choice}`;
         radio.value = choice;
         radio.required = true;
         radio.checked = choices[item.key] === choice;
         radio.addEventListener("change", () => { choices[item.key] = choice; });
-        wrapper.append(radio, ` ${label}: ${shownValue(value)}`);
+        wrapper.append(radio, element("span", `${label}: ${shownValue(value)}`));
         group.append(wrapper);
       }
       if (item.loosens_edit) group.append(element("p", "共有の値はこの端末の編集制限より緩い値です。", "notice notice-warning"));
       box.append(group);
     }
     if (plan.required.length) box.append(element("p", "選んだ値は同じ共有先を使う全ての端末に反映されます。"));
-    if (same.length) {
-      const detail = element("details");
-      detail.append(element("summary", `差の無い項目 ${same.length}件はそのまま移します`));
-      for (const item of same) detail.append(element("p", `${item.label}: ${shownValue(item.local)}`));
-      box.append(detail);
-    }
     for (const item of plan.items.filter(item => item.error)) {
-      box.append(element("p", `${item.label}: ${item.error}`, "notice notice-warning"));
+      box.append(element("p", `${migrationItemName(item)}: ${item.error} ${migrationRepair(item, data)}`, "notice notice-warning"));
     }
-    const apply = button("移行", async () => {
-      if (plan.required.some(key => !choices[key])) {
-        output.textContent = "差のある項目ごとに残す値を選んでください。";
-        return;
-      }
-      await migrateShared({action: "apply", revision: plan.revision, choices}, output);
-    });
-    setWriteUnavailable(apply, plan.invalid.length > 0 || !plan.pending);
-    const actions = element("div", "", "form-actions");
-    actions.append(apply);
-    box.append(actions);
+    if (plan.required.length) {
+      const apply = element("button", "選んだ値を保存");
+      apply.type = "submit";
+      apply.dataset.migrationFocus = "save";
+      const wait = element("p", "最新の共有設定を確認できるまで保存できません。", "notice");
+      wait.id = "settings-migration-wait";
+      wait.dataset.migrationWait = "";
+      wait.hidden = true;
+      box.append(wait);
+      box.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (apply.getAttribute("aria-disabled") === "true" || plan.required.some(key => !choices[key])) return;
+        await migrateShared({action: "apply", revision: plan.revision, choices}, output);
+      });
+      const actions = element("div", "", "form-actions");
+      actions.append(apply);
+      box.append(actions);
+    }
     target.insertBefore(box, output);
   }
 
@@ -381,7 +406,8 @@ export function createSettingsView({
       const target = scope(groupId(key), "shared");
       count++;
       const prior = old.get(key);
-      if (prior && key !== savedKey && editorFields(prior).some(field => field.value !== field.dataset.initialValue)) {
+      if (prior && !item.invalid_local && key !== savedKey &&
+          editorFields(prior).some(field => field.value !== field.dataset.initialValue)) {
         target.append(prior);
         const field = editorFields(prior)[0];
         prior.querySelector(".settings-shared-conflict")?.remove();
@@ -522,7 +548,7 @@ export function createSettingsView({
   function renderHost(data) {
     const root = document.createDocumentFragment();
     const groups = {
-      migration: section(root, "共有へ移行", "claude-code-settings.md#共有設定への移行"),
+      migration: section(root, "共有設定の選択", "claude-code-settings.md#共有設定への移行"),
       models: section(root, "工程別モデル", "claude-code-models.md#工程別モデル設定"),
       connections: section(root, "接続", "claude-code-connections.md#接続の使い分け"),
       usage: section(root, "利用枠", "claude-code-models.md#利用枠とreset許可"),
@@ -628,16 +654,7 @@ export function createSettingsView({
     currentCategory = active ?? "";
     updateCategories();
     navigation.hidden = searching || !available.some(Boolean);
-    if (!searching && active === "migration") {
-      const host = state.host;
-      const preview = content.querySelector("[data-migration-preview]");
-      if (!preview || migrationPlans.has(host) || migrationPreviews.has(host)) return;
-      setTimeout(() => {
-        if (host !== state.host || !preview.isConnected || preview.disabled || preview.closest("[hidden]")) return;
-        migrationPreviews.add(host);
-        preview.click();
-      }, 0);
-    }
+
   }
 
   function renderTemporary(temporary, data) {

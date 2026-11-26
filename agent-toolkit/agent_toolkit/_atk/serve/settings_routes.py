@@ -33,7 +33,7 @@ def _setting_timeout(operation: str, payload: dict[str, typing.Any] | None) -> i
             and isinstance(key, str)
             and key in config_settings.SHARED_SETTING_KEYS
         )
-        if action == "preset" or writes_shared:
+        if action in ("preset", "repo", "reset-reissue") or writes_shared:
             return int(git_sync.LOCK_WAIT_TIMEOUT_SECONDS + git_sync.LOCK_HOLD_TIMEOUT_SECONDS) + 20
     return 100 if operation.endswith(" --observe-usage") else 20
 
@@ -234,7 +234,7 @@ def _unconfirmed_remote_save() -> WebInputError:
 
 def _request_host() -> str:
     host = quart.request.args.get("host", "")
-    if host and host not in (_remote_hosts(read_only=True) if quart.request.args.get("background") == "1" else _remote_hosts()):
+    if host and host not in _remote_hosts(read_only=True):
         raise ValueError("ローカル設定のremote_hostsに登録したホストを選んでください")
     return host
 
@@ -362,30 +362,24 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
                 return with_host_status(current, hosts)
             if host and quart.request.args.get("cached") == "1" and host in snapshots:
-                hosts = await asyncio.to_thread(_remote_hosts)
+                hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
                 cached = snapshots.get(host)
                 if cached is not None and host in hosts:
                     return json_no_store({**cached, "cached": True, "hosts": hosts})
             async with locks.setdefault(host, asyncio.Lock()):
                 if host:
-                    snapshot, _ = await asyncio.to_thread(_remote_snapshot, host)
+                    snapshot, _ = await asyncio.to_thread(_remote_snapshot, host, read_only=True)
                     remember_snapshot(host, snapshot)
                 else:
-                    snapshot = (
-                        await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home(), read_only=True)
-                        if background
-                        else await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home())
-                    )
+                    snapshot = await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home(), read_only=True)
                     snapshot["listen"] = {
                         "serve_host": [serve.host, serve.host_source],
                         "serve_port": [serve.port, serve.port_source],
                     }
-                hosts = (
-                    await asyncio.to_thread(_remote_hosts, read_only=True)
-                    if background
-                    else await asyncio.to_thread(_remote_hosts)
-                )
+                hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
                 return with_host_status(snapshot, hosts)
+        except _ReadOnlyUnsupported as error:
+            raise web_input_error_from(ValueError("SSH先のatkが旧版です"), next_action="SSH先のatkを更新する") from error
         except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
             message = error if isinstance(error, ValueError) else ValueError("設定を読み込めませんでした")
             raise web_input_error_from(message, next_action="ホストの設定とSSHの接続を確認する") from error

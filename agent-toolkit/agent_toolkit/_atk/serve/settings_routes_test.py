@@ -104,7 +104,7 @@ async def test_remote_save_timeout_only_instructs_to_read_the_current_value(monk
         raise subprocess.TimeoutExpired(command, kwargs["timeout"])
 
     monkeypatch.setattr(settings_routes, "run_with_timeout", run)
-    monkeypatch.setattr(settings_routes, "_remote_hosts", lambda: ("host",))
+    monkeypatch.setattr(settings_routes, "_remote_hosts", lambda **_: ("host",))
     app = quart.Quart(__name__)
     shell_routes.register_error_handlers(app)
     settings_routes.register_settings_routes(app, ServeConfig("127.0.0.1", 8080))

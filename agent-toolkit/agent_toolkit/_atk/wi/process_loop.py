@@ -5,7 +5,7 @@ import signal
 import time
 from types import FrameType
 
-from agent_toolkit._atk import outcome
+from agent_toolkit._atk import config_shared_migration, outcome
 from agent_toolkit._atk.wi import process_loop_control as control
 from agent_toolkit._atk.wi import process_loop_env as env
 from agent_toolkit._atk.wi import process_loop_log as log
@@ -85,6 +85,7 @@ def _run_loop(*, once: bool, no_alerts: bool, alert_interval: int) -> int:
 
 
 def cmd_process_loop(args: argparse.Namespace) -> int:
+    config_shared_migration.migrate_at_startup()
     previous = {key: os.environ.get(key) for key in (env.PROCESS_LOOP_SESSION_ENV, env.PROCESS_LOOP_SESSION_ID_ENV)}
     os.environ[env.PROCESS_LOOP_SESSION_ENV] = "1"
     os.environ.pop(env.PROCESS_LOOP_SESSION_ID_ENV, None)
