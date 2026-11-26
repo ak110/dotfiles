@@ -12,7 +12,7 @@ from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import stop
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
-from agent_toolkit._testing.helpers import _write_transcript
+from agent_toolkit._testing.helpers import _write_transcript, repl_send_to_user_entries
 
 _HOOKS_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
 
@@ -442,7 +442,8 @@ def test_queued_notifications_yield_without_overriding_block(
 
 
 @pytest.mark.parametrize(
-    ("case", "approved"), [("clear", True), ("blocked", False), ("background", False), ("unrelated", False)]
+    ("case", "approved"),
+    [("clear", True), ("blocked", False), ("background", False), ("unrelated", False), ("repl", True), ("repl-error", False)],
 )
 def test_stop_completion_exit_verdict(case, approved, monkeypatch, tmp_path):
     _set_state_directory(monkeypatch, tmp_path)
@@ -486,6 +487,11 @@ def test_stop_completion_exit_verdict(case, approved, monkeypatch, tmp_path):
             },
         ],
     )
+    if case.startswith("repl"):
+        transcript = _write_transcript(
+            tmp_path,
+            repl_send_to_user_entries("call-a", {"kind": "completion", "message": "完了しました。"}, ok=case == "repl"),
+        )
     stop.evaluate(
         json.dumps(
             {
@@ -496,3 +502,15 @@ def test_stop_completion_exit_verdict(case, approved, monkeypatch, tmp_path):
         )
     )
     assert completion_exit.read_state(state).get("status") == ("approved" if approved else None)
+
+
+@pytest.mark.parametrize(("ok", "expected"), [(True, "完了しました。"), (False, None)])
+def test_completion_report_text_accepts_repl_delivery(ok, expected, tmp_path):
+    session = "repl-report"
+    record = tmp_path / "projects" / "repo" / f"{session}.jsonl"
+    record.parent.mkdir(parents=True)
+    entries = repl_send_to_user_entries("call-a", {"kind": "completion", "message": "完了しました。"}, ok=ok)
+    record.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
+
+    state = {"session": session, "call": "call-a", "status": "exiting"}
+    assert completion_exit.report_text(state, root=tmp_path) == expected

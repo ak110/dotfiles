@@ -38,21 +38,25 @@ def record_path(session: str, *, root: pathlib.Path | None = None) -> pathlib.Pa
     return paths[0] if len(paths) == 1 else None
 
 
-def _blocks(entries: list[dict]) -> Iterator[dict]:
+def _blocks(entries: list[dict]) -> Iterator[tuple[dict, dict]]:
     for entry in entries:
         if entry.get("isSidechain") or entry.get("type") not in ("assistant", "user"):
             continue
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if isinstance(content, list):
-            yield from (item for item in content if isinstance(item, dict))
+            yield from ((entry, item) for item in content if isinstance(item, dict))
 
 
-def _delivered(block: dict) -> bool:
+def _delivered(entry: dict, block: dict) -> bool:
     if block.get("is_error") is True:
         return False
     content = block.get("content")
-    for item in content if isinstance(content, list) else [{"text": content}]:
+    items = content if isinstance(content, list) else [{"text": content}]
+    # REPL内のMCP呼び出しは同じIDの仮想tool_resultの本文が空で、応答はtoolUseResultに残る。pyfltr: allow-comment
+    if entry.get("isVirtual") is True:
+        items = [*items, {"text": entry.get("toolUseResult")}]
+    for item in items:
         body = item.get("text") if isinstance(item, dict) else None
         if not isinstance(body, str):
             continue
@@ -68,7 +72,7 @@ def _delivered(block: dict) -> bool:
 def reports(entries: list[dict]) -> dict[str, str]:
     calls: dict[str, str] = {}
     delivered: dict[str, str] = {}
-    for block in _blocks(entries):
+    for entry, block in _blocks(entries):
         if block.get("type") == "tool_use" and is_send_to_user_tool(block.get("name")):
             args = block.get("input")
             identifier = block.get("id")
@@ -83,7 +87,7 @@ def reports(entries: list[dict]) -> dict[str, str]:
             block.get("type") == "tool_result"
             and isinstance(identifier := block.get("tool_use_id"), str)
             and identifier in calls
-            and _delivered(block)
+            and _delivered(entry, block)
         ):
             delivered[identifier] = calls[identifier]
     return delivered

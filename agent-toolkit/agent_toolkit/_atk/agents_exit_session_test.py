@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit._atk import agents_exit_session
 from agent_toolkit._common import completion_exit
+from agent_toolkit._testing.helpers import repl_send_to_user_entries
 
 
 @pytest.mark.parametrize(
@@ -321,6 +322,10 @@ def test_sweep_function_hook_files_includes_recheck(
         ("delegated", False),
         ("previous-turn", False),
         ("delivery-error", False),
+        ("repl", True),
+        ("repl-error", False),
+        ("repl-not-completion", False),
+        ("repl-previous-turn", False),
     ],
 )
 def test_request_completion_exit_is_fail_closed(
@@ -355,7 +360,7 @@ def test_request_completion_exit_is_fail_closed(
         os.utime(marker, (1, 1))
     record = tmp_path / "projects" / "repo" / f"{session}.jsonl"
     record.parent.mkdir(parents=True)
-    entries = [
+    entries: list[dict] = [
         {
             "type": "assistant",
             "message": {
@@ -383,7 +388,13 @@ def test_request_completion_exit_is_fail_closed(
             },
         },
     ]
-    if case == "previous-turn":
+    if case.startswith("repl"):
+        entries = repl_send_to_user_entries(
+            "call-a",
+            {"kind": "completion", "message": "今回の報告"} if case != "repl-not-completion" else {"message": "今回の報告"},
+            ok=case != "repl-error",
+        )
+    if case.endswith("previous-turn"):
         entries.append({"type": "user", "origin": {"kind": "human"}, "message": {"role": "user", "content": "新しい依頼"}})
     record.write_text("".join(json.dumps(event) + "\n" for event in entries), encoding="utf-8")
 
