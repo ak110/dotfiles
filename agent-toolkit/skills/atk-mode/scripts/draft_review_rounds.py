@@ -241,7 +241,12 @@ def collect(roots: list[Path]) -> _Collected:
                 session = (value if operation == "start" else args).get("session_id")
                 instruction = args.get("instruction")
                 if instruction == "再判定せよ" and isinstance(params := args.get("extra_params"), dict):
-                    prompt = {key: params[key] for key in ("原稿", "要求識別子") if key in params}
+                    if value.get("delivery") not in ("reply_started", "steered"):
+                        continue
+                    prompt = {
+                        "instruction": instruction,
+                        **{key: params[key] for key in ("原稿", "要求識別子") if key in params},
+                    }
                 else:
                     prompt = args.get("prompt") or instruction or args.get("extra_params")
                 if isinstance(session, str) and (operation == "start" or value.get("delivery") in ("reply_started", "steered")):
@@ -289,27 +294,31 @@ def _judgments(body: str) -> Iterator[dict[str, str]]:
     yield fields
 
 
-def _request_identity(
-    collected: _Collected, receipt: _Receipt, path: str, path_ids: set[str], series_ids: set[str]
-) -> str | None:
+def _latest_request(collected: _Collected, receipt: _Receipt) -> tuple[datetime, str] | None:
     candidates = [(time, prompt) for time, prompt in collected.requests.get(receipt.session, ()) if time <= receipt.timestamp]
     if not candidates:
         return None
     latest = max(time for time, _ in candidates)
     prompts = {prompt for time, prompt in candidates if time == latest}
-    if len(prompts) != 1:
-        return None
-    prompt = next(iter(prompts))
+    return (latest, next(iter(prompts))) if len(prompts) == 1 else None
+
+
+def _request_fields(prompt: str) -> dict[str, object]:
     try:
         params = json.loads(prompt)
     except ValueError:
-        params = None
-    if isinstance(params, dict):
+        return {}
+    return params if isinstance(params, dict) else {}
+
+
+def _request_identity(
+    prompt: str, params: dict[str, object], path: str, path_ids: set[str], series_ids: set[str]
+) -> str | None:
+    if params:
         identity = params.get("要求識別子")
         if not isinstance(identity, str) or identity not in series_ids:
             return None
-        draft = params.get("原稿")
-        return identity if draft == path or identity in path_ids else None
+        return identity if params.get("原稿") == path or identity in path_ids else None
     if path not in prompt:
         return None
     matches = {
@@ -320,37 +329,78 @@ def _request_identity(
 
 def period(collected: _Collected, since: datetime, until: datetime) -> dict[str, int | float | str]:
     counts = dict.fromkeys(("passed", "failed", "first_pass", "no_second", "missing_path", "unassigned"), 0)
-    by_path = defaultdict(list)
+    path_identities: dict[tuple[str, str], set[str]] = defaultdict(set)
     series_ids: dict[str, set[str]] = defaultdict(set)
+    observations: list[tuple[_Receipt, list[tuple[str, str | None, str]], bool]] = []
     for receipt in collected.receipts:
-        if receipt.session not in collected.series:
+        series = collected.series.get(receipt.session)
+        if series is None:
             continue
+        rows = []
+        judged = 0
         for fields in _judgments(receipt.body):
             verdict = fields.get("判定")
             if fields.get("確認段階") != "本文" or verdict not in {"合格", "修正要"}:
                 continue
+            judged += 1
             path = fields.get("対象資料", "")
             if not path or path == "なし":
                 counts["missing_path"] += int(since <= receipt.timestamp <= until)
                 continue
-            series = collected.series[receipt.session]
             identity = fields.get("要求識別子")
-            by_path[series, path].append((receipt, identity, verdict))
+            rows.append((path, identity, verdict))
             if identity:
+                path_identities[series, path].add(identity)
                 series_ids[series].add(identity)
+        if judged:
+            observations.append((receipt, rows, judged == 1))
     tracks = defaultdict(list)
-    for (series, path), rows in by_path.items():
-        path_ids = {identity for _, identity, _ in rows if identity}
-        for receipt, identity, verdict in rows:
+    previous_single_failure: dict[str, tuple[datetime, str]] = {}
+    for receipt, rows, single in observations:
+        series = collected.series[receipt.session]
+        requested = _latest_request(collected, receipt)
+        prompt = requested[1] if requested is not None else ""
+        params = _request_fields(prompt)
+        named_rejudgment = params.get("instruction") == "再判定せよ"
+        previous = previous_single_failure.pop(receipt.session, None)
+        for path, identity, verdict in rows:
+            path_ids = path_identities[series, path]
+            first_path = path
             if not identity:
-                identity = _request_identity(collected, receipt, path, path_ids, series_ids[series])
+                identity = _request_identity(prompt, params, path, path_ids, series_ids[series])
+                selected = params.get("要求識別子")
+                draft = params.get("原稿")
+                if identity is None and named_rejudgment:
+                    if (
+                        isinstance(selected, str)
+                        and isinstance(draft, str)
+                        and single
+                        and not path_ids
+                        and (series, selected, None) in tracks
+                    ):
+                        identity = selected
+                    elif (
+                        selected is None
+                        and draft == path
+                        and single
+                        and not path_ids
+                        and previous is not None
+                        and requested is not None
+                        and previous[0] < requested[0]
+                    ):
+                        first_path = previous[1]
+                    elif selected is not None or (not path_ids and (series, None, path) not in tracks):
+                        counts["unassigned"] += int(since <= receipt.timestamp <= until)
+                        continue
                 if identity is None:
                     if len(path_ids) > 1:
                         counts["unassigned"] += int(since <= receipt.timestamp <= until)
                         continue
                     identity = next(iter(path_ids), None)
-            key = (series, identity, None if identity else path)
+            key = (series, identity, None if identity else first_path)
             tracks[key].append((receipt.timestamp, receipt.order, verdict))
+            if single and not identity and verdict == "修正要":
+                previous_single_failure[receipt.session] = (receipt.timestamp, first_path)
     for track in tracks.values():
         track.sort()
         first, _, verdict = track[0]

@@ -49,7 +49,7 @@ class _Log:
             ]
         )
 
-    def start(self, session: str, **kwargs: str) -> None:
+    def start(self, session: str, **kwargs: object) -> None:
         self.call("mcp__agents_server__start", kwargs, {"session_id": session})
 
     def wait(self, session: str, body: str, *, day: int = 26, sent_day: int | None = None, status: str = "completed") -> None:
@@ -252,7 +252,7 @@ def test_collects_named_rejudgment_from_wrapped_codex(tmp_path: Path) -> None:
     assert (result["passed"], result["unassigned"], result["no_second"]) == (1, 0, 1)
 
 
-@pytest.mark.parametrize(("shared_path", "moved_draft"), [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize(("shared_path", "moved_draft"), [(False, False), (True, False), (False, True), (True, True)])
 def test_rejudgment_uses_draft_and_identity_from_named_continuation(
     tmp_path: Path, shared_path: bool, moved_draft: bool
 ) -> None:
@@ -270,7 +270,11 @@ def test_rejudgment_uses_draft_and_identity_from_named_continuation(
         {
             "session_id": "reviewer",
             "instruction": "再判定せよ",
-            "extra_params": {"原稿": draft, "要求識別子": "b", "指摘の扱い": "/corrections.md"},
+            "extra_params": {
+                "原稿": "/mapping.json" if shared_path and moved_draft else draft,
+                "要求識別子": "b",
+                "指摘の扱い": "/corrections.md",
+            },
         },
         {"delivery": "reply_started"},
         day=27,
@@ -278,3 +282,45 @@ def test_rejudgment_uses_draft_and_identity_from_named_continuation(
     log.wait("reviewer", _judgment(draft, "合格"), day=27)
     result = draft_review_rounds.period(log.collect(), _time(26), _time(27))
     assert (result["passed"], result["unassigned"], result["no_second"]) == (1, 0, int(shared_path))
+
+
+@pytest.mark.parametrize("prior_paths", [["/before.md"], ["/before.md", "/another.md"]])
+def test_single_draft_rejudgment_uses_the_only_prior_judgment(tmp_path: Path, prior_paths: list[str]) -> None:
+    log = _Log(tmp_path / "parent.jsonl")
+    log.start("reviewer", subagent_md_path=_ROLE, extra_params={"原稿": prior_paths[0]})
+    log.wait("reviewer", "".join(_judgment(path, "修正要") for path in prior_paths))
+    log.call(
+        "mcp__agents_server__send_message",
+        {
+            "session_id": "reviewer",
+            "instruction": "再判定せよ",
+            "extra_params": {"原稿": "/corrected.md", "指摘の扱い": "/corrections.md"},
+        },
+        {"delivery": "reply_started"},
+        day=27,
+    )
+    log.wait("reviewer", _judgment("/corrected.md", "合格"), day=27)
+    result = draft_review_rounds.period(log.collect(), _time(26), _time(27))
+    expected = (1, 0, 0) if len(prior_paths) == 1 else (0, 1, 2)
+    assert (result["passed"], result["unassigned"], result["no_second"]) == expected
+    assert result["first_pass"] == 0
+
+
+def test_rejudgment_does_not_assign_multiple_unlabelled_results_using_one_mapping_id(tmp_path: Path) -> None:
+    log = _Log(tmp_path / "parent.jsonl")
+    log.start("reviewer", subagent_md_path=_ROLE)
+    log.wait("reviewer", _judgment("/shared.md", "修正要", "a") + _judgment("/shared.md", "修正要", "b"))
+    log.call(
+        "mcp__agents_server__send_message",
+        {
+            "session_id": "reviewer",
+            "instruction": "再判定せよ",
+            "extra_params": {"原稿": "/mapping.json", "要求識別子": "b", "指摘の扱い": "/corrections.md"},
+        },
+        {"delivery": "reply_started"},
+        day=27,
+    )
+    log.wait("reviewer", _judgment("/corrected-a.md", "合格") + _judgment("/corrected-b.md", "合格"), day=27)
+    result = draft_review_rounds.period(log.collect(), _time(26), _time(27))
+    assert (result["passed"], result["unassigned"], result["no_second"]) == (0, 2, 2)
+    assert result["first_pass"] == 0
