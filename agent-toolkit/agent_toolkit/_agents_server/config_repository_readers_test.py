@@ -9,6 +9,21 @@ from agent_toolkit._common import agents_generation_index, state_paths
 from agent_toolkit._common.next_action import ActionableError
 
 
+def test_repository_format_waits_for_first_compatible_acceptor(tmp_path, monkeypatch):
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(agents_generation_index, "generation_process_alive", lambda process: process == "new-process")
+    directory = tmp_path / "services" / "agents-server"
+    registry = GenerationRegistry(directory)
+    assert not config_repository_readers.prepare_separated_format()
+    assert not (directory / "generations.json").exists()
+
+    registry.reserve("new", tmp_path / "new", "2.311.2")
+    assert not config_repository_readers.prepare_separated_format()
+    registry.publish("new", endpoint="new-endpoint", process="new-process")
+    assert config_repository_readers.prepare_separated_format()
+    assert registry.reserve("old", tmp_path / "old", "2.310.3")["generation"] == "new"
+
+
 def test_repository_format_changes_after_legacy_service_and_writer_finish(tmp_path, monkeypatch):
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     directory = tmp_path / "services" / "agents-server"

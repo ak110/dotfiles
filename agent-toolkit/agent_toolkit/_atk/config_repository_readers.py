@@ -37,7 +37,7 @@ def _prepare() -> bool:
                 for directory in directories
                 if _has_registry(directory)
             ]
-            if not all(_can_cut_over(directory, data) for directory, data in snapshots):
+            if not snapshots or not all(_can_cut_over(directory, data) for directory, data in snapshots):
                 return False
             for _, data in snapshots:
                 if not data["generations"]:
@@ -62,8 +62,7 @@ def _has_registry(directory: pathlib.Path) -> bool:
 
 def _can_cut_over(directory: pathlib.Path, data: dict[str, Any]) -> bool:
     entries = data["generations"]
-    legacy = [entry for entry in entries.values() if not agents_generation_index.reads_separated_repositories(entry["version"])]
-    if not legacy or data.get("repository_reader_minimum") == list(agents_generation_index.REPOSITORY_READER_MINIMUM):
+    if data.get("repository_reader_minimum") == list(agents_generation_index.REPOSITORY_READER_MINIMUM):
         return True
     current = entries.get(data["current"])
     if (
@@ -73,7 +72,10 @@ def _can_cut_over(directory: pathlib.Path, data: dict[str, Any]) -> bool:
         or not agents_generation_index.generation_process_alive(current["process"])
     ):
         return False
-    return not any(_legacy_in_use(directory, entry) for entry in legacy)
+    return not any(
+        not agents_generation_index.reads_separated_repositories(entry["version"]) and _legacy_in_use(directory, entry)
+        for entry in entries.values()
+    )
 
 
 def _legacy_in_use(directory: pathlib.Path, entry: dict[str, Any]) -> bool:

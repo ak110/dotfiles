@@ -16,6 +16,7 @@ from agent_toolkit._atk import (
 )
 from agent_toolkit._atk import config as config_module
 from agent_toolkit._atk.wi import sync
+from agent_toolkit._common import agents_generation_index, state_paths
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing.config_support import _isolate_platformdirs, _main
 
@@ -26,6 +27,7 @@ class _Hosts:
     def __init__(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self.tmp_path = tmp_path
         self.monkeypatch = monkeypatch
+        monkeypatch.setattr(agents_generation_index, "generation_process_alive", lambda process: process == "test-service")
         remote = git.init_bare_repository(tmp_path / "notes.git")
         seed = git.init_repository(tmp_path / "seed", initial_branch="main", origin=str(remote), files={".gitkeep": ""})
         git.commit_all(seed, "initialize")
@@ -38,13 +40,18 @@ class _Hosts:
             git.run_git(clone, "config", "user.email", f"{name}@example.invalid")
             self.notes[name] = clone
 
-    def use(self, name: str, *, pull: bool = True) -> pathlib.Path:
+    def use(self, name: str, *, pull: bool = True, compatible_acceptor: bool = True) -> pathlib.Path:
         """以降の操作を端末nameの設定ディレクトリとprivate-notesで行う。  pyfltr: allow-comment"""
         root = self.tmp_path / f"host-{name}"
         platformdirs = config_module.platformdirs
         self.monkeypatch.setattr(platformdirs, "user_config_dir", lambda _name, **_kwargs: str(root / "config"))
         self.monkeypatch.setattr(platformdirs, "user_state_dir", lambda _name, **_kwargs: str(root / "state"))
+        self.monkeypatch.setattr(state_paths, "state_dir", lambda **_kwargs: root / "state")
         self.monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(self.notes[name]))
+        if compatible_acceptor:
+            with agents_generation_index.locked_index(root / "state" / "services" / "agents-server") as data:
+                data["current"] = "compatible"
+                data["generations"]["compatible"] = {"version": "2.311.2", "ready": True, "process": "test-service"}
         if pull:
             git.run_git(self.notes[name], "pull", "--ff-only")
         return root
@@ -201,6 +208,29 @@ def test_migration_imports_new_repositories_and_asks_only_for_differences(hosts)
     hosts.use("a")
     assert config_settings.raw_mutable_setting("execute_model") == "codex:sol/high"
     assert config_settings.repository_settings(check_paths=False)["example.test/team/proj"]["path"] == str(clone_a.resolve())
+
+
+@pytest.mark.cpu_limit(1.5, reason="2端末の登録を実Gitで同期し、保留前後のCLI保存と権限を確かめる。")
+def test_shared_save_keeps_legacy_registration_until_compatible_acceptor_is_published(hosts):
+    repo = "example.test/team/proj"
+    clone = _clone(hosts.tmp_path, "proj", f"https://{repo}.git")
+    registration = json.dumps({repo: {"edit": "allow", "path": str(clone), "process_loop": True}})
+    hosts.use("b")
+    assert _main(hosts.tmp_path, "config", "repos", "add", repo, "--edit", "allow") == 0
+    hosts.use("a", compatible_acceptor=False)
+    hosts.write_local("a", {"repositories": registration})
+
+    assert _main(hosts.tmp_path, "config", "set", "review_model", "codex:sol/high") == 0
+    assert hosts.local("a")["repositories"] == registration
+    assert config_settings.raw_mutable_setting("review_model") == "codex:sol/high"
+    assert _main(hosts.tmp_path, "config", "repos", "set", repo, "--edit", "deny") == 2
+    assert config_settings.repository_settings(check_paths=False)[repo]["edit"] == "allow"
+
+    hosts.use("a")
+    assert _main(hosts.tmp_path, "config", "set", "review_model", "codex:sol/medium") == 0
+    assert json.loads(hosts.local("a")["repositories"])[repo] == {"path": str(clone.resolve()), "process_loop": True}
+    assert _main(hosts.tmp_path, "config", "repos", "set", repo, "--edit", "deny") == 0
+    assert config_settings.repository_settings(check_paths=False)[repo]["edit"] == "deny"
 
 
 def test_migration_keeps_local_values_when_revision_changes(hosts):

@@ -14,8 +14,8 @@ Codexでは、共有枠を取る構成のpyfltr検証を、検査の所要にか
 
 ```bash
 prefix=/absolute/managed-temp/unique-verification
-uv run --frozen pyfltr run --output-format=jsonl "$@" > "$prefix.out" 2> "$prefix.err"
-rc=$?
+rc=0
+uv run --frozen pyfltr run --output-format=jsonl "$@" > "$prefix.out" 2> "$prefix.err" || rc=$?
 printf '%s\n' "$rc" > "$prefix.exit.pending"
 mv -- "$prefix.exit.pending" "$prefix.exit"
 exit "$rc"
