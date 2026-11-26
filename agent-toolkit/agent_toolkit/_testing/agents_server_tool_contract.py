@@ -145,6 +145,23 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "output_schema": {"additionalProperties": True, "title": "startDictOutput", "type": "object"},
     },
+    "start_submit": {
+        "annotations": {"destructive_hint": False, "idempotent_hint": True},
+        "input_schema": {
+            "properties": {
+                "request_id": {"type": "string"},
+                "arguments": {"additionalProperties": True, "type": "object"},
+            },
+            "required": ["request_id", "arguments"],
+            "type": "object",
+        },
+        "output_schema": {"additionalProperties": True, "title": "start_submitDictOutput", "type": "object"},
+    },
+    "start_status": {
+        "annotations": {"read_only_hint": True},
+        "input_schema": {"properties": {"request_id": {"type": "string"}}, "required": ["request_id"], "type": "object"},
+        "output_schema": {"additionalProperties": True, "title": "start_statusDictOutput", "type": "object"},
+    },
     "stop": {
         "annotations": {"destructive_hint": True},
         "input_schema": {"properties": {"session_id": {"type": "string"}}, "required": ["session_id"], "type": "object"},

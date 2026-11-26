@@ -118,16 +118,7 @@ Code Modeを使えない場合は通常の公開ツールやCLIを使う。
 
 ## 起動パラメーター
 
-`Agent`ツールを使う条件は`agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」が定める（`agents_server`が標準である）。
-
-1. モデル、effort、バックグラウンドでの実行、省略時の値は、起動の時に公開されているスキーマとagent定義のfrontmatterで決める。
-2. 非対話の起動でターンを終えて通知を待つのは、通知の後に同じセッションが再開されると実行環境が保証する場合に限り、それ以外は同期の起動と公開された待機の手段で回収してfinishまで終える。
-   通常の`atk run-skill`はホストのバックグラウンド実行設定を継承し、[一括振り返り](review-session-batch.md#起動)ではClaudeの子に`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`を渡してフォアグラウンドで回収する。
-3. `agent-toolkit:atk-mode/playbooks/delegation.md`「会話を引き継ぐ委譲」でforkを選び、fork modeが有効なら`subagent_type: "fork"`で起動する。
-   forkは親のモデルと会話を引き継いでバックグラウンドで動き、通常と同じ完了通知で返り、親からの1階層で完結する。
-   fork modeは対話のセッションで有効、`-p`の非対話の実行とAgent SDKで無効であり、無効なら`agents_server`で新しく起動する。
-4. 計画ファイルの作成をplan modeの下で委譲した時は、サンドボックスのパスへ書かれた内容をメインが検収してから正規のパス（`~/.claude/plans/`の中）へ反映する。
-   正規のパスのファイルの削除と移動は、メインだけが行う。
+[Claude Codeの組み込み委譲の起動](delegation-start-recovery.md#claude-codeのagent起動)に従う。
 
 ### 委譲プロンプトへ含める前提
 

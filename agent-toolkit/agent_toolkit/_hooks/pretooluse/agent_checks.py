@@ -38,7 +38,11 @@ _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace i
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_LIST_TOOLS = frozenset(f"{namespace}list" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_TOOL_NAMES = (
-    _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS | _AGENTS_SERVER_LIST_TOOLS
+    _AGENTS_SERVER_START_TOOLS
+    | _AGENTS_SERVER_SEND_TOOLS
+    | _AGENTS_SERVER_KILL_TOOLS
+    | _AGENTS_SERVER_LIST_TOOLS
+    | {f"{namespace}start_submit" for namespace in _AGENTS_SERVER_NAMESPACES}
 )
 
 

@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import service_rpc, service_transport
+from agent_toolkit._agents_server import service_distribution, service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import delegated_session, file_lock, plugin_environment, runtime_environment, windows_job
 from agent_toolkit._common.atomic_file import atomic_write
@@ -154,6 +154,7 @@ def ensure_service(
     呼出元の環境が`DEFER_PUBLISH_ENV`を指定していれば、readyの世代を受付先として公開せずに返す。
     """
     publish = caller.environment.get(DEFER_PUBLISH_ENV) != "1"
+    caller = service_transport.plugin_caller(caller, root)
     directory = service_transport.namespace(caller)
     source = root
     requested, version = code_identity(source, directory)
@@ -291,13 +292,25 @@ def ensure_service(
             file_lock.release_lock(handle)
 
 
-def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Path, *, timeout: float) -> dict[str, Any]:
+def publish_service(
+    caller: runtime_environment.CallerContext,
+    root: pathlib.Path,
+    *,
+    timeout: float,
+    approved: tuple[str, str] | None = None,
+) -> dict[str, Any]:
     """公開を保留して起動した候補の世代が生存していれば受付先として公開し、公開後の受付先を返す。
 
     候補の起動と接続確認に使った子プロセスの終了後に呼び出す。候補が終了していれば公開せず、受付先を変更しない。
     公開の要求の途中か直後に候補が終了していれば、生存する世代へ受付を戻してから失敗を送出する。
     """
-    directory = service_transport.namespace(caller)
+    if approved is not None and (
+        caller.environment.get(service_distribution.UPDATE_ENV) != "1"
+        or caller.environment.get(service_distribution.SCOPE_ENV)
+        or service_distribution.identity(root) != approved
+    ):
+        raise ValueError("起動確認した通常の配布物と公開対象が一致しないため公開しません")
+    directory = service_transport.namespace(service_transport.plugin_caller(caller, root))
     generation, version = code_identity(root, directory)
     registry = GenerationRegistry(directory)
     generation = registry.reserve(generation, root, version)["generation"]
@@ -322,6 +335,8 @@ def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Pat
                 f"公開した受付先の世代が終了しました: generation={accepted['generation']} process={accepted['process']} "
                 f"現在の受付先={None if restored is None else restored['generation']}"
             )
+        if approved is not None:
+            service_distribution.publish(directory, approved)
         return accepted
     except Exception as error:
         _add_service_diagnostic(error, directory, generation)
@@ -549,6 +564,7 @@ def forward(
         connection_id="mcp-" + uuid.uuid4().hex,
         parent_settings=_parent_settings(),
     )
+    caller = service_transport.plugin_caller(caller, root)
     bridge = _Forwarder(caller)
     registry = GenerationRegistry(service_transport.namespace(caller))
     previous_reconnect = None

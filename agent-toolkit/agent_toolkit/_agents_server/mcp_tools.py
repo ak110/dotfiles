@@ -37,6 +37,7 @@ from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_S
 from agent_toolkit._agents_server.manager_start import WRITE_MODEL_AUTHORIZED, check_model_override
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
 from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response
+from agent_toolkit._agents_server.service_start_requests import register_start_request_tools
 from agent_toolkit._agents_server.tool_descriptions import (
     COMMAND_DESCRIPTION,
     CWD_DESCRIPTION,
@@ -299,7 +300,8 @@ mcp = AgentsServerMCP(
         "Codex、Claude、AntigravityまたはOpenCodeの委譲先sessionを非同期に起動・操作する。承認操作は公開しない。\n"
         "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業（task）、自由本文の委譲（delegate）、"
         "読み取り専用の調査（explore）、確定済みの書込（write）、コマンド実行（shell）を選ぶ。"
-        "入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
+        "入力とmodeごとの条件は`start`と各引数の説明が定める。"
+        "Codexでは新規起動を`start_submit`で受け付け、同じ要求IDを`start_status`へ渡して起動結果を受け取る。\n"
         "終了と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
         "`wait`はsession_idの位置引数を取らず、登録済みsessionの終了を待ち、応答の時点で終了したsessionの結果を返す。"
         "残りのsessionは同じコマンドを再発行して待つ。"
@@ -491,6 +493,9 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if mode != "task" and warnings:
         response.setdefault("warnings", []).extend(warnings)
     return public_start_response(response)
+
+
+register_start_request_tools(mcp)
 
 
 @mcp.tool(

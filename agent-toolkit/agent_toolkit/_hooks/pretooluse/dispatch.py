@@ -553,6 +553,12 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
 
 def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
     _record_iss_sidechain_probe(session_id, tool_name, payload)
+    if tool_name.endswith("__start_submit"):
+        arguments = tool_input.get("arguments")
+        return dataclasses.replace(
+            check_task_document_launch(tool_name.removesuffix("_submit"), arguments if isinstance(arguments, dict) else {}),
+            allow=True,
+        )
     launch = check_task_document_launch(tool_name, tool_input)
     if launch.block is not None:
         return launch

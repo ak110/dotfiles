@@ -431,22 +431,7 @@ class ServiceManagers:
         caller = runtime_environment.current()
         if caller is None:
             raise RuntimeError("管理サービスの呼出元contextがありません")
-        env = dict(caller.environment)
-        metadata = params.meta
-        identifier = metadata.get("threadId") if metadata else None
-        if identifier is not None and (not isinstance(identifier, str) or not shared_roots.valid_session_id(identifier)):
-            raise ActionableError("MCP要求のthreadIdが不正", next_action="ホストのMCP要求の会話IDを確認して再接続する")
-        if identifier is not None:
-            env["CODEX_THREAD_ID"] = identifier
-        elif env.get("CLAUDE_CODE_SESSION_ID"):
-            env.pop("CODEX_THREAD_ID", None)
-        native_codex = bool(env.get("CODEX_THREAD_ID"))
-        if identifier_override is not None:
-            identifier = identifier_override
-        if identifier is None:
-            identifier = (
-                env.get("CODEX_THREAD_ID") or env.get("CLAUDE_CODE_SESSION_ID") or env.get("AGENT_TOOLKIT_STATUS_HOST_SESSION")
-            )
+        identifier, env, native_codex = self.caller_identity(caller, params, identifier_override=identifier_override)
         if not identifier:
             identifier = caller.connection_id or "mcp-" + uuid.uuid4().hex
         if not shared_roots.valid_session_id(identifier):
@@ -481,6 +466,33 @@ class ServiceManagers:
                 yield conversation.manager
         finally:
             conversation.active -= 1
+
+    @staticmethod
+    def caller_identity(
+        caller: runtime_environment.CallerContext,
+        params: CallToolRequestParams,
+        *,
+        identifier_override: str | None = None,
+    ) -> tuple[str | None, dict[str, str], bool]:
+        env = dict(caller.environment)
+        metadata = params.meta
+        identifier = metadata.get("threadId") if metadata else None
+        if identifier is not None and (not isinstance(identifier, str) or not shared_roots.valid_session_id(identifier)):
+            raise ActionableError("MCP要求のthreadIdが不正", next_action="ホストのMCP要求の会話IDを確認して再接続する")
+        if identifier is not None:
+            env["CODEX_THREAD_ID"] = identifier
+        elif env.get("CLAUDE_CODE_SESSION_ID"):
+            env.pop("CODEX_THREAD_ID", None)
+        native_codex = bool(env.get("CODEX_THREAD_ID"))
+        if identifier_override is not None:
+            identifier = identifier_override
+        if identifier is None:
+            identifier = (
+                env.get("CODEX_THREAD_ID") or env.get("CLAUDE_CODE_SESSION_ID") or env.get("AGENT_TOOLKIT_STATUS_HOST_SESSION")
+            )
+        if identifier and not shared_roots.valid_session_id(identifier):
+            raise ActionableError("MCP接続の会話IDが不正", next_action="接続元の会話識別子を確認して再接続する")
+        return identifier, env, native_codex
 
     async def _create_conversation(
         self,

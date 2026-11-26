@@ -76,7 +76,10 @@ _AGENTS_SERVER_SHOW_TOOLS = frozenset(f"{namespace}show" for namespace in _AGENT
 
 # hooks.json・hooks.codex.jsonのPostToolUse matcherが被覆すべきagents_serverツール名の全体。
 # 集合の一致を確かめるテスト（posttooluse_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
-AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_SHOW_TOOLS | _AGENTS_SERVER_LIST_TOOLS
+_ASYNC_START_STATUS_TOOLS = {f"{namespace}start_status" for namespace in _AGENTS_SERVER_NAMESPACES}
+AGENTS_SERVER_HOOK_TOOL_NAMES = (
+    _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_SHOW_TOOLS | _AGENTS_SERVER_LIST_TOOLS | _ASYNC_START_STATUS_TOOLS
+)
 
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
@@ -532,6 +535,14 @@ def observe_tool(
     ):
         return []
     structured = _extract_agents_server_structured_response(response)
+    if tool_name in _ASYNC_START_STATUS_TOOLS:
+        if structured.get("request_status") != "started":
+            return []
+        if session_record(read_state(session_id), structured.get("session_id")) is not None:
+            return []
+        tool_name = tool_name.removesuffix("_status")
+        tool_input = {"cwd": structured.get("cwd"), "model_type": structured.get("model_type")}
+        payload = {**payload, "tool_input": tool_input}
     # agents_serverの応答が`root_session_id`を持てば、操作名によらずここで1回だけ別名索引へ記録する。
     # 後続の待機対象の登録より前に置き、再起動後の最初の操作が`send_message`でも、
     # 登録と`atk agents wait`が同じルートを使えるようにする。

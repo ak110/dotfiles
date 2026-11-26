@@ -11,7 +11,7 @@ lazy from agent_toolkit._atk import cli_support as _cli_support
 lazy from agent_toolkit._atk import git_sync as _atk_git_sync
 lazy from agent_toolkit._atk import help_text as _atk_help
 lazy from agent_toolkit._atk import outcome as _outcome
-lazy from agent_toolkit._atk.wi import add as _add
+lazy from agent_toolkit._atk.wi import add_cli
 lazy from agent_toolkit._atk.wi import attachments as _attachments
 lazy from agent_toolkit._atk.wi import background_sync as _background_sync
 lazy from agent_toolkit._atk.wi import batch as _batch
@@ -317,7 +317,7 @@ def dispatch(
         "add": lambda: (
             _batch.cmd_add_batch(args, private_notes, now, home)
             if args.batch
-            else _add.cmd_add(args, private_notes, now, home, matches_submit_bindings=_submit.matches_active_bindings)
+            else add_cli.cmd_add(args, private_notes, now, home, matches_submit_bindings=_submit.matches_active_bindings)
         ),
         **{key: lambda: _attachments.cmd_attachments(args, private_notes) for key in ("attach", "attachments", "detach")},
         "list": lambda: _listing.cmd_list(args, private_notes),

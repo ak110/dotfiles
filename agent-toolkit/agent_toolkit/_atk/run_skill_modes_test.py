@@ -73,6 +73,8 @@ def test_batch_uses_existing_runner_and_report_receipt(
         assert data["free_text"] == arguments
         return
     assert not session_review.pending()
+    if engine == "claude":
+        assert records[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert len(manifests) == 1
     value = session_review.read(manifests[0])
     assert value["status"] == "completed" and len(value["prepared"]) == 2

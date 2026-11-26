@@ -156,7 +156,13 @@ def _stop_mcp_services(state_base: pathlib.Path) -> None:
     env = dict(os.environ)
     env["LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"] = str(state_base)
     caller = runtime_environment.CallerContext(env, state_base)
-    path = service_transport.namespace(caller) / "generations.json"
+    base = service_transport.namespace(caller)
+    paths = [base, *base.parent.glob(f"{base.name}-isolated-*")]
+    for directory in paths:
+        _stop_mcp_service_generation(state_base, directory / "generations.json")
+
+
+def _stop_mcp_service_generation(state_base: pathlib.Path, path: pathlib.Path) -> None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:

@@ -23,6 +23,7 @@ from agent_toolkit._agents_server.service_force import (
     _record_launch_failure,
 )
 from agent_toolkit._agents_server.service_session_move import ServiceSessionMove, _caller_payload, _restore_caller
+from agent_toolkit._agents_server.service_start_requests import StartRequests
 from agent_toolkit._common import runtime_environment, session_launchers, session_registry
 from agent_toolkit._common.next_action import ActionableError, recover_from_failure
 
@@ -64,6 +65,7 @@ class ServiceSessionControl(ServiceForceControl, ServiceSessionMove):  # pylint:
         directory: pathlib.Path
         projections: ProjectionHub
         registry: GenerationRegistry
+        start_requests: StartRequests
         _contexts: set[str]
 
     async def accept_context(self, packet: dict) -> None:
@@ -220,6 +222,14 @@ class ServiceSessionControl(ServiceForceControl, ServiceSessionMove):  # pylint:
                         ),
                     ),
                 )
+        if params.name in {"start_submit", "start_status"}:
+            owner, _env, _native_codex = self.managers.caller_identity(caller, params)
+            if not owner:
+                raise ActionableError(
+                    "再接続で照合できる呼出元の会話IDがありません",
+                    next_action="MCP接続元の会話IDを確認する。会話IDを提供できないホストは同期のstartを使う",
+                )
+            return await self.start_requests.call(owner, params, self._start_detached)
         async with self.managers.scope(params) as manager, contextlib.AsyncExitStack() as scopes:
             parent = next(key for key, item in self.managers.conversations.items() if item.manager is manager)
             arguments = params.arguments or {}
@@ -415,6 +425,12 @@ class ServiceSessionControl(ServiceForceControl, ServiceSessionMove):  # pylint:
                             force_id, float(arguments.get("timeout", 270)), unconfirmed_launcher=unconfirmed_launcher
                         )
                     return result
+
+    async def _start_detached(self, request: CallToolRequestParams) -> Any:
+        caller = runtime_environment.current()
+        assert caller is not None
+        with runtime_environment.bind(dataclasses.replace(caller, connection_id=None)):
+            return await self.call_tool(None, request)
 
     async def _owns(self, owner: dict, parent: str, identifier: str) -> bool:
         """所有世代へ所有を照会する。応答しない世代を待ち続けず、終了済みの世代は登録簿による判定へ委ねる。

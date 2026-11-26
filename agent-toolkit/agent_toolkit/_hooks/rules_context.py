@@ -197,7 +197,9 @@ def compose_session_start(
             parts.append(_llm_notice(delegated_compact_notice(launch, own_contract)))
     elif source in _CONTEXT_LOSING_SOURCES:
         parts.append(_llm_notice(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE))
-    if host == "claude" and not delegated:
+    if host == "claude" and not delegated and os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID"):
+        parts.append(_llm_notice("この実行は画面が無いため、ユーザー向けの本文は最終応答に書いてください。"))
+    elif host == "claude" and not delegated:
         parts.append(
             _llm_notice(
                 "その場で回答を求める質問・選択には、ツール一覧にあれば`AskUserQuestion`を使ってください。"

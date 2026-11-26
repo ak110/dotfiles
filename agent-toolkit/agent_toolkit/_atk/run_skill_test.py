@@ -30,6 +30,7 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(
     回答済みの対応も実施されない。
     """
     monkeypatch.delenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "600000")
     code, out, err = _run(
         ["--target-repo", str(engine_env.repo / "sub"), "--args", "対象: web", "example-plugin:check-logs"], capsys
     )
@@ -39,6 +40,7 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(
     assert len(sessions) == 1
     argv = sessions[0]["argv"]
     assert sessions[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] is None
+    assert sessions[0]["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "0"
     assert argv[:2] == ["claude", "-p"]
     for option, value in (
         ("--permission-mode", "auto"),

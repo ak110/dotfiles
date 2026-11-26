@@ -79,6 +79,7 @@ def _setup(
 
     monkeypatch.setattr(_warmup, "_check_startup", ready)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setattr(_warmup.install_codex_plugins, "CODEX_HOME", tmp_path / "codex")
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
     _write_script(plugin_cache / "agent_toolkit" / "agents_server_mcp.py")
@@ -443,15 +444,16 @@ class TestCodexResolution:
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
         assert str(codex_script) not in _warmed(calls)
 
-    def test_codex_home_env_is_honored(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """`CODEX_HOME`配下のキャッシュを対象にする。"""
+    def test_custom_codex_home_does_not_publish_to_normal_service(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
         calls = _setup(monkeypatch, tmp_path)
         custom_home = tmp_path / "custom-codex"
         monkeypatch.setenv("CODEX_HOME", str(custom_home))
         script = _write_script(_codex_script(custom_home, "1.0.0"))
 
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
-        assert str(script) in _warmed(calls)
+        assert str(script) not in _warmed(calls)
 
     def test_missing_codex_cli_excludes_codex_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """codex CLI不在ではCodex分だけを除外して継続する。"""
@@ -640,8 +642,9 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
         script = f"import sys; sys.stderr.reconfigure(newline={newline!r}); sys.stderr.write({stderr!r}); sys.exit({code})"
         return await check_command([started[0], "-c", script], environment=environment, timeout=timeout)
 
-    def publish(_caller: object, target: pathlib.Path, *, timeout: float) -> dict:
+    def publish(_caller: object, target: pathlib.Path, *, timeout: float, approved: tuple[str, str]) -> dict:
         assert target == root and timeout > 0
+        assert approved == _warmup.service_distribution.identity(root)
         if failed == "publish":
             raise RuntimeError("候補の世代が生存していない")
         return {}

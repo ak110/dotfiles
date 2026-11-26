@@ -9,6 +9,7 @@ from typing import Any
 from agent_toolkit._atk import (
     config_migration,
     config_repositories,
+    config_repository_readers,
     config_settings,
     config_shared_migration,
     help_text,
@@ -109,6 +110,8 @@ def update_repositories(args: argparse.Namespace) -> str | dict[str, Any]:
         item = validated
     shared_path = config_shared_migration.shared_write_path() if config_repositories.is_shared_id(repo_id) else None
     before = repositories.get(repo_id, {})
+    if shared_path is not None:
+        config_repository_readers.require_compatible_readers()
     shared_fields = {key for key in config_repositories.SHARED_ATTRIBUTES if getattr(args, key, None) is not None}
     fields = {key for unit in config_repositories.SHARED_UNITS if set(unit) & shared_fields for key in unit}
     changes_shared = args.repos_subcommand != "set" or bool(fields)

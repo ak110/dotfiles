@@ -86,6 +86,8 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     sessions = _records(engine_env, "session")
     assert len(sessions) == 3
     assert all(session["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "0" for session in sessions)
+    if engine == "claude":
+        assert all(session["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "0" for session in sessions)
     first = sessions[0]["argv"]
     for session in sessions[1:]:
         argv = session["argv"]

@@ -12,7 +12,8 @@ _VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 def agents_directory() -> pathlib.Path:
     caller = runtime_environment.CallerContext(os.environ, pathlib.Path.cwd())
-    return service_transport.namespace(caller)
+    root = pathlib.Path(__file__).resolve().parents[2]
+    return service_transport.namespace(service_transport.plugin_caller(caller, root))
 
 
 def observe() -> tuple[bool, str | None]:

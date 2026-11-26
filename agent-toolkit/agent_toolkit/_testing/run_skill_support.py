@@ -62,6 +62,7 @@ record = {{
         "AGENT_TOOLKIT_RUN_SKILL_ID",
         "AGENT_TOOLKIT_SESSION_START_INPUT",
         "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
+        "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS",
     )}},
 }}
 record_path = record_dir / f"{{time.time_ns()}}-{{uuid.uuid4().hex}}.json"

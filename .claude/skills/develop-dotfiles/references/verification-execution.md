@@ -8,6 +8,23 @@
 直下の`pyproject.toml`の`addopts`が同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で外すものは枠の対象外となる。
 枠はホスト全体で2つ（pyfltr 3.30.0以降）で、pytestと統合の検証は開始からworker・子孫の回収まで枠を持ち、入れ子の実行は祖先の所有を継ぎ、収集だけのpytest（`--collect-only`）は枠を取らない。
 シェルからの起動は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の形式と3分類に従う。
+Codexでは、共有枠を取る構成のpyfltr検証を、検査の所要にかかわらず初回からCLIで起動する。
+呼出元のmanaged-tempに実行専用のprefixを決め、標準出力・標準エラー・終了コードを別々に残す。
+次は同じ実行の起動応答を失っても結果を読み直せるBashの例である。
+
+```bash
+prefix=/absolute/managed-temp/unique-verification
+uv run --frozen pyfltr run --output-format=jsonl "$@" > "$prefix.out" 2> "$prefix.err"
+rc=$?
+printf '%s\n' "$rc" > "$prefix.exit.pending"
+mv -- "$prefix.exit.pending" "$prefix.exit"
+exit "$rc"
+```
+
+実行の引数は検証対象に合わせて渡す。
+起動応答を失っても再起動せず、そのprefixの`.exit`、`.err`、`.out`を観測する。
+`.exit`が無ければ終了未確定であり、0以外は成功としない。
+`.out`の`header`にある`run_id`で必要に応じて同じ実行のアーカイブを照会する。
 
 方式や性能を比べるための全量計測（全ファイルのPylintを方式ごとに比べる実行など）は、変更の受入に必要な検証と分けて扱う。
 まず既存の実行記録の再利用と代表対象での比較を選び、全量でしか判断できない比較だけを、自分の巡回の必須検証と重ならない時間帯に置き、比較を繰り返す場合はその時間帯で直列に実行する。
@@ -31,7 +48,8 @@
    `uv run --frozen pyfltr run --disable pytest <対象ファイルの絶対パス>`を失敗が無くなるまで直し、修正後の再実行は失敗したチェックへ限定する。
    pyfltrは1回の実行の間ずっと枠を持つため、静的チェックで失敗する実行にpytestを含めると枠を数分ずつ無駄に占める（2026年11月12日の同時数12では、失敗した`pyfltr run`18件のうち12件が静的チェックだけの失敗で、その12件でもpytestが流れていた）。
 4. commitする内容を確定してから、pytestを含む実行を1回行う。
-   MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`--commands`の指定なしで実行し、失敗したら直して同じ形で実行し直す。
+   上記の条件でMCPの`run`へパスを渡すかCLIで起動し、`--commands`は指定しない。
+   失敗を確定したら直して同じ形で実行し直す。
    `develop`・`master`・`main`以外のブランチ（レーンと内部群の作業ブランチ）では`--no-always-targets`を付け、変更ファイルと、変更した契約を使うテストを実行する（pyfltr 3.31.0以降）。
    全量は統合後のdevelop CIで実行する。
    `uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で、文書を読む横断試験やhookの入口を経由する試験を含む、根拠付きの候補のJSONを取得する。

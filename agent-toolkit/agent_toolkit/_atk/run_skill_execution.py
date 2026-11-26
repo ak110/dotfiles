@@ -197,6 +197,8 @@ def run_locked(
     if orchestrator == "claude":
         if getattr(args, "batch_manifest", None):
             env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
+        else:
+            env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
         session_id = session_id or str(uuid.uuid4())
         progress.message(f"Claudeのセッション識別子: {session_id}")
         argv = [
