@@ -41,15 +41,13 @@ def test_mcp_setting_names_follow_public_config_keys(
                     atk.main(["config", "show"])
             shown = capsys.readouterr()
             affected = keys.intersection(config_settings.RETIRED_CONNECTION_KEYS[key])
+            assert exited.value.code == 2
+            assert "旧接続設定" in shown.err and name in shown.err
             if key == "claude_api_env_file":
-                assert exited.value.code == 0
                 assert shown.out.splitlines() == baseline
-                assert name not in shown.err
             else:
                 assert affected
-                assert exited.value.code == 2
                 assert {line.partition(" ")[0] for line in shown.out.splitlines()} - paths == keys - affected
-                assert "旧接続設定" in shown.err and name in shown.err
             assert saved_settings() == before
         elif key in config_settings.RETIRED_FIXED_KEYS or key in config_settings.LEGACY_REMOTE_HOSTS_KEYS:
             assert name in names
@@ -77,12 +75,15 @@ def test_mcp_setting_names_follow_public_config_keys(
         elif key in config_settings.RETIRED_RESEARCH_KEYS or key == "usage_auto_allocation":
             assert name in names
             assert key not in keys
+            before = saved_settings()
             with monkeypatch.context() as legacy:
                 legacy.setenv(name, "legacy-value")
                 with pytest.raises(SystemExit) as shown:
                     atk.main(["config", "show"])
-                assert shown.value.code == 0
-                assert capsys.readouterr().out.splitlines() == baseline
+                assert shown.value.code == 2
+                display = capsys.readouterr()
+                assert display.out.splitlines() == baseline
+                assert name in display.err
                 with pytest.raises(SystemExit) as rejected:
                     atk.main(["config", "get", "codex_fast_mode"])
                 assert rejected.value.code == 2
@@ -90,6 +91,7 @@ def test_mcp_setting_names_follow_public_config_keys(
                 assert name in err
                 if key in config_settings.RETIRED_RESEARCH_KEYS:
                     assert "旧調査設定" in err
+            assert saved_settings() == before
         else:
             assert key in keys
     assert not {"AGENT_TOOLKIT_CONFIG_STATE_DIR", "AGENT_TOOLKIT_CONFIG_PRIVATE_NOTES"} & set(names)
