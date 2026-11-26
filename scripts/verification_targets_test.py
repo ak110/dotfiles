@@ -159,6 +159,27 @@ def test_integration_argv_covers_cross_contracts_even_if_sources_are_omitted(
         ),
         (
             "scripts/sync_generated_files.py",
+            "def main():\n    sync_return_contracts()\nif __name__ == '__main__':\n    main()\n",
+            "def main():\n    sync_return_contracts()\nif __name__ == '__main__':\n    pass\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def main():\n    sync_return_contracts()\n",
+            "def main():\n    return 0\n    sync_return_contracts()\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def main():\n    try:\n        sync_return_contracts()\n    except ValueError:\n        print('old')\n",
+            "def main():\n    try:\n        sync_return_contracts()\n    except ValueError:\n        print('new')\n",
+            "role-document-generation",
+            set(),
+        ),
+        (
+            "scripts/sync_generated_files.py",
             "def other():\n    return 1\n",
             "def other():\n    return 2\n",
             "role-document-generation",

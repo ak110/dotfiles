@@ -79,13 +79,30 @@ def _role_generation_python(source: str, entries: set[str]) -> dict[str, str]:
 
 
 def _role_generation_startup(source: str, entries: set[str]) -> list[str]:
-    return [
-        ast.dump(statement)
-        for definition in ast.parse(source).body
-        if isinstance(definition, ast.FunctionDef) and definition.name == "main"
-        for statement in definition.body
-        if any(isinstance(node, ast.Name) and node.id in entries for node in ast.walk(statement))
-    ]
+    tree = ast.parse(source)
+    result: list[str] = []
+    for statement in tree.body:
+        if isinstance(statement, ast.FunctionDef) and statement.name == "main":
+            last_sync = next(
+                (
+                    index
+                    for index, child in reversed(list(enumerate(statement.body)))
+                    if any(isinstance(node, ast.Name) and node.id in entries for node in ast.walk(child))
+                ),
+                -1,
+            )
+            if last_sync >= 0:
+                result.extend(ast.dump(_RoleStartupDiagnostics().visit(child)) for child in statement.body[: last_sync + 1])
+        elif any(isinstance(node, ast.Name) and node.id == "main" for node in ast.walk(statement)):
+            result.append(ast.dump(statement))
+    return result
+
+
+class _RoleStartupDiagnostics(ast.NodeTransformer):
+    def visit_Expr(self, node: ast.Expr) -> ast.AST:
+        if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == "print":
+            return ast.Expr(value=ast.Name(id="print", ctx=ast.Load()))
+        return node
 
 
 def _role_generation_source(name: str, source: str) -> object:
