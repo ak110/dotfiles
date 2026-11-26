@@ -21,6 +21,28 @@ def _render_config(content: str, environment: dict[str, str]) -> str:
     )
 
 
+def test_config_template_merges_commit_hook_with_existing_shell_environment(
+    host_environ: collections.abc.Callable[[], dict[str, str]],
+) -> None:
+    original = (
+        "[shell_environment_policy]\n"
+        'include_only = ["PATH", "OTHER"]\n'
+        'exclude = ["UNRELATED_*"]\n'
+        "[shell_environment_policy.set]\n"
+        'OTHER = "retained"\n'
+        "GIT_CONFIG_PARAMETERS = \"'color.ui'='never'\"\n"
+    )
+    first = _render_config(original, host_environ())
+    policy = tomllib.loads(first)["shell_environment_policy"]
+    assert policy["exclude"] == ["UNRELATED_*"]
+    assert policy["include_only"] == ["PATH", "OTHER", "AGENT_TOOLKIT_COMMIT_HOOKS", "GIT_CONFIG_PARAMETERS"]
+    settings = policy["set"]
+    assert settings["OTHER"] == "retained"
+    assert settings["GIT_CONFIG_PARAMETERS"].startswith("'color.ui'='never' 'core.hooksPath'=")
+    assert settings["GIT_CONFIG_PARAMETERS"].count("core.hooksPath") == 1
+    assert tomllib.loads(_render_config(first, host_environ()))["shell_environment_policy"] == policy
+
+
 @pytest.mark.parametrize("enabled", [False, True, None])
 def test_config_template_preserves_explicit_plugin_enabled_state(
     enabled: bool | None, host_environ: collections.abc.Callable[[], dict[str, str]]

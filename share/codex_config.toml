@@ -1,3 +1,5 @@
 project_doc_max_bytes = 262144
 project_doc_warn_ratio = 0.8
 tool_output_token_limit = 20000
+[shell_environment_policy.set]
+AGENT_TOOLKIT_COMMIT_HOOKS = ".local/share/agent-toolkit/git-hooks/codex"

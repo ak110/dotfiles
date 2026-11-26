@@ -92,7 +92,10 @@ def _role_generation_startup(source: str, entries: set[str]) -> list[str]:
                 -1,
             )
             if last_sync >= 0:
-                result.extend(ast.dump(_RoleStartupDiagnostics().visit(child)) for child in statement.body[: last_sync + 1])
+                first = 1 if ast.get_docstring(statement) is not None else 0
+                result.extend(
+                    ast.dump(_RoleStartupDiagnostics().visit(child)) for child in statement.body[first : last_sync + 1]
+                )
         elif any(isinstance(node, ast.Name) and node.id == "main" for node in ast.walk(statement)):
             result.append(ast.dump(statement))
     return result

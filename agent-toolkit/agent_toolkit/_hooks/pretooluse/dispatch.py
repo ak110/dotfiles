@@ -141,7 +141,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
-lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import duplicate_autosquash_subject
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import commit_requires_preflight, duplicate_autosquash_subject
 lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES, check_task_document_launch
 lazy from agent_toolkit._hooks.pretooluse.warning_context import (
     format_warning_context,
@@ -498,7 +498,9 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 )
             return dataclasses.replace(shell, ask="モデル・接続設定または一時指定の変更を許可しますか。")
         if tool_name == "Bash":
-            return shell
+            return _commit_actor_input(payload, tool_input, shell, is_codex=is_codex)
+        if is_codex and commit_identity.commit_hook_installed(is_codex=is_codex):
+            commit_identity.record_commit_observation(payload, is_codex=True)
     if tool_name == "TaskStop":
         return Decision(block=_check_task_stop(session_id, tool_input))
     cwd_raw = payload.get("cwd", "")
@@ -530,8 +532,9 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
     elif decision.ask is not None and not is_codex:
         hook_output["permissionDecision"] = "ask"
         hook_output["permissionDecisionReason"] = decision.ask
-    elif force_allow or decision.updated_input is not None:
-        hook_output["permissionDecision"] = "allow"
+    else:
+        if force_allow or decision.updated_input is not None and not decision.keep_host_permission_check:
+            hook_output["permissionDecision"] = "allow"
         if decision.updated_input is not None:
             hook_output["updatedInput"] = decision.updated_input
     contexts = [decision.context] if decision.context else []
@@ -612,6 +615,25 @@ def _protect_config_update(command: str) -> bool:
     return action != "set" or not isinstance(key, str) or key in MODEL_DEFAULTS or key in CONNECTION_ORDER_KEYS
 
 
+def _commit_actor_input(payload: dict, tool_input: dict, decision: Decision, *, is_codex: bool) -> Decision:
+    command = tool_input.get("command")
+    if (
+        not isinstance(command, str)
+        or is_antigravity_payload(payload)
+        or not commit_identity.commit_hook_installed(is_codex=is_codex)
+    ):
+        return decision
+    actor = commit_identity.record_commit_observation(payload, is_codex=is_codex)
+    if is_codex or actor is None or "agent_id" not in payload:
+        return decision
+    prefix = f"export AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR={actor}\n"
+    if command.startswith(prefix):
+        return decision
+    return dataclasses.replace(
+        decision, updated_input={**tool_input, "command": prefix + command}, keep_host_permission_check=True
+    )
+
+
 def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
     """Bashコマンドの遮断と警告を判定する。
 
@@ -636,7 +658,19 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     if duplicate_subject := duplicate_autosquash_subject(command, cwd):
         return Decision(block=duplicate_subject)
     messages = tuple(_git_commit_messages(command, cwd=cwd))
-    if messages:
+    hook_installed = not is_antigravity_payload(payload) and commit_identity.commit_hook_installed(is_codex=is_codex)
+    preflight = hook_installed and commit_requires_preflight(command)
+    if preflight and not messages:
+        return Decision(
+            block="Git hookを外す場合は、確定した本文を`-m`または保存済みファイルの`-F`で指定して、"
+            "commitの前に同じ書式と帰属の検査を受けてください。"
+        )
+    if messages and (
+        preflight
+        or not hook_installed
+        or not any(line.startswith("#") for message in messages for line in message.splitlines())
+        and commit_identity.static_commit_body_safe(command, cwd)
+    ):
         checks_attribution = is_codex or not commit_identity.claude_commit_attribution_disabled(cwd)
         identity = commit_identity.hook_observed_identity(payload, is_codex=is_codex) if checks_attribution else None
         commit_block = _git_commit_block(messages, identity)

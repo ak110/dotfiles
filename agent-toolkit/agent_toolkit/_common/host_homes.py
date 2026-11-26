@@ -37,3 +37,7 @@ def codex_home(environ: Mapping[str, str] | None = None) -> pathlib.Path:
     if value:
         return pathlib.Path(value)
     return runtime_environment.home() / ".codex"
+
+
+def commit_hook_directory(home: pathlib.Path, host: str) -> pathlib.Path:
+    return home / ".local" / "share" / "agent-toolkit" / "git-hooks" / host

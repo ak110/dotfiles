@@ -338,6 +338,17 @@ function Install-CodexPlugin {
             throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) $savedCacheRetry"
         }
     }
+    if ($pluginName -eq 'agent-toolkit') {
+        $installedRoot = Join-Path $codexPluginCacheRoot $expectedVersion
+        Push-Location ([System.IO.Path]::GetPathRoot($installedRoot))
+        try {
+            $hookConfiguration = Invoke-RequiredNativeCommand uv @('run', '--no-cache', '--no-config', '--no-project', '--python', '3.15',
+                'python', (Join-Path $installedRoot 'scripts/launch.py'), '--prepare-if-missing', 'scripts/install_git_hooks.py')
+            if ($hookConfiguration -contains 'changed') { $script:codexPluginUpdated = $true }
+        } finally {
+            Pop-Location
+        }
+    }
     Write-Output "Codex側の$pluginName プラグインを設定しました。"
 }
 

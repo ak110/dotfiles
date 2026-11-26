@@ -37,4 +37,27 @@
 {{- $config = setValueAtPath "plugins.agent-toolkit@ak110-dotfiles.mcp_servers.agents_server.default_tools_approval_mode" "approve" $config -}}
 {{- /* 開発中フラグの既知の警告だけを抑え、機能自体の設定は維持する。 */ -}}
 {{- $config = setValueAtPath "suppress_unstable_features_warning" true $config -}}
+{{- $hookDir := joinPath .chezmoi.homeDir $codexConfig.shell_environment_policy.set.AGENT_TOOLKIT_COMMIT_HOOKS | replace "\\" "/" -}}
+{{- $hookParameter := printf "'core.hooksPath'='%s'" ($hookDir | replace "'" "'\\''" | replace "!" "'\\!'") -}}
+{{- $previous := dig "shell_environment_policy" "set" "GIT_CONFIG_PARAMETERS" "" $config -}}
+{{- $previousDir := dig "shell_environment_policy" "set" "AGENT_TOOLKIT_COMMIT_HOOKS" "" $config -}}
+{{- if $previousDir -}}
+{{-   $oldParameter := printf "'core.hooksPath'='%s'" ($previousDir | replace "'" "'\\''" | replace "!" "'\\!'") -}}
+{{-   $previous = trim (trimSuffix $oldParameter $previous) -}}
+{{- end -}}
+{{- if dig "plugins" "agent-toolkit@ak110-dotfiles" "enabled" true $config -}}
+{{-   $config = setValueAtPath "shell_environment_policy.set.AGENT_TOOLKIT_COMMIT_HOOKS" $hookDir $config -}}
+{{-   $config = setValueAtPath "shell_environment_policy.set.GIT_CONFIG_PARAMETERS" (trim (printf "%s %s" $previous $hookParameter)) $config -}}
+{{-   $includes := dig "shell_environment_policy" "include_only" (list) $config -}}
+{{-   if $includes -}}
+{{-     $config = setValueAtPath "shell_environment_policy.include_only" (uniq (concat $includes (list "AGENT_TOOLKIT_COMMIT_HOOKS" "GIT_CONFIG_PARAMETERS"))) $config -}}
+{{-   end -}}
+{{- else if $previousDir -}}
+{{-   $config = deleteValueAtPath "shell_environment_policy.set.AGENT_TOOLKIT_COMMIT_HOOKS" $config -}}
+{{-   if $previous -}}
+{{-     $config = setValueAtPath "shell_environment_policy.set.GIT_CONFIG_PARAMETERS" $previous $config -}}
+{{-   else -}}
+{{-     $config = deleteValueAtPath "shell_environment_policy.set.GIT_CONFIG_PARAMETERS" $config -}}
+{{-   end -}}
+{{- end -}}
 {{ toToml $config }}

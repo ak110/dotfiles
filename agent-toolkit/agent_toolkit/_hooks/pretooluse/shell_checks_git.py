@@ -151,6 +151,25 @@ def git_commit_options(arguments: Sequence[str]) -> Iterable[tuple[str, str | No
             yield token, None
 
 
+def is_new_commit_message(arguments: Sequence[str]) -> bool:
+    names = {name for name, _ in git_commit_options(arguments)}
+    return not (names & {"--fixup", "--squash", "-C", "--reuse-message"} or {"--amend", "--no-edit"} <= names)
+
+
+def commit_requires_preflight(command: str) -> bool:
+    for invocation in extract_bash_invocations(command):
+        segment = invocation.segment
+        parsed = git_subcommand_tokens(segment)
+        if parsed is None or parsed[0] != "commit" or not is_new_commit_message(parsed[1]):
+            continue
+        if any(option in {"-n", "--no-verify"} for option, _ in git_commit_options(parsed[1])):
+            return True
+        prefix = segment.tokens[: len(segment.tokens) - len(parsed[1])]
+        if any(token.removeprefix("-c").lower().startswith("core.hookspath=") for token in prefix):
+            return True
+    return False
+
+
 def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         parsed = git_subcommand_tokens(invocation.segment)
@@ -284,6 +303,11 @@ _COMMIT_BLOCK_RERUN = (
     "同じコマンド全体へ修正を加えて再実行してください。"
 )
 
+_COMMIT_MSG_RERUN = (
+    "Gitがcommitの作成を止めた。連結した前段（`git add`など）は実行済みのため、"
+    "前段を繰り返さず、本文を直してcommitだけを再実行してください。"
+)
+
 
 """commitの遮断の是正へ添える、未実行の範囲と再実行の範囲。commitだけを直して前段を外す再実行を防ぐ。"""
 
@@ -333,18 +357,20 @@ def _git_commit_block(
     identity: RuntimeIdentity | None,
     *,
     attribution_disabled: bool = False,
+    prepared: bool = False,
 ) -> str | None:
     messages = tuple(messages)
     violations = list(dict.fromkeys(_git_commit_format_violations(messages)))
     violations += _git_commit_attribution_violations(messages, identity, attribution_disabled=attribution_disabled)
     if not violations:
         return None
+    retry = _COMMIT_MSG_RERUN if prepared else _COMMIT_BLOCK_RERUN
     if len(violations) == 1:
-        return _block_notice(violations[0][0], fix=violations[0][1] + _COMMIT_BLOCK_RERUN)
+        return _block_notice(violations[0][0], fix=violations[0][1] + retry)
     return _block_notice(
         f"`commit`のメッセージに違反が{len(violations)}件ある。"
         + "".join(f"（{number}）{reason}" for number, (reason, _fix) in enumerate(violations, 1)),
-        fix="".join(f"（{number}）{fix}" for number, (_reason, fix) in enumerate(violations, 1)) + _COMMIT_BLOCK_RERUN,
+        fix="".join(f"（{number}）{fix}" for number, (_reason, fix) in enumerate(violations, 1)) + retry,
     )
 
 

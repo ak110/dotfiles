@@ -15,7 +15,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from agent_toolkit._common import dotfiles_mode
+from agent_toolkit._common import commit_hook_environment, dotfiles_mode, host_homes
 
 from pytools._internal import (
     codex_hook_trust,
@@ -426,6 +426,12 @@ def _install_hook_wrapper(root: Path) -> bool:
         if name == "atk-hook":
             destination.chmod(0o755)
         changed = True
+    plugin_root = (root / "agent-toolkit").resolve()
+    if (plugin_root / "agent_toolkit/_hooks/git_commit_msg.py").is_file():
+        directory = host_homes.commit_hook_directory(Path.home(), "codex")
+        hooks_changed = commit_hook_environment.install(directory, plugin_root)
+        config_changed = commit_hook_environment.merge_codex_config(_codex_home() / "config.toml", directory)
+        return changed or hooks_changed or config_changed
     return changed
 
 
@@ -646,7 +652,10 @@ def _sync_local_plugin(
             f"前回の実行が退避した旧cacheの復旧に失敗。退避先を保持: {saved_root}: {error}。{_SAVED_CACHE_RETRY}"
         ) from error
     if current is not None and current.get("enabled") is False:
-        return False, False
+        disabled = plugin_name == "agent-toolkit" and commit_hook_environment.merge_codex_config(
+            _codex_home() / "config.toml", None
+        )
+        return disabled, False
 
     pruned = _prune_retired_versions(cache_root, {version} if current is None else {version, current["version"]})
     plugin_id = f"{plugin_name}@{marketplace_name}"
