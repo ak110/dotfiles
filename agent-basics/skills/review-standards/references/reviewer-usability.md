@@ -18,7 +18,9 @@
    文言は文章の基準で判定する。
    この実機の観測で、`references/reviewer.md`「初回レビュー」の最初の合否を決める。
    対象の一部だけが使いやすい、見た目だけが揃うなど、原要求に足りない場合はここで不合格とする。
-3. `agent-basics:writing-standards/references/ui-ux.md`「判断の順序」「用途と参考例の調査」「操作と情報」「状態と内容」に照らして判定する。
+3. `agent-basics:writing-standards/references/ui-ux.md`「判断の順序」「用途と参考例の調査」「操作と情報」「状態と内容」「視覚と構造」に照らして判定する。
+   `agent-basics:writing-standards/references/ui-ux-topics.md`「アクセシビリティと性能」も使う。
+   実画面で最小の文字の計算値、主要な文字と背景のコントラスト比、キーボードだけでの代表作業の完遂、操作対象の大きさを観測する。
    入力に頼らず同じ製品で同じ機能・資源・目的の画面や部品を探す。
    同じ作業・データ・幅と状態で並べて描画し、枠・背景・見出し、操作と表示条件、項目名・並び・共通スタイルを比べる。
    見た目と操作状態の比較には、`agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」の観察点を使う。

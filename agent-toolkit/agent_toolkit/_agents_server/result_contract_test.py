@@ -739,16 +739,17 @@ def test_invalid_freeform_fails_after_one_recovery(kind: state.LaunchKind, tmp_p
 
 
 @pytest.mark.parametrize(
-    ("comparison", "valid"),
+    ("comparison", "accessibility", "valid"),
     [
-        ("同じ製品の一覧と設定画面を比較した | 外見: 共通部品と配色が一致した", True),
-        ("同じ製品の一覧と設定画面を比較した", False),
-        ("同じ製品の一覧と設定画面を比較した | 外見: なし", False),
-        ("", False),
-        ("外部類例との比較は未確認", False),
+        ("同じ製品の一覧と設定画面を比較した | 外見: 共通部品と配色が一致した", True, True),
+        ("同じ製品の一覧と設定画面を比較した | 外見: 共通部品と配色が一致した", False, False),
+        ("同じ製品の一覧と設定画面を比較した", True, False),
+        ("同じ製品の一覧と設定画面を比較した | 外見: なし", True, False),
+        ("", True, False),
+        ("外部類例との比較は未確認", True, False),
     ],
 )
-def test_usability_pass_requires_each_whole_screen_observation(comparison: str, valid: bool) -> None:
+def test_usability_pass_requires_each_whole_screen_observation(comparison: str, accessibility: bool, valid: bool) -> None:
     session = _role_session("usability-review.subagent.md")
     message = (
         "判定: 合格\n"
@@ -759,7 +760,9 @@ def test_usability_pass_requires_each_whole_screen_observation(comparison: str, 
         "入力負担: 期限を日時欄から選べる\n"
         "modern-web-guidanceのガイドと適用結果: フォームのラベルとエラー通知を実画面で確認した"
     )
+    if accessibility:
+        message += "\n可読性・アクセシビリティ: 最小14px、主要文字は7:1、TabとEnterで保存、ボタンは44px角"
     reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message})
     assert (reason is None) is valid
     if reason:
-        assert "類例の比較" in reason
+        assert ("類例の比較" if accessibility else "可読性・アクセシビリティ") in reason
