@@ -169,6 +169,8 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         "",
         f"- 経過秒: {total.get('elapsed_seconds', 'unknown')}秒（セッションの最初の記録から準備時点まで）",
     ]
+    for item in by_kind.get("stats-token-peak", []):
+        lines.append(f"- メインのtoken上位: {json.dumps(item, ensure_ascii=False)}")
     quality = list(by_kind["cost-metrics-first-pass"])
     quality.extend(row for week in by_kind["cost-metrics-week"] for row in week.get("first_pass", []))
     lines.extend(["", "## 段階別の初回品質", ""])
@@ -338,8 +340,6 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         lines.append(f"- 上位一覧の省略: 結果{item['omitted_largest_result_count']}件、反復{item['omitted_repeat_count']}組")
     for item in by_kind.get("stats-resource-summary", []):
         lines.extend(_resource_summary_lines(item))
-    for item in by_kind.get("stats-token-peak", []):
-        lines.append(f"- メインのtoken上位: {json.dumps(item, ensure_ascii=False)}")
     return "\n".join(lines) + "\n"
 
 
