@@ -1,5 +1,6 @@
 # 委譲と背景処理の待機
 
+目的: 起動した者が委譲先と背景処理の結果を必ず回収し、実行済みの成果や失敗を失わずに次の工程へ渡す。
 委譲先とバックグラウンドタスクの終了を待ち、結果を回収するまでの手順書である。
 待機中の停滞もここで扱い、待機の異常は`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`が扱う。
 方針: 起動した者が、起動時に返された識別子で終了を観測して結果を回収する（原則7、`agent-basics:writing-standards/references/quality-principles-ownership.md`）。

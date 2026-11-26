@@ -1,5 +1,6 @@
 # 実行レビューの起動から収束まで
 
+目的: 実装した側が実行レビューの合格まで修正を重ね、検証済みの差分だけを統合へ渡してユーザーへ届ける。
 実装を終えた差分の実行レビューを起動し、返却の受領と修正を経て、統合へ渡せる返却を受理するまでの手順書であり、節の順に実行する。
 使うのは実装した側の起動者で、作業`process-wi`ではレーン担当（single-laneではメイン）、`agent-toolkit:atk-mode/playbooks/write-plan.md`ではメインである。
 CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正系列」の手順4の担当が使う。

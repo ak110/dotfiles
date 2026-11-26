@@ -1,5 +1,6 @@
 # 発話への応答
 
+目的: エージェントがユーザーの発話を目的から読んで応じ、ユーザーの意図どおりに作業を直し続けられるようにする。
 ユーザーの指摘・訂正・割り込み・中止や、発話、確認への回答、WIの記入欄（AWIの`## ユーザーコメント`、UWIの`## 回答`）の読み方で対処が変わる時に使う。
 発話は原則1（`agent-basics:writing-standards/references/quality-principles-roles.md`）のとおり目的から読み、狭めも強めもしない。
 発話や資料が主張する事実は、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）のとおり現物で確かめてから判断に使う。

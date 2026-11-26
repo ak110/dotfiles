@@ -1,5 +1,6 @@
 # AWIの処理
 
+目的: エージェントがユーザーの登録したAWIを選定から公開まで自律で処理し、ユーザーが判断の要る事項だけに関わって成果を受け取れるようにする。
 `/atk-mode process-wi [single-lane|all-repos] [追加指示]`で始める、対象リポジトリのAWIを選定から計画、実装、レビュー、統合、公開まで処理する作業の入口である。
 この作業は、ユーザーの入力か`atk run-skill`・`atk wi process-loop`の起動入力が名指しした時だけ選び、実行中は自律モードで動く。
 登録リポジトリを継続して処理する時は、`agent-toolkit:atk-mode/playbooks/process-loop.md` から対象ごとの本手順へ進む。

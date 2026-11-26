@@ -1,5 +1,6 @@
 # 作業完了報告とセッションの完了処理
 
+目的: メインが成果の反映・回収・公開を終えてから事実どおりに報告し、ユーザーが報告だけで結果と残る判断を把握できるようにする。
 成果物の検収を終えたら、最終報告を書く前に本書を読み、反映、回収、判断の保存、公開、報告の確定、報告用UWI、送達と終了を一続きに行う手順書である。
 この手順書を全文読むことが終了工程の開始であり、Stop hookはその読み取りを完了報告の起動証拠として扱う（`agent-toolkit:atk-mode/references/termination-evidence.md`「受理する証拠」）。
 結果は不都合なものも含めて報告し、観測した事実、推論、未確認を分ける（`agent-basics:writing-standards/references/quality-principles-facts.md`）。

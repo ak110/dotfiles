@@ -1,5 +1,6 @@
 # 事象単位の調査の委譲と探索の分担
 
+目的: 委譲元が事実の収集と読む量の多い探索を独立した担当へ分け、費用を抑えながら観測に基づいて原因を特定し処置を決める。
 バグ対応、CI失敗の対応、振り返りの事実収集で、事象ごとの観測事実の収集を独立した担当へ委譲する時と、読む量の多い調査や探索を分担する時の手順書である。
 方針: 調査は依頼された担当が似た対象から順に進めて知見を再利用し、分担は起動と読み込みを含む総費用が下がる時だけにする（原則2、`agent-basics:writing-standards/references/quality-principles-qcd.md`）。
 担当の推定と対策案は他者の報告として検証し、原因の特定と処置の決定は委譲元が持つ（原則6、`agent-basics:writing-standards/references/quality-principles-verification.md`）。
