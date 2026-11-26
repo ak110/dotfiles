@@ -82,6 +82,13 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "properties": {
                 "message": {"type": "string"},
                 "kind": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "misdetection": {
+                    "anyOf": [
+                        {"items": {"additionalProperties": {"type": "string"}, "type": "object"}, "type": "array"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
             },
             "required": ["message"],
             "type": "object",
