@@ -1,4 +1,5 @@
 import datetime
+import functools
 import re
 
 import playwright.async_api
@@ -11,6 +12,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _open_filters,
     _screen_harness_fixture,
 )
+from agent_toolkit._atk.wi import readiness
 from agent_toolkit._testing.serve_browser_wi_support import _entry_path, _state_text
 
 pytestmark = [
@@ -227,6 +229,49 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
         assert "再開待ち" not in (await row.get_attribute("aria-label") or "").split("、")
         assert await row.locator(".state-badge").get_attribute("title") is None
         assert "解除日時:" not in (await row.get_attribute("aria-label") or "")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_cooldown_expiry_updates_remaining_blocked_reasons(
+    browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness = browser_harness
+    page = harness.page
+    now = datetime.datetime(2099, 1, 2, tzinfo=datetime.UTC)
+    until = now + datetime.timedelta(seconds=20)
+    calculate = readiness.calculate_readiness
+    await page.clock.install(time=now)
+    monkeypatch.setattr(readiness, "calculate_readiness", functools.partial(calculate, now=now))
+    prefix = "---\nstate: inbox\ntarget_repo: github.com/example/repo\n"
+    _entry_path(harness.root, "prerequisite.md").write_text(prefix + "type: awi\n---\n\n前提\n", encoding="utf-8")
+    _entry_path(harness.root, "question.md").write_text(prefix + "type: uwi\n---\n\n## 回答\n", encoding="utf-8")
+    examples = {
+        "free.md": ("", ""),
+        "awi.md": ("depends_on: [prerequisite.md]\n", "依存先の処理待ち"),
+        "uwi.md": ("depends_on: [question.md]\n", "回答待ち"),
+        "invalid.md": ("depends_on: invalid\n", "依存先の指定が不正"),
+    }
+    for name, (dependency, _) in examples.items():
+        _entry_path(harness.root, name).write_text(
+            prefix + f"type: awi\ncooldown_until: '{until.isoformat()}'\n" + dependency + "---\n\n# 再開待ち\n",
+            encoding="utf-8",
+        )
+    await page.goto(harness.base_url + "/")
+    focused = page.locator('.entry-select[data-key="awi.md"]')
+    await playwright.async_api.expect(focused.locator(".state-badge")).to_have_text("再開待ち")
+    await focused.focus()
+    monkeypatch.setattr(readiness, "calculate_readiness", functools.partial(calculate, now=until))
+    await page.clock.run_for(21000)
+    for name, (_, reason) in examples.items():
+        row = page.locator(f'.entry-select[data-key="{name}"]')
+        blocked = row.locator(".blocked-badge")
+        await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("受信", timeout=10000)
+        if reason:
+            await playwright.async_api.expect(blocked).to_have_text(reason)
+            await playwright.async_api.expect(row).to_have_accessible_name(re.compile(reason))
+        else:
+            await playwright.async_api.expect(blocked).to_have_count(0)
+    await playwright.async_api.expect(focused).to_be_focused()
 
 
 @pytest.mark.asyncio(loop_scope="session")

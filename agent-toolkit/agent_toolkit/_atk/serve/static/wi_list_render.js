@@ -12,7 +12,7 @@ import {
   api, runPending, setGlobalError, setTextMessage, withNextAction
 } from "./wi_feedback.js";
 import {
-  renderPagination
+  loadEntries, renderPagination
 } from "./wi_list.js";
 
 export function formatDateParts(value) {
@@ -78,7 +78,6 @@ function updateEntryStateDisplay(entry, button, badge) {
   );
 }
 
-// 最も近い期限で状態表示だけを更新し、一覧警告・詳細の入力・フォーカスを保持する。
 export function refreshCooldownDisplays() {
   clearTimeout(wiState.cooldownTimer);
   for (const {entry, button, badge} of wiState.entryStateDisplays.values()) updateEntryStateDisplay(entry, button, badge);
@@ -88,10 +87,14 @@ export function refreshCooldownDisplays() {
   }
   const remaining = [...wiState.entries, ...(wiState.currentEntry ? [wiState.currentEntry] : [])]
     .filter(entry => entry.state === 'inbox')
-    .map(entry => Date.parse(entry.cooldown_until) - Date.now()).filter(value => value > 0);
+    .map(entry => Date.parse(entry.cooldown_until)).filter(value => value > Date.now());
   if (remaining.length) {
+    const next = Math.min(...remaining);
     // setTimeoutが扱える遅延の範囲で予約し、長い期限は次の予約で再判定する。
-    wiState.cooldownTimer = setTimeout(refreshCooldownDisplays, Math.min(...remaining, 2147483647));
+    wiState.cooldownTimer = setTimeout(() => {
+      refreshCooldownDisplays();
+      if (Date.now() >= next) void loadEntries({showLoading: false});
+    }, Math.min(next - Date.now(), 2147483647));
   }
 }
 
