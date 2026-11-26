@@ -392,7 +392,7 @@ test("協調の終了要求はcron一覧を取得できなければ取り消す"
   expect(writes.get(COMPLETION_PATH)).toBe("{}");
 });
 
-test("協調の終了要求は次のturn.startより前でも利用者の入力で取り消す", async ($, on) => {
+test("協調の終了要求は次のturn.startより前でもユーザーの入力で取り消す", async ($, on) => {
   const { calls, writes } = engine(on, { completion: "approved", completionSurfaces: [] });
   const input: string[] = [];
   on("prompt.submit", (_$, e) => { input.push(e.text); return { text: e.text }; });
