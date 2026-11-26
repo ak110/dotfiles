@@ -64,6 +64,7 @@ def observe(payload: dict, session_id: str, tool_name: str, tool_input: dict, cw
     if not required and not read:
         return []
     actor = resolve_hook_agent_id(payload)
+    tool_use_id = payload.get("tool_use_id")
 
     def remember(state: dict) -> dict:
         subjects = state.get(_STATE)
@@ -72,6 +73,7 @@ def observe(payload: dict, session_id: str, tool_name: str, tool_input: dict, cw
         subjects[actor] = {
             "required": sorted(set(prior.get("required", [])) | required),
             "read": {**prior.get("read", {}), **read},
+            "read_calls": {**prior.get("read_calls", {}), **dict.fromkeys(read, tool_use_id)},
         }
         return {**state, _STATE: subjects}
 
@@ -101,9 +103,15 @@ def _missing(prior: dict) -> list[str]:
     return [name for name in prior.get("required", []) if name in _GUIDANCE and not _still_current(seen.get(_GUIDANCE[name]))]
 
 
-def has_current_reads(payload: dict, session_id: str) -> bool:
+def current_read_calls(payload: dict, session_id: str) -> set[str]:
     prior = _receipt(payload, session_id)
-    return bool(prior.get("required")) and not _missing(prior)
+    if _missing(prior):
+        return set()
+    reads = prior.get("read_calls", {})
+    calls = [reads.get(_GUIDANCE[name]) for name in prior.get("required", []) if name in _GUIDANCE]
+    if not all(isinstance(call, str) and call for call in calls):
+        return set()
+    return set(calls)
 
 
 def missing_before_response(payload: dict, session_id: str, tool_input: dict) -> list[str]:
@@ -128,7 +136,7 @@ def forget_reads(session_id: str, actor: str, *, retain_requirements: bool) -> N
         active = dict(subjects)
         prior = active.pop(actor)
         if retain_requirements:
-            active[actor] = {**prior, "read": {}}
+            active[actor] = {**prior, "read": {}, "read_calls": {}}
         return {**state, _STATE: active}
 
     update_state(session_id, forget)

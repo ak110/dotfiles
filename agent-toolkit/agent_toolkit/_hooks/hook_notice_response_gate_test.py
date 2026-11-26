@@ -301,14 +301,36 @@ def test_marker_by_itself_does_not_resolve_warning(tmp_path, response):
     assert _evaluate([_HUMAN, _attachment(_WARN), _text(response)], tmp_path)[0] == "block"
 
 
-@pytest.mark.parametrize(("received", "reviewed"), [(False, False), (True, False), (False, True), (True, True)])
-def test_review_warning_needs_reads_and_a_new_decision(tmp_path, monkeypatch, received, reviewed):
+@pytest.mark.parametrize("order", ["unread", "unreviewed", "reversed", "read-then-review", "earlier-read", "missing-result"])
+def test_review_warning_needs_decision_after_full_read(tmp_path, order):
     title = "レビュー返却が指定した資料の取得を確認できないまま、採否を記録する操作である。"
     body = _WARN.replace("セッション原記録の直接参照である。", title)
     identifier = hashlib.sha256(body.encode()).hexdigest()[:12]
     response = f"hook通知への対応: pretooluse: [{identifier}] {title} → 対象全件を検証する判断に変更した。"
-    monkeypatch.setattr(gate.review_receipt, "has_current_reads", lambda *_: received)
-    entries = [_HUMAN, _attachment(body), *([_text(response)] if reviewed else [])]
+    sid = "hook-notice-response"
+    required = json.dumps(["agent-basics:review-standards/SKILL.md"])
+    gate.review_receipt.observe(
+        {"tool_response": {"stdout": f"終了行: session_id=child status=completed read_requirements={required}"}},
+        sid,
+        "Bash",
+        {"command": "atk agents wait"},
+        str(tmp_path),
+    )
+    skill_input = {"skill": "agent-basics:review-standards"}
+    if order != "unread":
+        gate.review_receipt.observe({"tool_use_id": "read"}, sid, "Skill", skill_input, str(tmp_path))
+    read = [_call("Skill", "read", skill_input), _result("read", "レビューの判断基準")]
+    respond = _text(response)
+    turns = {
+        "unread": [respond],
+        "unreviewed": read,
+        "reversed": [respond, *read],
+        "read-then-review": [*read, respond],
+        "earlier-read": [respond],
+        "missing-result": [read[0], respond],
+    }
+    before = read if order == "earlier-read" else []
+    entries = [*before, _HUMAN, _attachment(body), *turns[order]]
     decision, _ = _evaluate(entries, tmp_path)
-    assert (decision == "approve") is (received and reviewed)
+    assert (decision == "approve") is (order in {"read-then-review", "earlier-read"})
     assert _evaluate(entries, tmp_path)[0] == decision

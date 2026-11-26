@@ -98,7 +98,29 @@ def _since_human_input(entries: list[dict]) -> list[dict]:
     return entries
 
 
-def _scan(turn: list[dict], resolved: set[tuple[str, str]], current: str, *, review_read: bool) -> dict[str, str]:
+def _last_read(entries: list[dict], calls: set[str]) -> int:
+    if not calls:
+        return len(entries)
+    pending = calls.copy()
+    last = -1
+    for index, entry in enumerate(entries):
+        if entry.get("type") != "user" or not isinstance(message := entry.get("message"), dict):
+            continue
+        content = message.get("content")
+        for block in content if isinstance(content, list) else ():
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "tool_result"
+                and block.get("is_error") is not True
+                and isinstance(call := block.get("tool_use_id"), str)
+                and call in pending
+            ):
+                pending.remove(call)
+                last = index
+    return len(entries) if pending else last
+
+
+def _scan(turn: list[dict], resolved: set[tuple[str, str]], current: str, *, last_review_read: int) -> dict[str, str]:
     warnings: dict[str, tuple[int, str]] = {}
     responses = {name: len(turn) for name in _responses(current)}
     for index, entry in enumerate(turn):
@@ -120,7 +142,7 @@ def _scan(turn: list[dict], resolved: set[tuple[str, str]], current: str, *, rev
     return {
         name: identity
         for name, (position, identity) in warnings.items()
-        if responses.get(name, -1) <= position or (_REVIEW_WARNING in name and not review_read)
+        if responses.get(name, -1) <= (max(position, last_review_read) if _REVIEW_WARNING in name else position)
     }
 
 
@@ -143,12 +165,10 @@ def _unanswered(
     resolved = send_misdetection.resolved(session_id) | {
         (item["check"], delivery_id) for item in claims or [] if (delivery_id := item["delivery_id"]) is not None
     }
-    warnings = _scan(
-        _since_human_input(_conversation_entries(lines)),
-        resolved,
-        current,
-        review_read=review_receipt.has_current_reads(payload, session_id),
-    )
+    entries = _conversation_entries(lines)
+    turn = _since_human_input(entries)
+    last_read = _last_read(entries, review_receipt.current_read_calls(payload, session_id)) - (len(entries) - len(turn))
+    warnings = _scan(turn, resolved, current, last_review_read=last_read)
     if not warnings:
         return None
     if any(_REVIEW_WARNING in name for name in warnings):
