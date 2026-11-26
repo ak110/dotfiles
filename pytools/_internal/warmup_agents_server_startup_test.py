@@ -75,8 +75,11 @@ def _launch_command(root: pathlib.Path) -> list[str]:
 @pytest.mark.windows
 @pytest.mark.timeout(240)
 @pytest.mark.cpu_limit(
-    3.0,
-    reason="実のlauncher・転送側・管理サービスを起動し、MCPのinitializeとtools/listを通して世代を公開する。",
+    4.0,
+    reason=(
+        "新旧2世代の実配布物で依存確認、MCP初期化、受付切替と停止を確認する。"
+        "配布物の比較と回収を含むLinuxの全量検証で所有CPU 3.37秒を観測したため、4秒で上限を設ける。"
+    ),
 )
 def test_published_service_outlives_startup_check(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, service_environment: dict[str, str]
