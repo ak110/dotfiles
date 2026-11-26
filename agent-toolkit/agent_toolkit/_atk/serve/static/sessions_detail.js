@@ -17,7 +17,6 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   let parentTrail = [];
   // 詳細の取得の世代。選択の切り替えや再取得の後に届いた古い応答を反映しないために使う。  // pyfltr: allow-comment
   let detailGeneration = 0;
-  let detailOpening = null;
   let renderLimit = 0;
   const DETAIL_PAGE_SIZE = 100;
   let currentDetail = null;
@@ -492,12 +491,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   }
 
   async function refreshSelectedDetail(timing = {}) {
-    const selection = selected;
-    if (!selection) return;
-    // 初回表示がリンクへ移動する前に、通知の再取得がその世代を無効にしないよう待つ。  // pyfltr: allow-comment
-    if (detailOpening) await detailOpening.promise;
-    if (selection !== selected) return;
-    const {host, engine, path} = selection;
+    if (!selected) return;
+    const {host, engine, path} = selected;
     const generation = ++detailGeneration;
     try {
       const response = await timedFetch(
@@ -548,9 +543,6 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     detailTitleEl.textContent = "読み込み中...";
     const query = new URLSearchParams({ host, engine, path });
     const generation = ++detailGeneration;
-    detailOpening?.resolve();
-    const opening = Promise.withResolvers();
-    detailOpening = opening;
     const operation = beginOperation("sessions", "open-session", {trigger: "click"});
     let outcome = "ok";
     try {
@@ -582,8 +574,6 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       alert.append(retry);
       detailEl.append(alert);
     } finally {
-      if (detailOpening === opening) detailOpening = null;
-      opening.resolve();
       operation.end(outcome);
     }
   }
@@ -611,8 +601,6 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   }
   function clear(message) {
     selected = currentDetail = null;
-    detailOpening?.resolve();
-    detailOpening = null;
     parentTrail = [];
     detailGeneration++;
     detailTitleEl.textContent = detailUsageEl.textContent = "";

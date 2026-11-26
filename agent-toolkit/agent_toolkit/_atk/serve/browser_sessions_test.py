@@ -477,7 +477,8 @@ async def test_session_line_link_survives_record_notification_during_open(screen
     (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
     paragraph = {"type": "user", "cwd": "/home/aki/proj", "message": {"content": "長い会話の発話"}}
     linked = {"type": "assistant", "message": {"content": [{"type": "text", "text": text} for text in ("先行", "後続")]}}
-    record.write_text("\n".join(json.dumps(entry) for entry in [*([paragraph] * 24), linked]) + "\n", encoding="utf-8")
+    entries = [*([paragraph] * 24), linked, *([paragraph] * 24)]
+    record.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n", encoding="utf-8")
     page = screen_harness.page
     await page.add_init_script("""
         const NativeEventSource = window.EventSource;
@@ -489,47 +490,78 @@ async def test_session_line_link_survives_record_notification_during_open(screen
             window.testSessionEvents = this;
             queueMicrotask(() => this.dispatchEvent(new Event('subscribed')));
           }
+          get readyState() {
+            return this === window.testSessionEvents ? NativeEventSource.OPEN : super.readyState;
+          }
+        };
+        const responseJson = Response.prototype.json;
+        Response.prototype.json = async function() {
+          const body = await responseJson.call(this);
+          if (body.session_name === '遅い初回') requestAnimationFrame(() => { window.testFirstDetailConsumed = true; });
+          return body;
         };
     """)
-    open_started, release_open, release_refresh = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    open_started, release_open = asyncio.Event(), asyncio.Event()
     detail_pattern = "**/api/sessions/detail?*"
+    requested = 0
 
     async def hold_detail(route: playwright.async_api.Route) -> None:
-        if not open_started.is_set():
+        nonlocal requested
+        index = requested
+        requested += 1
+        title, cost = (("遅い初回", 0.11), ("通知による初回表示", 0.22), ("再取得済み", 0.33))[index]
+        if index == 0:
             open_started.set()
             await release_open.wait()
-            await route.continue_()
-            return
-        await release_refresh.wait()
         response = await route.fetch()
-        await route.fulfill(response=response, json={**await response.json(), "session_name": "再取得済み"})
+        await route.fulfill(
+            response=response,
+            json={**await response.json(), "session_name": title, "cost_pending": False, "cost": {"known_usd": cost}},
+        )
 
     await page.route(detail_pattern, hold_detail)
     selection = {"host": "browser-test", "engine": "claude", "path": record.as_posix()}
     expect = playwright.async_api.expect
     markers = page.locator("#detail .event-linked")
+    title = page.locator("#detail-title")
+    usage = page.locator("#detail-usage")
     main = page.locator("#screen-sessions main")
-    try:
-        await page.goto(
-            screen_harness.base_url + "/sessions?" + urlencode({**selection, "line": 25}), wait_until="domcontentloaded"
-        )
-        await asyncio.wait_for(open_started.wait(), timeout=10)
+
+    async def notify_record_change() -> None:
         await page.evaluate(
             "selection => window.testSessionEvents.dispatchEvent(new MessageEvent('message', {"
             "data: JSON.stringify({...selection, type: 'record'})}))",
             selection,
         )
-        release_open.set()
+
+    try:
+        await page.goto(
+            screen_harness.base_url + "/sessions?" + urlencode({**selection, "line": 25}), wait_until="domcontentloaded"
+        )
+        await asyncio.wait_for(open_started.wait(), timeout=10)
+        await notify_record_change()
+        await expect(title).to_contain_text("通知による初回表示")
+        await expect(usage).to_contain_text("$0.22")
         await expect(markers).to_have_count(2)
-        assert await main.evaluate("element => element.scrollTop") > 0
+        await expect(markers.first).to_be_in_viewport()
+        assert await main.evaluate(
+            "element => 0 < element.scrollTop && element.scrollTop + element.clientHeight < element.scrollHeight - 1"
+        )
+
+        release_open.set()
+        await page.wait_for_function("window.testFirstDetailConsumed === true")
+        await expect(title).to_contain_text("通知による初回表示")
+        await expect(usage).to_contain_text("$0.22")
+        await expect(markers).to_have_count(2)
+
         await main.evaluate("element => { element.scrollTop = 0; }")
-        release_refresh.set()
-        await expect(page.locator("#detail-title")).to_contain_text("再取得済み")
+        await notify_record_change()
+        await expect(title).to_contain_text("再取得済み")
+        await expect(usage).to_contain_text("$0.33")
         await expect(markers).to_have_count(2)
         assert await main.evaluate("element => element.scrollTop") == 0
     finally:
         release_open.set()
-        release_refresh.set()
         await page.unroute(detail_pattern, hold_detail)
 
 
