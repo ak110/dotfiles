@@ -180,15 +180,22 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
             assert await page.locator("#plans-menu-btn").get_attribute("aria-expanded") == "true"
             assert await page.locator("#copy-btn .short-label").is_visible()
             assert not await page.locator("#copy-btn .wide-label").is_visible()
-            assert (
-                await page.locator("#screen-plans main .toolbar").evaluate("element => getComputedStyle(element).flexWrap")
-                == "nowrap"
-            )
             await page.locator("#files .file").first.click()
             await page.locator("#preview h1").wait_for(state="visible")
             assert not await page.locator("#screen-plans").evaluate("element => element.classList.contains('drawer-open')")
         else:
             await page.locator("#preview h1").wait_for(state="visible")
+
+        toolbar = page.locator("#screen-plans .detail-toolbar")
+        for control in ("#copy-btn", "#copy-path-btn", "#prev-btn", "#next-btn"):
+            assert await toolbar.evaluate(
+                """(toolbar, selector) => {
+                    const available = toolbar.getBoundingClientRect();
+                    const button = toolbar.querySelector(selector).getBoundingClientRect();
+                    return button.width > 0 && button.left >= available.left && button.right <= available.right;
+                }""",
+                control,
+            )
 
         await page.goto(screen_harness.base_url + "/sessions")
         await page.locator("#sessions .session-item").first.wait_for(state="visible")

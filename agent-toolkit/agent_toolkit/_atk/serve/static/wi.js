@@ -313,7 +313,7 @@ function initializeApp() {
 async function init() {
   bindEvents();
   const detailBody = byId("detail-dialog-body");
-  attachScrollEdges(detailBody, byId("detail-dialog").querySelector(".dialog-header"), detailBody);
+  attachScrollEdges(detailBody, byId("detail-scroll-actions"), detailBody);
   resyncWhenVisible(() => {
     refreshCooldownDisplays();
     return initialization.then(() => reloadFromExternalChange());

@@ -49,7 +49,7 @@
 }
 .pane-item-title {
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: var(--weight-label);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -114,14 +114,10 @@
   box-sizing: border-box;
 }
 #screen-plans .detail-toolbar {
-  flex-wrap: wrap;
   position: sticky;
   inset-block-start: 0;
   z-index: 2;
   justify-content: flex-end;
-}
-#screen-plans main .toolbar button {
-  white-space: nowrap;
 }
 /* 結果文言を同じ領域へ重ね、コピー後も隣の操作を同じ位置へ保つ。 */
 #screen-plans main .toolbar .copy-feedback {
@@ -187,7 +183,7 @@
 #screen-plans .diagram-source summary {
   color: var(--color-secondary-text);
   cursor: pointer;
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-base);
 }
 #screen-plans .diagram-source pre {
   margin-bottom: 0;
@@ -196,7 +192,7 @@
 #screen-plans .diagram-error {
   margin: 0.75rem 0 0;
   color: var(--color-danger);
-  font-weight: 600;
+  font-weight: var(--weight-label);
 }
 /* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
 @media (max-width: 768px) {
@@ -263,7 +259,7 @@
     overflow-wrap: anywhere;
   }
   #screen-plans #meta-mobile .meta-host {
-    font-weight: 600;
+    font-weight: var(--weight-label);
     color: var(--color-text);
   }
   #screen-plans #meta-mobile .meta-path {

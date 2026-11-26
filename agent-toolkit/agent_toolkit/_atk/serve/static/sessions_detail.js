@@ -182,6 +182,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       const item = document.createElement("button");
       item.type = "button";
       item.className = "subagent-item";
+      if (subagent.path) item.dataset.focusKey = subagent.path;
       // 起動の深さを字下げで表す。`parent_agent_id`は深さ2以上の記録にしか現れないため使わない。  // pyfltr: allow-comment
       const depth = Number.isInteger(subagent.spawn_depth) ? subagent.spawn_depth : 0;
       item.style.paddingLeft = `${10 + depth * 14}px`;
@@ -208,6 +209,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     const button = document.createElement("button");
     button.type = "button";
     button.className = "detail-back button-secondary";
+    button.dataset.focusKey = JSON.stringify([parent.host, parent.engine, parent.path]);
     button.textContent = "委譲元の記録へ戻る";
     button.addEventListener("click", () => openSession(parent.host, parent.engine, parent.path, trail.slice(0, -1)));
     return button;
@@ -219,10 +221,34 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     for (const block of detailEl.querySelectorAll("details[data-event-index]")) {
       openStates.set(block.dataset.eventIndex, block.open);
     }
+    return {openStates, focus: captureDetailFocus(), renderLimit, scrollTop: detailEl.parentElement.scrollTop};
+  }
+
+  function focusMatches(scope, target) {
+    const {tag, key} = target;
+    return [...scope.querySelectorAll(tag)].filter(node =>
+      (node.dataset.focusKey ?? node.getAttribute("href")) === key &&
+      (node.closest("[data-event-index]") ?? detailEl) === scope);
+  }
+
+  function captureDetailFocus() {
     const active = document.activeElement;
-    const focusedEvent = active?.matches("summary") && detailEl.contains(active)
-      ? active.parentElement.dataset.eventIndex : undefined;
-    return {openStates, focusedEvent, renderLimit, scrollTop: detailEl.parentElement.scrollTop};
+    if (!detailEl.contains(active)) return null;
+    const scope = active.closest("[data-event-index]") ?? detailEl;
+    const target = {
+      event: scope.dataset.eventIndex,
+      tag: active.localName,
+      key: active.dataset.focusKey ?? active.getAttribute("href"),
+    };
+    return {...target, ordinal: focusMatches(scope, target).indexOf(active)};
+  }
+
+  function restoreDetailFocus(target) {
+    if (!target) return;
+    const scope = target.event === undefined ? detailEl :
+      detailEl.querySelector(`[data-event-index="${CSS.escape(target.event)}"]`);
+    if (!scope) return;
+    focusMatches(scope, target)[target.ordinal]?.focus({preventScroll: true});
   }
 
   // ローカルの記録は本文の後に費用を別に取得するため、取得中は前回の値か「算出中」を表示する。  // pyfltr: allow-comment
@@ -468,10 +494,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     renderLimit = 0;
     document.getElementById("session-reading").hidden = false;
     appendEvents(preserved ? preserved.renderLimit : DETAIL_PAGE_SIZE, preserved);
-    if (preserved?.focusedEvent !== undefined) {
-      const block = detailEl.querySelector(`details[data-event-index="${CSS.escape(preserved.focusedEvent)}"]`);
-      block?.querySelector(":scope > summary")?.focus({preventScroll: true});
-    }
+    restoreDetailFocus(preserved?.focus);
     refreshSearch();
     detailScroller().scrollTop = preserved ? preserved.scrollTop : 0;
     renderEventsNearEnd();

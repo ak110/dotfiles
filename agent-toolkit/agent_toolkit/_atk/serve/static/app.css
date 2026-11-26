@@ -37,6 +37,9 @@
   --font-size-icon: 1.5rem;
   --line-height-icon: 1;
   --line-height-compact: 1.35;
+  --weight-label: 600;
+  --weight-heading: 650;
+  --weight-strong: 700;
   --font-size-heading: 1.25rem;
   --two-pane-sidebar-width: 320px;
   --font-family-base: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -215,7 +218,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .list-row { border-block-end: 1px solid var(--color-border); }
 .text-clip { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.page-heading { margin: 0; font-size: var(--font-size-heading); font-weight: 650; line-height: var(--line-height-compact); }
+.page-heading { margin: 0; font-size: var(--font-size-heading); font-weight: var(--weight-heading); line-height: var(--line-height-compact); }
 .two-pane { display: grid; grid-template-columns: var(--two-pane-sidebar-width) minmax(0, 1fr); }
 
 @media (any-pointer: coarse) {
@@ -445,11 +448,15 @@ main > .toolbar {
 }
 .detail-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   background: var(--color-surface);
 }
 .detail-toolbar .spacer { flex: 1; }
+.detail-toolbar > button, .detail-navigation { flex: 0 0 auto; }
+.detail-toolbar > button { white-space: nowrap; }
+.detail-navigation { display: inline-flex; gap: var(--space-2); }
 .detail-toolbar .nav-btn { min-inline-size: var(--control-height); }
 .pane-sidebar > .toolbar {
   position: sticky;

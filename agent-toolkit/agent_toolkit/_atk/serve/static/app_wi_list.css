@@ -176,7 +176,7 @@
 }
 #screen-wi .filters summary {
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--weight-strong);
 }
 #screen-wi .filters-body {
   margin-top: var(--space-3);
@@ -256,7 +256,7 @@
 }
 #screen-wi .summary-cell {
   grid-column: 1 / -1;
-  font-weight: 650;
+  font-weight: var(--weight-heading);
 }
 #screen-wi .entry-meta { display: contents; }
 #screen-wi :is(.entry-meta, .status-cell) {

@@ -61,12 +61,14 @@
 
 /* セッション名は見出しだけが示すため、狭い幅や拡大時も省略せず折り返して全文を表示する。 */
 #screen-sessions .detail-title {
-  min-width: 0;
+  min-inline-size: min(10ch, 100%);
+  flex: 1 1 12ch;
   overflow-wrap: anywhere;
-  font-weight: 600;
+  font-weight: var(--weight-label);
 }
 #screen-sessions #detail-usage {
-  min-width: 0;
+  flex: 0 1 auto;
+  min-inline-size: min(10ch, 100%);
   overflow-wrap: anywhere;
 }
 /* 計画ファイル画面の本文と同じ最大幅と左右余白にそろえる。 */
@@ -126,7 +128,7 @@
 }
 #screen-sessions .subagent-item .subagent-type {
   flex: none;
-  font-weight: 600;
+  font-weight: var(--weight-label);
 }
 #screen-sessions .subagent-item .subagent-description {
   overflow: hidden;

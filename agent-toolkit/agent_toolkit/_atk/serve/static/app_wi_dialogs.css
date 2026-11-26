@@ -39,6 +39,7 @@
 :is(#screen-wi, .wi-reference-layer) .dialog-close {
   display: inline-grid;
   flex: 0 0 2.75rem;
+  margin-inline-start: auto;
   width: 2.75rem;
   height: 2.75rem;
   padding: 0;
@@ -91,7 +92,7 @@
   gap: var(--space-1) var(--space-3);
 }
 :is(#screen-wi, .wi-reference-layer) .metadata dt {
-  font-weight: 700;
+  font-weight: var(--weight-strong);
 }
 :is(#screen-wi, .wi-reference-layer) .metadata dd {
   margin: 0;
@@ -269,6 +270,7 @@
 :is(#screen-wi, .wi-reference-layer) .operation-notice-close {
   display: inline-grid;
   flex: 0 0 2.75rem;
+  margin-inline-start: auto;
   width: 2.75rem;
   min-width: 2.75rem;
   height: 2.75rem;

@@ -249,7 +249,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
 
     await page.wait_for_function("(summary) => !summary.isConnected", arg=old_summary)
     await playwright.async_api.expect(summary).to_be_focused()
-    await playwright.async_api.expect(events).to_have_count(231)
+    await playwright.async_api.expect(events).to_have_count(232)
     assert not await events.nth(0).evaluate("element => element.open")
     assert not await events.nth(120).evaluate("element => element.open")
     assert await page.evaluate("() => document.querySelector('#screen-sessions main').scrollTop") == scroll_top
@@ -257,8 +257,6 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     await page.wait_for_function("window.__screenRequests.pending === 0")
     assert _session_list_requests(screen_harness) == list_requests
 
-    await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
-    await playwright.async_api.expect(events).to_have_count(232)
     await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
     await playwright.async_api.expect(page.locator("#detail").get_by_text("追記されたイベント")).to_be_in_viewport()
 
@@ -397,3 +395,57 @@ async def test_session_connection_failure_uses_shared_status_and_recovers(screen
     await playwright.async_api.expect(banner).to_contain_text("再接続中")
     await banner.get_by_role("button", name="再取得").click()
     await playwright.async_api.expect(banner).to_be_hidden()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(2, reason="隔離したserveをブラウザーで操作して再描画のフォーカスを観測する")
+@pytest.mark.parametrize("control", ["back", "link", "subagent-item", "body-link"])
+async def test_focused_session_control_survives_append(screen_harness: _ScreenHarness, tmp_path: Path, control: str) -> None:
+    parent = tmp_path / "claude" / "projects" / "-home-aki-long" / "parent.jsonl"
+    records = [{"type": "user", "timestamp": "2026-09-04T00:00:00Z", "cwd": "/home/aki/long", "message": {"content": "開始"}}]
+    records.append(
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-04T00:00:01Z",
+            "message": {"content": [{"type": "text", "text": "[本文のリンク](https://example.invalid/fixture)"}]},
+        }
+    )
+    subagents = parent.with_suffix("") / "subagents"
+    subagents.mkdir(parents=True, exist_ok=True)
+    (subagents / "agent-long.meta.json").write_text(
+        json.dumps({"agentType": "Explore", "description": "長い調査", "spawnDepth": 1}, ensure_ascii=False), encoding="utf-8"
+    )
+    path = subagents / "agent-long.jsonl"
+    queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
+    _append_jsonl(parent, records)
+    _append_jsonl(path, records)
+    await _wait_record_notification(screen_harness, queue, path)
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
+    if control == "subagent-item":
+        button = page.locator(".subagent-item", has_text="長い調査")
+        changed_path = parent
+    else:
+        await page.locator(".subagent-item", has_text="長い調査").click()
+        button = (
+            page.get_by_role("button", name="委譲元の記録へ戻る") if control == "back" else page.locator("a.event-link").first
+        )
+        if control == "body-link":
+            button = page.get_by_role("link", name="本文のリンク", exact=True)
+        changed_path = path
+    await button.focus()
+    await playwright.async_api.expect(button).to_be_focused()
+    old = await button.element_handle()
+    _append_jsonl(
+        changed_path,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-04T00:00:02Z",
+                "message": {"content": [{"type": "text", "text": "追記されたイベント"}]},
+            }
+        ],
+    )
+    await page.wait_for_function("(el) => !el.isConnected", arg=old)
+    await playwright.async_api.expect(button).to_be_focused()
