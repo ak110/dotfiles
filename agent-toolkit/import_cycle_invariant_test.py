@@ -107,25 +107,27 @@ def _eager_imports(node: ast.AST, bindings: dict[str, str]) -> Iterator[ast.Impo
             del bindings[name]
 
     invalidated: set[str] = set()
-    previous_bindings = bindings.copy()
-    for field in ("body", "orelse", "finalbody", "handlers", "cases"):
-        branch: list[ast.AST] = getattr(node, field, [])
+    for field in node._fields:
+        if field not in {"body", "orelse", "finalbody", "handlers", "cases"}:
+            continue
+        branch: list[ast.AST] = getattr(node, field)
         if branch:
-            branch_bindings = previous_bindings.copy()
+            branch_bindings = bindings.copy()
             for child in branch:
                 yield from _eager_imports(child, branch_bindings)
-            invalidated.update(name for name, value in previous_bindings.items() if branch_bindings.get(name) != value)
+            invalidated.update(name for name, value in bindings.items() if branch_bindings.get(name) != value)
     for name in invalidated:
         del bindings[name]
 
 
 def _dependencies(root: Path) -> dict[str, set[str]]:
     modules = {}
+    root_offset = len(root.parent.parts)
     for path in sorted(root.rglob("*.py")):
         if path.name.endswith("_test.py") or path.name == "conftest.py":
             continue
-        parts = path.relative_to(root.parent).with_suffix("").parts
-        name = ".".join(parts[:-1] if path.name == "__init__.py" else parts)
+        parts = path.parts[root_offset:-1]
+        name = ".".join(parts if path.name == "__init__.py" else (*parts, path.stem))
         modules[name] = path
 
     graph: dict[str, set[str]] = {}
@@ -141,7 +143,7 @@ def _dependencies(root: Path) -> dict[str, set[str]]:
                 for alias in node.names:
                     submodule = f"{base}.{alias.name}"
                     targets.add(submodule if submodule in modules else base)
-        targets.intersection_update(modules)
+        targets = {target for target in targets if target in modules}
 
         for target in tuple(targets):
             parent = target.rpartition(".")[0]
