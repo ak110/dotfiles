@@ -105,6 +105,12 @@ def _build_parser() -> argparse.ArgumentParser:
     extent = parser.add_mutually_exclusive_group()
     extent.add_argument("--after", metavar="PATH", help="前回範囲に使うscope JSONを明示する。")
     extent.add_argument("--full", action="store_true", help="前回確定済みの範囲を使わず全量を分析する。")
+    parser.add_argument(
+        "--observation-boundary",
+        type=session_conversation.timestamp,
+        metavar="TIME",
+        help="この日時を超える最初の行より前だけを準備する。タイムゾーン付きISO 8601で指定する。",
+    )
     parser.add_argument("--conversation-window", action="store_true", help="会話を少量表示する。候補・統計は更新しない。")
     parser.add_argument(
         "--conversation-digest",
@@ -358,6 +364,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         after = str(previous) if previous is not None else None
     if after is not None:
         session_arguments.extend(["--after", after])
+    if args.observation_boundary is not None:
+        session_arguments.extend(["--observation-boundary", args.observation_boundary.isoformat()])
     if args.allow_partial_records:
         session_arguments.append("--allow-partial-records")
     bundle_dir = work_dir / "bundle"

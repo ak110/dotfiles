@@ -71,6 +71,7 @@ from session_evidence_records import (
 from session_evidence_stats import (
     _apply_observation_boundary,
     _elapsed_until_event,
+    _observation_prefix,
     _parse_cli_timestamp,
     _stats_events,
 )
@@ -476,7 +477,8 @@ def main(
         else:
             elapsed_events.append(event)
     if boundary is not None:
-        records = _apply_observation_boundary(records, boundary)
+        limit = _observation_prefix if args.bundle is not None else _apply_observation_boundary
+        records = limit(records, boundary)
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None or args.delegation_record is not None else None
     if opencode_collected is not None:
         collected = [
@@ -505,6 +507,11 @@ def main(
     )
     if loaded is not None and loaded.gaps:
         collected[0] = collected[0]._replace(gaps=loaded.gaps)
+    if boundary is not None and args.bundle is not None:
+        collected = [
+            item._replace(records=_observation_prefix(item.records, boundary)) if item.role != "main" else item
+            for item in collected
+        ]
     gaps = [event for event in _collection_events(collected, []) if event["kind"] == "record-gap"]
 
     if args.bundle is not None:

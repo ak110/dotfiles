@@ -1,3 +1,4 @@
+import json
 import pathlib
 
 import filelock
@@ -177,3 +178,25 @@ def test_finish_distinguishes_same_session_id_in_two_hosts(tmp_path, monkeypatch
     path.write_text(text.replace("| codex:same | 未着手 |", "| codex:same | 完了 |"), encoding="utf-8")
     assert session_review_state.main(["finish"]) == 0
     assert writer.load().analysis_succeeded
+
+
+def test_show_target_avoids_running_batch_without_waiting(capsys):
+    session_review.record({"hook_event_name": "SessionStart", "session_id": "mine"}, host="codex")
+    root = session_review.directory()
+    runs = root / "runs"
+    runs.mkdir()
+    writer = session_review.BatchWriter(runs / "batch.json")
+    writer.create({"run_id": "batch", "targets": session_review.pending()})
+
+    def status(host, session_id):
+        assert session_review_state.main(["show", "--target", host, session_id]) == 0
+        return json.loads(capsys.readouterr().out)
+
+    assert status("codex", "mine") == {"status": "batch", "batch_run_id": "batch", "processed_scope": None}
+    assert status("claude", "mine")["status"] == "available"
+    with filelock.FileLock(root / "batch.lock"):
+        assert status("codex", "mine")["status"] == "batch-busy"
+    writer.fail("failure", "実行できない")
+    assert status("codex", "mine")["status"] == "available"
+    writer.report_failure(synced=False)
+    assert status("codex", "mine")["status"] == "batch"

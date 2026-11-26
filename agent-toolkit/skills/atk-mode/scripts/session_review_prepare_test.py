@@ -101,6 +101,59 @@ def test_agents_session_id_unresolved_returns_next_action(session_id, capsys):
     assert "次の操作:" in output.err and "atk agents show" in output.err
 
 
+def test_resumed_review_keeps_two_boundaries_and_does_not_commit_interrupted_work(tmp_path, capsys):
+    path = tmp_path / "same.jsonl"
+    entries = [
+        support.timestamped_entry("2026-09-06T12:00:01Z", "前の区間で確定した依頼"),
+        support.timestamped_entry("2026-09-06T12:01:01Z", "最初の再開までの依頼"),
+        support.timestamped_entry("2026-09-06T12:02:01Z", "二度目の再開までの依頼"),
+        support.timestamped_entry("2026-09-06T12:03:01Z", "いま進めている新着"),
+    ]
+    support.write_jsonl(path, entries)
+    payload = {"hook_event_name": "SessionStart", "session_id": path.stem, "transcript_path": str(path)}
+    assert session_review.record(payload, host="claude")
+    target = {"host": "claude", "session_id": path.stem}
+
+    def prepared(label, minute):
+        output = tmp_path / label
+        output.mkdir()
+        args = [
+            "--transcript",
+            str(path),
+            "--work-dir",
+            str(output),
+            "--observation-boundary",
+            f"2026-09-06T12:0{minute}:59Z",
+        ]
+        assert prepare.main(args, now=_FIXED_NOW) == 0
+        result = json.loads(capsys.readouterr().out)
+        saved = output / "prepare.json"
+        session_review.write(saved, result)
+        return saved, pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
+
+    def commit(saved):
+        assert session_review_state.main(["complete", "--prepared", str(saved)]) == 0
+        capsys.readouterr()
+
+    seed, _ = prepared("seed", 0)
+    commit(seed)
+    prior = session_review.previous_scope(target)
+    assert prior is not None
+    before = prior.read_bytes()
+    _, interrupted = prepared("interrupted", 1)
+    assert prior.read_bytes() == before
+    assert "最初の再開までの依頼" in interrupted and "二度目の再開までの依頼" not in interrupted
+    first, restarted = prepared("restarted", 1)
+    assert "最初の再開までの依頼" in restarted and "前の区間で確定した依頼" not in restarted
+    commit(first)
+    second, resumed = prepared("second", 2)
+    assert "二度目の再開までの依頼" in resumed
+    assert "最初の再開までの依頼" not in resumed and "いま進めている新着" not in resumed
+    commit(second)
+    _, latest = prepared("latest", 3)
+    assert "いま進めている新着" in latest and "二度目の再開までの依頼" not in latest
+
+
 def _hook_attachment(line_time: str, tool_use_id: str, notice: str) -> dict[str, object]:
     return {
         "type": "attachment",

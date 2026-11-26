@@ -57,6 +57,13 @@ def _apply_observation_boundary(records: list[_Record], boundary: datetime.datet
     return [record for record in records if (timestamp := _record_timestamp(record)) is None or timestamp <= boundary]
 
 
+def _observation_prefix(records: list[_Record], boundary: datetime.datetime) -> list[_Record]:
+    for index, record in enumerate(records):
+        if (timestamp := _record_timestamp(record)) is not None and timestamp > boundary:
+            return records[:index]
+    return records
+
+
 def _elapsed_until_event(records: list[_Record], until_text: str) -> dict[str, Any] | str:
     try:
         until = _parse_cli_timestamp(until_text)
