@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import typing
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
@@ -13,7 +14,14 @@ from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi.constants import WI_EDITABLE_STATES, WI_STATE_HOLD, WI_STATE_INBOX, WI_STATE_PROCESSING
+from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
+from agent_toolkit._atk.wi.constants import (
+    WI_EDITABLE_STATES,
+    WI_STATE_ADOPTED,
+    WI_STATE_HOLD,
+    WI_STATE_INBOX,
+    WI_STATE_PROCESSING,
+)
 from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action as _unrepairable_entry_next_action
 from agent_toolkit._atk.wi.entries import CommitMetadata
 from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths, unique_dated_entry_path
@@ -30,15 +38,24 @@ _MISSING_TARGET_NEXT_ACTION = "`atk wi list`で実在するファイル名を確
 
 
 def _resolve_state_targets(
-    filenames: list[str], private_notes: pathlib.Path, states: tuple[str, ...], *, missing_is_conflict: bool
+    filenames: list[str],
+    private_notes: pathlib.Path,
+    states: tuple[str, ...],
+    *,
+    missing_is_conflict: bool,
+    also: typing.Callable[[pathlib.Path], bool] = lambda _path: False,
 ) -> list[pathlib.Path]:
     names = [_wi_filenames.validate_filename(name, private_notes).name for name in filenames]
 
     dated = {name: unique_dated_entry_path(private_notes, name) for name in names}
     if all(path is not None for path in dated.values()):
-        candidates = {name: path for name, path in dated.items() if path is not None and entry_state_of(path) in states}
+        candidates = {
+            name: path for name, path in dated.items() if path is not None and (entry_state_of(path) in states or also(path))
+        }
     else:
-        candidates = {path.name: path for path in iter_entry_paths(private_notes) if entry_state_of(path) in states}
+        candidates = {
+            path.name: path for path in iter_entry_paths(private_notes) if entry_state_of(path) in states or also(path)
+        }
     missing = [name for name in names if name not in candidates]
     if missing:
         if missing_is_conflict:
@@ -243,7 +260,14 @@ def resolve_editable_targets(
     *,
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
-    return _resolve_state_targets(filenames, private_notes, WI_EDITABLE_STATES, missing_is_conflict=missing_is_conflict)
+    """編集できる項目を解決する。保存した時点で`adopted`になる報告も、再開時の更新のために含める。  pyfltr: allow-comment"""
+    return _resolve_state_targets(
+        filenames,
+        private_notes,
+        WI_EDITABLE_STATES,
+        missing_is_conflict=missing_is_conflict,
+        also=lambda path: entry_state_of(path) == WI_STATE_ADOPTED and _uwi_scan.is_report(path.read_text(encoding="utf-8")),
+    )
 
 
 def resolve_active_targets(

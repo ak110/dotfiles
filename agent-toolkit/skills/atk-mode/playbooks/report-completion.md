@@ -86,7 +86,8 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    会話圧縮や担当交代の後も同じ作業記録から復元し、`済`の対象へAWIを重ねて投入しない。
    改善点の調査と是正は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「作業中の改善点の報告」が定める。
 6. 自律モードでは、作業結果を回答を求めない報告用UWI（`--question-type=report`）としてセッションにつき1件保存する。
-   報告用UWIは保存した時点で`adopted`となり、未回答の一覧と選定の対象に入らない。
+   報告用UWIは保存した時点で`adopted`となり、質問・回答欄を持たず、未回答の一覧と選定の対象に入らない。
+   巡回の完了報告にだけ、本文のfrontmatterへ`completion_report: true`を置く（巡回の終了判定が使う。公開後の案内など途中で保存する報告には置かない）。
    本人にしか決められない事項や本人にしかできない操作が残る場合だけ、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってその事項だけを個別のUWIにし、報告の未達・持ち越しにファイル名を書く。
    エージェントが再試行・対処できる未達と、自ら確定した技術判断は、回答を求める理由にしない。
    本文と保存は`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」に従う。

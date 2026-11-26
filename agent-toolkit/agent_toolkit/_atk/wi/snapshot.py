@@ -181,7 +181,7 @@ def record_list_start(
         try:
             digest = save(path, entries)
             unanswered = identifiers(
-                entry for entry in entries if entry[4] == WI_TYPE_UWI and not uwi_scan.is_uwi_answered(entry[2])
+                entry for entry in entries if entry[4] == WI_TYPE_UWI and uwi_scan.answer_label(entry[2]) == "unanswered"
             )
             targets, configured_ids = configured_start()
             new_source = {

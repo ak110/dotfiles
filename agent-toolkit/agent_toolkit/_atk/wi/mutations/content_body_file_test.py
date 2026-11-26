@@ -191,7 +191,9 @@ class TestEditBodyFile:
             storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
             expected_content: str | None = None,
             finalized_content: dict[str, str] | None = None,
+            allow_terminal: bool = False,
         ) -> bool:
+            assert not allow_terminal
             path.write_text(path.read_text(encoding="utf-8").replace("編集前", "競合側の変更"), encoding="utf-8")
             return original_edit(
                 private_notes,

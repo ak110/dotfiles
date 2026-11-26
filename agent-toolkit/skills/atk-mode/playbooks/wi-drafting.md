@@ -4,7 +4,7 @@
 要約で埋めず、発話・資料・コードと実行結果から決まることを投入前に本文で確定し、ユーザーだけが決めることを確認する（原則1・3）。
 
 本書は、通常AWIと報告用を除くUWIを起草する者（`/atk-mode add-awi-by-user`や独立したWI投入のセッションのメイン、WI投入担当、他の作業中にUWIを書く者）が上から実行する。
-報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」に従い、報告用かは`--question-type=post-approval`ではなく同スキルの定義で決める。
+報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」に従い、`--question-type=report`で保存する。
 
 ## 手順
 

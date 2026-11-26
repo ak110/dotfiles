@@ -8,10 +8,12 @@ import datetime
 import json
 import os
 import re
+from pathlib import Path
 
 from agent_toolkit._hooks.notice import block_formatter
 lazy from agent_toolkit._atk.session_records import codex_shell_command, codex_shell_output, exit_session_in_entries
 lazy from agent_toolkit._atk.wi import process_loop_control, process_loop_log
+lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 lazy from agent_toolkit._common import session_state, transcript
 lazy from agent_toolkit._common.process_loop_session import (
     REPORT_SAVED_AT_KEY,
@@ -49,6 +51,28 @@ def _save_args(command: object) -> tuple[str, ...]:
     return args[3:]
 
 
+def _is_completion_report(args: tuple[str, ...]) -> bool:
+    """保存した本文のfrontmatterに巡回の完了報告の印（`completion_report: true`）があるかを返す。
+
+    公開後の案内など、同じ回答形式の報告を途中で保存しても終了判定に使わない。
+    pyfltr: allow-comment
+    """
+    for index, arg in enumerate(args):
+        if arg == "--body-file" and index + 1 < len(args):
+            value = args[index + 1]
+        elif arg.startswith("--body-file="):
+            value = arg.partition("=")[2]
+        else:
+            continue
+        try:
+            parsed = parse_frontmatter(Path(value).read_text(encoding="utf-8"))
+        except OSError, UnicodeError:
+            continue
+        if parsed is not None and str(parsed[0].get("completion_report")).lower() == "true":
+            return True
+    return False
+
+
 def _save_succeeded(stdout: object) -> bool:
     return isinstance(stdout, str) and _SAVE_SUCCESS.search(stdout) is not None
 
@@ -81,7 +105,7 @@ def _claude_report_saved(entries: list[dict]) -> bool:
                 if not isinstance(identifier := item.get("id"), str) or not isinstance(tool_input := item.get("input"), dict):
                     continue
                 name = item.get("name")
-                if name in ATK_SHELL_TOOLS and (args := _save_args(tool_input.get("command"))):
+                if name in ATK_SHELL_TOOLS and (args := _save_args(tool_input.get("command"))) and _is_completion_report(args):
                     pending[identifier] = args
                 elif isinstance(name, str) and name.endswith("__compact_conversation"):
                     pending[identifier] = ()
@@ -127,7 +151,7 @@ def _codex_report_saved(entries: list[dict]) -> bool:
         call_id = payload.get("call_id")
         if not isinstance(call_id, str):
             continue
-        if args := _save_args(codex_shell_command(payload)):
+        if (args := _save_args(codex_shell_command(payload))) and _is_completion_report(args):
             pending[call_id] = args
         elif (
             payload.get("type") in {"function_call_output", "custom_tool_call_output"}

@@ -301,13 +301,20 @@ def test_block_limit_below_does_not_terminate(monkeypatch: pytest.MonkeyPatch, t
         "codex-previous-log",
         "codex-previous-state",
         "codex-wrong-turn",
+        "guidance-only",
+        "codex-guidance",
     ],
 )
 def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, boundary: str) -> None:
     # 実例の行12、9866～9867、9950～9959を匿名化して縮約した。  # pyfltr: allow-comment
     ordinary = boundary in {"ordinary-save", "other-uwi", "codex-ordinary"}
     question_type = "post-approval" if ordinary else "report"
-    command = f"cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type={question_type} --body-file /report.md"
+    report_body = tmp_path / "report.md"
+    marker = "" if ordinary or boundary in {"guidance-only", "codex-guidance"} else "completion_report: true\n"
+    report_body.write_text(f"---\n{marker}---\n\n# 報告: 作業結果\n", encoding="utf-8")
+    command = (
+        f"cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type={question_type} --body-file {report_body}"
+    )
     saved = "1件をinboxへ投入した" if ordinary else "1件を報告として保存した"
     if boundary == "dry-run":
         command += " --dry-run"

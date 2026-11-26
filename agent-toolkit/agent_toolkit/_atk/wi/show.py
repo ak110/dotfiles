@@ -130,10 +130,9 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _report_missing(private_notes, validated_filenames, missing, explicit_repos, args)
             sys.exit(2)
         for path, target_repo, text, state, kind in selected_by_name:
-            answered = _wi_uwi_scan.is_uwi_answered(text)
             label = f" [{state}]"
             if kind == WI_TYPE_UWI:
-                label = f" [{state}/{'answered' if answered else 'unanswered'}]"
+                label = f" [{state}/{_wi_uwi_scan.answer_label(text)}]"
             output.write(f"## target_repo: {target_repo}")
             output.write(f"### {path.name}{label}{_branch_label(text, target_repo, branch_settings)}")
             output.body(path.name, text, kind, args)
@@ -160,7 +159,6 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         for path, target_repo, text, state, entry_type in selected:
             if entry_type != header_type:
                 continue
-            answered = _wi_uwi_scan.is_uwi_answered(text)
             entries.setdefault(target_repo, []).append((path.name, text, state))
         if entries:
             output.write(f"# {header_type}")
@@ -169,7 +167,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 for name, text, state in items:
                     label = f" [{state}]"
                     if header_type == WI_TYPE_UWI:
-                        label = f" [{state}/{'answered' if _wi_uwi_scan.is_uwi_answered(text) else 'unanswered'}]"
+                        label = f" [{state}/{_wi_uwi_scan.answer_label(text)}]"
                     output.write(f"### {name}{label}{_branch_label(text, repo, branch_settings)}")
                     output.body(name, text, header_type, args)
                     output.attachment_list(private_notes, name)

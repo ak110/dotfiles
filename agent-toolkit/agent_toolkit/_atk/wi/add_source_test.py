@@ -8,7 +8,7 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk.wi import frontmatter
+from agent_toolkit._atk.wi import filters, frontmatter, uwi_scan
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._common import session_state, uwi_watch
 from agent_toolkit._common.process_loop_session import REPORT_SAVED_AT_KEY
@@ -341,7 +341,11 @@ def test_cmd_add_records_codex_report_save(tmp_path: pathlib.Path, monkeypatch: 
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "other" if case == "other-thread" else "report-thread")
     if case == "delegated":
         monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "report-thread")
-    body = "設定変更を承認しますか？" if case == "ordinary" else "# 報告: 2026年11月23日のdotfilesの作業結果"
+    body = (
+        "設定変更を承認しますか？"
+        if case == "ordinary"
+        else "---\ncompletion_report: true\n---\n\n# 報告: 2026年11月23日のdotfilesの作業結果"
+    )
     args = _cmd_add_args(tmp_path, body, source="process-wi", entry_type=WI_TYPE_UWI, dry_run=case == "dry-run")
     args.question_type = "post-approval" if case == "ordinary" else "report"
     _run_public_add(args, notes, _FIXED_DT, tmp_path)
@@ -376,6 +380,10 @@ def test_cmd_add_report_is_saved_without_waiting_for_answer(
     assert "choices" not in parsed[0]
     assert ("1件を報告として保存した" in capsys.readouterr().out) == report
     assert bool(uwi_watch.awaiting(session_state.read_state("report-session"))) != report
+    text = saved[0].read_text(encoding="utf-8")
+    assert ("## 回答" in text) != report
+    assert uwi_scan.answer_label(text) == ("report" if report else "unanswered")
+    assert filters.answered_matches(WI_TYPE_UWI, text, ["no"]) != report
 
 
 def test_cmd_add_rejects_report_without_report_title(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

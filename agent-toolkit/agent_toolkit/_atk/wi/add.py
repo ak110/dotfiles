@@ -400,7 +400,11 @@ def add_entries_locked(
                 frontmatter_data["repair_kind"] = repair_kind
             if submitter_session is not None:
                 frontmatter_data["submitter_session"] = submitter_session
-            logical_body = f"\n{_uwi.QUESTION_HEADING}\n\n{body}\n\n{_uwi.ANSWER_HEADING}\n\n{_uwi.ANSWER_MARKER}\n"
+            logical_body = (
+                f"\n{body.rstrip()}\n"
+                if question_type == QUESTION_TYPE_REPORT
+                else f"\n{_uwi.QUESTION_HEADING}\n\n{body}\n\n{_uwi.ANSWER_HEADING}\n\n{_uwi.ANSWER_MARKER}\n"
+            )
         else:
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
             if item_dependencies:
@@ -413,7 +417,7 @@ def add_entries_locked(
         path = _wi_entries.entry_path(private_notes, filename)
         path.parent.mkdir(parents=True, exist_ok=True)
         _frontmatter.write_entry_text(path, content)
-        if entry_type != WI_TYPE_AWI:
+        if entry_type != WI_TYPE_AWI and question_type != QUESTION_TYPE_REPORT:
             _uwi.warn_question_quality(filename, body, question_type)
         generated.append((filename, content))
         counter += 1
@@ -544,6 +548,7 @@ def add_entries(
         and submitter_session == os.environ.get("CODEX_THREAD_ID")
         and entry_type == WI_TYPE_UWI
         and question_type == QUESTION_TYPE_REPORT
+        and any(str(data.get("completion_report")).lower() == "true" for data, _ in parsed_messages)
         and not _process_loop_session.record_codex_report_save(submitter_session, started_at, os.environ)
     ):
         _outcome.report_warning(

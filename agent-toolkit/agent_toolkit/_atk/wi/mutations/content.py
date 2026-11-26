@@ -19,6 +19,7 @@ from agent_toolkit._atk.wi import processing_owner as _processing_owner
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
+from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 from agent_toolkit._atk.wi.constants import (
     DETAILED_KEY,
     DETAILED_SOURCES,
@@ -392,7 +393,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     if question_type not in accepted_question_types:
         raise WebInputError(
             f"question_typeが不正です: {question_type}",
-            next_action="frontmatterのquestion_typeへchoice、yes-no、post-approvalを指定する（free-formは新しく指定できない）",
+            next_action="frontmatterのquestion_typeへchoice、yes-no、post-approval、reportを指定する（free-formは新しく指定できない）",
         )
     if question_type == _constants.QUESTION_TYPE_CHOICE and not updated_data.get("choices"):
         raise WebInputError(
@@ -404,6 +405,16 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         if "choices" in updates:
             raise WebInputError("post-approval形式の選択肢は固定です", next_action="編集本文のfrontmatterからchoicesを外す")
         updated_data.pop("choices", None)
+
+    if question_type == _constants.QUESTION_TYPE_REPORT or stored_data.get("question_type") == _constants.QUESTION_TYPE_REPORT:
+        if question_type != stored_data.get("question_type"):
+            raise WebInputError(
+                "報告と質問の回答形式は相互に変えられない",
+                next_action="frontmatterのquestion_typeを保存済みの値に戻し、質問が必要なら別のUWIとして投入する",
+            )
+        return _frontmatter.serialize_frontmatter(
+            updated_data, "\n" + _strip_trailing_blank_lines(normalized_message_body) + "\n"
+        )
 
     marker_index = stored_body.rfind(_uwi.ANSWER_MARKER)
     if marker_index < 0:
@@ -769,6 +780,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             target_repo=args.target_repo,
             expected_content=original,
             finalized_content=finalized_content,
+            allow_terminal=_uwi_scan.is_report(original),
         )
     except RuntimeError:
         if tmp_path is None:
