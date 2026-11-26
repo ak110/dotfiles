@@ -335,7 +335,11 @@ def _codex_policy_delivery(transcript: str, modifier: str, corrected: int) -> in
             moment = int(datetime.datetime.fromisoformat(stamp).timestamp() * 1000) * 1_000_000
         except ValueError:
             continue
-        if _policy_modifier(text) == modifier and moment >= corrected // 1_000_000 * 1_000_000:
+        if (
+            _policy_modifier(text) == modifier
+            and text.partition("\n")[2].strip()
+            and moment >= corrected // 1_000_000 * 1_000_000
+        ):
             delivered = moment
     return delivered
 

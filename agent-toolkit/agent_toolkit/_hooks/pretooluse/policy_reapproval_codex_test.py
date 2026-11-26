@@ -82,6 +82,7 @@ def test_codex_policy_reapproval_accepts_revision_in_assistant_text(
     write("進捗: 改訂版を作成中")
     write("方針（案）\n目標: ユーザーの発話", role="user", kind="input_text")
     write("方針（案） 2件目の\n目標: 別の方針")
+    write("方針（案）\n \n")
     ask("progress-only", approved)
     assert blocked()
     write("方針（案）\n目標: 既存の一行だけを確定する")
