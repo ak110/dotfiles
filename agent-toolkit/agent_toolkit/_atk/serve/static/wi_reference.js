@@ -23,7 +23,7 @@ export function decorateWiReferences(container) {
     if (!response.ok) throw new Error(String(response.status));
     const result = await response.json();
     return Array.isArray(result.names) ? result.names.filter(name => typeof name === "string") : [];
-  }).then(names => (legacyNames = names)).catch(() => []);
+  }).then(names => (legacyNames = names)).catch(() => []).finally(() => { legacyRequest = undefined; });
   void legacyRequest.then(names => {
     if (container.isConnected && names.length) linkWiReferences(container, {referenced_wi_names: names});
   });
