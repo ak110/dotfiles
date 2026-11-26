@@ -148,7 +148,7 @@ def take_rejections(session_id: str, checks: set[str], message: str) -> dict[str
         if entry is None:
             if checks:
                 return None
-            seen[key] = {"status": "reserved", "sources": {}}
+            seen[key] = _Rejection(status="reserved", sources={})
             return state
         if entry["status"] != "pending" or checks - entry["sources"].keys():
             return None
