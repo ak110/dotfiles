@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import os
@@ -13,6 +14,8 @@ from agent_toolkit._atk.serve import sessions_local
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_app,
     _browser_fixture,
+    _screen_harness_fixture,
+    _ScreenHarness,
     _serve,
     _write_session_records,
 )
@@ -51,8 +54,7 @@ async def test_agent_record_link_and_independent_remote_failure(
         await page.goto(f"http://127.0.0.1:{port}/agents")
         panel = page.locator("#agents-hosts")
         banner = page.locator("#update-status")
-        await playwright.async_api.expect(banner).to_contain_text("接続先のdotfilesを更新してください")
-        await playwright.async_api.expect(banner).to_contain_text("old-host")
+        await playwright.async_api.expect(banner).to_contain_text("old-hostのエージェント一覧を取得できません。")
         await playwright.async_api.expect(banner.get_by_role("button", name="再取得")).to_be_visible()
         await playwright.async_api.expect(panel).to_contain_text("セッション画面で扱いません")
         await playwright.async_api.expect(panel).not_to_contain_text(re.compile(r"[\u2500-\u257f]"))
@@ -192,3 +194,28 @@ async def test_agent_activity_records_drive_root_states(
             await playwright.async_api.expect(grandchild.locator(".agent-elapsed")).to_have_css(
                 "font-variant-numeric", "tabular-nums"
             )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_agent_filter_abandons_old_failure(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    first = asyncio.Event()
+    release = asyncio.Event()
+
+    async def serve_list(route: playwright.async_api.Route) -> None:
+        if "terminated=0" in route.request.url:
+            first.set()
+            await release.wait()
+            await route.fulfill(status=503)
+        else:
+            await route.fulfill(json={"roots": []})
+
+    await page.route("**/api/agents/list?*", serve_list)
+    try:
+        await page.goto(screen_harness.base_url + "/agents")
+        await asyncio.wait_for(first.wait(), 5)
+        async with page.expect_response(lambda response: "terminated=1" in response.url):
+            await page.locator("#agents-terminated").check()
+        await playwright.async_api.expect(page.locator("#update-status")).to_be_hidden()
+    finally:
+        release.set()

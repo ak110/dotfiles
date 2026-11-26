@@ -1,7 +1,8 @@
+import {readFailure} from "./common.js";
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, setUpdateError, createReadRecovery, setDisplayedReadError
 } from "./common.js";
 import {createSessionDetail} from "./sessions_detail.js";
 import {registerScreen} from "./shell.js";
@@ -239,6 +240,34 @@ function payloadNotifyDelay(payload) {
 }
 
 const loadList = coalesced(fetchList);
+let remoteRetry;
+const remoteFailures = new Map();
+
+function showListWarnings(warnings) {
+  const failed = new Set(warnings.filter(warning => warning.retryable === "true").map(warning => warning.host));
+  renderWarnings(warningsEl, warnings.filter(warning => warning.retryable !== "true").map(warning =>
+    diagnostic("セッション", warning.host, warning.path || warning.root || "記録一覧", warning.reason)));
+  clearTimeout(remoteRetry);
+  for (const host of remoteFailures.keys()) {
+    if (!failed.has(host)) {
+      remoteFailures.delete(host);
+      setUpdateError("sessions", `host:${host}`);
+    }
+  }
+  if (!failed.size) return;
+  let delay = 30_000;
+  for (const host of failed) {
+    const attempts = (remoteFailures.get(host) ?? 0) + 1;
+    remoteFailures.set(host, attempts);
+    delay = Math.min(delay, 1500 * 2 ** Math.min(5, attempts - 1));
+    if (attempts >= 2) {
+      setUpdateError("sessions", `host:${host}`, `${host}のセッション一覧を取得できません。`, loadList);
+    }
+  }
+  remoteRetry = setTimeout(() => {
+    if (document.body.dataset.screen === "sessions") void loadList();
+  }, delay);
+}
 
 async function fetchList(timing = {}) {
   try {
@@ -247,7 +276,10 @@ async function fetchList(timing = {}) {
     const payload = await (response.json());
     const previousKeys = new Set(sessions.map(sessionKey));
     const hadMetadataMatch = queryText && sessions.some(matchesMetadata);
-    sessions = payload.sessions || [];
+    const warnings = payload.warnings || [];
+    showListWarnings(warnings);
+    const failed = new Set(warnings.filter(warning => warning.retryable !== undefined).map(warning => warning.host));
+    sessions = [...(payload.sessions || []), ...sessions.filter(entry => failed.has(entry.host))];
     const hasMetadataMatch = queryText && sessions.some(matchesMetadata);
     if (hasMetadataMatch) cancelFullTextSearch();
     const currentKeys = new Set(sessions.map(sessionKey));
@@ -260,9 +292,7 @@ async function fetchList(timing = {}) {
       if (location.pathname.endsWith("/sessions") && location.search) history.replaceState({atkSession: true}, "", location.pathname);
     }
     sessionRoots = payload.roots || [];
-    renderWarnings(warningsEl, (payload.warnings || []).map((warning) =>
-      diagnostic("セッション", warning.host, warning.path || warning.root || "記録一覧", warning.reason)));
-    document.getElementById("sessions-list-error").hidden = true;
+    setUpdateError("sessions", "list");
     const searched = fullTextMatches !== null || fullTextRequest !== null;
     if (queryText && !hasMetadataMatch && (hadMetadataMatch || (searched && listChanged))
         && queryText === filterEl.value.trim().toLowerCase()) {
@@ -271,16 +301,7 @@ async function fetchList(timing = {}) {
       renderSessions();
     }
   } catch (error) {
-    const box = document.getElementById("sessions-list-error");
-    box.replaceChildren();
-    const message = document.createElement("span");
-    message.textContent = diagnostic("セッション", SERVE_HOST, "一覧取得", `セッション一覧を取得できません: ${error.message} `);
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.textContent = "再読み込み";
-    retry.addEventListener("click", loadList);
-    box.append(message, retry);
-    box.hidden = false;
+    if (error.name !== "AbortError") setDisplayedReadError("sessions", "list", "セッション一覧を取得できません。", loadList);
   }
 }
 
@@ -352,6 +373,7 @@ function cancelFullTextSearch() {
 
 async function applySessionFilter() {
   cancelFullTextSearch();
+  setUpdateError("sessions", "search");
   queryText = filterEl.value.trim().toLowerCase();
   visibleLimit = 100;
   if (!queryText || sessions.some(matchesFilter)) {
@@ -362,24 +384,47 @@ async function applySessionFilter() {
   fullTextRequest = request;
   fullTextStatus = "セッション本文を検索しています。";
   renderSessions();
-  try {
-    const response = await timedFetch("sessions", `${BASE_PATH}/api/sessions/search`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({query: queryText}),
-      signal: request.signal,
-    });
-    if (!response.ok) throw new Error(`全文検索に失敗しました (${response.status})`);
-    const payload = await response.json();
-    if (fullTextRequest !== request) return;
-    fullTextMatches = new Set(payload.matches.map(match => JSON.stringify(match)));
-    fullTextStatus = payload.incomplete ? "一部のセッション本文を検索できませんでした。" : "";
-  } catch {
-    if (fullTextRequest !== request) return;
-    fullTextStatus = "セッション本文を検索できませんでした。";
-  }
-  fullTextRequest = null;
-  renderSessions();
+  let targets;
+  const matches = new Set();
+  const unavailable = new Set();
+  const run = createReadRecovery(request.signal, async failures => {
+    try {
+      const response = await timedFetch("sessions", `${BASE_PATH}/api/sessions/search`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({query: queryText, ...(targets ? {retry: targets} : {})}),
+        signal: request.signal,
+      });
+      if (!response.ok) {
+        if (readFailure(response.status) === "temporary") throw new Error();
+        fullTextStatus = "セッションを検索できません。";
+      } else {
+        const payload = await response.json();
+        if (fullTextRequest !== request) return false;
+        for (const match of payload.matches) matches.add(JSON.stringify(match));
+        for (const host of payload.unavailable ?? []) unavailable.add(host);
+        fullTextMatches = matches;
+        fullTextStatus = unavailable.size || (payload.incomplete && !payload.retry) ?
+          "検索できない記録があります。" : "";
+        targets = payload.retry;
+        if (targets && Object.keys(targets).length) {
+          if (failures) setUpdateError("sessions", "search", "一部のセッションを検索できません。", run);
+          renderSessions();
+          return true;
+        }
+      }
+      setUpdateError("sessions", "search");
+      fullTextRequest = null;
+      renderSessions();
+      return false;
+    } catch {
+      if (fullTextRequest !== request) return false;
+      setUpdateError("sessions", "search", "セッションを検索できません。", run);
+      renderSessions();
+      return true;
+    }
+  });
+  await run();
 }
 
 function selectedRecordFromUrl() {
@@ -395,6 +440,13 @@ async function init() {
   warningsEl = document.getElementById("warnings");
   detail.init();
   filterEl = document.getElementById("sessions-filter");
+  document.addEventListener("atk-screen-change", () => {
+    if (document.body.dataset.screen !== "sessions") {
+      clearTimeout(filterTimer);
+      cancelFullTextSearch();
+      setUpdateError("sessions", "search");
+    } else if (filterEl.value.trim()) void applySessionFilter();
+  });
   filterEl.addEventListener("input", () => {
     clearTimeout(filterTimer);
     cancelFullTextSearch();

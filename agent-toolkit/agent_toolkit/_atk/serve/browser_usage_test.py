@@ -49,7 +49,7 @@ async def test_usage_displays_observations_and_refresh_failure_without_losing_va
         return {
             "refresh_context": usage_settings.context_id(),
             "last_refresh_at": time.time(),
-            "refresh_failures": ["Codex: 接続できない"] if force else [],
+            "refresh_failures": ["Codex: 接続できない"] if started.is_set() else [],
         }
 
     monkeypatch.setattr(usage_refresh, "refresh_for_display", refresh_for_display)
@@ -69,8 +69,8 @@ async def test_usage_displays_observations_and_refresh_failure_without_losing_va
         await expect(screen.get_by_role("progressbar")).to_be_visible()
     finally:
         release.set()
-    await expect(page.locator("#update-status")).to_contain_text("取得に失敗した項目")
-    await expect(screen.get_by_text("取得失敗: Codex:", exact=False)).to_contain_text("最後の観測")
+    await expect(page.locator("#update-status")).to_contain_text("利用枠を取得できません。")
+    await expect(screen.get_by_text("取得失敗: Codex:", exact=False)).to_have_count(0)
     await expect(screen.get_by_role("progressbar")).to_have_attribute("value", "80")
     assert started.is_set()
     await screen.get_by_role("link", name="リセットの許可を設定").click()
@@ -111,7 +111,7 @@ async def test_usage_fetch_is_scoped_to_the_visible_screen(
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_visible_usage_retries_every_five_minutes(
+async def test_usage_recovers_without_showing_first_failure(
     screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     attempts = 0
@@ -130,8 +130,38 @@ async def test_visible_usage_retries_every_five_minutes(
     await page.clock.install()
     await page.goto(screen_harness.base_url + "/usage")
     banner = page.locator("#update-status")
-    await playwright.async_api.expect(banner).to_be_visible()
-    assert attempts == 1
-    await page.clock.fast_forward(300_000)
+    await playwright.async_api.expect(page.locator("#screen-usage .metric-section").first).to_be_visible()
+    await playwright.async_api.expect(banner).to_be_hidden()
+    await page.clock.fast_forward(1800)
+    await playwright.async_api.expect(page.locator("#screen-usage").get_by_role("button", name="再取得")).to_be_enabled()
     await playwright.async_api.expect(banner).to_be_hidden()
     assert attempts == 2
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_repeated_usage_failure_has_only_one_recovery_action(
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempts = 0
+
+    def refresh_for_display(**_kwargs):
+        nonlocal attempts
+        attempts += 1
+        return {
+            "refresh_context": usage_settings.context_id(),
+            "last_refresh_at": time.time(),
+            "refresh_failures": ["Codex: 一時失敗"] if attempts <= 2 else [],
+        }
+
+    monkeypatch.setattr(usage_refresh, "refresh_for_display", refresh_for_display)
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/usage")
+    expect = playwright.async_api.expect
+    banner = page.locator("#update-status")
+    await expect(banner).to_be_hidden()
+    await expect(banner).to_contain_text("利用枠を取得できません。")
+    assert attempts == 2
+    await expect(page.get_by_role("button", name="再取得", exact=True)).to_have_count(1)
+    await banner.get_by_role("button", name="再取得").click()
+    await expect(banner).to_be_hidden()
+    assert attempts == 3

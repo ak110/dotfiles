@@ -56,6 +56,38 @@ class RemoteHelperError(Exception):
     def __init__(self, returncode: int, stderr: bytes) -> None:
         super().__init__(f"リモートヘルパーの実行が終了コード{returncode}で失敗しました: {stderr_excerpt(stderr)}")
         self.returncode = returncode
+        diagnostic = stderr.lower()
+        self.status = (
+            503
+            if returncode == _SSH_CONNECTION_FAILED
+            and not any(
+                marker in diagnostic
+                for marker in (
+                    b"permission denied",
+                    b"host key verification failed",
+                    b"authentication failed",
+                )
+            )
+            else 403
+        )
+
+
+def read_failure_status(error: Exception) -> int:
+    if isinstance(error, RemoteHelperError):
+        return error.status
+    if isinstance(error, FileNotFoundError):
+        return 404
+    if isinstance(error, (TimeoutError, ConnectionError, subprocess.TimeoutExpired)):
+        return 503
+    return 403
+
+
+def raise_read_failure(status: int) -> typing.NoReturn:
+    if status == 404:
+        raise FileNotFoundError("記録が見つかりません。")
+    if status == 503:
+        raise TimeoutError("記録を一時的に取得できません。")
+    raise PermissionError("記録を読み取れません。")
 
 
 def stderr_excerpt(stderr: bytes) -> str:

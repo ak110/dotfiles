@@ -6,6 +6,8 @@
 
 ## ユーザビリティレビューの判定
 
+読み取りに障害を注入した実描画で、取得中・短い障害からの回復・継続失敗を、`agent-basics:writing-standards/references/ui-ux.md`「視覚と構造」の自動更新の基準に照らして判定する。
+
 1. 提出された成功手順に頼らず、原要求と変更前の通常利用から開始状態と代表作業を選ぶ。
 2. `agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」に従い、Webはブラウザー、ネイティブGUIは対象OSで変更後の画面を描画・操作する。
    Web画面では`agent-basics:writing-standards/references/ui-ux-web-rules.md`と該当するModern Web Guidanceを使う。

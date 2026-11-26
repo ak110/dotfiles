@@ -39,30 +39,23 @@ async def test_global_error_closed_during_sync_restores_refresh_focus(
         await release_sync.wait()
         await route.fulfill(response=response)
 
-    async def fail_entries(route: playwright.async_api.Route) -> None:
-        await route.fulfill(
-            status=500,
-            content_type="application/json",
-            body='{"error":"一覧取得失敗"}',
-        )
-
     await page.route("**/api/sync", delay_sync)
     await refresh_button.click()
-    await asyncio.wait_for(sync_started.wait(), timeout=5)
-    await playwright.async_api.expect(refresh_button).to_be_disabled()
+    try:
+        await asyncio.wait_for(sync_started.wait(), timeout=5)
+        await playwright.async_api.expect(refresh_button).to_be_disabled()
 
-    await page.route("**/api/entries?*", fail_entries)
+        await page.locator('.entry-select[data-key="awi.md"]').click()
+        await page.get_by_role("dialog", name="詳細").get_by_role("button", name="削除", exact=True).click()
+        await page.locator("#delete-submit-button").click()
+        await playwright.async_api.expect(page.locator("#operation-notice")).to_contain_text("削除しました。")
 
-    await page.locator("#kind-filter").dispatch_event("change")
-    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_visible()
-    await page.unroute("**/api/entries?*", fail_entries)
-
-    await close_button.focus()
-    await close_button.click()
-    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
-    await playwright.async_api.expect(refresh_button).to_be_disabled()
-
-    release_sync.set()
+        await close_button.focus()
+        await close_button.click()
+        await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
+        await playwright.async_api.expect(refresh_button).to_be_disabled()
+    finally:
+        release_sync.set()
     await playwright.async_api.expect(refresh_button).to_be_enabled()
     await playwright.async_api.expect(refresh_button).to_be_focused()
     await page.unroute("**/api/sync", delay_sync)
@@ -136,8 +129,10 @@ async def test_background_sync_failure_offers_retry_in_browser(browser_harness: 
     await page.goto(harness.base_url + "/")
     await page.locator('.entry-select[data-key="awi.md"]').wait_for(state="visible")
     harness.current_state.publish("sync-error")
-    status = page.locator("#connection-status")
-    await playwright.async_api.expect(status).to_contain_text("今すぐ同期")
+    status = page.locator("#update-status")
+    await playwright.async_api.expect(status).to_be_hidden()
+    harness.current_state.publish("sync-error")
+    await playwright.async_api.expect(status).to_contain_text("WIを同期できません。")
     await playwright.async_api.expect(status).to_be_visible()
     harness.current_state.publish("sync-ok")
     await playwright.async_api.expect(status).to_be_hidden()
@@ -171,6 +166,80 @@ async def test_work_item_list_failure_names_server_and_operation(screen_harness:
     page = harness.page
     await page.route("**/api/entries?*", lambda route: route.fulfill(status=503, json={"error": "同じ取得失敗"}))
     await page.goto(harness.base_url + "/")
-    notice = page.locator("#operation-notice")
-    await playwright.async_api.expect(notice).to_contain_text(f"WI / browser-test / {harness.root.parent} / 一覧取得")
-    await playwright.async_api.expect(notice).to_contain_text("同じ取得失敗")
+    notice = page.locator("#update-status")
+    await playwright.async_api.expect(notice).to_contain_text("WI一覧を取得できません。")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_detail_retry_preserves_unsaved_input(browser_harness: _BrowserHarness) -> None:
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator('.entry-select[data-key="awi.md"]').click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.get_by_role("button", name="編集", exact=True).click()
+    field = detail.locator("#edit-content")
+    await field.fill("編集途中の本文")
+    await page.evaluate("""() => {
+        const alert = document.getElementById("detail-alert");
+        alert.hidden = false;
+        alert.textContent = "既存の保存結果";
+    }""")
+    attempts = 0
+
+    async def fail_twice(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 2:
+            await route.fulfill(status=503, json={"error": "一時失敗"})
+        else:
+            await route.continue_()
+
+    await page.route("**/api/entries/awi.md", fail_twice)
+    browser_harness.current_state.publish()
+    notice = detail.locator("#update-status")
+    expect = playwright.async_api.expect
+    await expect(notice).to_be_hidden()
+    await expect(notice).to_contain_text("WIの詳細を取得できません。")
+    assert attempts == 2
+    await expect(field).to_have_value("編集途中の本文")
+    await notice.get_by_role("button", name="再取得").press("Enter")
+    await expect(notice).to_be_hidden()
+    await expect(field).to_be_focused()
+    await expect(detail.locator("#detail-alert")).to_have_text("既存の保存結果")
+    assert attempts == 3
+    await expect(field).to_have_value("編集途中の本文")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_shared_failure_notice_has_one_sentence_and_one_action(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    for endpoint in ("entries?*", "branches"):
+        await page.route(f"**/api/{endpoint}", lambda route: route.fulfill(status=503))
+    await page.goto(screen_harness.base_url + "/")
+    notice = page.locator("#update-status")
+    await playwright.async_api.expect(notice.get_by_role("status")).to_have_text("一部の情報を更新できません。")
+    await playwright.async_api.expect(notice.get_by_role("button", name="再取得")).to_have_count(1)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_normal_detail_deleted_after_retry_clears_common_notice(browser_harness: _BrowserHarness) -> None:
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator('.entry-select[data-key="awi.md"]').click()
+    attempts = 0
+
+    async def fail_then_missing(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        await route.fulfill(status=503 if attempts <= 2 else 404)
+
+    await page.route("**/api/entries/awi.md", fail_then_missing)
+    browser_harness.current_state.publish()
+    notice = page.locator("#update-status")
+    expect = playwright.async_api.expect
+    await expect(notice).to_contain_text("WIの詳細を取得できません。")
+    await notice.get_by_role("button", name="再取得").click()
+    await expect(notice).to_be_hidden()
+    await expect(page.get_by_role("dialog", name="詳細")).to_be_hidden()
+    await expect(page.locator("#operation-notice")).to_contain_text("削除されたため")
+    assert attempts == 3

@@ -6,8 +6,7 @@ from agent_toolkit._atk.serve import assets
 from agent_toolkit._testing.serve_support import _run_node_ui
 
 
-def test_assets_execute_error_paths_across_binding_and_initialization_code() -> None:
-    """外部変更の再読込と初期化のどちらで失敗しても、失敗メッセージを操作通知へ表示する。"""
+def test_notification_lookup_failure_stays_silent_but_initialization_failure_is_visible() -> None:
     result = _run_node_ui(
         """
 document.body.dataset.screen = 'wi';
@@ -29,7 +28,7 @@ process.stdout.write(JSON.stringify({reloadError, initializationError: elements[
 """
     )
     assert result == {
-        "reloadError": "［WI / node-test / /notes / 操作］外部更新失敗",
+        "reloadError": "",
         "initializationError": "［WI / node-test / /notes / 操作］初期化失敗",
     }
 

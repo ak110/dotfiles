@@ -269,7 +269,7 @@ def _read_record_file(raw_path: str) -> tuple[pathlib.Path, list[dict[str, typin
     path = pathlib.Path(raw_path)
     try:
         data = path.read_bytes()
-    except OSError as error:
+    except FileNotFoundError as error:
         raise SessionNotFoundError(raw_path) from error
     if len(data) > MAX_RECORD_BYTES:
         raise SessionNotFoundError(f"{raw_path}（記録が大きすぎます）")
@@ -328,7 +328,7 @@ def estimate_local_family(
     path = pathlib.Path(raw_path)
     try:
         size = path.stat().st_size
-    except OSError as error:
+    except FileNotFoundError as error:
         raise SessionNotFoundError(raw_path) from error
     if size > MAX_RECORD_BYTES:
         raise SessionNotFoundError(f"{raw_path}（記録が大きすぎます）")

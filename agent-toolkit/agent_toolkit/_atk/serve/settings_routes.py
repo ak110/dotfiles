@@ -10,7 +10,7 @@ import typing
 
 import quart
 
-from agent_toolkit._atk import config, config_migration, config_settings, git_sync
+from agent_toolkit._atk import config, config_migration, config_settings, git_sync, usage_refresh
 from agent_toolkit._atk.serve.config import ServeConfig
 from agent_toolkit._atk.serve.shell_routes import json_no_store, no_store, render_index, safe_base_path
 from agent_toolkit._atk.wi.web_input import WebInputError, web_input_error_from
@@ -33,7 +33,7 @@ def _setting_timeout(operation: str, payload: dict[str, typing.Any] | None) -> i
         )
         if action == "preset" or writes_shared:
             return int(git_sync.LOCK_WAIT_TIMEOUT_SECONDS + git_sync.LOCK_HOLD_TIMEOUT_SECONDS) + 20
-    return 20
+    return 100 if operation.endswith(" --observe-usage") else 20
 
 
 def _ssh(host: str, operation: str, payload: dict[str, typing.Any] | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -82,7 +82,9 @@ class _ReadOnlyUnsupported(Exception):
     pass
 
 
-def _remote_snapshot(host: str, *, read_only: bool = False) -> tuple[dict[str, typing.Any], _ConfigRunner]:
+def _remote_snapshot(
+    host: str, *, read_only: bool = False, observe_usage: bool = False
+) -> tuple[dict[str, typing.Any], _ConfigRunner]:
     platform = _ssh(host, "uname -s")
     if platform.returncode == 255:
         raise WebInputError("SSH先に接続できません", next_action="接続先とSSHの接続を確認する")
@@ -93,6 +95,8 @@ def _remote_snapshot(host: str, *, read_only: bool = False) -> tuple[dict[str, t
         else _ssh_unelevated
     )
     operation = "atk config snapshot --read-only" if read_only else "atk config snapshot"
+    if observe_usage and read_only:
+        operation += " --observe-usage"
     result = runner(host, operation, None)
     if result.returncode == 0:
         snapshot = json.loads(result.stdout)
@@ -224,10 +228,13 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
             }
         )
 
-    async def refresh_remote(host: str) -> None:
+    async def read_remote(host: str, observe_usage: bool) -> None:
         async with locks.setdefault(host, asyncio.Lock()):
             try:
-                snapshot, _ = await asyncio.to_thread(_remote_snapshot, host, read_only=True)
+                if observe_usage:
+                    snapshot, _ = await asyncio.to_thread(_remote_snapshot, host, read_only=True, observe_usage=True)
+                else:
+                    snapshot, _ = await asyncio.to_thread(_remote_snapshot, host, read_only=True)
             except _ReadOnlyUnsupported:
                 unsupported.add(host)
                 errors.pop(host, None)
@@ -236,6 +243,16 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
             else:
                 unsupported.discard(host)
                 remember_snapshot(host, snapshot)
+
+    pending: dict[str, asyncio.Task[None]] = {}
+
+    async def refresh_remote(host: str, *, observe_usage: bool = False) -> None:
+        task = pending.get(host)
+        if task is None:
+            task = asyncio.create_task(read_remote(host, observe_usage))
+            pending[host] = task
+            task.add_done_callback(lambda _: pending.pop(host, None))
+        await asyncio.shield(task)
 
     async def refresh_remotes() -> None:
         shutdown = typing.cast(asyncio.Event, app.shutdown_event)
@@ -271,15 +288,24 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
         try:
             host = await asyncio.to_thread(_request_host)
             background = quart.request.args.get("background") == "1"
-            if background and quart.request.args.get("retry") == "1":
+            observe_usage = background and quart.request.args.get("observe_usage") == "1"
+            if observe_usage and not host:
+                await asyncio.to_thread(usage_refresh.refresh_for_display)
+            if observe_usage and host and snapshots.get(host, {}).get("can_observe_usage"):
+                await refresh_remote(host, observe_usage=True)
+            elif background and quart.request.args.get("retry") == "1":
                 hosts = (host,) if host else await asyncio.to_thread(_remote_hosts, read_only=True)
+                if not host:
+                    hosts = tuple(name for name in hosts if name in errors)
                 await asyncio.gather(*(refresh_remote(name) for name in hosts if name not in unsupported))
             if background and host:
+                current = snapshots.get(host)
+                if current is None or host in errors:
+                    response = json_no_store({"error": errors.get(host, "設定を取得できません。")})
+                    response.status_code = 503
+                    return response
                 hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
-                background_snapshot = snapshots.get(host)
-                if background_snapshot is None or host in errors:
-                    raise ValueError(errors.get(host, "リモート設定の自動取得を待っています"))
-                return with_host_status(background_snapshot, hosts)
+                return with_host_status(current, hosts)
             if host and quart.request.args.get("cached") == "1" and host in snapshots:
                 hosts = await asyncio.to_thread(_remote_hosts)
                 cached = snapshots.get(host)

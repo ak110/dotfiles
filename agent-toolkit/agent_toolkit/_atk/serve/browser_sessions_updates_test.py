@@ -354,8 +354,8 @@ async def test_session_failures_preserve_host_engine_and_record(screen_harness: 
         await page.route("**/api/sessions/detail?*", lambda route: route.fulfill(status=503, json={"error": "同じ失敗"}))
     await page.goto(harness.base_url + "/sessions")
     if failure == "list":
-        alert = page.locator("#sessions-list-error")
-        await playwright.async_api.expect(alert).to_contain_text("browser-test / 一覧取得")
+        alert = page.locator("#update-status")
+        await playwright.async_api.expect(alert).to_contain_text("セッション一覧を取得できません。")
         return
     item = page.locator('#sessions .session-item[data-engine="claude"]').first
     path = await item.get_attribute("data-path")
@@ -367,6 +367,9 @@ async def test_session_failures_preserve_host_engine_and_record(screen_harness: 
             "**/api/sessions/list", lambda route: route.fulfill(json={"sessions": [], "warnings": [], "roots": []})
         )
         await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    if failure == "detail":
+        await playwright.async_api.expect(page.locator("#update-status")).to_contain_text("セッションの詳細を取得できません。")
+        return
     alert = page.locator("#detail")
     await playwright.async_api.expect(alert).to_contain_text("セッション / browser-test / Claude")
     await playwright.async_api.expect(alert).to_contain_text(path)
@@ -392,8 +395,8 @@ async def test_session_connection_failure_uses_shared_status_and_recovers(screen
         window.sessionSource.dispatchEvent(new Event("error"));
     }""")
     banner = page.locator("#update-status")
-    await playwright.async_api.expect(banner).to_contain_text("再接続中")
-    await banner.get_by_role("button", name="再取得").click()
+    await playwright.async_api.expect(banner).to_be_hidden()
+    await page.wait_for_function("window.sessionSource.readyState === EventSource.OPEN")
     await playwright.async_api.expect(banner).to_be_hidden()
 
 
@@ -449,3 +452,31 @@ async def test_focused_session_control_survives_append(screen_harness: _ScreenHa
     )
     await page.wait_for_function("(el) => !el.isConnected", arg=old)
     await playwright.async_api.expect(button).to_be_focused()
+
+
+@pytest.mark.parametrize("terminal", [403, 404])
+@pytest.mark.parametrize("warm", [False, True])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_retry_reports_terminal_failure(screen_harness: _ScreenHarness, terminal: int, warm: bool) -> None:
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    item = page.locator("#sessions .session-item").first
+    if warm:
+        await item.click()
+        await page.locator("#detail .event").first.wait_for(state="visible")
+    calls = 0
+
+    async def inject(route):
+        nonlocal calls
+        calls += 1
+        await route.fulfill(status=503 if calls <= 2 else terminal, json={})
+
+    await page.route("**/api/sessions/detail?*", inject)
+    if warm:
+        await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    else:
+        await item.click()
+    expected = "見つかりません" if terminal == 404 else "取得できません"
+    await playwright.async_api.expect(page.locator("#detail")).to_contain_text(expected, timeout=15000)
+    await playwright.async_api.expect(page.locator("#update-status")).to_be_hidden()
+    assert calls == 3

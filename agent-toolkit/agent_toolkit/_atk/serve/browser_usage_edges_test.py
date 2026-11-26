@@ -245,9 +245,9 @@ async def test_failed_refresh_displays_newer_independent_observation(
         observe(45, now)
     finally:
         release.set()
-    await expect(status).to_contain_text("取得に失敗した項目")
+    await expect(status).to_contain_text("利用枠を取得できません。")
     await expect(page.get_by_role("progressbar")).to_have_attribute("value", "45")
-    await expect(page.get_by_text("取得失敗: Codex:", exact=False)).to_contain_text("最後の観測")
+    await expect(page.get_by_text("取得失敗: Codex:", exact=False)).to_have_count(0)
     await expect(page.locator(".metric-row")).not_to_contain_text("1時間以上前")
 
 

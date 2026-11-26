@@ -43,6 +43,7 @@ from agent_toolkit._atk.serve.plans.roots import (
     deliver_root_status,
     logger,
 )
+from agent_toolkit._atk.serve.remote import read_failure_status
 from agent_toolkit._common import watch_observer as _watch_observer
 from agent_toolkit._common.async_operations import run_sync_operation
 from agent_toolkit._common.frontmatter import normalize_newlines, parse_frontmatter
@@ -202,31 +203,38 @@ def listed_plan_path(rel: str) -> str:
     return rel if main_name is None else str(path.with_name(main_name))
 
 
-async def search_entries(context: PlansContext, query: str) -> list[FileEntry] | None:
+async def search_entries(
+    context: PlansContext, query: str, *, failures: dict[str, int] | None = None, targets: tuple[str, ...] = ()
+) -> list[FileEntry] | None:
     entries = await all_entries(context)
     if not query:
         return entries
+    local_roots = () if targets else context.roots
     local_results = await asyncio.gather(
         *(
             asyncio.to_thread(search_files, spec.path, query, spec.source_id, stop=context.state.stop_requested)
-            for spec in context.roots
+            for spec in local_roots
         )
     )
     local_matches = {
         candidate
-        for spec, paths in zip(context.roots, local_results, strict=True)
+        for spec, paths in zip(local_roots, local_results, strict=True)
         for path in paths
         for candidate in ((spec.source_id, path), (spec.source_id, listed_plan_path(path)))
     }
 
+    hosts = targets or tuple(context.remote_hosts)
     results = await asyncio.gather(
-        *(_search_remote(context, host, query) for host in context.remote_hosts),
+        *(_search_remote(context, host, query) for host in hosts),
         return_exceptions=True,
     )
     remote_matches: dict[str, set[tuple[str, str]]] = {}
-    for result in results:
+    for host, result in zip(hosts, results, strict=True):
         if isinstance(result, RemoteSearchSuperseded):
             return None
+        if isinstance(result, PlanFileError) and failures is not None:
+            failures[host] = result.status
+            continue
         if isinstance(result, BaseException):
             raise result
         matched_host, matched_paths = result
@@ -257,7 +265,7 @@ async def _search_remote(context: PlansContext, host: str, query: str) -> tuple[
         raise
     except Exception as error:  # noqa: BLE001
         logger.warning("リモート本文検索失敗 host=%s: %s", host, error)
-        raw_paths = set()
+        raise _remote_read_error(error) from error
     source_ids = set(context.state.root_info.get(host, {}))
     fallback_source = next(iter(source_ids)) if len(source_ids) == 1 else ""
     paths: set[tuple[str, str]] = set()
@@ -371,6 +379,11 @@ class PlanFileError(Exception):
         self.message = message
 
 
+def _remote_read_error(error: Exception) -> PlanFileError:
+    status = read_failure_status(error)
+    return PlanFileError(status, {403: "remote read failed", 404: "not found", 503: "remote read unavailable"}[status])
+
+
 async def resolve_text(
     context: PlansContext,
     host: str,
@@ -388,9 +401,14 @@ async def resolve_text(
     watcher = context.state.remote_watchers.get(host)
     try:
         return await fetch_remote_file(host, rel, context.runner, watcher, source_id=source_id)
-    except Exception as error:  # noqa: BLE001
+    except FileNotFoundError as error:
         logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, error)
         raise PlanFileError(404, "not found") from error
+    except PermissionError as error:
+        raise PlanFileError(403, "permission denied") from error
+    except Exception as error:  # noqa: BLE001
+        logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, error)
+        raise _remote_read_error(error) from error
 
 
 def _read_text(path: pathlib.Path) -> str:

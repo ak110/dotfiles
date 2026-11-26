@@ -165,14 +165,14 @@ await handleFilterChange({reloadRepos: true});
 process.stdout.write(JSON.stringify({
   listUrls,
   rows: entries.map(entry => entry.filename),
-  error: elements['operation-notice-message'].textContent
+  error: elements['update-status'].querySelector('[role=status]').textContent
 }));
 """
     )
     assert result == {
         "listUrls": ["/atk/api/entries?type=all&status=adopted&answered=all&period=all&page=1"],
         "rows": ["entry.md"],
-        "error": "［WI / node-test / /notes / 対象リポジトリ一覧取得］候補取得失敗",
+        "error": "リポジトリ候補を取得できません。",
     }
 
 

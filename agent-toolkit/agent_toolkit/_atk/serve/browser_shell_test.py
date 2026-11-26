@@ -230,3 +230,40 @@ async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harn
         arg=[events, listing, *before],
     )
     _assert_other_streams_unrequested(screen_harness, screen)
+
+
+@pytest.mark.parametrize(
+    ("screen", "endpoint", "resolved"),
+    [
+        ("plans", "**/api/plans/files", "#files .file"),
+        ("sessions", "**/api/sessions/list", "#sessions .session-item"),
+        ("wi", "**/api/entries?*", "#entry-list .entry-select"),
+        ("settings", "**/api/settings*", "#settings-nav button"),
+        ("agents", "**/api/agents/hosts", "#agents-hosts section"),
+    ],
+)
+@pytest.mark.asyncio(loop_scope="session")
+async def test_read_recovery_does_not_offer_an_action_after_one_failure(
+    screen_harness: _ScreenHarness, screen: str, endpoint: str, resolved: str
+) -> None:
+    page = screen_harness.page
+    first = asyncio.Event()
+    attempts = 0
+
+    async def fail_first(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            await route.fulfill(status=503, json={"error": "一時失敗"})
+            first.set()
+        else:
+            await route.continue_()
+
+    await page.route(endpoint, fail_first)
+    await page.goto(screen_harness.base_url + ("/" if screen == "wi" else f"/{screen}"))
+    await asyncio.wait_for(first.wait(), 5)
+    status = page.locator("#update-status")
+    await playwright.async_api.expect(status).to_be_hidden()
+    await playwright.async_api.expect(page.locator(resolved).first).to_be_visible()
+    assert attempts >= 2
+    await playwright.async_api.expect(status).to_be_hidden()

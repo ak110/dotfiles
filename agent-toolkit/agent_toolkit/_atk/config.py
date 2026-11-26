@@ -527,6 +527,7 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         "repositories": config_repositories.parse(repositories, check_paths=False),
         "model_candidates": {engine: sorted(names) for engine, names in _config_settings.KNOWN_MODELS.items()},
         "usage": config_usage.cli_windows(windows),
+        "can_observe_usage": True,
         "reset_editor": config_usage.reset_editor_snapshot(windows, usage["history"], state),
         "model_order_policy": config_usage.MODEL_ORDER_POLICY,
     }
@@ -784,6 +785,7 @@ def build_parser(config: argparse.ArgumentParser) -> None:
         parser = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
         if name == "snapshot":
             parser.add_argument("--read-only", action="store_true", help="設定を移行または保存せずに読み取る。")
+            parser.add_argument("--observe-usage", action="store_true", help="読み取り専用で利用枠の観測も更新する。")
     for name in ("add", "remove"):
         array = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
         array.add_argument("key", metavar="KEY", help="JSON配列型の設定キー。")
@@ -808,7 +810,13 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     )
 
 
-def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[..., None] | None = None) -> int:
+def dispatch(
+    args: argparse.Namespace,
+    home: pathlib.Path,
+    *,
+    refresh: Callable[..., None] | None = None,
+    observe_usage: Callable[[], Any] | None = None,
+) -> int:
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
         if sub in {"usage", "temporary"}:
@@ -818,7 +826,13 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
         elif sub in {"show", "list"}:
             return _cmd_config_show(home)
         elif sub == "snapshot":
-            print(json.dumps(settings_snapshot(home, read_only=getattr(args, "read_only", False))))
+            read_only = getattr(args, "read_only", False)
+            if getattr(args, "observe_usage", False):
+                if not read_only:
+                    raise ValueError("--observe-usageには--read-onlyが必要です")
+                if observe_usage is not None:
+                    observe_usage()
+            print(json.dumps(settings_snapshot(home, read_only=read_only)))
         elif sub == "update":
             payload = json.load(sys.stdin.buffer)
             if not isinstance(payload, dict):

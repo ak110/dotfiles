@@ -1,6 +1,8 @@
-import {BASE_PATH, setUpdateError} from "./common.js";
+import {readFailure} from "./common.js";
+import {BASE_PATH, setUpdateError, setDisplayedReadError, recoverRead} from "./common.js";
+import {formatLocalMinute} from "./reset_permissions.js";
 import {registerScreen} from "./shell.js";
-import {formatLocalMinute, renderResetPermissions} from "./reset_permissions.js";
+import {createSettingsView} from "./settings_view.js";
 
 const status = document.getElementById("settings-status");
 const content = document.getElementById("settings-content");
@@ -23,72 +25,37 @@ let displayedData;
 let refreshTimer;
 const hostDrafts = new Map();
 const conflicts = new Map();
-let fieldCount = 0;
-const guide = "https://github.com/ak110/dotfiles/blob/master/docs/guide/";
+const {button, element, renderComparison, renderHost, renderShared, renderSharedComparison, showGroup} = createSettingsView({
+  content, shared, comparison, hostPicker, navigation,
+  state: {
+    get host() { return host; },
+    get localData() { return localData; },
+    get confirmedComparisonFailures() { return confirmedComparisonFailures; },
+    get activeGroup() { return activeGroup; },
+    set activeGroup(value) { activeGroup = value; },
+  },
+  operate, saveShared, selectHost, filterSettings, updateUnsaved, updateWriteControls, setWriteUnavailable,
+  rememberSettingFocus, restoreSettingFocus, editorFields,
+});
 
-function element(tag, text = "", className = "") {
-  const result = document.createElement(tag);
-  result.textContent = text;
-  if (className) result.className = className;
-  return result;
-}
-
-function section(parent, title, url) {
-  const target = element("section");
-  const heading = element("h2", title);
-  heading.className = "page-heading";
-  target.append(heading);
-  if (url) {
-    const link = element("a", "ガイドを読む");
-    link.href = guide + url;
-    target.append(link);
-  }
-  parent.append(target);
-  return target;
-}
-
-function button(text, action) {
-  const result = element("button", text);
-  result.type = "button";
-  result.addEventListener("click", action);
-  return result;
-}
-
-const FAST_MODE_LABELS = {auto: "自動判定（auto）", true: "高速（true）", false: "通常（false）"};
-function sharedScope(syncs) {
-  return syncs
-    ? "保存先: 同じprivate-notesを使うホストで共有されます。このホストだけ変えるには一時指定を使ってください。"
-    : "保存先: このホストのprivate-notes。同期先が未設定のため、他のホストには反映されません。";
-}
-
-function field(parent, label, value = "", choices, type = "text", labels = {}) {
-  const wrapper = element("div");
-  wrapper.className = "settings-field";
-  const input = element(choices ? "select" : "input");
-  for (const choice of choices ?? []) input.append(new Option(labels[choice] ?? choice, choice));
-  if (!choices) input.type = type;
-  input.id = `settings-field-${++fieldCount}`;
-  const caption = element("label", label);
-  caption.htmlFor = input.id;
-  input.value = value;
-  input.dataset.initialValue = input.value;
-  wrapper.append(caption, input);
-  parent.append(wrapper);
-  return input;
-}
-
-async function request(payload, cached = false, background = false, retry = false, target = host) {
+async function request(payload, cached = false, background = false, retry = false, target = host, observeUsage = false) {
   const parameters = new URLSearchParams();
   if (target) parameters.set("host", target);
   if (cached) parameters.set("cached", "1");
   if (background) parameters.set("background", "1");
+  if (observeUsage) parameters.set("observe_usage", "1");
   if (retry) parameters.set("retry", "1");
   const query = parameters.size ? "?" + parameters : "";
-  const response = await fetch(BASE_PATH + "/api/settings" + query, payload ? {
+  const url = BASE_PATH + "/api/settings" + query;
+  const response = background && !payload ? await recoverRead("settings", url, {}, observeUsage ? 115_000 : undefined) : await fetch(url, payload ? {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
-  } : undefined);
+  } : {signal: AbortSignal.timeout(45_000)});
   const data = await response.json();
-  if (!response.ok) throw new Error([data.error, data.next_action].filter(Boolean).join(" "));
+  if (!response.ok) {
+    const error = new Error([data.error, data.next_action].filter(Boolean).join(" "));
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -103,18 +70,15 @@ function rememberEditors(savedSlot) {
       open: editor.open,
       values: editor.dataset.editor === savedSlot ? [] : editorFields(editor).map(input => {
         const instant = input.dataset.instantDisplay === input.value ? input.dataset.instant : "";
+        if (editor.open && input.matches("[data-permission-account]") &&
+            (input.value || editor.querySelector("[data-permission-direct]")?.value)) {
+          return {value: input.value, instant};
+        }
         if (input.value === input.dataset.initialValue && (!instant || instant === input.dataset.initialInstant)) return null;
         return {value: input.value, instant};
       }),
     },
   ]));
-}
-
-function settingResult() {
-  const output = element("p");
-  output.dataset.settingsResult = "";
-  output.setAttribute("role", "alert");
-  return output;
 }
 
 function revealSettingResult(output, message, stayedAtOrigin) {
@@ -178,7 +142,7 @@ function restoreSettingFocus(focus) {
 }
 
 async function operate(payload, output, submittedEditor = null) {
-  if (busy || loading || conflicts.has(output.closest("[data-editor]")?.dataset.editor)) return;
+  if (busy || loading || staleSnapshotHost === host || conflicts.has(output.closest("[data-editor]")?.dataset.editor)) return;
   const trigger = document.activeElement;
   const stayedAtOrigin = () => document.activeElement === trigger || document.activeElement === document.body;
   busy = true;
@@ -229,6 +193,11 @@ function restoreEditors(drafts, editorKey) {
     editorFields(editor).forEach((input, index) => {
       const draft = previous?.values[index];
       if (!draft) return;
+      if (input.matches("[data-permission-account]") && input.options.length &&
+          !Array.from(input.options).some(option => option.value === draft.value)) {
+        input.add(new Option(draft.value ? "編集中のアカウント" : "直接入力", draft.value));
+        input.parentElement.hidden = false;
+      }
       input.value = draft.value;
       if (draft.instant) {
         input.dataset.instant = draft.instant;
@@ -241,146 +210,8 @@ function restoreEditors(drafts, editorKey) {
   return savedEditor;
 }
 
-function form(parent, perform) {
-  const result = element("form");
-  result.addEventListener("submit", event => {
-    event.preventDefault();
-    perform();
-  });
-  parent.append(result);
-  return result;
-}
-
-function submit(form, label) {
-  const control = element("button", label);
-  control.type = "submit";
-  const actions = element("div", "", "form-actions");
-  actions.append(control);
-  form.append(actions);
-  return control;
-}
-
-function keyEditor(parent, key, item, data, save = operate) {
-  const listen = data.listen ?? {};
-  const block = element("div");
-  block.dataset.setting = key;
-  block.dataset.search = `${key} ${item.description ?? ""}`.toLowerCase();
-  block.dataset.editor = `setting:${key}`;
-  block.className = "settings-row";
-  const description = element("div");
-  description.append(element("h3", key));
-  block.append(description);
-  const timing = key.startsWith("serve_") || key === "remote_hosts" ? "次回のatk serve起動" :
-    key === "dotfiles_mode" ? "次のdotfiles更新" : "";
-  if (item.description) description.append(element("p", item.description));
-  const source = item.source ? `（出所: ${item.source}）` : "";
-  const effective = key === "usage_reset_permissions" ? `${JSON.parse(item.effective || "[]").length}件の許可` :
-    item.effective || "未指定";
-  description.append(element("p", `実効値: ${effective}${source}`));
-  if (item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && host)) {
-    description.append(element("p", key === "usage_reset_permissions" && host
-      ? "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"
-      : "読み取り専用"));
-    parent.append(block);
-    return;
-  }
-  if (item.shared) description.append(element("p", sharedScope(item.shared_sync)));
-  if (timing) description.append(element("p", key === "remote_hosts" ?
-    "反映: 設定のホスト切替は保存後、計画とセッションは次回のatk serve起動" : `反映: ${timing}`));
-  if (item.source === "一時指定" || item.source?.startsWith("AGENT_TOOLKIT_CONFIG_")) {
-    description.append(element("p", "保存値を変更しても、この上書きが解除されるまで実効値は変わりません。"));
-  }
-  if (listen[key] && (String(listen[key][0]) !== item.effective || listen[key][1] !== "atk config")) {
-    const [value, source] = listen[key];
-    description.append(element("p", `実行中の待受: ${value}（出所: ${source}）、保存値: ${item.saved}。`));
-    if (source !== "atk config") description.append(element("p", "同じ指定で再起動する場合、保存値は使われません。"));
-  }
-  const controls = element("div");
-  block.append(controls);
-  const output = settingResult();
-  if (key === "usage_reset_permissions") {
-    renderResetPermissions(controls, JSON.parse(item.saved), data.reset_editor,
-      (entries, editor) => save({action: "set", key, value: JSON.stringify(entries)}, output, editor),
-      {element, field, form, button, submit, setWriteUnavailable});
-  } else if (item.array) {
-    const list = element("ul");
-    for (const value of JSON.parse(item.saved)) {
-      const row = element("li", value + " ");
-      row.append(button(`${value}を削除`, () => save({action: "array-remove", key, value}, output)));
-      list.append(row);
-    }
-    controls.append(list);
-    const editor = form(controls, () => save({action: "array-add", key, value: input.value}, output));
-    const input = field(editor, "追加するホスト");
-    input.required = true;
-    submit(editor, "追加");
-  } else if (key !== "repositories") {
-    const editor = form(controls, () => save({action: "set", key, value: input.value}, output));
-    const input = field(editor, "保存値", item.saved, item.choices, "text", key === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
-    if (key === "serve_port") input.inputMode = "numeric";
-    if (!item.choices && item.format) {
-      const hint = element("small", `形式: ${item.format}。${item.default === undefined ? "" : ` 初期値: ${item.default || "未指定"}`}`);
-      hint.id = `${input.id}-format`;
-      hint.className = "settings-format";
-      input.parentElement.append(hint);
-      input.setAttribute("aria-describedby", `${hint.id} ${input.id}-result`);
-    }
-    output.id = `${input.id}-result`;
-    submit(editor, "保存");
-  }
-  controls.append(output);
-  parent.append(block);
-}
-
-function repositoryEditor(parent, repo = "", attributes = {}) {
-  const box = element("details");
-  box.dataset.editor = `repository:${repo}`;
-  box.append(element("summary", repo || "リポジトリを追加"));
-  const identifier = repo ? null : field(box, "リポジトリID・URL・ローカルパス");
-  const edit = field(box, "編集可否", attributes.edit ?? "deny", ["allow", "awi", "deny"]);
-  const path = field(box, "ワークツリー", attributes.path);
-  const loop = field(box, "process-loopの対象", String(attributes.process_loop ?? false), ["true", "false"]);
-  const platforms = field(box, "検証OS（カンマ区切り）", (attributes.platforms ?? ["linux", "windows"]).join(","));
-  const branches = field(box, "系統（カンマ区切り）", (attributes.branches ?? []).join(","));
-  const defaultBranch = field(box, "省略時の系統", attributes.default_branch);
-  const mergeFrom = field(box, "リリース前に取り込む系統（対象=取込元、カンマ区切り）",
-    Object.entries(attributes.merge_from ?? {}).map(([target, source]) => `${target}=${source}`).join(","));
-  const output = settingResult();
-  box.append(button(repo ? "属性を保存" : "追加", () => {
-    const data = {
-      action: "repo", operation: repo ? "set" : "add", repo: repo || identifier.value,
-      edit: edit.value, process_loop: loop.value === "true", platforms: platforms.value,
-    };
-    if (repo || path.value) data.path = path.value;
-    if (branches.value !== (attributes.branches ?? []).join(",")) data.branches = branches.value;
-    if (defaultBranch.value && branches.value) data.default_branch = defaultBranch.value;
-    if (mergeFrom.value || Object.keys(attributes.merge_from ?? {}).length) data.merge_from = mergeFrom.value;
-    void operate(data, output);
-  }));
-  if (repo) box.append(button("登録を削除", () => {
-    if (window.confirm(`${repo}の登録を削除しますか？`)) void operate({action: "repo", operation: "remove", repo}, output);
-  }));
-  box.append(output);
-  parent.append(box);
-}
-
-function sameSharedSetting(data, key) {
-  const here = localData?.settings[key];
-  const there = data.settings[key];
-  return Boolean(localData?.shared_identity && data.shared_identity === localData.shared_identity &&
-    here?.shared && !here.migration_pending && there?.shared && !there.migration_pending);
-}
-
-function groupId(key) {
-  return key.endsWith("_model") ? "models" : (key.startsWith("serve_") || key === "remote_hosts") ? "serve" :
-    key === "repositories" ? "repos" : /usage|reset/.test(key) ? "usage" :
-    /connections|provider|env_file/.test(key) ? "connections" : "other";
-}
-
-const groupTitles = {models: "工程別モデル", connections: "接続", usage: "利用枠", other: "その他の設定とパス"};
-
 async function saveShared(payload, output) {
-  if (busy || output.closest("[data-setting]")?.querySelector(".settings-shared-conflict")) return;
+  if (busy || staleSnapshotHost === host || output.closest("[data-setting]")?.querySelector(".settings-shared-conflict")) return;
   busy = true;
   updateWriteControls();
   try {
@@ -400,90 +231,29 @@ async function saveShared(payload, output) {
   }
 }
 
-function renderShared(savedKey) {
-  const data = localData;
-  if (!data) return;
-  const old = new Map([...shared.querySelectorAll("[data-setting]")].map(node => [node.dataset.setting, node]));
-  const focus = shared.contains(document.activeElement) ? rememberSettingFocus(document.activeElement) : null;
-  const note = element("p");
-  note.dataset.sharedComparison = "";
-  const nodes = [note];
-  const sections = new Map();
-  for (const [key, item] of Object.entries(data.settings)) {
-    if (!item.shared) continue;
-    const group = groupId(key);
-    if (!sections.has(group)) {
-      const node = element("section");
-      node.append(element("h3", groupTitles[group] ?? "その他の設定"));
-      sections.set(group, node);
-      nodes.push(node);
-    }
-    const target = sections.get(group);
-    const prior = old.get(key);
-    if (prior && key !== savedKey && editorFields(prior).some(field => field.value !== field.dataset.initialValue)) {
-      target.append(prior);
-      const field = editorFields(prior)[0];
-      prior.querySelector(".settings-shared-conflict")?.remove();
-      if (field.dataset.initialValue !== item.saved) {
-        const conflict = element("p", `共有の保存値が変わりました。最新の保存値: ${item.saved}`);
-        conflict.className = "settings-shared-conflict notice notice-warning";
-        conflict.setAttribute("role", "alert");
-        const resolve = keep => {
-          field.dataset.initialValue = item.saved;
-          if (!keep) field.value = item.saved;
-          conflict.remove();
-          updateWriteControls();
-          updateUnsaved();
-        };
-        const preserve = button("入力を残す", () => resolve(true));
-        const replace = button("保存値を使う", () => resolve(false));
-        preserve.dataset.conflictAction = "";
-        replace.dataset.conflictAction = "";
-        preserve.dataset.sharedConflictAction = "keep";
-        replace.dataset.sharedConflictAction = "replace";
-        conflict.append(" ", preserve, " ", replace);
-        prior.append(conflict);
-      }
-    } else {
-      keyEditor(target, key, item, data, saveShared);
-    }
-  }
-  if (sections.size === 0) nodes.push(element("p", "共有設定はありません。"));
-  for (const [preset, values] of Object.entries(data.presets ?? {})) {
-    if (!Object.keys(values).length || !Object.keys(values).every(key => data.settings[key]?.shared)) continue;
-    const detail = element("details");
-    detail.append(element("summary", preset));
-    for (const [key, value] of Object.entries(values)) detail.append(element("p", `${key}: ${value}`));
-    const output = settingResult();
-    const actions = element("div", "", "form-actions");
-    actions.append(button("適用", () => saveShared({action: "preset", preset}, output)));
-    detail.append(actions, output);
-    nodes.push(detail);
-  }
-  shared.replaceChildren(...nodes);
-  renderSharedComparison();
-  restoreSettingFocus(focus);
-}
-
-function renderSharedComparison() {
-  const note = shared.querySelector("[data-shared-comparison]");
-  const data = localData;
-  if (!note || !data) return;
-  note.replaceChildren("保存先: private-notesの共有設定ファイル");
-  for (const [name, peer] of Object.entries(data.comparison ?? {})) {
-    const common = Object.keys(data.settings).filter(key => sameSharedSetting(peer, key));
-    const summary = peer.state === "pending" ? "未取得" : peer.state === "error" ? "取得失敗" :
-      common.length === 0 ? "共有設定の一致を確認できません" :
-      common.some(key => data.settings[key].saved !== peer.settings[key].saved) ? "値が異なります（同期の遅れの可能性）" :
-      "同じ共有設定を使用";
-    note.append(element("span", ` · ${name}: ${summary}`));
-  }
-}
-
-function showAutomaticErrors(data) {
+let comparisonRetry;
+let confirmedComparisonFailures = new Set();
+function showAutomaticErrors(data, retried = false) {
   if (!data.automatic_errors) return;
-  const failures = Object.entries(data.automatic_errors).map(([name, reason]) => `${name}: ${reason}`);
-  setUpdateError("settings", "automatic", failures.join(" / "), retryComparison);
+  const failures = Object.entries(data.automatic_errors);
+  confirmedComparisonFailures = new Set(
+    failures.filter(([name]) => retried || confirmedComparisonFailures.has(name)).map(([name]) => name)
+  );
+  renderSharedComparison();
+  const announced = failures.filter(([name]) => name !== host && confirmedComparisonFailures.has(name));
+  if (announced.length) {
+    setDisplayedReadError("settings", "automatic", announced.map(([name, reason]) => `${name}: ${reason}`).join(" / "), retryComparison);
+  } else setUpdateError("settings", "automatic");
+  const unconfirmed = failures.some(([name]) => !confirmedComparisonFailures.has(name));
+  if (!unconfirmed) {
+    clearTimeout(comparisonRetry);
+    comparisonRetry = undefined;
+  } else if (comparisonRetry === undefined && document.body.dataset.screen === "settings") {
+    comparisonRetry = setTimeout(() => {
+      comparisonRetry = undefined;
+      if (document.body.dataset.screen === "settings") void retryComparison();
+    }, 1500);
+  }
 }
 
 async function retryComparison() {
@@ -492,48 +262,11 @@ async function retryComparison() {
     renderShared();
     renderComparison(localData);
     setUpdateError("settings", "comparison");
-    showAutomaticErrors(localData);
+    showAutomaticErrors(localData, true);
     filterSettings();
   } catch (error) {
-    setUpdateError("settings", "comparison", error.message, retryComparison);
+    setDisplayedReadError("settings", "comparison", error.message, retryComparison);
   }
-}
-
-function renderComparison(data) {
-  const hosts = [ ["", {state: "ready", ...localData}], ...Object.entries(data.comparison ?? localData?.comparison ?? {}) ];
-  const table = element("table");
-  const headers = table.createTHead().insertRow();
-  const label = element("th", "設定");
-  label.scope = "col";
-  headers.append(label);
-  for (const [name, info] of hosts) {
-    const header = element("th");
-    header.scope = "col";
-    header.append(button(name || "ローカル", () => selectHost(name)));
-    if (info.state === "pending" || info.state === "error") {
-      header.append(element("p", info.state === "pending" ? "未取得" : "取得失敗"),
-        button("再取得", retryComparison));
-    } else if (info.state === "legacy") header.append(element("p", "旧版のため自動取得なし"));
-    headers.append(header);
-  }
-  const body = table.createTBody();
-  for (const key of new Set(hosts.flatMap(([, value]) => Object.keys(value.settings ?? {})))) {
-    const values = hosts.map(([name, info]) => {
-      if (name ? sameSharedSetting(info, key) : info.settings?.[key]?.shared) return null;
-      return info.settings?.[key]?.saved ?? null;
-    });
-    if (values.every(value => value == null)) continue;
-    const row = body.insertRow();
-    const heading = element("th", key);
-    heading.scope = "row";
-    row.append(heading);
-    for (const value of values) {
-      const cell = row.insertCell();
-      cell.textContent = value == null ? "—" : String(value);
-      if (value != null && value !== values[0]) cell.className = "settings-different";
-    }
-  }
-  comparison.replaceChildren(table);
 }
 
 function filterSettings() {
@@ -630,126 +363,7 @@ function render(data) {
     renderSharedComparison();
   }
   renderComparison(data);
-  const root = document.createDocumentFragment();
-  const groups = {
-    models: section(root, "工程別モデル", "claude-code-models.md#工程別モデル設定"),
-    connections: section(root, "接続", "claude-code-connections.md#接続の使い分け"),
-    usage: section(root, "利用枠", "claude-code-models.md#利用枠とreset許可"),
-    repos: section(root, "リポジトリ", "claude-code-wi.md#処理対象と検証os"),
-    serve: section(root, "atk serve", "claude-code-serve.md#atk-serveの画面"),
-    other: section(root, "その他の設定とパス", "claude-code-settings.md#atk-config"),
-    temporary: section(root, "一時指定", "claude-code-connections.md#緊急時だけ従量課金を許可する"),
-  };
-  const candidates = element("details");
-  candidates.append(element("summary", "モデル候補の例"));
-  for (const [engine, models] of Object.entries(data.model_candidates ?? {})) {
-    candidates.append(element("p", `${engine}: ${models.join(", ")}`));
-  }
-  if (data.model_candidates) groups.models.append(candidates);
-  const settings = Object.entries(data.settings).sort(([left], [right]) =>
-    Number(right === "remote_hosts") - Number(left === "remote_hosts"));
-  for (const [key, item] of settings) {
-    if ((!host && item.shared) || (host && sameSharedSetting(data, key))) continue;
-    const group = groups[groupId(key)];
-    if (key !== "repositories" || !data.repositories) keyEditor(group, key, item, data);
-  }
-  for (const [key, value] of Object.entries(data.paths)) groups.other.append(element("p", `${key}: ${value}`));
-  for (const [repo, attributes] of Object.entries(data.repositories ?? {})) repositoryEditor(groups.repos, repo, attributes);
-  if (data.repositories) repositoryEditor(groups.repos);
-  if (data.model_order_policy) groups.usage.append(element("p", data.model_order_policy));
-  const usageLink = element("a", "利用枠の使用率とリセット権を見る");
-  usageLink.href = BASE_PATH + "/usage";
-  const usageHelp = element("p");
-  usageHelp.append(usageLink);
-  groups.usage.append(usageHelp);
-  if (data.temporary) renderTemporary(groups.temporary, data);
-  else groups.temporary.remove();
-  const presets = groups.models;
-  if (data.presets) presets.append(element("h3", "プリセット"));
-  for (const [preset, values] of Object.entries(data.presets ?? {})) {
-    const item = element("details");
-    item.dataset.editor = `preset:${preset}`;
-    item.append(element("summary", preset));
-    if (Object.keys(values).some(name => !data.settings[name] || data.settings[name].read_only)) continue;
-    if (Object.keys(values).every(name => host ? sameSharedSetting(data, name) : data.settings[name].shared)) continue;
-    const sharedSetting = Object.keys(values).find(name => data.settings[name].shared);
-    if (sharedSetting) item.append(element("p", sharedScope(data.settings[sharedSetting].shared_sync)));
-    for (const [name, presetValue] of Object.entries(values)) {
-      item.append(element("p", `${name}: 現在 ${data.settings[name].effective} → 保存 ${presetValue}`));
-    }
-    const output = settingResult();
-    const actions = element("div", "", "form-actions");
-    actions.append(button("適用", () => operate({action: "preset", preset}, output)));
-    item.append(actions, output);
-    presets.append(item);
-  }
-  navigation.replaceChildren();
-  for (const [id, group] of Object.entries(groups)) {
-    if (!group.parentNode) continue;
-    group.id = `settings-group-${id}`;
-    const control = button(group.querySelector("h2").textContent, () => {
-      activeGroup = id;
-      showGroup();
-      content.closest("main").scrollTop = 0;
-    });
-    control.dataset.group = id;
-    control.setAttribute("aria-controls", group.id);
-    navigation.append(control);
-  }
-  content.replaceChildren(root);
-  if (!document.getElementById(`settings-group-${activeGroup}`)) activeGroup = "models";
-  showGroup();
-
-  const options = [new Option("ローカル", ""), ...(data.hosts ?? []).map(name => new Option(name, name))];
-  hostPicker.replaceChildren(...options);
-  hostPicker.value = host;
-  filterSettings();
-  updateWriteControls();
-}
-
-function showGroup() {
-  for (const control of navigation.querySelectorAll("button")) {
-    const selected = control.dataset.group === activeGroup;
-    document.getElementById(control.getAttribute("aria-controls")).hidden = !selected;
-    if (selected) control.setAttribute("aria-current", "page");
-    else control.removeAttribute("aria-current");
-  }
-}
-
-function renderTemporary(temporary, data) {
-  temporary.dataset.editor = "temporary";
-  temporary.append(element("p", "保存値は変わりません。期限を空欄にすると解除するまで有効です。"));
-  const entries = Object.entries(data.temporary.values);
-  if (entries.length) {
-    const current = element("ul");
-    for (const [name, value] of entries) current.append(element("li", `${name}: ${value}`));
-    temporary.append(current);
-    if (data.temporary.until) temporary.append(element("p", `有効期限: ${new Date(data.temporary.until).toLocaleString()}`));
-  }
-  const keys = Object.keys(data.settings).filter(key => data.settings[key].temporary && !data.settings[key].read_only);
-  if (!keys.length) return;
-  const output = settingResult();
-  const editor = form(temporary, () => {
-    void operate({action: "temporary", key: key.value, value: value.value,
-      until: until.value ? new Date(until.value).toISOString() : null}, output);
-  });
-  const key = field(editor, "キー", keys[0], keys);
-  function valueField(parent) {
-    const setting = data.settings[key.value];
-    return field(parent, "値", setting.effective, setting.choices, "text",
-      key.value === "codex_fast_mode" ? FAST_MODE_LABELS : undefined);
-  }
-  let value = valueField(editor);
-  key.addEventListener("change", () => {
-    const replacement = document.createDocumentFragment();
-    const next = valueField(replacement);
-    value.parentElement.replaceWith(replacement);
-    value = next;
-  });
-  const until = field(editor, "期限（このブラウザーの時刻）", "", null, "datetime-local");
-  submit(editor, "一時指定を保存");
-  if (entries.length) temporary.append(button("一時指定を全解除", () => operate({action: "temporary-clear"}, output)));
-  temporary.append(output);
+  renderHost(data);
 }
 
 function syncWriteControl(control) {
@@ -762,11 +376,15 @@ function setWriteUnavailable(control, unavailable) {
 }
 
 function updateWriteControls() {
+  for (const control of content.querySelectorAll("[data-observed-deadline]")) {
+    control.toggleAttribute("data-write-blocked", Boolean(host) && (loading || staleSnapshotHost === host));
+    syncWriteControl(control);
+  }
   for (const control of [...content.querySelectorAll("button:not([data-conflict-action], [data-local-edit])"), ...shared.querySelectorAll("button:not([data-conflict-action])")]) {
     const editor = control.closest("[data-editor]");
     if (!editor) continue;
     const setting = control.closest("[data-setting]") || editor;
-    const blocked = busy || setting.querySelector(".settings-shared-conflict") ||
+    const blocked = busy || staleSnapshotHost === host || setting.querySelector(".settings-shared-conflict") ||
       (!shared.contains(control) && (loading || conflicts.has(setting.dataset.editor)));
     if (blocked) {
       control.dataset.writeBlocked = "";
@@ -823,6 +441,48 @@ function renderConflicts() {
   updateWriteControls();
 }
 
+let observingHost;
+let staleSnapshotHost;
+async function observeUsage() {
+  if (document.body.dataset.screen !== "settings" || busy || fetching) return;
+  const target = host;
+  if (observingHost === target || (target && !displayedData?.can_observe_usage)) return;
+  let generation = loadGeneration;
+  observingHost = target;
+  if (target) {
+    staleSnapshotHost = target;
+    updateWriteControls();
+  }
+  try {
+    for (const delay of [0, 1500]) {
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      if (host !== target || generation !== loadGeneration) return;
+      try {
+        const data = await request(undefined, false, true, false, target, true);
+        if (host !== target || generation !== loadGeneration || busy || document.body.dataset.screen !== "settings") return;
+        const failed = data.reset_editor?.refresh_failed;
+        if (failed && !delay && !target) continue;
+        await loadHost(true);
+        generation = loadGeneration;
+        if (!failed) {
+          setUpdateError("settings", "usage");
+          return;
+        }
+      } catch {
+        if (target && host === target && generation === loadGeneration) {
+          staleSnapshotHost = target;
+          updateWriteControls();
+        }
+      }
+    }
+    if (host === target && document.body.dataset.screen === "settings") {
+      setDisplayedReadError("settings", "usage", "利用枠を取得できません。", observeUsage);
+    }
+  } finally {
+    if (observingHost === target) observingHost = undefined;
+  }
+}
+
 async function loadHost(background = false, retry = false) {
   if (busy || (background && fetching)) return;
   const generation = ++loadGeneration;
@@ -851,7 +511,16 @@ async function loadHost(background = false, retry = false) {
         return;
       }
     }
-    const initial = await request(undefined, !background && Boolean(host) && !displayedData, background, retry && !displayedHost);
+    let initial;
+    try {
+      initial = await request(undefined, !background && !retry && Boolean(host) && !displayedData, background, retry);
+    } catch (error) {
+      const transient = readFailure(error.status) === "temporary";
+      if (retry || !transient || generation !== loadGeneration) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (generation !== loadGeneration) return;
+      initial = await request(undefined, false, true, Boolean(displayedHost), displayedHost);
+    }
     if (generation !== loadGeneration) return;
     const scroll = content.closest("main");
     const scrollTop = scroll.scrollTop;
@@ -861,7 +530,7 @@ async function loadHost(background = false, retry = false) {
       render(initial);
       restoreEditors(prior);
       status.textContent = "更新中。最新の値が届くまで保存できません。";
-      data = await request();
+      data = await request(undefined, false, true, true, displayedHost);
       if (generation !== loadGeneration) return;
     }
     const drafts = initial.cached ? rememberEditors() : prior;
@@ -889,6 +558,7 @@ async function loadHost(background = false, retry = false) {
     updateUnsaved();
     scroll.scrollTop = scrollTop;
     restoreSettingFocus(focus);
+    staleSnapshotHost = undefined;
     loading = false;
     updateWriteControls();
     setUpdateError("settings", "refresh");
@@ -896,11 +566,12 @@ async function loadHost(background = false, retry = false) {
     status.textContent = data.legacy || data.automatic_unsupported?.includes(host) ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
   } catch (error) {
     if (generation !== loadGeneration) return;
+    if (host) staleSnapshotHost = host;
     loading = Boolean(host) && Boolean(displayedData);
     renderFastStart(displayedData, true);
     updateWriteControls();
     status.textContent = loading ? "最新の値が届くまで保存できません。" : "";
-    setUpdateError("settings", "refresh", host ? `${host}: ${error.message}` : error.message, () => loadHost(background, background));
+    setDisplayedReadError("settings", "refresh", host ? `${host}の設定を取得できません。` : error.message, () => loadHost(true, true), () => loadHost(false, true));
   } finally {
     if (generation === loadGeneration) {
       fetching = false;
@@ -912,7 +583,10 @@ async function loadHost(background = false, retry = false) {
 async function enter() {
   clearInterval(refreshTimer);
   if (document.body.dataset.screen !== "settings") return;
-  refreshTimer = setInterval(() => void loadHost(true), 30_000);
+  refreshTimer = setInterval(() => {
+    if (content.querySelector('details[data-editor^="usage_reset_permissions:"][open]')) void observeUsage();
+    else void loadHost(true);
+  }, 30_000);
   const query = new URLSearchParams(location.search);
   if (query.get("group") === "usage") activeGroup = "usage";
   if (query.get("host") === "" && host) {
@@ -929,6 +603,8 @@ async function enter() {
 function selectHost(selected) {
   if (busy) return;
   if (content.hasChildNodes()) hostDrafts.set(host, {snapshot: displayedData, editors: rememberEditors()});
+  setUpdateError("settings", "refresh");
+  setUpdateError("settings", "usage");
   host = selected;
   hostPicker.value = host;
   displayedData = undefined;
@@ -947,3 +623,9 @@ registerScreen("settings", {init: () => {
   document.addEventListener("atk-screen-change", enter);
   return enter();
 }});
+
+content.addEventListener("click", event => {
+  if (event.target.closest('details[data-editor^="usage_reset_permissions:"] > summary')) {
+    setTimeout(() => void observeUsage(), 0);
+  }
+});

@@ -22,23 +22,211 @@ function readBootstrap() {
 const updateErrors = new Map();
 const updateStatus = document.getElementById("update-status");
 
+const updateHome = updateStatus?.parentElement;
+let lastFocus;
+let retryFocus;
+
+function rememberRetryFocus() {
+  const editor = lastFocus?.closest("[data-editor]");
+  retryFocus = lastFocus && {node: lastFocus, id: lastFocus.id, slot: editor?.dataset.editor,
+    index: editor ? [...editor.querySelectorAll("input, select, textarea, button, summary")].indexOf(lastFocus) : -1};
+}
+
+document.addEventListener("focusin", event => {
+  if (updateStatus?.contains(event.target)) rememberRetryFocus();
+  else lastFocus = event.target;
+});
+
+export function readFailure(status) {
+  if (status === 404) return "missing";
+  if (!status || status >= 500 || [408, 429].includes(status)) return "temporary";
+  return "restricted";
+}
+
 function renderUpdateStatus() {
   if (!updateStatus) return;
-  const failures = [...(updateErrors.get(document.body.dataset.screen)?.values() ?? [])];
+  const screen = document.body.dataset.screen;
+  const failures = [...(updateErrors.get(screen)?.values() ?? [])];
+  const button = updateStatus.querySelector("button");
+  const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
+  const container = dialog ?? updateHome;
+  const retryFocused = document.activeElement === button;
+  if (updateStatus.parentElement !== container) container.prepend(updateStatus);
+  if (!failures.length && retryFocused) {
+    const origin = retryFocus;
+    const editor = origin?.slot && [...document.querySelectorAll("[data-editor]")]
+      .find(node => node.dataset.editor === origin.slot);
+    const target = origin?.node.isConnected ? origin.node :
+      (origin?.id && document.getElementById(origin.id)) ??
+      editor?.querySelectorAll("input, select, textarea, button, summary")[origin.index];
+    if (target && !target.closest("[hidden]") && !target.disabled) target.focus();
+    else document.querySelector(`#screen-${CSS.escape(screen)} h1`)?.focus();
+  }
   updateStatus.hidden = failures.length === 0;
-  updateStatus.querySelector("[role=status]").textContent = failures.map(item => item.message).join(" / ");
-  updateStatus.querySelector("button").onclick = () => failures.forEach(item => item.retry());
+  updateStatus.querySelector("[role=status]").textContent =
+    failures.length > 1 ? "一部の情報を更新できません。" : (failures[0]?.message ?? "");
+  button.onclick = () => {
+    rememberRetryFocus();
+    for (const history of readFailures.values()) {
+      if (history.screen === screen) history.next = Date.now();
+    }
+    new Set(failures.map(item => item.retry)).forEach(retry => retry());
+  };
+}
+
+if (updateStatus) {
+  const observer = new MutationObserver(renderUpdateStatus);
+  for (const dialog of document.querySelectorAll("dialog")) observer.observe(dialog, {attributes: true, attributeFilter: ["open"]});
+}
+
+function recoveryDelay(failures) {
+  return Math.min(30_000, 1500 * 2 ** Math.min(5, failures - 1));
+}
+
+const displayedRetries = new Map();
+
+function stopDisplayedRetry(screen, key) {
+  const id = JSON.stringify([screen, key]);
+  clearTimeout(displayedRetries.get(id)?.timer);
+  displayedRetries.delete(id);
+}
+
+export function setDisplayedReadError(screen, key, message, retry, manual = retry) {
+  if (document.body.dataset.screen !== screen) return;
+  const id = JSON.stringify([screen, key]);
+  const count = (displayedRetries.get(id)?.count ?? 0) + 1;
+  stopDisplayedRetry(screen, key);
+  async function run(retrieve = retry) {
+    if (displayedRetries.get(id) !== entry || entry.pending || document.body.dataset.screen !== screen) return;
+    clearTimeout(entry.timer);
+    entry.pending = true;
+    try {
+      await retrieve();
+    } finally {
+      if (displayedRetries.get(id) === entry) {
+        entry.pending = false;
+        entry.timer = setTimeout(run, delay);
+      }
+    }
+  }
+  const delay = recoveryDelay(count);
+  const entry = {screen, key, count, pending: false, timer: setTimeout(run, delay)};
+  displayedRetries.set(id, entry);
+  setUpdateError(screen, key, message, () => run(manual));
 }
 
 export function setUpdateError(screen, key, message, retry) {
   if (!updateErrors.has(screen)) updateErrors.set(screen, new Map());
   const errors = updateErrors.get(screen);
   if (message) errors.set(key, {message, retry});
-  else errors.delete(key);
+  else {
+    stopDisplayedRetry(screen, key);
+    errors.delete(key);
+  }
   renderUpdateStatus();
 }
 
-document.addEventListener("atk-screen-change", renderUpdateStatus);
+document.addEventListener("atk-screen-change", () => {
+  for (const {screen, key} of displayedRetries.values()) {
+    if (document.body.dataset.screen !== screen) setUpdateError(screen, key);
+  }
+  renderUpdateStatus();
+});
+
+const reads = new Map();
+const readFailures = new Map();
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// pyfltr: allow-comment 共有する利用側が残っている間は、個別の中止で通信を止めない。
+export function recoverRead(screen, url, options = {}, timeoutMs = 45_000) {
+  const {signal, fresh, ...requestOptions} = options;
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  const headers = new Headers(options.headers);
+  headers.delete("X-Atk-Request-Id");
+  const key = JSON.stringify([screen, url, options.method ?? "GET", options.body, [...headers], timeoutMs]);
+  let read = reads.get(key);
+  // 変更通知を受けた読み取りは、進行中の応答を共有せず完了後の1回を共有する。  // pyfltr: allow-comment
+  if (read && fresh) {
+    return read.finished.then(() => recoverRead(screen, url, {...requestOptions, signal}, timeoutMs));
+  }
+  if (!read) {
+    read = {clients: new Set(), controller: new AbortController()};
+    reads.set(key, read);
+    const deliver = (error, response) => {
+      if (reads.get(key) === read) reads.delete(key);
+      const waiting = [...read.clients];
+      const responses = response && waiting.map((_, index) => index ? response.clone() : response);
+      waiting.forEach((client, index) => client(error, responses?.[index]));
+    };
+    const perform = async () => {
+      let failure;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const history = readFailures.get(key);
+        if (history) {
+          await pause(Math.max(0, history.next - Date.now()));
+        }
+        read.controller.signal.throwIfAborted();
+        try {
+          const timeout = AbortSignal.timeout(timeoutMs);
+          const response = await fetch(url, {...requestOptions, signal: AbortSignal.any([timeout, read.controller.signal])});
+          if (response.ok || readFailure(response.status) !== "temporary") {
+            readFailures.delete(key);
+            return response;
+          }
+          failure = {response};
+          if (!attempt) void response.text().catch(() => {});
+        } catch (error) {
+          read.controller.signal.throwIfAborted();
+          failure = {error};
+        }
+        const count = Math.min(6, (history?.count ?? 0) + 1);
+        if (readFailures.size >= 256 && !readFailures.has(key)) readFailures.delete(readFailures.keys().next().value);
+        readFailures.set(key, {screen, count, next: Date.now() + recoveryDelay(count)});
+      }
+      if (failure.response) return failure.response;
+      throw failure.error;
+    };
+    read.finished = perform().then(response => deliver(null, response), error => deliver(error));
+  }
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      read.clients.delete(settle);
+      if (!read.clients.size) {
+        if (reads.get(key) === read) reads.delete(key);
+        read.controller.abort();
+      }
+      reject(signal.reason);
+    };
+    const settle = (error, response) => {
+      signal?.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolve(response);
+    };
+    read.clients.add(settle);
+    signal?.addEventListener("abort", abort, {once: true});
+  });
+}
+
+export function createReadRecovery(signal, attempt) {
+  let timer;
+  let pending = false;
+  let failures = 0;
+  const stopTimer = () => clearTimeout(timer);
+  signal.addEventListener("abort", stopTimer, {once: true});
+  async function run() {
+    if (pending || signal.aborted) return;
+    stopTimer();
+    pending = true;
+    try {
+      if (!await attempt(failures) || signal.aborted) return;
+      failures += 1;
+      timer = setTimeout(run, recoveryDelay(failures));
+    } finally {
+      pending = false;
+    }
+  }
+  return run;
+}
 
 const DEFAULT_STALL_MS = 45000;
 
@@ -61,17 +249,25 @@ export function connectEvents(path, handlers) {
   let source = null;
   let lastSeen = 0;
   let timer = null;
+  let retryTimer;
+  let failures = 0;
   const touch = () => { lastSeen = Date.now(); };
 
   const screen = {"/api/events": "wi", "/api/plans/events": "plans", "/api/sessions/events": "sessions"}[path];
 
   function reconnect() {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
     source?.close();
     open();
   }
 
   function disconnected() {
-    if (screen) setUpdateError(screen, "sse", "接続が切れました。再接続中です。", reconnect);
+    if (retryTimer !== undefined) return;
+    failures += 1;
+    if (screen && failures >= 2) setUpdateError(screen, "sse", "更新情報を取得できません。", reconnect);
+    source?.close();
+    retryTimer = setTimeout(reconnect, recoveryDelay(failures));
   }
 
   function open() {
@@ -79,7 +275,7 @@ export function connectEvents(path, handlers) {
     touch();
     source.addEventListener("heartbeat", touch);
     source.addEventListener("error", disconnected);
-    source.addEventListener("open", () => { if (screen) setUpdateError(screen, "sse"); });
+    source.addEventListener("open", () => { failures = 0; if (screen) setUpdateError(screen, "sse"); });
     for (const [name, handler] of Object.entries(handlers)) {
       source.addEventListener(name, (event) => {
         if (name !== "error") touch();
@@ -92,11 +288,14 @@ export function connectEvents(path, handlers) {
     if (!source) return;
     if (source.readyState === EventSource.CLOSED || Date.now() - lastSeen > limit) {
       disconnected();
-      reconnect();
     }
   }
 
   function close() {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+    failures = 0;
+    if (screen) setUpdateError(screen, "sse");
     clearInterval(timer);
     timer = null;
     if (source) source.close();
@@ -296,7 +495,8 @@ export async function timedFetch(screen, url, options = {}, timing = {}) {
   };
   let response;
   try {
-    response = await fetch(url, {...options, headers});
+    const read = !options.method || options.method === "GET" || path === "/api/sessions/search";
+    response = await (read ? recoverRead(screen, url, {...options, headers}) : fetch(url, {...options, headers}));
   } catch (error) {
     // 画面が不要になった要求を中止した場合は、通信の失敗と区別して記録する。
     const outcome = error?.name === "AbortError" ? "aborted" : "network-error";

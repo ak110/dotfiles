@@ -432,6 +432,11 @@ async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harne
         # 見出しは図の描画より先に現れる。初期描画の完了後にコピーして失敗表示を検証する。
         await playwright.async_api.expect(page.locator("#preview")).to_have_attribute("aria-busy", "false")
         await page.locator("#copy-btn").click()
+    if failure == "body":
+        notice = page.locator("#update-status")
+        await playwright.async_api.expect(notice).to_contain_text("計画の本文を取得できません。")
+        await playwright.async_api.expect(notice.get_by_role("button")).to_have_count(1)
+        return
     alert = page.locator("#preview [role=alert]" if failure != "svg" else "#preview .diagram-error")
     await playwright.async_api.expect(alert).to_contain_text("plan.md")
     await playwright.async_api.expect(alert).to_contain_text("browser-test")
@@ -463,9 +468,11 @@ async def test_plan_collection_failures_show_operation(screen_harness: _ScreenHa
     await page.goto(harness.base_url + "/plans")
     if failure == "search":
         await page.locator("#plans-filter").fill("本文条件")
-    alert = page.locator("#plans-list-error" if failure == "list" else "#search-status")
-    await playwright.async_api.expect(alert).to_contain_text("browser-test")
-    await playwright.async_api.expect(alert).to_contain_text("一覧取得" if failure == "list" else "本文条件")
+    alert = page.locator("#update-status")
+    if failure == "list":
+        await playwright.async_api.expect(alert).to_contain_text("計画一覧を取得できません。")
+    else:
+        await playwright.async_api.expect(alert).to_contain_text("計画を検索できません。")
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -531,3 +538,238 @@ async def test_plan_and_wi_detail_share_scroll_edge_controls(screen_harness: _Sc
     assert await body.evaluate("el => el.scrollTop + el.clientHeight >= el.scrollHeight - 1")
     await dialog.get_by_role("button", name="先頭へ", exact=True).click()
     assert await body.evaluate("el => el.scrollTop") == 0
+
+
+@pytest.mark.parametrize("warm", [False, True])
+@pytest.mark.parametrize("failures", [1, 2])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_plan_text_recovers_without_a_missing_notice(screen_harness: _ScreenHarness, warm: bool, failures: int) -> None:
+    page = screen_harness.page
+    preview = page.locator("#preview")
+    expect = playwright.async_api.expect
+    if warm:
+        await page.goto(screen_harness.base_url + "/plans")
+        await expect(preview).to_contain_text("本文-初回")
+    first = asyncio.Event()
+    release = asyncio.Event()
+    retried = asyncio.Event()
+    attempts = 0
+
+    async def temporary_error(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts <= failures:
+            await route.fulfill(status=503)
+            first.set()
+        else:
+            retried.set()
+            await release.wait()
+            await route.continue_()
+
+    await page.route("**/api/plans/file?*", temporary_error)
+    try:
+        if warm:
+            await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        else:
+            await page.goto(screen_harness.base_url + "/plans")
+        await asyncio.wait_for(first.wait(), 5)
+        await asyncio.wait_for(retried.wait(), 8)
+        notice = page.locator("#update-status")
+        if failures == 2:
+            await expect(notice).to_be_visible()
+        else:
+            await expect(notice).to_be_hidden()
+        if warm:
+            await expect(preview).to_contain_text("本文-初回")
+    finally:
+        release.set()
+    await expect(preview).to_contain_text("本文-初回")
+    await expect(page.locator("#update-status")).to_be_hidden()
+    assert attempts == failures + 1
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_search_does_not_show_empty_while_retrying(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    attempts = 0
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+
+    async def temporary_error(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            await route.fulfill(status=503)
+        elif attempts == 2:
+            waiting.set()
+            await release.wait()
+            await route.continue_()
+        else:
+            await route.continue_()
+
+    await page.route("**/api/plans/search?*", temporary_error)
+    await page.goto(screen_harness.base_url + "/plans")
+    try:
+        await page.locator("#plans-filter").fill("本文-初回")
+        await asyncio.wait_for(waiting.wait(), 5)
+        await playwright.async_api.expect(page.locator("#plans-empty")).to_be_hidden()
+        await playwright.async_api.expect(page.locator("#update-status")).to_be_hidden()
+    finally:
+        release.set()
+    await playwright.async_api.expect(page.locator("#files .file").first).to_be_visible()
+    await page.locator("#plans-filter").fill("存在しない検索語")
+    await playwright.async_api.expect(page.locator("#plans-empty")).to_be_visible()
+    assert attempts == 3
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_search_recovers_after_notifying_without_another_input(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    attempts = 0
+
+    async def fail_twice(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 2:
+            await route.fulfill(status=503)
+        else:
+            await route.continue_()
+
+    await page.route("**/api/plans/search?*", fail_twice)
+    await page.goto(screen_harness.base_url + "/plans")
+    await page.locator("#plans-filter").fill("本文-初回")
+    notice = page.locator("#update-status")
+    await playwright.async_api.expect(notice).to_be_visible()
+    assert attempts == 2
+    await playwright.async_api.expect(page.locator("#files .file").first).to_be_visible()
+    await playwright.async_api.expect(notice).to_be_hidden()
+    assert attempts == 3
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_partial_search_keeps_success_and_retries_only_failed_host(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    local = {"host": "browser-test", "path": "plan.md", "name": "plan.md", "source_id": "explicit"}
+    remotes = [
+        {"host": "good", "path": "ok.md", "name": "ok.md"},
+        {"host": "slow", "path": "missing-until-recovery.md", "name": "missing-until-recovery.md"},
+    ]
+    calls: list[list[str]] = []
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+
+    async def list_files(route: playwright.async_api.Route) -> None:
+        response = await route.fetch()
+        entries = await response.json()
+        local.update(entries[0])
+        await route.fulfill(json=[*entries, *remotes])
+
+    async def search(route: playwright.async_api.Route) -> None:
+        params = urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query)
+        hosts = params.get("host", [])
+        calls.append(hosts)
+        if len(calls) == 1:
+            await route.fulfill(json={"entries": [local, remotes[0]], "failures": {"slow": 503}})
+        else:
+            waiting.set()
+            await release.wait()
+            await route.fulfill(json={"entries": remotes[1:], "failures": {}})
+
+    await page.route("**/api/plans/files", list_files)
+    await page.route("**/api/plans/search?*", search)
+    await page.goto(screen_harness.base_url + "/plans")
+    await page.locator("#files .file").first.wait_for()
+    await page.locator("#plans-filter").fill("本文-初回")
+    expect = playwright.async_api.expect
+    try:
+        await asyncio.wait_for(waiting.wait(), 5)
+        await expect(page.locator("#files .file")).to_have_count(2)
+        await expect(page.locator("#plans-empty")).to_be_hidden()
+        assert calls == [[], ["slow"]]
+    finally:
+        release.set()
+    await expect(page.locator("#files .file")).to_have_count(3)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_permission_denied_does_not_offer_retry(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    calls = 0
+
+    async def forbidden(route: playwright.async_api.Route) -> None:
+        nonlocal calls
+        calls += 1
+        await route.fulfill(status=403)
+
+    await page.route("**/api/plans/file?*", forbidden)
+    await page.goto(screen_harness.base_url + "/plans")
+    await playwright.async_api.expect(page.locator("#plans-selection-status")).to_contain_text("読む権限がありません")
+    await playwright.async_api.expect(page.locator("#update-status")).to_be_hidden()
+    assert calls == 1
+
+
+@pytest.mark.parametrize("during_first", [False, True])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_search_retry_stops_when_query_changes(screen_harness: _ScreenHarness, during_first: bool) -> None:
+    page = screen_harness.page
+    old_attempts = 0
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def search(route: playwright.async_api.Route) -> None:
+        nonlocal old_attempts
+        if "q=old-query" in route.request.url:
+            old_attempts += 1
+            started.set()
+            if during_first:
+                await release.wait()
+            await route.fulfill(status=503)
+        else:
+            await route.fulfill(json=[])
+
+    await page.route("**/api/plans/search?*", search)
+    await page.goto(screen_harness.base_url + "/plans")
+    await page.clock.install()
+    query = page.locator("#plans-filter")
+    await query.fill("old-query")
+    notice = page.locator("#update-status")
+    try:
+        if during_first:
+            await asyncio.wait_for(started.wait(), 5)
+        else:
+            await playwright.async_api.expect(notice).to_be_visible()
+        await query.fill("new-query")
+        await playwright.async_api.expect(page.locator("#plans-empty")).to_be_visible()
+    finally:
+        release.set()
+    await page.clock.fast_forward(31_000)
+    assert old_attempts == (1 if during_first else 2)
+    await playwright.async_api.expect(notice).to_be_hidden()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_preview_retry_stops_when_another_plan_is_selected(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    (screen_harness.root / "second.md").write_text("# 別の計画\n\n切替先の本文", encoding="utf-8")
+    old_calls = 0
+
+    async def fail_old(route: playwright.async_api.Route) -> None:
+        nonlocal old_calls
+        target = urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query).get("path")
+        if target == ["plan.md"]:
+            old_calls += 1
+            await route.fulfill(status=503)
+        else:
+            await route.continue_()
+
+    await page.route("**/api/plans/file?*", fail_old)
+    await page.goto(screen_harness.base_url + "/plans?host=browser-test&path=plan.md")
+    notice = page.locator("#update-status")
+    await playwright.async_api.expect(notice).to_be_visible()
+    assert old_calls == 2
+    await page.locator("#files .file").filter(has_text="second.md").click()
+    await playwright.async_api.expect(page.locator("#preview")).to_contain_text("切替先の本文")
+    await page.clock.install()
+    await page.clock.fast_forward(31_000)
+    await playwright.async_api.expect(notice).to_be_hidden()
+    assert old_calls == 2

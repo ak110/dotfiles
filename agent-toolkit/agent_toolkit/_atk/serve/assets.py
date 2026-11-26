@@ -70,6 +70,7 @@ SCRIPTS = {
         "sessions_detail.js",
         "agents.js",
         "settings.js",
+        "settings_view.js",
         "usage.js",
         "usage_display.js",
         "reset_permissions.js",

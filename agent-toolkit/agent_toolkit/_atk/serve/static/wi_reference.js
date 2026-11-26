@@ -1,10 +1,12 @@
-import {BASE_PATH} from "./common.js";
+import {readFailure} from "./common.js";
+import {BASE_PATH, recoverRead, setDisplayedReadError, setUpdateError} from "./common.js";
 import {api} from "./wi_feedback.js";
 import {entryPageUrl} from "./wi_list_render.js";
 
 const DATED = String.raw`\d{8}-\d{6}-\d{3,}\.md`;
 
 const childDialogs = [];
+let referenceSequence = 0;
 let renderDetailView, openMainDetail;
 let legacyNames;
 let legacyRequest;
@@ -19,7 +21,7 @@ export function decorateWiReferences(container) {
   if (!text.includes(".md")) return;
   linkWiReferences(container, {referenced_wi_names: legacyNames});
   if (legacyNames || !text.replace(new RegExp(DATED, "g"), "").includes(".md")) return;
-  legacyRequest ??= fetch(BASE_PATH + "/api/wi-reference-names").then(async response => {
+  legacyRequest ??= recoverRead(document.body.dataset.screen, BASE_PATH + "/api/wi-reference-names").then(async response => {
     if (!response.ok) throw new Error(String(response.status));
     const result = await response.json();
     return Array.isArray(result.names) ? result.names.filter(name => typeof name === "string") : [];
@@ -119,7 +121,10 @@ async function openReferencedWi(filename, origin) {
   frame.className = 'dialog-frame';
   frame.append(header, body, footer);
   dialog.append(frame);
+  const screen = document.body.dataset.screen;
+  const key = `reference:${++referenceSequence}`;
   dialog.addEventListener('close', () => {
+    setUpdateError(screen, key);
     const index = childDialogs.indexOf(dialog);
     if (index !== -1) childDialogs.splice(index, 1);
     dialog.remove();
@@ -148,23 +153,34 @@ async function openReferencedWi(filename, origin) {
   });
   childDialogs.push(dialog);
   dialog.showModal();
-  try {
-    const {entry} = await api(`/api/entries/${encodeURIComponent(filename)}`);
+  async function read() {
     if (!dialog.open) return;
-    const view = document.getElementById('detail-view-template').content.cloneNode(true);
-    const parts = new Map();
-    for (const part of view.querySelectorAll('[id]')) {
-      parts.set(part.id, part);
-      part.removeAttribute('id');
+    try {
+      const {entry} = await api(`/api/entries/${encodeURIComponent(filename)}`);
+      if (!dialog.open || document.body.dataset.screen !== screen) return;
+      setUpdateError(screen, key);
+      const view = document.getElementById('detail-view-template').content.cloneNode(true);
+      const parts = new Map();
+      for (const part of view.querySelectorAll('[id]')) {
+        parts.set(part.id, part);
+        part.removeAttribute('id');
+      }
+      renderDetailView(entry, id => parts.get(id));
+      body.replaceChildren(view);
+      open.hidden = false;
+      open.addEventListener('click', () => {
+        if (document.body.dataset.screen === 'wi') openMainDetail(entry);
+        else location.assign(entryPageUrl({filename}));
+      });
+    } catch (error) {
+      if (!dialog.open || document.body.dataset.screen !== screen) return;
+      if (readFailure(error.status) !== "temporary") {
+        setUpdateError(screen, key);
+        body.textContent = error.status === 404 ? 'WIが見つかりません。' : error.message;
+      } else {
+        setDisplayedReadError(screen, key, 'WIの参照を取得できません。', read);
+      }
     }
-    renderDetailView(entry, id => parts.get(id));
-    body.replaceChildren(view);
-    open.hidden = false;
-    open.addEventListener('click', () => {
-      if (document.body.dataset.screen === 'wi') openMainDetail(entry);
-      else location.assign(entryPageUrl({filename}));
-    });
-  } catch (error) {
-    body.textContent = error.status === 404 ? 'WIが見つかりません。' : error.message;
   }
+  await read();
 }

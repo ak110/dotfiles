@@ -1,5 +1,5 @@
 import {decorateWiReferences} from "./wi_reference.js";
-import {BASE_PATH, attachScrollEdges, beginOperation, isSelected, setDrawerOpen, timedFetch} from "./common.js";
+import {BASE_PATH, attachScrollEdges, beginOperation, isSelected, setDrawerOpen, timedFetch, readFailure, setUpdateError, setDisplayedReadError} from "./common.js";
 
 const KIND_LABELS = {
   user: "ユーザー",
@@ -293,20 +293,32 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     costRequest = request;
     const {host, engine, path} = detail;
     let cost = null;
+    let failed = false;
     try {
       const response = await timedFetch(
         "sessions", `${BASE_PATH}/api/sessions/cost?${new URLSearchParams({host, engine, path}).toString()}`,
         {signal: request.controller.signal}
       );
+      failed = readFailure(response.status) === "temporary";
       if (response.ok) cost = (await response.json()).cost;
-    } catch (_) {
-      // 取得できない場合は前回の値か「取得不能」を表示し、次の詳細の取り直しで再び取得する。  // pyfltr: allow-comment
+    } catch {
+      failed = true;
     }
     if (costRequest !== request) return;
     costRequest = null;
     const shown = currentDetail;
     if (!shown || costKey(shown) !== key) return;
-    if (cost) shown.cost = cost;
+    if (!failed) {
+      if (cost) shown.cost = cost;
+      setUpdateError("sessions", "cost");
+    } else if (!request.stale) {
+      setDisplayedReadError("sessions", "cost", "費用を取得できません。", () => {
+        if (currentDetail && costKey(currentDetail) === key) {
+          currentDetail.cost_pending = true;
+          void loadDeferredCost(currentDetail);
+        }
+      });
+    }
     shown.cost_pending = request.stale;
     renderCost(shown);
     if (request.stale) void loadDeferredCost(shown);
@@ -522,17 +534,36 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= FOLLOW_TAIL_PX;
   }
 
+  function showDetailFailure(status) {
+    setUpdateError("sessions", "detail");
+    detailTitleEl.textContent = "セッションの詳細";
+    document.getElementById("session-reading").hidden = true;
+    detailEl.replaceChildren();
+    const alert = document.createElement("p");
+    alert.setAttribute("role", "status");
+    alert.textContent = sessionDiagnostic(selected, readFailure(status) === "missing" ?
+      "記録が見つかりません。" : "記録を取得できません。");
+    detailEl.append(alert);
+  }
+
+  // 末尾を読んでいた場合は追記の末尾へ追従し、それ以外は位置を保つ。末尾より上を読んでいる間に届いた追記は、  // pyfltr: allow-comment
+  // エンドユーザーが末尾まで読み進めた時点で`renderEventsNearEnd`が描画する。  // pyfltr: allow-comment
   async function refreshSelectedDetail(timing = {}) {
     if (!selected) return;
     const {host, engine, path} = selected;
     const generation = ++detailGeneration;
     try {
       const response = await timedFetch(
-        "sessions", `${BASE_PATH}/api/sessions/detail?${new URLSearchParams({host, engine, path}).toString()}`, {}, timing
+        "sessions", `${BASE_PATH}/api/sessions/detail?${new URLSearchParams({host, engine, path}).toString()}`, {fresh: true}, timing
       );
-      if (!response.ok) return;
+      if (!response.ok) {
+        if (readFailure(response.status) === "temporary") throw new Error("取得失敗");
+        if (generation === detailGeneration) showDetailFailure(response.status);
+        return;
+      }
       const detail = await response.json();
       if (generation !== detailGeneration || !isSelected(selected, {host, engine, path})) return;
+      setUpdateError("sessions", "detail");
       const previousCount = currentDetail ? currentDetail.events.length : detail.events.length;
       const readingTail = isReadingTail();
       // 追記のたびに見出しが「算出中」へ戻らないよう、新しい費用が届くまで前回の値を表示する。  // pyfltr: allow-comment
@@ -550,8 +581,10 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
         const scroller = detailScroller();
         scroller.scrollTop = scroller.scrollHeight;
       }
-    } catch (_) {
-      // 一時的な取得失敗では現在の表示を残し、次の通知か再接続で取り直す。  // pyfltr: allow-comment
+    } catch {
+      if (generation === detailGeneration) {
+        setDisplayedReadError("sessions", "detail", "セッションの詳細を取得できません。", refreshSelectedDetail);
+      }
     }
   }
 
@@ -567,6 +600,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     }
     parentTrail = trail;
     currentDetail = null;
+    setUpdateError("sessions", "detail");
+    setUpdateError("sessions", "cost");
     conversationOnly = new URLSearchParams(location.search).get("view") === "conversation";
     document.getElementById("session-conversation").checked = conversationOnly;
     document.getElementById("session-reading").hidden = true;
@@ -579,7 +614,11 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     let outcome = "ok";
     try {
       const response = await (timedFetch("sessions", `${BASE_PATH}/api/sessions/detail?${query.toString()}`, {}, operation.timing));
-      if (!response.ok) throw new Error(`記録を取得できません (${response.status})`);
+      if (!response.ok) {
+        const error = new Error(`記録を取得できません (${response.status})`);
+        error.status = response.status;
+        throw error;
+      }
       const detail = await (response.json());
       if (generation !== detailGeneration) {
         outcome = "superseded";
@@ -594,17 +633,12 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
         outcome = "superseded";
         return;
       }
-      detailTitleEl.textContent = "";
-      detailEl.replaceChildren();
-      const alert = document.createElement("div");
-      alert.setAttribute("role", "alert");
-      alert.textContent = sessionDiagnostic({host, engine, path}, `セッションの詳細を取得できません: ${error.message} `);
-      const retry = document.createElement("button");
-      retry.type = "button";
-      retry.textContent = "再読み込み";
-      retry.addEventListener("click", () => openSession(host, engine, path, trail, false));
-      alert.append(retry);
-      detailEl.append(alert);
+      if (readFailure(error.status) === "temporary") {
+        detailTitleEl.textContent = "";
+        setDisplayedReadError("sessions", "detail", "セッションの詳細を取得できません。", refreshSelectedDetail);
+        return;
+      }
+      showDetailFailure(error.status);
     } finally {
       operation.end(outcome);
     }
@@ -632,6 +666,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     detailScroller().addEventListener("scroll", renderEventsNearEnd, {passive: true});
   }
   function clear(message) {
+    setUpdateError("sessions", "detail");
+    setUpdateError("sessions", "cost");
     selected = currentDetail = null;
     parentTrail = [];
     detailGeneration++;

@@ -4,7 +4,7 @@ import {
   isCurrentUserListOperation, loadBranchRegistry, loadEntries, loadTargetRepos, movePage, refreshKnownEntries, syncNotificationButton
 } from "./wi_list.js";
 import {
-  SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible, attachScrollEdges
+  SERVE_HOST, WI_ROOT, beginOperation, connectEvents, diagnostic, notifyDelayMs, resyncWhenVisible, attachScrollEdges, setUpdateError
 } from "./common.js";
 import {
   api, closeDialog, closeOperationNotice, runPending, setGlobalError
@@ -121,9 +121,7 @@ export function reloadFromExternalChange(trigger = 'resync', event = null) {
 
 async function reloadFromExternalChangeOnce(timing = {}) {
   // 通知用の既知集合の更新は表示に関わらないため待たず、取得の記録だけを同じ操作へ対応付ける。
-  void refreshKnownEntries({notify: true, timing}).catch((error) => {
-    setGlobalError(error.message);
-  });
+  void refreshKnownEntries({notify: true, timing}).catch(() => {});
   if (wiState.userListOperationPending) {
     wiState.externalListReloadPending = true;
     return;
@@ -250,14 +248,9 @@ let resolveFirstSubscription = () => {};
 const firstSubscription = new Promise(resolve => { resolveFirstSubscription = resolve; });
 
 // 無通信の検知、再接続とbfcacheの前後の接続の開閉は共通モジュールが担う。
+let syncFailures = 0;
 function subscribeEvents() {
   return connectEvents('/api/events', {
-    open: () => {
-      if (byId('connection-status').dataset.syncFailed !== 'true') {
-        byId('connection-status').hidden = true;
-        byId('connection-status').textContent = '';
-      }
-    },
     subscribed: () => {
       if (!initialLoadStarted) {
         resolveFirstSubscription();
@@ -279,16 +272,12 @@ function subscribeEvents() {
       void initialization.then(() => reloadFromExternalChange('sse', event));
     },
     'sync-error': () => {
-      const status = byId('connection-status');
-      status.dataset.syncFailed = 'true';
-      status.textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / Git同期`, 'Git同期に失敗しました。自動で再試行します。今すぐ同期も利用できます。');
-      status.hidden = false;
+      syncFailures += 1;
+      if (syncFailures >= 2) setUpdateError('wi', 'sync', 'WIを同期できません。', synchronizeAndLoad);
     },
     'sync-ok': () => {
-      const status = byId('connection-status');
-      status.dataset.syncFailed = 'false';
-      status.textContent = '';
-      status.hidden = true;
+      syncFailures = 0;
+      setUpdateError('wi', 'sync');
     },
   });
 }

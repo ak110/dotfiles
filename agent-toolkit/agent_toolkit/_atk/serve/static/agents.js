@@ -1,13 +1,13 @@
 import {decorateWiReferences} from "./wi_reference.js";
-import {setUpdateError, BASE_PATH} from "./common.js";
+import {setUpdateError, setDisplayedReadError, BASE_PATH, recoverRead} from "./common.js";
 import {registerScreen} from "./shell.js";
 
 const active = () => document.body.dataset.screen === "agents";
 const checkbox = document.getElementById("agents-terminated");
 const hosts = document.getElementById("agents-hosts");
 
-async function fetchJson(url) {
-  const response = await fetch(BASE_PATH + url);
+async function fetchJson(url, signal) {
+  const response = await recoverRead("agents", BASE_PATH + url, {signal});
   if (!response.ok) throw new Error(`一覧の取得に失敗しました（HTTP ${response.status}）。`);
   return response.json();
 }
@@ -108,28 +108,50 @@ function renderRoots(content, roots) {
 function watchHost(content, host) {
   let pending = false;
   let timer;
+  let failed = false;
+  let generation = 0;
+  let current;
+  let controller;
   async function refresh() {
     clearTimeout(timer);
     if (pending || !active()) return;
     pending = true;
+    const token = generation;
+    controller = new AbortController();
     const params = new URLSearchParams({terminated: checkbox.checked ? "1" : "0"});
     if (host !== null) params.set("host", host);
     try {
-      const payload = await fetchJson("/api/agents/list?" + params);
+      const payload = await fetchJson("/api/agents/list?" + params, controller.signal);
       if (payload.error) throw new Error(payload.error);
+      if (!active() || token !== generation) return;
       renderRoots(content, payload.roots);
+      failed = false;
       setUpdateError("agents", host);
-    } catch (cause) {
+    } catch {
+      if (!active() || token !== generation) return;
+      failed = true;
       if (content.textContent === "読み込み中…") content.textContent = "";
-      setUpdateError("agents", host, `${host ?? "ローカル"}: ${cause.message}`, refresh);
+      setDisplayedReadError("agents", host, `${host ?? "ローカル"}のエージェント一覧を取得できません。`, refresh);
     } finally {
       pending = false;
-      if (active()) timer = setTimeout(refresh, 2000);
+      if (active() && token !== generation) void refresh();
+      else if (active() && !failed) timer = setTimeout(refresh, 2000);
     }
   }
-  checkbox.addEventListener("change", refresh);
-  document.addEventListener("atk-screen-change", refresh);
-  void refresh();
+  function change() {
+    const selection = active() ? checkbox.checked : null;
+    if (selection !== current) {
+      current = selection;
+      generation += 1;
+      controller?.abort();
+      failed = false;
+      setUpdateError("agents", host);
+    }
+    void refresh();
+  }
+  checkbox.addEventListener("change", change);
+  document.addEventListener("atk-screen-change", change);
+  change();
 }
 
 async function init() {
@@ -150,7 +172,7 @@ async function init() {
       watchHost(content, hostname);
     }
   } catch (cause) {
-    setUpdateError("agents", "hosts", cause.message, init);
+    setDisplayedReadError("agents", "hosts", cause.message, init);
     delete hosts.dataset.initialized;
   }
 }

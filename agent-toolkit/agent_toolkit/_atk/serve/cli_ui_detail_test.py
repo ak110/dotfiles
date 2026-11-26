@@ -258,6 +258,7 @@ async function exercise(updatedEntries, warnings) {
     deleteOpen: elements['delete-dialog'].open,
     detailOpen: elements['detail-dialog'].open,
     alert: elements['detail-alert'].textContent,
+    readNotice: elements['update-status'].querySelector('[role=status]').textContent,
     topmost: topmostDialog()?.id || '',
     focused
   };
@@ -277,7 +278,7 @@ process.stdout.write(JSON.stringify({changed, unreadable}));
     for outcome in result.values():
         assert outcome["deleteOpen"] is False
         assert outcome["detailOpen"] is True
-        assert "詳細取得に失敗" in outcome["alert"]
+        assert outcome["readNotice"] == "WIの詳細を取得できません。"
         assert "削除確認を閉じました" in outcome["alert"]
         assert "削除操作をやり直してください" in outcome["alert"]
         assert outcome["topmost"] == "detail-dialog"

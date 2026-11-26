@@ -197,6 +197,7 @@ def reset_editor_snapshot(
 ) -> dict[str, Any]:
     claude = read_metadata("claude")
     codex = read_metadata("codex")
+    failures = state.get("refresh_failures", []) if state.get("refresh_context") == usage_settings.context_id() else []
     return {
         "accounts": {
             "claude": {"account": claude.get("account"), "plan": claude.get("contract")},
@@ -204,6 +205,10 @@ def reset_editor_snapshot(
         },
         "claude_inventory": state.get("claude_reset_inventory", []),
         "codex_weekly": codex.get("weekly_window"),
+        "refresh_failed": bool(failures),
+        "failed_engines": [
+            engine for engine in ("codex", "claude") if any(failure.lower().startswith(f"{engine}:") for failure in failures)
+        ],
         "windows": display_windows(windows, history),
     }
 

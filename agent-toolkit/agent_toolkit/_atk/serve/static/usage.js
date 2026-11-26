@@ -1,4 +1,4 @@
-import {setUpdateError, BASE_PATH} from "./common.js";
+import {setUpdateError, setDisplayedReadError, BASE_PATH} from "./common.js";
 import {registerScreen} from "./shell.js";
 import {DAY, claudeResetScopeName, dateJst, forecast, quotaName} from "./usage_display.js";
 
@@ -30,7 +30,7 @@ function values(parent, pairs) {
     row.append(element("dt", label), element("dd", String(value)));
     list.append(row);
   }
-  parent.append(list);
+  if (list.childElementCount) parent.append(list);
 }
 
 function booleanStatus(value, yes, no) {
@@ -152,7 +152,7 @@ function extra(parent, metadata) {
   ]);
 }
 
-function render(payload) {
+function render(payload, refreshed = false) {
   const now = Date.now() / 1000;
   const url = {
     claude: "https://claude.ai/settings/usage?from=cc_cli_limit_message",
@@ -164,10 +164,12 @@ function render(payload) {
     const section = element("section", "", "metric-section");
     const metadata = payload.metadata[engine] ?? {};
     section.append(element("h2", names[engine], "page-heading"), link("公式の利用状況を開く", url[engine]));
-    values(section, [["プラン", metadata.contract || "未取得"]]);
     const rows = payload.windows.filter(window => window.engine === engine);
-    if (rows.length === 0) section.append(element("p", "利用枠の観測はありません。"));
-    else for (const window of rows) section.append(quota(window, now));
+    const failed = payload.refresh_failures?.some(message => message.startsWith(names[engine] + ":"));
+    const settled = (refreshed || payload.last_refresh_at) && !failed;
+    values(section, [["プラン", metadata.contract || (settled ? "未取得" : null)]]);
+    if (rows.length === 0 && settled) section.append(element("p", "利用枠の観測はありません。"));
+    for (const window of rows) section.append(quota(window, now));
     section.append(element("h3", "リセット権"));
     if (engine === "claude") {
       extra(section, metadata);
@@ -177,7 +179,7 @@ function render(payload) {
         const name = claudeResetScopeName(right.scope, payload.windows);
         section.append(element("p", `${name} · ${right.count}回 · ${dateJst(Date.parse(right.until) / 1000)}まで`));
       }
-    } else {
+    } else if (settled || Object.keys(metadata).length) {
       values(section, [
         ["在庫", metadata.reset_available_count == null ? "未取得" : `${metadata.reset_available_count}回`],
         ["期限", "取得できない"],
@@ -195,20 +197,15 @@ function render(payload) {
     for (const entry of permissions) {
       section.append(element("p", `${entry.scope} · ${entry.count}回 · ${dateJst(Date.parse(entry.from) / 1000)}〜${dateJst(Date.parse(entry.until) / 1000)}`));
     }
-    const failure = (payload.refresh_failures ?? []).find(item => item.startsWith(`${names[engine]}:`));
-    if (failure) {
-      const observed = rows.length ? Math.max(...rows.map(window => window.observed_at)) : null;
-      section.append(element("p", `取得失敗: ${failure}。最後の観測: ${dateJst(observed)}`, "metric-warning"));
-    }
     body.append(section);
   }
   view.replaceChildren(body);
 }
 
 async function request(path, body) {
-  const response = await fetch(BASE_PATH + path, body ? {
+  const response = await fetch(BASE_PATH + path, {signal: AbortSignal.timeout(90_000), ...(body ? {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
-  } : undefined);
+  } : {})});
   const result = await response.json();
   if (!response.ok) throw new Error([result.error, result.next_action].filter(Boolean).join(" "));
   return result;
@@ -220,16 +217,30 @@ async function update(force) {
 
   refreshButton.disabled = true;
   try {
-    if (!data) {
-      data = await request("/api/usage");
-      render(data);
+    for (const delay of [0, 1500]) {
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      if (!visible()) return;
+      try {
+        if (!data) {
+          data = await request("/api/usage");
+          if (visible()) render(data);
+        }
+        if (!visible()) return;
+        data = await request("/api/usage/refresh", {force: force && !delay});
+        if (visible()) render(data, true);
+        if (!data.refresh_failures?.length) {
+          refreshButton.hidden = false;
+          setUpdateError("usage", "refresh");
+          return;
+        }
+      } catch {
+        // pyfltr: allow-comment 前回の値は次の取得が成功するまで表示する。
+      }
     }
-    if (!visible()) return;
-    data = await request("/api/usage/refresh", {force});
-    render(data);
-    setUpdateError("usage", "refresh", data.refresh_failures?.length ? "利用枠の取得に失敗した項目があります。" : "", () => update(true));
-  } catch (error) {
-    setUpdateError("usage", "refresh", `利用枠の取得に失敗しました。 ${error.message}`, () => update(true));
+    if (visible()) {
+      refreshButton.hidden = true;
+      setDisplayedReadError("usage", "refresh", "利用枠を取得できません。", () => update(true));
+    }
   } finally {
     pending = false;
     refreshButton.disabled = false;

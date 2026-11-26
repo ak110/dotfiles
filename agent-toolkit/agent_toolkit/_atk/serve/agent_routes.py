@@ -72,10 +72,11 @@ def register_agent_routes(app: quart.Quart, context: SessionsContext, listing: A
                 roots = payload["roots"]
                 if not isinstance(roots, list):
                     raise ValueError("一覧の形式が不正です")
-            except Exception as error:  # noqa: BLE001
-                return json_no_store(
-                    {"error": f"一覧を取得できません: {error}。SSH接続を確認し、接続先のdotfilesを更新してください。"}
-                )
+            except Exception:  # noqa: BLE001
+                app.logger.info("エージェント一覧を取得できません: %s", host, exc_info=True)
+                response = json_no_store({"error": "エージェント一覧を取得できません。"})
+                response.status_code = 503
+                return response
             raw_records = payload.get("records")
             unavailable = not isinstance(raw_records, dict)
             records = (

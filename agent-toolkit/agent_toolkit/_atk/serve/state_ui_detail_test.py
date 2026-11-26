@@ -29,22 +29,18 @@ const redisplayed = {
   message: elements['operation-notice-message'].textContent,
   hidden: elements['operation-notice'].hidden
 };
-const failures = [];
+const readNotices = [];
+const status = elements['update-status'].querySelector('[role=status]');
 fetchHandler = async () => ({
-  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '一覧取得失敗'})
+  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '取得失敗'})
 });
 await loadEntries();
-failures.push(elements['operation-notice-message'].textContent);
-fetchHandler = async () => ({
-  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '対象取得失敗'})
-});
+readNotices.push(status.textContent);
 await loadTargetRepos();
-failures.push(elements['operation-notice-message'].textContent);
-fetchHandler = async () => ({
-  ok: false, status: 500, statusText: 'Error', json: async () => ({error: '詳細取得失敗'})
-});
+readNotices.push(status.textContent);
 await selectEntry({state: 'inbox', filename: 'detail.md'}, new Element('detail-origin', 'BUTTON'));
-failures.push(elements['operation-notice-message'].textContent);
+readNotices.push(status.textContent);
+const failures = [];
 const removed = {
   kind: 'awi', state: 'processing', filename: 'entry.md', content: '本文', body_html: '<p>本文</p>',
   frontmatter_entries: []
@@ -71,7 +67,7 @@ refreshKnownEntries = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
 failures.push(elements['operation-notice-message'].textContent);
-process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
+process.stdout.write(JSON.stringify({shown, cleared, redisplayed, readNotices, failures}));
 """,
         environment=host_environ(),
     )
@@ -83,12 +79,10 @@ process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
             "focused": "refresh-button",
         },
         "redisplayed": {"message": "［WI / node-test / /notes / 操作］後続のエラー", "hidden": False},
+        "readNotices": ["WI一覧を取得できません。", "一部の情報を更新できません。", "一部の情報を更新できません。"],
         "failures": [
-            "［WI / node-test / /notes / 一覧取得］一覧取得失敗",
-            "［WI / node-test / /notes / 対象リポジトリ一覧取得］対象取得失敗",
-            "［WI / node-test / /notes / detail.md］詳細取得失敗",
             "entry.mdは削除されたため表示できません。一覧を更新しました。",
-            "［WI / node-test / /notes / 操作］SSE更新失敗",
+            "entry.mdは削除されたため表示できません。一覧を更新しました。",
             "［WI / node-test / /notes / 操作］ダイアログ外失敗",
             "［WI / node-test / /notes / 操作］初期化失敗",
         ],

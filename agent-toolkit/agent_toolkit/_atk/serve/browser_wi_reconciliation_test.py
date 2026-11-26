@@ -272,7 +272,7 @@ async def test_delete_confirmation_closes_on_detail_failure_and_content_conflict
     )
     harness.current_state.publish()
     await delete_dialog.wait_for(state="hidden")
-    await detail.get_by_role("alert").filter(has_text="詳細取得に失敗しました").wait_for(state="visible")
+    await playwright.async_api.expect(detail.locator("#update-status")).to_contain_text("WIの詳細を取得できません。")
     assert "削除操作をやり直してください" in await detail.locator("#detail-alert").inner_text()
     await playwright.async_api.expect(detail.locator("#detail-dialog-body")).to_be_focused()
     await page.unroute("**/api/entries/dialog-failure.md", fail_detail)

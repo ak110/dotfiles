@@ -314,7 +314,12 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
         command_dest="worktree_stash_subcommand",
         private_notes=_private_notes.default_private_notes(invocation.home),
     ),
-    "config": lambda invocation: _config_cmd.dispatch(invocation.args, invocation.home, refresh=_usage_refresh.ensure_fresh),
+    "config": lambda invocation: _config_cmd.dispatch(
+        invocation.args,
+        invocation.home,
+        refresh=_usage_refresh.ensure_fresh,
+        observe_usage=_usage_refresh.refresh_for_display,
+    ),
     "plans": lambda invocation: _plans.dispatch_command(invocation.args, home=invocation.home),
     "review-table": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_table_cli.dispatch),
     "review-audit": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_audit.dispatch),

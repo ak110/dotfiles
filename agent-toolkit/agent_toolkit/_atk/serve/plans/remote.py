@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import asyncio.subprocess as _async_subprocess
 import base64
+import contextlib
 import dataclasses
 import json
 import pathlib
@@ -52,6 +53,16 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     )
 
 
+def _check_read_error(payload: typing.Mapping[str, typing.Any]) -> None:
+    match payload.get("error_type"):
+        case "not_found":
+            raise FileNotFoundError
+        case "permission_denied":
+            raise PermissionError
+        case "timeout":
+            raise TimeoutError
+
+
 def _decode_read_payload(payload: typing.Mapping[str, typing.Any]) -> str:
     data_b64 = str(payload["data"])
     return base64.b64decode(data_b64).decode("utf-8", errors="replace")
@@ -78,8 +89,7 @@ async def fetch_remote_file(
         else:
             if response.get("ok"):
                 return _decode_read_payload(response)
-            if response.get("error_type") == "not_found":
-                raise FileNotFoundError(rel)
+            _check_read_error(response)
             error_msg = response.get("error", "(no error message)")
             # `ok=False`は権限不足・パス不正など恒久的な失敗を含むため、fallbackで取得し直す。
             logger.warning("リモートRPCエラー host=%s path=%s: %s（fallbackへ）", host, rel, error_msg)
@@ -88,7 +98,9 @@ async def fetch_remote_file(
         source_b64 = base64.b64encode(source_id.encode("utf-8")).decode("ascii")
         args = [source_b64, rel_b64]
     raw = await ssh_runner(host, "read", args)
-    return _decode_read_payload(json.loads(raw))
+    payload = json.loads(raw)
+    _check_read_error(payload)
+    return _decode_read_payload(payload)
 
 
 class RemoteSearchSuperseded(Exception):
@@ -197,6 +209,7 @@ async def search_remote_files(
                     if source_id:
                         return {(source_id, path) for path in paths}
                     return paths
+            _check_read_error(response)
             logger.warning("リモート検索RPCエラー host=%s: %s（fallbackへ）", host, response.get("error"))
 
     async def _run_ssh_search() -> RemoteSearchResult:
@@ -206,6 +219,7 @@ async def search_remote_files(
             args = [source_b64, query_b64]
         raw = await ssh_runner(host, "search", args)
         payload = json.loads(raw)
+        _check_read_error(payload)
         matches = payload.get("matches")
         if isinstance(matches, list):
             return {
@@ -213,9 +227,9 @@ async def search_remote_files(
                 for item in matches
                 if isinstance(item, dict) and "source_id" in item and "path" in item
             }
-        paths = payload.get("paths", [])
+        paths = payload.get("paths")
         if not isinstance(paths, list):
-            return set()
+            raise ValueError("リモート検索結果の形式が不正です")
         result = {str(path) for path in paths}
         if source_id:
             return {(source_id, path) for path in result}
@@ -255,6 +269,7 @@ class RemoteWatcher:
         self.state = state
 
         self._backoff = REMOTE_BACKOFF_INITIAL_SEC
+        self._retry_requested = asyncio.Event()
 
         self._proc: _async_subprocess.Process | None = None
 
@@ -298,6 +313,10 @@ class RemoteWatcher:
         finally:
             self._pending.pop(req_id, None)
 
+    def retry(self) -> None:
+        if not self.is_connected():
+            self._retry_requested.set()
+
     async def run(self) -> None:
         """無限ループで接続→ストリーム処理→バックオフ→再接続を繰り返す。
 
@@ -330,7 +349,9 @@ class RemoteWatcher:
             _atk_serve_remote.raise_if_cancelling()
 
             jittered = self._backoff * random.uniform(*REMOTE_BACKOFF_JITTER_RANGE)
-            await asyncio.sleep(jittered)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._retry_requested.wait(), jittered)
+            self._retry_requested.clear()
             self._backoff = min(self._backoff * 2, REMOTE_BACKOFF_MAX_SEC)
 
     async def _connect(self) -> _async_subprocess.Process:

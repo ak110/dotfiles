@@ -172,13 +172,13 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
             body='{"error":"一覧取得失敗"}',
         )
 
-    await page.route("**/api/entries?*", fail_first_list_request)
+    await page.route("**/api/sync", fail_first_list_request)
     await page.locator("#refresh-button").click()
-    await playwright.async_api.expect(error_message).to_have_text(
-        f"［WI / {socket.gethostname()} / {browser_harness.root} / 一覧取得］一覧取得失敗"
+    await playwright.async_api.expect(error_message).to_contain_text(
+        f"［WI / {socket.gethostname()} / {browser_harness.root} / Git同期］一覧取得失敗"
     )
     await playwright.async_api.expect(error_region).to_be_visible()
-    await page.unroute("**/api/entries?*", fail_first_list_request)
+    await page.unroute("**/api/sync", fail_first_list_request)
     await close_button.focus()
     await playwright.async_api.expect(close_button).to_be_focused()
     await page.keyboard.press("Enter")
@@ -192,10 +192,10 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
             body='{"error":"後続のエラー"}',
         )
 
-    await page.route("**/api/entries?*", fail_second_list_request)
+    await page.route("**/api/sync", fail_second_list_request)
     await page.locator("#refresh-button").click()
-    await playwright.async_api.expect(error_message).to_have_text(
-        f"［WI / {socket.gethostname()} / {browser_harness.root} / 一覧取得］後続のエラー"
+    await playwright.async_api.expect(error_message).to_contain_text(
+        f"［WI / {socket.gethostname()} / {browser_harness.root} / Git同期］後続のエラー"
     )
     await playwright.async_api.expect(error_region).to_be_visible()
 
@@ -221,7 +221,7 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
     assert metrics["closeRight"] <= metrics["viewportWidth"]
     assert metrics["closeWidth"] >= 44
     assert metrics["closeHeight"] >= 44
-    await page.unroute("**/api/entries?*", fail_second_list_request)
+    await page.unroute("**/api/sync", fail_second_list_request)
 
 
 @pytest.mark.asyncio(loop_scope="session")

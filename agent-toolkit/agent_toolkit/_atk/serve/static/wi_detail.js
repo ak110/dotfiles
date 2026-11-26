@@ -1,3 +1,4 @@
+import {readFailure} from "./common.js";
 // WI詳細の表示・選択と外部更新時の入力保護。
 import {
   DELETABLE_STATES, EDITABLE_STATES, FRONTMATTER_EXCLUDED_KEYS, MUTABLE_STATES, PROCESSABLE_STATES,
@@ -20,7 +21,7 @@ import {
   loadEntries, renderListLoading
 } from "./wi_list.js";
 import {
-  BASE_PATH
+  BASE_PATH, setUpdateError, setDisplayedReadError
 } from "./common.js";
 
 import {closeWiReferences, configureWiReferences, linkWiReferences, wiLink} from "./wi_reference.js";
@@ -286,7 +287,8 @@ function reportDeletedEntry(filename, {reloadList = true} = {}) {
   if (reloadList) void reloadFromExternalChange();
 }
 
-export async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) {
+export async function selectEntry(entry, origin = null, {ignoreNotFound = false, recovering = false} = {}) {
+  if (!recovering) setUpdateError('wi', 'detail');
   const requestGeneration = ++wiState.detailRequestGeneration;
   const sessionGeneration = ++wiState.detailSessionGeneration;
   const requestIsCurrent = () => requestGeneration === wiState.detailRequestGeneration &&
@@ -303,16 +305,22 @@ export async function selectEntry(entry, origin = null, {ignoreNotFound = false}
   try {
     const payload = await api(`/api/entries/${encodeURIComponent(entry.filename)}`);
     if (!requestIsCurrent()) return;
+    setUpdateError('wi', 'detail');
     displayEntry(payload.entry);
     openDetailDialog(wiState.detailOrigin);
     if (payload.entry.state !== entry.state) void loadEntries({showLoading: false});
   } catch (error) {
     if (!requestIsCurrent()) return;
     if (error.status === 404) {
+      setUpdateError('wi', 'detail');
       if (!ignoreNotFound) reportDeletedEntry(entry.filename);
       return;
     }
-    setGlobalError(error.message);
+    if (readFailure(error.status) !== "temporary") {
+      setUpdateError('wi', 'detail');
+      setGlobalError(error.message);
+    }
+    else setDisplayedReadError('wi', 'detail', 'WIの詳細を取得できません。', () => selectEntry(entry, origin, {ignoreNotFound, recovering: true}));
   } finally {
     if (pendingRow) {
       pendingRow.removeAttribute('aria-busy');
@@ -364,6 +372,7 @@ export function closeDetailDialog({updateUrl = true, force = false} = {}) {
       mode.startsWith('decide-') && byId('decision-note').value !== '';
     if (changed && !window.confirm('変更した入力を破棄しますか？')) return;
   }
+  setUpdateError('wi', 'detail');
   closeWiReferences();
   const returnTarget = detailReturnTarget();
   wiState.detailRequestGeneration += 1;
@@ -442,12 +451,21 @@ export async function reloadOpenDetailFromExternalChange({timing = {}} = {}) {
     const payload = await api(`/api/entries/${encodeURIComponent(filename)}`, {timing});
     if (!requestIsCurrent()) return;
     resolvedEntry = payload.entry;
+    setUpdateError('wi', 'detail');
   } catch (error) {
     if (!requestIsCurrent()) return;
     if (error.status !== 404) {
-      reportExternalDetailFailure(error, deleteConfirmationInvalidated);
+      if (readFailure(error.status) !== "temporary") {
+        setUpdateError('wi', 'detail');
+        reportExternalDetailFailure(error, deleteConfirmationInvalidated);
+      } else {
+        const invalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
+        if (invalidated && byId('detail-alert').hidden) setTextMessage('detail-alert', DELETE_RECONFIRM_MESSAGE);
+        setDisplayedReadError('wi', 'detail', 'WIの詳細を取得できません。', reloadOpenDetailFromExternalChange);
+      }
       return;
     }
+    setUpdateError('wi', 'detail');
     deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
   }
   if (!resolvedEntry) {

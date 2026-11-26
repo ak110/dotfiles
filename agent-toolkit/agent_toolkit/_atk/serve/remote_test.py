@@ -882,3 +882,18 @@ def test_stderr_excerpt_redacts_credentials_before_taking_tail(prefix: str) -> N
     assert "[REDACTED]" in excerpt
     assert excerpt.startswith("...") == bool(prefix)
     assert len(excerpt) <= serve_remote.STDERR_EXCERPT_MAX_CHARS + len("...")
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (FileNotFoundError(), 404),
+        (PermissionError(), 403),
+        (TimeoutError(), 503),
+        (serve_remote.RemoteHelperError(255, b"user@host: Permission denied (publickey)."), 403),
+        (serve_remote.RemoteHelperError(255, b"Connection timed out"), 503),
+        (serve_remote.RemoteHelperError(255, b"Host key verification failed."), 403),
+    ],
+)
+def test_read_failure_status_preserves_the_cause(error, status):
+    assert serve_remote.read_failure_status(error) == status

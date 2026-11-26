@@ -439,15 +439,18 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
 
 
 @pytest.mark.asyncio
-async def test_remote_failure_warning_names_next_action(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_remote_helper_failure_does_not_offer_ssh_as_normal_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(2, b"helper not found\n"))
     context = _context(tmp_path, remote_hosts=["down-host"])
 
     _, warnings = await sessions.list_sessions(context)
 
-    reason = warnings[0]["reason"]
-    assert "次の操作:" in reason
-    assert "ssh down-host" in reason
+    warning = warnings[0]
+    assert warning["retryable"] == "false"
+    assert "次の操作:" not in warning["reason"]
+    assert "ssh down-host" not in warning["reason"]
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])

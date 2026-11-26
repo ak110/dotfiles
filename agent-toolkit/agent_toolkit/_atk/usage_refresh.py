@@ -492,10 +492,13 @@ def _refresh_locked(
         try:
             state = usage_settings.read_settings()
             previous = state.get("last_refresh_at")
+            interval = 1 if requested_at is not None and state.get("refresh_failures") else 300
             if (
                 state.get("refresh_context") == usage_settings.context_id()
                 and isinstance(previous, (int, float))
-                and ((not force and time.time() - previous < 300) or (requested_at is not None and previous >= requested_at))
+                and (
+                    (not force and time.time() - previous < interval) or (requested_at is not None and previous >= requested_at)
+                )
             ):
                 return state
             errors = refresh(quiet=True, environment=environment)

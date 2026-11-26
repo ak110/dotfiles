@@ -494,12 +494,6 @@ async def test_session_line_link_survives_record_notification_during_open(screen
             return this === window.testSessionEvents ? NativeEventSource.OPEN : super.readyState;
           }
         };
-        const responseJson = Response.prototype.json;
-        Response.prototype.json = async function() {
-          const body = await responseJson.call(this);
-          if (body.session_name === '遅い初回') requestAnimationFrame(() => { window.testFirstDetailConsumed = true; });
-          return body;
-        };
     """)
     open_started, release_open = asyncio.Event(), asyncio.Event()
     detail_pattern = "**/api/sessions/detail?*"
@@ -540,6 +534,8 @@ async def test_session_line_link_survives_record_notification_during_open(screen
         )
         await asyncio.wait_for(open_started.wait(), timeout=10)
         await notify_record_change()
+        assert requested == 1
+        release_open.set()
         await expect(title).to_contain_text("通知による初回表示")
         await expect(usage).to_contain_text("$0.22")
         await expect(markers).to_have_count(2)
@@ -547,12 +543,6 @@ async def test_session_line_link_survives_record_notification_during_open(screen
         assert await main.evaluate(
             "element => 0 < element.scrollTop && element.scrollTop + element.clientHeight < element.scrollHeight - 1"
         )
-
-        release_open.set()
-        await page.wait_for_function("window.testFirstDetailConsumed === true")
-        await expect(title).to_contain_text("通知による初回表示")
-        await expect(usage).to_contain_text("$0.22")
-        await expect(markers).to_have_count(2)
 
         await main.evaluate("element => { element.scrollTop = 0; }")
         await notify_record_change()
@@ -653,3 +643,69 @@ async def test_session_report_markdown_and_result_follow_the_view_mode(screen_ha
     await page.get_by_label("会話だけ").check()
     await expect(report.locator("strong")).to_have_text("報告の本文")
     await expect(result).to_have_count(0)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_full_text_search_keeps_matches_and_only_retries_temporary_records(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    records: list[list[str]] = []
+    queries: list[dict] = []
+
+    async def list_sessions(route: playwright.async_api.Route) -> None:
+        response = await route.fetch()
+        payload = await response.json()
+        if not records:
+            records.extend([[entry["host"], entry["engine"], entry["path"]] for entry in payload["sessions"]])
+        await route.fulfill(response=response)
+
+    async def search(route: playwright.async_api.Route) -> None:
+        payload = route.request.post_data_json
+        assert isinstance(payload, dict)
+        queries.append(payload)
+        if len(queries) == 1:
+            await route.fulfill(
+                json={
+                    "matches": records[:1],
+                    "incomplete": True,
+                    "unavailable": [records[0][0]],
+                    "retry": {records[1][0]: [records[1][2]]},
+                }
+            )
+        else:
+            await route.fulfill(json={"matches": records[1:], "incomplete": False, "unavailable": [], "retry": {}})
+
+    await page.route("**/api/sessions/list", list_sessions)
+    await page.route("**/api/sessions/search", search)
+    await page.goto(screen_harness.base_url + "/sessions")
+    expect = playwright.async_api.expect
+    items = page.locator("#sessions .session-item")
+    await expect(items).to_have_count(2)
+    await page.locator("#sessions-filter").fill("fixture-search-unsupplied")
+    await expect(page.locator("#sessions-search-status")).to_contain_text("検索できない記録があります。")
+    for path in (records[0][2], records[1][2]):
+        await expect(page.locator(f'#sessions .session-item[data-path="{path}"]')).to_be_visible()
+    assert len(queries) == 2
+    assert queries[1]["retry"] == {records[1][0]: [records[1][2]]}
+    await expect(page.locator("#update-status")).to_be_hidden()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_full_text_search_abandons_retry_when_screen_changes(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    attempts = 0
+    noticed = asyncio.Event()
+
+    async def search(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        await route.fulfill(json={"matches": [], "incomplete": True, "retry": {"browser-test": None}})
+        noticed.set()
+
+    await page.route("**/api/sessions/search", search)
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.clock.install()
+    await page.locator("#sessions-filter").fill("fixture-search-unsupplied")
+    await asyncio.wait_for(noticed.wait(), 5)
+    await page.get_by_role("navigation", name="画面").get_by_role("link", name="計画ファイル").click()
+    await page.clock.fast_forward(31_000)
+    assert attempts == 1

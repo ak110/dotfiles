@@ -165,7 +165,9 @@ const first = entry('a.md');
 displayEntry(first); openDetailDialog(null);
 let oldList;
 fetchHandler = async () => new Promise(resolve => { oldList = resolve; });
+elements['waiting-target-filter'].value = 'old/repo';
 const stale = loadEntries();
+elements['waiting-target-filter'].value = '';
 fetchHandler = async url => {
   if (url.endsWith('/b.md')) return {ok: true, json: async () => ({entry: {...entry('b.md'), answered: true}})};
   if (url.endsWith('/c.md')) return {ok: false, status: 404, json: async () => ({error: '消失'})};

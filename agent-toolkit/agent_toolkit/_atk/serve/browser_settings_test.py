@@ -11,7 +11,7 @@ import time
 import playwright.async_api
 import pytest
 
-from agent_toolkit._atk import config, config_settings
+from agent_toolkit._atk import config, config_settings, usage_refresh
 from agent_toolkit._atk.serve import settings_routes
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_fixture,
@@ -21,6 +21,11 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
 from agent_toolkit._common import codex_fast_mode, usage_observation, usage_settings
 
 pytestmark = [pytest.mark.browser]
+
+
+@pytest.fixture(autouse=True)
+def isolate_observation_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(usage_refresh, "refresh", lambda **_kwargs: [])
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -185,7 +190,7 @@ async def test_settings_host_scope_and_native_deadline(
     await expect(existing).not_to_contain_text("atk config usage --refresh")
     await existing.get_by_label("エンジン").select_option("claude")
     await expect(direct).to_be_visible()
-    await expect(existing).to_contain_text("atk config usage --refresh")
+    await expect(existing).not_to_contain_text("atk config usage --refresh")
     await direct.click()
     await expect(existing.get_by_label("アカウントを直接入力")).to_be_visible()
 
@@ -387,16 +392,17 @@ async def test_remote_settings_show_cached_snapshot_and_resolve_draft_conflict(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
     config_settings.save_config({"remote_hosts": '["demo-host"]'})
     started = threading.Event()
+    update_started = threading.Event()
     release = threading.Event()
     snapshot = config.settings_snapshot(tmp_path)
     snapshot["settings"]["serve_host"].update(effective="old-value", saved="old-value")
     calls = 0
 
-    def remote_snapshot(_host: str):
+    def remote_snapshot(_host: str, **_kwargs):
         nonlocal calls
         calls += 1
         result = copy.deepcopy(snapshot)
-        if calls > 1:
+        if update_started.is_set():
             started.set()
             if not release.wait(timeout=10):
                 raise TimeoutError
@@ -411,12 +417,12 @@ async def test_remote_settings_show_cached_snapshot_and_resolve_draft_conflict(
     editor = page.locator('[data-setting="serve_host"]')
     field = editor.get_by_label("保存値")
     expect = playwright.async_api.expect
-    assert calls == 0
     await picker.select_option("demo-host")
     await expect(field).to_have_value("old-value")
     await picker.select_option("")
     await expect(field).not_to_have_value("old-value")
     start = time.monotonic()
+    update_started.set()
     try:
         await picker.select_option("demo-host")
         await expect(field).to_have_value("old-value", timeout=1000)
@@ -447,7 +453,7 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     failures: dict[str, str] = {"uncached-host": "SSH先で設定を取得できません"}
     calls: list[str] = []
 
-    def remote_snapshot(host: str):
+    def remote_snapshot(host: str, **_kwargs):
         calls.append(host)
         if host in failures:
             raise ValueError(failures[host])
@@ -462,9 +468,8 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     field = editor.get_by_label("保存値")
     expect = playwright.async_api.expect
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
-    assert not calls
     await picker.select_option("uncached-host")
-    await expect(page.locator("#update-status")).to_contain_text(failures["uncached-host"])
+    await expect(page.locator("#update-status")).to_contain_text("uncached-hostの設定を取得できません。")
     fast = page.locator("#settings-fast-state")
     await expect(fast).to_contain_text("（uncached-host）: 取得できませんでした")
     await expect(editor).to_have_count(0)
@@ -480,7 +485,7 @@ async def test_remote_settings_failure_keeps_cache_read_only_and_can_retry(
     error = "SSH先で設定を非昇格で取得できません。接続先でユーザーがログオンしていることを確認してください"
     failures["cached-host"] = error
     await picker.select_option("cached-host")
-    await expect(page.locator("#update-status")).to_contain_text(error)
+    await expect(page.locator("#update-status")).to_contain_text("cached-hostの設定を取得できません。")
     await expect(status).to_contain_text("最新の値が届くまで保存できません")
     await expect(fast).to_contain_text("記録なし（前回取得）")
     await expect(field).to_have_value("cached-value")
@@ -503,7 +508,7 @@ async def test_remote_permission_conflict_preserves_entry_written_during_refresh
     release = threading.Event()
     snapshot = config.settings_snapshot(tmp_path)
     key = "usage_reset_permissions"
-    calls = 0
+    update_started = threading.Event()
     pending: list[dict] = []
     other = {
         "id": "other-writer",
@@ -515,11 +520,9 @@ async def test_remote_permission_conflict_preserves_entry_written_during_refresh
         "until": "2099-01-02T00:00:00Z",
     }
 
-    def remote_snapshot(_host: str):
-        nonlocal calls
-        calls += 1
+    def remote_snapshot(_host: str, **_kwargs):
         result = copy.deepcopy(snapshot)
-        if calls > 1:
+        if update_started.is_set():
             if not release.wait(timeout=8):
                 raise TimeoutError
             result["settings"][key].update(saved=json.dumps(pending or [other]))
@@ -552,6 +555,7 @@ async def test_remote_permission_conflict_preserves_entry_written_during_refresh
         await new_permission.get_by_label("開始（このブラウザーの時刻）").fill("2099-02-01T00:00")
         await new_permission.get_by_label("終了（このブラウザーの時刻）").fill("2099-02-02T00:00")
 
+    update_started.set()
     try:
         await picker.select_option("demo-host")
         await expect(page.locator("#settings-status")).to_contain_text("更新中")
