@@ -178,7 +178,9 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
    失敗の全体を取得できない時は、先にその原因を除く。
 6. 再pushのたびに新しいbaselineで監視し、前回失敗したジョブが新しいpushの監視の対象に含まれることを確かめる。
    含まれない場合は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正commitが必要なCI失敗を修正するエージェント」の修正系列の定めに従う。
-7. 原因の調査でCIのジョブを手動で再実行した場合も、同じbaselineで`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を呼び直し、baselineに基づく判定を再現できるこのスクリプトに監視を任せる。
+7. 原因の調査でCIのジョブを手動で再実行した場合も、同じbaselineで`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を呼び直して監視させる。
+   再実行の成功は診断の結果であり、試験自身が原因で結果が揺れると確かめた時は、同じ公開系列の次の候補へ進む前に原因を直し、元の発生条件と保つべき保証で対象の試験を通す。
+   一時障害か原因が未確定なら、この扱いにせず再実行の診断を続ける。
    許された再実行でも失敗が解消しない場合は最終状態を「CI未通過」とし、その事実と帰属の判定を、完了の報告、採否の記録、`atk run-script plan-progress -- <記録先> --handoff`で引き継ぎ記録に記す。
 
 ### 原因commitへ取り込む区分
