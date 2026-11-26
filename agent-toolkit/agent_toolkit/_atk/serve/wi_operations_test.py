@@ -1,13 +1,16 @@
 """`Operations`の確認状態の同期失敗で返す案内文のテスト。"""
 
 import datetime
+import json
 import pathlib
 import subprocess
 
 import pytest
 
+from agent_toolkit import atk
+from agent_toolkit._atk.config_repositories import BranchSettings
 from agent_toolkit._atk.serve import wi_operations
-from agent_toolkit._atk.wi import add, entries, frontmatter, sync
+from agent_toolkit._atk.wi import add, branches, entries, frontmatter, listing, sync
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
 
@@ -32,7 +35,8 @@ def test_uwi_dependency_blocked_refreshes_without_changing_awi(tmp_path: pathlib
 
     write_uwi(tmp_path, "answer.md", answer="回答済み")
     after, _warnings = operations.entries_with_warnings(filters)
-    assert not any(item["blocked"] for item in after)
+    assert not any(item["waiting_for_answer"] for item in after)
+    assert next(item for item in after if item["filename"] == "awi.md")["blocked"] is True
     assert path.read_bytes() == original
 
 
@@ -49,6 +53,72 @@ def test_uwi_dependency_blocked_supports_legacy(tmp_path: pathlib.Path, legacy: 
         write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
     rows, _warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"type": "awi", "status": "active"})
     assert [(item["filename"], item["blocked"]) for item in rows] == [("awi.md", True)]
+    assert rows[0]["waiting_for_answer"] is True
+
+
+def test_web_and_cli_agree_on_readiness_from_one_index(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = "github.com/example/repo"
+    write_awi(tmp_path, "wait-awi.md", depends_on=("prerequisite.md",))
+    write_awi(tmp_path, "wait-uwi.md", depends_on=("question.md",))
+    write_awi(tmp_path, "completed-dependency.md", depends_on=("completed.md",))
+    write_awi(tmp_path, "plain.md")
+    write_awi(tmp_path, "prerequisite.md")
+    write_awi(tmp_path, "completed.md", state="adopted")
+    write_awi(tmp_path, "outside.md", target_repo="github.com/example/other")
+    write_uwi(tmp_path, "question.md")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path))
+    monkeypatch.setattr(branches, "registry", lambda: {repo: BranchSettings(("develop",), "develop", {})})
+    operations = wi_operations.Operations(tmp_path)
+    mark_changed = operations.track_index_changes()
+    filters = {"type": "awi", "status": "inbox", "target_repo": repo, "target_branch": "develop"}
+
+    def web_rows() -> dict[str, dict[str, object]]:
+        with monkeypatch.context() as context:
+            context.setattr(subprocess, "run", _unexpected_subprocess)
+            context.setattr(listing.background_sync, "prepare_read", _unexpected_subprocess)
+            rows, warnings = operations.entries_with_warnings(filters)
+        assert not warnings
+        return {str(row["filename"]): row for row in rows}
+
+    def compare(rows: dict[str, dict[str, object]]) -> None:
+        with pytest.raises(SystemExit) as result:
+            atk.main(
+                [
+                    "wi",
+                    "list",
+                    "--jsonl",
+                    "--skip-pull",
+                    "--type=awi",
+                    "--status=inbox",
+                    f"--target-repo={repo}",
+                    "--target-branch=develop",
+                ],
+                home=tmp_path,
+            )
+        assert result.value.code == 0
+        cli = {row["filename"]: row for line in capsys.readouterr().out.splitlines() if (row := json.loads(line))}
+        assert {name: (row["ready"], row["blocked_reason"]) for name, row in rows.items()} == {
+            name: (row["ready"], row["blocked_reason"]) for name, row in cli.items()
+        }
+
+    before = web_rows()
+    compare(before)
+    assert {name for name, row in before.items() if row["ready"]} == {"completed-dependency.md", "plain.md", "prerequisite.md"}
+    assert before["wait-awi.md"]["waiting_for_answer"] is False
+    assert before["wait-uwi.md"]["waiting_for_answer"] is True
+    write_awi(tmp_path, "prerequisite.md", state="adopted")
+    write_uwi(tmp_path, "question.md", state="adopted", answer="回答済み")
+    mark_changed()
+    after = web_rows()
+    compare(after)
+    assert set(after) == {"completed-dependency.md", "plain.md", "wait-awi.md", "wait-uwi.md"}
+    assert all(row["ready"] and not row["blocked"] and not row["waiting_for_answer"] for row in after.values())
+
+
+def _unexpected_subprocess(*args: object, **kwargs: object) -> None:
+    pytest.fail(f"Web一覧がプロセスや同期を起動した: {args!r} {kwargs!r}")
 
 
 def test_legacy_confirmation_is_preserved_without_a_special_operation(tmp_path: pathlib.Path) -> None:
