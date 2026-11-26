@@ -165,7 +165,21 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     }
     const body = document.createElement("pre");
     if (typeof event.text === "string" && event.text !== "") {
-      body.textContent = event.text;
+      const message = event.initial_work && event.kind === "injected" ?
+        event.text.trim().match(/^<atk-auto\b[^>]*>([\s\S]*)<\/atk-auto>$/u) : null;
+      body.textContent = message && !message[1].includes("<atk-auto") ? message[1].trim() : event.text;
+      if (body.textContent !== event.text) {
+        const payload = document.createElement("details");
+        payload.className = "event-payload";
+        const label = document.createElement("summary");
+        label.textContent = "配送時の原文";
+        const source = document.createElement("pre");
+        source.textContent = event.text;
+        payload.append(label, source);
+        block.append(body, payload);
+        decorateWiReferences(body);
+        return block;
+      }
     } else if (event.detail !== null && event.detail !== undefined) {
       body.textContent = JSON.stringify(event.detail, null, 2);
     } else {

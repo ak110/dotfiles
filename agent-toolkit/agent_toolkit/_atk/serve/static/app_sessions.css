@@ -507,6 +507,12 @@
 }
 #screen-sessions .event:is(.kind-tool_result, .kind-tool_call, .kind-injected) > pre { font-family: var(--font-family-code); }
 #screen-sessions .event-link { text-decoration: none; color: var(--color-secondary-text); }
+#screen-sessions .event-payload {
+  margin: 0 var(--space-3) var(--space-2);
+  color: var(--color-secondary-text);
+  font-size: var(--font-size-secondary);
+}
+#screen-sessions .event-payload summary { cursor: pointer; }
 #screen-sessions .event-link:hover { color: var(--color-primary); }
 #screen-sessions .event > summary:hover { background: var(--color-normal-hover); }
 #screen-sessions .reading-toolbar input[type="search"] { min-inline-size: 0; }

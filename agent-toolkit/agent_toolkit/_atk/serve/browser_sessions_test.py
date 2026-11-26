@@ -152,7 +152,10 @@ async def test_session_details_open_run_skill_goal(screen_harness: _ScreenHarnes
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator(f'#sessions .session-item[data-engine="{engine}"]').first.click()
     expect = playwright.async_api.expect
-    await expect(page.locator("#detail .kind-injected[open]")).to_contain_text("工程を完遂する")
+    initial = page.locator("#detail .kind-injected[open]")
+    await expect(initial.locator(":scope > pre")).to_contain_text("工程を完遂する")
+    await expect(initial.locator(":scope > pre")).not_to_contain_text("<atk-auto")
+    await expect(initial.locator(".event-payload pre")).to_be_hidden()
     await expect(page.locator("#detail .kind-injected:not([open])")).to_have_count(1)
     if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
         await page.screenshot(path=Path(directory) / f"007-{engine}.png")
