@@ -114,6 +114,15 @@ def test_default_comment_cleanup_and_verbatim_limitation(repo: pathlib.Path) -> 
     assert "20261126-123456-001.md" in _git(repo, "show", "-s", "--format=%B").stdout
 
 
+def test_auto_comment_selection_is_not_available_to_commit_msg(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _git(repo, "config", "core.commentChar", "auto").returncode == 0
+    monkeypatch.setenv("GIT_EDITOR", ":")
+    message = f"試験\n\n# 20261126-123456-001.md\n\n{_TRAILER}"
+    result = _git(repo, "commit", "--allow-empty", "--edit", "--cleanup=strip", "-F", "-", stdin=message)
+    assert result.returncode == 0, result.stderr
+    assert _git(repo, "show", "-s", "--format=%B").stdout.strip() == message
+
+
 def test_claude_subagent_uses_own_latest_observation(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     base = {"session_id": "claude-1", "model": "claude-opus-5-5", "effort": "low"}
     parent = commit_identity.record_commit_observation(base, is_codex=False)
