@@ -97,7 +97,7 @@ class CodexStartMixin:
             if selection is None or selection.auth is None:
                 await self._start_turn(session, prompt, client)
             else:
-                await self._start_turn(session, prompt, client, auth=selection.auth)
+                await self._start_turn(session, prompt, client, auth=selection.auth, quota_workspace=selection.quota_workspace)
         except Exception as exc:
             if self._turn_start_response_is_ambiguous(client, exc):
                 await self._mark_turn_start_ambiguous(session, exc)
@@ -183,6 +183,7 @@ class CodexStartMixin:
                                 record_start=True,
                                 provider=candidate,
                                 auth=selection.auth,
+                                quota_workspace=selection.quota_workspace,
                                 subscription=(
                                     await run_file_operation(codex_connection.subscription_provider_for, candidate) is not None
                                 ),

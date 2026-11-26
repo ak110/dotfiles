@@ -69,7 +69,11 @@ class CodexConnectionsMixin:
                     return False
                 session.codex_model_provider = candidate
                 await self._resume_thread(
-                    session, client, self._writer_session_ids.get(session.session_id), auth=selection.auth
+                    session,
+                    client,
+                    self._writer_session_ids.get(session.session_id),
+                    auth=selection.auth,
+                    quota_workspace=selection.quota_workspace,
                 )
             except JsonRpcResponseError as exc:
                 session.codex_model_provider = original
@@ -128,6 +132,7 @@ class CodexConnectionsMixin:
         writer_session_id: str | None = None,
         *,
         auth: dict[str, Any] | None = None,
+        quota_workspace: str | None = None,
     ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
         if archive := self._archive_tasks.get(session.session_id):
@@ -140,8 +145,8 @@ class CodexConnectionsMixin:
                 "Codexの再開条件を取得できず、再開先との状態互換性を確認できない"
             ) from error
         subscription: bool | None = await run_file_operation(codex_connection.subscription_provider_for, target) is not None
-        if not codex_providers.has_provider_configuration() and target in (None, "openai"):
-            subscription = None
+        if not codex_providers.has_provider_configuration() and target == "openai":
+            subscription = target == "openai"
         resume_params: dict[str, Any] = {
             "threadId": session.session_id,
             "cwd": session.cwd,
@@ -153,6 +158,7 @@ class CodexConnectionsMixin:
                 subscription=subscription,
                 provider=target,
                 auth=selection.auth if selection is not None else auth,
+                quota_workspace=selection.quota_workspace if selection is not None else quota_workspace,
                 record_start=True,
             ),
         }
@@ -181,6 +187,8 @@ class CodexConnectionsMixin:
             "modelProvider"
         ) != target:
             raise AppServerError("thread/resume did not confirm the requested connection")
+        if session.codex_state_provider is not None and session.codex_state_provider != target:
+            await codex_fast_mode.invalidate_provider(session.codex_state_provider)
         session.codex_state_provider = target
         return writer_session_id
 

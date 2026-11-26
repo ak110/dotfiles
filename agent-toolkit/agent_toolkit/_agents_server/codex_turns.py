@@ -123,6 +123,7 @@ class CodexTurnsMixin:
         client: JsonRpcProcess | None = None,
         *,
         auth: dict[str, Any] | None = None,
+        quota_workspace: str | None = None,
     ) -> None:
         if client is None:
             client = await self._acquire_owned_client(session.session_id, session.launch_kind)
@@ -132,7 +133,7 @@ class CodexTurnsMixin:
         provider = session.codex_model_provider or session.codex_state_provider
         subscription: bool | None = await run_file_operation(codex_connection.subscription_provider_for, provider) is not None
         if not codex_providers.has_provider_configuration() and provider in (None, "openai"):
-            subscription = None
+            subscription = provider == "openai" if provider is not None else None
         params: dict[str, Any] = {
             "threadId": session.session_id,
             "input": [{"type": "text", "text": prompt}],
@@ -140,7 +141,12 @@ class CodexTurnsMixin:
             "approvalPolicy": "never",
             "sandboxPolicy": {"type": "dangerFullAccess"},
             "serviceTier": await _current_service_tier(
-                client.request, session.cwd, subscription=subscription, provider=provider, auth=auth
+                client.request,
+                session.cwd,
+                subscription=subscription,
+                provider=provider,
+                auth=auth,
+                quota_workspace=quota_workspace,
             ),
         }
         if session.model is not None:

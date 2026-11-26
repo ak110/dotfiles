@@ -148,7 +148,7 @@ def test_config_show_auto_fast_without_app_server(tmp_path, monkeypatch, capsys,
     expected = "起動時判定の記録なし"
     if source is not None:
         label = {"current": "今回確認", "previous": "直前の成功判定", "unavailable": "確認不能"}[source]
-        expected = f"最後の起動時判定 {instant.isoformat()}、高速（planType=business／{label}）"
+        expected = f"最後の起動時判定 高速（{label}） — {instant.isoformat()}、planType=business"
     assert f"Codex自動速度: {expected}\n" in shown.err
     assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
     assert capsys.readouterr().out == "auto\n"

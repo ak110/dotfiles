@@ -236,7 +236,12 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
         assert command in {"atk config snapshot", "atk config snapshot --read-only"}
         snapshot = config.settings_snapshot(tmp_path)
         snapshot["settings"]["serve_host"].update(effective=remote_value, saved=remote_value)
-        snapshot["codex_fast_start"] = "最後の起動時判定: new-host の高速"
+        snapshot["codex_fast_start"] = {
+            "speed": "高速",
+            "source": "直前の成功判定",
+            "at": "2026-11-26T12:00:00+09:00",
+            "reason": "Business",
+        }
         return subprocess.CompletedProcess(args, 0, json.dumps(snapshot).encode(), b"")
 
     monkeypatch.setattr(settings_routes, "run_with_timeout", ssh)
@@ -246,12 +251,12 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     status = page.locator("#settings-status")
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     picker = page.get_by_label("設定対象ホスト")
-    fast = page.locator('[data-setting="codex_fast_mode"]')
-    await expect(fast).to_contain_text("起動時判定の記録なし")
+    fast = page.locator("#settings-fast-state")
+    await expect(fast).to_contain_text("（ローカル）: 記録なし")
     await picker.select_option("old-host")
     legacy = page.locator('[data-setting="serve_sessions_codex_home"]')
     await expect(legacy).to_contain_text("読み取り専用")
-    await expect(fast).to_contain_text("起動時判定の記録なし")
+    await expect(fast).to_contain_text("（old-host）: このホストからは取得できません")
     await expect(legacy.get_by_role("button")).to_have_count(0)
     groups = page.get_by_role("navigation", name="設定の分類")
     await groups.get_by_text("利用枠", exact=True).click()
@@ -267,7 +272,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     await picker.select_option("new-host")
     port = page.locator('[data-setting="serve_host"]')
     await expect(port).to_contain_text("実効値: remote")
-    await expect(fast).to_contain_text("new-host の高速")
+    await expect(fast).to_contain_text("（new-host）: 高速（直前の成功判定）")
     await port.get_by_label("保存値").fill("updated")
     save = port.get_by_role("button", name="保存")
     await page.set_viewport_size({"width": 320, "height": 720})
@@ -292,7 +297,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     await expect(notice).to_be_in_viewport()
     await picker.select_option("")
     await expect(port).to_contain_text("実効値: local")
-    await expect(fast).to_contain_text("起動時判定の記録なし")
+    await expect(fast).to_contain_text("（ローカル）: 記録なし")
 
 
 @pytest.mark.parametrize("fails", [False, True])
@@ -688,8 +693,14 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
     snapshot = config.settings_snapshot(tmp_path)
     shared = snapshot["settings"]["execute_model"]
     shared.update(shared=True, shared_sync=True, saved="claude:sonnet/medium", effective="claude:sonnet/medium")
-    snapshot.update(shared_identity="same", hosts=["remote"])
+    snapshot["settings"]["codex_fast_mode"].update(shared=True, shared_sync=True)
+    snapshot.update(
+        shared_identity="same",
+        hosts=["remote"],
+        codex_fast_start={"speed": "高速", "source": "今回確認", "at": "2026-11-26T12:00:00+09:00", "reason": "Business"},
+    )
     peer = copy.deepcopy(snapshot)
+    peer["codex_fast_start"].update(speed="通常", source="直前の成功判定")
     snapshot["comparison"] = {"remote": {"state": "ready", **peer}}
     posts = []
 
@@ -708,8 +719,16 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
     await page.goto(screen_harness.base_url + "/settings")
     expect = playwright.async_api.expect
     editor = page.locator('#settings-shared [data-setting="execute_model"]')
+    fast = page.locator("#settings-fast-state")
+    picker = page.get_by_label("設定対象ホスト")
+    await expect(fast).to_have_text("Codexの起動時判定（ローカル）: 高速（今回確認）")
+    await expect(page.locator("#settings-shared")).not_to_contain_text("今回確認")
     await editor.get_by_label("保存値").fill("codex:sol/high")
-    await page.get_by_label("設定対象ホスト").select_option("remote")
+    await picker.select_option("remote")
+    await expect(fast).to_have_text("Codexの起動時判定（remote）: 通常（直前の成功判定）")
+    await expect(page.locator('#settings-content [data-setting="codex_fast_mode"]')).to_have_count(0)
+    await page.locator("#settings-fast-detail summary").click()
+    await expect(page.locator("#settings-fast-reason")).to_contain_text("Business")
     await expect(editor.get_by_label("保存値")).to_have_value("codex:sol/high")
     await expect(page.locator('#settings-content [data-setting="execute_model"]')).to_have_count(0)
     button = editor.get_by_role("button", name="保存")
@@ -722,11 +741,19 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
     await expect(editor.get_by_role("alert")).to_contain_text("設定を保存しました")
     assert posts == [{"action": "set", "key": "execute_model", "value": "codex:sol/high"}]
     peer["shared_identity"] = "different-branch"
-    picker = page.get_by_label("設定対象ホスト")
     await picker.select_option("")
+    await expect(fast).to_have_text("Codexの起動時判定（ローカル）: 高速（今回確認）")
     await picker.select_option("remote")
     await expect(page.locator('#settings-content [data-setting="execute_model"]')).to_have_count(1)
+    await expect(fast).to_have_text("Codexの起動時判定（remote）: 通常（直前の成功判定）")
+    await expect(page.locator("#settings-shared")).not_to_contain_text("今回確認")
     if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
+        await page.set_viewport_size({"width": 1440, "height": 1000})
+        await picker.scroll_into_view_if_needed()
+        for scheme in ("light", "dark"):
+            await page.emulate_media(color_scheme=scheme)
+            await page.screenshot(path=pathlib.Path(directory) / f"codex-fast-{scheme}.png")
+        await page.emulate_media(color_scheme=None)
         compare = page.locator("#settings-compare")
         await compare.locator("summary").click()
         for width in (1440, 400):

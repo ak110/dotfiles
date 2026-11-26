@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from agent_toolkit._agents_server import api_credits, codex_auto_reset, engine_availability
+from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._atk import codex_connection, usage_refresh
 from agent_toolkit._atk import config as atk_config
@@ -39,6 +40,7 @@ class ProviderSelection:
     usage_limit_resets_at: int | None = None
     auto_reset_permitted: bool = False
     auth: dict[str, Any] | None = dataclasses.field(default=None, repr=False, compare=False)
+    quota_workspace: str | None = dataclasses.field(default=None, repr=False, compare=False)
 
 
 def has_provider_configuration() -> bool:
@@ -91,15 +93,31 @@ async def select(
         raise ValueError("Codexの実効接続先設定を取得できません")
     providers = effective.get("model_providers", {})
     providers = providers if isinstance(providers, dict) else {}
-    auth = await codex_fast_mode.read_with_retry(request, "account/read", {"refreshToken": False})
+    quota_workspace = None
+    usage = None
+    try:
+        auth = await codex_fast_mode.read_with_retry(request, "account/read", {"refreshToken": False})
+    except (OSError, RuntimeError, ValueError) as error:
+        usage = await codex_fast_mode.read_workspace_quota(request)
+        quota_workspace = codex_fast_mode.quota_workspace_id(usage)
+        if quota_workspace is None:
+            raise AppServerError("現在のCodex認証を確認できないため、接続先を選べない") from error
+        auth = {}
     account = auth.get("account")
-    account_type = account.get("type") if isinstance(account, dict) else None
+    account_type = "chatgpt" if quota_workspace is not None else account.get("type") if isinstance(account, dict) else None
     entries = codex_connection.provider_entries(role)
     if role == "delegate":
         entries = api_credits.order(entries, _entry_kind, engine="codex")
     diagnostics: list[str] = []
 
     def usable(kind: str, candidate: str) -> bool:
+        if quota_workspace is not None:
+            definition = providers.get(candidate, {})
+            return (
+                kind == "subscription"
+                and isinstance(definition, dict)
+                and bool(definition.get("requires_openai_auth", candidate == "openai"))
+            )
         if kind == "subscription":
             if account_type != "chatgpt":
                 if account_type is not None and codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC not in diagnostics:
@@ -131,21 +149,22 @@ async def select(
         remainder = [candidate for candidate in available if candidate != primary]
     definition = providers.get(selected, {})
     requires_auth = definition.get("requires_openai_auth", selected == "openai") if isinstance(definition, dict) else False
-    subscription = bool(requires_auth and account_type == "chatgpt")
+    subscription = bool(requires_auth and account_type == "chatgpt" and (quota_workspace is None or selected in available))
     allowed = None
     usage_limit_type = None
     usage_limit_resets_at = None
     auto_reset_permitted = False
     if subscription:
-        try:
-            usage = await request("account/rateLimits/read", {})
-        except RuntimeError, OSError, TimeoutError:
-            usage = {}
+        if usage is None:
+            try:
+                usage = await request("account/rateLimits/read", {})
+            except RuntimeError, OSError:
+                usage = {}
 
-        active_id = codex_fast_mode.workspace_id(auth)
+        active_id = quota_workspace or codex_fast_mode.workspace_id(auth)
         snapshot_id = usage.get("accountId")
         if snapshot_id is None or active_id is not None and snapshot_id == active_id:
-            if usage_refresh.enabled():
+            if quota_workspace is None and usage_refresh.enabled():
                 await run_file_operation(
                     usage_refresh.record_codex,
                     usage,
@@ -157,7 +176,7 @@ async def select(
             allowed = value if isinstance(value, bool) else None
             limit = codex_usage_limit.from_rate_limits(usage.get("rateLimits"))
             usage_limit_type, usage_limit_resets_at = limit.limit_type, limit.resets_at
-            if allowed is False and primary is None:
+            if allowed is False and primary is None and quota_workspace is None:
                 try:
                     permissions = await run_file_operation(codex_auto_reset.active_permissions)
                     if permissions:
@@ -177,6 +196,7 @@ async def select(
         usage_limit_resets_at,
         auto_reset_permitted,
         auth,
+        quota_workspace,
     )
 
 

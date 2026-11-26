@@ -78,6 +78,7 @@ class CodexManager(typing.Protocol):
         writer_session_id: str | None = None,
         *,
         auth: dict[str, Any] | None = None,
+        quota_workspace: str | None = None,
     ) -> str | None: ...
 
     @staticmethod
@@ -204,6 +205,7 @@ class CodexManager(typing.Protocol):
         client: JsonRpcProcess | None = None,
         *,
         auth: dict[str, Any] | None = None,
+        quota_workspace: str | None = None,
     ) -> None: ...
 
     async def _notify_waiters(self) -> None: ...

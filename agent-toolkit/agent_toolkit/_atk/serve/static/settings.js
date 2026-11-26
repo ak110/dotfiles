@@ -5,6 +5,9 @@ import {formatLocalMinute, renderResetPermissions} from "./reset_permissions.js"
 const status = document.getElementById("settings-status");
 const content = document.getElementById("settings-content");
 const hostPicker = document.getElementById("settings-host");
+const fastState = document.getElementById("settings-fast-state");
+const fastDetail = document.getElementById("settings-fast-detail");
+const fastReason = document.getElementById("settings-fast-reason");
 const shared = document.getElementById("settings-shared");
 const comparison = document.getElementById("settings-comparison");
 const search = document.getElementById("settings-search");
@@ -274,9 +277,6 @@ function keyEditor(parent, key, item, data, save = operate) {
   const effective = key === "usage_reset_permissions" ? `${JSON.parse(item.effective || "[]").length}件の許可` :
     item.effective || "未指定";
   description.append(element("p", `実効値: ${effective}${source}`));
-  if (key === "codex_fast_mode") {
-    description.append(element("p", data.codex_fast_start ?? "起動時判定の記録なし"));
-  }
   if (item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && host)) {
     description.append(element("p", key === "usage_reset_permissions" && host
       ? "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"
@@ -591,8 +591,29 @@ document.addEventListener("atk-screen-will-change", event => {
       !window.confirm("未保存の設定があります。この画面を離れますか？")) event.preventDefault();
 });
 
+function renderFastStart(data) {
+  const start = data?.codex_fast_start;
+  const known = start && typeof start === "object" && typeof start.speed === "string" && typeof start.source === "string";
+  const scope = host || "ローカル";
+  let result = "読み込み中";
+  if (data) {
+    result = known ? `${start.speed}（${start.source}）` :
+      start === null ? "記録なし" : "このホストからは取得できません";
+  }
+  fastState.textContent = `Codexの起動時判定（${scope}）: ${result}`;
+  fastDetail.hidden = !known;
+  if (known) {
+    const minute = Number.isFinite(Date.parse(start.at)) ? formatLocalMinute(start.at).replace("T", " ") : "";
+    fastReason.textContent = [minute, start.reason].filter(Boolean).join("、");
+  } else {
+    fastReason.textContent = "";
+    fastDetail.open = false;
+  }
+}
+
 function render(data) {
   displayedData = data;
+  renderFastStart(data);
   if (!host) { localData = data; renderShared(); }
   renderComparison(data);
   const root = document.createDocumentFragment();
@@ -893,6 +914,7 @@ function selectHost(selected) {
   host = selected;
   hostPicker.value = host;
   displayedData = undefined;
+  renderFastStart();
   conflicts.clear();
   navigation.replaceChildren();
   content.replaceChildren();

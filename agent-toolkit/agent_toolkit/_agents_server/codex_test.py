@@ -7,14 +7,14 @@ import datetime
 import json
 import pathlib
 import sys
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
-from agent_toolkit._agents_server import codex_instructions, shared_roots, state
+from agent_toolkit._agents_server import codex_instructions, codex_providers, shared_roots, state
 from agent_toolkit._atk import config_settings
 from agent_toolkit._common import codex_fast_mode, process_identity, session_registry, state_paths
 from agent_toolkit._common.next_action import ActionableError
@@ -368,11 +368,16 @@ async def test_auto_tier_sends_priority_on_start_turn_and_resume(tmp_path, monke
     monkeypatch.setattr(codex_fast_mode, "_FREE_FAST_MODE_PERIODS", ((frozenset({"business"}), end, ""),))
     auth = {"workspaceRouting": {"chatgptAccountId": "workspace"}, "account": {"type": "chatgpt", "planType": "business"}}
     plans = iter([auth, OSError(), auth, TimeoutError(), TimeoutError(), auth])
+    config_reads = 0
     client = _TierClient()
     original = client.request
 
     async def request(method, params=None, **kwargs):
+        nonlocal config_reads
         if method == "config/read":
+            config_reads += 1
+            if config_reads > 2:
+                raise OSError("不要な再取得")
             return {"config": {"model_provider": "openai"}}
         if method == "account/rateLimits/read":
             return {"accountId": "workspace"}
@@ -401,3 +406,85 @@ async def test_auto_tier_sends_priority_on_start_turn_and_resume(tmp_path, monke
         assert sent == [(method, "priority") for method in ("thread/start", "turn/start", "thread/resume", "turn/start")]
         latest = codex_fast_mode.latest_start_decision()
         assert latest is not None and latest[1].source == "previous"
+        assert config_reads == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["exception", "timeout"])
+async def test_managed_start_and_order_change_keep_verified_subscription(tmp_path, monkeypatch, failure):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "auto")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(codex_fast_mode, "_RETRY_ATTEMPT_SECONDS", 0.01)
+    monkeypatch.setattr(codex_providers, "has_provider_configuration", lambda: True)
+    connection = codex_providers.codex_connection
+    monkeypatch.setattr(connection, "provider_entries", lambda _role: (("subscription", "openai"), ("payg", "paid")))
+    monkeypatch.setattr(connection, "subscription_provider_for", lambda value: "openai" if value == "openai" else None)
+    monkeypatch.setattr(connection, "outside_order", lambda provider, *_args, **_kwargs: provider != "openai")
+    monkeypatch.setattr(codex_providers, "independent_api_auth", lambda _definition: True)
+    monkeypatch.setattr(codex_providers.usage_refresh, "enabled", lambda: False)
+    end = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
+    monkeypatch.setattr(codex_fast_mode, "_FREE_FAST_MODE_PERIODS", ((frozenset({"business"}), end, ""),))
+    client = _TierClient()
+    original = client.request
+    rpc_client = cast(subject.JsonRpcProcess, client)
+    fail = False
+    workspace = "workspace"
+
+    async def request(method, params=None, **kwargs):
+        if method == "config/read":
+            return {"config": {"model_provider": "openai", "model_providers": {"paid": {}}}}
+        if method == "account/rateLimits/read":
+            return {"accountId": workspace}
+        if method == "thread/unsubscribe":
+            return {"status": "notLoaded"}
+        if method == "account/read":
+            if fail:
+                if failure == "timeout":
+                    await asyncio.sleep(60)
+                raise OSError("account/read")
+            return {"account": {"type": "chatgpt", "planType": "business"}, "workspaceRouting": {"chatgptAccountId": workspace}}
+        return await original(method, params, **kwargs)
+
+    monkeypatch.setattr(client, "request", request)
+    async with subject.AppServerManager({}, asyncio.Condition()) as manager:
+        monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+        await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+        fail = True
+        _thread, selection, *_ = await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+        assert selection is not None and selection.candidates == ()
+        assert [params["serviceTier"] for method, params in client.requests if method == "thread/start"] == ["priority"] * 2
+        latest = codex_fast_mode.latest_start_decision()
+        assert latest is not None and latest[1].source == "previous"
+        resumed = await manager.resume("tier-thread", state.ResumePrompt("再開"), str(tmp_path), state_provider="openai")
+        assert [params["serviceTier"] for method, params in client.requests if method in {"thread/resume", "turn/start"}] == [
+            "priority",
+            "priority",
+        ]
+        resumed.record_turn_completed()
+        resumed.codex_model_provider = "paid"
+        resumed.codex_subscription_provider = None
+        resumed.codex_attempted_provider_ids.clear()
+        assert await manager._switch_provider(resumed, client)
+        assert client.requests[-1][0] == "thread/resume"
+        assert client.requests[-1][1]["serviceTier"] == "priority"
+        workspace = "different"
+        await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+        assert client.requests[-1][1]["serviceTier"] == "default"
+        workspace = ""
+        with pytest.raises(subject.AppServerError, match="現在のCodex認証を確認できない"):
+            await manager._start_thread(rpc_client, str(tmp_path), None, "delegate")
+
+
+@pytest.mark.asyncio
+async def test_separate_api_connection_does_not_clear_subscription_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    now = datetime.datetime(2026, 11, 26, tzinfo=datetime.UTC)
+    auth = {"workspaceRouting": {"chatgptAccountId": "same"}, "account": {"type": "chatgpt", "planType": "business"}}
+    request = AsyncMock()
+    await codex_fast_mode.auto_service_tier(request, ".", subscription=True, provider="openai", now=now, auth=auth)
+    await codex_fast_mode.auto_service_tier(request, ".", subscription=False, provider="paid", now=now)
+    result = await codex_fast_mode.auto_service_tier(
+        request, ".", subscription=True, provider="openai", now=now, quota_workspace="same"
+    )
+    request.assert_not_awaited()
+    assert (result.tier, result.source) == ("priority", "previous")

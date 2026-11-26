@@ -235,19 +235,26 @@ def _cmd_config_show(home: pathlib.Path) -> int:
     return 2 if incomplete else 0
 
 
-def _auto_fast_report() -> str:
+def _fast_start_snapshot() -> dict[str, str] | None:
     previous = codex_fast_mode.latest_start_decision()
     if previous is None:
-        return "Codex自動速度: 起動時判定の記録なし"
+        return None
     instant, decision = previous
-    speed = "高速" if decision.tier == "priority" else "通常"
-    source = {
-        "current": "今回確認",
-        "previous": "直前の成功判定",
-        "unavailable": "確認不能",
-        "legacy": "出所の記録なし",
-    }[decision.source]
-    return f"Codex自動速度: 最後の起動時判定 {instant}、{speed}（{decision.explanation}／{source}）"
+    return {
+        "at": instant,
+        "speed": "高速" if decision.tier == "priority" else "通常",
+        "reason": decision.explanation,
+        "source": {"current": "今回確認", "previous": "直前の成功判定", "unavailable": "確認不能", "legacy": "出所の記録なし"}[
+            decision.source
+        ],
+    }
+
+
+def _auto_fast_report() -> str:
+    start = _fast_start_snapshot()
+    if start is None:
+        return "Codex自動速度: 起動時判定の記録なし"
+    return f"Codex自動速度: 最後の起動時判定 {start['speed']}（{start['source']}） — {start['at']}、{start['reason']}"
 
 
 def _pending_shared(local: dict[str, Any]) -> dict[str, Any]:
@@ -512,7 +519,7 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
     return {
         "settings": settings,
-        "codex_fast_start": _auto_fast_report(),
+        "codex_fast_start": _fast_start_snapshot(),
         "shared_identity": _shared_settings_identity(shared_path) if shared_path is not None and shared_sync else None,
         "paths": effective,
         "presets": _config_settings.PRESET_MODELS,
