@@ -595,9 +595,7 @@ def test_feedback_rule_is_delivered_once_per_context(tmp_path: pathlib.Path, hos
             continue
         assert "場合だけ" not in context
         assert "調査より先に" in context
-        assert "最初の`send_to_user`の`message`" in context
-        assert "Codexでは`commentary`" in context
-        assert "一次回答" in context and "正式回答" in context
+        assert "伝えてください" in context and "`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」" in context
         assert "`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」" in context
         assert prompt not in context
 

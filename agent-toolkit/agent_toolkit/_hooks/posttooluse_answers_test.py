@@ -177,9 +177,7 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     assert "「割り込み・訂正・中止」" in context
     assert "「発話の理解」" in context
     assert "調査より先に" in context
-    assert "最初の`send_to_user`の`message`" in context
-    assert "Codexでは`commentary`" in context
-    assert "一次回答" in context and "正式回答" in context
+    assert "伝えてください" in context and "`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」" in context
     assert "認識合わせ" not in context
     has_example = not text.startswith("`") and "例えば" in text
     assert ("「原文の保持と取り込み」" in context) == has_example
