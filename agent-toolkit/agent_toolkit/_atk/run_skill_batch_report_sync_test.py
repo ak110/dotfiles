@@ -162,7 +162,9 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
             old = report.read_text("utf-8")
             if saved == "missing-run-id":
                 monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", "別の実行")
-                updated = content._build_noninteractive_edit_content(report, old, "編集後の報告を確認したか？")
+                updated = content._build_noninteractive_edit_content(
+                    report, old, "# 報告: 振り返り結果\n\n保存の後に書き換えた。"
+                )
                 parsed = frontmatter.parse_frontmatter(updated)
                 assert parsed is not None and parsed[0]["run_skill_run_id"] == args.run_id
             else:
