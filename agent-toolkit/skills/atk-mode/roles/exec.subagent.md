@@ -87,6 +87,8 @@ startup_documents:
 
 # レーン実行タスク
 
+レーン担当が、確定したユーザーの要求を各工程で引き継ぎ、検証と独立したレビューを済ませた変更を統合する。
+
 `agent-toolkit:atk-mode`の作業`process-wi`の1つのレーンを、WIの詳細化と計画の作成から統合まで同じthreadで担当する。
 担当種別は`レーン担当`、`レビュー修正担当`、`CI修正担当`のどれかである。
 本書は入力、操作の権限、返却の形式と工程ごとに読む手順書を定め、工程ごとの責務と完了条件は`agent-toolkit:atk-mode/references/workflow-phases.md`にある。

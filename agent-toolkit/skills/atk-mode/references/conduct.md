@@ -1,5 +1,7 @@
 # 判断の細則
 
+エージェントが、方針が衝突したり作業の続行に迷ったりする場面で、安全と認可を守りながらユーザーが求めた結果に向けて作業を進める。
+
 入口`agent-toolkit:atk-mode`と原則の本文（`agent-basics:writing-standards/references/quality-principles.md`）で言えず、特定の判断の時にだけ必要な細則を置く。
 各節の見出しが、その判断の場面を示す。
 
