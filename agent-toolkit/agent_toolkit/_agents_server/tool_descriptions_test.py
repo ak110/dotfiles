@@ -85,6 +85,7 @@ async def test_tool_input_schema_is_unchanged_by_error_wrapping() -> None:
     tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
 
     assert set(tools["send_message"].input_schema["properties"]) == {
+        "contract_changes",
         "session_id",
         "prompt",
         "timeout",

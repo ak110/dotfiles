@@ -10,38 +10,52 @@ def _body(session_id: str) -> str:
     return (directory / subagent_contract.RECORD_NAME).read_text(encoding="utf-8")
 
 
-def test_followups_keep_order_and_separate_unconfirmed_delivery() -> None:
-    assert subagent_contract.create("contract-a", subagent_contract.task_request("review", {"対象": "x.py"})) is None
-    subagent_contract.append_followup("contract-a", "訂正1: 対象をy.pyへ", "steered")
-    subagent_contract.append_followup("contract-a", "失敗した訂正", "reply_failed")
-    subagent_contract.append_followup("contract-a", "訂正2: 範囲を広げる", "reply_ambiguous")
+def test_current_request_replaces_and_cancels_delivered_requirements() -> None:
+    request = subagent_contract.task_request("review", {"対象": "x.py", "保つ条件": "公開しない"})
+    assert subagent_contract.create("contract-a", request + "\n追加検査を行う") is None
+    changes = {"対象: x.py": "対象: y.py", "追加検査を行う": "", "": "型検査も行う"}
+    assert subagent_contract.apply_followup("contract-a", changes, "steered") is None
+    assert subagent_contract.apply_followup("contract-a", {"": "失敗した訂正"}, "reply_failed") is None
+    uncertain = {"対象: y.py": "対象: z.py"}
+    assert subagent_contract.apply_followup("contract-a", uncertain, "reply_ambiguous") is None
+    pending, _, active = _body("contract-a").partition("## 現在の依頼")
+    assert "配送結果が不明" in pending and "対象: z.py" in pending
+    assert "対象: y.py" in active and "対象: z.py" not in active
+    assert "役割: review" in active and "公開しない" in active and "型検査も行う" in active
+    assert "対象: x.py" not in active and "追加検査を行う" not in active
+    assert "失敗した訂正" not in pending + active
+    assert subagent_contract.apply_followup("contract-a", uncertain, "reply_started") is None
     body = _body("contract-a")
-    assert "役割: review" in body
-    assert "対象: x.py" in body
-    assert "失敗した訂正" not in body
-    first = body.index("### 追送1（配送確定）\n\n訂正1: 対象をy.pyへ")
-    assert body.index("### 追送2（配送結果が不明）\n\n訂正2: 範囲を広げる") > first
+    assert "対象: z.py" in body and "対象: y.py" not in body and "配送結果が不明" not in body
+
+
+def test_nonunique_change_does_not_apply_any_of_the_changes() -> None:
+    assert subagent_contract.create("contract-a", "目的A\n検査 aaa") is None
+    before = _body("contract-a")
+    warning = subagent_contract.apply_followup("contract-a", {"目的A": "目的B", "aa": "bb"}, "reply_started")
+    assert warning is not None
+    assert _body("contract-a") == before
 
 
 def test_sessions_do_not_share_contracts() -> None:
     assert subagent_contract.create("contract-b", "目的B") is None
     assert subagent_contract.create("contract-c", "目的C") is None
-    subagent_contract.append_followup("contract-b", "Bへの訂正", "reply_started")
+    assert subagent_contract.apply_followup("contract-b", {"": "Bへの訂正"}, "reply_started") is None
     assert "目的C" not in _body("contract-b")
     assert "Bへの訂正" not in _body("contract-c")
 
 
 def test_followup_without_contract_creates_nothing() -> None:
-    subagent_contract.append_followup("contract-none", "訂正", "reply_started")
+    assert subagent_contract.apply_followup("contract-none", {"": "訂正"}, "reply_started") is not None
     directory = managed_temp.find_session_temp("contract-none")
     assert directory is None or not (directory / subagent_contract.RECORD_NAME).exists()
 
 
 def test_handoff_inherits_predecessor_contract() -> None:
     assert subagent_contract.create("contract-old", "目的D") is None
-    subagent_contract.append_followup("contract-old", "訂正D", "reply_started")
+    assert subagent_contract.apply_followup("contract-old", {"目的D": "目的E"}, "reply_started") is None
     assert subagent_contract.inherit("contract-old", "contract-new") is None
     assert _body("contract-new") == _body("contract-old")
-    subagent_contract.append_followup("contract-new", "後任への訂正", "reply_started")
-    assert "### 追送2（配送確定）" in _body("contract-new")
-    assert "後任への訂正" not in _body("contract-old")
+    assert subagent_contract.apply_followup("contract-new", {"目的E": "目的F"}, "reply_started") is None
+    assert "目的F" in _body("contract-new") and "目的E" not in _body("contract-new")
+    assert "目的E" in _body("contract-old") and "目的F" not in _body("contract-old")

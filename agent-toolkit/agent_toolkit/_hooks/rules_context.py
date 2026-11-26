@@ -75,7 +75,7 @@ DELEGATED_COMPACT_NOTICE = "圧縮後に読む資料の限定とは別に、作�
 def delegated_compact_notice(launch: work_contract.DelegatedLaunch | None, own_contract: pathlib.Path | None = None) -> str:
     targets = [f"委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`", "起動の入力が示した役割文書"]
     if own_contract is not None:
-        targets.insert(0, f"目的を見返すための自身の作業契約`{own_contract}`（起動依頼と配送済みの追送）")
+        targets.insert(0, f"目的を見返すための自身の作業契約`{own_contract}`（現在の依頼）")
     if launch is not None and launch.whole_contract is not None:
         targets.append(f"上位の目的と現行の制約を見失わないための全体作業契約`{launch.whole_contract}`")
     if launch is not None and launch.handoff is not None and pathlib.Path(launch.handoff).is_file():

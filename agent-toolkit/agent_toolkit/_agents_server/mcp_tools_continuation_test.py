@@ -11,7 +11,8 @@ from typing import Any
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools, session_handoff, state
+from agent_toolkit._agents_server import launch_requests, mcp_tools, session_handoff, state, subagent_contract
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_mcp_tools_support import _start_exec_review_session, _write_review_plan
 from agent_toolkit._testing.agents_server_support import (
@@ -82,6 +83,36 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
             "label": "",
             "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
         }
+
+
+@pytest.mark.asyncio
+async def test_followup_updates_only_explicit_contract_changes_after_delivery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(str(tmp_path), prompt="目的: 書式点検\n対象: 文書A\n制約: 変更しない", mode="explore")
+        session_id = started["session_id"]
+        directory = managed_temp.find_session_temp(session_id)
+        assert directory is not None
+        contract = directory / subagent_contract.RECORD_NAME
+        before = contract.read_text(encoding="utf-8")
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "prompt": "進捗を教えて"})
+        assert contract.read_text(encoding="utf-8") == before
+        assert delivery_payload(backend.prompts[-1]) == "進捗を教えて"
+
+        _complete(manager.sessions[session_id])
+        await mcp_tools.mcp.call_tool(
+            "send_message",
+            {"session_id": session_id, "prompt": "対象を文書Bへ訂正", "contract_changes": {"対象: 文書A": "対象: 文書B"}},
+        )
+        delivered = delivery_payload(backend.prompts[-1])
+        assert "対象を文書Bへ訂正" in delivered and 'kind="work-contract-update"' in delivered
+        body = contract.read_text(encoding="utf-8")
+        assert "対象: 文書B" in body and "対象: 文書A" not in body
+        assert "目的: 書式点検" in body and "制約: 変更しない" in body
+        assert "対象を文書Bへ訂正" not in body and "進捗を教えて" not in body
 
 
 @pytest.mark.asyncio

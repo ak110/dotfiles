@@ -35,6 +35,34 @@ def shell_prompt(command: str, summary_policy: str) -> str:
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
 
 
+SEND_MESSAGE_PROMPT_DESCRIPTION = parameter_description(
+    "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終了済みsessionへは新しい依頼として届く。"
+    "instructionと排他的に指定する。"
+)
+
+SEND_MESSAGE_TIMEOUT_DESCRIPTION = parameter_description(
+    "継続要求の配送結果が確定するまでの待機上限秒数。省略時は270秒。委譲先の応答生成の完了は待たない。0以下は受理しない。"
+)
+
+SEND_MESSAGE_INSTRUCTION_DESCRIPTION = parameter_description(
+    "役割文書が宣言する定型継続指示。extra_paramsと組み合わせ、promptと排他的に指定する。"
+)
+
+SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION = parameter_description(
+    'instructionの宣言済み入力だけを渡す。例: instruction=再レビューせよ、extra_params={"round":"2"}。'
+)
+
+SEND_MESSAGE_MESSAGE_DESCRIPTION = parameter_description(
+    "promptの別名。send_to_userのmessageと同じ名前で本文を渡す取り違えを受け付けるためにあり、promptと同時には指定しない。"
+)
+
+SEND_MESSAGE_CONTRACT_CHANGES_DESCRIPTION = parameter_description(
+    "作業契約に残す実際の要求変更だけを指定する。現在の依頼に一意にある原文をキー、"
+    "新しい文を値とする。値が空なら取消、キーが空なら追加。状況照会では省略する。"
+    "追送本文でも同じ変更を伝える。配送に失敗した場合は契約を変更しない。"
+)
+
+
 StartMode = Literal["task", "delegate", "explore", "write", "shell"]
 """`start`の`mode`が受理する値。`tool_names.START_MODES`と同じ集合を保つ。"""
 

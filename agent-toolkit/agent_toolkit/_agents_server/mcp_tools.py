@@ -47,6 +47,12 @@ from agent_toolkit._agents_server.tool_descriptions import (
     MODE_DESCRIPTION,
     MODEL_TYPE_DESCRIPTION,
     PROMPT_DESCRIPTION,
+    SEND_MESSAGE_CONTRACT_CHANGES_DESCRIPTION,
+    SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION,
+    SEND_MESSAGE_INSTRUCTION_DESCRIPTION,
+    SEND_MESSAGE_MESSAGE_DESCRIPTION,
+    SEND_MESSAGE_PROMPT_DESCRIPTION,
+    SEND_MESSAGE_TIMEOUT_DESCRIPTION,
     SESSION_ID_DESCRIPTION,
     START_DESCRIPTION,
     SUBAGENT_MD_PATH_DESCRIPTION,
@@ -478,48 +484,12 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
 )
 async def send_message(
     session_id: Annotated[str, Field(description=SESSION_ID_DESCRIPTION)],
-    prompt: Annotated[
-        str | None,
-        Field(
-            description=parameter_description(
-                "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終了済みsessionへは新しい依頼として届く。"
-                "instructionと排他的に指定する。"
-            )
-        ),
-    ] = None,
-    timeout: Annotated[
-        float,
-        Field(
-            description=parameter_description(
-                "継続要求の配送結果が確定するまでの待機上限秒数。省略時は270秒。"
-                "委譲先の応答生成の完了は待たない。0以下は受理しない。"
-            )
-        ),
-    ] = DEFAULT_SEND_MESSAGE_TIMEOUT,
-    instruction: Annotated[
-        str | None,
-        Field(
-            description=parameter_description(
-                "役割文書が宣言する定型継続指示。extra_paramsと組み合わせ、promptと排他的に指定する。"
-            )
-        ),
-    ] = None,
-    extra_params: Annotated[
-        dict[str, str] | None,
-        Field(
-            description=parameter_description(
-                'instructionの宣言済み入力だけを渡す。例: instruction=再レビューせよ、extra_params={"round":"2"}。'
-            )
-        ),
-    ] = None,
-    message: Annotated[
-        str | None,
-        Field(
-            description=parameter_description(
-                "promptの別名。send_to_userのmessageと同じ名前で本文を渡す取り違えを受け付けるためにあり、promptと同時には指定しない。"
-            )
-        ),
-    ] = None,
+    prompt: Annotated[str | None, Field(description=SEND_MESSAGE_PROMPT_DESCRIPTION)] = None,
+    timeout: Annotated[float, Field(description=SEND_MESSAGE_TIMEOUT_DESCRIPTION)] = DEFAULT_SEND_MESSAGE_TIMEOUT,
+    instruction: Annotated[str | None, Field(description=SEND_MESSAGE_INSTRUCTION_DESCRIPTION)] = None,
+    extra_params: Annotated[dict[str, str] | None, Field(description=SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION)] = None,
+    message: Annotated[str | None, Field(description=SEND_MESSAGE_MESSAGE_DESCRIPTION)] = None,
+    contract_changes: Annotated[dict[str, str] | None, Field(description=SEND_MESSAGE_CONTRACT_CHANGES_DESCRIPTION)] = None,
 ) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終了済みなら同じsessionでreplyを開始する。
 
@@ -560,11 +530,16 @@ async def send_message(
                 next_action="本文をpromptだけに入れて同じsession_idのsend_messageを再実行する",
             )
         prompt = message
-    if instruction is None and extra_params is None:
+    if instruction is None and extra_params is None and contract_changes is None:
         response = await _manager().send_message(session_id, prompt, timeout)
     else:
         response = await _manager().send_message(
-            session_id, prompt, timeout, instruction=instruction, extra_params=extra_params
+            session_id,
+            prompt,
+            timeout,
+            instruction=instruction,
+            extra_params=extra_params,
+            **({"contract_changes": contract_changes} if contract_changes is not None else {}),
         )
     return public_send_message_response(response)
 

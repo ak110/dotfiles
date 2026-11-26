@@ -143,6 +143,8 @@ def public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
 
 def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
     public: dict[str, Any] = {"delivery": response["delivery"], "label": response["label"]}
+    if response.get("warnings"):
+        public["warnings"] = response["warnings"]
     if "root_session_id" in response:
         public["root_session_id"] = response["root_session_id"]
     previous_result = response.get("previous_result")
