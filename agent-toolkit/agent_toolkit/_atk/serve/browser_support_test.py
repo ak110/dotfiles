@@ -29,7 +29,7 @@ from agent_toolkit._atk.wi import sync as wi_sync
 from agent_toolkit._common import host_homes, state_paths
 from agent_toolkit._common import private_notes as private_notes_store
 from agent_toolkit._plan import creation_times as plan_creation_times
-from agent_toolkit._testing import isolation, wi_entry_files
+from agent_toolkit._testing import git_repository, isolation, wi_entry_files
 from agent_toolkit._testing.pytest_plugin import _BROWSER_EVIDENCE
 
 _SERVER_START_TIMEOUT_SEC = 10.0
@@ -597,8 +597,7 @@ def _manual_browser_main(argv: list[str]) -> int:
         notes = root / "private-notes"
         _require_browser_paths(root, {"home": Path.home(), "WI": notes})
         if not notes.exists():
-            notes.mkdir()
-            subprocess.run(["git", "-C", str(notes), "init", "--quiet"], timeout=10, check=True)  # noqa: S607
+            git_repository.init_repository(notes)
         notes, serve = _manual_cli_inputs(root, args.port)
         plans = Path(serve.plans.root).expanduser() if serve.plans.root else notes / "plans"
         _seed_manual_browser(notes, plans, root)
