@@ -511,3 +511,24 @@ async def test_plan_wi_links_open_here_and_support_middle_click(screen_harness: 
     await related.click()
     await first.get_by_role("button", name="このWIを開く").click()
     await expect(page.locator("#detail-filename")).to_have_text(filename)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_plan_and_wi_detail_share_scroll_edge_controls(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    screen_harness.plan_path.write_text("# 先頭\n\n" + "長い記録の段落です。\n\n" * 100 + "最後の段落\n", encoding="utf-8")
+    await page.goto(screen_harness.base_url + "/plans")
+    await page.locator("#files .pane-item").first.click()
+    main = page.locator("#screen-plans main")
+    await main.get_by_role("button", name="末尾へ", exact=True).click()
+    await playwright.async_api.expect(main.get_by_text("最後の段落")).to_be_in_viewport()
+    await main.get_by_role("button", name="先頭へ", exact=True).click()
+    assert await main.evaluate("el => el.scrollTop") == 0
+
+    await page.goto(screen_harness.base_url + "/?filename=question.md")
+    dialog = page.locator("#detail-dialog")
+    await dialog.get_by_role("button", name="末尾へ", exact=True).click()
+    body = dialog.locator("#detail-dialog-body")
+    assert await body.evaluate("el => el.scrollTop + el.clientHeight >= el.scrollHeight - 1")
+    await dialog.get_by_role("button", name="先頭へ", exact=True).click()
+    assert await body.evaluate("el => el.scrollTop") == 0

@@ -326,6 +326,16 @@ def test_prepare_omits_tool_result_bodies_in_claude_conversation(
     assert "依頼" in conversation
     call_rows = [line for line in conversation.splitlines() if line.startswith("- 呼出 ")]
     assert len(call_rows) == 4
+    from agent_toolkit._atk import session_record_format
+    from agent_toolkit._atk.serve import sessions_models
+
+    records, broken = session_record_format.parse_records(transcript.read_text(encoding="utf-8"), include_positions=True)
+    detail = sessions_models.build_detail("claude", records, broken_lines=broken, subagents=None, subagents_unavailable=False)
+    labels = [row["label"].replace("record:", f"claude:{transcript.stem}:") for row in detail["conversation"]]
+    document_rows = [row for row in conversation.splitlines() if row.startswith(("- ユーザー ", "- 呼出 "))]
+    assert len(labels) == len(document_rows)
+    assert all(row.startswith(label) for label, row in zip(labels, document_rows, strict=True))
+
     for row, (_, tool, tool_input, _, _), line in zip(call_rows, calls, (2, 4, 6, 8), strict=True):
         assert row.startswith(f"- 呼出 {tool} claude:{transcript.stem}:{line}")
         assert json.dumps(tool_input, ensure_ascii=False) in row
@@ -378,8 +388,9 @@ def test_prepare_summarizes_codex_tool_activity(
             support.codex_item(line_time, {"type": "function_call_output", "call_id": call_id, "output": header + output}),
         ]
 
+    transcript = rollout_dir / f"rollout-2026-10-19T00-00-00-{thread_id}.jsonl"
     support.write_jsonl(
-        rollout_dir / f"rollout-2026-10-19T00-00-00-{thread_id}.jsonl",
+        transcript,
         [
             support.codex_item(
                 "2026-10-19T00:00:00Z",
@@ -412,6 +423,18 @@ def test_prepare_summarizes_codex_tool_activity(
     for name in ("sed", "checked", "found", "linted"):
         assert f"{name}-line-" not in conversation
     assert "Chunk ID: abc" not in conversation
+
+    from agent_toolkit._atk import session_record_format
+    from agent_toolkit._atk.serve import sessions_models
+
+    records, broken = session_record_format.parse_records(transcript.read_text(encoding="utf-8"), include_positions=True)
+    detail = sessions_models.build_detail("codex", records, broken_lines=broken, subagents=None, subagents_unavailable=False)
+    labels = [
+        row["label"].replace("record:", f"codex:{transcript.stem.removeprefix('rollout-')}:") for row in detail["conversation"]
+    ]
+    document_rows = [row for row in conversation.splitlines() if row.startswith(("- ユーザー ", "- 呼出 "))]
+    assert len(labels) == len(document_rows)
+    assert all(row.startswith(label) for label, row in zip(labels, document_rows, strict=True))
 
 
 def test_prepare_keeps_reference_to_fork_context(

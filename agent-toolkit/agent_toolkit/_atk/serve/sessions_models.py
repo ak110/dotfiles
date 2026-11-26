@@ -167,13 +167,15 @@ def _report_status(event: session_record_format.SessionEvent | None) -> str:
 
 def _detail_events(
     events: list[session_record_format.SessionEvent],
+    *,
+    delegated: bool = False,
 ) -> tuple[list[dict[str, typing.Any]], list[dict[str, typing.Any]]]:
     results = {
         event.call_id: (index, event) for index, event in enumerate(events) if event.kind == "tool_result" and event.call_id
     }
     display = [event.to_json() for event in events]
     conversation = []
-    delegation = False
+    delegation = delegated
     for index, event in enumerate(events):
         text, kind = event.text or "", event.kind
         line = event.line if event.line is not None else index + 1
@@ -238,7 +240,9 @@ def build_detail(
     events, totals = (
         session_record_format.claude_events(records) if engine == "claude" else session_record_format.codex_events(records)
     )
-    display, conversation = _detail_events(events)
+    messages = [record for record in records if record.get("type") in {"user", "assistant"}]
+    delegated = engine == "claude" and bool(messages) and all(record.get("isSidechain") is True for record in messages)
+    display, conversation = _detail_events(events, delegated=delegated)
     return {
         "engine": engine,
         "events": display,

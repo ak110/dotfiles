@@ -449,6 +449,7 @@ async def test_remote_failure_warning_names_next_action(tmp_path: pathlib.Path, 
     assert "ssh down-host" in reason
 
 
+@pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize(
     ("result", "expected"),
     [
@@ -458,7 +459,7 @@ async def test_remote_failure_warning_names_next_action(tmp_path: pathlib.Path, 
         (None, "unknown"),
     ],
 )
-def test_session_reports_use_exact_tool_names_and_correlate_results(result, expected):
+def test_session_reports_use_exact_tool_names_and_correlate_results(engine, result, expected):
     from agent_toolkit._atk import session_record_format
     from agent_toolkit._atk.serve import sessions_models
 
@@ -476,11 +477,41 @@ def test_session_reports_use_exact_tool_names_and_correlate_results(result, expe
         "type": "response_item",
         "payload": {"type": "function_call_output", "call_id": "report-1", "output": json.dumps(result, ensure_ascii=False)},
     }
+    if engine == "claude":
+        call = {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "report-1",
+                        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                        "input": {"message": "**報告する本文**"},
+                    }
+                ]
+            },
+        }
+        other = {
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "id": "not-report", "name": "foreign_send_to_user"}]},
+        }
+        result_record = {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "report-1",
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                ]
+            },
+        }
     records, broken = session_record_format.parse_records(
         "\n".join(["not-json", json.dumps(call), json.dumps(other), *([json.dumps(result_record)] if result else [])]),
         include_positions=True,
     )
-    detail = sessions_models.build_detail("codex", records, broken_lines=broken, subagents=None, subagents_unavailable=False)
+    detail = sessions_models.build_detail(engine, records, broken_lines=broken, subagents=None, subagents_unavailable=False)
     report, unrelated, *responses = detail["events"]
     assert (report["kind"], report["text"], report["delivery_status"], report["line"], report["ordinal"]) == (
         "user_report",
@@ -494,3 +525,24 @@ def test_session_reports_use_exact_tool_names_and_correlate_results(result, expe
     if responses:
         assert responses[0]["report_index"] == 0
         assert report["result_index"] == 2
+
+
+def test_delegate_view_contains_only_request_and_last_assistant():
+    from agent_toolkit._atk import session_record_format
+    from agent_toolkit._atk.serve import sessions_models
+
+    messages = [
+        ("user", "委譲元の依頼"),
+        ("assistant", "中間の発話"),
+        ("user", "委譲元の追送"),
+        ("assistant", "最終の発話"),
+    ]
+    text = "\n".join(
+        json.dumps({"type": role, "isSidechain": True, "message": {"role": role, "content": body}}) for role, body in messages
+    )
+    records, broken = session_record_format.parse_records(text, include_positions=True)
+    detail = sessions_models.build_detail("claude", records, broken_lines=broken, subagents=None, subagents_unavailable=False)
+    assert [(detail["events"][row["index"]]["line"], row["text"]) for row in detail["conversation"]] == [
+        (1, "委譲元の依頼"),
+        (4, "最終の発話"),
+    ]

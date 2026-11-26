@@ -278,6 +278,31 @@ def codex_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list[
         record_type = record.get("type")
         if record_type == "event_msg":
             _codex_apply_token_count(payload, totals)
+            item = payload.get("item") if payload.get("type") == "item_completed" else None
+            if isinstance(item, dict) and item.get("type") == "CommandExecution":
+                call_id = item.get("id") if isinstance(item.get("id"), str) else None
+                events.append(
+                    SessionEvent(
+                        kind="tool_call",
+                        timestamp=timestamp,
+                        name="CommandExecution",
+                        call_id=call_id,
+                        detail={"input": item.get("command")},
+                        line=line,
+                        ordinal=0,
+                    )
+                )
+                events.append(
+                    SessionEvent(
+                        kind="tool_result",
+                        timestamp=timestamp,
+                        call_id=call_id,
+                        text=as_text(item.get("aggregated_output")),
+                        detail={"is_error": item.get("status") == "failed" or item.get("exit_code") not in (None, 0)},
+                        line=line,
+                        ordinal=1,
+                    )
+                )
             continue
         if record_type == "compacted":
             events.append(

@@ -467,3 +467,44 @@ async def test_session_links_distinguish_blocks_on_the_same_record_line(screen_h
     await expect(page.locator("#detail .event-linked")).to_contain_text("二番目のブロック")
     await page.goto(link.replace("&ordinal=1", ""))
     await expect(page.locator("#detail .event-linked")).to_have_count(2)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_report_markdown_and_result_follow_the_view_mode(screen_harness: _ScreenHarness) -> None:
+    (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
+    entries = [
+        {"type": "user", "cwd": "/home/aki/proj", "message": {"content": "依頼"}},
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "report",
+                        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                        "input": {"message": "**報告の本文**"},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "report", "content": '{"ok": true}'}]},
+        },
+    ]
+    record.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    page = screen_harness.page
+    query = urlencode({"host": "browser-test", "engine": "claude", "path": record.as_posix()})
+    await page.goto(screen_harness.base_url + "/sessions?" + query)
+    report = page.locator("#detail .kind-user_report")
+    expect = playwright.async_api.expect
+    await expect(report.locator("strong")).to_have_text("報告の本文")
+    await expect(report.locator(".event-kind").first).to_contain_text("成功")
+    result = report.locator(".kind-tool_result")
+    await result.locator("summary").click()
+    await expect(result.locator("pre")).to_be_visible()
+    if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
+        await page.screenshot(path=Path(directory) / "002-user-report.png")
+    await page.get_by_label("会話だけ").check()
+    await expect(report.locator("strong")).to_have_text("報告の本文")
+    await expect(result).to_have_count(0)
