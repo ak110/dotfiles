@@ -10,6 +10,7 @@ import argparse
 import pathlib
 import re
 import sys
+import typing
 
 import yaml
 from agent_toolkit._atk.wi.add_validation import require_cause_analysis_format
@@ -17,7 +18,7 @@ from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import structure
 from agent_toolkit._plan.structure.formal_verification import missing_judgment_message
-from agent_toolkit._plan.structure.parsing import is_awi_plan
+from agent_toolkit._plan.structure.parsing import is_awi_plan, is_wi_list_plan
 from check_plan_file_common import _ClassifiedWarning
 from check_plan_file_formats import (
     _check_eight_section_format,
@@ -29,7 +30,14 @@ from check_plan_file_formats import (
     _outside_fences,
 )
 from check_plan_file_references import TARGET_REPO_NEXT_ACTION, _check_target_repo
-from check_plan_file_selection import _check_lane_selection, _check_wi_selection, _labeled, _validate_expected_wi
+from check_plan_file_selection import (
+    _check_lane_selection,
+    _check_wi_selection,
+    _labeled,
+    _validate_expected_wi,
+    related_wi_bodies,
+    wi_list_target_checks,
+)
 
 FORMAT_REQUEST = "request"
 FORMAT_EIGHT_SECTION = "eight-section"
@@ -38,9 +46,27 @@ FORMAT_TWO_FILE = "two-file"
 FORMAT_LEGACY = "legacy"
 
 FORMAT_AWI = "awi"
+"""本文にAWIと同じ節を置いた前回の書式。保存済みの計画の読み取りと進行中の計画の完了に使う。  pyfltr: allow-comment"""
+FORMAT_WI_LIST = "wi-list"
+"""frontmatterとH1だけを持ち、計画の中身を対象WIの本文に置く現行の書式。  pyfltr: allow-comment"""
+
+AWI_FORMAT_MIGRATION_WARNING = (
+    "前回のAWI書式（本文の節とwork_kindを持つ）である。新規作成・改訂ではfrontmatterとH1だけのWIリスト形式にし、"
+    "計画の中身は対象WIの本文へ置く"
+)
+
+
+def _validate_added_wi(added_wi: tuple[str, ...], selection_file: pathlib.Path | None) -> None:
+    if added_wi and selection_file is None:
+        raise ValueError("--added-wiは--selection-file・--laneと組で指定する")
+    invalid = [name for name in added_wi if re.fullmatch(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md", name) is None]
+    if invalid:
+        raise ValueError(f"追加WIのファイル名が不正: {invalid}。--added-wiへyyyymmdd-hhmmss-nnn.md形式で指定する")
 
 
 def detect_plan_format(plan_path: pathlib.Path, text: str) -> str:
+    if is_wi_list_plan(text):
+        return FORMAT_WI_LIST
     if is_awi_plan(text):
         return FORMAT_AWI
     if _detail_path_for(plan_path).is_file():
@@ -56,6 +82,26 @@ def detect_plan_format(plan_path: pathlib.Path, text: str) -> str:
     return FORMAT_LEGACY
 
 
+def check_wi_list_plan(text: str, work_dir: pathlib.Path) -> list[str]:
+    metadata, errors = structure.parse_plan_metadata(text)
+    if metadata is not None:
+        errors.extend(_check_target_repo(metadata.values["対象リポジトリ"], work_dir))
+    headings = structure.extract_headings(text)
+    titles = [heading for heading in headings if heading.level == 1]
+    body = structure.markdown_body_text(text)
+    if len(titles) != 1 or not body.lstrip().startswith("# "):
+        errors.append("本文の先頭にH1を1件置く")
+    errors.extend(
+        f"WIリスト形式の計画は見出しをH1だけにする: {'#' * heading.level} {heading.text}。計画の中身は対象WIの本文へ書く"
+        for heading in headings
+        if heading.level >= 2
+    )
+    stray = [line for line in body.splitlines() if line.strip() and not line.startswith("# ")]
+    if stray and not any(heading.level >= 2 for heading in headings):
+        errors.append("WIリスト形式の計画はH1の後に本文を置かない。計画の中身は対象WIの本文へ書く")
+    return errors
+
+
 def check_awi_plan(text: str, work_dir: pathlib.Path) -> list[str]:
     metadata, errors = structure.parse_plan_metadata(text)
     if metadata is not None:
@@ -64,7 +110,7 @@ def check_awi_plan(text: str, work_dir: pathlib.Path) -> list[str]:
     sections = structure.request_sections(text)
     if (
         metadata is not None
-        and metadata.values["作業種別"] == "バグ対応"
+        and metadata.values.get("作業種別") == "バグ対応"
         and not metadata.related_wi
         and (structure.REQUEST_H2_CAUSE, True) not in sections
     ):
@@ -105,9 +151,11 @@ def check(
     selection_file: pathlib.Path | None = None,
     lane: str | None = None,
     expected_wi: tuple[str, ...] = (),
+    added_wi: tuple[str, ...] = (),
     prior_plans: tuple[pathlib.Path, ...] = (),
     agent_rule_paths: tuple[str, ...] = (),
     warning_details: list[_ClassifiedWarning] | None = None,
+    handoff_texts: tuple[str, ...] = (),
 ) -> tuple[list[str], list[str]]:
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -119,10 +167,17 @@ def check(
     plan_format = detect_plan_format(plan_path, text)
     progress_heading = structure.PLAN_H2_PROGRESS
     classified_warnings: list[_ClassifiedWarning]
-    if plan_format == FORMAT_AWI:
+    if plan_format == FORMAT_WI_LIST:
+        format_errors = check_wi_list_plan(text, work_dir)
+        target_errors, target_warnings = wi_list_target_checks(text, private_notes, agent_rule_paths, handoff_texts)
+        format_errors.extend(target_errors)
+        classified_warnings = [("advisory", warning) for warning in target_warnings]
+    elif plan_format == FORMAT_AWI:
         format_errors = check_awi_plan(text, work_dir)
         judgment = missing_judgment_message(text)
-        classified_warnings = [("migration", judgment)] if judgment is not None else []
+        classified_warnings = [("migration", AWI_FORMAT_MIGRATION_WARNING)]
+        if judgment is not None:
+            classified_warnings.append(("migration", judgment))
     elif plan_format == FORMAT_TWO_FILE:
         format_errors, classified_warnings = _check_new_format(_detail_path_for(plan_path), text, work_dir, private_notes, home)
         if not any(kind == "migration" for kind, _message in classified_warnings):
@@ -140,9 +195,10 @@ def check(
         f"返却予定のエージェント向け文書のパスが計画本文にない: {relative}。"
         "編集対象のパスを計画本文へ明記し、同じ一覧でもう一度確かめる"
         for relative in agent_rule_paths
-        if relative not in text
+        if plan_format != FORMAT_WI_LIST and relative not in text
     )
     _validate_expected_wi(expected_wi, selection_file, lane)
+    _validate_added_wi(added_wi, selection_file)
     if (selection_file is None) != (lane is None):
         raise ValueError("選定結果の出力先ファイルとレーン識別子は組で指定する")
     if prior_plans and selection_file is None and not expected_wi:
@@ -152,7 +208,7 @@ def check(
             raise ValueError("選定結果の出力先ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
         if plan_path in prior_plans or len(prior_plans) != len(set(prior_plans)):
             raise ValueError("追加計画と先行計画に同じファイルを重複指定できない")
-        errors.extend(_check_lane_selection(((None, text),), selection_file, lane, prior_plans, work_dir))
+        errors.extend(_check_lane_selection(((None, text),), selection_file, lane, prior_plans, work_dir, added_wi))
     if expected_wi:
         errors.extend(_check_wi_selection(((None, text),), expected_wi, "期待WI集合", prior_plans, work_dir))
     if reject_progress_log_rows and structure.has_progress_log_rows(text):
@@ -177,14 +233,18 @@ def check_plan_set(
     selection_file: pathlib.Path | None = None,
     lane: str | None = None,
     expected_wi: tuple[str, ...] = (),
+    added_wi: tuple[str, ...] = (),
     prior_plans: tuple[pathlib.Path, ...] = (),
     agent_rule_paths: tuple[str, ...] = (),
     warning_details: list[_ClassifiedWarning] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    handoff_texts: tuple[str, ...] = (),
 ) -> tuple[list[str], list[str]]:
     resolved = [path.resolve() for path in (*plan_paths, *prior_plans)]
     if len(resolved) != len(set(resolved)):
         raise ValueError("確かめる計画と先行計画に同じファイルを重複指定できない")
     _validate_expected_wi(expected_wi, selection_file, lane)
+    _validate_added_wi(added_wi, selection_file)
     if (selection_file is None) != (lane is None):
         raise ValueError("選定結果の出力先ファイルとレーン識別子は組で指定する")
     if prior_plans and selection_file is None and not expected_wi:
@@ -197,25 +257,35 @@ def check_plan_set(
         plan_errors, plan_warnings = check(
             plan_path,
             work_dir,
+            private_notes=private_notes,
             reject_migration_warnings=reject_migration_warnings,
             reject_progress_log_rows=reject_progress_log_rows,
             warning_details=plan_details,
+            handoff_texts=handoff_texts,
         )
         errors.extend(_labeled(plan_path, error) for error in plan_errors)
         warnings.extend(_labeled(plan_path, warning) for warning in plan_warnings)
         if warning_details is not None:
             warning_details.extend(plan_details)
         texts.append((plan_path, plan_path.read_text(encoding="utf-8")))
+    # WIリスト形式の計画は本文を持たないため、一覧のWI本文を検索対象にする。  # pyfltr: allow-comment
+    searchable = [
+        "\n".join((*related_wi_bodies(text, private_notes), *handoff_texts))
+        if detect_plan_format(path, text) == FORMAT_WI_LIST
+        else text
+        for path, text in texts
+        if path is not None
+    ]
     errors.extend(
         f"返却予定のエージェント向け文書のパスがどの計画の本文にもない: {relative}。"
         "編集対象のパスを、その文書を変更する計画の本文へ明記し、同じ一覧でもう一度確かめる"
         for relative in agent_rule_paths
-        if not any(relative in text for _path, text in texts)
+        if not any(relative in text for text in searchable)
     )
     if selection_file is not None and lane is not None:
         if not selection_file.is_absolute() or re.fullmatch(r"lane-\d{2}", lane) is None:
             raise ValueError("選定結果の出力先ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
-        errors.extend(_check_lane_selection(tuple(texts), selection_file, lane, prior_plans, work_dir))
+        errors.extend(_check_lane_selection(tuple(texts), selection_file, lane, prior_plans, work_dir, added_wi))
     if expected_wi:
         errors.extend(_check_wi_selection(tuple(texts), expected_wi, "期待WI集合", prior_plans, work_dir))
     return errors, warnings
@@ -291,6 +361,24 @@ def main(argv: list[str] | None = None) -> int:
         help="保存済み対応表の全計画対象のWIファイル名を反復指定する。選定YAML方式とは併用しない",
     )
     parser.add_argument(
+        "--handoff-file",
+        action="append",
+        default=None,
+        type=pathlib.Path,
+        metavar="PATH",
+        help="WIリスト形式の計画で、詳細化しないWIの形式検証の判定を書いた引き継ぎ記録を反復指定する",
+    )
+    parser.add_argument(
+        "--added-wi",
+        action="append",
+        default=None,
+        metavar="WI",
+        help=(
+            "詳細化で新しく作り、計画の一覧へ加えたAWIのファイル名を反復指定する。"
+            "--selection-file・--laneの照合で、レーンの選定WIに加えて比べる"
+        ),
+    )
+    parser.add_argument(
         "--agent-rule-path",
         action="append",
         default=None,
@@ -319,32 +407,22 @@ def main(argv: list[str] | None = None) -> int:
         warning_details: list[_ClassifiedWarning] = []
         prior_plans = tuple(args.prior_plan or ())
         agent_rule_paths = tuple(args.agent_rule_path or ())
+        common: dict[str, typing.Any] = {
+            "reject_migration_warnings": args.reject_migration_warnings,
+            "reject_progress_log_rows": args.reject_progress_log_rows,
+            "selection_file": args.selection_file,
+            "lane": args.lane,
+            "expected_wi": tuple(args.expected_wi or ()),
+            "added_wi": tuple(args.added_wi or ()),
+            "handoff_texts": tuple(path.read_text(encoding="utf-8") for path in args.handoff_file or ()),
+            "prior_plans": prior_plans,
+            "agent_rule_paths": agent_rule_paths,
+            "warning_details": warning_details,
+        }
         if len(args.plan_file) == 1:
-            errors, warnings = check(
-                args.plan_file[0],
-                args.work_dir,
-                reject_migration_warnings=args.reject_migration_warnings,
-                reject_progress_log_rows=args.reject_progress_log_rows,
-                selection_file=args.selection_file,
-                lane=args.lane,
-                expected_wi=tuple(args.expected_wi or ()),
-                prior_plans=prior_plans,
-                agent_rule_paths=agent_rule_paths,
-                warning_details=warning_details,
-            )
+            errors, warnings = check(args.plan_file[0], args.work_dir, **common)
         else:
-            errors, warnings = check_plan_set(
-                tuple(args.plan_file),
-                args.work_dir,
-                reject_migration_warnings=args.reject_migration_warnings,
-                reject_progress_log_rows=args.reject_progress_log_rows,
-                selection_file=args.selection_file,
-                lane=args.lane,
-                expected_wi=tuple(args.expected_wi or ()),
-                prior_plans=prior_plans,
-                agent_rule_paths=agent_rule_paths,
-                warning_details=warning_details,
-            )
+            errors, warnings = check_plan_set(tuple(args.plan_file), args.work_dir, **common)
     except (OSError, UnicodeDecodeError, yaml.YAMLError, ValueError) as error:
         _next_action.report(
             f"計画を確認するための入力を読み込めない: {error}",

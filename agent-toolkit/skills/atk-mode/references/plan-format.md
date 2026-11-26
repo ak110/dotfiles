@@ -1,9 +1,9 @@
 # 計画ファイルの形式
 
-計画ファイルの構成、凍結後の訂正、初回起草の雛形を定める。
-計画はadd-awi-by-userで起草するAWIと同じ詳細度・書式の文書であり、AWIの本文から実装を始められない入力を、AWIと同じ水準まで具体化したものである（作る条件は`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」）。
-構成は`atk run-script plan-create`、`atk run-script plan-check`、`atk plans commit`が前提にする公開契約であり、見出しの位置とfrontmatterの書式は検査が判定し、直し方は診断が示す。
-本文の各節の書き方は`agent-toolkit:atk-mode/references/awi-body.md`だけが定める。
+計画ファイルの構成、凍結、初回起草の雛形を定める。
+計画ファイルは、1つの作業で扱う対象WIの一覧だけを持つ文書である。
+計画の中身（反映内容、原因分析、調査結果、完成条件など）は対象WIの本文に置き、計画へ書き写さない（作り方は`agent-toolkit:atk-mode/playbooks/write-plan.md`）。
+構成は`atk run-script plan-create`、`atk run-script plan-check`、`atk plans commit`が前提にする公開契約であり、frontmatterと見出しの書式は検査が判定し、直し方は診断が示す。
 
 計画を構成するファイルは次の呼称で区別する。
 
@@ -15,48 +15,28 @@
 
 ## 計画ファイルの構成
 
-計画ファイルは、frontmatterと、通常AWIの本文と同じ節だけを持つ。
-
-1. frontmatter（`launch_route`、`target_repo`、`related_wis`、`work_kind`）
-2. H1の主題と、H1直下の要約
-3. `## 反映内容と反映先`（必須）、`## 原因分析`、`## 調査結果と判断根拠`、`## 完成条件`、`## ユーザー指摘の逐語引用`（この順で、必須以外は書く内容がある場合に置く）
-
-`## 実施内容`、`## 検証`、`## 進捗ログ`は持たない。
-要求単位の採否、採らなかった案、人間由来の要求を縮めた範囲は、AWIと同じく`## 反映内容と反映先`と`## 調査結果と判断根拠`へ書く。
-人間由来の要求を全部か一部不採用とする場合は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「承認」に従って事前にユーザーの承認を得る。
-変更範囲の検証コマンド、進捗、検証結果、再開の情報は、計画の有無によらず引き継ぎ記録へ書く（`agent-toolkit:atk-mode/references/work-contract.md`「引き継ぎ記録」）。
-予測補正記録は対象AWIの本文へ保存する（`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「予測補正記録」）。
-WI実装commitの対応は対応記録ファイル（`agent-toolkit:atk-mode/references/commit-wi-records.md`）へ保存する。
-
-frontmatterの値は次のとおり。
+計画ファイルは、frontmatterとH1の主題だけを持ち、H1の後に本文と見出しを置かない。
 
 - `launch_route`: 起動経路（`process-wi`のレーン、`process-wi single-lane`、メインによる起動など）。
 - `target_repo`: `plan-check`の`--work-dir`のGitルートと同じ絶対パス（`process-wi`のレーンでは専用worktree）。
-- `related_wis`: 計画が具体化するWIのファイル名の一覧（入力にWIが無ければ空の一覧）。
-- `work_kind`: バグ対応の要求単位が1件でもあれば`バグ対応`、無ければ`通常変更`。
+- `related_wis`: 作業で扱う対象WIのファイル名の一覧。
 
-計画には、入力（WI本文か依頼）と対象リポジトリの現物から決まらない部分を、add-awi-by-userの起草と同じ調査と判断で書く。
-入力で確定済みの目的、要件、原因分析、範囲、方式、成立根拠、完成条件は、調べ直さずに参照する。
-導き直すのは、入力の対応する節が欠けている時と、現物との乖離を確かめた時に限り、乖離の事実と結論は`## 調査結果と判断根拠`へ書く。
-完成条件と手段の必要性は、`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」で目的上の必要性と由来を判定してから写す。
-固有の公開後の操作（PRかMRの作成、リリースの作成、タグ付けなど）と合意した公開範囲は、ある場合だけ`## 反映内容と反映先`の項目として書く。
-キューに無い素材の原文とユーザーの回答の全文は、計画の外の入力の原本として保持し、各工程へ原文の参照を渡す。
+対象WIの本文が実装と実行レビューの基準である。
+詳細化が要るAWIは、計画を作る前に`atk wi edit --detail`で本文を置き換えて詳細化済みの印を付ける（`write-plan.md`「詳細化」）。
+`plan-check`は、一覧のWI本文をprivate-notesから読み、詳細化済みの印、編集するエージェント向け文書のパス（`--agent-rule-path`）、形式検証の判定の欠落（WI本文と`--handoff-file`の引き継ぎ記録）を検査する。
+変更範囲の検証コマンド、進捗、検証結果、再開の情報、詳細化しないWIの`形式検証の判定:`の行は、引き継ぎ記録へ書く（`agent-toolkit:atk-mode/references/work-contract.md`「引き継ぎ記録」）。
+予測補正記録は対象AWIの本文へ保存する（`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「予測補正記録」）。
+WI実装commitの対応は対応記録ファイル（`agent-toolkit:atk-mode/references/commit-wi-records.md`）へ保存する。
 
-実装に着手した後は計画ファイルを変えない（計画凍結）。
-実装中に確定した要件の変更と、記述の不整合に採った解釈は、レビュー指摘管理表へ記録する（計画を直すと実行レビューの指摘になり、不要な往復が生じるため）。
+`plan-check`を通した後（実装の着手後）は、一覧の全AWIが詳細化済みの印を持つか、詳細化の対象外の`source`（add-awi-by-user、process-user-comments、implement）である。
+エージェント環境の`atk wi edit`は、processingの項目、保留中の詳細化済みのAWI、implementが保留で保存したAWIの本文の置換を拒否する（本文の凍結）。
+implementのAWIは、`merge_branch`と`merge_commit`を加えるマージ用への更新（`agent-toolkit:atk-mode/playbooks/implement.md`手順7、実行レビューの収束後）だけを受け付ける。
+実装中に確定した要件の変更と、記述の不整合に採った解釈は、実行レビュー指摘管理表へ記録する（基準を直すと実行レビューの指摘になり、不要な往復が生じるため）。
 凍結の後は、既存のレビュー指摘管理表と`review_contract`の原本を保持する。
-
-## 原因分析
-
-作業種別が`バグ対応`の計画は、原因分析を記録した関連WIの`## 原因分析`をWIファイル名で参照する。
-複数のバグでは、各バグの見出しと`期待:`の行まで一意に取得し直せることを確かめる。
-計画の本体に`## 原因分析`を置くのは、入力にWIが無い計画と、起草時にWIの原因分析を訂正か追加した計画に限る。
-訂正と追加では対象のバグ単位だけを書き、実態との乖離の観測と導いた結論を`## 調査結果と判断根拠`へ書く。
-記録の形と各行に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」、バグ単位の分け方は`agent-toolkit:atk-mode/references/analysis-records.md`「バグ単位の分け方」に従う。
 
 ## 保持・不変性・完全復元の契約
 
-保持、不変性、完全復元を計画の契約かユーザー確認の選択肢へ書く場合は、確定する前に、採る入力形式がその不変性を表現できるかを確かめる。
+保持、不変性、完全復元を詳細化するWI本文の契約かユーザー確認の選択肢へ書く場合は、確定する前に、採る入力形式がその不変性を表現できるかを確かめる。
 データが経由する既存の処理（保存、読み込み、UI、エディターなど）が意図しない変換（再シリアライズ、トリム、値の補完や正規化など）を加えないかも、対象の実装コードで確かめる。
 契約、完成条件、選択肢には、不変とする対象、許容する変換、不変性が成り立つ範囲を、食い違いの無い同じ条件で書く。
 
@@ -71,12 +51,11 @@ frontmatterの値は次のとおり。
   現存する値は`git blame -L`、削除された値は`git log -S`で特定した削除commitの親commitに対するblame、再導入された値は現在の行と過去の削除元の両方を調べる。
   最終更新者か`git log -S`の最新の結果だけを根拠に導入元を決めると、再導入の前の目的を取り違える。
 - 過去の方式へ戻す変更では、その方式を前提に後から加えた回避策、条件分岐、例外処理、運用の規定を、導入commit以降の履歴と方式名の検索で列挙する。
-  復元の後に前提が成り立たなくなるものは撤去か修正を同じ計画に含め、維持するものは復元の後も前提が成り立つ根拠を書く。
+  復元の後に前提が成り立たなくなるものは撤去か修正を同じWIに含め、維持するものは復元の後も前提が成り立つ根拠を書く。
 
 ## 初回起草の雛形
 
 次の雛形の`< >`とfrontmatterを案件の値へ置き換えて原稿を作り、`atk run-script plan-create`へ渡す。
-`plan-create`は記入済みの原稿を`atk wi add`と同じ本文の検査とfrontmatterの検査にかけて計画を作る。
 
 ```md
 ---
@@ -84,22 +63,7 @@ launch_route: <skillまたは起動経路>
 target_repo: /absolute/repository/path
 related_wis:
   - 20260831-000000-001.md
-work_kind: 通常変更
 ---
 
 # <計画主題>
-
-<目的、変更の要点、変更後の結果>
-
-## 反映内容と反映先
-
-<何をどう変えるか、対象と固有の条件、外部から見える仕様、採らない要求単位と理由>
-
-## 調査結果と判断根拠
-
-<補った事実と根拠、退けた有力な案と理由>
-
-## 完成条件
-
-<本文から一意に導けない固有の検収条件>
 ```

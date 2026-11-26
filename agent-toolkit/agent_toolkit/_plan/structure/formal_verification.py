@@ -90,3 +90,26 @@ def missing_judgment_message(text: str) -> str | None:
         f"計画が形式検証の判定の対象に触れる語（{'、'.join(found)}）を含みますが、結論と理由を書いた`{JUDGMENT_LABEL}:`の行がありません。"
         "`agent-basics:formal-verification`「当てるかの判定」で判定し、" + guidance
     )
+
+
+def missing_judgment_message_for_wis(bodies: tuple[str, ...], handoff_texts: tuple[str, ...]) -> str | None:
+    """WIリスト形式の計画について、一覧のWI本文と引き継ぎ記録から形式検証の判定の欠落を返す。  pyfltr: allow-comment
+
+    判定の行は、詳細化したWIでは`## 調査結果と判断根拠`に、詳細化しないWIでは引き継ぎ記録に置く。
+    """
+    recorded = [line for body in bodies for line in _recorded_lines(body, awi_plan=True)]
+    recorded.extend(line for text in handoff_texts for line in markdown_headings.normalize_newlines(text).split("\n"))
+    if any(_JUDGMENT_RE.match(line.strip()) for line in recorded):
+        return None
+    scanned = "\n".join(_scanned_text(body) for body in bodies)
+    found = [term for term, pattern in _TERM_PATTERNS.items() if pattern.search(scanned)]
+    if not found:
+        return None
+    return (
+        f"計画の対象WIが形式検証の判定の対象に触れる語（{'、'.join(found)}）を含みますが、"
+        f"結論と理由を書いた`{JUDGMENT_LABEL}:`の行がありません。"
+        "`agent-basics:formal-verification`「当てるかの判定」で判定し、"
+        "詳細化したWIでは`## 調査結果と判断根拠`へ、詳細化しないWIでは引き継ぎ記録へ"
+        f"`{JUDGMENT_LABEL}: <当てる|当てない>（理由）`の1行を書き、"
+        "`plan-check`へ`--handoff-file`で引き継ぎ記録を渡してください"
+    )

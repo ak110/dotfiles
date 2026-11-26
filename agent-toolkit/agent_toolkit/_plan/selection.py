@@ -19,7 +19,10 @@ EXCLUDED_PATHS_KEY = "書き込まない反映先"
 LANE_COSTS_KEY = "レーンの所要時間"
 RATIONALE_KEY = "根拠"
 MODEL_TYPES_KEY = "担当モデル"
-PLAN_REQUIREMENT_KEY = "計画要否"
+DETAIL_REQUIREMENT_KEY = "詳細化要否"
+DETAIL_REQUIRED = "詳細化あり"
+DETAIL_NOT_REQUIRED = "詳細化なし"
+_LEGACY_PLAN_REQUIREMENT_KEY = "計画要否"
 STAGE_KEY = "段階"
 PRIOR_LANES_KEY = "先行レーン"
 START_DEPENDENCIES_KEY = "着手前に必要なレーン"
@@ -138,6 +141,7 @@ def decisions(selection: object) -> list[object] | None:
     for item in normalized:
         if isinstance(item, dict):
             item.setdefault(PUBLIC_WRITE_FILES_KEY, [])
+            item.pop(_LEGACY_PLAN_REQUIREMENT_KEY, None)
     return normalized
 
 

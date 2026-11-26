@@ -28,7 +28,7 @@ def test_lane_planning_document_command_creates_plan_from_another_worktree(
     assert matched is not None
     command = matched[1]
     for placeholder, value in {
-        "<計画本文の絶対パス>": str(source),
+        "<原稿の絶対パス>": str(source),
         "<レーン識別子>": "lane-01",
         "<対象リポジトリ>": str(repo),
     }.items():

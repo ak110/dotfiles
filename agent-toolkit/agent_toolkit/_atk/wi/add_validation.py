@@ -272,6 +272,7 @@ _RESERVED_ADD_KEY_NEXT_ACTIONS = {
     "proposal_fingerprint": "atkによる原稿の指紋の記録に任せる",
     "github_source": "GitHubの取り込み処理による出所の記録に任せる",
     "processing_owner": "atk wi start-processingまたはtake-overで担当を記録する",
+    "detailed": "計画を作る時点で詳細化したAWIの新規投入では--detailedを指定する",
     "submitter_session": "atkによる投入元セッションの自動取得に任せる",
     "run_skill_run_id": "atkによるrun-skill実行識別子の自動取得に任せる",
     "plan_file": "通常新規投入では除き、移行・復元では--batchを使う",

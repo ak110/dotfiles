@@ -110,7 +110,7 @@ from check_selection_lanes import (
 from check_selection_loading import (
     _NEXT_SOURCE_MISMATCH,
     _check_allocation_sources,
-    complete_plan_requirements,
+    complete_detail_requirements,
     load_inline_addition,
     load_selection,
 )
@@ -847,7 +847,7 @@ def main(argv: list[str] | None = None) -> int:
             and args.transfer_wi is None
             and args.handoff_observation is None
         ):
-            complete_plan_requirements(selection, private_notes)
+            complete_detail_requirements(selection, private_notes)
         errors = check(
             args.selection_file,
             work_dir,

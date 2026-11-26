@@ -10,6 +10,7 @@ _FIELD_USES = {
     "choices": ("uwiの回答形式処理", "問いで選べる答えを依頼ごとに指定する"),
     "cooldown_until": ("readiness", "その項目の着手を待つ期限を指定する"),
     "depends_on": ("readiness", "処理を前提項目の終了まで待たせる"),
+    "detailed": ("selection_contractの詳細化要否", "計画を作る時点の詳細化を終えたAWIを示す。手入力しない"),
     "effect_check": ("effect_checkとlisting", "必要な項目の効果確認の結果を追跡する"),
     "github_source": ("alertsとgithub_submission_approval", "外部報告の再登録を防ぎ、承認したAWIの出所を記録する"),
     "important": ("filtersの重要度選択", "優先的に閲覧したい項目を区別する"),

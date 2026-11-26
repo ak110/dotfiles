@@ -156,7 +156,7 @@ def test_new_format_accepts_legacy_bug_file_reference_with_warning(
     errors, warnings = _check_new(work_dir, main_content, detail_content)
 
     assert not errors, errors
-    assert "バグ調査ファイル参照が旧形式である。新規作成・改訂では計画本体の`## 原因分析`へ移行する" in warnings
+    assert "バグ調査ファイル参照が旧形式である。新規作成・改訂では対象WIの`## 原因分析`へ移行する" in warnings
 
 
 @pytest.mark.parametrize(
@@ -187,7 +187,7 @@ def test_rejects_current_single_file_structure_violations(
         ),
         (
             _migration_legacy_bug_table_input,
-            "バグ調査結果が旧形式の本文内表である。新規作成・改訂では計画本体の`## 原因分析`へ移行する",
+            "バグ調査結果が旧形式の本文内表である。新規作成・改訂では対象WIの`## 原因分析`へ移行する",
         ),
         (
             _migration_legacy_history_input,
@@ -219,7 +219,7 @@ def test_rejects_current_single_file_structure_violations(
         ),
         (
             _migration_legacy_bug_reference_input,
-            "バグ調査ファイル参照が旧形式である。新規作成・改訂では計画本体の`## 原因分析`へ移行する",
+            "バグ調査ファイル参照が旧形式である。新規作成・改訂では対象WIの`## 原因分析`へ移行する",
         ),
         (
             _migration_legacy_two_file_id_input,

@@ -19,7 +19,7 @@ WIとの対応は記録から取得し、メッセージの件名や説明文か
      `atk run-script plan-rewrite`も、新書式の計画は本文を変えずに対応だけを更新する（同コマンドの`--completed-step`と`--result`は必須のまま）。
    - 1つのcommitが複数のAWIの変更を含む場合は、全件を同じ記録へ渡す。
    - 引き継ぎ記録へは、`--handoff`と対象AWI全件の`--allowed-awi`を指定する。
-   - 計画が必要なAWIと不要なAWIの変更を1つのcommitが含む場合は、同じ作成前HEADと新しいHEADで、計画の`related_wis`にあるAWIを計画へ、残りを引き継ぎ記録へ記録する。
+   - 公開の時点で計画なしで進行中のAWIと計画のAWIの変更を1つのcommitが含む場合は、同じ作成前HEADと新しいHEADで、計画の`related_wis`にあるAWIを計画へ、残りを引き継ぎ記録へ記録する。
      手順2の取得と`commit_record`も、AWIごとに記録した側を使う。
    - レビュー修正とCI修正のcommitも全件記録する。
    - cherry-pickやfast-forwardで複数のcommitを取り込んだ場合は、操作前後のHEADで一括して記録する。

@@ -129,7 +129,7 @@
 - 動作中の外部プロセスとバックグラウンドタスクの種別、安定した実行識別子、対象コマンド（認証情報は除く）。
 - `agents_server`で起動した`session_id`の一覧と、それぞれの状態を観測したか。
 - 後続の工程で使うGit管理外の成果物（原稿、検証の保存出力、調査記録など）の用途と絶対パス。
-- 計画ファイルを作らずにWI実装commitを作った場合の対応記録（引き継ぎ記録と同じstemの`<stem>.wi-commits.jsonl`）の所在。
+- 計画ファイルを作らずにWI実装commitを作った場合（公開の時点で計画なしで進行中のレーンと、計画を省いた小変更）の対応記録（引き継ぎ記録と同じstemの`<stem>.wi-commits.jsonl`）の所在。
   出力、取得、履歴の変更の後は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う。
 - 計画が無い作業で、途中報告のAWI化ステータスを`予定`とした改善点の対象、区分、再開の条件。
   確定は`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」の手順5に従う。

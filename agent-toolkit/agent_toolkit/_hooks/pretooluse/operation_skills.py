@@ -117,7 +117,6 @@ def _is_search_operation(tool_name: str, tool_input: dict) -> bool:
 
 
 _ROOT_CAUSE_HEADING = re.compile(r"^## 原因分析[ \t]*$", re.MULTILINE)
-"""原因分析の見出しだけから成る行。AWIと計画ファイルの`## 原因分析`の起草で書く。"""
 
 
 def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:

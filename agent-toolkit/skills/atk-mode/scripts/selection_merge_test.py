@@ -99,7 +99,7 @@ def _dispatch(*args: str) -> int:
 def test_public_merge_reads_judgments_and_mapping_from_stdin(inputs, tmp_path, capsys, monkeypatch):
     repo, existing, added = inputs
     old = yaml.safe_load(existing.read_bytes())
-    old["選定"][1]["計画要否"] = "計画なし"
+    old["選定"][1]["詳細化要否"] = "詳細化なし"
     existing.write_text(yaml.safe_dump(old, allow_unicode=True), encoding="utf-8")
     source = repo.parent / "notes/processing/a.md"
     source.write_text(
@@ -139,11 +139,11 @@ def test_public_merge_reads_judgments_and_mapping_from_stdin(inputs, tmp_path, c
         "c.md": "lane-01",
         "d.md": "lane-02",
     }
-    assert {row["WI"]: row["計画要否"] for row in result["選定"] if not row["WI"].startswith("active-")} == {
-        "a.md": "計画なし",
-        "b.md": "計画なし",
-        "c.md": "計画あり",
-        "d.md": "計画あり",
+    assert {row["WI"]: row["詳細化要否"] for row in result["選定"] if not row["WI"].startswith("active-")} == {
+        "a.md": "詳細化なし",
+        "b.md": "詳細化なし",
+        "c.md": "詳細化あり",
+        "d.md": "詳細化あり",
     }
     assert result["見込みの補正"] == yaml.safe_load(existing.read_bytes())["見込みの補正"]
     original = output.read_bytes()

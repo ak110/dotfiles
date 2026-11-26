@@ -122,6 +122,15 @@ def _add_wi_add_parser(sub: Any) -> None:
         ),
     )
     add.add_argument(
+        "--detailed",
+        action="store_true",
+        help=(
+            "AWIへ詳細化済みの印（frontmatterのdetailed: true）を付ける。"
+            "計画を作る時点でadd-awi-by-userと同じ水準へ詳細化した本文を新規に保存する場合に使い、"
+            "次の巡回の選定で詳細化の対象から外す。UWI・--batchとは併用できない。"
+        ),
+    )
+    add.add_argument(
         "--source",
         metavar="NAME",
         default=None,
@@ -383,6 +392,15 @@ def _add_mq_edit_parsers(sub: Any) -> None:
             "`## ユーザー指摘の逐語引用`に連続して含まれる時だけ、コメント節を削除して保存する。エージェント環境でも使える。"
             "満たさない時は保存しない。比較では改行の種類、コメントの前後の空行、本文側の行頭の引用記号（`>`と空白1つ）だけを無視する。"
             "--body-fileとの併用が必須で、--appendとは併用できない。"
+        ),
+    )
+    edit.add_argument(
+        "--detail",
+        action="store_true",
+        help=(
+            "計画を作る時点で詳細化したAWIの本文を保存し、詳細化済みの印（frontmatterのdetailed: true）を付ける。"
+            "processingの項目では、エージェント環境でも、処理中の担当（processing_owner）と同じ会話からの置換だけを受け付ける。"
+            "--body-fileとの併用が必須で、--append・--cooldown-untilとは併用できない。UWIには指定できない。"
         ),
     )
     edit.add_argument(

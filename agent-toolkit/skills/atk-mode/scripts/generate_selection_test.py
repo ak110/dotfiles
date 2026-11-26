@@ -15,8 +15,9 @@ import pytest
 import yaml
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
+from agent_toolkit._plan import selection as _selection
 from agent_toolkit._testing import git_repository
-from selection_contract import _plan_requirement
+from selection_contract import _detail_requirement, complete_detail_requirements
 
 
 def _dispatch(*args: str) -> int:
@@ -134,7 +135,7 @@ def test_public_generation_uses_candidate_facts_and_typed_edges_once(
     assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
     saved = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert [item["鮮度"]["later_commit_count"] for item in saved["選定"]] == [0, 1]
-    assert all(item["計画要否"] == "計画あり" for item in saved["選定"])
+    assert all(item["詳細化要否"] == "詳細化あり" for item in saved["選定"])
     assert all("担当モデル" not in item for item in saved["選定"])
     initial = saved["初回配分"]
     assert initial["候補WI"] == names and initial["レーン割当"] == dict.fromkeys(names, "lane-01")
@@ -149,12 +150,14 @@ def test_public_generation_uses_candidate_facts_and_typed_edges_once(
         assert generated["計画1"] == generated["計画2"] == "shared.md"
 
 
-def test_generated_plan_requirement_uses_source_and_wi_type() -> None:
+def test_generated_detail_requirement_uses_source_mark_and_wi_type() -> None:
     for source in ("add-awi-by-user", "process-user-comments", "implement"):
-        assert _plan_requirement({"type": "awi", "source": source}) == "計画なし"
-        assert _plan_requirement({"type": "uwi", "source": source}) == "計画あり"
-    assert _plan_requirement({"type": "awi", "source": "human"}) == "計画あり"
-    assert _plan_requirement({"type": "awi"}) == "計画あり"
+        assert _detail_requirement({"type": "awi", "source": source}) == "詳細化なし"
+        assert _detail_requirement({"type": "uwi", "source": source}) == "詳細化なし"
+    assert _detail_requirement({"type": "awi", "source": "human"}) == "詳細化あり"
+    assert _detail_requirement({"type": "awi"}) == "詳細化あり"
+    assert _detail_requirement({"type": "awi", "source": "human", "detailed": True}) == "詳細化なし"
+    assert _detail_requirement({"type": "uwi"}) == "詳細化なし"
 
 
 def test_public_generation_empty_candidates_and_failure_preserve_destination(
@@ -599,3 +602,26 @@ def test_public_generation_saves_long_single_stage_without_legacy_comparison(env
         _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(selection), "--work-dir", str(repo)) == 0
     ), capsys.readouterr().err
     assert "段階案の完了見込み秒数" not in yaml.safe_load(selection.read_bytes())
+
+
+def test_legacy_plan_requirement_is_recomputed_from_metadata() -> None:
+    legacy: dict[str, Any] = {
+        "選定": [
+            {"WI": "uwi.md", "計画要否": "計画あり"},
+            {"WI": "user.md", "計画要否": "計画あり"},
+            {"WI": "other.md", "計画要否": "計画なし"},
+        ]
+    }
+    metadata = {
+        "uwi.md": {"type": "uwi"},
+        "user.md": {"type": "awi", "source": "add-awi-by-user"},
+        "other.md": {"type": "awi", "source": "human"},
+    }
+    decisions = _selection.decisions(legacy) or []
+    assert all(isinstance(item, dict) and "計画要否" not in item and "詳細化要否" not in item for item in decisions)
+    complete_detail_requirements(legacy, lambda name: metadata[name])
+    assert {item["WI"]: item["詳細化要否"] for item in legacy["選定"]} == {
+        "uwi.md": "詳細化なし",
+        "user.md": "詳細化なし",
+        "other.md": "詳細化あり",
+    }

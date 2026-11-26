@@ -16,7 +16,7 @@ def _legacy_bug_warnings(text: str) -> list[_ClassifiedWarning]:
     return [
         (
             "migration",
-            f"バグ調査結果が旧形式の本文内表である。新規作成・改訂では計画本体の`## {structure.REQUEST_H2_CAUSE}`へ移行する",
+            f"バグ調査結果が旧形式の本文内表である。新規作成・改訂では対象WIの`## {structure.REQUEST_H2_CAUSE}`へ移行する",
         )
     ]
 
@@ -110,7 +110,7 @@ def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
         warnings.append(
             (
                 "migration",
-                f"バグ調査ファイル参照が旧形式である。新規作成・改訂では計画本体の`## {structure.REQUEST_H2_CAUSE}`へ移行する",
+                f"バグ調査ファイル参照が旧形式である。新規作成・改訂では対象WIの`## {structure.REQUEST_H2_CAUSE}`へ移行する",
             )
         )
     reference = structure.extract_bug_file_reference(text)

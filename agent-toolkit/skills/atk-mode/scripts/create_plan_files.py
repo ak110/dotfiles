@@ -226,9 +226,9 @@ def _check_structure(
 ) -> None:
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-    if check_plan_file.detect_plan_format(main_path, main_path.read_text(encoding="utf-8")) != check_plan_file.FORMAT_AWI:
+    if check_plan_file.detect_plan_format(main_path, main_path.read_text(encoding="utf-8")) != check_plan_file.FORMAT_WI_LIST:
         raise PlanCreationError(
-            "新しく作る計画ファイルはAWI本文と同じ書式（計画メタ情報はfrontmatter）で書きます",
+            "新しく作る計画ファイルは、frontmatter（launch_route・target_repo・related_wis）とH1だけのWIリスト形式で書きます",
             next_action=(
                 "agent-toolkit/skills/atk-mode/references/plan-format.md「初回起草の雛形」の構成へ"
                 "本文を書き直し、同じ引数で再実行する"
