@@ -30,5 +30,5 @@ jobs:
           ${{ steps.review.outputs.comment-content == '' ||
               contains(steps.review.outputs.comment-content, '<h2>Snapshot Warnings</h2>') }}
         run: |
-          echo "::error::依存グラフの比較にスナップショット警告があるか、比較の要約を取得できません。"
+          echo "::error::依存グラフの比較にスナップショット警告があるか、比較の要約を取得できません。警告がある場合はジョブの要約で Snapshot Warnings を確認し、依存グラフの更新後にジョブを再実行してください。要約がない場合は「依存差分の脆弱性を検査」ステップのログを確認してください。"
           exit 1
