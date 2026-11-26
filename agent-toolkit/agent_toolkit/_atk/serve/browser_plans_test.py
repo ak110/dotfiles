@@ -447,7 +447,7 @@ async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
     await expect(headers.nth(1)).to_be_in_viewport()
     await harness.page.wait_for_function("document.querySelector('.review-scroll').scrollTop > 0")
     await harness.page.get_by_role("button", name="先頭へ").click()
-    assert await review.evaluate("(table) => table.scrollTop") == 0
+    await harness.page.wait_for_function("document.querySelector('.review-scroll').scrollTop === 0")
 
 
 @pytest.mark.asyncio(loop_scope="session")
