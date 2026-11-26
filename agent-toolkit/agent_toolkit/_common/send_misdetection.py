@@ -136,21 +136,25 @@ def resolved(session_id: str) -> set[tuple[str, str]]:
     return {tuple(pair) for pair in session_state.read_state(session_id).get("send_misdetection_resolved", [])}
 
 
+class RejectionStateError(RuntimeError):
+    """確認済みの未送達記録を更新できなかった。 pyfltr: allow-comment"""
+
+
 def take_rejections(session_id: str, checks: set[str], message: str) -> dict[str, str] | None:
     if not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
         return None if checks else {}
     key = _body_key(message)
+    current = session_state.read_state(session_id).get(_REJECTIONS, {}).get(key)
+    if current is None:
+        return None if checks else {}
     taken: dict[str, str] = {}
+    evaluated = False
 
     def update(state: dict) -> dict | None:
-        seen: dict[str, _Rejection] = state.setdefault(_REJECTIONS, {})
-        entry = seen.get(key)
-        if entry is None:
-            if checks:
-                return None
-            seen[key] = _Rejection(status="reserved", sources={})
-            return state
-        if entry["status"] != "pending" or checks - entry["sources"].keys():
+        nonlocal evaluated
+        evaluated = True
+        entry = state.get(_REJECTIONS, {}).get(key)
+        if entry is None or entry["status"] != "pending" or checks - entry["sources"].keys():
             return None
         taken.update(entry["sources"])
         entry["status"] = "reserved"
@@ -158,20 +162,17 @@ def take_rejections(session_id: str, checks: set[str], message: str) -> dict[str
 
     if session_state.update_state(session_id, update):
         return taken
+    if not evaluated or taken:
+        raise RejectionStateError("未送達記録を更新できない。")
     return None
 
 
 def finish_rejection(session_id: str, message: str, *, failed: bool) -> None:
     def update(state: dict) -> dict | None:
-        seen: dict[str, _Rejection] = state.get(_REJECTIONS, {})
-        key = _body_key(message)
-        entry = seen.get(key)
+        entry = state.get(_REJECTIONS, {}).get(_body_key(message))
         if entry is None or entry["status"] != "reserved":
             return None
-        if entry["sources"]:
-            entry["status"] = "pending" if failed else "sent"
-        else:
-            seen.pop(key)
+        entry["status"] = "pending" if failed else "sent"
         return state
 
     session_state.update_state(session_id, update)
