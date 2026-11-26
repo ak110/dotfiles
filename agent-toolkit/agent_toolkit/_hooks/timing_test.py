@@ -12,6 +12,29 @@ from agent_toolkit._hooks import rules_context, timing
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 
+def test_stop_timing_distinguishes_checks_and_before_after(tmp_path, monkeypatch):
+    monkeypatch.setattr(timing.managed_temp, "find_session_temp", lambda _session: tmp_path)
+    record = tmp_path / "transcript.jsonl"
+    record.write_text('{"type":"assistant","message":{"content":[]}}\n', encoding="utf-8")
+    result = _run_hook_in_process(
+        "stop", {"session_id": "stop-timing", "hook_event_name": "Stop", "transcript_path": str(record)}
+    )
+    assert result.returncode == 0
+    assert json.loads(result.stdout).get("decision") != "block"
+    rows = [json.loads(line) for line in (tmp_path / "hook-timings.jsonl").read_text(encoding="utf-8").splitlines()]
+    stages = {row["stage"] for row in rows if row["operation"] == "stop" and row["seconds"] >= 0}
+    assert {
+        "stop_session",
+        "current_turn_delivery",
+        "delivered_repost_gate",
+        "aggregate_result",
+        "completion_verdict",
+        "recheck_verdict",
+        "handler",
+        "total",
+    } <= stages
+
+
 def test_new_session_start_records_internal_stages(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(paths, "_temp_root_path", lambda: tmp_path / "temp")
     monkeypatch.setattr(paths, "_state_root_path", lambda: tmp_path / "state")

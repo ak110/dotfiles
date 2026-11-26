@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import time
 import types
@@ -14,6 +15,24 @@ import pytest
 from agent_toolkit._atk import agents_exit_session
 from agent_toolkit._common import completion_exit
 from agent_toolkit._testing.helpers import repl_send_to_user_entries
+
+
+def test_function_hook_paths_does_not_load_lane(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from agent_toolkit._atk.agents_exit_session import function_hook_paths; "
+            "paths = function_hook_paths('path-only'); assert paths is not None; "
+            "assert 'agent_toolkit._atk.lane' not in sys.modules; print(paths[0].name, paths[1].name)",
+        ],
+        capture_output=True,
+        check=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.stdout.split() == ["marker-path-only.txt", "request-path-only.txt"]
 
 
 @pytest.mark.parametrize(

@@ -187,7 +187,8 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
                 f"不正・書込途中の行{item['invalid_rows']}件。保存先: bundle/hook-timings.jsonl",
                 "- 保持されている計測だけを対象とする。保持上限で古い計測が除かれるため、セッション全体の網羅は保証しない。"
                 "計測に時刻が無いため、batchの差分期間へ限定できない。",
-                "- totalとhandlerは区間別に示し、重ねて合算しない。並行hookの累積秒数を経過時間の占有率へ変換しない。",
+                "- total・handler・Stopの内訳は区間別に示し、重なる区間を合算しない。"
+                "並行hookの累積秒数を経過時間の占有率へ変換しない。",
             ]
         )
         if item["status"] == "unreadable":

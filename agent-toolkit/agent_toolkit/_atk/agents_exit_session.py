@@ -13,10 +13,10 @@ from dataclasses import dataclass
 
 lazy import psutil
 
-from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import process_identity
+lazy from agent_toolkit._atk import lane as _lane
 lazy from agent_toolkit._common import completion_exit, transcript
 
 _NO_VALUE = frozenset(

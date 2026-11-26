@@ -26,10 +26,12 @@ import importlib
 import json
 import os
 import sys
+import time
 from typing import Any
 lazy import asyncio
 
 from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
+from agent_toolkit._hooks import timing
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._common import completion_exit, function_hook_requests
 lazy from agent_toolkit._common import delegated_session as _delegated_session
@@ -259,20 +261,25 @@ def _intermission(payload: dict, session_id: str, delivery: tuple[list[dict], bo
 
 
 def evaluate(payload_text: str) -> dict[str, object]:
-    resolved = _parse_stop_session(payload_text, lambda: None)
+    stages = timing.Stages()
+    with stages.measure("stop_session"):
+        resolved = _parse_stop_session(payload_text, lambda: None)
     session_id = ""
     payload: dict = {}
     if resolved is not None:
         session_id, payload = resolved
-    _write_recheck_verdict(session_id, payload, may_collect=False)
+    with stages.measure("recheck_reset"):
+        _write_recheck_verdict(session_id, payload, may_collect=False)
 
     source = payload.get("transcript_path")
     delivery = None
     quiet_intermission = runtime_reserved = False
     if isinstance(source, str) and source and not (is_codex_payload(payload) or is_antigravity_payload(payload)):
         try:
-            delivery = delivered_repost_gate.current_turn_delivery(source)
-            quiet_intermission, runtime_reserved = _intermission(payload, session_id, delivery)
+            with stages.measure("current_turn_delivery"):
+                delivery = delivered_repost_gate.current_turn_delivery(source)
+            with stages.measure("intermission"):
+                quiet_intermission, runtime_reserved = _intermission(payload, session_id, delivery)
         except Exception as exc:  # noqa: BLE001 -- 共通証拠の取得失敗で個別の終了判定を失わない
             append_stop_log(session_id, "check_error", {"check": "intermission", "error": f"{type(exc).__name__}: {exc}"})
     entries = delivery[0] if delivery is not None else []
@@ -293,12 +300,13 @@ def evaluate(payload_text: str) -> dict[str, object]:
         if module_name == "response_language_advisor" and "delivered_repost_gate" in blocking_checks:
             continue
         try:
-            module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
-            decision, body = (
-                module.evaluate(payload_text, allow_delivery=not block_reasons)
-                if module_name == "queued_notification_advisor"
-                else module.evaluate(payload_text, **options.get(module_name, {}))
-            )
+            with stages.measure(module_name):
+                module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
+                decision, body = (
+                    module.evaluate(payload_text, allow_delivery=not block_reasons)
+                    if module_name == "queued_notification_advisor"
+                    else module.evaluate(payload_text, **options.get(module_name, {}))
+                )
         except Exception as exc:  # noqa: BLE001 -- 1判定の故障で他の終了判定を失わないため広範に捕捉
             append_stop_log(session_id, "check_error", {"check": module_name, "error": f"{type(exc).__name__}: {exc}"})
             continue
@@ -314,21 +322,28 @@ def evaluate(payload_text: str) -> dict[str, object]:
         elif decision == "halt":
             halt_request = functools.partial(_call_halt, module, session_id, int(body))
 
+    finalize_started = time.monotonic()
+
     def _finalize(result: dict[str, object]) -> dict[str, object]:
+        stages.rows.append(("aggregate_result", time.monotonic() - finalize_started, "ok"))
         if is_codex_payload(payload):
-            return {key: value for key, value in result.items() if key in {"decision", "reason"}}
-        _completion_verdict(
-            session_id,
-            payload,
-            allowed=not block_reasons and not yield_for_delivery and halt_request is None,
-        )
-        _write_recheck_verdict(
-            session_id,
-            payload,
-            may_collect=result.get("decision") != "block" and not yield_for_delivery and halt_request is None,
-        )
-        if user_messages:
-            result["systemMessage"] = "\n\n".join(user_messages)
+            result = {key: value for key, value in result.items() if key in {"decision", "reason"}}
+        else:
+            with stages.measure("completion_verdict"):
+                _completion_verdict(
+                    session_id,
+                    payload,
+                    allowed=not block_reasons and not yield_for_delivery and halt_request is None,
+                )
+            with stages.measure("recheck_verdict"):
+                _write_recheck_verdict(
+                    session_id,
+                    payload,
+                    may_collect=result.get("decision") != "block" and not yield_for_delivery and halt_request is None,
+                )
+            if user_messages:
+                result["systemMessage"] = "\n\n".join(user_messages)
+        timing.record_stages(payload, "stop", stages.rows)
         return result
 
     block_count = _consecutive_block_count(session_id, payload) if block_reasons and session_id else 0
@@ -348,11 +363,15 @@ def evaluate(payload_text: str) -> dict[str, object]:
             {"limit": _CONSECUTIVE_BLOCK_LIMIT, "blocking_checks": ",".join(blocking_checks)},
         )
     if halt_request is not None and session_id and (limit_reached or "response_language_advisor" not in blocking_checks):
+        stages.rows.append(("halt_preparation", time.monotonic() - finalize_started, "ok"))
         try:
-            status, message = halt_request()
+            with stages.measure("halt"):
+                status, message = halt_request()
         except Exception as exc:  # noqa: BLE001 -- 停止工程の故障で他の判定の結果を失わないため広範に捕捉
             append_stop_log(session_id, "halt_error", {"error": f"{type(exc).__name__}: {exc}"})
+            finalize_started = time.monotonic()
         else:
+            finalize_started = time.monotonic()
             user_messages.append(message)
             if status in _TERMINATION_ISSUED:
                 append_stop_log(
