@@ -46,6 +46,7 @@ from agent_toolkit._atk.wi.add_validation import (
     require_agent_awi_sections,
     require_cause_analysis_format,
     require_confirmed_cause,
+    validate_retrospective_report,
 )
 from agent_toolkit._atk.wi.constants import (
     DETAILED_KEY,
@@ -423,6 +424,8 @@ def add_entries_locked(
             if scope:
                 frontmatter_data["scope"] = scope
             frontmatter_data["question_type"] = question_type
+            if question_type == QUESTION_TYPE_REPORT:
+                validate_retrospective_report(private_notes, body, frontmatter_data)
             if choices:
                 frontmatter_data["choices"] = choices
             if repair_target is not None:

@@ -10,6 +10,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as add_module
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import uwi as uwi_module
+from agent_toolkit._atk.wi.add_validation import validate_retrospective_report
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._testing import git_repository
@@ -267,3 +268,32 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
 
     assert exc_info.value.code == 0
     assert list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "agent-toolkit:review-session",
+        "agent-toolkit:review-session batch",
+        "agent-toolkit:session-review",
+        "agent-toolkit:session-review batch",
+        "agent-toolkit:session-review-batch",
+        "review-session",
+        "review-session batch",
+    ],
+)
+def test_retrospective_handoff_required_in_all_review_scopes(tmp_path, scope):
+    metadata = {"scope": scope, "target_repo": "github.com/example/repo"}
+    opening = "# 報告: 振り返り\n\n- 未確定: 再現しない; 検証の引き継ぎ: "
+    for value in (
+        "",
+        "なし（次回の振り返りで同じ型が出た時に調べる）",
+        "不要（次の振り返りで同じ型が出たら調べる）",
+        "20261126-183408-001.md",
+    ):
+        with pytest.raises(WebInputError, match="引き継ぎ"):
+            validate_retrospective_report(tmp_path, opening + value, metadata)
+    validate_retrospective_report(tmp_path, opening + "不要（対策の採否は原因に依存しない）（c0001）", metadata)
+    validate_retrospective_report(tmp_path, "# 報告: 振り返り\n\n### 未達・持ち越し\n\n- 未確定: 記録が追記された", metadata)
+    for other in ("agent-toolkit:review-session architecture", "agent-toolkit:process-wi"):
+        validate_retrospective_report(tmp_path, opening, {**metadata, "scope": other})
