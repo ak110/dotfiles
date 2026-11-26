@@ -217,19 +217,19 @@ async def test_plan_toolbar_keeps_actions_in_view_while_scrolling(screen_harness
 
     async def check_toolbar() -> float:
         pane = await main.bounding_box()
-        bar = await toolbar.bounding_box()
-        assert pane is not None and bar is not None
+        toolbar_box = await toolbar.bounding_box()
+        assert pane is not None and toolbar_box is not None
         assert await toolbar.evaluate("element => getComputedStyle(element).position") == "sticky"
         rows = []
         for control in controls:
             box = await control.bounding_box()
             assert box is not None, control
             assert pane["x"] <= box["x"] and box["x"] + box["width"] <= pane["x"] + pane["width"], (control, box, pane)
-            assert bar["y"] <= box["y"] < box["y"] + box["height"] <= min(bar["y"] + bar["height"], 800)
+            assert toolbar_box["y"] <= box["y"] < box["y"] + box["height"] <= min(toolbar_box["y"] + toolbar_box["height"], 800)
             rows.append(box["y"])
         if width == 1280:
             assert max(rows) - min(rows) <= 1, rows
-        return bar["y"]
+        return toolbar_box["y"]
 
     toolbar_top = await check_toolbar()
     await last.click()
