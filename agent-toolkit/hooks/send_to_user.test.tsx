@@ -217,3 +217,16 @@ test("申告した判定だけを送達後の警告から外す", () => {
   expect(warnings.some((warning) => warning.includes('check="missing-prevention"'))).toBe(false);
   expect(warnings.every((warning) => warning.includes(`delivery_id="${deliveryId}"`))).toBe(true);
 });
+
+test("表示済みの誤警告は質問前に送る本文と申告を同じ箇所に示す", () => {
+  const message = "原稿の用語例を示す。例文は「ミスが見つかった。ユーザーから指摘を受けた。」。";
+  for (const id of ["1".repeat(32), "2".repeat(32)]) {
+    const warnings = reportWarnings(message, id);
+    expect(warnings.length).toBeGreaterThan(0);
+    for (const warning of warnings) {
+      expect(warning).toContain(`"delivery_id":"${id}"`);
+      expect(warning).toContain('質問の前に `message: "…"`');
+      expect(warning).not.toContain("hook通知への対応:");
+    }
+  }
+});

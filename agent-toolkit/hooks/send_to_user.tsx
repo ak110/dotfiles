@@ -72,7 +72,7 @@ const RECORD_LINE_CHECKS: readonly { cues: readonly Cue[]; head: string; warning
       "send-to-user",
       "warn",
       "本文は表示済みである。逸脱を示す語を含む報告に`処置:`の行が無い。" +
-        "以後の報告では、今回の是正と残る影響を`処置:`の行に書け。bugfixの起動の記録は、今回の事象へ5つの問いを適用したことを示さない。逸脱の報告に当たらないと判断した時は、根拠を`hook通知への対応:`の行に書け。",
+        "以後の報告では、今回の是正と残る影響を`処置:`の行に書け。bugfixの起動の記録は、今回の事象へ5つの問いを適用したことを示さない。",
     ),
   },
   {
@@ -82,7 +82,7 @@ const RECORD_LINE_CHECKS: readonly { cues: readonly Cue[]; head: string; warning
       "send-to-user",
       "warn",
       "本文は表示済みである。再発防止を検討する条件（ユーザーの指摘、同じ害の繰り返し、大きな害）を示す語を含む逸脱の報告に`再発防止:`の行が無い。" +
-        "以後の報告では、再発防止の採否を`再発防止:`の行に書け。採らない場合は区分名と理由を書く。条件に当たらないと判断した時は、根拠を`hook通知への対応:`の行に書け。",
+        "以後の報告では、再発防止の採否を`再発防止:`の行に書け。採らない場合は区分名と理由を書く。",
     ),
   },
 ];
@@ -189,8 +189,12 @@ export function reportWarnings(message: string, deliveryId?: string, skipped: re
       warnings.add(warning);
       return;
     }
+    const claim = JSON.stringify([{ check, reason: "誤検出と判断した理由", delivery_id: deliveryId }]);
+    const guidance =
+      `次の操作: 誤検出なら表示済みの本文は再掲せず、次のsend_to_userに \`misdetection=${claim}\` を付ける。` +
+      '次が質問だけなら、質問の前に `message: "…"` とその申告を付けたsend_to_userを1回呼ぶ。';
     warnings.add(warning.replace('kind="warn">', `kind="warn" check="${check}" delivery_id="${deliveryId}">`)
-      .replace("</atk-auto>", `判定名は \`${check}\`。誤検出の場合は本文を再掲せず、次のsend_to_userに \`misdetection=[{"check":"${check}","reason":"理由","delivery_id":"${deliveryId}"}]\` を付ける。\n</atk-auto>`));
+      .replace("</atk-auto>", `${guidance}\n</atk-auto>`));
   }
   const clockClaims = reportBodyLines(message).map((line) => line.replace(/`[^`\n]+`/g, ""));
   if (clockClaims.some((line) => /(?:^|[^0-9A-Za-z_])(?:(?:[01]?\d|2[0-3]):(?:[0-5][xX]|[xX][0-9xX])|(?:[012][xX]|[xX][0-9xX]):(?:[0-5][0-9xX]|[xX][0-9xX]))(?![0-9A-Za-z_])/.test(line))) {
@@ -212,7 +216,7 @@ export function reportWarnings(message: string, deliveryId?: string, skipped: re
         if (missing.length > 0) warn("deferral-comparison", automatedMessage(
           "send-to-user", "warn",
           `見送り報告の比較項目が空または欠落している: ${missing.join("、")}。` +
-            "同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、セミコロンで区切って記録せよ。見送り報告に当たらないと判断した時は、根拠を`hook通知への対応:`の行に書け。",
+            "同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、セミコロンで区切って記録せよ。",
         ));
       }
     }
