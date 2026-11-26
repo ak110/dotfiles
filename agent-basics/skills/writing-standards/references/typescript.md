@@ -1,6 +1,6 @@
 # TypeScript記述スタイル
 
-TypeScriptで実装する担当が固有の書き方に従い、ユーザーが型の抜け穴や実行時の誤りを含むコードを受け取らないようにする。
+TypeScriptで実装する担当が型と非同期処理の契約をコードに表し、ユーザーが実行時の振る舞いを確かめながら保守できるようにする。
 本書は、TypeScriptのコードとテストを書く・直す時に、一般的な作法だけでは決まらない固有の書き方を示す。
 一般知識で導ける作法を書かないのは`agent-basics:writing-standards/references/quality-principles-subtraction.md`の適用である。
 Biomeやtypescript-eslintなどの検査が導入されている環境では、その診断に従う。

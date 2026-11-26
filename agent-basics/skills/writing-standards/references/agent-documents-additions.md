@@ -1,6 +1,6 @@
 # エージェント向け文書への追記と記述量の管理
 
-規範を足す・削る担当が既存の規定と比べて判断に要る記述を残し、エージェントが目的と条件を読める量で受け取ってユーザーの意図どおりに動けるようにする。
+規範を改訂する担当が判断に必要な目的と条件を保ち、読み手のエージェントが作業に合う規定を選んでユーザーの意図に沿って動けるようにする。
 本書は、規範の不足や誤適用に対処してエージェント向け文書の規定を足す・改める時と、文書の記述量を点検・削減する時の基準である。
 主に原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用である。
 費用の比べ方は原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）に従う。

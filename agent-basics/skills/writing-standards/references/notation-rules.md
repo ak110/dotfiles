@@ -1,6 +1,6 @@
 # 日本語とMarkdownの執筆規則
 
-文章を書く担当が表記と書式をそろえ、読み手が表記の揺れに迷わずに内容を読めるようにする。
+文章を書く担当が表記と書式をそろえ、読み手が文章中の語句と関係を一貫して読み取れるようにする。
 文章を書く時と表記を直す時に使う、日本語の表記、Markdownの書式、表記の一括置換の基準である。
 原則8（`agent-basics:writing-standards/references/quality-principles-readers.md`）を表記へ当てはめる。
 チェックの診断へ対応する時は`agent-basics:writing-standards/references/textlint-violations.md`「textlint指摘への修正方針」に従う。

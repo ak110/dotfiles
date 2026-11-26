@@ -1,6 +1,6 @@
 # Claude Code・Codex Hook実装ガイドライン
 
-hookを作る担当がホストの実際の入出力に合わせて実装し、ユーザーが動かないhookや作業を誤って止めるhookを受け取らないようにする。
+フックを作る担当がホストの入出力に合わせ、ユーザーとエージェントのそれぞれに次の判断に必要な通知を届ける。
 Claude CodeとCodexのhookの入出力、matcher、出力欄、`Stop`・`SubagentStop`、管理環境での実行、子のClaude Codeへの環境変数、auto modeのカスタムルールを扱う。
 hookを新設・変更する時と、ホストの機能の可否や入出力を調べる時に使う。
 ホストの仕様は版で変わるため、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従って入出力を公式資料と観測で確定し、Claude Code固有の上限値と出力契約にはホスト名を書く。

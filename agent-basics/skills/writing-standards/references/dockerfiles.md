@@ -1,6 +1,6 @@
 # Dockerfile記述スタイル
 
-Dockerfileを書く担当がDockerfileに固有の決まりに従い、ユーザーが遅いビルドや再現しないイメージを受け取らないようにする。
+Dockerfileを書く担当が依存と実行環境を定め、ユーザーが安全で再現性のあるコンテナーイメージを取得できるようにする。
 Dockerfileを書く時とレビューする時の、BuildKitとAPTのキャッシュ、公開待機設定との組み合わせなどの決まりを示す。
 原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用として、Dockerfileに固有の決まりだけを置く。
 
