@@ -118,18 +118,28 @@ def resolved(session_id: str) -> set[tuple[str, str]]:
     return {tuple(pair) for pair in session_state.read_state(session_id).get("send_misdetection_resolved", [])}
 
 
-def clear_rejections(session_id: str, message: str) -> None:
-    keys = {_body_key(check, message) for check in RETRY}
+def take_rejections(session_id: str, checks: set[str], message: str) -> dict[str, str]:
+    keys = {check: _body_key(check, message) for check in checks}
+    taken: dict[str, str] = {}
 
     def update(state: dict) -> dict | None:
         seen = state.get("send_misdetection_rejections", {})
-        if not keys.intersection(seen):
+        if not all(isinstance(seen.get(key), str) for key in keys.values()):
             return None
-        state["send_misdetection_rejections"] = {key: value for key, value in seen.items() if key not in keys}
+        taken.update({check: seen.pop(key) for check, key in keys.items()})
         return state
 
-    if re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
-        session_state.update_state(session_id, update)
+    return taken if keys and session_state.update_state(session_id, update) else {}
+
+
+def restore_rejections(session_id: str, message: str, sources: dict[str, str]) -> None:
+    def update(state: dict) -> dict:
+        seen = state.setdefault("send_misdetection_rejections", {})
+        for check, source in sources.items():
+            seen.setdefault(_body_key(check, message), source)
+        return state
+
+    session_state.update_state(session_id, update)
 
 
 def record(session_id: str, claims: list[Claim], delivery_id: str | None, *, sources: dict[str, str] | None = None) -> bool:

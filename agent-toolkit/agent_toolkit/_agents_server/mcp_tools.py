@@ -24,6 +24,7 @@ from agent_toolkit._agents_server import (
     lifetime,
     logging_config,
     result_projection,
+    send_retry,
     shared_roots,
     state,
     status_file,
@@ -858,7 +859,7 @@ async def send_to_user(
         inputs["tool_use_id"] = tool_use_id
     if retry:
         inputs["misdetection_checks"] = sorted(retry)
-    result = await _ui_request("send_to_user", inputs)
+    result, sources = await send_retry.deliver(_ui_request, inputs, session_id, retry, message)
     if (
         claims
         and session_id

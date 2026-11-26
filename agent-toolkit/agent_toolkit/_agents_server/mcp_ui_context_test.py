@@ -344,6 +344,12 @@ async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, t
             },
         )
 
+        with pytest.raises(ToolError, match="未送達記録を確認できない"):
+            await mcp_tools.mcp.call_tool(
+                "send_to_user",
+                {"message": message, "misdetection": [{"check": "missing-prevention", "reason": "説明用の引用である。"}]},
+            )
+
     assert isinstance(result, CallToolResult)
     assert result.structured_content == {"ok": True, "id": identifier}
     request.assert_awaited_once_with(
