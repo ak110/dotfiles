@@ -138,27 +138,28 @@ def test_repost_similarity_uses_full_text_and_unique_grams(tmp_path: Path, capsy
     assert next(event for event in events if event["kind"] == "delivery-repost-summary")["candidate_count"] == 0
 
 
-@pytest.mark.parametrize(("length", "end", "expected"), [(200, True, 0), (201, True, 1), (201, False, 0)])
-def test_long_post_delivery_text_enters_existing_bundle(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], length: int, end: bool, expected: int
+@pytest.mark.parametrize(("result", "expected"), [([], 0), ([_result("send-1", failed=True)], 0), ([_result("send-1")], 1)])
+def test_post_delivery_bundle_requires_success_even_for_long_replies(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], result: list[dict[str, Any]], expected: int
 ) -> None:
     path = tmp_path / "main.jsonl"
-    _write(path, [_send("送達した本文" * 20), _text("地" * length, end=end)])
+    _write(path, [_send("送達した本文" * 20), *result, _text("地" * 201)])
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     assert evidence.main([str(path), "--bundle", str(bundle)]) == 0
     capsys.readouterr()
     candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
-    selected = [event for event in candidates if event.get("candidate_kind") == "post-delivery-long-text"]
+    selected = [event for event in candidates if event.get("candidate_kind") == delivery.RESPONSE_CANDIDATE]
     assert len(selected) == expected
+    assert not any(event.get("candidate_kind") == "post-delivery-long-text" for event in candidates)
     if selected:
-        assert selected[0]["text_length"] == length
-        assert selected[0]["delivery_line"] == 1
-        assert selected[0]["locators"][0]["line"] == 2
+        assert selected[0]["text_length"] == 201
+        assert selected[0]["delivery_lines"] == [1]
+        assert selected[0]["locators"][0]["line"] == 3
         conversations = [json.loads(line) for line in (bundle / "conversation.jsonl").read_text(encoding="utf-8").splitlines()]
         assert [event["delivery"] for event in conversations if event["kind"] == "utterance"] == ["send_to_user", "text"]
         proof = json.loads((bundle / "candidate-evidence" / f"{selected[0]['candidate_id']}.json").read_text(encoding="utf-8"))
-        assert {event["line"] for event in proof["events"]} == {1, 2}
+        assert {event["line"] for event in proof["events"]} == {1, 2, 3}
 
 
 @pytest.mark.parametrize(("size", "common", "expected"), [(19, 19, 0), (20, 9, 0), (20, 10, 1)])
@@ -227,24 +228,16 @@ def test_delivery_catalog_and_invalid_queries(tmp_path: Path, capsys: pytest.Cap
         assert any(json.loads(line)["kind"] == "error" for line in capsys.readouterr().out.splitlines())
 
 
-@pytest.mark.parametrize(
-    "boundary",
-    [
-        {"type": "user", "message": {"role": "user", "content": "次の依頼"}},
-        _text("…"),
-    ],
-)
-def test_long_candidate_does_not_cross_human_or_turn_boundary(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], boundary: dict[str, Any]
-) -> None:
+def test_post_delivery_bundle_does_not_cross_next_user_input(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "main.jsonl"
-    _write(path, [_send("報告" * 40), boundary, _text("次の応答" * 60)])
+    user = {"type": "user", "message": {"role": "user", "content": "次の依頼"}}
+    _write(path, [_send("報告" * 40), _result("send-1"), user, _text("次の応答" * 60)])
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     assert evidence.main([str(path), "--bundle", str(bundle)]) == 0
     capsys.readouterr()
     candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert not any(event.get("candidate_kind") == "post-delivery-long-text" for event in candidates)
+    assert not any(event.get("candidate_kind") == delivery.RESPONSE_CANDIDATE for event in candidates)
 
 
 def test_bundle_reuses_timeline_without_similarity_scan(
@@ -258,13 +251,13 @@ def test_bundle_reuses_timeline_without_similarity_scan(
     monkeypatch.setattr(delivery, "_grams", reject_unused_scan)
     body = "送達後の終了本文" * 400
     path = tmp_path / "main.jsonl"
-    _write(path, [_send("報告" * 40), _text(body)])
+    _write(path, [_send("報告" * 40), _result("send-1"), _text(body)])
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     assert evidence.main([str(path), "--bundle", str(bundle)]) == 0
     capsys.readouterr()
     candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
-    candidate = next(event for event in candidates if event.get("candidate_kind") == "post-delivery-long-text")
+    candidate = next(event for event in candidates if event.get("candidate_kind") == delivery.RESPONSE_CANDIDATE)
     assert candidate["text_length"] == len(body)
     assert len(candidate["text"]) < len(body)
     proof = json.loads((bundle / "candidate-evidence" / f"{candidate['candidate_id']}.json").read_text(encoding="utf-8"))
@@ -280,7 +273,7 @@ def test_bundle_excludes_sidechain_long_candidate(tmp_path: Path, capsys: pytest
     assert evidence.main([str(path), "--bundle", str(bundle)]) == 0
     capsys.readouterr()
     candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert not any(event.get("candidate_kind") == "post-delivery-long-text" for event in candidates)
+    assert not any(event.get("candidate_kind") == delivery.RESPONSE_CANDIDATE for event in candidates)
 
 
 def test_new_delivery_candidate_requires_success_and_counts_once(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

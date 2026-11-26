@@ -24,29 +24,6 @@ DELIVERY_CANDIDATE_KINDS = frozenset({"delivery-repost-candidate", "post-deliver
 
 
 def post_delivery_events(timeline: list[dict[str, Any]], collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    latest: dict[str, dict[str, Any]] = {}
-    events: list[dict[str, Any]] = []
-    for event in timeline:
-        if event.get("is_sidechain") is True:
-            continue
-        record = event.get("record")
-        if not isinstance(record, str):
-            continue
-        if event["kind"] == "user" and not _generated_user_event(event):
-            latest.pop(record, None)
-        elif event.get("delivery") == "send_to_user":
-            latest[record] = event
-        elif event.get("delivery") == "text" and event.get("stop_reason") == "end_turn":
-            delivered = latest.pop(record, None)
-            if delivered is not None and event["text_length"] > _LONG_TEXT_THRESHOLD:
-                events.append(
-                    {
-                        **event,
-                        "kind": "post-delivery-long-text",
-                        "delivery_line": delivered["line"],
-                        "delivery_timestamp": delivered.get("timestamp"),
-                    }
-                )
     with_delivery = {
         record
         for event in timeline
@@ -59,9 +36,7 @@ def post_delivery_events(timeline: list[dict[str, Any]], collected: list[_Collec
         for item in collected
         if item.runtime == "claude" and item.record_id in with_delivery
     }
-    responses = _response_candidates(timeline, results)
-    comparable = {(event["record"], event["line"]) for event in responses}
-    return [event for event in events if (event["record"], event["line"]) not in comparable] + responses
+    return _response_candidates(timeline, results)
 
 
 def _result_index(records: list[_Record], boundary: datetime.datetime | None) -> dict[str, tuple[int, str]]:

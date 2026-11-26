@@ -22,7 +22,6 @@ UNTRUNCATED_EVIDENCE_KINDS = frozenset(
         "tool-failure",
         "delegate-return",
         "escalation",
-        "post-delivery-long-text",
         RESPONSE_CANDIDATE,
     }
 )
@@ -87,9 +86,7 @@ def _candidate_evidence_events(
         details: list[dict[str, Any]] = []
         source_chars = 0
         evidence_locators = list(candidate["locators"])
-        if candidate["candidate_kind"] == "post-delivery-long-text":
-            evidence_locators.append({"record": candidate["locators"][0]["record"], "line": candidate["delivery_line"]})
-        elif candidate["candidate_kind"] == RESPONSE_CANDIDATE:
+        if candidate["candidate_kind"] == RESPONSE_CANDIDATE:
             for line in sorted(set(candidate["delivery_lines"]) | set(candidate["delivery_result_lines"])):
                 evidence_locators.append({"record": candidate["locators"][0]["record"], "line": line})
         for locator in evidence_locators:

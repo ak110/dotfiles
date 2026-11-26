@@ -58,10 +58,8 @@ _CANDIDATE_CONTEXT_FIELDS = (
     "answer_line",
     "question_call_id",
     "question_index",
-    "delivery_line",
     "delivery_lines",
     "delivery_result_lines",
-    "delivery_timestamp",
     "review_status",
     "text_length",
 )
@@ -154,7 +152,6 @@ def _candidate_events(
         ),
         ("confirmation-request", (event for event in wi_events or () if event.get("kind") == "submitted-uwi")),
         ("wi-user-response", (event for event in wi_events or () if event.get("kind") == "wi-user-response")),
-        ("post-delivery-long-text", (event for event in post_delivery or () if event["kind"] == "post-delivery-long-text")),
         (RESPONSE_CANDIDATE, (event for event in post_delivery or () if event["kind"] == RESPONSE_CANDIDATE)),
     )
     for candidate_kind, events in sources:
@@ -373,7 +370,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
     if candidate_kind in {"adhoc-processing", "definition-body-read", "definition-read-unresolved"}:
         return candidate_kind, str(event["record"])
-    if candidate_kind in {"confirmation-request", "wi-user-response", "post-delivery-long-text", RESPONSE_CANDIDATE}:
+    if candidate_kind in {"confirmation-request", "wi-user-response", RESPONSE_CANDIDATE}:
         return candidate_kind, str(event["record"]), f"{int(event['line']):010d}", str(event.get("tag", ""))
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 
