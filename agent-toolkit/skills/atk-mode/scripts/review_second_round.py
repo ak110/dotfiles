@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
                 host_homes.claude_config_dir() / "projects",
                 *session_record_paths.codex_record_roots(host_homes.codex_home()),
             ]
-            collected = draft_review_rounds.collect(roots)
+            collected = draft_review_rounds.collect(roots, index=draft_review_rounds.index_path(roots))
             result["draft_review"] = {
                 "current": draft_review_rounds.period(collected, since, until),
                 "previous": draft_review_rounds.period(

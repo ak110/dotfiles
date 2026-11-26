@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shlex
+import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
+import filelock
 from agent_toolkit._agents_server import wait_summary
+from agent_toolkit._common import derived_index, state_paths
 from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
 from session_evidence_extract import _load_records, _record_timestamp
 from session_evidence_tool_calls_records import _record_tool_calls, _recorded_input, _recorded_result
@@ -32,14 +36,29 @@ _SESSION_ARGUMENT = re.compile(r"""(?:^|,)\s*(?:session_id|"session_id"|'session
 class _Receipt(NamedTuple):
     timestamp: datetime
     session: str
-    body: str
+    digest: str
+    judgments: list[dict[str, str]]
     order: int
+
+
+class _Request(NamedTuple):
+    timestamp: datetime
+    digest: str
+    identity: str | None
+    prompt: str | None
+
+
+class _Record(NamedTuple):
+    parents: dict[str, str]
+    reviewers: set[str]
+    receipts: list[tuple[datetime, str, str, int, list[dict[str, str]]]]
+    requests: dict[str, list[_Request]]
 
 
 class _Collected(NamedTuple):
     series: dict[str, str]
     receipts: list[_Receipt]
-    requests: dict[str, list[tuple[datetime, str]]]
+    requests: dict[str, list[_Request]]
 
 
 def _wrapped_arguments(source: str) -> dict[str, object]:
@@ -143,133 +162,244 @@ def _exec_result(raw: object) -> dict | None:
     return result if isinstance(result, dict) and not (result.get("error") or result.get("isError")) else None
 
 
-def collect(roots: list[Path]) -> _Collected:
+def _hash_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="surrogatepass")).hexdigest()
+
+
+def _request(timestamp: datetime, prompt: str) -> _Request:
+    matches = {
+        match[2].strip("`") for line in prompt.splitlines() if (match := _FIELD.fullmatch(line)) and match[1] == "要求識別子"
+    }
+    identity = next(iter(matches)) if len(matches) == 1 else None
+    params = _request_fields(prompt)
+    if params.get("instruction") == "再判定せよ":
+        selected = params.get("要求識別子")
+        identity = selected if isinstance(selected, str) else None
+        return _Request(timestamp, _hash_text(prompt), identity, prompt)
+    return _Request(timestamp, _hash_text(prompt), identity, prompt if identity is not None else None)
+
+
+def _extract(path: Path) -> _Record:
+    parents: dict[str, str] = {}
+    reviewers: set[str] = set()
+    requests: dict[str, list[_Request]] = defaultdict(list)
+    records = _load_records(str(path)) or []
+    entries = {record.line: record for record in records}
+    pending: dict[str, list[str]] = {}
+    deliveries: dict[str, int] = defaultdict(int)
+    continued: set[tuple[str, str, int]] = set()
+    path_receipts: list[tuple[datetime, str, str, int, list[dict[str, str]]]] = []
+    for call in sorted(_record_tool_calls(records), key=lambda item: item.result_line or item.line):
+        entry = entries[call.line].entry
+        args = _recorded_input(entry, call.call_id)
+        command = args.get("command", args.get("cmd", call.text))
+        operation = _operation(call.tool, command if isinstance(command, str) else "")
+        shell_call = _SHELL_CALL.fullmatch(call.text.strip()) if call.tool == "functions.exec" else None
+        poll = shell_call is not None and shell_call[1] == "write_stdin"
+        if shell_call:
+            argument = _COMMAND_ARGUMENT.search(shell_call[2])
+            command = (argument[1] or argument[2] or "") if argument else ""
+            operation = "wait" if poll else _operation("exec_command", command)
+        elif call.tool.rsplit(".", 1)[-1] == "exec":
+            operations = _WRAPPED_CALL.findall(call.text)
+            if len(operations) == 1:
+                operation = operations[0]
+                args = _wrapped_arguments(call.text)
+            elif not operations and "tools.write_stdin" not in call.text and re.search(r"\bagents\s+wait\b", call.text):
+                operation = "wait"
+        if operation not in {"start", "send_message", "wait"} or call.result_line is None:
+            continue
+        result = entries[call.result_line]
+        payload = result.entry.get("payload")
+        output = payload.get("output") if isinstance(payload, dict) else None
+        raw = _recorded_result(result.entry, call.call_id)
+        message = result.entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list) and any(
+            isinstance(block, dict) and block.get("tool_use_id") == call.call_id and block.get("is_error") for block in content
+        ):
+            continue
+        meta = result.entry.get("mcpMeta")
+        structured = meta.get("structuredContent") if isinstance(meta, dict) else None
+        value = _structured(structured if structured is not None else raw if raw is not None else output)
+        if shell_call:
+            execution = _exec_result(raw if raw is not None else output)
+            argument = _SESSION_ARGUMENT.search(shell_call[2]) if poll else None
+            process = argument[1] if argument else None
+            if poll and process not in pending:
+                continue
+            if execution is None:
+                if process is not None:
+                    pending.pop(process, None)
+                continue
+            running = execution.get("session_id")
+            exit_code = execution.get("exit_code")
+            chunk = execution.get("output")
+            if (
+                isinstance(running, int)
+                and not isinstance(running, bool)
+                and exit_code is None
+                and (not poll or str(running) == process)
+            ):
+                chunks = pending.setdefault(str(running), [])
+                if isinstance(chunk, str):
+                    chunks.append(chunk)
+                continue
+            chunks = pending.pop(process) if process is not None else []
+            if (
+                not isinstance(exit_code, int)
+                or isinstance(exit_code, bool)
+                or exit_code != 0
+                or running is not None
+                or not isinstance(chunk, str)
+            ):
+                continue
+            value = "".join([*chunks, chunk])
+        if value is None:
+            continue
+        if operation == "start" and isinstance(value, dict) and isinstance(session := value.get("session_id"), str):
+            role = args.get("subagent_md_path")
+            if isinstance(role, str) and role.replace("\\", "/").rsplit("/", 1)[-1] in {
+                "wi-draft-review.subagent.md",
+                "wi-draft-review",
+            }:
+                reviewers.add(session)
+            if isinstance(parent := args.get("handoff_from"), str):
+                parents[session] = parent
+        timestamp = _record_timestamp(result)
+        if timestamp is None:
+            continue
+        if operation in {"start", "send_message"} and isinstance(value, dict):
+            session = (value if operation == "start" else args).get("session_id")
+            instruction = args.get("instruction")
+            if instruction == "再判定せよ" and isinstance(params := args.get("extra_params"), dict):
+                if value.get("delivery") not in ("reply_started", "steered"):
+                    continue
+                prompt = {
+                    "instruction": instruction,
+                    **{key: params[key] for key in ("原稿", "要求識別子") if isinstance(params.get(key), str)},
+                }
+            else:
+                prompt = args.get("prompt") or instruction or args.get("extra_params")
+            if isinstance(session, str) and (operation == "start" or value.get("delivery") in ("reply_started", "steered")):
+                deliveries[session] += 1
+            if isinstance(session, str) and isinstance(prompt, (str, dict)):
+                requests[session].append(
+                    _request(timestamp, prompt if isinstance(prompt, str) else json.dumps(prompt, ensure_ascii=False))
+                )
+        if operation == "wait":
+            for session, body in _bodies(value):
+                body = body.strip()
+                digest = _hash_text(body)
+                revision = deliveries[session]
+                path_receipts.append((timestamp, session, digest, revision, [fields for fields in _judgments(body) if fields]))
+                if poll:
+                    continued.add((session, digest, revision))
+    receipts: list[tuple[datetime, str, str, int, list[dict[str, str]]]] = []
+    seen: set[tuple[str, str, int]] = set()
+    for timestamp, session, digest, revision, judgments in path_receipts:
+        identity = (session, digest, revision)
+        if identity in continued and identity in seen:
+            continue
+        seen.add(identity)
+        receipts.append((timestamp, session, digest, revision, judgments))
+    return _Record(parents, reviewers, receipts, requests)
+
+
+_INDEX_MAX_BYTES = 64 * 1024 * 1024
+_CHECKPOINT_RECORDS = 256
+
+
+def _encode(record: _Record) -> list[Any]:
+    return [
+        record.parents,
+        sorted(record.reviewers),
+        [
+            [time.isoformat(), session, digest, revision, judgments]
+            for time, session, digest, revision, judgments in record.receipts
+        ],
+        {
+            session: [[time.isoformat(), digest, identity, prompt] for time, digest, identity, prompt in rows]
+            for session, rows in record.requests.items()
+        },
+    ]
+
+
+def _decode(fields: list[Any]) -> _Record:
+    parents, reviewers, receipts, requests = fields
+    if (
+        not isinstance(parents, dict)
+        or not isinstance(reviewers, list)
+        or not isinstance(receipts, list)
+        or not isinstance(requests, dict)
+    ):
+        raise ValueError("派生索引の値が不正")
+    return _Record(
+        parents,
+        set(reviewers),
+        [
+            (datetime.fromisoformat(time), session, digest, revision, judgments)
+            for time, session, digest, revision, judgments in receipts
+        ],
+        {
+            session: [
+                _Request(datetime.fromisoformat(time), digest, identity, prompt) for time, digest, identity, prompt in rows
+            ]
+            for session, rows in requests.items()
+        },
+    )
+
+
+def _indexed_records(paths: list[Path], index: Path) -> dict[str, _Record]:
+    listed = []
+    unreadable = {}
+    for path in paths:
+        try:
+            listed.append((str(path), path, derived_index.identity(path.stat())))
+        except OSError:
+            unreadable[str(path)] = _extract(path)
+    checkpoint = derived_index.Checkpoint(every=_CHECKPOINT_RECORDS, max_bytes=_INDEX_MAX_BYTES)
+    code = derived_index.code_version(__name__, script_root=Path(__file__).resolve().parent)
+    index.parent.mkdir(parents=True, exist_ok=True)
+    with filelock.FileLock(index.with_suffix(".lock"), timeout=3):
+        records = derived_index.refreshed(
+            index, code, listed, lambda _key, path: _extract(path), _encode, _decode, checkpoint=checkpoint
+        )
+    print(
+        f"投入前レビュー索引: 解析={len(paths) if checkpoint.overflow else checkpoint.digested + len(unreadable)}件、"
+        f"再利用={0 if checkpoint.overflow else checkpoint.reused}件、"
+        f"容量={0 if checkpoint.overflow else checkpoint.bytes_saved} bytes、上限={checkpoint.max_bytes} bytes",
+        file=sys.stderr,
+    )
+    return records | unreadable
+
+
+def index_path(roots: list[Path]) -> Path:
+    key = _hash_text(json.dumps(sorted({str(root.resolve()) for root in roots})))
+    return state_paths.state_dir() / "session-review" / "draft-review-index" / f"{key}.json"
+
+
+def collect(roots: list[Path], *, index: Path | None = None) -> _Collected:
     parents: dict[str, str] = {}
     reviewers: set[str] = set()
     receipts: dict[tuple[datetime, str, str], _Receipt] = {}
-    requests: dict[str, list[tuple[datetime, str]]] = defaultdict(list)
-    paths = {path.resolve() for root in roots for path in ([root] if root.is_file() else root.rglob("*.jsonl"))}
-    for path in sorted(paths):
-        records = _load_records(str(path)) or []
-        entries = {record.line: record for record in records}
-        pending: dict[str, list[str]] = {}
-        deliveries: dict[str, int] = defaultdict(int)
-        continued: set[tuple[str, str, int]] = set()
-        path_receipts: list[tuple[datetime, str, str, int]] = []
-        for call in sorted(_record_tool_calls(records), key=lambda item: item.result_line or item.line):
-            entry = entries[call.line].entry
-            args = _recorded_input(entry, call.call_id)
-            command = args.get("command", args.get("cmd", call.text))
-            operation = _operation(call.tool, command if isinstance(command, str) else "")
-            shell_call = _SHELL_CALL.fullmatch(call.text.strip()) if call.tool == "functions.exec" else None
-            poll = shell_call is not None and shell_call[1] == "write_stdin"
-            if shell_call:
-                argument = _COMMAND_ARGUMENT.search(shell_call[2])
-                command = (argument[1] or argument[2] or "") if argument else ""
-                operation = "wait" if poll else _operation("exec_command", command)
-            elif call.tool.rsplit(".", 1)[-1] == "exec":
-                operations = _WRAPPED_CALL.findall(call.text)
-                if len(operations) == 1:
-                    operation = operations[0]
-                    args = _wrapped_arguments(call.text)
-                elif not operations and "tools.write_stdin" not in call.text and re.search(r"\bagents\s+wait\b", call.text):
-                    operation = "wait"
-            if operation not in {"start", "send_message", "wait"} or call.result_line is None:
-                continue
-            result = entries[call.result_line]
-            payload = result.entry.get("payload")
-            output = payload.get("output") if isinstance(payload, dict) else None
-            raw = _recorded_result(result.entry, call.call_id)
-            message = result.entry.get("message")
-            content = message.get("content") if isinstance(message, dict) else None
-            if isinstance(content, list) and any(
-                isinstance(block, dict) and block.get("tool_use_id") == call.call_id and block.get("is_error")
-                for block in content
-            ):
-                continue
-            meta = result.entry.get("mcpMeta")
-            structured = meta.get("structuredContent") if isinstance(meta, dict) else None
-            value = _structured(structured if structured is not None else raw if raw is not None else output)
-            if shell_call:
-                execution = _exec_result(raw if raw is not None else output)
-                argument = _SESSION_ARGUMENT.search(shell_call[2]) if poll else None
-                process = argument[1] if argument else None
-                if poll and process not in pending:
-                    continue
-                if execution is None:
-                    if process is not None:
-                        pending.pop(process, None)
-                    continue
-                running = execution.get("session_id")
-                exit_code = execution.get("exit_code")
-                chunk = execution.get("output")
-                if (
-                    isinstance(running, int)
-                    and not isinstance(running, bool)
-                    and exit_code is None
-                    and (not poll or str(running) == process)
-                ):
-                    chunks = pending.setdefault(str(running), [])
-                    if isinstance(chunk, str):
-                        chunks.append(chunk)
-                    continue
-                chunks = pending.pop(process) if process is not None else []
-                if (
-                    not isinstance(exit_code, int)
-                    or isinstance(exit_code, bool)
-                    or exit_code != 0
-                    or running is not None
-                    or not isinstance(chunk, str)
-                ):
-                    continue
-                value = "".join([*chunks, chunk])
-            if value is None:
-                continue
-            if operation == "start" and isinstance(value, dict) and isinstance(session := value.get("session_id"), str):
-                role = args.get("subagent_md_path")
-                if isinstance(role, str) and role.replace("\\", "/").rsplit("/", 1)[-1] in {
-                    "wi-draft-review.subagent.md",
-                    "wi-draft-review",
-                }:
-                    reviewers.add(session)
-                if isinstance(parent := args.get("handoff_from"), str):
-                    parents[session] = parent
-            timestamp = _record_timestamp(result)
-            if timestamp is None:
-                continue
-            if operation in {"start", "send_message"} and isinstance(value, dict):
-                session = (value if operation == "start" else args).get("session_id")
-                instruction = args.get("instruction")
-                if instruction == "再判定せよ" and isinstance(params := args.get("extra_params"), dict):
-                    if value.get("delivery") not in ("reply_started", "steered"):
-                        continue
-                    prompt = {
-                        "instruction": instruction,
-                        **{key: params[key] for key in ("原稿", "要求識別子") if key in params},
-                    }
-                else:
-                    prompt = args.get("prompt") or instruction or args.get("extra_params")
-                if isinstance(session, str) and (operation == "start" or value.get("delivery") in ("reply_started", "steered")):
-                    deliveries[session] += 1
-                if isinstance(session, str) and isinstance(prompt, (str, dict)):
-                    requests[session].append(
-                        (timestamp, prompt if isinstance(prompt, str) else json.dumps(prompt, ensure_ascii=False))
-                    )
-            if operation == "wait":
-                for session, body in _bodies(value):
-                    body = body.strip()
-                    revision = deliveries[session]
-                    path_receipts.append((timestamp, session, body, revision))
-                    if poll:
-                        continued.add((session, body, revision))
-        seen: set[tuple[str, str, int]] = set()
-        for timestamp, session, body, revision in path_receipts:
-            identity = (session, body, revision)
-            if identity in continued and identity in seen:
-                continue
-            seen.add(identity)
-            key = (timestamp, session, body)
-            receipts.setdefault(key, _Receipt(*key, len(receipts)))
+    requests: dict[str, list[_Request]] = defaultdict(list)
+    paths = sorted({path.resolve() for root in roots for path in ([root] if root.is_file() else root.rglob("*.jsonl"))})
+    indexed = None
+    if index is not None:
+        try:
+            indexed = _indexed_records(paths, index)
+        except (OSError, filelock.Timeout) as error:
+            print(f"投入前レビュー索引を利用できないため全件を読む: {error}", file=sys.stderr)
+    for path in paths:
+        record = indexed[str(path)] if indexed is not None else _extract(path)
+        parents.update(record.parents)
+        reviewers.update(record.reviewers)
+        for session, rows in record.requests.items():
+            requests[session].extend(rows)
+        for timestamp, session, digest, _revision, judgments in record.receipts:
+            key = (timestamp, session, digest)
+            receipts.setdefault(key, _Receipt(*key, judgments, len(receipts)))
     series = {}
     for session in reviewers | parents.keys():
         chain = [session]
@@ -294,13 +424,13 @@ def _judgments(body: str) -> Iterator[dict[str, str]]:
     yield fields
 
 
-def _latest_request(collected: _Collected, receipt: _Receipt) -> tuple[datetime, str] | None:
-    candidates = [(time, prompt) for time, prompt in collected.requests.get(receipt.session, ()) if time <= receipt.timestamp]
+def _latest_request(collected: _Collected, receipt: _Receipt) -> _Request | None:
+    candidates = [row for row in collected.requests.get(receipt.session, ()) if row.timestamp <= receipt.timestamp]
     if not candidates:
         return None
-    latest = max(time for time, _ in candidates)
-    prompts = {prompt for time, prompt in candidates if time == latest}
-    return (latest, next(iter(prompts))) if len(prompts) == 1 else None
+    latest = max(row.timestamp for row in candidates)
+    prompts = {row.digest: row for row in candidates if row.timestamp == latest}
+    return next(iter(prompts.values())) if len(prompts) == 1 else None
 
 
 def _request_fields(prompt: str) -> dict[str, object]:
@@ -338,7 +468,7 @@ def period(collected: _Collected, since: datetime, until: datetime) -> dict[str,
             continue
         rows = []
         judged = 0
-        for fields in _judgments(receipt.body):
+        for fields in receipt.judgments:
             verdict = fields.get("判定")
             if fields.get("確認段階") != "本文" or verdict not in {"合格", "修正要"}:
                 continue
@@ -359,7 +489,7 @@ def period(collected: _Collected, since: datetime, until: datetime) -> dict[str,
     for receipt, rows, single in observations:
         series = collected.series[receipt.session]
         requested = _latest_request(collected, receipt)
-        prompt = requested[1] if requested is not None else ""
+        prompt = (requested.prompt or "") if requested is not None else ""
         params = _request_fields(prompt)
         named_rejudgment = params.get("instruction") == "再判定せよ"
         previous = previous_single_failure.pop(receipt.session, None)
@@ -394,7 +524,7 @@ def period(collected: _Collected, since: datetime, until: datetime) -> dict[str,
                         and not path_ids
                         and previous is not None
                         and requested is not None
-                        and previous[0] < requested[0]
+                        and previous[0] < requested.timestamp
                     ):
                         first_path = previous[1]
                     elif selected is not None or (not path_ids and (series, None, path) not in tracks):
