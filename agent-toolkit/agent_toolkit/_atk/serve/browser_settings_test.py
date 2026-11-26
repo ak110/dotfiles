@@ -191,6 +191,10 @@ async def test_settings_host_scope_and_native_deadline(
     await existing.get_by_label("エンジン").select_option("claude")
     await expect(direct).to_be_visible()
     await expect(existing).not_to_contain_text("atk config usage --refresh")
+    disclosure = direct.locator("xpath=..")
+    if await disclosure.get_attribute("open") is not None:
+        await direct.click()
+    await expect(disclosure).not_to_have_attribute("open", "")
     await direct.click()
     await expect(existing.get_by_label("アカウントを直接入力")).to_be_visible()
 

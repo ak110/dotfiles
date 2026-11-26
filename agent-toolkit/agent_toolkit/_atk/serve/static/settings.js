@@ -465,8 +465,11 @@ async function observeUsage() {
         if (host !== target || generation !== loadGeneration || busy || document.body.dataset.screen !== "settings") return;
         const failed = data.reset_editor?.refresh_failed;
         if (failed && !delay && !target) continue;
-        await loadHost(true);
-        generation = loadGeneration;
+        const changed = JSON.stringify(data.reset_editor) !== JSON.stringify(displayedData?.reset_editor);
+        if (target || changed) {
+          await loadHost(true);
+          generation = loadGeneration;
+        }
         if (!failed) {
           setUpdateError("settings", "usage");
           return;
