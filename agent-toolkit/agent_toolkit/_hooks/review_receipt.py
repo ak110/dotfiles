@@ -45,7 +45,7 @@ def _requirements(text: str) -> set[str]:
     return result
 
 
-def observe(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str) -> None:
+def observe(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str) -> list[str]:
     response = payload.get("tool_response")
     command = tool_input.get("command")
     required: set[str] = set()
@@ -62,7 +62,7 @@ def observe(payload: dict, session_id: str, tool_name: str, tool_input: dict, cw
         except OSError:
             continue
     if not required and not read:
-        return
+        return []
     actor = resolve_hook_agent_id(payload)
 
     def remember(state: dict) -> dict:
@@ -76,6 +76,7 @@ def observe(payload: dict, session_id: str, tool_name: str, tool_input: dict, cw
         return {**state, _STATE: subjects}
 
     update_state(session_id, remember)
+    return _missing(_receipt(payload, session_id)) if required else []
 
 
 def _still_current(record: object) -> bool:
@@ -90,20 +91,33 @@ def _still_current(record: object) -> bool:
         return False
 
 
+def _receipt(payload: dict, session_id: str) -> dict:
+    subjects = read_state(session_id).get(_STATE)
+    return subjects.get(resolve_hook_agent_id(payload), {}) if isinstance(subjects, dict) else {}
+
+
+def _missing(prior: dict) -> list[str]:
+    seen = prior.get("read", {})
+    return [name for name in prior.get("required", []) if name in _GUIDANCE and not _still_current(seen.get(_GUIDANCE[name]))]
+
+
+def has_current_reads(payload: dict, session_id: str) -> bool:
+    prior = _receipt(payload, session_id)
+    return bool(prior.get("required")) and not _missing(prior)
+
+
 def missing_before_response(payload: dict, session_id: str, tool_input: dict) -> list[str]:
     command = tool_input.get("command")
-    if not session_id or not isinstance(command, str):
-        return []
-    subjects = read_state(session_id).get(_STATE)
-    prior = subjects.get(resolve_hook_agent_id(payload), {}) if isinstance(subjects, dict) else {}
-    required = prior.get("required", [])
-    if not required or not any(
-        item.resolved and is_atk_command(item.tokens) and item.tokens[1:3] == ("review-table", "respond")
-        for item in extract_execution_segments(command)
+    if (
+        not session_id
+        or not isinstance(command, str)
+        or not any(
+            item.resolved and is_atk_command(item.tokens) and item.tokens[1:3] == ("review-table", "respond")
+            for item in extract_execution_segments(command)
+        )
     ):
         return []
-    seen = prior.get("read", {})
-    return [name for name in required if name in _GUIDANCE and not _still_current(seen.get(_GUIDANCE[name]))]
+    return _missing(_receipt(payload, session_id))
 
 
 def forget_reads(session_id: str, actor: str, *, retain_requirements: bool) -> None:

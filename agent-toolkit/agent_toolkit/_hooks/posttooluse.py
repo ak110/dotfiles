@@ -76,7 +76,7 @@ lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse.large_reads import session_record_reference_warning
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
@@ -583,7 +583,14 @@ def main(payload_text: str) -> int:
             notices.append(_llm_notice(truncated))
         notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
         if event_name == "PostToolUse" and (tool_name in ATK_SHELL_TOOLS or tool_name in {"Read", "Skill"}):
-            review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
+            review_reads = review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
+            if review_reads and (payload.get("agent_id") or is_antigravity_payload(payload)):
+                notices.append(
+                    _llm_notice(
+                        "レビュー返却を受領した。採否を判断する前に、返却が指定した資料を確認してください: "
+                        + "、".join(review_reads)
+                    )
+                )
             if not is_codex_payload(payload):
                 source_review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
         if event_name == "PostToolUse" and tool_name != "Skill":

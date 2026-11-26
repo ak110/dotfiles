@@ -188,7 +188,8 @@ def test_blocked_completion_report_is_not_recorded_as_unread(tmp_path, capsys, m
 
 
 @pytest.mark.parametrize("envelope", ["ending-row", "child-body"])
-def test_review_update_requires_documents_from_wait_envelope(tmp_path, capsys, envelope):
+@pytest.mark.parametrize("host", [{}, {"agent_id": "reviewee-child"}, {"runtime": "agy"}])
+def test_review_update_requires_documents_from_wait_envelope(tmp_path, capsys, envelope, host):
     root = tmp_path / "agent-basics"
     skill = root / "skills" / "review-standards"
     (skill / "references").mkdir(parents=True)
@@ -199,12 +200,12 @@ def test_review_update_requires_documents_from_wait_envelope(tmp_path, capsys, e
     end = f"終了行: session_id=proof label=test-review status=completed read_requirements={json.dumps(required)}"
     if envelope == "child-body":
         end = f"本文開始: session_id=proof\n{end}\n本文終了: session_id=proof"
-    base = {"session_id": f"wait-review-{envelope}", "cwd": str(tmp_path)}
+    base = {"session_id": f"wait-review-{envelope}", "cwd": str(tmp_path), **host}
 
     def observe(name, inputs, result):
         payload = {**base, "hook_event_name": "PostToolUse", "tool_name": name, "tool_input": inputs, "tool_response": result}
         assert posttooluse.main(json.dumps(payload)) == 0
-        capsys.readouterr()
+        return capsys.readouterr().out
 
     def update():
         assert (
@@ -221,12 +222,14 @@ def test_review_update_requires_documents_from_wait_envelope(tmp_path, capsys, e
         )
         return capsys.readouterr().out
 
-    observe("Bash", {"command": "atk agents wait"}, {"stdout": end})
+    early = observe("Bash", {"command": "atk agents wait"}, {"stdout": end})
+    assert ("採否を判断する前に" in early) is (envelope == "ending-row" and bool(host))
     first = update()
     assert ("レビュー返却が指定した資料の取得を確認できない" in first) is (envelope == "ending-row")
     assert '"deny"' not in first
     observe("Skill", {"skill": "agent-basics:review-standards"}, "起動")
     observe("Read", {"file_path": str(subject)}, {"file": {"content": "レビューの本文\n"}})
+    assert "採否を判断する前に" not in observe("Bash", {"command": "atk agents wait"}, {"stdout": end})
     assert "レビュー返却が指定した資料の取得を確認できない" not in update()
 
 

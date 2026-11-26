@@ -71,7 +71,7 @@ __all__ = [
 ]
 
 
-def observe_user(payload_text: str) -> None:
+def observe_user(payload_text: str, *, entry_work: str | None = None) -> None:
     payload = _parse(payload_text)
     if payload is None:
         return
@@ -96,6 +96,8 @@ def observe_user(payload_text: str) -> None:
             data["sequence"] += 1
             reference = f"input-{data['sequence']}"
         _store_input(data, reference, prompt, human=human, offset=_position(payload))
+        if human and entry_work is not None:
+            data["entry_work"] = entry_work
         _compact(data)
         return state
 

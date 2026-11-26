@@ -223,10 +223,8 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
             pending_notices.append(warning)
         if decision.block is None:
             pending_notices.extend(_operation_skills.notices(payload, tool_name, tool_input, session_id))
-            if (
-                not is_codex
-                and not is_antigravity_payload(payload)
-                and (boundary := intake_edit.notice(payload, tool_name, tool_input, session_id))
+            if not is_antigravity_payload(payload) and (
+                boundary := intake_edit.notice(payload, tool_name, tool_input, session_id)
             ):
                 pending_notices.append(boundary)
         contract_update = work_contract.delegated_notice(session_id, agent=_agent_id.resolve_hook_agent_id(payload))
