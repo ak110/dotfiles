@@ -63,7 +63,7 @@
   本文の書き方は`agent-toolkit:atk-mode/references/awi-body.md`に従う。
   元の要求と`## ユーザー指摘の逐語引用`は保ち、人間由来の要求を縮める時は`agent-toolkit:atk-mode/references/origin-and-approval.md`「承認」に従う。
   独立した要求は新しいAWIへ分けてinboxへ投入する。
-  詳細化に新たな計画レビューの工程は設けない。
+  詳細化に計画を審査する別工程は設けない。
   ユーザー起点の原文・対象・目的・完成条件を変える場合は、保存前に`wi-saving.md`「原要求の検収結果」を得る。
   詳細化した本文は実行レビューが基準として確かめる。
 - `atk wi edit --detail`は、`processing_owner`と同じ会話から、印を持たず対象外の`source`でないAWIへ1回だけ受け付ける（委譲先のレーン担当は委譲元の会話に解決される）。

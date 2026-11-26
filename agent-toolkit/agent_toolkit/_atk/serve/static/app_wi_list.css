@@ -262,7 +262,14 @@
   }
   #screen-wi .entry-meta {
     grid-area: 3 / 1;
-    white-space: nowrap;
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+  }
+  #screen-wi .entry-meta > :is(.filename-cell, .target-repo-cell) {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   #screen-wi .status-cell > :is(.entry-kind, .unanswered-badge, .blocked-badge) { flex-shrink: 0; }
   #screen-wi .status-cell > :is(.important-badge, .branch-badge, .plan-badge) { order: 1; }

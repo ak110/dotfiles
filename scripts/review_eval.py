@@ -29,7 +29,7 @@ from typing import Any
 
 from agent_toolkit._atk import review_table
 from agent_toolkit._atk.managed_temp import resources
-from agent_toolkit._atk.wi import frontmatter, headings, sync
+from agent_toolkit._atk.wi import add_reports, frontmatter, headings, sync
 from agent_toolkit._atk.wi.constants import normalized_wi_type
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.next_action import ActionableError
@@ -460,6 +460,7 @@ def _case_dir_name(case: _Case) -> str:
 
 def _prepare_draft_opening(case_dir: pathlib.Path, params: dict[str, str]) -> None:
     draft = pathlib.Path(params["原稿"])
+    draft_text = ""
     for name in (*_DRAFT_BODY_INPUTS, "調査原本"):
         if name not in params:
             continue
@@ -467,57 +468,24 @@ def _prepare_draft_opening(case_dir: pathlib.Path, params: dict[str, str]) -> No
         try:
             if not path.is_absolute():
                 raise ValueError("絶対パスで指定する")
-            path.read_text(encoding="utf-8")
+            content = path.read_bytes().decode("utf-8")
             if name == "原稿":
                 draft = path.resolve(strict=True)
+                draft_text = content
         except (OSError, ValueError) as error:
             raise ActionableError(
                 f"本文評価の{name}を読めない: {path}（{error}）",
                 next_action="該当するextra_paramsを読めるUTF-8ファイルへ直し、新しい--outで同じ事例をprepareする",
             ) from error
-    command = [
-        sys.executable,
-        "-m",
-        "agent_toolkit.atk",
-        "wi",
-        "add",
-        "--dry-run",
-        "--target-repo",
-        "github.com/review-eval/fixture",
-        "--source",
-        "add-awi-by-user",
-        "--body-file",
-        str(draft),
-    ]
+    # 不合格を期待する評価原稿にも、投入の承認を作らず実際の冒頭抽出を当てる。 pyfltr: allow-comment
+    ((_, excerpt),) = add_reports.compare_draft_openings([draft_text], [str(draft)])
+    opening = case_dir / "draft-opening.md"
     try:
-        result = subprocess.run(
-            command,
-            cwd=case_dir,
-            env={**os.environ, "AGENT_TOOLKIT_PRIVATE_NOTES": str(case_dir)},
-            capture_output=True,
-            encoding="utf-8",
-            check=False,
-        )
-    except (OSError, UnicodeError) as error:
+        opening.write_bytes(excerpt.encode("utf-8"))
+    except OSError as error:
         raise ActionableError(
-            f"本文評価のdry-runを実行して出力を取得できない: {draft}（{error}）",
-            next_action="Pythonからatkを起動できるかと出力の文字コードを確認し、新しい--outで同じ事例をprepareする",
-        ) from error
-    lines = result.stdout.splitlines()
-    if result.returncode or len(lines) < 2 or lines[0] != f"原稿: {draft}" or not lines[1].startswith("冒頭保存先: "):
-        raise ActionableError(
-            f"本文評価のdry-runに失敗した: {draft}（終了 {result.returncode}）\n{result.stderr or result.stdout}",
-            next_action="評価用原稿とdry-runの出力を確認し、新しい--outで同じ事例をprepareする",
-        )
-    opening = pathlib.Path(lines[1].removeprefix("冒頭保存先: "))
-    try:
-        if not opening.is_absolute():
-            raise ValueError("絶対パスではない")
-        opening.read_text(encoding="utf-8")
-    except (OSError, ValueError) as error:
-        raise ActionableError(
-            f"dry-runが返した冒頭を取得できない: {opening}（{error}）",
-            next_action="managed-tempの保存先と読取権限を確認し、新しい--outで同じ事例をprepareする",
+            f"本文評価の冒頭を保存できない: {opening}（{error}）",
+            next_action="保存先の書込権限を確かめ、新しい--outで同じ事例をprepareする",
         ) from error
     params["ユーザー向け部分"] = str(opening)
 

@@ -889,9 +889,12 @@ async def test_remote_settings_retry_clears_the_recovered_hosts_status_everywher
     monkeypatch.setattr(settings_routes, "_remote_snapshot", remote_snapshot)
     page = screen_harness.page
     api = screen_harness.base_url + "/api/settings"
-    prefetch = await page.request.get(api + "?background=1&retry=1")
-    assert prefetch.ok
-    assert set((await prefetch.json())["automatic_errors"]) == unavailable
+    for host in sorted(unavailable):
+        prefetch = await page.request.get(f"{api}?host={host}&background=1&retry=1")
+        assert prefetch.status == 503
+    prefetched = await page.request.get(api + "?background=1")
+    assert prefetched.ok
+    assert set((await prefetched.json())["automatic_errors"]) == unavailable
     await page.goto(screen_harness.base_url + "/settings")
     expect = playwright.async_api.expect
     shared = page.locator("#settings-shared")

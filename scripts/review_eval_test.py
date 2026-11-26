@@ -595,7 +595,7 @@ _SMALL_CASES = (
 
 
 @pytest.mark.parametrize("case_id", ["intent-fixed-defect", "intent-fixed-control"])
-def test_prepare_body_review_links_dry_run_to_the_same_draft(tmp_path, capsys, case_id) -> None:
+def test_prepare_body_review_extracts_the_opening_of_the_same_draft(tmp_path, capsys, case_id) -> None:
     assert review_eval.main(["prepare", "--out", str(tmp_path), "--case", case_id]) == 0
     (prepared,) = _results(capsys)
     params = prepared["start"]["extra_params"]
@@ -643,14 +643,11 @@ def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, 
     "cleanup_failure",
     [None, "start", "dirty", "decode"],
 )
-def test_prepare_body_review_recovers_from_unreadable_opening(tmp_path, capsys, monkeypatch, cleanup_failure) -> None:
+def test_prepare_body_review_recovers_from_opening_write_failure(tmp_path, capsys, monkeypatch, cleanup_failure) -> None:
 
     run = subprocess.run
 
     def run_with_cleanup_failure(args, *, check=False, **kwargs):
-        if "--dry-run" in args and "agent_toolkit.atk" in args:
-            draft = args[args.index("--body-file") + 1]
-            return subprocess.CompletedProcess(args, 0, f"原稿: {draft}\n冒頭保存先: {tmp_path / 'missing-opening.md'}\n", "")
         if args[0] == "git" and args[3:5] == ["worktree", "remove"]:
             if cleanup_failure == "start":
                 raise FileNotFoundError("Gitを起動できない")
@@ -660,13 +657,21 @@ def test_prepare_body_review_recovers_from_unreadable_opening(tmp_path, capsys, 
                 (pathlib.Path(args[-1]) / "test-local-change").write_text("回収しない変更", encoding="utf-8")
         return run(args, check=check, **kwargs)
 
+    write_bytes = pathlib.Path.write_bytes
+
+    def write_with_opening_failure(path, content):
+        if path.name == "draft-opening.md":
+            raise PermissionError("評価用の冒頭を保存できない")
+        return write_bytes(path, content)
+
+    monkeypatch.setattr(pathlib.Path, "write_bytes", write_with_opening_failure)
     monkeypatch.setattr(subprocess, "run", run_with_cleanup_failure)
     out = tmp_path / "out"
     try:
         assert review_eval.main(["prepare", "--out", str(out), "--case", "intent-fixed-control"]) == 1
         error = capsys.readouterr().err
-        assert "dry-runが返した冒頭を取得できない:" in error and "missing-opening.md" in error
-        assert "読取権限" in error and "新しい--out" in error
+        assert "本文評価の冒頭を保存できない:" in error and "draft-opening.md" in error
+        assert "書込権限" in error and "新しい--out" in error
         remaining = list(out.glob("*/worktree"))
         if cleanup_failure is None:
             assert not remaining

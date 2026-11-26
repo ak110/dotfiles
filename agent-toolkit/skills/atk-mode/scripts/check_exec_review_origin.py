@@ -9,8 +9,8 @@ from agent_toolkit._plan import review_contract
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="実行レビューの原文要求の判定を検証する")
-    parser.add_argument("result", type=pathlib.Path, help="正式な実行レビュー返却の保存ファイル")
-    parser.add_argument("originals", type=pathlib.Path, nargs="+", help="全対象AWIの保存本文")
+    parser.add_argument("result", type=pathlib.Path, metavar="PATH", help="正式な実行レビュー返却の保存ファイル")
+    parser.add_argument("originals", type=pathlib.Path, metavar="PATH", nargs="+", help="全対象AWIの保存本文")
     args = parser.parse_args()
     try:
         originals = {path.name: path.read_text(encoding="utf-8") for path in args.originals}
