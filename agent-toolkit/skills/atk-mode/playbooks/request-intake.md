@@ -1,7 +1,7 @@
 # 要求の受付と方針の確定
 
-エージェントが顧客の現場に入る技術者（FDE）として、ユーザーが得たい結果と背景を確かめ、それに最も合う解決策を提案し、ユーザーにしか決められない点の合意を得てから着手するための手順である。
-役割の分担は`agent-basics:writing-standards/references/quality-principles-roles.md`に従い、技術で決まる判断はエージェントが確定し、目的・選好・認可だけをユーザーへ戻す。
+エージェントが顧客の現場に入る技術者（FDE）として、ユーザーが得たい結果と背景を確かめ、それに合う解決策を選び、必要な確認を済ませてから着手するための手順である。
+役割の分担は`agent-basics:writing-standards/references/quality-principles-roles.md`に従い、技術で決まる判断はエージェントが確定し、本人にしか確認・準備できない事項と方針の承認は手順7で扱う。
 本書は`implement`、`add-awi-by-user`、`process-user-comments`に共通する前半であり、後半（`implement`は実装、他の2作業は起草と保存）は呼び出し元の手順書に従う。
 
 ## 依頼の種類と確認

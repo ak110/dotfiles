@@ -64,7 +64,7 @@
    - 起動の前に`uv run --frozen python scripts/pyfltr_precommit.py --check-argv '<予定argvのJSON配列>' --consumer-review <判定JSONの絶対パス>`で引数と必須の範囲を確かめる。
      argvは`["run", "--no-fix", "--no-always-targets", "--commands=...", "<対象パス>"]`の形とし、曖昧な候補が無ければ`--consumer-review`を省く。
    - 合成版の検証では、最新の統合先をmergeした後、同じ統合先の完全OIDを候補列挙、`--check-argv`、`--verify-run`の`--against`へ渡す。
-     候補の`cross_contracts`にある必須試験を実行し、規範の容量は合成後のファイルで判定する。
+     合成後のファイルに対して、候補の`cross_contracts`にある必須試験を実行する。
      統合先が進んだ場合は新しい組で対象を確かめ、入力が変わった証拠だけを取り直す。
      `atk lane integrate`は`pyproject.toml`の`[tool.agent-toolkit.lane-integration]`から必須の横断試験の検証を呼ぶ。
      合成候補で必要な試験の成功を再利用できなければ該当試験を実行し、失敗ならfast-forwardしない。

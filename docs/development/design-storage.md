@@ -96,7 +96,8 @@ handoffの抽出は成功時に`conversation.md`だけを残し、失敗時だ�
 `atk agents wait`の本文は`agents-wait/<session_id>.md`の1ファイルだけが持ち、耐久run記録は配送状態と本文のパスを持つ。
 索引と全量は用途が異なり、plugin-rootとレーンの診断は作業ツリーと寿命が異なる。
 専用の検証証拠（`atk-command/record.json`、`plan-verify-results/results.json`、`exec-review-input/reviews.json`など）の生成機構は撤去した。
-検証結果は既存の返却と引き継ぎ記録へ残す（`design-review-acceptance.md`）。
+検証結果の原本は引き継ぎ記録に置き、返却はその所在を示す。
+原本を参照できない場合は返却に直接記録する（`design-review-acceptance.md`）。
 完成条件の根拠、引き継ぎ記録と再開入力はセッションのmanaged-tempへ置き、作業ツリーとともに捨ててよいものだけを`.git`を含む個別の領域へ置く。
 寿命の異なる保存物を同じ領域へ置くと、作業ツリーの回収で参照先が失われるためである（削除前の障害事例集`docs/development/incidents-data-security.md`「データ破壊と喪失」の2026年10月6日の項）。
 セッションのmanaged-tempの記録と領域自体はSessionEndで削除せず、7日掃引で回収する。
