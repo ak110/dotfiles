@@ -8,6 +8,8 @@ from collections.abc import Iterator
 from importlib.util import resolve_name
 from pathlib import Path
 
+import pytest
+
 _PACKAGE = Path(__file__).with_name("agent_toolkit")
 
 
@@ -179,6 +181,13 @@ def _cycles(graph: dict[str, set[str]]) -> list[list[str]]:
     return cycles
 
 
+@pytest.mark.cpu_limit(
+    0.60,
+    reason=(
+        "CI実測は0.717〜0.758秒。走査削減後も構文解析が約7割で、検出条件を保つ削減には限界がある。"
+        "CI上限0.84秒は観測最大値に約1割の余裕を持たせ、観測範囲の2割超の悪化は検出する。"
+    ),
+)
 def test_eager_imports_are_acyclic() -> None:
     graph = _dependencies(_PACKAGE)
     assert graph, f"検査対象が見つからない。作業ツリーに {_PACKAGE} のPythonファイルがあるか確認する。"
