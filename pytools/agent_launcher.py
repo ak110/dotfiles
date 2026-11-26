@@ -31,13 +31,15 @@ type CommandRunner = Callable[[list[str]], int]
 type HelpRunner = Callable[[list[str]], subprocess.CompletedProcess[str] | None]
 type TerminalChecker = Callable[[int], bool]
 
+# pyfltr: allow-comment -- 2.1.332のヘルプ本文では [-file] と略記される。値付きでmcp --helpへ渡して解釈を確認した。
+_CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS = {"--append-system-prompt-file", "--system-prompt-file"}
 _CLAUDE_VALUE_OPTIONS = frozenset(
     {
+        *_CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS,
         "--add-dir",
         "--agent",
         "--agents",
         "--append-system-prompt",
-        "--append-system-prompt-file",
         "--betas",
         "--debug-file",
         "--disallowedTools",
@@ -59,7 +61,6 @@ _CLAUDE_VALUE_OPTIONS = frozenset(
         "--setting-sources",
         "--settings",
         "--system-prompt",
-        "--system-prompt-file",
         "--tools",
         "--allowedTools",
         "--allowed-tools",
@@ -197,8 +198,6 @@ _CLAUDE_LAUNCH_VALUE_OPTIONS = {
     "-w",
     "--worktree",
 }
-# pyfltr: allow-comment -- 2.1.332のヘルプ本文では [-file] と略記される。値付きでmcp --helpへ渡して解釈を確認した。
-_CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS = {"--append-system-prompt-file", "--system-prompt-file"}
 _CLAUDE_LAUNCH_VARIADIC_OPTIONS = {
     "--add-dir",
     "--allowedTools",
