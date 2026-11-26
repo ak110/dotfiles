@@ -29,3 +29,14 @@ def test_codex_pretooluse_matcher_covers_verification_mcp_tool() -> None:
     ]
     assert re.fullmatch(codex_matcher, "mcp__pyfltr__run")
     assert not re.fullmatch(codex_matcher, "mcp__pyfltr__show_run")
+
+
+def test_codex_policy_approval_registration() -> None:
+    hooks = json.loads((_PLUGIN_ROOT / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]
+    expected = {
+        "PreToolUse": ("Bash", "request_user_input", "request_user_input_async"),
+        "PostToolUse": ("request_user_input", "request_user_input_async", "mcp__agents_server__send_to_user"),
+    }
+    for event, tool_names in expected.items():
+        for tool_name in tool_names:
+            assert any(re.fullmatch(group["matcher"], tool_name) for group in hooks[event])

@@ -9,7 +9,7 @@ import shlex
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._hooks import user_prompt_submit
+from agent_toolkit._hooks import posttooluse, user_prompt_submit
 from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
@@ -646,3 +646,122 @@ def test_external_source_url_preserves_ipv6_address() -> None:
 )
 def test_external_source_url_uses_ascii_uri_characters(line: str, expected: str) -> None:
     assert list(pretooluse.work_contract.source_urls(line)) == [expected]
+
+
+@pytest.mark.parametrize("tool", ["AskUserQuestion", "request_user_input", "request_user_input_async"])
+def test_policy_reapproval_blocks_only_until_new_matching_approval(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool: str
+) -> None:
+
+    from agent_toolkit._common import session_state
+
+    monkeypatch.setattr(session_state, "state_path", lambda sid: tmp_path / f"{sid}.json")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    private_notes = tmp_path / "notes"
+    dated = private_notes / "2026" / "11"
+    dated.mkdir(parents=True)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+    for kind, filename in (("awi", "20261126-095854-001.md"), ("uwi", "20261126-095854-002.md")):
+        (dated / filename).write_text(f"---\ntype: {kind}\nstate: inbox\n---\n# 確認\n", encoding="utf-8")
+    checks = user_facing_checks
+    approved = "この方針で進める"
+    revise = "大体よいが、入力ごとにAWI相当を作るように修正して"
+    asynchronous = tool == "request_user_input_async"
+    session = "approval"
+
+    def post(tool_name: str, payload: dict, body: dict, response: dict) -> None:
+        assert (
+            posttooluse.main(
+                json.dumps(
+                    {
+                        **payload,
+                        "session_id": session,
+                        "hook_event_name": "PostToolUse",
+                        "tool_name": tool_name,
+                        "tool_input": body,
+                        "tool_response": response,
+                    }
+                )
+            )
+            == 0
+        )
+
+    def ask(call: str, modifier: str = "") -> tuple[dict, dict]:
+        question = f"送った{modifier}方針で進めてよいですか？"
+        options = list(checks._POLICY_APPROVAL_OPTIONS)
+        item = (
+            {"title": f"方針の承認：{question}", "options": [option["label"] for option in options]}
+            if asynchronous
+            else {"header": "方針の承認", "question": question, "options": options, "id": "policy"}
+        )
+        payload = {"tool_use_id": call}
+        body = {"questions": [item]}
+        checks.record_policy_question(payload, session, tool, body)
+        if asynchronous:
+            post(tool, payload, body, {})
+        return payload, body
+
+    def answer(asked: tuple[dict, dict], value: str) -> None:
+        payload, body = asked
+        if asynchronous:
+            replies = [{"questionItemId": json.dumps([tool, payload["tool_use_id"], 0]), "answer": value}]
+            prompt = f"<send_user_message_question_reply>{json.dumps(replies)}</send_user_message_question_reply>"
+            assert user_prompt_submit.main(json.dumps({"session_id": session, "prompt": prompt, "model": "codex"})) == 0
+        else:
+            answers = (
+                {"policy": {"answers": [value]}} if tool == "request_user_input" else {body["questions"][0]["question"]: value}
+            )
+            post(tool, payload, body, {"answers": answers})
+
+    def send(message: str, *, ok: bool = True) -> None:
+        post("mcp__agents_server__send_to_user", {}, {"message": message}, {"structuredContent": {"ok": ok}})
+
+    commands = (
+        "git commit -m test",
+        "atk run-script commit-with-timeout -- --timeout=10 -- -m test",
+        "atk wi add --body-file=draft.md",
+        "atk wi edit 20261126-095854-001.md --body-file=draft.md",
+    )
+
+    def blocked(command: str, shell: str = "Bash", sid: str = session, payload: dict | None = None) -> str | None:
+        return checks.policy_reapproval_block(payload or {}, shell, {"command": command}, sid)
+
+    answer(ask("approval-before"), approved)
+    assert not blocked(commands[0])
+    answer(ask("revision", "2件目の"), revise)
+    for shell in ("Bash", "exec_command", "functions.exec_command"):
+        for command in commands:
+            assert "問い直" in (blocked(command, shell) or "")
+    for command in (
+        "atk wi add --dry-run",
+        "atk wi add --type=uwi",
+        "atk wi edit 20261126-095854-002.md --body-file=draft.md",
+        "atk wi start-processing awi.md",
+    ):
+        assert not blocked(command)
+    assert not checks.policy_reapproval_block({}, "Agent", {"command": commands[0]}, session)
+    with monkeypatch.context() as delegated:
+        delegated.setenv("AGENT_TOOLKIT_OWNER_SESSION", session)
+        for command in commands:
+            assert "委譲元" in (blocked(command, sid="started-before") or "")
+    assert "委譲元" in (blocked(commands[0], payload={"agent_id": "child"}) or "")
+    assert not blocked(commands[0], sid="unrelated", payload={"agent_id": "child"})
+    send("進捗")
+    answer(ask("progress", "2件目の"), approved)
+    send("方針（案） 2件目の", ok=False)
+    answer(ask("failed", "2件目の"), approved)
+    send("方針（案）")
+    answer(ask("unrelated"), approved)
+    checks.observe_async_policy_reply(session, approved)
+    assert blocked(commands[0])
+    old = ask("old", "2件目の")
+    send("方針（案） 2件目の")
+    answer(old, approved)
+    assert blocked(commands[0])
+    answer(ask("new-revision", "2件目の"), revise)
+    answer(ask("not-resent", "2件目の"), approved)
+    assert blocked(commands[0])
+    send("方針（案） 2件目の")
+    answer(ask("new-approval", "2件目の"), approved)
+    for command in commands:
+        assert not blocked(command)

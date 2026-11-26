@@ -149,7 +149,7 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 2. 質問には、公開スキーマ、モードの制限、用途の制限、ホストの命令に合う構造化質問を使う。
    - Codex CLIの`request_user_input`で推奨案を含む問いは送信直前に「確認要否の判定」による一度の見直しを求められ、方針の承認の質問は`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7の決まった形でないと止められる。
    - Plan modeで同期型の`request_user_input`を使える時は、回答まで待つ。
-   - 非同期型の`request_user_input_async`だけを使える時は、後続のユーザーのメッセージとして届く実際の回答を元の質問へ対応付ける。
+   - 非同期型の`request_user_input_async`では後続のユーザーメッセージで届く回答を元の質問へ対応付け、方針の承認には`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7の非同期用`title`と`options`を使う。
    - 発行の成功と選択肢の初期選択は、回答と承認から外す。
    - 合う構造化質問が無い時だけ、`agent-toolkit:atk-mode/references/choice-construction.md`「質問の形式」の固定形式を使う。
 3. 回答期限の無いDefault modeでは、協調モードの確認を前の段の手段で示して回答を待つ。

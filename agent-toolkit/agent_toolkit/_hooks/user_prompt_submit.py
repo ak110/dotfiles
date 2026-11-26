@@ -73,6 +73,7 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
 lazy from agent_toolkit._hooks import command_timing, session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._hooks.pretooluse import user_facing_checks
 
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*(?:\[SYSTEM NOTIFICATION - NOT USER INPUT\]\s*)?<task-notification\b")
@@ -177,6 +178,9 @@ def main(payload_text: str) -> int:
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt:
         return 0
+
+    if is_codex_payload(payload):
+        user_facing_checks.observe_async_policy_reply(session_id, prompt)
 
     set_warning_session_id(session_id)
     initial_notices: list[str] = []

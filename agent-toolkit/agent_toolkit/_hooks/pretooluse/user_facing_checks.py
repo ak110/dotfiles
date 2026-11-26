@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import pathlib
 import re
+import time
 from collections.abc import Iterable
 
 lazy from markdown_it import MarkdownIt
@@ -19,7 +21,13 @@ from agent_toolkit._hooks.pretooluse.content_checks import _warn_mojibake
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.notices import _block_notice
 from agent_toolkit._hooks.pretooluse.warning_context import format_warning_context
+lazy from agent_toolkit._atk.wi import cli, entries
+lazy from agent_toolkit._common import private_notes
 lazy from agent_toolkit._common.markdown_headings import without_literal_blocks
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._common.shell_tokens import is_atk_command
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
+lazy from agent_toolkit._plan.owner_records import resolve_conversation_session_id
 
 USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
 _MARKDOWN_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+)$")
@@ -212,6 +220,229 @@ def policy_approval_form_invalid(tool_input: dict) -> bool:
             for option, expected in zip(options, _POLICY_APPROVAL_OPTIONS, strict=True)
         )
     )
+
+
+_APPROVAL_STATE = "policy_reapproval"
+_APPROVAL_TOOLS = {"AskUserQuestion", "request_user_input", "request_user_input_async"}
+_ASYNC_QUESTION = "request_user_input_async"
+_APPROVED = _POLICY_APPROVAL_OPTIONS[0]["label"]
+
+
+def normalize_policy_question(tool_name: str, tool_input: dict) -> dict:
+    if tool_name != _ASYNC_QUESTION or not isinstance(questions := tool_input.get("questions"), list):
+        return tool_input
+    normalized = []
+    for question in questions:
+        title = question.get("title") if isinstance(question, dict) else None
+        if not isinstance(title, str) or not title.startswith("方針の承認："):
+            normalized.append({})
+            continue
+        options = question.get("options")
+        normalized.append(
+            {
+                "header": _POLICY_APPROVAL_HEADER,
+                "question": title.removeprefix("方針の承認："),
+                "options": list(_POLICY_APPROVAL_OPTIONS)
+                if options == [item["label"] for item in _POLICY_APPROVAL_OPTIONS]
+                else None,
+            }
+        )
+    return {"questions": normalized}
+
+
+def record_policy_question(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> None:
+    call_id = payload.get("tool_use_id")
+    if tool_name not in _APPROVAL_TOOLS or not isinstance(call_id, str) or not call_id:
+        return
+    if not _agent_id.is_main_agent_context(payload):
+        return
+    normalized = normalize_policy_question(tool_name, tool_input)
+    questions = normalized.get("questions")
+    if not isinstance(questions, list) or len(questions) != 1 or not isinstance(questions[0], dict):
+        return
+    question = questions[0]
+    if question.get("header") != _POLICY_APPROVAL_HEADER or policy_approval_form_invalid(normalized):
+        return
+    match = _POLICY_APPROVAL_QUESTION.fullmatch(question["question"])
+    if match is None:
+        return
+    key = tool_input["questions"][0].get("id") if tool_name == "request_user_input" else question["question"]
+
+    def update(state: dict) -> dict:
+        data = state.setdefault(_APPROVAL_STATE, {})
+        data.setdefault("questions", {}).setdefault(call_id, [tool_name, match["modifier"], key, time.time_ns(), False])
+        return state
+
+    update_state(session_id, update)
+
+
+def _result_object(response: object) -> dict:
+    if isinstance(response, str):
+        try:
+            response = json.loads(response)
+        except ValueError:
+            return {}
+    if isinstance(response, list) and len(response) == 1 and isinstance(response[0], dict):
+        return _result_object(response[0].get("text"))
+    if not isinstance(response, dict) or response.get("isError") is True:
+        return {}
+    structured = response.get("structuredContent")
+    if isinstance(structured, dict):
+        return structured
+    content = response.get("content")
+    if isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict):
+        return _result_object(content[0].get("text"))
+    return response
+
+
+def _apply_policy_answer(data: dict, call_id: str, question: list, answer: str) -> None:
+    _, modifier, _, asked, _ = question
+    del data["questions"][call_id]
+    waits = data.setdefault("waits", {})
+    if answer != _APPROVED:
+        waits[modifier] = None
+    elif modifier in waits and waits[modifier] is not None and waits[modifier] < asked:
+        del waits[modifier]
+
+
+def observe_policy_result(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> None:
+    delivery = tool_name == "mcp__agents_server__send_to_user"
+    if (not delivery and tool_name not in _APPROVAL_TOOLS) or not _agent_id.is_main_agent_context(payload):
+        return
+    response = _result_object(payload.get("tool_response"))
+    call_id = payload.get("tool_use_id")
+
+    def update(state: dict) -> dict | None:
+        data = state.get(_APPROVAL_STATE, {})
+        if delivery:
+            message = tool_input.get("message")
+            if response.get("ok") is not True or not isinstance(message, str):
+                return None
+            first = message.split("\n", 1)[0]
+            if not first.startswith("方針（案）"):
+                return None
+            modifier = first.removeprefix("方針（案）").strip()
+            waits = data.get("waits", {})
+            if modifier not in waits:
+                return None
+            waits[modifier] = time.time_ns()
+            return state
+        if not isinstance(call_id, str):
+            return None
+        question = data.get("questions", {}).get(call_id)
+        if not question or question[0] != tool_name:
+            return None
+        if tool_name == _ASYNC_QUESTION:
+            question[4] = True
+            return state
+        if response.get("afkTimeoutMs") is not None:
+            return None
+        answers = response.get("answers")
+        answer = answers.get(question[2]) if isinstance(answers, dict) else None
+        annotations = response.get("annotations")
+        annotation = annotations.get(question[2]) if isinstance(annotations, dict) else None
+        notes = annotation.get("notes") if isinstance(annotation, dict) else None
+        if isinstance(notes, str) and notes.strip():
+            answer = notes
+        if tool_name == "request_user_input" and isinstance(answer, dict):
+            values = answer.get("answers")
+            answer = values[0] if isinstance(values, list) and len(values) == 1 else None
+        if not isinstance(answer, str) or not answer.strip():
+            answer = response.get("response")
+        if not isinstance(answer, str) or not answer.strip():
+            return None
+        _apply_policy_answer(data, call_id, question, answer)
+        return state
+
+    update_state(session_id, update)
+
+
+def observe_async_policy_reply(session_id: str, prompt: str) -> None:
+    opening, closing = "<send_user_message_question_reply>", "</send_user_message_question_reply>"
+    prompt = prompt.strip()
+    if not prompt.startswith(opening) or not prompt.endswith(closing):
+        return
+    try:
+        replies = json.loads(prompt[len(opening) : -len(closing)])
+    except ValueError:
+        return
+    if not isinstance(replies, list):
+        return
+
+    def update(state: dict) -> dict | None:
+        data = state.get(_APPROVAL_STATE, {})
+        changed = False
+        for reply in replies:
+            if not isinstance(reply, dict) or not isinstance(item_id := reply.get("questionItemId"), str):
+                continue
+            try:
+                identity = json.loads(item_id)
+            except ValueError:
+                continue
+            if (
+                not isinstance(identity, list)
+                or len(identity) != 3
+                or identity[0] != _ASYNC_QUESTION
+                or not isinstance(call_id := identity[1], str)
+                or type(identity[2]) is not int
+                or identity[2] != 0
+                or not isinstance(answer := reply.get("answer"), str)
+            ):
+                continue
+            question = data.get("questions", {}).get(call_id)
+            if question and question[0] == _ASYNC_QUESTION and question[4]:
+                _apply_policy_answer(data, call_id, question, answer)
+                changed = True
+        return state if changed else None
+
+    update_state(session_id, update)
+
+
+def _saves_awi(tokens: tuple[str, ...]) -> bool:
+    parser = argparse.ArgumentParser(exit_on_error=False)
+    cli.build_parser(parser)
+    try:
+        args = parser.parse_args(tokens[2:])
+        if args.dry_run:
+            return False
+        if tokens[2] == "add":
+            return args.type != "uwi"
+        root = private_notes.default_private_notes(pathlib.Path.home())
+        names = entries.validate_named_filenames(root, [args.filename])
+        records, _ = entries.read_named_entries(root, names, target_repo=None)
+        return not records or any(record[-1] != "uwi" for record in records)
+    except argparse.ArgumentError, SystemExit, OSError, ValueError:
+        return True
+
+
+def policy_reapproval_block(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
+    command = tool_input.get("command")
+    if tool_name not in {"Bash", "PowerShell", "exec_command", "functions.exec_command"} or not isinstance(command, str):
+        return None
+    main = _agent_id.is_main_agent_context(payload)
+    owner = session_id if main else resolve_conversation_session_id() or session_id
+    if not read_state(owner).get(_APPROVAL_STATE, {}).get("waits"):
+        return None
+    for segment in extract_execution_segments(command):
+        tokens = segment.tokens
+        git = git_subcommand_tokens(segment)
+        if (git and git[0] == "commit" and not {"--help", "-h", "--dry-run"}.intersection(git[1])) or (
+            segment.resolved
+            and is_atk_command(tokens)
+            and tokens[1:3] in {("wi", "add"), ("wi", "edit")}
+            and _saves_awi(tokens)
+        ):
+            return _block_notice(
+                "方針の修正回答に対する再承認を待っているため、確定操作を止めました。",
+                fix=(
+                    "同じ会話で、修正した方針を1行目「方針（案）」（修飾があれば続けて記載）の"
+                    "send_to_userで送り、その後に同じ修飾の方針の承認を問い直してください。"
+                    "送達できない場合は同じ会話でagents_serverの接続を回復してください（Claude Codeでは /mcp）。"
+                    if main
+                    else "委譲元が再送と再承認を行うまで確定できません。結果を委譲元へ返して待ってください。"
+                ),
+            )
+    return None
 
 
 def recommendation_review_needed(payload: dict, session_id: str, tool_input: dict) -> bool:

@@ -235,6 +235,7 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 )
             )
         if decision.block is None:
+            user_facing_checks.record_policy_question(payload, session_id, tool_name, tool_input)
             command_timing.start(payload)
             if not is_codex and tool_name == "Skill":
                 bugfix_gate.observe_repl_skill_start(payload, session_id)
@@ -354,9 +355,9 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         if isinstance(reason, str) and is_send_to_user_tool(tool_name):
             return _retry_send(payload, tool_name, tool_input, session_id, reason)
         return Decision(block=reason)
-    question_tool = "request_user_input" if is_codex else "AskUserQuestion"
-    if tool_name == question_tool and _agent_id.is_main_agent_context(payload):
-        if user_facing_checks.policy_approval_form_invalid(tool_input):
+    question_tools = {"request_user_input", "request_user_input_async"} if is_codex else {"AskUserQuestion"}
+    if tool_name in question_tools and _agent_id.is_main_agent_context(payload):
+        if user_facing_checks.policy_approval_form_invalid(user_facing_checks.normalize_policy_question(tool_name, tool_input)):
             return Decision(
                 block=_block_notice(
                     "方針の承認の質問が決まった形でないため、まだ送っていない。再発行しても同じ形では送れない。",
@@ -413,6 +414,8 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
     ):
         return Decision(block=notice_block)
+    if reapproval_block := user_facing_checks.policy_reapproval_block(payload, tool_name, tool_input, session_id):
+        return Decision(block=reapproval_block)
     if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
         return Decision(block=_block_notice(publication_block[0], fix=publication_block[1]))
     if tool_name == "ExitPlanMode":
