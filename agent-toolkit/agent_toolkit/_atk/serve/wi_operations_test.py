@@ -121,6 +121,52 @@ def _unexpected_subprocess(*args: object, **kwargs: object) -> None:
     pytest.fail(f"Web一覧がプロセスや同期を起動した: {args!r} {kwargs!r}")
 
 
+def test_readiness_resolves_legacy_repositories_only_for_comparisons(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = "github.com/example/repo"
+    first = tmp_path / "first-legacy-repo"
+    second = tmp_path / "second-legacy-repo"
+    first.mkdir()
+    second.mkdir()
+    write_awi(tmp_path, "legacy-a.md", target_repo=str(first))
+    write_awi(tmp_path, "legacy-b.md", target_repo=str(first))
+    write_awi(tmp_path, "legacy-other.md", target_repo=str(second), depends_on=("legacy-a.md",))
+    resolved: list[str] = []
+
+    def resolve(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert cmd[3:] == ["remote", "get-url", "origin"]
+        resolved.append(cmd[2])
+        return subprocess.CompletedProcess(cmd, 0, stdout=f"https://{repo}.git\n")
+
+    monkeypatch.setattr(subprocess, "run", resolve)
+    operations = wi_operations.Operations(tmp_path)
+    rows, warnings = operations.entries_with_warnings({})
+    assert not warnings
+    assert {item["filename"] for item in rows if item["ready"]} == {"legacy-a.md", "legacy-b.md"}
+    assert not resolved
+    for value in (repo, str(first)):
+        rows, warnings = operations.entries_with_warnings({"target_repo": value})
+        assert not warnings
+        assert len(rows) == 3
+        assert sorted(resolved) == sorted(map(str, (first, second)))
+        resolved.clear()
+
+    write_awi(tmp_path, "delivered.md", state="adopted", target_repo=str(first))
+    write_awi(
+        tmp_path,
+        "after-delivery.md",
+        target_repo=str(second),
+        legacy_dependency=(
+            f"    kind: external-repo-entry\n    filenames: [delivered.md]\n    target_repo: {json.dumps(str(first))}"
+        ),
+    )
+    rows, warnings = operations.entries_with_warnings({})
+    assert not warnings
+    assert any(item["filename"] == "after-delivery.md" and item["ready"] for item in rows)
+    assert resolved == [str(first)]
+
+
 def test_legacy_confirmation_is_preserved_without_a_special_operation(tmp_path: pathlib.Path) -> None:
     path = write_awi(tmp_path, "legacy.md")
     content = path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\nconfirmation: required\n")

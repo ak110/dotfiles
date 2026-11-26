@@ -406,7 +406,8 @@ class Operations:
         period_weeks = PERIOD_WEEKS.get(filters.get("period", "all"))
         created_after = datetime.datetime.now() - datetime.timedelta(weeks=period_weeks) if period_weeks is not None else None
         states = wi_filters.resolve_states(status_filter)
-        target_repo_matcher = wi_filters.TargetRepoMatcher(target_repo_filter)
+        resolver_cache: dict[str, str | None] = {}
+        target_repo_matcher = wi_filters.TargetRepoMatcher(target_repo_filter, resolver_cache=resolver_cache)
         selected_states = set(states)
         needs_readiness = not waiting and not selected_states.isdisjoint(wi_constants.WI_PROCESSABLE_STATES)
         scanned, warnings = self._entry_index.scan(wi_constants.WI_STATES if needs_readiness else selected_states)
@@ -415,9 +416,10 @@ class Operations:
             wi_readiness.calculate_readiness(
                 self.private_notes,
                 target_repo_filter or None,
-                snapshot=wi_readiness.snapshot_from_index(scanned),
+                snapshot=wi_readiness.snapshot_from_index(scanned, resolver_cache=resolver_cache),
                 branch_settings=branch_registry,
                 target_branch=target_branch_filter,
+                resolver_cache=resolver_cache,
             )
             if needs_readiness
             else wi_readiness.ReadinessResult()

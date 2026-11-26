@@ -74,8 +74,13 @@ def important_value_matches(important: bool, filter_values: str | Iterable[str])
 
 
 class TargetRepoMatcher:
-    def __init__(self, filter_values: str | Iterable[str] | None) -> None:
-        self._cache: dict[str, str | None] = {}
+    def __init__(
+        self,
+        filter_values: str | Iterable[str] | None,
+        *,
+        resolver_cache: dict[str, str | None] | None = None,
+    ) -> None:
+        self._cache = {} if resolver_cache is None else resolver_cache
         values = () if filter_values is None else _values(filter_values)
         self.active = bool(values)
         self._canonical: set[str] = set()
