@@ -32,8 +32,8 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - 主作業ツリーは変更せず、対象リポジトリのプロジェクト規範に従って隔離worktree内の環境を準備する（`mise trust`、依存同期など）。
 4. 実装し、変更範囲を検証してcommitする。
    - 合意済みの方針を変える時は、`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順7の確認条件を変更後の方針に当てはめ、本人の判断が必要なら変更に着手する前に合意を得直す。
-   - AWIの本文と現物から変更内容と完成条件が定まるため、計画ファイルは原則として作らない。
-     設計の整理や中断再開の記録が必要な大規模な変更に限り、`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って計画を作る。
+   - 保留中のAWIを列挙した計画を`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って作る（`source: implement`のAWIは詳細化の対象外で、本文をそのまま実装と実行レビューの基準にする）。
+     実行レビュー指摘管理表と対応記録は計画と同じstemに置き、手順7で一時資源を回収する前に`atk plans commit`で計画バンドルを保存する。
    - 実装・テスト・変更範囲の検証（`agent-basics:check-execution`と対象リポジトリの検証規範）を行い、`agent-toolkit:atk-mode/playbooks/commit.md`に従って一時ブランチへcommitする。
    - 配布物の版数はマージ用ブランチで上げない。
      更新が必要な場合は、更新種別と根拠をAWIへ書く。

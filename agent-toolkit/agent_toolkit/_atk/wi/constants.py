@@ -6,6 +6,8 @@ WIの共通処理のモジュール（`sync.py`・`entries.py`など）と`uwi_s
 pyfltr: allow-comment
 """
 
+import typing
+
 from agent_toolkit._common.next_action import recover_from_failure
 
 PROCESS_WI_GOAL_BODY = "`agent-toolkit:process-wi`を完遂してください。"
@@ -144,6 +146,23 @@ def bulk_source_states(action: str, *, actor_is_agent: bool) -> tuple[str, ...]:
 
 WI_TYPE_AWI = "awi"
 """frontmatterの`type`がエージェントワークアイテムであることを示す値。"""
+
+DETAILED_KEY = "detailed"
+"""計画を作る時点の詳細化を終えたAWIを示すfrontmatterのキー。  pyfltr: allow-comment
+
+`atk wi add --detailed`と`atk wi edit --detail`だけが付ける。
+"""
+
+
+def is_detailed(data: typing.Mapping[str, object]) -> bool:
+    return data.get(DETAILED_KEY) in (True, "true")
+
+
+DETAILED_SOURCES = ("add-awi-by-user", "process-user-comments", "implement")
+"""投入前レビューを経た本文を保存する起票経路。  pyfltr: allow-comment
+
+この経路のAWIは計画を作る時点で詳細化せず、本文の置換も受け付けない。
+"""
 
 WI_TYPE_UWI = "uwi"
 """frontmatterの`type`がユーザーワークアイテムであることを示す値。"""

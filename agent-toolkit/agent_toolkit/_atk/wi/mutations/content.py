@@ -15,10 +15,20 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
+from agent_toolkit._atk.wi import processing_owner as _processing_owner
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.constants import WI_EDITABLE_STATES, WI_STATE_INBOX, WI_STATE_PROCESSING, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import (
+    DETAILED_KEY,
+    DETAILED_SOURCES,
+    WI_EDITABLE_STATES,
+    WI_STATE_INBOX,
+    WI_STATE_PROCESSING,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
+    is_detailed,
+)
 from agent_toolkit._atk.wi.mutations.targets import invalidate_repo_bound_metadata, resolve_editable_targets
 from agent_toolkit._atk.wi.repo import append_entry as _append_entry
 from agent_toolkit._atk.wi.repo import edit_entry as _edit_entry
@@ -63,6 +73,7 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
     "priority": "frontmatterからpriorityを除き、優先区分は`atk wi set-priority`で設定する",
     "github_source": "frontmatterからgithub_sourceを除き、保存されたGitHubの出所は変更しない",
     "processing_owner": "frontmatterからprocessing_ownerを除き、担当はatk wi take-overで変更する",
+    "detailed": "frontmatterからdetailedを除き、詳細化した本文の保存では--detailを指定する",
     "proposal_fingerprint": "frontmatterからproposal_fingerprintを除いて再実行する（原稿の指紋はatkが記録する）",
     "submitter_session": "frontmatterからsubmitter_sessionを除いて再実行する（submitter_sessionはatkが記録する）",
     "run_skill_run_id": "frontmatterからrun_skill_run_idを除いて再実行する（実行識別子はatkが記録する）",
@@ -453,15 +464,49 @@ def _apply_cooldown_edit(content: str, value: str, filename: str) -> str:
     return _frontmatter.serialize_frontmatter(data, body)
 
 
-def _reject_agent_processing_edit(path: pathlib.Path) -> None:
+def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False) -> None:
     if not is_agent_environment() or _wi_entries.entry_state_of(path) != WI_STATE_PROCESSING:
         return
+    if detail:
+        # 詳細化の保存は、処理中の担当自身による着手前の1回の置換に限って許す。  # pyfltr: allow-comment
+        # 他の会話からの置換と再置換は、実装・レビューの基準を途中で変えるため拒否する。  # pyfltr: allow-comment
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is not None and (is_detailed(parsed[0]) or parsed[0].get("source") in DETAILED_SOURCES):
+            _outcome.report_failure(
+                f"詳細化済みか詳細化の対象外のprocessingの項目は本文を置き換えられない: {path.name}",
+                next_action=(
+                    "実装中に確定した要件の変更は実行レビュー指摘管理表へ記録し、この項目へはatk wi edit --appendで追記する"
+                ),
+            )
+            sys.exit(2)
+        owner = _processing_owner.from_text(text)
+        if owner is not None and owner == _processing_owner.current():
+            return
+        _outcome.report_failure(
+            f"processingの項目の詳細化は処理中の担当の会話からだけ保存できる: {path.name}（担当: {owner or '記録なし'}）",
+            next_action="処理中の担当の会話から再実行するか、担当へ原稿を渡して保存を依頼する",
+        )
+        sys.exit(2)
     _outcome.report_failure(
         f"processingの項目はエージェント環境から編集できない: {path.name}。"
         "処理中の要求を書き換えると、処理しているセッションが扱う要求の内容が途中で変わる",
         next_action="書き換えたい内容はatk wi addで新しい項目として投入し、この項目へはatk wi edit --appendで追記する",
     )
     sys.exit(2)
+
+
+def _mark_detailed(content: str, filename: str) -> str:
+    parsed = _frontmatter.parse_frontmatter(content)
+    assert parsed is not None
+    data, body = parsed
+    if _constants.normalized_wi_type(data.get("type")) != WI_TYPE_AWI:
+        raise WebInputError(
+            f"詳細化済みの印を付けられるのはAWIだけです: {filename}",
+            next_action="--detailを外して保存する",
+        )
+    data[DETAILED_KEY] = True
+    return _frontmatter.serialize_frontmatter(data, body)
 
 
 def _print_cooldown_result(content: str) -> None:
@@ -483,6 +528,11 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             args.subparser.error("--cooldown-untilではFILENAMEを指定してください。")
         if args.append:
             args.subparser.error("--cooldown-untilは--appendと併用できません。")
+    if getattr(args, "detail", False):
+        if args.append or args.cooldown_until is not None:
+            args.subparser.error("--detailは--appendおよび--cooldown-untilと併用できません。")
+        if args.filename is None or message is None:
+            args.subparser.error("--detailではFILENAMEと--body-fileを指定してください。")
     if args.move_user_comment is not None:
         if args.append:
             args.subparser.error("--move-user-commentは--appendと併用できません。")
@@ -534,7 +584,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         original = _frontmatter.decode_entry_text(snapshot)
         editing_body = message is not None or args.cooldown_until is None
         if editing_body:
-            _reject_agent_processing_edit(path)
+            _reject_agent_processing_edit(path, detail=bool(getattr(args, "detail", False)))
         normalized_target_repo = resolve_repo_id(args.target_repo) if args.target_repo is not None else None
         verify_target_repo_content(path, original, normalized_target_repo)
     original = _frontmatter.decode_entry_text(snapshot)
@@ -564,6 +614,12 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             edited = _preserve_agent_user_comment(original, edited)
     else:
         edited = original
+    if getattr(args, "detail", False):
+        try:
+            edited = _mark_detailed(edited, path.name)
+        except WebInputError as error:
+            _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
+            sys.exit(1)
     if args.cooldown_until is not None:
         try:
             edited = _apply_cooldown_edit(edited, args.cooldown_until, path.name)

@@ -13,6 +13,7 @@ import pathlib
 import socket
 import threading
 import typing
+import urllib.parse
 
 import markdown_it
 import markdown_it.renderer
@@ -46,9 +47,10 @@ from agent_toolkit._common import watch_observer as _watch_observer
 from agent_toolkit._common.async_operations import run_sync_operation
 from agent_toolkit._common.frontmatter import normalize_newlines, parse_frontmatter
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
+from agent_toolkit._plan import locations as _plan_locations
 from agent_toolkit._plan.creation_times import cleanup_creation_time_temporaries
 from agent_toolkit._plan.structure import parse_plan_metadata
-from agent_toolkit._plan.structure.parsing import is_awi_plan
+from agent_toolkit._plan.structure.parsing import BOM, is_awi_plan, is_wi_list_plan
 from agent_toolkit._plan.viewer_files import (
     LEGACY_SOURCE_ID,
     NEW_SOURCE_ID,
@@ -405,15 +407,52 @@ def _awi_plan_html(text: str, body_html: str) -> str:
     return f"<dl>{fields}</dl>{body_html}"
 
 
+def _listed_wi_texts(text: str) -> list[tuple[str, str | None]]:
+    metadata, _errors = parse_plan_metadata(text)
+    if metadata is None:
+        return []
+    try:
+        root = _plan_locations.private_notes_root()
+    except OSError, ValueError:
+        return [(name, None) for name, _summary in metadata.related_wi]
+    results: list[tuple[str, str | None]] = []
+    for name, _summary in metadata.related_wi:
+        try:
+            source = _plan_locations.find_wi_source(name, root)
+            results.append((name, source.read_text(encoding="utf-8", errors="replace") if source is not None else None))
+        except OSError, ValueError:
+            results.append((name, None))
+    return results
+
+
+def _wi_list_plan_html(text: str, wis: list[tuple[str, str | None]], renderer: markdown_it.MarkdownIt) -> str:
+    parts = [_awi_plan_html(text, "")]
+    for name, wi_text in wis:
+        escaped = html_lib.escape(name)
+        query = html_lib.escape(urllib.parse.urlencode({"filename": name}), quote=True)
+        link = f'<a href="./?{query}">{escaped}</a>'
+        if wi_text is None:
+            parts.append(f'<section class="plan-wi"><h2>{link}</h2><p>このWIの本文を取得できない。</p></section>')
+            continue
+        parsed = parse_frontmatter(normalize_newlines(wi_text.lstrip(BOM)))
+        body = parsed[1] if parsed is not None else wi_text
+        parts.append(f'<section class="plan-wi"><h2>{link}</h2>{markdown_to_html(body, renderer)}</section>')
+    return "".join(parts)
+
+
 async def render_file_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:
     text = await resolve_text(context, host, source_id, rel)
 
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    wis = await asyncio.to_thread(_listed_wi_texts, text) if is_wi_list_plan(text) else []
+    digest_source = text + "".join(f"\0{name}\0{wi_text}" for name, wi_text in wis)
+    digest = hashlib.sha256(digest_source.encode("utf-8")).hexdigest()
     cache_key: MarkdownCacheKey = (host, source_id, rel, digest)
     rendered = context.markdown_cache.get(cache_key)
     if rendered is None:
         if is_review_table_path(rel):
             rendered = review_table_html(text)
+        elif is_wi_list_plan(text):
+            rendered = _wi_list_plan_html(text, wis, context.renderer)
         elif is_awi_plan(text):
             parsed = parse_frontmatter(normalize_newlines(text.lstrip("\ufeff")))
             assert parsed is not None

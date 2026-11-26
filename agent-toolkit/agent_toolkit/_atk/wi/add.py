@@ -45,7 +45,7 @@ from agent_toolkit._atk.wi.add_validation import (
     require_cause_analysis_format,
     require_confirmed_cause,
 )
-from agent_toolkit._atk.wi.constants import WI_STATE_HOLD, WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import DETAILED_KEY, WI_STATE_HOLD, WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
@@ -278,6 +278,7 @@ def add_entries_locked(
     target_commit_branch: str | None = None,
     initial_state: str = WI_STATE_INBOX,
     insertions: list[_add_drafts.Insertion] | None = None,
+    detailed: bool = False,
 ) -> list[tuple[str, str]]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
 
@@ -359,6 +360,8 @@ def add_entries_locked(
                 frontmatter_data["depends_on"] = list(item_dependencies)
             if cooldown_until is not None:
                 frontmatter_data["cooldown_until"] = cooldown_until
+            if detailed:
+                frontmatter_data[DETAILED_KEY] = True
         content = _frontmatter.normalize_newlines(_frontmatter.serialize_frontmatter(frontmatter_data, logical_body))
         path = _wi_entries.entry_path(private_notes, filename)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -392,8 +395,9 @@ def add_entries(
     draft_basis: DraftBasis | None = None,
     draft_namespace: str | None = None,
     resolve_draft_links: bool = True,
+    detailed: bool = False,
 ) -> list[str]:
-    """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
+    """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。  pyfltr: allow-comment
 
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
     UWI種別では、`parse_entry_message`が保存形式の未回答外枠を取り除いた本文を保存する。
@@ -405,6 +409,7 @@ def add_entries(
     系統を登録したrepository宛てで省略した項目はdefault_branchの系統で保存し、登録に無い系統は保存前に拒否する。
     `initial_state`は保存する状態で、`WI_STATE_HOLD`なら保存した時点から自動処理の対象に入れない。
     `target_commit`は`target_repo`と`target_branch`の解決結果が一致する項目にだけ記録する。
+    `detailed`はAWIへ詳細化済みの印（`detailed: true`）を付け、計画を作る時点の詳細化の対象から外す。
     """
     started_at = time.time()
     choices = normalize_choices(choices)
@@ -465,6 +470,7 @@ def add_entries(
             target_commit_branch=target_commit_branch,
             initial_state=initial_state,
             insertions=insertions,
+            detailed=detailed,
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
@@ -832,6 +838,7 @@ def cmd_add(
             initial_state=WI_STATE_HOLD if hold else WI_STATE_INBOX,
             draft_basis=draft_basis,
             draft_namespace=namespace,
+            detailed=bool(getattr(args, "detailed", False)),
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)

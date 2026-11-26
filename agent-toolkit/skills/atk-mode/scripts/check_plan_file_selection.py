@@ -4,8 +4,12 @@ import pathlib
 import re
 
 import yaml
+from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
+from agent_toolkit._atk.wi.constants import DETAILED_SOURCES, WI_TYPE_AWI, is_detailed, normalized_wi_type
+from agent_toolkit._plan import locations as _plan_locations
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import structure
+from agent_toolkit._plan.structure.formal_verification import missing_judgment_message_for_wis
 
 # 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合に使う値
 # （`process-wi-selection-format.md`「選定結果の書式」）。
@@ -21,10 +25,13 @@ def _check_lane_selection(
     lane: str,
     prior_plans: tuple[pathlib.Path, ...],
     work_dir: pathlib.Path,
+    added_wi: tuple[str, ...] = (),
 ) -> list[str]:
-    """選定済みWI集合と人間由来行の根拠が計画の集合に対応するか確かめる。
+    """選定済みWI集合と人間由来行の根拠が計画の集合に対応するか確かめる。  pyfltr: allow-comment
 
-    計画と比べる集合は、指定レーンのうち`再開位置`を持たない（キーが無いか値が`なし`の）選定結果の項目とする。
+    計画と比べる集合は、指定レーンのうち`再開位置`を持たない（キーが無いか値が`なし`の）未統合の選定結果の全項目とする。
+    計画は詳細化の要否によらずレーンの全WIを列挙するため、`詳細化要否`はこの照合に使わない。
+    `added_wi`は、作業を伴う回答済みUWIの詳細化で新しく作り、計画の一覧へ加えたAWIで、比べる集合へ加える。
     旧欄名で書かれた選定結果も`agent_toolkit._plan.selection`で新しい欄名へそろえて読む。
     再開位置を持つ項目は再開位置が指す既存計画で続け、新しい計画の対象にしないためである。
     不一致は、割り当てた要求を実行とレビューへ渡せない致命的な問題としてerrorにする。
@@ -37,8 +44,6 @@ def _check_lane_selection(
         raise ValueError(f"選定結果の`{_selection.DECISIONS_KEY}`がYAMLの配列ではない")
     lane_awis: list[str] = []
     expected: list[str] = []
-    planless: list[str] = []
-    missing_requirement: list[str] = []
     for decision in items:
         if (
             not isinstance(decision, dict)
@@ -51,32 +56,86 @@ def _check_lane_selection(
         lane_awis.append(decision[_selection.WI_KEY])
         if decision.get(_RESUME_POSITION_KEY, _RESUME_POSITION_NONE) != _RESUME_POSITION_NONE:
             continue
-        requirement = decision.get(_selection.PLAN_REQUIREMENT_KEY)
-        if requirement == "計画なし":
-            planless.append(decision[_selection.WI_KEY])
-        elif requirement == "計画あり":
-            expected.append(decision[_selection.WI_KEY])
-        else:
-            missing_requirement.append(decision[_selection.WI_KEY])
+        if decision.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED:
+            continue
+        expected.append(decision[_selection.WI_KEY])
     if not lane_awis:
         raise ValueError(f"選定結果にレーンがない: {lane}")
     if len(lane_awis) != len(set(lane_awis)):
         raise ValueError(f"選定結果のレーンにWIが重複する: {lane}")
-    if missing_requirement:
-        return [
-            f"レーン{lane}のWIで`計画要否`を確認できない: {', '.join(missing_requirement)}。"
-            f"`atk run-script pick-wi-check -- {selection_file} --output <再検証結果>`で補い、"
-            "保存した選定を--selection-fileへ指定して計画検査をやり直す"
-        ]
-    if not expected and planless:
-        return [
-            f"レーン{lane}の新しいWIは全て計画なしで、計画の対象となるWIが無い: {', '.join(planless)}。"
-            "計画なしで進めるか、例外で計画へ含める時は--selection-file・--laneの代わりに--expected-wiで全件を指定する"
-        ]
+    expected.extend(name for name in added_wi if name not in expected)
     if not expected:
         return [f"レーン{lane}の全WIが再開位置を持ち、新しい計画の対象となるWIが無い。再開位置が指す既存計画で続ける"]
 
     return _check_wi_selection(plans, tuple(expected), f"レーン{lane}の選定結果", prior_plans, work_dir)
+
+
+def related_wi_bodies(text: str, private_notes: pathlib.Path | str | None) -> list[str]:
+    metadata, metadata_errors = structure.parse_plan_metadata(text)
+    if metadata_errors or metadata is None:
+        return []
+    root = _plan_locations.private_notes_root(private_notes)
+    if not root.is_dir():
+        root = None
+    bodies: list[str] = []
+    for name, _summary in metadata.related_wi:
+        source = _plan_locations.find_wi_source(name, root) if root is not None else None
+        parsed = _wi_frontmatter.parse_frontmatter(source.read_text(encoding="utf-8")) if source is not None else None
+        if parsed is not None:
+            bodies.append(parsed[1])
+    return bodies
+
+
+def wi_list_target_checks(
+    text: str,
+    private_notes: pathlib.Path | str | None,
+    agent_rule_paths: tuple[str, ...],
+    handoff_texts: tuple[str, ...],
+) -> tuple[list[str], list[str]]:
+    """WIリスト形式の計画が列挙したWIの本文を読み、実装の着手前に要る検査を当てる。  pyfltr: allow-comment
+
+    計画は本文を持たないため、計画本文に当てていた検査を一覧のWI本文の連結へ向ける。
+    詳細化の印の検査は、着手の時点で一覧の全AWIの本文を凍結するためである（対象外のsourceのAWIは置換自体を拒否する）。
+    選定結果を使わないため、選定の無い協調モードの計画にも同じ検査が働く。
+    """
+    metadata, metadata_errors = structure.parse_plan_metadata(text)
+    if metadata_errors or metadata is None:
+        return [], []
+    root = _plan_locations.private_notes_root(private_notes)
+    if not root.is_dir():
+        root = None
+    errors: list[str] = []
+    bodies: list[str] = []
+    unmarked: list[str] = []
+    for name, _summary in metadata.related_wi:
+        source = _plan_locations.find_wi_source(name, root) if root is not None else None
+        parsed = _wi_frontmatter.parse_frontmatter(source.read_text(encoding="utf-8")) if source is not None else None
+        if parsed is None:
+            errors.append(f"計画の対象WIを取得できない: {name}。`atk wi show {name} --pull`で取得してから再実行する")
+            continue
+        data, body = parsed
+        bodies.append(body)
+        if (
+            normalized_wi_type(data.get("type")) == WI_TYPE_AWI
+            and data.get("source") not in DETAILED_SOURCES
+            and not is_detailed(data)
+        ):
+            unmarked.append(name)
+    if unmarked:
+        errors.append(
+            f"詳細化が要るAWIに詳細化済みの印が無い: {', '.join(unmarked)}。"
+            "`atk wi edit --detail`（回答から作るAWIは`atk wi add --detailed --hold`）で詳細化を保存してから実装に着手する"
+        )
+    # 詳細化しないWIは本文を置き換えられないため、そのWIで編集するパスは引き継ぎ記録へ書く。  # pyfltr: allow-comment
+    joined = "\n".join((*bodies, *handoff_texts))
+    errors.extend(
+        f"返却予定のエージェント向け文書のパスが計画の対象WIの本文にも引き継ぎ記録にもない: {relative}。"
+        "詳細化するWIでは本文へ、詳細化しないWIでは--handoff-fileの引き継ぎ記録へ明記し、同じ一覧でもう一度確かめる"
+        for relative in agent_rule_paths
+        if relative not in joined
+    )
+    judgment = missing_judgment_message_for_wis(tuple(bodies), handoff_texts)
+    return errors, [judgment] if judgment is not None else []
 
 
 def _check_wi_selection(

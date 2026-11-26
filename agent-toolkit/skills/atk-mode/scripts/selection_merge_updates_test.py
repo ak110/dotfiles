@@ -80,7 +80,7 @@ def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
     for path in (existing, added):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         for item in data["選定"]:
-            item.update({**metadata, "計画要否": "計画あり"})
+            item.update({**metadata, "詳細化要否": "詳細化あり"})
             item["公開工程の書込対象"] = []
         originals.extend(data["選定"])
         path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
@@ -340,7 +340,7 @@ def test_public_merge_preserves_derived_new_paths(
             **item,
             "レーン": {"lane-03": "lane-01", "lane-04": "lane-02"}[item["レーン"]],
             "公開工程の書込対象": [],
-            "計画要否": "計画あり",
+            "詳細化要否": "詳細化あり",
         }
         for item in data["選定"]
     ]
