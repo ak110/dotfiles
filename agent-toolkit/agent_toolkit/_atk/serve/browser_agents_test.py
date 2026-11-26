@@ -50,7 +50,10 @@ async def test_agent_record_link_and_independent_remote_failure(
     async with _serve(app, browser) as (_context, page, port):
         await page.goto(f"http://127.0.0.1:{port}/agents")
         panel = page.locator("#agents-hosts")
-        await playwright.async_api.expect(panel).to_contain_text("接続先のdotfilesを更新してください")
+        banner = page.locator("#update-status")
+        await playwright.async_api.expect(banner).to_contain_text("接続先のdotfilesを更新してください")
+        await playwright.async_api.expect(banner).to_contain_text("old-host")
+        await playwright.async_api.expect(banner.get_by_role("button", name="再取得")).to_be_visible()
         await playwright.async_api.expect(panel).to_contain_text("セッション画面で扱いません")
         await playwright.async_api.expect(panel).not_to_contain_text(re.compile(r"[\u2500-\u257f]"))
         record = panel.get_by_role("link", name=session_id, exact=True)

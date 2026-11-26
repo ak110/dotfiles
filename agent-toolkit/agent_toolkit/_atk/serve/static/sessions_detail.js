@@ -17,7 +17,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   let parentTrail = [];
   // 詳細の取得の世代。選択の切り替えや再取得の後に届いた古い応答を反映しないために使う。  // pyfltr: allow-comment
   let detailGeneration = 0;
-  let renderedCount = 100;
+  let renderLimit = 0;
   const DETAIL_PAGE_SIZE = 100;
   let currentDetail = null;
   const FOLLOW_TAIL_PX = 48;
@@ -218,7 +218,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     for (const block of detailEl.querySelectorAll("details[data-event-index]")) {
       openStates.set(block.dataset.eventIndex, block.open);
     }
-    return {openStates, renderedCount, scrollTop: detailEl.parentElement.scrollTop};
+    return {openStates, renderLimit, scrollTop: detailEl.parentElement.scrollTop};
   }
 
   // ローカルの記録は本文の後に費用を別に取得するため、取得中は前回の値か「算出中」を表示する。  // pyfltr: allow-comment
@@ -316,7 +316,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     return detail.events.flatMap((event, index) => event.report_index == null ? [{event, index}] : []);
   }
   function appendEvents(end, preserved) {
-    for (const {event, index} of visibleEvents.slice(renderedCount, end)) {
+    for (const {event, index} of visibleEvents.slice(renderLimit, end)) {
       const block = renderEvent(event, index);
       const open = preserved?.openStates.get(String(index));
       if (open !== undefined) block.open = open;
@@ -324,7 +324,8 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       if (nested) nested.open = preserved?.openStates.get(nested.dataset.eventIndex) ?? nested.open;
       detailEl.append(block);
     }
-    renderedCount = Math.min(end, visibleEvents.length);
+    // 描画を要求した範囲を保ち、次の追記もこの範囲内ならスクロールせず表示する。  // pyfltr: allow-comment
+    renderLimit = Math.max(renderLimit, end);
     updateScrollEdges();
   }
   function currentPosition() {
@@ -336,7 +337,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     const position = visibleEvents.findIndex(item => item.index === index ||
       (!conversationOnly && item.event.result_index === index));
     if (position < 0) return null;
-    if (position >= renderedCount) appendEvents(position + 1);
+    if (position >= renderLimit) appendEvents(position + 1);
     const target = detailEl.querySelector(`[data-event-index="${index}"]`);
     if (!target) return null;
     for (let node = target; node && node !== detailEl; node = node.parentElement) {
@@ -453,9 +454,9 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     }
 
     visibleEvents = detailEvents(detail);
-    renderedCount = 0;
+    renderLimit = 0;
     document.getElementById("session-reading").hidden = false;
-    appendEvents(preserved ? preserved.renderedCount : DETAIL_PAGE_SIZE, preserved);
+    appendEvents(preserved ? preserved.renderLimit : DETAIL_PAGE_SIZE, preserved);
     refreshSearch();
     detailScroller().scrollTop = preserved ? preserved.scrollTop : 0;
     renderEventsNearEnd();
@@ -467,10 +468,10 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     if (!currentDetail) return;
     const scroller = detailScroller();
     while (
-      renderedCount < visibleEvents.length
+      renderLimit < visibleEvents.length
       && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= RENDER_AHEAD_PX
     ) {
-      appendEvents(renderedCount + DETAIL_PAGE_SIZE);
+      appendEvents(renderLimit + DETAIL_PAGE_SIZE);
     }
   }
   function detailScroller() {
@@ -478,13 +479,11 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   }
 
   function isReadingTail() {
-    if (!currentDetail || renderedCount < visibleEvents.length) return false;
+    if (!currentDetail || renderLimit < visibleEvents.length) return false;
     const scroller = detailScroller();
     return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= FOLLOW_TAIL_PX;
   }
 
-  // 末尾を読んでいた場合は追記の末尾へ追従し、それ以外は位置を保つ。末尾より上を読んでいる間に届いた追記は、  // pyfltr: allow-comment
-  // エンドユーザーが末尾まで読み進めた時点で`renderEventsNearEnd`が描画する。  // pyfltr: allow-comment
   async function refreshSelectedDetail(timing = {}) {
     if (!selected) return;
     const {host, engine, path} = selected;
@@ -502,7 +501,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       if (detail.cost_pending && currentDetail?.cost && currentDetail.path === detail.path && currentDetail.host === detail.host) {
         detail.cost = currentDetail.cost;
       }
-      renderDetail(detail, {...captureDetailState(), renderedCount: readingTail ? detail.events.length : renderedCount});
+      renderDetail(detail, {...captureDetailState(), renderLimit: readingTail ? detail.events.length : renderLimit});
       void loadDeferredCost(detail);
       if (readingTail && detail.events.length > previousCount) {
         const scroller = detailScroller();
@@ -575,7 +574,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     new ResizeObserver(() => detailEl.style.setProperty("--reading-height", `${controls.offsetHeight}px`)).observe(controls);
     updateScrollEdges = attachScrollEdges(detailScroller(), controls, detailEl, {
       beforeEnd: () => appendEvents(visibleEvents.length),
-      hasMore: () => renderedCount < visibleEvents.length,
+      hasMore: () => renderLimit < visibleEvents.length,
     });
     document.getElementById("session-conversation").addEventListener("change", event => setConversation(event.target.checked));
     document.getElementById("session-search").addEventListener("input", () => refreshSearch(true));
