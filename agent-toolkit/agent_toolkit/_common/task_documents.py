@@ -42,9 +42,11 @@ INPUT_CONTRACT_NOTICE = (
     "役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。"
 )
 WHOLE_CONTRACT_PREPARATION = (
-    "通常起動（`mode: delegate`）の共通の準備: 起動の前に"
-    "`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、"
-    "`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。"
+    "通常起動の共通の準備: 起動の前に"
+    "`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意する。\n"
+    "`agents_server.start`に役割文書の`subagent_md_path`と、以下の役割固有の入力をまとめた`extra_params`を渡す。\n"
+    "`mode`は省略する（明示する場合は`mode: task`）。\n"
+    "全体作業契約の絶対パスは`extra_params`の外の`whole_contract_path`に渡す。"
 )
 """通常起動だけが前提にする共通の準備。`start`は全体作業契約が解決できない通常起動を拒否する。
 
