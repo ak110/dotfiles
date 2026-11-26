@@ -2,16 +2,6 @@
 
 ## 作業ツリーの準備
 
-メインは、レーンへ共通基点を渡す前に、変更のない作業ツリーのそのHEADで規範Markdownの合計サイズを検査する。
-同じテスト入力で成功済みなら結果を再利用し、未検証なら次の1ケースを実行する。
-
-```sh
-UV_NO_SYNC=true uv run --frozen pytest -n 0 -p no:cacheprovider norm_size_budget_invariant_test.py::test_norm_markdown_within_budget
-```
-
-上限超過なら基点を渡さず、統合先の所有者が先に削減する。
-検査に成功したHEADを渡す。
-
 1. 専用worktreeや回収予定の検証用複製では、`mise trust`の後にルートで`make sync`を実行し、リポジトリ直下の`.venv`を`uv.lock`と`.python-version`へ合わせてから後続へ渡す（`agent-toolkit/`には仮想環境を作らない）。
    - `make sync` の同期対象はPythonの仮想環境に限る。
      mise管理のツールやshimは別に準備する。

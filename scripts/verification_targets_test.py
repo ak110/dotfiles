@@ -1,6 +1,5 @@
 import json
 import pathlib
-import shutil
 import subprocess
 import sys
 
@@ -127,19 +126,17 @@ def test_integration_argv_covers_cross_contracts_even_if_sources_are_omitted(
 def test_individually_valid_norm_changes_fail_on_combined_tree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], remove_policy: bool
 ) -> None:
-    source = pathlib.Path(__file__).resolve().parents[1] / "norm_size_budget_invariant_test.py"
     root, selection, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selection, monkeypatch, root)
     worktree = pathlib.Path(record["worktree"])
     documents = pathlib.Path("agent-toolkit/skills/atk-mode")
     (worktree / documents).mkdir(parents=True)
-    (worktree / documents / "base.md").write_text("A" * (3_150_000 - 16), encoding="ascii")
-    shutil.copyfile(source, worktree / source.name)
+    (worktree / documents / "base.md").write_text("A", encoding="ascii")
     verification = [
         sys.executable,
         "-c",
-        "import runpy,sys; runpy.run_path(sys.argv[1])['test_norm_markdown_within_budget']()",
-        source.name,
+        "import pathlib,sys; sys.exit(len(list(pathlib.Path(sys.argv[1]).glob('*.md'))) > 2)",
+        str(documents),
     ]
     policy = worktree / "pyproject.toml"
     policy.write_text(
