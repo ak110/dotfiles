@@ -171,6 +171,38 @@ async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
+async def test_named_continuation_delivers_supplement_once_without_using_it_as_input(monkeypatch, tmp_path):
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
+    session_id = started["session_id"]
+    count = backend.send_calls
+    named = {"session_id": session_id, "instruction": "再レビューせよ"}
+    extra = "依頼元からの詳しい説明\n" * 60 + "round: この文字列は入力にしない"
+    try:
+        rejected = (
+            ({"session_id": session_id, "supplement": extra}, "supplement"),
+            ({"session_id": session_id, "message": "自由文", "supplement": extra}, "supplement"),
+            ({**named, "supplement": extra}, "必須欠落"),
+            ({**named, "extra_params": {"round": "2", "未宣言": "値"}, "supplement": extra}, "宣言外"),
+            (
+                {**named, "extra_params": {"round": "2", "rewrite_map": str(tmp_path / "absent")}, "supplement": extra},
+                "パス入力",
+            ),
+        )
+        for args, reason in rejected:
+            with pytest.raises(ToolError, match=reason):
+                await mcp_tools.mcp.call_tool("send_message", args)
+            assert backend.send_calls == count
+        await mcp_tools.mcp.call_tool(
+            "send_message",
+            {**named, "extra_params": {"round": "2"}, "supplement": extra},
+        )
+        assert backend.send_calls == count + 1
+        assert delivery_payload(backend.prompts[-1]) == f"再レビューせよ\nround: 2\n\n## 補足\n\n{extra}"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_continuation_input_errors_return_reason_and_next_action(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

@@ -121,6 +121,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         instruction: str | None = None,
         extra_params: Mapping[str, str] | None = None,
         contract_changes: Mapping[str, str] | None = None,
+        supplement: str | None = None,
     ) -> dict[str, Any]:
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ActionableError(
@@ -137,7 +138,9 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         sends.add(task)
         try:
             async with asyncio.timeout(float(timeout)):
-                return await self._send_message_response(session_id, prompt, instruction, extra_params, contract_changes)
+                return await self._send_message_response(
+                    session_id, prompt, instruction, extra_params, contract_changes, supplement
+                )
         except TimeoutError as exc:
             raise ActionableTimeoutError(
                 f"send_message timed out: {session_id}; delivery is undetermined",
@@ -162,6 +165,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         instruction: str | None,
         extra_params: Mapping[str, str] | None,
         contract_changes: Mapping[str, str] | None,
+        supplement: str | None,
     ) -> dict[str, Any]:
         await self._drain_diagnostics()
         pending = self._pending_resumes.get(session_id)
@@ -182,6 +186,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             prompt=prompt,
             instruction=instruction,
             extra_params=extra_params,
+            supplement=supplement,
         )
         delivery_prompt = subagent_contract.mark_contract_update(prompt) if contract_changes else prompt
         response = await self._deliver_message(session_id, delivery_prompt)

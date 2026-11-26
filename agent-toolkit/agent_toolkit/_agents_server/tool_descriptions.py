@@ -35,6 +35,39 @@ def shell_prompt(command: str, summary_policy: str) -> str:
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
 
 
+SEND_MESSAGE_DESCRIPTION = """実行中turnへ追加指示を送り、終了済みなら同じsessionでreplyを開始する。
+
+自由文はprompt、宣言された定型指示はinstructionと必要なextra_paramsで渡す。定型指示にはsupplementを添えられる。
+入力形式が不成立の場合は配送せず、next_actionに同じsessionへの再実行形と、確認できた役割宣言の候補を返す。
+
+`timeout`の省略時は270秒を待機上限とする。待つのは継続要求の配送結果が確定するまでとする。委譲先の応答生成の完了は待たない。
+上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
+Claude・Codexの実行中turnにはsteerする。Antigravity・OpenCodeの実行中turnは受理しない。
+後者は`atk agents wait`で終了を観測して同じsessionへ`send_message`を再送する。
+終了済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
+子session・背景taskの完了待ちの保留中には待機対象を引き継いで新しいturnを開始し、古い待機表明を結果として返さない。
+保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
+応答は`delivery`・担当名`label`と、識別できる場合は`root_session_id`を含む。
+`label`は起動時に確定した値であり、送信前に意図した担当へ配送したかを確かめる比較に使う。
+担当名を記録していない旧形式の登録簿から再開した場合は空文字列を返す。
+終了済みsessionの未回収の終了時の結果を消費して新しいturnを開始した場合は、
+その結果を`previous_result`（`status`・`agent_message`と、ある場合は`error`）で返す。
+消費した結果は`atk agents wait`で受領できないため、委譲元は同じ応答から受け取る。
+回収済みの結果は含めない。別の回収や保存と競合した場合も追送の配送状態だけを返し、未回収の結果は`atk agents wait`に残す。
+`delivery`の値は次のとおりである。
+`steered`は実行中turnの配送キューへ指示を投入したことだけを示し、委譲先が読んだことは示さない。
+委譲先が単一の長時間コマンドを実行している間はturnの区切りに達しないため、指示はキューに残る。
+到達は、`show`が返す`seconds_since_activity`と`active_tool_uses`の変化で判定する。
+`reply_started`は終了済みまたは完了待ちで保留中のsessionで新しいturnを開始したことを示す。
+`reply_failed`は新しいturnを開始できなかったこと、`reply_ambiguous`は開始の成否を確定できなかったことを示し、
+いずれも`atk agents wait`で状態を確認してから次の操作を選ぶ。
+sessionの起動後に工程別モデル設定の候補列が変わっても、保持したengine・model・effortで継続する。
+相対effort操作を受理した会話は、その変更を次turnから使う。
+採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
+保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
+"""
+
+
 SEND_MESSAGE_PROMPT_DESCRIPTION = parameter_description(
     "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終了済みsessionへは新しい依頼として届く。"
     "instructionと排他的に指定する。"
@@ -45,7 +78,7 @@ SEND_MESSAGE_TIMEOUT_DESCRIPTION = parameter_description(
 )
 
 SEND_MESSAGE_INSTRUCTION_DESCRIPTION = parameter_description(
-    "役割文書が宣言する定型継続指示。extra_paramsと組み合わせ、promptと排他的に指定する。"
+    "役割文書が宣言する定型継続指示。extra_paramsと組み合わせ、promptと排他的に指定する。任意の説明はsupplementに置く。"
 )
 
 SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION = parameter_description(

@@ -93,6 +93,7 @@ async def test_tool_input_schema_is_unchanged_by_error_wrapping() -> None:
         "instruction",
         "extra_params",
         "message",
+        "supplement",
     }
     assert tools["send_message"].input_schema["required"] == ["session_id"]
     assert "reply_failed" in (tools["send_message"].description or "")

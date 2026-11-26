@@ -49,6 +49,7 @@ from agent_toolkit._agents_server.tool_descriptions import (
     MODEL_TYPE_DESCRIPTION,
     PROMPT_DESCRIPTION,
     SEND_MESSAGE_CONTRACT_CHANGES_DESCRIPTION,
+    SEND_MESSAGE_DESCRIPTION,
     SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION,
     SEND_MESSAGE_INSTRUCTION_DESCRIPTION,
     SEND_MESSAGE_MESSAGE_DESCRIPTION,
@@ -501,6 +502,7 @@ register_start_request_tools(mcp)
 @mcp.tool(
     name="send_message",
     title="委譲sessionへの指示の追送",
+    description=SEND_MESSAGE_DESCRIPTION,
     annotations=ToolAnnotations(destructive_hint=False),
     structured_output=True,
 )
@@ -512,39 +514,10 @@ async def send_message(
     extra_params: Annotated[dict[str, str] | None, Field(description=SEND_MESSAGE_EXTRA_PARAMS_DESCRIPTION)] = None,
     message: Annotated[str | None, Field(description=SEND_MESSAGE_MESSAGE_DESCRIPTION)] = None,
     contract_changes: Annotated[dict[str, str] | None, Field(description=SEND_MESSAGE_CONTRACT_CHANGES_DESCRIPTION)] = None,
+    supplement: Annotated[
+        str | None, Field(description=parameter_description("定型指示にだけ添える説明。名前付き入力と別。"))
+    ] = None,
 ) -> dict[str, Any]:
-    """実行中turnへ追加指示を送り、終了済みなら同じsessionでreplyを開始する。
-
-    自由文はprompt、宣言された定型指示はinstructionと必要なextra_paramsで渡す。
-    入力形式が不成立の場合は配送せず、next_actionに同じsessionへの再実行形と、確認できた役割宣言の候補を返す。
-
-    `timeout`の省略時は270秒を待機上限とする。待つのは継続要求の配送結果が確定するまでとする。委譲先の応答生成の完了は待たない。
-    上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
-    Claude・Codexの実行中turnにはsteerする。Antigravity・OpenCodeの実行中turnは受理しない。
-    後者は`atk agents wait`で終了を観測して同じsessionへ`send_message`を再送する。
-    終了済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
-    子session・背景taskの完了待ちの保留中には待機対象を引き継いで新しいturnを開始し、古い待機表明を結果として返さない。
-    保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`と、指示を配送したsessionが保持する担当名の`label`を含み、
-    サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
-    `label`は起動時に確定した値であり、送信前に意図した担当へ配送したかを確かめる比較に使う。
-    担当名を記録していない旧形式の登録簿から再開した場合は空文字列を返す。
-    終了済みsessionの未回収の終了時の結果を消費して新しいturnを開始した場合は、
-    その結果を`previous_result`（`status`・`agent_message`と、ある場合は`error`）で返す。
-    消費した結果は`atk agents wait`で受領できないため、委譲元は同じ応答から受け取る。
-    回収済みの結果は含めない。別の回収や保存と競合した場合も追送の配送状態だけを返し、未回収の結果は`atk agents wait`に残す。
-    `delivery`の値は次のとおりである。
-    `steered`は実行中turnの配送キューへ指示を投入したことだけを示し、委譲先が読んだことは示さない。
-    委譲先が単一の長時間コマンドを実行している間はturnの区切りに達しないため、指示はキューに残る。
-    到達は、`show`が返す`seconds_since_activity`と`active_tool_uses`の変化で判定する。
-    `reply_started`は終了済みまたは完了待ちで保留中のsessionで新しいturnを開始したことを示す。
-    `reply_failed`は新しいturnを開始できなかったこと、`reply_ambiguous`は開始の成否を確定できなかったことを示し、
-    いずれも`atk agents wait`で状態を確認してから次の操作を選ぶ。
-    sessionの起動後に工程別モデル設定の候補列が変わっても、保持したengine・model・effortで継続する。
-    相対effort操作を受理した会話は、その変更を次turnから使う。
-    採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
-    保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
-    """
     if message is not None:
         if prompt is not None:
             raise ActionableError(
@@ -552,7 +525,7 @@ async def send_message(
                 next_action="本文をpromptだけに入れて同じsession_idのsend_messageを再実行する",
             )
         prompt = message
-    if instruction is None and extra_params is None and contract_changes is None:
+    if instruction is None and extra_params is None and contract_changes is None and supplement is None:
         response = await _manager().send_message(session_id, prompt, timeout)
     else:
         response = await _manager().send_message(
@@ -561,6 +534,7 @@ async def send_message(
             timeout,
             instruction=instruction,
             extra_params=extra_params,
+            supplement=supplement,
             **({"contract_changes": contract_changes} if contract_changes is not None else {}),
         )
     return public_send_message_response(response)

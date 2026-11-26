@@ -33,12 +33,18 @@ def continuation_prompt(
     prompt: str | None = None,
     instruction: str | None = None,
     extra_params: Mapping[str, str] | None = None,
+    supplement: str | None = None,
 ) -> str:
     first_line = launch_prompt.split("\n", 1)[0]
     documents = task_documents.find_task_documents(first_line)
     declaration = task_documents.read_declaration(documents[0]) if documents else None
     if declaration is None and ".subagent.md" in first_line:
         declaration = "起動記録の役割文書へ到達できません"
+    if supplement is not None and (instruction is None or prompt is not None):
+        raise ActionableError(
+            "supplementは宣言されたinstructionにだけ添えられます。追送は未配送です。",
+            next_action="定型指示と名前付き入力にsupplementを添えるか、自由な指示なら補足もpromptに入れる",
+        )
     if (prompt is None) == (instruction is None) or (prompt is not None and extra_params is not None):
         raise ActionableError(
             "promptとinstruction/extra_paramsは排他的です。どちらか一方が必要です。",
@@ -143,4 +149,5 @@ def continuation_prompt(
                 f"パス入力{name}を受理できません: {value}",
                 next_action=f"{name}へ実在するファイルの絶対パスだけを渡す。空白を含むファイル名はそのまま指定する",
             )
-    return "\n".join([contract.instruction, *named_input_lines(params)])
+    body = "\n".join([contract.instruction, *named_input_lines(params)])
+    return body if supplement is None else f"{body}\n\n## 補足\n\n{supplement}"
