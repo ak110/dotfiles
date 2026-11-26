@@ -25,6 +25,13 @@ _WRAPPED_ARGUMENT = re.compile(
     r"""("(?:[^"\\\r\n]|\\.)*"|'(?:[^'\\\r\n]|\\.)*')"""
 )
 
+_DRAFT_ROLE = "wi-draft-review"
+OTHER_ROLES = ("plan-review", "reader-fit-review", "usability-review", "external-write-review")
+_OTHER_FIELDS = re.compile(
+    r"^(?:- )?(?:判定の回数|判定|未解決の指摘数|成果物|再レビュー|状態|レビューしたHEAD|対象資料|区分|新しい要件):[^\n]*$",
+    re.MULTILINE,
+)
+
 _SHELL_CALL = re.compile(
     r"(?:[ \t]*// @exec:[^\r\n]*\r?\n)?\s*"
     r"text\s*\(\s*await\s+tools\.(exec_command|write_stdin)\s*\(\s*\{([^{}]*)\}\s*\)\s*\)\s*;?"
@@ -38,6 +45,7 @@ class _Receipt(NamedTuple):
     session: str
     digest: str
     judgments: list[dict[str, str]]
+    body: str
     order: int
 
 
@@ -46,12 +54,13 @@ class _Request(NamedTuple):
     digest: str
     identity: str | None
     prompt: str | None
+    rejudgment: bool
 
 
 class _Record(NamedTuple):
     parents: dict[str, str]
-    reviewers: set[str]
-    receipts: list[tuple[datetime, str, str, int, list[dict[str, str]]]]
+    reviewers: dict[str, str]
+    receipts: list[tuple[datetime, str, str, int, list[dict[str, str]], str]]
     requests: dict[str, list[_Request]]
 
 
@@ -59,6 +68,13 @@ class _Collected(NamedTuple):
     series: dict[str, str]
     receipts: list[_Receipt]
     requests: dict[str, list[_Request]]
+    roles: dict[str, str]
+
+
+class _SavedWait(NamedTuple):
+    stderr: str | None
+    timestamp: datetime
+    deliveries: dict[str, int]
 
 
 def _wrapped_arguments(source: str) -> dict[str, object]:
@@ -175,8 +191,59 @@ def _request(timestamp: datetime, prompt: str) -> _Request:
     if params.get("instruction") == "再判定せよ":
         selected = params.get("要求識別子")
         identity = selected if isinstance(selected, str) else None
-        return _Request(timestamp, _hash_text(prompt), identity, prompt)
-    return _Request(timestamp, _hash_text(prompt), identity, prompt if identity is not None else None)
+        return _Request(timestamp, _hash_text(prompt), identity, prompt, True)
+    return _Request(
+        timestamp,
+        _hash_text(prompt),
+        identity,
+        prompt if identity is not None else None,
+        "再レビュー" in prompt or "再判定" in prompt,
+    )
+
+
+def _native_wait_value(
+    command: str,
+    entry: dict,
+    redirects: dict[str, _SavedWait],
+    *,
+    is_wait: bool,
+    timestamp: datetime | None,
+    deliveries: dict[str, int],
+) -> tuple[str, _SavedWait | None] | None:
+    if not is_wait and (not redirects or not command.lstrip().startswith("cat ")):
+        return None
+    payload = entry.get("payload")
+    item = payload.get("item") if isinstance(payload, dict) else None
+    if not isinstance(item, dict) or item.get("type") != "CommandExecution" or item.get("exit_code") != 0:
+        return None
+    output = item.get("aggregated_output")
+    if not isinstance(output, str):
+        return None
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars="();<>|&")
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    if is_wait:
+        if len(tokens) == 3:
+            return output, None
+        if (
+            timestamp is not None
+            and len(tokens) in (5, 8)
+            and tokens[3] == ">"
+            and (len(tokens) == 5 or tokens[5:7] == ["2", ">"])
+            and Path(tokens[4]).is_absolute()
+        ):
+            redirects[tokens[4]] = _SavedWait(tokens[7] if len(tokens) == 8 else None, timestamp, dict(deliveries))
+    elif (
+        len(tokens) in (2, 5)
+        and tokens[0] == "cat"
+        and tokens[1] in redirects
+        and (len(tokens) == 2 or (tokens[2:4] == [";", "cat"] and tokens[4] == redirects[tokens[1]].stderr))
+    ):
+        return output, redirects.pop(tokens[1])
+    return None
 
 
 def _extract(path: Path) -> _Record | None:
@@ -184,18 +251,33 @@ def _extract(path: Path) -> _Record | None:
     if records is None:
         return None
     parents: dict[str, str] = {}
-    reviewers: set[str] = set()
+    reviewers: dict[str, str] = {}
     requests: dict[str, list[_Request]] = defaultdict(list)
     entries = {record.line: record for record in records}
     pending: dict[str, list[str]] = {}
     deliveries: dict[str, int] = defaultdict(int)
     continued: set[tuple[str, str, int]] = set()
-    path_receipts: list[tuple[datetime, str, str, int, list[dict[str, str]]]] = []
+    redirects: dict[str, _SavedWait] = {}
+    path_receipts: list[tuple[datetime, str, str, int, list[dict[str, str]], str]] = []
     for call in sorted(_record_tool_calls(records), key=lambda item: item.result_line or item.line):
         entry = entries[call.line].entry
         args = _recorded_input(entry, call.call_id)
         command = args.get("command", args.get("cmd", call.text))
         operation = _operation(call.tool, command if isinstance(command, str) else "")
+        native_wait = (
+            _native_wait_value(
+                call.text,
+                entry,
+                redirects,
+                is_wait=operation == "wait",
+                timestamp=_record_timestamp(entries[call.line]),
+                deliveries=deliveries,
+            )
+            if call.tool == "CommandExecution"
+            else None
+        )
+        if native_wait is not None:
+            operation = "wait"
         shell_call = _SHELL_CALL.fullmatch(call.text.strip()) if call.tool == "functions.exec" else None
         poll = shell_call is not None and shell_call[1] == "write_stdin"
         if shell_call:
@@ -224,6 +306,10 @@ def _extract(path: Path) -> _Record | None:
         meta = result.entry.get("mcpMeta")
         structured = meta.get("structuredContent") if isinstance(meta, dict) else None
         value = _structured(structured if structured is not None else raw if raw is not None else output)
+        saved = None
+        if native_wait is not None:
+            value = _structured(native_wait[0])
+            saved = native_wait[1]
         if shell_call:
             execution = _exec_result(raw if raw is not None else output)
             argument = _SESSION_ARGUMENT.search(shell_call[2]) if poll else None
@@ -261,14 +347,13 @@ def _extract(path: Path) -> _Record | None:
             continue
         if operation == "start" and isinstance(value, dict) and isinstance(session := value.get("session_id"), str):
             role = args.get("subagent_md_path")
-            if isinstance(role, str) and role.replace("\\", "/").rsplit("/", 1)[-1] in {
-                "wi-draft-review.subagent.md",
-                "wi-draft-review",
-            }:
-                reviewers.add(session)
+            if isinstance(role, str):
+                name = role.replace("\\", "/").rsplit("/", 1)[-1].removesuffix(".subagent.md")
+                if name in (_DRAFT_ROLE, *OTHER_ROLES):
+                    reviewers[session] = name
             if isinstance(parent := args.get("handoff_from"), str):
                 parents[session] = parent
-        timestamp = _record_timestamp(result)
+        timestamp = saved.timestamp if saved is not None else _record_timestamp(result)
         if timestamp is None:
             continue
         if operation in {"start", "send_message"} and isinstance(value, dict):
@@ -293,18 +378,27 @@ def _extract(path: Path) -> _Record | None:
             for session, body in _bodies(value):
                 body = body.strip()
                 digest = _hash_text(body)
-                revision = deliveries[session]
-                path_receipts.append((timestamp, session, digest, revision, [fields for fields in _judgments(body) if fields]))
-                if poll:
+                revision = saved.deliveries.get(session, 0) if saved is not None else deliveries[session]
+                path_receipts.append(
+                    (
+                        timestamp,
+                        session,
+                        digest,
+                        revision,
+                        [fields for fields in _judgments(body) if fields],
+                        "\n".join(_OTHER_FIELDS.findall(body)),
+                    )
+                )
+                if poll or native_wait is not None:
                     continued.add((session, digest, revision))
-    receipts: list[tuple[datetime, str, str, int, list[dict[str, str]]]] = []
+    receipts: list[tuple[datetime, str, str, int, list[dict[str, str]], str]] = []
     seen: set[tuple[str, str, int]] = set()
-    for timestamp, session, digest, revision, judgments in path_receipts:
+    for timestamp, session, digest, revision, judgments, body in path_receipts:
         identity = (session, digest, revision)
         if identity in continued and identity in seen:
             continue
         seen.add(identity)
-        receipts.append((timestamp, session, digest, revision, judgments))
+        receipts.append((timestamp, session, digest, revision, judgments, body))
     return _Record(parents, reviewers, receipts, requests)
 
 
@@ -315,13 +409,15 @@ _CHECKPOINT_RECORDS = 256
 def _encode(record: _Record) -> list[Any]:
     return [
         record.parents,
-        sorted(record.reviewers),
+        record.reviewers,
         [
-            [time.isoformat(), session, digest, revision, judgments]
-            for time, session, digest, revision, judgments in record.receipts
+            [time.isoformat(), session, digest, revision, judgments, body]
+            for time, session, digest, revision, judgments, body in record.receipts
         ],
         {
-            session: [[time.isoformat(), digest, identity, prompt] for time, digest, identity, prompt in rows]
+            session: [
+                [time.isoformat(), digest, identity, prompt, rejudgment] for time, digest, identity, prompt, rejudgment in rows
+            ]
             for session, rows in record.requests.items()
         },
     ]
@@ -338,39 +434,47 @@ def _indexed_timestamp(value: str) -> datetime:
     return parsed
 
 
-def _decode_receipt(row: Any) -> tuple[datetime, str, str, int, list[dict[str, str]]]:
+def _decode_receipt(row: Any) -> tuple[datetime, str, str, int, list[dict[str, str]], str]:
     if not isinstance(row, list):
         raise ValueError("派生索引の返却が不正")
-    time, session, digest, revision, judgments = row
+    time, session, digest, revision, judgments, body = row
     if (
         not isinstance(session, str)
         or not isinstance(digest, str)
         or not isinstance(revision, int)
         or isinstance(revision, bool)
         or not isinstance(judgments, list)
+        or not isinstance(body, str)
         or not all(_string_map(item) for item in judgments)
     ):
         raise ValueError("派生索引の返却が不正")
-    return _indexed_timestamp(time), session, digest, revision, judgments
+    return _indexed_timestamp(time), session, digest, revision, judgments, body
 
 
 def _decode_request(row: Any) -> _Request:
     if not isinstance(row, list):
         raise ValueError("派生索引の依頼が不正")
-    time, digest, identity, prompt = row
-    if not isinstance(digest, str) or not (
-        (identity is None and prompt is None) or (isinstance(identity, str) and isinstance(prompt, str))
+    time, digest, identity, prompt, rejudgment = row
+    if (
+        not isinstance(digest, str)
+        or not isinstance(rejudgment, bool)
+        or not (
+            (
+                identity is None
+                and (prompt is None or (isinstance(prompt, str) and _request_fields(prompt).get("instruction") == "再判定せよ"))
+            )
+            or (isinstance(identity, str) and isinstance(prompt, str))
+        )
     ):
         raise ValueError("派生索引の依頼が不正")
-    return _Request(_indexed_timestamp(time), digest, identity, prompt)
+    return _Request(_indexed_timestamp(time), digest, identity, prompt, rejudgment)
 
 
 def _decode(fields: list[Any]) -> _Record:
     parents, reviewers, receipts, requests = fields
     if (
         not _string_map(parents)
-        or not isinstance(reviewers, list)
-        or not all(isinstance(item, str) for item in reviewers)
+        or not _string_map(reviewers)
         or not isinstance(receipts, list)
         or not isinstance(requests, dict)
         or not all(isinstance(rows, list) for rows in requests.values())
@@ -378,7 +482,7 @@ def _decode(fields: list[Any]) -> _Record:
         raise ValueError("派生索引の値が不正")
     return _Record(
         parents,
-        set(reviewers),
+        reviewers,
         [_decode_receipt(row) for row in receipts],
         {session: [_decode_request(row) for row in rows] for session, rows in requests.items()},
     )
@@ -418,7 +522,7 @@ def index_path(roots: list[Path]) -> Path:
 
 def collect(roots: list[Path], *, index: Path | None = None) -> _Collected:
     parents: dict[str, str] = {}
-    reviewers: set[str] = set()
+    reviewers: dict[str, str] = {}
     receipts: dict[tuple[datetime, str, str], _Receipt] = {}
     requests: dict[str, list[_Request]] = defaultdict(list)
     paths = sorted({path.resolve() for root in roots for path in ([root] if root.is_file() else root.rglob("*.jsonl"))})
@@ -436,17 +540,20 @@ def collect(roots: list[Path], *, index: Path | None = None) -> _Collected:
         reviewers.update(record.reviewers)
         for session, rows in record.requests.items():
             requests[session].extend(rows)
-        for timestamp, session, digest, _revision, judgments in record.receipts:
+        for timestamp, session, digest, _revision, judgments, body in record.receipts:
             key = (timestamp, session, digest)
-            receipts.setdefault(key, _Receipt(*key, judgments, len(receipts)))
-    series = {}
-    for session in reviewers | parents.keys():
+            receipts.setdefault(key, _Receipt(*key, judgments, body, len(receipts)))
+    series: dict[str, str] = {}
+    roles: dict[str, str] = {}
+    for session in reviewers.keys() | parents.keys():
         chain = [session]
         while chain[-1] in parents and parents[chain[-1]] not in chain:
             chain.append(parents[chain[-1]])
-        if reviewers.intersection(chain):
+        chain_roles = {reviewers[item] for item in chain if item in reviewers}
+        if len(chain_roles) == 1:
             series[session] = chain[-1]
-    return _Collected(series, sorted(receipts.values(), key=lambda row: (row.timestamp, row.order)), requests)
+            roles[session] = chain_roles.pop()
+    return _Collected(series, sorted(receipts.values(), key=lambda row: (row.timestamp, row.order)), requests, roles)
 
 
 def _judgments(body: str) -> Iterator[dict[str, str]]:
@@ -502,9 +609,9 @@ def period(collected: _Collected, since: datetime, until: datetime) -> dict[str,
     series_ids: dict[str, set[str]] = defaultdict(set)
     observations: list[tuple[_Receipt, list[tuple[str, str | None, str]], bool]] = []
     for receipt in collected.receipts:
-        series = collected.series.get(receipt.session)
-        if series is None:
+        if collected.roles.get(receipt.session) != _DRAFT_ROLE:
             continue
+        series = collected.series[receipt.session]
         rows = []
         judged = 0
         for fields in receipt.judgments:

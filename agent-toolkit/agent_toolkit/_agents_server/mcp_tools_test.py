@@ -82,7 +82,7 @@ async def test_public_kill_marks_wait_statement_without_review_receipt(monkeypat
 
     assert answer["error"] == result["error"]
     assert "`show`" in answer["next_action"]
-    assert "レビューの指摘を受領した" not in answer["next_action"]
+    assert "レビュー結果を受領しました" not in answer["next_action"]
     assert "read_requirements" not in answer
 
 
@@ -102,7 +102,7 @@ async def test_public_kill_guides_recovery_of_unobserved_children(monkeypatch: p
     assert answer["error"] == result["error"]
     assert answer["agent_message"] == "最終結果"
     assert "`send_message`で元の委譲先に`atk agents wait`" in answer["next_action"]
-    assert "レビューの指摘を受領した" in answer["next_action"]
+    assert "レビュー結果を受領しました" in answer["next_action"]
 
 
 @pytest.mark.asyncio

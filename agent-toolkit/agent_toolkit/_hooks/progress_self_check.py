@@ -176,7 +176,7 @@ def _new_wi_text(session_id: str, recipient: str) -> tuple[str, str | None]:
     from agent_toolkit._atk.wi.listing import progress_new_wis  # pylint: disable=import-outside-toplevel
 
     try:
-        rows = progress_new_wis(session_id)
+        rows = progress_new_wis(session_id, track_merges=True)
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
         return (
             f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で確かめてください。",
@@ -184,7 +184,11 @@ def _new_wi_text(session_id: str, recipient: str) -> tuple[str, str | None]:
         )
     if rows is None:
         return "新着WIは未確認（開始時集合なし）。", None
-    return _notice.new_wi_preview(session_id, recipient, rows)
+    tracked = [row for row in rows if row.merge_pending == "processing"]
+    text, snapshot = _notice.new_wi_preview(session_id, recipient, [row for row in rows if row.merge_pending != "processing"])
+    if tracked:
+        text += " 取り込み結果待ち（再割当不要）: " + "、".join(row.filename for row in tracked) + "。"
+    return text, snapshot
 
 
 def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:

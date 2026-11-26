@@ -96,8 +96,8 @@ def _block_body(phrase: str, delivery: str, hint: str = "") -> str:
         f"本文が既存の規範を理由に対処を見送る言い回し「{phrase}」を含むため、{delivery}を止めた。"
         "規範があるという事実だけでは、再発を防げる根拠にならない。" + hint,
         fix=(
-            "`agent-basics:bugfix`の`references/prevention.md`「案を比べる」に従い、文言・出し方と仕組みを比べ、原因に作用する案で"
-            "処置した結果を本文に書いてください。"
+            "`agent-basics:bugfix`の`references/prevention.md`「案を比べる」に従って対策を比べ、"
+            "原因を取り除く処置と検証、または既存の対策が被覆する根拠を、変更・検証の記録と照合してください。"
             + ("" if hint else "案内を確認し、本文を維持する場合は同じ主体から同じ本文を再発行してよい。")
         ),
     )

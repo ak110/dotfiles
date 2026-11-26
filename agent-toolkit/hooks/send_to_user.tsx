@@ -23,7 +23,7 @@ function statusCheck<const Value extends string, const Category extends string>(
     "send-to-user",
     "warn",
     `本文は表示済みである。\`AWI化ステータス: ${value}\`の直後に区分名が無い行がある。` +
-      `以後の該当行は\`AWI化ステータス: ${value} <区分> ${form}\`とし、区分は${listed}から選べ。${detail}`,
+      `以後の該当行は\`AWI化ステータス: ${value} <区分> ${form}\`とし、区分は${listed}から選んでください。${detail}`,
   );
   return { value, categories, warning };
 }
@@ -33,7 +33,7 @@ const STATUS_CHECKS = [
     "不要",
     ["非欠陥", "処置済み", "被覆", "所有範囲外", "見送り"],
     "<理由>",
-    "`見送り`の理由には`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`をセミコロンで区切って書け。",
+    "`見送り`の理由には`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`をセミコロンで区切って書いてください。",
   ),
   statusCheck("予定", ["判断待ち", "認可待ち", "入力待ち", "書込競合"], "<再開条件>"),
 ] as const;
@@ -45,7 +45,7 @@ const UNINVESTIGATED_WARNING = automatedMessage(
   "send-to-user",
   "warn",
   "`AWI化ステータス: 不要`の理由が、原因を調べていないことを見送りの根拠にしている箇所がある。本文は表示済みである。" +
-    "担当と処置を決めるのに足りる最小の調査をしてから、該当する理由を調査・処置の結果に基づいて更新せよ。",
+    "担当と処置を決めるために必要な範囲を調べ、該当する理由を調査・処置の結果に基づいて更新してください。",
 );
 const STATUS_MARKER = /AWI化ステータス:\s*(不要|予定)[ \t]*/g;
 const DEFERRAL_FIELDS = ["作り込み側の候補", "見逃し側の候補", "比較結論"] as const;
@@ -74,7 +74,7 @@ const RECORD_LINE_CHECKS: readonly { cues: readonly Cue[]; head: string; warning
       "send-to-user",
       "warn",
       "本文は表示済みである。逸脱を示す語を含む報告に`対策:`の行が無い。" +
-        "以後の報告では、今回の是正と残る影響を`対策:`の行に書け。bugfixの起動の記録は、今回の事象へ7つの問いを適用したことを示さない。",
+        "以後の報告では、今回の是正と残る影響を`対策:`の行に書いてください。bugfixの起動の記録は、今回の事象へ7つの問いを適用したことを示さない。",
     ),
   },
   {
@@ -84,7 +84,7 @@ const RECORD_LINE_CHECKS: readonly { cues: readonly Cue[]; head: string; warning
       "send-to-user",
       "warn",
       "本文は表示済みである。再発防止を検討する条件（ユーザーの指摘、同じ害の繰り返し、大きな害）を示す語を含む逸脱の報告に`再発防止:`の行が無い。" +
-        "以後の報告では、再発防止の採否を`再発防止:`の行に書け。採らない場合は区分名と理由を書く。",
+        "以後の報告では、再発防止の採否を`再発防止:`の行に書いてください。採らない場合は区分名と理由を書いてください。",
     ),
   },
 ];
@@ -151,7 +151,7 @@ const PREVENTION_WITHOUT_CHANGE_WARNING = automatedMessage(
   "warn",
   "本文は表示済みである。`再発防止:`の行が、変える成果物（ファイル・commit）も採用しない区分名も示していない。" +
     "担当の心がけは再発防止にならない（`agent-basics:bugfix/references/prevention.md`）。採る場合は文言・出し方と仕組みを比べ、原因に作用する変更を加えるファイルを、" +
-    "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書け。",
+    "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書いてください。",
 );
 
 const BUGFIX_RECORD_HEADS = ["期待", "原因", "対策"] as const;
@@ -193,16 +193,16 @@ export function reportWarnings(message: string, deliveryId?: string, skipped: re
     }
     const claim = JSON.stringify([{ check, reason: "誤検出と判断した理由", delivery_id: deliveryId }]);
     const guidance =
-      `次の操作: 誤検出なら表示済みの本文は再掲せず、次のsend_to_userに \`misdetection=${claim}\` を付ける。` +
-      "同じ送達に誤検出が複数あれば、それぞれの判定名と送達IDの組を1つのmisdetection配列にまとめる。" +
-      '次が質問だけなら、質問の前に `message: "…"` とその申告を付けたsend_to_userを1回呼ぶ。';
+      `次の操作: 誤検出なら表示済みの本文は再掲せず、次のsend_to_userに \`misdetection=${claim}\` を付けてください。` +
+      "同じ送達に誤検出が複数あれば、それぞれの判定名と送達IDの組を1つのmisdetection配列にまとめてください。" +
+      '次が質問だけなら、質問の前に `message: "…"` とその申告を付けたsend_to_userを1回呼んでください。';
     warnings.add(warning.replace('kind="warn">', `kind="warn" check="${check}" delivery_id="${deliveryId}">`)
       .replace("</atk-auto>", `${guidance}\n</atk-auto>`));
   }
   const clockClaims = reportBodyLines(message).map((line) => line.replace(/`[^`\n]+`/g, ""));
   if (clockClaims.some((line) => /(?:^|[^0-9A-Za-z_])(?:(?:[01]?\d|2[0-3]):(?:[0-5][xX]|[xX][0-9xX])|(?:[012][xX]|[xX][0-9xX]):(?:[0-5][0-9xX]|[xX][0-9xX]))(?![0-9A-Za-z_])/.test(line))) {
     warn("clock-claim", automatedMessage("send-to-user", "warn",
-      "本文は表示済みである。時刻の一部が伏せ字になっている。観測値か、推定と分かる時間帯を示す。"));
+      "本文は表示済みである。時刻の一部が伏せ字になっている。観測値か、推定と分かる時間帯を示してください。"));
   }
   for (const line of reportedLines(message)) {
     for (const matched of line.matchAll(STATUS_MARKER)) {
@@ -219,7 +219,7 @@ export function reportWarnings(message: string, deliveryId?: string, skipped: re
         if (missing.length > 0) warn("deferral-comparison", automatedMessage(
           "send-to-user", "warn",
           `見送り報告の比較項目が空または欠落している: ${missing.join("、")}。` +
-            "同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、セミコロンで区切って記録せよ。",
+            "同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、セミコロンで区切って記録してください。",
         ));
       }
     }

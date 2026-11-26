@@ -141,7 +141,7 @@ def public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
     return public
 
 
-def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
+def public_send_message_response(response: Mapping[str, Any], *, recipient: str | None = None) -> dict[str, Any]:
     public: dict[str, Any] = {"delivery": response["delivery"], "label": response["label"]}
     if response.get("warnings"):
         public["warnings"] = response["warnings"]
@@ -149,7 +149,9 @@ def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
         public["root_session_id"] = response["root_session_id"]
     previous_result = response.get("previous_result")
     if previous_result:
-        public["previous_result"] = result_projection.public_result(previous_result)
+        public["previous_result"] = result_projection.concise_review_receipt(
+            result_projection.public_result(previous_result), recipient
+        )
     if response.get("notices"):
         public["notices"] = [result_projection.public_notice(notice) for notice in response["notices"]]
     next_action = REPLY_NEXT_ACTIONS.get(response["delivery"])

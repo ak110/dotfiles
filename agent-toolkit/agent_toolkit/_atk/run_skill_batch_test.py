@@ -131,7 +131,7 @@ def test_hook_disabled_announces_start_form_of_each_host(tmp_path, monkeypatch, 
         host=host,
     )
     assert notice is not None
-    assert f"`{command}`" in notice
+    assert f"`{command}`を実行してください。" in notice
 
 
 def test_hook_disabled_records_and_announces_pending(tmp_path, monkeypatch) -> None:

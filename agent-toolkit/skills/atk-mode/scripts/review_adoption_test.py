@@ -10,10 +10,64 @@ import pytest
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.session_evidence_support import write_jsonl
+from review_adoption import _confirmed_free_review_tables, _table_models
 
 _ROLE_PROMPT = "出所: /plugin/agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md"
 
 _LEGACY_ROLE_PROMPT = "出所: /plugin/agent-toolkit/share/exec-review.subagent.md"
+
+
+def test_free_review_uses_own_successful_add_and_formal_result(tmp_path: Path) -> None:
+    table = "lane-04.exec-review.tsv"
+    plan = "/plans/lane-04.md"
+    path = f"/plans/{table}"
+    kickoff = f'<atk-auto source="agents-server" kind="delivery">\n独立実行レビュー。計画 {plan} を確認。\n</atk-auto>'
+    result = f"状態: completed\nレビューHEAD: {'a' * 40}\n未解決の指摘数: 1\n- レビュー指摘管理表: {path}\n"
+    addition = f"成功: 指摘行を1件追加した: {path}（1件）\n"
+
+    original = "/results/own.md"
+    notice = f"状態: completed\n正式原本: {original}"
+
+    def write(name: str, prompt: str, *, add: int, returned: str, final: str = "", model: str = "gpt-6.2-sol") -> None:
+        payloads = [
+            {"type": "message", "role": "user", "content": [{"text": prompt}]},
+            {"type": "custom_tool_call", "call_id": "add", "input": f"atk review-table add {path} --track exec-review"},
+            {"type": "custom_tool_call_output", "call_id": "add", "output": json.dumps({"exit_code": add, "output": addition})},
+            {"type": "custom_tool_call", "call_id": "result", "input": f"cat {original}"},
+            {
+                "type": "custom_tool_call_output",
+                "call_id": "result",
+                "output": json.dumps({"exit_code": 0, "output": returned}),
+            },
+            {"type": "message", "role": "assistant", "phase": "final_answer", "content": [{"text": final}]},
+        ]
+        write_jsonl(
+            tmp_path / f"rollout-{name}.jsonl",
+            [
+                {"type": "session_meta", "payload": {"id": name}},
+                {"type": "turn_context", "payload": {"model": model, "effort": "medium"}},
+                *({"type": "response_item", "payload": payload} for payload in payloads),
+            ],
+        )
+
+    write("review", kickoff, add=0, returned="", final=result)
+    write("duplicate", kickoff, add=0, returned=result, final=notice)
+    for name in ("review", "duplicate"):
+        assert _confirmed_free_review_tables((tmp_path / f"rollout-{name}.jsonl").read_text(encoding="utf-8"), {path}) == {
+            table
+        }
+    write("support", kickoff.replace("独立実行レビュー", "補助調査"), add=0, returned="", final=result, model="gpt-6.1-sol")
+    write("failed", kickoff, add=1, returned="", final=result, model="gpt-6.1-sol")
+    write("incomplete", kickoff, add=0, returned=result, model="gpt-6.1-sol")
+    write(
+        "unmatched",
+        kickoff,
+        add=0,
+        returned=result + f"正式原本: {original}\n",
+        final=notice.replace("own", "other"),
+        model="gpt-6.1-sol",
+    )
+    assert _table_models([table], [tmp_path]) == {table: "codex:gpt-6.2-sol/medium"}
 
 
 def _row(round_value: str, issue: str, level: str, response: str, reason: str, *, location: str = "file.py") -> str:

@@ -537,7 +537,8 @@ async def send_message(
             supplement=supplement,
             **({"contract_changes": contract_changes} if contract_changes is not None else {}),
         )
-    return public_send_message_response(response)
+    recipient = _manager().launcher_session_id() if response.get("previous_result") else None
+    return public_send_message_response(response, recipient=recipient)
 
 
 @mcp.tool(

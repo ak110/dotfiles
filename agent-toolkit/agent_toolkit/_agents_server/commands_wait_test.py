@@ -74,7 +74,7 @@ def test_recover_published_wait_drops_legacy_review_receipt(
     assert "既存の補足" in output
     assert "`show`" in output
     assert "agent-basics:bugfix/SKILL.md" in output
-    assert "レビューの指摘を受領した" not in output
+    assert "レビュー結果を受領しました" not in output
     assert "review-standards" not in output
 
 

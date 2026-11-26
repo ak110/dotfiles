@@ -474,8 +474,8 @@ class ServiceSessionControl(ServiceForceControl, ServiceSessionMove):  # pylint:
             raise ActionableError(
                 f"session {identifier}の所有世代は現在の管理サービスの名前空間にありません",
                 next_action=(
-                    "元のsessionを起動した時と同じ昇格状態のホストでshowを実行する。"
-                    "所有状況を確認するまでは同じ送信や停止を繰り返さない"
+                    "元のセッションと同じ昇格状態で動くホストから、MCPの`show`を実行してください。"
+                    "所有状況を確認するまでは、同じ送信や停止を繰り返さないでください。"
                 ),
             )
         return None

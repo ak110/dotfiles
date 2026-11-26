@@ -106,7 +106,7 @@ def test_stop_handles_denial_once_and_ignores_ordinary_output(
     stopped = _hook("stop", tmp_path, hook_event_name="Stop")
     assert stopped["decision"] == "block" and _SOURCE in stopped["reason"]
     if delegated:
-        assert "委譲元へ報告する" in stopped["reason"] and "AskUserQuestion" not in stopped["reason"]
+        assert "委譲元へ報告してください" in stopped["reason"] and "AskUserQuestion" not in stopped["reason"]
     else:
         assert "AskUserQuestion" in stopped["reason"]
     assert _SOURCE not in str(_hook("stop", tmp_path, hook_event_name="Stop", stop_hook_active=True))
@@ -117,4 +117,4 @@ def test_subagent_denial_is_not_consumed_by_main(tmp_path: pathlib.Path) -> None
     payload = {"hook_event_name": "PreToolUse", "tool_name": "Read", "tool_input": {}}
     assert _SOURCE not in str(_hook("pretooluse", tmp_path, **payload))
     warning = _hook("pretooluse", tmp_path, agent_id="worker", **payload)["hookSpecificOutput"]["additionalContext"]
-    assert "委譲元へ報告する" in warning and "AskUserQuestion" not in warning
+    assert "委譲元へ報告してください" in warning and "AskUserQuestion" not in warning

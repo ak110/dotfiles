@@ -22,7 +22,14 @@ from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
-from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATE_PROCESSING, WI_STATES, WI_TYPE_UWI, WI_TYPES
+from agent_toolkit._atk.wi.constants import (
+    WI_PROCESSABLE_STATES,
+    WI_STATE_PROCESSING,
+    WI_STATES,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
+    WI_TYPES,
+)
 from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import (
     NewWorkItem,
@@ -532,7 +539,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
 
 def progress_new_wis(
-    session_id: str, *, targets: frozenset[tuple[str, str | None]] | None = None
+    session_id: str, *, targets: frozenset[tuple[str, str | None]] | None = None, track_merges: bool = False
 ) -> tuple[NewWorkItem, ...] | None:
     if not (saved := _wi_snapshot.progress_sources(session_id)):
         return None
@@ -576,12 +583,23 @@ def progress_new_wis(
         for snapshot in snapshots:
             repo = snapshot.repository
             baseline = baselines[repo.repo_id, repo.branch]
-            for path, _repo, body, state, _kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
-                if state == WI_STATE_PROCESSING and path.name in started:
-                    continue
+            for path, _repo, body, state, kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
                 source = parse_source(body) or "未指定"
                 if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
                     source = "その他"
                 branch = (parse_frontmatter(body) or ({}, ""))[0].get("merge_branch")
-                rows[path.name] = NewWorkItem(path.name, source, bool(branch))
+                own = state == WI_STATE_PROCESSING and path.name in started
+                merge_pending = (
+                    state
+                    if track_merges
+                    and kind == WI_TYPE_AWI
+                    and source == "implement"
+                    and branch
+                    and path.name in snapshot.readiness.ready
+                    and (own or state != WI_STATE_PROCESSING)
+                    else None
+                )
+                if own and merge_pending is None:
+                    continue
+                rows[path.name] = NewWorkItem(path.name, source, bool(branch), merge_pending)
     return tuple(rows[name] for name in sorted(rows))

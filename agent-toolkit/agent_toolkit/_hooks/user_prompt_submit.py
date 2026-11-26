@@ -155,8 +155,8 @@ def _entry_work_notice(session_id: str, full_name: str, arguments: str | None) -
     return informational(
         _llm_notice(
             f"起動入力の先頭の語 `{work}` は作業の指定である。"
-            f"`agent-toolkit:atk-mode/playbooks/{work}.md` に従う。"
-            f"{mode_notice}指定の後ろにある本文だけを入力として扱う。"
+            f"`agent-toolkit:atk-mode/playbooks/{work}.md` を読み、その手順に従ってください。"
+            f"{mode_notice}指定の後ろにある本文だけを入力として扱ってください。"
         )
     )
 

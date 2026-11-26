@@ -31,7 +31,7 @@
 
 ## 完了の到達水準
 
-「完了」は、対象全体と既知の問題への対応が済み、ユーザーの操作が必要な事項だけが残る状態を指す。
+「完了」は対象全体と既知の問題への対応が済み、ユーザーの操作が必要な事項だけが残る状態を指す。
 代表箇所だけの変更は途中経過として報告する。
 既知の不具合と未達の明示要件は、未達事項として区別して書く。
 環境の制約で確かめられない範囲は、実施できる検証を終えたうえで、未確認の範囲と理由を報告する。
@@ -75,15 +75,18 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 3. このセッションでユーザーが確定した判断のうち未保存のもの（`agent-toolkit/skills/atk-mode/SKILL.md`「硬い制約」の保存対象）を保存するか、AWIを投入する。
    保存では`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」の、程度の限定と確度を保つ規定を適用する。
 4. 協調モードでcommitを作り、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`でその範囲の公開を終える。
-   `agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の作業`process-wi single-lane`は、それぞれの工程の中で公開する。
+   `agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の作業`process-wi single-lane`はそれぞれの工程の中で公開する。
 5. 元の要求が求めた結果を各工程の成果から確かめる。
+   是正を受けた場合は、作業契約の完遂事項と既存の変更・検証記録を見て、原因・対策・確認の根拠がそろっているかを確かめる。
+   起動や書式の通過、既存の規則の存在は再発防止の証拠にせず、原因に有効な処置と確認、または実際に被覆する既存対策を確かめる。
+   確認できない分は未達として、何を確かめれば再開できるかを示す。
    協調モードの本文は `agent-toolkit:atk-mode/references/report-formats.md`「作業完了報告のフォーマット」で確定する。
    公開・反映・回収は、依頼の結果や次の行動に関わる到達点と、未実施なら必要だった操作・理由を報告する。
    依頼外の非実施や予定どおり自動回収を待つだけの一時領域など、判断を変えない説明は省く。
    引き継ぎや手作業が残る資源は、所在と残る操作を示す。
    本人の判断・認可・入力が必要な事項は確認の手順へ分け、報告には結果と判断に使った根拠を残す。
    確定の前に、作業記録に残る、途中報告でAWI化ステータスを`予定`とした改善点を回収する。
-   今回のAWI投入、再利用した既存項目、不要の判断と比べて、各対象を`済`とWIファイル名、または`不要`と理由へ確定し、同じ作業記録へ追記する。
+   今回のAWI投入、再利用した既存項目、不要の判断と比べて、各対象について`済`とWIファイル名か、`不要`と理由を同じ作業記録へ追記する。
    確定できない対象は、不足する判断・認可・入力か具体的な競合と、再開の条件を作業記録に残し、報告の未達へ書く。
    会話圧縮や担当交代の後も同じ作業記録から復元し、`済`の対象へAWIを重ねて投入しない。
    改善点の調査と是正は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「作業中の改善点の報告」が定める。
@@ -96,13 +99,13 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    `atk run-skill`による実行では、`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保つ。
    scopeは自由記述を含まないスキル名とモードの組とし、起動入力の`accepted_scopes`の先頭を使う。
    例えばbatchのscopeは`agent-toolkit:review-session batch`である。
-   保存CLIが付ける`run_skill_run_id`は、再開と更新でも保つ。
+   保存CLIが付ける`run_skill_run_id`は再開と更新でも保つ。
    報告先は起動元が渡したリポジトリとし、実行のcwdと区別する。
    起動元は本文、commit、upstreamがある場合のpushを検収する。
    batchの振り返り結果は、その実行の1件の報告へ集約し、対象セッションの作業完了報告とは別に保存する。
    保存に失敗した時は、同じUWIの保存を回復する。
 7. 協調モードは確定した本文を、自律モードは保存を検収した報告用UWIのファイル名を、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従って1回送達する。
-   - Claude Codeで最終報告を`send_to_user`で送る時は、`kind: "completion"`を指定し、表示の成功を確かめる。
+   - Claude Codeで最終報告を`send_to_user`で送る時は`kind: "completion"`を指定し、表示の成功を確かめる。
    - 協調モードの `add-awi-by-user`、`implement`、`process-user-comments` では、送達成功を確かめてから最後のツール呼び出しとして `atk agents-exit-session --after-completion` を実行する。
      ユーザーの回答・承認・本人作業を待つ場合は呼ばない。
      環境による対象判定はコマンドに任せ、自動終了しない理由が返った場合も通常どおりターンを終える。
@@ -126,7 +129,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 
 `agent-toolkit:atk-mode/playbooks/review-session.md`の単発の振り返りは、必要時か巡回の指定の区切りで行い、本書の工程と送達の条件とは分ける。
-非同期の`review-session batch`は、その場の`bugfix`と単発の振り返りで未解決の問題を後から扱う。
+非同期の`review-session batch`はその場の`bugfix`と単発の振り返りで未解決の問題を後から扱う。
 
 ## 常時稼働サーバーへの反映
 

@@ -16,15 +16,15 @@ lazy from agent_toolkit._hooks import message_format, stop_session
 _STATE_KEY = "pending_permission_denials"
 _SOURCE = "permission_denial_notice"
 _INTRO = "ホストがツール呼び出しを拒否した。"
-_COMMON = "`agent-toolkit:atk-mode/playbooks/permission-denial.md`「共通判断」から始める。"
+_COMMON = "`agent-toolkit:atk-mode/playbooks/permission-denial.md`「共通判断」から始めてください。"
 _MAIN = (
-    _COMMON + " classifierの拒否を偽陽性と判断できる場合は、同書「偽陽性と判断できる拒否への対応」に従う。"
-    "具体的な承認と実際の操作が一致し、既存の承認を適用できる時は質問しない。"
+    _COMMON + " classifierの拒否を偽陽性と判断できる場合は、同書「偽陽性と判断できる拒否への対応」に従ってください。"
+    "具体的な承認と実際の操作が一致し、既存の承認を適用できる時は質問しないでください。"
     "適用できなければ同じ操作を再試行せず、拒否の事実と偽陽性の根拠を伝え、"
     "`AskUserQuestion`で「偽陽性として実行を承認する」「該当の操作を撤回する」"
-    "「サブエージェント側でレビューを終えてから判断する」の3択で認可だけを問う。"
+    "「サブエージェント側でレビューを終えてから判断する」の3択で認可だけを尋ねてください。"
 )
-_DELEGATED = _COMMON + " 拒否の対象・操作・診断と必要な認可を委譲元へ報告する。自分では質問や再試行をしない。"
+_DELEGATED = _COMMON + " 拒否の対象・操作・診断と必要な認可を委譲元へ報告してください。自分では質問や再試行をしないでください。"
 _block_notice = notice.block_formatter(_SOURCE)
 
 

@@ -34,11 +34,11 @@ def test_review_wait_statement_does_not_request_review_receipt() -> None:
     waiting = result_projection.with_result_next_action(held, "scope-review")
     assert "`show`" in waiting["next_action"]
     assert "send_message" not in waiting["next_action"]
-    assert "レビューの指摘を受領した" not in waiting["next_action"]
+    assert "レビュー結果を受領しました" not in waiting["next_action"]
     assert "read_requirements" not in waiting
 
     finished = result_projection.with_result_next_action({"status": "completed", "agent_message": "適合"}, "scope-review")
-    assert "レビューの指摘を受領した" in finished["next_action"]
+    assert "レビュー結果を受領しました" in finished["next_action"]
     assert finished["read_requirements"]
 
 
@@ -50,7 +50,7 @@ def test_unobserved_child_guidance_preserves_final_review() -> None:
     )
     assert result["error"]["unobservedSessions"] == ["child-1"]
     assert result["agent_message"] == "適合"
-    assert "レビューの指摘を受領した" in result["next_action"]
+    assert "レビュー結果を受領しました" in result["next_action"]
     assert "`send_message`で元の委譲先に`atk agents wait`" in result["next_action"]
     assert result["read_requirements"]
 
@@ -69,7 +69,7 @@ def test_lane_completion_guidance_is_specific_to_lane_executors(label: str) -> N
     else:
         assert "実測と判断の検収" not in result.get("next_action", "")
         if label.endswith("-review"):
-            assert "レビューの指摘を受領した" in result["next_action"]
+            assert "レビュー結果を受領しました" in result["next_action"]
 
     held = result_projection.with_result_next_action({"status": "completed", "error": {"heldResultFinalized": True}}, label)
     assert "実測と判断の検収" not in held["next_action"]

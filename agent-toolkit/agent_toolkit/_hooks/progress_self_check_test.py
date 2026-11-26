@@ -489,7 +489,7 @@ def test_process_loop_point_lists_merge_candidate(monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", sid)
     name = "20261123-145959-001.md"
-    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid: (NewWorkItem(name, "implement", True),))
+    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid, **_kwargs: (NewWorkItem(name, "implement", True),))
 
     payload = {"session_id": sid}
     assert progress_self_check.claim_notice(payload, now=1.0) is None

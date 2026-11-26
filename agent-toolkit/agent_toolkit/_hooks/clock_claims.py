@@ -84,7 +84,7 @@ def warning(texts: Iterable[str], payload: dict | None = None, *, skip_masked: b
                 matches_clock = observed[11:16] == f"{int(short[1]):02d}:{short[2]}"
             if line.startswith("dateで確認") and not matches_clock:
                 return _llm_notice(
-                    "同じ呼出主体の対応する日時取得結果を確認できない。観測した出力を確かめる。",
+                    "同じ呼出主体の対応する日時取得結果を確認できない。",
                     tag="warn",
                     removable_cause=False,
                     fix="根拠とする時計の出力を確かめてください。",
@@ -105,10 +105,10 @@ def warning(texts: Iterable[str], payload: dict | None = None, *, skip_masked: b
                 continue
             if delta > 120:
                 return _llm_notice(
-                    "明示された現在時刻が時計の値と離れている。取得し直して時点を確認する。",
+                    "明示された現在時刻が時計の値と離れている。",
                     tag="warn",
                     removable_cause=False,
-                    fix="根拠とする時計の出力を確かめてください。",
+                    fix="時計の値を取得し直し、観測時点を確認してください。",
                 )
     return None
 
