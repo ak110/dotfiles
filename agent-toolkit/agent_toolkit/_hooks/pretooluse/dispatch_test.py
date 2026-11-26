@@ -2,14 +2,19 @@
 # pylint: disable=protected-access
 """dispatchの契約テスト。"""
 
+import io
+import itertools
 import json
 import pathlib
+import re
 import shlex
+import sys
+from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit import atk
-from agent_toolkit._hooks import posttooluse, user_prompt_submit
+from agent_toolkit import atk, hook
+from agent_toolkit._hooks import user_prompt_submit
 from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
@@ -649,8 +654,9 @@ def test_external_source_url_uses_ascii_uri_characters(line: str, expected: str)
 
 
 @pytest.mark.parametrize("tool", ["AskUserQuestion", "request_user_input", "request_user_input_async"])
+@pytest.mark.cpu_limit(1.0, reason="各ホストの公開hook入口と再承認前後の全操作を通す（Linux CPU実測の最大0.593秒）。")
 def test_policy_reapproval_blocks_only_until_new_matching_approval(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tool: str
 ) -> None:
 
     from agent_toolkit._common import session_state
@@ -668,22 +674,68 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     revise = "大体よいが、入力ごとにAWI相当を作るように修正して"
     asynchronous = tool == "request_user_input_async"
     session = "approval"
+    host = {} if tool == "AskUserQuestion" else {"turn_id": "codex-turn"}
+    hook_path = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
+    hooks = json.loads(hook_path.read_text(encoding="utf-8"))["hooks"]
+
+    def invoke(event: str, name: str, payload: dict) -> None:
+        entry = {"PreToolUse": "pretooluse", "PostToolUse": "posttooluse", "UserPromptSubmit": "user_prompt_submit"}[event]
+        if host and name in {"", tool, "Bash", "mcp__agents_server__send_to_user"}:
+            registered = {
+                shlex.split(handler["command"].split(" || ", 1)[0].split(" && ")[-1])[-1]
+                for group in hooks[event]
+                if re.fullmatch(group.get("matcher", ".*"), name)
+                for handler in group["hooks"]
+            }
+            assert entry in registered
+        with monkeypatch.context() as stdin, io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode())) as stream:
+            stdin.setattr(sys, "stdin", stream)
+            assert hook.main([entry]) == 0
+
+    def pre(name: str, body: dict, sid: str = session, **extra: object) -> str:
+        capsys.readouterr()
+        payload = {
+            "cwd": str(tmp_path),
+            "hook_event_name": "PreToolUse",
+            "session_id": sid,
+            "tool_name": name,
+            "tool_input": body,
+            **host,
+            **extra,
+        }
+        invoke("PreToolUse", name, payload)
+        text = capsys.readouterr().out.strip()
+        result = json.loads(text) if text else {}
+        if result.get("decision") == "block":
+            return result["reason"]
+        scoped = result.get("hookSpecificOutput", {})
+        return scoped.get("permissionDecisionReason", "") if scoped.get("permissionDecision") == "deny" else ""
+
+    def prompt(text: str) -> None:
+        invoke(
+            "UserPromptSubmit",
+            "",
+            {
+                "session_id": session,
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": text,
+                **host,
+            },
+        )
 
     def post(tool_name: str, payload: dict, body: dict, response: dict) -> None:
-        assert (
-            posttooluse.main(
-                json.dumps(
-                    {
-                        **payload,
-                        "session_id": session,
-                        "hook_event_name": "PostToolUse",
-                        "tool_name": tool_name,
-                        "tool_input": body,
-                        "tool_response": response,
-                    }
-                )
-            )
-            == 0
+        invoke(
+            "PostToolUse",
+            tool_name,
+            {
+                **payload,
+                **host,
+                "session_id": session,
+                "hook_event_name": "PostToolUse",
+                "tool_name": tool_name,
+                "tool_input": body,
+                "tool_response": response,
+            },
         )
 
     def ask(call: str, modifier: str = "") -> tuple[dict, dict]:
@@ -696,7 +748,7 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
         )
         payload = {"tool_use_id": call}
         body = {"questions": [item]}
-        checks.record_policy_question(payload, session, tool, body)
+        assert not pre(tool, body, **payload)
         if asynchronous:
             post(tool, payload, body, {})
         return payload, body
@@ -705,8 +757,7 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
         payload, body = asked
         if asynchronous:
             replies = [{"questionItemId": json.dumps([tool, payload["tool_use_id"], 0]), "answer": value}]
-            prompt = f"<send_user_message_question_reply>{json.dumps(replies)}</send_user_message_question_reply>"
-            assert user_prompt_submit.main(json.dumps({"session_id": session, "prompt": prompt, "model": "codex"})) == 0
+            prompt(f"<send_user_message_question_reply>{json.dumps(replies)}</send_user_message_question_reply>")
         else:
             answers = (
                 {"policy": {"answers": [value]}} if tool == "request_user_input" else {body["questions"][0]["question"]: value}
@@ -724,35 +775,82 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     )
 
     def blocked(command: str, shell: str = "Bash", sid: str = session, payload: dict | None = None) -> str | None:
-        return checks.policy_reapproval_block(payload or {}, shell, {"command": command}, sid)
+        reason = pre(shell, {"command": command}, sid, **(payload or {}))
+        return reason or None
+
+    malformed = (
+        {"title": "方針の承認：送った方針で進めてよいですか？", "options": []}
+        if asynchronous
+        else {"header": "方針の承認", "options": []}
+    )
+    reason = pre(tool, {"questions": [malformed]})
+    assert "決まった形でない" in reason
+    if asynchronous:
+        assert "title" in reason and 'optionsを["この方針で進める", "修正して進める"]' in reason
+    else:
+        assert "見出し「方針の承認」" in reason
+    outputs = [f"形式拒否 {tool}: {reason}"]
+
+    ordinary = (
+        {"questions": [{"title": "確認", "options": ["はい"]}]}
+        if asynchronous
+        else {"questions": [{"header": "確認", "question": "確認しますか", "id": "policy", "options": []}]}
+    )
+    assert not pre(tool, ordinary, tool_use_id="ordinary")
+    if asynchronous:
+        post(tool, {"tool_use_id": "ordinary"}, ordinary, {})
+    answer(({"tool_use_id": "ordinary"}, ordinary), revise)
+    assert not blocked(commands[0])
 
     answer(ask("approval-before"), approved)
     assert not blocked(commands[0])
+    answer(ask("choice-two"), "修正して進める")
+    plain_reason = blocked(commands[0])
+    assert plain_reason and "1行目は「方針（案）」です" in plain_reason
+    outputs.append(f"修飾なしの最終案内 {tool}: {plain_reason}")
+    send("方針（案）")
+    answer(ask("cleared-plain"), approved)
     answer(ask("revision", "2件目の"), revise)
+    modified_reason = blocked(commands[0])
+    assert modified_reason and "1行目は「方針（案） 2件目の」です" in modified_reason
+    assert "件名、補足、本文は2行目以降" in modified_reason and "同じ会話でagents_serverの接続を回復" in modified_reason
+    outputs.append(f"修飾ありの最終案内 {tool}: {modified_reason}")
     for shell in ("Bash", "exec_command", "functions.exec_command"):
         for command in commands:
             assert "問い直" in (blocked(command, shell) or "")
     for command in (
         "atk wi add --dry-run",
+        "atk wi edit 20261126-095854-001.md --body-file=draft.md --dry-run",
         "atk wi add --type=uwi",
         "atk wi edit 20261126-095854-002.md --body-file=draft.md",
         "atk wi start-processing awi.md",
     ):
         assert not blocked(command)
-    assert not checks.policy_reapproval_block({}, "Agent", {"command": commands[0]}, session)
+    assert "方針の修正回答に対する再承認" not in pre("spawn_agent" if host else "Agent", {"prompt": "読み取り"})
     with monkeypatch.context() as delegated:
         delegated.setenv("AGENT_TOOLKIT_OWNER_SESSION", session)
         for command in commands:
             assert "委譲元" in (blocked(command, sid="started-before") or "")
-    assert "委譲元" in (blocked(commands[0], payload={"agent_id": "child"}) or "")
+    for command in commands:
+        assert "委譲元" in (blocked(command, payload={"agent_id": "child"}) or "")
     assert not blocked(commands[0], sid="unrelated", payload={"agent_id": "child"})
+    (tmp_path / "copied.json").write_bytes((tmp_path / f"{session}.json").read_bytes())
+    assert not blocked(commands[0], sid="copied")
     send("進捗")
     answer(ask("progress", "2件目の"), approved)
     send("方針（案） 2件目の", ok=False)
     answer(ask("failed", "2件目の"), approved)
     send("方針（案）")
     answer(ask("unrelated"), approved)
-    checks.observe_async_policy_reply(session, approved)
+    prompt(approved)
+    assert blocked(commands[0])
+    if asynchronous:
+        prompt(
+            '<send_user_message_question_reply>[{"questionItemId":"["request_user_input_async","missing",0]","answer":"この方針で進める"}]</send_user_message_question_reply>'
+        )
+        assert blocked(commands[0])
+    send("方針（案） 2件目の方針")
+    answer(ask("extra-title", "2件目の"), approved)
     assert blocked(commands[0])
     old = ask("old", "2件目の")
     send("方針（案） 2件目の")
@@ -765,3 +863,85 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     answer(ask("new-approval", "2件目の"), approved)
     for command in commands:
         assert not blocked(command)
+    print("\n".join(outputs))
+
+
+def test_policy_reapproval_bounded_event_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    state: dict = {}
+    session = "bounded"
+    tick = 0
+
+    def update(_session: str, mutate: Callable[[dict], dict | None]) -> bool:
+        return mutate(state) is not None
+
+    def now() -> int:
+        return tick
+
+    checks = user_facing_checks
+    monkeypatch.setattr(checks, "update_state", update)
+    monkeypatch.setattr(checks.time, "time_ns", now)
+    name = "AskUserQuestion"
+    labels = ["この方針で進める", "修正して進める"]
+    modifiers = ("", "2件目の")
+    checked = 0
+    for (revision, approval, delivery), second_wait in itertools.product(itertools.product(modifiers, repeat=3), (False, True)):
+        other = next(modifier for modifier in modifiers if modifier != revision)
+        revision_text = f"送った{revision}方針で進めてよいですか？"
+        approval_text = f"送った{approval}方針で進めてよいですか？"
+
+        def issue(call: str, text: str) -> None:
+            body = {
+                "questions": [
+                    {
+                        "header": "方針の承認",
+                        "question": text,
+                        "options": list(checks._POLICY_APPROVAL_OPTIONS),
+                    }
+                ]
+            }
+            checks.record_policy_question({"tool_use_id": call}, session, name, body)
+
+        def answer(call: str, text: str, value: str) -> None:
+            checks.observe_policy_result({"tool_use_id": call, "tool_response": {"answers": {text: value}}}, session, name, {})
+
+        for order in itertools.permutations(("revise", "deliver", "issue", "approve")):
+            if order.index("issue") > order.index("approve"):
+                continue
+            state.clear()
+            tick = 0
+            issue("revision", revision_text)
+            if second_wait:
+                other_text = f"送った{other}方針で進めてよいですか？"
+                issue("other-revision", other_text)
+                answer("other-revision", other_text, labels[1])
+            for tick, event in enumerate(order, start=1):
+                if event == "revise":
+                    answer("revision", revision_text, labels[1])
+                elif event == "deliver":
+                    checks.observe_policy_result(
+                        {"tool_response": {"ok": True}},
+                        session,
+                        "mcp__agents_server__send_to_user",
+                        {"message": f"方針（案） {delivery}".rstrip()},
+                    )
+                elif event == "issue":
+                    issue("approval", approval_text)
+                else:
+                    answer("approval", approval_text, labels[0])
+                history = order[:tick]
+                expected = "revise" in history and not (
+                    revision == delivery == approval
+                    and all(action in history for action in ("revise", "deliver", "issue", "approve"))
+                    and order == ("revise", "deliver", "issue", "approve")
+                )
+                actual = state[checks._APPROVAL_STATE].get("waits", {})
+                remaining = {revision} if expected else set()
+                if second_wait and not (
+                    other == delivery == approval
+                    and {"deliver", "issue", "approve"}.issubset(history)
+                    and order.index("deliver") < order.index("issue")
+                ):
+                    remaining.add(other)
+                assert set(actual) == remaining, (revision, delivery, approval, history)
+            checked += 1
+    assert checked == 192

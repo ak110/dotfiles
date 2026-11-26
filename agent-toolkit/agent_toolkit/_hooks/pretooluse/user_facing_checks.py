@@ -250,6 +250,17 @@ def normalize_policy_question(tool_name: str, tool_input: dict) -> dict:
     return {"questions": normalized}
 
 
+def _policy_data(state: dict, session_id: str, *, create: bool = False) -> dict:
+    data = state.get(_APPROVAL_STATE)
+    if isinstance(data, dict) and data.get("owner") == session_id:
+        return data
+    # pyfltr: allow-comment -- transcriptから共通状態を継承しても、再承認は元の会話だけに属する。
+    data = {"owner": session_id} if create else {}
+    if create:
+        state[_APPROVAL_STATE] = data
+    return data
+
+
 def record_policy_question(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> None:
     call_id = payload.get("tool_use_id")
     if tool_name not in _APPROVAL_TOOLS or not isinstance(call_id, str) or not call_id:
@@ -269,7 +280,7 @@ def record_policy_question(payload: dict, session_id: str, tool_name: str, tool_
     key = tool_input["questions"][0].get("id") if tool_name == "request_user_input" else question["question"]
 
     def update(state: dict) -> dict:
-        data = state.setdefault(_APPROVAL_STATE, {})
+        data = _policy_data(state, session_id, create=True)
         data.setdefault("questions", {}).setdefault(call_id, [tool_name, match["modifier"], key, time.time_ns(), False])
         return state
 
@@ -313,7 +324,7 @@ def observe_policy_result(payload: dict, session_id: str, tool_name: str, tool_i
     call_id = payload.get("tool_use_id")
 
     def update(state: dict) -> dict | None:
-        data = state.get(_APPROVAL_STATE, {})
+        data = _policy_data(state, session_id)
         if delivery:
             message = tool_input.get("message")
             if response.get("ok") is not True or not isinstance(message, str):
@@ -370,7 +381,7 @@ def observe_async_policy_reply(session_id: str, prompt: str) -> None:
         return
 
     def update(state: dict) -> dict | None:
-        data = state.get(_APPROVAL_STATE, {})
+        data = _policy_data(state, session_id)
         changed = False
         for reply in replies:
             if not isinstance(reply, dict) or not isinstance(item_id := reply.get("questionItemId"), str):
@@ -421,7 +432,8 @@ def policy_reapproval_block(payload: dict, tool_name: str, tool_input: dict, ses
         return None
     main = _agent_id.is_main_agent_context(payload)
     owner = session_id if main else resolve_conversation_session_id() or session_id
-    if not read_state(owner).get(_APPROVAL_STATE, {}).get("waits"):
+    waits = _policy_data(read_state(owner), owner).get("waits")
+    if not waits:
         return None
     for segment in extract_execution_segments(command):
         tokens = segment.tokens
@@ -432,11 +444,13 @@ def policy_reapproval_block(payload: dict, tool_name: str, tool_input: dict, ses
             and tokens[1:3] in {("wi", "add"), ("wi", "edit")}
             and _saves_awi(tokens)
         ):
+            headings = "、".join(f"「方針（案）{f' {modifier}' if modifier else ''}」" for modifier in waits) if main else ""
             return _block_notice(
                 "方針の修正回答に対する再承認を待っているため、確定操作を止めました。",
                 fix=(
-                    "同じ会話で、修正した方針を1行目「方針（案）」（修飾があれば続けて記載）の"
-                    "send_to_userで送り、その後に同じ修飾の方針の承認を問い直してください。"
+                    f"同じ会話のsend_to_userで改訂版を送ってください。再送する方針の1行目は{headings}です。"
+                    "修飾なしの形は「方針（案）」、修飾ありの例は「方針（案） 2件目の」です。"
+                    "件名、補足、本文は2行目以降に書き、送達の後で同じ修飾の方針の承認を問い直してください。"
                     "送達できない場合は同じ会話でagents_serverの接続を回復してください（Claude Codeでは /mcp）。"
                     if main
                     else "委譲元が再送と再承認を行うまで確定できません。結果を委譲元へ返して待ってください。"
