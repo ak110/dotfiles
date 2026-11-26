@@ -408,10 +408,11 @@ def test_meta_log_evidence_distinguishes_unavailable_inputs(tmp_path, log_kind, 
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
-def test_terminal_progress_is_not_reproduced_in_batch_or_meta_failure(tmp_path, monkeypatch, engine):
+@pytest.mark.parametrize("separator", ["\n", "\r\n", "\r"])
+def test_terminal_progress_is_not_reproduced_in_batch_or_meta_failure(tmp_path, monkeypatch, engine, separator):
     terminal = io.StringIO()
     monkeypatch.setattr(terminal, "isatty", lambda: True)
-    text = "転載しない発話の先頭\n転載しない発話の続き"
+    text = f"転載しない発話の先頭{separator}転載しない発話の続き"
     event = (
         {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
         if engine == "claude"
@@ -425,7 +426,7 @@ def test_terminal_progress_is_not_reproduced_in_batch_or_meta_failure(tmp_path, 
         run_skill._copy_stream(source, "stdout", log, threading.Lock(), progress, engine)  # pylint: disable=protected-access
         log.write("終了状態: exit code 3\n")
     assert text in terminal.getvalue()
-    assert "[progress] 転載しない発話の続き" in path.read_text(encoding="utf-8")
+    assert "assistant: 転載しない発話" not in path.read_text(encoding="utf-8")
     details = run_skill_batch_evidence.meta_failure_evidence(
         run_skill_batch.PLUGIN_ROOT, stage="execution-3", detail=None, log_path=path, report_target=None
     )
@@ -438,3 +439,46 @@ def test_terminal_progress_is_not_reproduced_in_batch_or_meta_failure(tmp_path, 
     for body in bodies:
         assert "転載しない発話" not in body
         assert "残す診断" in body and "終了状態: exit code 3" in body
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+def test_reissuing_legacy_batch_failure_does_not_copy_terminal_projection(tmp_path, monkeypatch):
+    notes = run_skill_batch_test._notes()  # pylint: disable=protected-access
+    run_skill_batch_test._target(tmp_path, "one")  # pylint: disable=protected-access
+    log = tmp_path / "legacy.log"
+    model_text = "旧ログの会話先頭\n[stderr] 旧ログの会話続き"
+    event = {"type": "assistant", "message": {"content": [{"type": "text", "text": model_text}]}}
+    log.write_text(
+        f"[stdout] {json.dumps(event, ensure_ascii=False)}\nassistant: {model_text}\n"
+        "[stderr] 旧版のエラー\n終了状態: exit code 3\n",
+        encoding="utf-8",
+    )
+    version, oid = "0.0.1", "a" * 40
+    monkeypatch.setattr(run_skill_batch_evidence, "plugin_version", lambda _root: version)
+    monkeypatch.setattr(run_skill_batch_evidence, "plugin_source", lambda _root, _version: {"version": version, "commit": oid})
+    add_entries = run_skill_batch.add.add_entries
+
+    def unavailable(*_args, **_kwargs):
+        raise OSError("起票先を一時的に利用できない")
+
+    def fail(args):
+        path = pathlib.Path(args.batch_manifest)
+        session_review.write(path, {**session_review.read(path), "log_path": str(log)})
+        return 3
+
+    def unexpected(_args):
+        pytest.fail("保存だけの再試行でモデルを再起動した")
+
+    monkeypatch.setattr(run_skill_batch.add, "add_entries", unavailable)
+    args = run_skill_batch_test._args("manual")  # pylint: disable=protected-access
+    assert run_skill_batch.dispatch(args, fail) == 3
+    assert session_review.pending()[0]["failure_unreported"]
+    assert not run_skill_batch_test._failure_awis(notes)  # pylint: disable=protected-access
+    monkeypatch.setattr(run_skill_batch.add, "add_entries", add_entries)
+    version, oid = "0.0.2", "b" * 40
+    assert run_skill_batch.dispatch(args, unexpected) == 1
+    [report] = run_skill_batch_test._failure_awis(notes)  # pylint: disable=protected-access
+    body = report.read_text(encoding="utf-8")
+    assert "0.0.1" in body and "a" * 40 in body
+    assert "旧版のエラー" in body and "終了状態: exit code 3" in body
+    assert "旧ログの会話" not in body

@@ -7,7 +7,7 @@ from agent_toolkit._atk.session_record_format import SessionEvent, claude_events
 
 
 class Progress:
-    """stderrが端末の実行だけ進捗を表示し、表示した内容を生診断と同じログに残す。
+    """stderrが端末の実行だけ会話の進捗を表示し、診断ログには構造化出力を使う。  pyfltr: allow-comment
 
     readerからの呼出は生診断の書込と同じロックの内側で行い、ログと表示の順序を保つ。
     """
@@ -18,9 +18,8 @@ class Progress:
         self.enabled = stderr.isatty()
         self._seen_tools: set[str] = set()
 
-    def message(self, text: str, *, projected: bool = False) -> None:
-        prefix = "[progress] " if projected else ""
-        self.log.write("".join(f"{prefix}{line}\n" for line in text.split("\n")))
+    def message(self, text: str) -> None:
+        self.log.write(f"{text}\n")
         self.log.flush()
         if self.enabled:
             print(text, file=self.stderr, flush=True)
@@ -41,14 +40,39 @@ class Progress:
                 self.message(f"Codexのthread識別子: {record['thread_id']}")
             events = _codex_events(record)
         for event in events:
-            if event.kind == "assistant" and event.text:
-                self.message(f"assistant: {event.text}", projected=True)
-            elif event.kind == "tool_call" and event.name:
-                if event.call_id is not None:
-                    if event.call_id in self._seen_tools:
-                        continue
-                    self._seen_tools.add(event.call_id)
-                self.message(f"tool: {event.name}", projected=True)
+            text = _projected_text(event)
+            if text is None:
+                continue
+            if event.kind == "tool_call" and event.call_id is not None:
+                if event.call_id in self._seen_tools:
+                    continue
+                self._seen_tools.add(event.call_id)
+            print(text, file=self.stderr, flush=True)
+
+
+def _projected_text(event: SessionEvent) -> str | None:
+    if event.kind == "assistant" and event.text:
+        return f"assistant: {event.text}"
+    if event.kind == "tool_call" and event.name:
+        return f"tool: {event.name}"
+    return None
+
+
+def legacy_projection(payload: str) -> list[str]:
+    """旧ログでモデルの構造化行に直結していた端末用の派生表示を返す。  pyfltr: allow-comment"""
+    try:
+        record = json.loads(payload)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(record, dict):
+        return []
+    events = claude_events([record])[0] if record.get("type") == "assistant" else _codex_events(record)
+    return [
+        line
+        for event in events
+        if (text := _projected_text(event)) is not None
+        for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
 
 
 def _codex_events(record: dict[str, typing.Any]) -> list[SessionEvent]:

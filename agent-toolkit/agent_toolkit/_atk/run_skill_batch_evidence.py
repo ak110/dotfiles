@@ -11,7 +11,7 @@ import stat
 import sys
 from typing import Any
 
-from agent_toolkit._atk import run_skill_state
+from agent_toolkit._atk import run_skill_progress, run_skill_state
 from agent_toolkit._common import diagnostic_process, host_homes, session_record_paths, session_review
 from agent_toolkit._common.diagnostic_redaction import (
     ByteDiagnosticLine,
@@ -156,6 +156,7 @@ def _log_diagnostics(raw: Any, *, missing: str = "実行ログなし（モデル
     tail_bytes = 0
     tail_truncated = False
     omitted = 0
+    legacy_projection: collections.deque[str] = collections.deque()
     try:
         path = pathlib.Path(raw)
         if not path.is_file():
@@ -164,8 +165,13 @@ def _log_diagnostics(raw: Any, *, missing: str = "実行ログなし（モデル
         with path.open(encoding="utf-8", errors="replace") as stream:
             for raw_line in stream:
                 line = raw_line.rstrip("\r\n")
+                if legacy_projection and line == legacy_projection[0]:
+                    legacy_projection.popleft()
+                    continue
+                legacy_projection.clear()
                 if line.startswith(("[stdout] ", "[stderr] ")):
                     header_open = False
+                    legacy_projection.extend(run_skill_progress.legacy_projection(line.partition(" ")[2]))
                 if line.startswith("[stdout] "):
                     payload = line.removeprefix("[stdout] ")
 
