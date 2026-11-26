@@ -1,0 +1,42 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 依存差分の脆弱性を検査
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          license-check: false
+          show-openssf-scorecard: false
+
+      - name: 依存グラフのスナップショット警告を検査
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          response=$(gh api --include "repos/${REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}")
+          # 正常な応答にも空の警告ヘッダーが付く。本文は判定しない。
+          if ! awk '
+            { sub(/\r$/, "") }
+            /^$/ { exit }
+            tolower($0) ~ /^x-github-dependency-graph-snapshot-warnings:[[:space:]]*[^[:space:]]/ {
+              exit 1
+            }
+          ' <<< "$response"; then
+            echo "::error::依存グラフの比較にスナップショット警告があります。依存グラフの更新後に再実行してください。"
+            exit 1
+          fi

@@ -55,3 +55,35 @@ CI workflowを編集する時は、次を確かめる。
 - `container:`で実行するジョブのstepへ新しいコマンドの呼び出しを足す時は、先行するstepで導入されるか、ジョブが宣言する`image`にそのコマンドがあるかを確かめる。
   どちらでも確かめられないコマンドは、呼び出す前に同じジョブで導入する。
   `ENTRYPOINT`がシェルでないimageでは、`docker run --rm --entrypoint sh <image> -c 'command -v <command>'`で確かめる。
+
+## PRの依存差分チェック
+
+dotfilesでは、master宛ての全PRで`GitHub Dependency Review`を実行する。
+パスで限定せず、依存変更のないPRも成功の結果を返す。
+ライセンスチェックとOpenSSF Scorecardの表示は無効にし、既知の脆弱性を検出する。
+比較APIのエラーは成功扱いにしない。
+比較が成功しても `x-github-dependency-graph-snapshot-warnings` の値に警告があれば同じジョブを失敗させる。
+ヘッダーが無いか値が空なら、警告のチェックは成功とする。
+
+依存グラフが認識する `uv.lock`、`rust/claude-statusline/Cargo.lock`、workflowのaction、miseのロック配下の `package.json` は各定義の変更が比較結果に現れることを検証用PRで確かめる。
+SBOMに載るだけではPRで比較される証拠にしない。
+比較に現れない定義はチェック対象から外し、理由と別の監査の有無をここに記録する。
+
+- 定期監査の `audit.yaml` は残す。
+  PRのチェックとは別に、後から判明した `uv.lock` と `rust/claude-statusline/Cargo.lock` の脆弱性も検出する。
+- `agent-toolkit/scripts/launch.py.lock` は依存グラフの直接の対象外。
+  配布先の実行依存は `agent_toolkit_dependencies_invariant_test.py::test_locked_versions_match_root_lock` がルートの `uv.lock` との版の一致をチェックし、ルートのチェックと監査で間接的に覆う。
+- `mise.lock` と `.chezmoi-source/dot_config/mise/mise.lock` が固定するツールの版は、PRのチェックと既存の定期監査のどちらにも含まれない。
+
+通常のPRで結果が返ることを確かめてから、dotfilesの `master-release-pr` ルールセットに `Dependency Review` を必須チェックとして加える。
+他のリポジトリへは検知のみを導入し、ルールセットを新設しない。
+追従先でも、対象にする依存定義の変更が比較結果に現れることと、比較データを取得できない場合に成功しないことを確かめる。
+
+| リポジトリ | 対象または除外理由 |
+| --- | --- |
+| pyfltr | Python依存を検知する。 |
+| glatasks | `pnpm-lock.yaml` のnpm依存を検知する。 |
+| gv | Cargoとnpmの依存を検知する。 |
+| lc | npm依存を検知する。中央管理の `Directory.Packages.props` は一部しか認識されないため、NuGetは既存の定期監査に任せる。 |
+| pytilpack | 除外。ライブラリのlockfileは開発専用で、意図的に依存の警告を無効にしている。 |
+| smpr | 除外。非公開リポジトリの Dependency Reviewに必要な GitHub Advanced Security を個人アカウントでは使えない。 |
