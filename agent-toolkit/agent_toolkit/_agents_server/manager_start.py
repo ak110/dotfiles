@@ -584,6 +584,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         predecessor = SessionResumeState.from_session(current) if isinstance(current, SessionState) else current
         assert predecessor.model_type is not None
         role_type = await run_file_operation(launch_requests.current_role_model, predecessor, include_explicit=True)
+        previous_phase = predecessor.model_type if predecessor.model_type in _atk_config.MODEL_TYPES else None
         inherited_type = predecessor.model_type
         if inherited_type in _atk_config.MODEL_TYPES and role_type and not launch_requests.role_model_was_explicit(predecessor):
             inherited_type = role_type
@@ -593,12 +594,11 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         warnings = await check_model_override(
             self,
             successor_type,
-            default_type=role_type,
+            default_type=role_type or previous_phase,
             reason=model_override,
             evidence=model_override_evidence,
             inherited=model_type is None,
             launch_kind=predecessor.launch_kind,
-            fallback_phase=predecessor.model_type if predecessor.model_type in _atk_config.MODEL_TYPES else None,
             launch={
                 "mode": "handoff",
                 "cwd": predecessor.cwd,

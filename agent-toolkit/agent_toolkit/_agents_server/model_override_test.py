@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import backends, mcp_tools
+from agent_toolkit._agents_server import backends, mcp_tools, session_handoff
 from agent_toolkit._atk.wi import repo
 from agent_toolkit._atk.wi.uwi_body import ANSWER_MARKER
 from agent_toolkit._common.claude_usage_limit import UsageLimitState
@@ -305,6 +305,31 @@ async def test_dependency_failure_does_not_authorize_override(monkeypatch: pytes
             with pytest.raises(ToolError, match="週間上限"):
                 await mcp_tools.mcp.call_tool("start", {**fallback, "model_override_evidence": f"phase:{phase}"})
         assert not backend.start_calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "phase", "another_phase"), [("delegate", "review", "execute"), ("explore", "chores_fast", "chores")]
+)
+async def test_failed_handoff_does_not_change_phase_without_authority(monkeypatch, tmp_path, mode, phase, another_phase):
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{phase.upper()}_MODEL", "codex:original/high,codex:configured/high")
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{another_phase.upper()}_MODEL", "codex:other/high")
+    monkeypatch.setattr(session_handoff, "prepare_prompt", lambda predecessor: predecessor.prompt)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(cwd=str(tmp_path), mode=mode, prompt="前の作業", model_type=phase)
+        child = manager.sessions[started["session_id"]]
+        _complete(child, error={"codexErrorInfo": "serverOverloaded"})
+        backend.start_calls.clear()
+        release = AsyncMock(wraps=backend.release_session)
+        monkeypatch.setattr(backend, "release_session", release)
+        for wrong in (another_phase, _MODEL):
+            with pytest.raises(ToolError, match="週間上限"):
+                await mcp_tools.mcp.call_tool("start", {"handoff_from": child.session_id, "model_type": wrong})
+        assert not backend.start_calls
+        release.assert_not_awaited()
+        await mcp_tools.mcp.call_tool("start", {"handoff_from": child.session_id, "model_type": phase})
+        assert backend.start_calls == [("configured", "high", mode)]
 
 
 @pytest.mark.asyncio
