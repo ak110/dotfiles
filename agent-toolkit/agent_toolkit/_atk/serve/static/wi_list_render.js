@@ -41,6 +41,24 @@ export function entryStateText(entry) {
   return STATE_LABELS[displayState(entry)] || STATE_LABELS.unknown;
 }
 
+const BLOCKED_LABELS = new Map([
+  ['frontmatter-broken', '項目の情報に不備'],
+  ['branch-unregistered', '系統が未登録'],
+  ['invalid-cooldown', '再開日時が不正'],
+  ['invalid-dependency', '依存先の指定が不正'],
+  ['missing-dependency', '依存先が見つからない'],
+  ['self-dependency', '自身への依存'],
+  ['cyclic-dependency', '依存先が循環'],
+  ['dependency-unmet-internal', '依存先の処理待ち'],
+  ['dependency-unmet-external', '着手条件待ち'],
+]);
+
+function blockedLabel(entry) {
+  if (entry.waiting_for_answer === true) return '回答待ち';
+  if (!entry.blocked_reason || entry.blocked_reason === 'cooldown-until') return '';
+  return BLOCKED_LABELS.get(entry.blocked_reason) || '着手不可';
+}
+
 function updateEntryStateDisplay(entry, button, badge) {
   const state = displayState(entry);
   const label = entryStateText(entry);
@@ -53,7 +71,7 @@ function updateEntryStateDisplay(entry, button, badge) {
   button.setAttribute(
     'aria-label',
     [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
-      label, badge.title, entry.plan ? '計画あり' : '', entry.target_branch ? `系統 ${entry.target_branch}` : '',
+      label, badge.title, blockedLabel(entry), entry.plan ? '計画あり' : '', entry.target_branch ? `系統 ${entry.target_branch}` : '',
       entry.important === true ? '重要' : '',
       entry.kind === 'uwi' && entry.answered === false ? '未回答' : '', entry.summary || '要約なし']
       .filter(Boolean).join('、')
@@ -151,14 +169,10 @@ function renderEntry(entry) {
     status.append(important);
   }
 
-  if (entry.blocked === true) {
-    // 未回答UWIの回答待ちは保存状態ではなく依存先から導いた値であり、編集中のholdと区別して示す。
-    const blocked = document.createElement('span');
-    blocked.className = 'status-chip blocked-badge';
+  const waiting = blockedLabel(entry);
+  if (waiting) {
+    const blocked = appendTextCell(status, 'status-chip blocked-badge', waiting);
     blocked.dataset.state = 'warning';
-    blocked.textContent = 'blocked';
-    blocked.title = '未回答のUWIの回答待ち';
-    status.append(blocked);
   }
   if (entry.target_branch) {
     const branch = document.createElement('span');

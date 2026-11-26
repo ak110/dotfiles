@@ -30,16 +30,35 @@ async def test_blocked_badge_tracks_unanswered_uwi_dependency(browser_harness: _
         "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\ndepends_on:\n  - wait-question.md\n---\n\n# 回答待ち\n",
         encoding="utf-8",
     )
+    _entry_path(harness.root, "wait-prerequisite.md").write_text(
+        "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\n---\n\n# 前提\n", encoding="utf-8"
+    )
+    _entry_path(harness.root, "wait-another-awi.md").write_text(
+        "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\ndepends_on: [wait-prerequisite.md]\n---\n\n# 依存あり\n",
+        encoding="utf-8",
+    )
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator('.entry-select[data-key="waiting-awi.md"]')
-    await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_text("blocked")
+    awi_row = page.locator('.entry-select[data-key="wait-another-awi.md"]')
+    await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_text("回答待ち")
+    await playwright.async_api.expect(row).to_have_accessible_name(re.compile("回答待ち"))
+    await playwright.async_api.expect(awi_row.locator(".blocked-badge")).to_have_text("依存先の処理待ち")
+    await playwright.async_api.expect(awi_row).to_have_accessible_name(re.compile("依存先の処理待ち"))
     await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("受信")
     question_badges = page.locator('.entry-select[data-key="wait-question.md"] .blocked-badge')
     await playwright.async_api.expect(question_badges).to_have_count(0)
 
     uwi_path.write_text(unanswered + "回答済み\n", encoding="utf-8")
     harness.current_state.publish()
+    await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_text("依存先の処理待ち")
+    uwi_path.write_text(unanswered.replace("state: inbox", "state: adopted") + "回答済み\n", encoding="utf-8")
+    prerequisite = _entry_path(harness.root, "wait-prerequisite.md")
+    prerequisite.write_text(
+        prerequisite.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8"
+    )
+    harness.current_state.publish()
+    await playwright.async_api.expect(awi_row.locator(".blocked-badge")).to_have_count(0)
     await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_count(0)
     await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("受信")
 
