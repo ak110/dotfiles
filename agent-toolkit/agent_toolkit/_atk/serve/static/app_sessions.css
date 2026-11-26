@@ -170,13 +170,15 @@
   display: flex;
   gap: var(--space-2);
   align-items: center;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 #screen-sessions .event > summary::before {
   content: "▸";
   color: var(--color-secondary-text);
 }
 #screen-sessions .event[open] > summary::before { content: "▾"; }
-#screen-sessions .event .event-kind { flex: 0 0 auto; }
+#screen-sessions .event .event-kind { flex: 0 1 auto; max-inline-size: 100%; white-space: normal; }
 #screen-sessions .event .event-time {
   flex: 0 0 auto;
   color: var(--color-secondary-text);
@@ -434,7 +436,7 @@
 #settings-comparison { max-inline-size: 100%; max-block-size: 24rem; overflow: auto; }
 #settings-comparison th { text-align: start; background: var(--color-surface); padding: var(--space-2); }
 #settings-comparison thead th { position: sticky; inset-block-start: 0; z-index: 1; }
-#settings-comparison tbody th { position: sticky; inset-inline-start: 0; }
+#settings-comparison tbody th { position: sticky; inset-inline-start: 0; max-inline-size: 8rem; overflow-wrap: anywhere; }
 #settings-comparison td { min-inline-size: 10rem; overflow-wrap: anywhere; padding: var(--space-2); }
 #settings-comparison .settings-different { background: var(--color-warning-quiet); }
 #settings-unsaved:not(:empty) { padding-block: var(--space-2); }
