@@ -315,7 +315,9 @@ def dispatch(
     )
     commands = {
         "add": lambda: (
-            _batch.cmd_add_batch(args, private_notes, now, home) if args.batch else _add.cmd_add(args, private_notes, now, home)
+            _batch.cmd_add_batch(args, private_notes, now, home)
+            if args.batch
+            else _add.cmd_add(args, private_notes, now, home, matches_submit_bindings=_submit.matches_active_bindings)
         ),
         **{key: lambda: _attachments.cmd_attachments(args, private_notes) for key in ("attach", "attachments", "detach")},
         "list": lambda: _listing.cmd_list(args, private_notes),

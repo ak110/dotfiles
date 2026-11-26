@@ -172,7 +172,7 @@ def test_add_accepts_colloquial_and_dash_without_warnings(
     if editor:
         args.body_file = None
         monkeypatch.setattr(_wi_cli_input, "collect_message_via_editor", lambda: body)
-        add_module.cmd_add(args, notes, _FIXED_DT, tmp_path)
+        add_module.cmd_add(args, notes, _FIXED_DT, tmp_path, matches_submit_bindings=lambda *_: False)
     else:
         _run_public_add(args, notes, _FIXED_DT, tmp_path)
     captured = capsys.readouterr()

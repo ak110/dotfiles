@@ -364,7 +364,7 @@ async def test_wi_policy_review_continues_to_draft_in_same_session(
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         materials = {}
-        for name in ("方針", "原稿", "要求原本"):
+        for name in ("方針", "原稿", "要求原本", "指摘の扱い"):
             path = tmp_path / f"{name}.md"
             path.write_text(f"# {name}\n", encoding="utf-8")
             materials[name] = str(path)
@@ -393,6 +393,28 @@ async def test_wi_policy_review_continues_to_draft_in_same_session(
         assert materials["原稿"] in backend.prompts[-1]
         assert len(manager.sessions) == 1
         assert len(manager.sessions[session_id].followup_prompts) == 1
+
+        for params in ({}, {"指摘の扱い": str(tmp_path / "missing.md")}):
+            with pytest.raises(ToolError, match="指摘の扱い"):
+                await mcp_tools.mcp.call_tool(
+                    "send_message",
+                    {"session_id": session_id, "instruction": "再判定せよ", "extra_params": params},
+                )
+        assert len(manager.sessions[session_id].followup_prompts) == 1
+        await mcp_tools.mcp.call_tool(
+            "send_message",
+            {
+                "session_id": session_id,
+                "instruction": "再判定せよ",
+                "extra_params": {"指摘の扱い": materials["指摘の扱い"], "原稿": materials["原稿"]},
+            },
+        )
+        assert "再判定せよ" in backend.prompts[-1]
+        assert materials["指摘の扱い"] in backend.prompts[-1]
+        assert materials["原稿"] in backend.prompts[-1]
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "prompt": "訂正: 原稿の対象は開発用"})
+        assert "訂正: 原稿の対象は開発用" in backend.prompts[-1]
+        assert len(manager.sessions[session_id].followup_prompts) == 3
 
 
 @pytest.mark.parametrize(

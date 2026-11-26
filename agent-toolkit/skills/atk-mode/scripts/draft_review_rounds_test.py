@@ -218,3 +218,63 @@ def test_missing_identity_requires_unique_attribution(tmp_path: Path) -> None:
     log.wait("reviewer", _judgment("/same.md", "合格"), day=27)
     result = draft_review_rounds.period(log.collect(), _time(26), _time(26))
     assert (result["passed"], result["unassigned"], result["no_second"], result["pass_rate"]) == (1, 1, 1, 1.0)
+
+
+def test_collects_named_rejudgment_from_wrapped_codex(tmp_path: Path) -> None:
+    path = tmp_path / "rollout-parent.jsonl"
+    draft = r"C:\drafts\shared.md"
+    entries: list[dict[str, object]] = []
+    _wrap_codex(
+        entries,
+        f'text(await tools.mcp__agents_server__start({{ subagent_md_path: "{_ROLE}" }}))',
+        '{"session_id":"reviewer"}',
+    )
+
+    def wait(body: str, *, day: int) -> None:
+        _wrap_codex(
+            entries,
+            "text(await tools.mcp__agents_server__wait({}))",
+            json.dumps({"session_id": "reviewer", "status": "completed", "agent_message": body}),
+            day=day,
+        )
+
+    wait(_judgment(draft, "修正要", "a") + _judgment(draft, "修正要", "b"), day=26)
+    args = {"session_id": "reviewer", "instruction": "再判定せよ", "extra_params": {"原稿": draft, "要求識別子": "b"}}
+    _wrap_codex(
+        entries,
+        f"text(await tools.mcp__agents_server__send_message({json.dumps(args, ensure_ascii=False)}))",
+        '{"delivery":"reply_started"}',
+        day=27,
+    )
+    wait(_judgment(draft, "合格"), day=27)
+    path.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    result = draft_review_rounds.period(draft_review_rounds.collect([path]), _time(26), _time(27))
+    assert (result["passed"], result["unassigned"], result["no_second"]) == (1, 0, 1)
+
+
+@pytest.mark.parametrize(("shared_path", "moved_draft"), [(False, False), (True, False), (False, True)])
+def test_rejudgment_uses_draft_and_identity_from_named_continuation(
+    tmp_path: Path, shared_path: bool, moved_draft: bool
+) -> None:
+    log = _Log(tmp_path / "parent.jsonl")
+    log.start("reviewer", subagent_md_path=_ROLE)
+    draft = "/shared.md"
+    first = _judgment(draft, "修正要", "b")
+    if shared_path:
+        first = _judgment(draft, "修正要", "a") + first
+    log.wait("reviewer", first)
+    if moved_draft:
+        draft = "/corrected.md"
+    log.call(
+        "mcp__agents_server__send_message",
+        {
+            "session_id": "reviewer",
+            "instruction": "再判定せよ",
+            "extra_params": {"原稿": draft, "要求識別子": "b", "指摘の扱い": "/corrections.md"},
+        },
+        {"delivery": "reply_started"},
+        day=27,
+    )
+    log.wait("reviewer", _judgment(draft, "合格"), day=27)
+    result = draft_review_rounds.period(log.collect(), _time(26), _time(27))
+    assert (result["passed"], result["unassigned"], result["no_second"]) == (1, 0, int(shared_path))

@@ -26,7 +26,8 @@
      この段階では冒頭は原稿のH1から最初のH2までを直接読み、作成主体が行う先行のdry-runと冒頭抽出は省く。
      合格後に検収者か作成主体が`--origin-review <検収結果の絶対パス>`を付けてdry-runを行い、その抽出を後続の検収へ使う。
    - 新規は`atk wi add --dry-run --body-file <原稿の絶対パス> --source <source>`を使う。
-     調査基点がある新規AWIは`--target-repo <宛先worktree> --draft-base <ベースref> <完全OID>`も指定する。
+     調査基点がある新規AWIは`--target-repo <宛先worktree> --draft-base <宛先ブランチ> <完全OID>`も指定する。
+     宛先ブランチは`refs/heads/<ブランチ>`か、宛先に実在し、`/`を含まないブランチ名で指定する。
      系統を登録した宛先では、初回・再検収のどちらも本保存と同じ`--target-branch <系統>`を渡す。
    - 更新は`atk wi edit <ファイル名> --dry-run --body-file <原稿の絶対パス>`を使う。
    - `source`は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決め、原稿のfrontmatterに指定済みなら`--source`を省く。
@@ -154,7 +155,7 @@
    原要求の検収対象では、dry-runと同じ`--origin-review`を付ける。
    正式なWI名に置換した原稿も、検収者が置換先を確かめた版の結果を使う。
    - 新規は`atk wi add --body-file <原稿の絶対パス>`で保存する。
-     dry-runに調査基点を指定した新規AWIは、同じ宛先と`--draft-base`を使う。
+     dry-runに調査基点を指定した新規AWIは、同じ宛先と`--draft-base <宛先ブランチ> <完全OID>`を使う。
      不一致なら同じ宛先で基点を選び直し、影響する前提の調査・原稿の修正・検収をやり直す。
    - `ファイル名`を受け取った要求は新規に保存せず、`atk wi show --pull`で取得した現行本文を改訂して`atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で保存する。
    - 投入は要求ごとに1回だけ行う。

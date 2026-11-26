@@ -105,7 +105,11 @@
    方式を変えた時は、開始・途中の失敗からの再開・終了までの成立性を`agent-toolkit:atk-mode/references/drafting-decisions.md`「実現方式の成立」で確かめる。
    修正のたびに状態管理や照会手段を足す指摘が続く時は、方式の維持、縮小、代替案への切り替えを`agent-basics:writing-standards/references/design-heuristics.md`「問題と手段の比例性」で比べる。
    指摘が繰り返される原因は`agent-basics:bugfix/references/recurrence.md`に従って分析し、成立性の未解決事項は繰り返されても解消してから合格とする。
-6. レビュー担当が「要」とした範囲の再判定は、`agent-toolkit:atk-mode/references/draft-semantic-review.md`「初回と再判定・差戻し」の受け渡しに従い、指摘ごとの扱いと根拠がそろってから `send_message` で頼む。
+6. レビュー担当が「要」とした範囲の再判定は、`agent-toolkit:atk-mode/references/draft-semantic-review.md`「初回と再判定・差戻し」手順2に従って指摘ごとの扱いをファイルへ保存し、同じsessionへ`send_message`で頼む。
+   `instruction: 再判定せよ`と、`extra_params`に`指摘の扱い`（ファイルの絶対パス）を渡す。
+   変わった資料は、方針段階では`方針`、本文段階では単一原稿か対応表の`原稿`と、単一原稿の新しい`ユーザー向け部分`・`dry-run出力`を渡す。
+   対応表の各原稿に属する抽出と出力は対応表に置く。
+   複数原稿から再判定する要求は`要求識別子`で特定し、必要な場合は`再判定の対象範囲`も渡す。
    前提が変わる修正は`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」で要否を照会する。
    「不要」の範囲は、起動側が採否と修正後の成立性・直接影響の検証を確かめて保存へ進める。
    変更の無い共通資料と合格済みの要求の結果は保ち、変わらない抽出は読者別探索の再点検を省く条件に従って再利用する。

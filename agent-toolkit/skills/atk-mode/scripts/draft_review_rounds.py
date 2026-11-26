@@ -16,7 +16,10 @@ from session_evidence_tool_calls_records import _record_tool_calls, _recorded_in
 
 _FIELD = re.compile(r"^\s*(?:-\s+)?(要求識別子|判定|確認段階|対象資料):[ \t]*(.*?)\s*$")
 _WRAPPED_CALL = re.compile(r"\btools\.mcp__agents_server__(start|send_message|wait)\s*\(")
-_WRAPPED_ARGUMENT = re.compile(r"""(?:["']?(subagent_md_path|handoff_from|session_id)["']?)\s*:\s*["']([^"'\r\n]+)["']""")
+_WRAPPED_ARGUMENT = re.compile(
+    r"""(?:["']?(subagent_md_path|handoff_from|session_id|instruction|原稿|要求識別子)["']?)\s*:\s*"""
+    r"""("(?:[^"\\\r\n]|\\.)*"|'(?:[^'\\\r\n]|\\.)*')"""
+)
 
 _SHELL_CALL = re.compile(
     r"(?:[ \t]*// @exec:[^\r\n]*\r?\n)?\s*"
@@ -37,6 +40,20 @@ class _Collected(NamedTuple):
     series: dict[str, str]
     receipts: list[_Receipt]
     requests: dict[str, list[tuple[datetime, str]]]
+
+
+def _wrapped_arguments(source: str) -> dict[str, object]:
+    fields: dict[str, str] = {}
+    for key, literal in _WRAPPED_ARGUMENT.findall(source):
+        if literal.startswith('"'):
+            try:
+                fields[key] = json.loads(literal)
+            except ValueError:
+                continue
+        else:
+            fields[key] = re.sub(r"\\([\\'])", r"\1", literal[1:-1])
+    params = {key: fields.pop(key) for key in ("原稿", "要求識別子") if key in fields}
+    return {**fields, "extra_params": params}
 
 
 def _structured(value: object) -> object:
@@ -154,7 +171,7 @@ def collect(roots: list[Path]) -> _Collected:
                 operations = _WRAPPED_CALL.findall(call.text)
                 if len(operations) == 1:
                     operation = operations[0]
-                    args = dict(_WRAPPED_ARGUMENT.findall(call.text))
+                    args = _wrapped_arguments(call.text)
                 elif not operations and "tools.write_stdin" not in call.text and re.search(r"\bagents\s+wait\b", call.text):
                     operation = "wait"
             if operation not in {"start", "send_message", "wait"} or call.result_line is None:
@@ -222,7 +239,11 @@ def collect(roots: list[Path]) -> _Collected:
                 continue
             if operation in {"start", "send_message"} and isinstance(value, dict):
                 session = (value if operation == "start" else args).get("session_id")
-                prompt = args.get("prompt") or args.get("instruction") or args.get("extra_params")
+                instruction = args.get("instruction")
+                if instruction == "再判定せよ" and isinstance(params := args.get("extra_params"), dict):
+                    prompt = {key: params[key] for key in ("原稿", "要求識別子") if key in params}
+                else:
+                    prompt = args.get("prompt") or instruction or args.get("extra_params")
                 if isinstance(session, str) and (operation == "start" or value.get("delivery") in ("reply_started", "steered")):
                     deliveries[session] += 1
                 if isinstance(session, str) and isinstance(prompt, (str, dict)):
@@ -268,7 +289,9 @@ def _judgments(body: str) -> Iterator[dict[str, str]]:
     yield fields
 
 
-def _request_identity(collected: _Collected, receipt: _Receipt, path: str, ids: set[str]) -> str | None:
+def _request_identity(
+    collected: _Collected, receipt: _Receipt, path: str, path_ids: set[str], series_ids: set[str]
+) -> str | None:
     candidates = [(time, prompt) for time, prompt in collected.requests.get(receipt.session, ()) if time <= receipt.timestamp]
     if not candidates:
         return None
@@ -277,17 +300,28 @@ def _request_identity(collected: _Collected, receipt: _Receipt, path: str, ids: 
     if len(prompts) != 1:
         return None
     prompt = next(iter(prompts))
+    try:
+        params = json.loads(prompt)
+    except ValueError:
+        params = None
+    if isinstance(params, dict):
+        identity = params.get("要求識別子")
+        if not isinstance(identity, str) or identity not in series_ids:
+            return None
+        draft = params.get("原稿")
+        return identity if draft == path or identity in path_ids else None
     if path not in prompt:
         return None
     matches = {
         match[2].strip("`") for line in prompt.splitlines() if (match := _FIELD.fullmatch(line)) and match[1] == "要求識別子"
     }
-    return next(iter(matches)) if len(matches) == 1 and matches <= ids else None
+    return next(iter(matches)) if len(matches) == 1 and matches <= path_ids else None
 
 
 def period(collected: _Collected, since: datetime, until: datetime) -> dict[str, int | float | str]:
     counts = dict.fromkeys(("passed", "failed", "first_pass", "no_second", "missing_path", "unassigned"), 0)
     by_path = defaultdict(list)
+    series_ids: dict[str, set[str]] = defaultdict(set)
     for receipt in collected.receipts:
         if receipt.session not in collected.series:
             continue
@@ -299,26 +333,34 @@ def period(collected: _Collected, since: datetime, until: datetime) -> dict[str,
             if not path or path == "なし":
                 counts["missing_path"] += int(since <= receipt.timestamp <= until)
                 continue
-            by_path[collected.series[receipt.session], path].append((receipt, fields.get("要求識別子"), verdict))
-    for (_, path), rows in by_path.items():
-        ids = {identity for _, identity, _ in rows if identity}
-        tracks = defaultdict(list)
+            series = collected.series[receipt.session]
+            identity = fields.get("要求識別子")
+            by_path[series, path].append((receipt, identity, verdict))
+            if identity:
+                series_ids[series].add(identity)
+    tracks = defaultdict(list)
+    for (series, path), rows in by_path.items():
+        path_ids = {identity for _, identity, _ in rows if identity}
         for receipt, identity, verdict in rows:
-            if not identity and len(ids) > 1:
-                identity = _request_identity(collected, receipt, path, ids)
+            if not identity:
+                identity = _request_identity(collected, receipt, path, path_ids, series_ids[series])
                 if identity is None:
-                    counts["unassigned"] += int(since <= receipt.timestamp <= until)
-                    continue
-            tracks[identity or next(iter(ids), None)].append((receipt.timestamp, verdict))
-        for track in tracks.values():
-            first, verdict = track[0]
-            if not since <= first <= until:
-                continue
-            if verdict == "合格":
-                counts["first_pass"] += 1
-            elif len(track) < 2:
-                counts["no_second"] += 1
-            else:
-                counts["passed" if track[1][1] == "合格" else "failed"] += 1
+                    if len(path_ids) > 1:
+                        counts["unassigned"] += int(since <= receipt.timestamp <= until)
+                        continue
+                    identity = next(iter(path_ids), None)
+            key = (series, identity, None if identity else path)
+            tracks[key].append((receipt.timestamp, receipt.order, verdict))
+    for track in tracks.values():
+        track.sort()
+        first, _, verdict = track[0]
+        if not since <= first <= until:
+            continue
+        if verdict == "合格":
+            counts["first_pass"] += 1
+        elif len(track) < 2:
+            counts["no_second"] += 1
+        else:
+            counts["passed" if track[1][2] == "合格" else "failed"] += 1
     denominator = counts["passed"] + counts["failed"]
     return {**counts, "pass_rate": counts["passed"] / denominator if denominator else "判定不能"}

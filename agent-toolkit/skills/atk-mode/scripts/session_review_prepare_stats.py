@@ -255,9 +255,14 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
                 f"{document['path']}（{document['count']}回、{document['bytes']}バイト）"
                 for document in interval.get("norm_doc_display_top", [])
             )
+            missing_reads = interval.get("read_content_unknown_count", 0)
+            missing_norm_reads = interval.get("norm_doc_read_content_unknown_count", 0)
+            known_tools = "（既知分）" if missing_reads else ""
+            known_norm = f"（本文不明{missing_norm_reads}件を除く）" if missing_norm_reads else ""
             line += (
-                f"、区間のツール出力{interval.get('tool_output_bytes', 0)}バイト、"
-                f"うちエージェント向け文書の表示{interval.get('norm_doc_display_bytes', 0)}バイト（上限寄り）"
+                f"、区間のツール出力{interval.get('tool_output_bytes', 0)}バイト{known_tools}、"
+                f"うちエージェント向け文書の表示{interval.get('norm_doc_display_bytes', 0)}バイト（上限寄り）{known_norm}"
+                + (f"、読取本文不明{missing_reads}件" if missing_reads else "")
                 + (f"、表示の多いエージェント向け文書: {top}" if top else "")
             )
         lines.append(line)

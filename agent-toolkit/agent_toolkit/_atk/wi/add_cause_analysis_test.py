@@ -235,6 +235,7 @@ def test_add_rejects_undetermined_cause_in_uwi(
             notes,
             _FIXED_DT,
             tmp_path,
+            matches_submit_bindings=lambda *_: False,
         )
 
     assert exc_info.value.code == 1

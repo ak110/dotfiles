@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 
 from agent_toolkit._atk import managed_temp, research_sources
 from agent_toolkit._atk import outcome as _outcome
@@ -82,24 +82,44 @@ class DraftBasis:
         def git(*args: str) -> subprocess.CompletedProcess[str]:
             return _git_command.run(["-C", str(self.worktree), *args], capture_output=True, text=True, check=False, timeout=10)
 
-        if not self.branch_ref.startswith("refs/heads/") or git("check-ref-format", self.branch_ref).returncode != 0:
-            raise WebInputError("起草のベースにはrefs/heads/から始まる完全なrefが必要", next_action=_DRAFT_NEXT)
+        branch_ref = self.branch_ref
+        if not branch_ref.startswith("refs/heads/"):
+            if "/" in branch_ref:
+                candidates: set[str] = set()
+                local_ref = f"refs/heads/{branch_ref}"
+                if git("show-ref", "--verify", "--quiet", local_ref).returncode == 0:
+                    candidates.add(local_ref)
+                current_branch = git("symbolic-ref", "--quiet", "HEAD")
+                destination = (
+                    f"refs/heads/{registered_branch}" if registered_branch is not None else current_branch.stdout.strip()
+                )
+                if destination.startswith("refs/heads/") and branch_ref.partition("/")[2] == destination.removeprefix(
+                    "refs/heads/"
+                ):
+                    candidates.add(destination)
+                candidate = next(iter(candidates)) if len(candidates) == 1 else None
+                raise self._invalid_branch(candidate)
+            branch_ref = f"refs/heads/{branch_ref}"
+            if git("show-ref", "--verify", "--quiet", branch_ref).returncode != 0:
+                raise self._invalid_branch()
+        if git("check-ref-format", branch_ref).returncode != 0:
+            raise self._invalid_branch()
         if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", self.oid) is None:
             raise WebInputError("起草の基点には完全なOIDが必要", next_action=_DRAFT_NEXT)
-        branch = self.branch_ref.removeprefix("refs/heads/")
+        branch = branch_ref.removeprefix("refs/heads/")
         if registered_branch is not None:
             if registered_branch != branch:
                 raise WebInputError("起草のベースが登録済みの宛先系統と一致しない", next_action=_DRAFT_NEXT)
             ref = f"refs/remotes/origin/{branch}"
         else:
             current_branch = git("symbolic-ref", "--quiet", "HEAD")
-            if current_branch.returncode != 0 or current_branch.stdout.strip() != self.branch_ref:
+            if current_branch.returncode != 0 or current_branch.stdout.strip() != branch_ref:
                 raise WebInputError("起草のベースが宛先worktreeの現在のブランチと一致しない", next_action=_DRAFT_NEXT)
-            result = git("for-each-ref", "--format=%(refname)%09%(upstream)", self.branch_ref)
+            result = git("for-each-ref", "--format=%(refname)%09%(upstream)", branch_ref)
             if result.returncode != 0:
                 raise WebInputError("起草のベースrefを照会できない", next_action=_DRAFT_NEXT)
             selected = next(
-                (line.partition("\t")[2] for line in result.stdout.splitlines() if line.partition("\t")[0] == self.branch_ref),
+                (line.partition("\t")[2] for line in result.stdout.splitlines() if line.partition("\t")[0] == branch_ref),
                 None,
             )
             if selected is None:
@@ -108,12 +128,22 @@ class DraftBasis:
                 configured = (git("config", "--get", f"branch.{branch}.{key}") for key in ("remote", "merge"))
                 if any(setting.returncode != 1 for setting in configured):
                     raise WebInputError("設定済みの宛先上流を解決できない", next_action=_DRAFT_NEXT)
-            ref = selected or self.branch_ref
+            ref = selected or branch_ref
         current = git("rev-parse", "--verify", f"{ref}^{{commit}}")
         if current.returncode != 0:
             raise WebInputError(f"取得済みの宛先refを解決できない: {ref}", next_action=_DRAFT_NEXT)
         if current.stdout.strip() != self.oid:
             raise WebInputError(f"起草の基点が取得済みの宛先refと一致しない: {ref}", next_action=_DRAFT_NEXT)
+
+    @staticmethod
+    def _invalid_branch(candidate: str | None = None) -> WebInputError:
+        forms = "refs/heads/<ブランチ>、または宛先に実在する / を含まないブランチ名"
+        action = (
+            f"--draft-baseのブランチには {candidate} を指定する"
+            if candidate
+            else f"--draft-baseのブランチを {forms} で指定する"
+        )
+        return WebInputError(f"起草のベースには {forms} が必要", next_action=action)
 
 
 def _ensure_draft_destinations(
@@ -620,15 +650,25 @@ def read_body_files(paths: list[str]) -> list[str]:
     return bodies
 
 
-def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]) -> bool:
+def _require_process_wi_timing(
+    args: argparse.Namespace,
+    data: dict[str, object],
+    target_repo: str | None,
+    matches_submit_bindings: Callable[[object, str], bool],
+) -> bool:
     timing = getattr(args, "process_wi_timing", None)
     if args.type != WI_TYPE_AWI:
         return False
-    in_process_wi = (
-        os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") == "1"
-        or args.source == "process-wi"
-        or data.get("source") == "process-wi"
-    )
+    in_process_wi = os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") == "1" or args.source == "process-wi"
+    if not in_process_wi and data.get("source") == "process-wi":
+        bindings = data.get("wi_submit_bindings")
+        if bindings:
+            raw_target_repo = data.get("target_repo", target_repo)
+            if isinstance(raw_target_repo, str) and matches_submit_bindings(
+                bindings, resolve_repo_id_or_raise(raw_target_repo)
+            ):
+                return False
+        in_process_wi = True
     next_action = "--process-wi-timing に this-run（今回）か next-run（次回）を指定して再投入する"
     if in_process_wi and timing is None and getattr(args, "hold", False):
         raise WebInputError(
@@ -695,6 +735,8 @@ def cmd_add(
     private_notes: pathlib.Path,
     now: datetime.datetime,
     home: pathlib.Path,
+    *,
+    matches_submit_bindings: Callable[[object, str], bool],
 ) -> None:
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。
 
@@ -745,8 +787,7 @@ def cmd_add(
                     next_action=_user_comment.AGENT_USER_COMMENT_ADD_NEXT_ACTION,
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
-            if not args.dry_run:
-                join_current = _require_process_wi_timing(args, frontmatter) or join_current
+            join_current = _require_process_wi_timing(args, frontmatter, target_repo, matches_submit_bindings) or join_current
             _require_agent_source(frontmatter, args.source)
             try:
                 require_agent_awi_sections(

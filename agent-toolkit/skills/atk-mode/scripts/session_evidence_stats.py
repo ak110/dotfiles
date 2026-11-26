@@ -511,12 +511,12 @@ def _displayed_norm_documents(tool: str, block_input: Any, hint: str | None) -> 
     return []
 
 
-def _output_bytes(value: Any) -> int:
-    """ツール出力の本文をUTF-8のバイト数で返す。構造化された出力は文字列部分だけを数える。"""
+def _output_bytes(value: Any) -> int | None:
     if isinstance(value, str):
         return len(value.encode())
     if isinstance(value, list):
-        return sum(_output_bytes(item) for item in value)
+        sizes = [size for item in value if (size := _output_bytes(item)) is not None]
+        return sum(sizes) if sizes else None
     if isinstance(value, dict):
         if isinstance(value.get("text"), str):
             return len(value["text"].encode())
@@ -524,7 +524,14 @@ def _output_bytes(value: Any) -> int:
             return _output_bytes(value["content"])
         if "output" in value:
             return _output_bytes(value["output"])
-    return 0
+    return None
+
+
+def _claude_read_fallback(entry: dict[str, Any]) -> str | None:
+    result = entry.get("toolUseResult")
+    file = result.get("file") if isinstance(result, dict) else None
+    content = file.get("content") if isinstance(file, dict) else None
+    return content if isinstance(content, str) else None
 
 
 def _compaction_usage_events(item: _CollectedRecord) -> list[dict[str, Any]]:
@@ -532,10 +539,13 @@ def _compaction_usage_events(item: _CollectedRecord) -> list[dict[str, Any]]:
     if runtime not in {"claude", "codex"}:
         return []
     calls: dict[str, list[str]] = {}
+    claude_reads: set[str] = set()
     events: list[dict[str, Any]] = []
     total = 0
     norm = 0
     documents: dict[str, list[int]] = {}
+    missing_reads = 0
+    missing_norm_reads = 0
     for record in item.records:
         entry = record.entry
         if _compaction_event(record, item.record_id) is not None:
@@ -547,6 +557,8 @@ def _compaction_usage_events(item: _CollectedRecord) -> list[dict[str, Any]]:
                     "line": record.line,
                     "tool_output_bytes": total,
                     "norm_doc_display_bytes": norm,
+                    **({"read_content_unknown_count": missing_reads} if missing_reads else {}),
+                    **({"norm_doc_read_content_unknown_count": missing_norm_reads} if missing_norm_reads else {}),
                     "norm_doc_display_top": [
                         {"path": path, "count": count, "bytes": size} for path, (count, size) in top[:_COMPACTION_TOP_DOCUMENTS]
                     ],
@@ -555,23 +567,42 @@ def _compaction_usage_events(item: _CollectedRecord) -> list[dict[str, Any]]:
             total = 0
             norm = 0
             documents = {}
+            missing_reads = 0
+            missing_norm_reads = 0
             continue
-        outputs: list[tuple[str, Any]] = []
+        outputs: list[tuple[str, int]] = []
         if runtime == "claude":
             message = entry.get("message")
             content = message.get("content") if isinstance(message, dict) else None
             if not isinstance(content, list):
                 continue
+            results = [block for block in content if isinstance(block, dict) and block.get("type") == "tool_result"]
             for block in content:
                 if not isinstance(block, dict):
                     continue
-                if block.get("type") == "tool_use" and isinstance(block.get("id"), str):
+                if block.get("type") == "tool_use" and isinstance(call_id := block.get("id"), str):
                     name = str(block.get("name", ""))
-                    calls[block["id"]] = _displayed_norm_documents(
-                        name, block.get("input"), _claude_call_hint(block.get("input"))
-                    )
-                elif block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
-                    outputs.append((block["tool_use_id"], block.get("content")))
+                    if name == "Read":
+                        claude_reads.add(call_id)
+                    calls[call_id] = _displayed_norm_documents(name, block.get("input"), _claude_call_hint(block.get("input")))
+            for block in results:
+                call_id = block.get("tool_use_id")
+                if not isinstance(call_id, str):
+                    continue
+                size = _output_bytes(block.get("content"))
+                if call_id in claude_reads:
+                    if block.get("is_error"):
+                        total += size or 0
+                        size = None
+                    elif not size and len(results) == 1:
+                        fallback = _claude_read_fallback(entry)
+                        if fallback is not None:
+                            size = len(fallback.encode())
+                    if size is None:
+                        missing_reads += 1
+                        missing_norm_reads += bool(calls.get(call_id))
+                        continue
+                outputs.append((call_id, size or 0))
         else:
             payload = entry.get("payload")
             if not isinstance(payload, dict):
@@ -584,9 +615,8 @@ def _compaction_usage_events(item: _CollectedRecord) -> list[dict[str, Any]]:
             elif payload_type in {"custom_tool_call_output", "function_call_output"} and isinstance(
                 payload.get("call_id"), str
             ):
-                outputs.append((payload["call_id"], payload.get("output")))
-        for call_id, value in outputs:
-            size = _output_bytes(value)
+                outputs.append((payload["call_id"], _output_bytes(payload.get("output")) or 0))
+        for call_id, size in outputs:
             total += size
             displayed = calls.get(call_id, [])
             if displayed:
