@@ -3,12 +3,24 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._atk import config, config_repositories, config_settings
+from agent_toolkit._atk import config, config_repositories, config_repositories_cli, config_settings
 from agent_toolkit._git import remote
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing.config_support import _isolate_platformdirs, _main, _saved, _write_config
 
 __all__ = ["_isolate_platformdirs"]
+
+
+def test_repositories_terminal_summary_preserves_json(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config_repositories_cli, "is_human_terminal", lambda _stream: True)
+    repo = "example.org/team/repo"
+    assert _main(tmp_path, "config", "repos", "add", repo, "--edit", "awi", "--platforms", "linux") == 0
+    capsys.readouterr()
+    assert _main(tmp_path, "config", "repos", "list") == 0
+    shown = capsys.readouterr().out
+    assert repo in shown and "編集: AWIのみ" in shown and "検証OS: linux" in shown
+    assert _main(tmp_path, "config", "repos", "list", "--json") == 0
+    assert json.loads(capsys.readouterr().out)[repo] == {"edit": "awi", "process_loop": False, "platforms": ["linux"]}
 
 
 def test_repository_cli_round_trip(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

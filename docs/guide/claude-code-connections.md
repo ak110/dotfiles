@@ -80,18 +80,16 @@ Codexの会話は移った接続を使い続け、新しい会話だけを使用
 同期先が無い環境ではローカル設定をそのまま変更できる。
 
 1. 移行する各ホストで `atk config migrate-shared` を実行する。
-   JSONの `local` と `shared` を比較し、`comparison` で一致、差、片方にのみあるキーを確かめる。
-   共有ファイルがまだなく、手元に旧`codex_fast_mode`がある場合は、このキーを共有へ移さず、`initial_not_shared`に移行後の初期値`auto`を示す。
-   それ以外では`initial_not_shared`は空になる。
-   共有ファイルが既にあれば、そのホストで初めて移行する場合も、旧速度設定は他のキーと同じく比較と選択の対象になる。
-   両ホストの値が違う場合は、共有に採る値を決めてから実行する。
-   認可されたエージェントも同じコマンドを使える。
-2. `atk config migrate-shared --apply <REVISION>` に、そのホストで比較時に出た版を渡す。
-   共有ファイルが既にあり、ローカル値と共有で使う値が違うキーは、`--keep-local KEY` か `--keep-shared KEY` で指定する。
+   端末には、キーごとのローカル保存値・共有保存値と、移行後の値または選択肢が表示される。
+   初回はローカル値が共有になるが、旧`codex_fast_mode`は共有へ移さず、初期値の`auto`になる。
+   共有ファイルが既にあれば、別のホストで初めて移行する場合も速度設定は比較と選択の対象になる。
+   自動処理で従来のJSONを読む場合は `atk config migrate-shared --json` を使う。
+2. 表示された `atk config migrate-shared --apply <REVISION>` を使う。
+   選択が必要なキーごとに、表示された `--keep-local KEY` か `--keep-shared KEY` の一方をコマンドに追加する。
    `--keep-local` を選んだ設定は他のホストにも同期する。
    他のホストを移行する前に、最新の共有設定から比較し直す。
 3. 同期が確認できたホストだけでローカルの共有キーが除かれる。
-   `atk config migrate-shared` の `local` が空であることと、`atk config get KEY` で合意した実効値を確かめる。
+   `atk config migrate-shared` に適用不要と表示されることと、`atk config get KEY` で合意した実効値を確かめる。
    比較後に対象の値が変わった場合や同期できない場合は、ローカル値を保持して処理が止まる。
    比較をやり直し、値を確認してから再実行する。
 

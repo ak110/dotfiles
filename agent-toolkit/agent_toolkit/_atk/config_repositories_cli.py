@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from typing import Any
 
 from agent_toolkit._atk import config_migration, config_repositories, config_settings, help_text, outcome
+from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._git import command as git
 
 
@@ -14,6 +16,7 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
     for name in ("add", "set", "remove", "list"):
         command = help_text.add_command(commands, name, **help_text.HELP[f"atk config repos {name}"])
         if name == "list":
+            command.add_argument("--json", action="store_true", help="登録をJSONで表示する")
             continue
         command.add_argument("repo", metavar="REPO", help="originのURL・host/owner/repository・ローカルworktreeのパス。")
         if name == "remove":
@@ -48,7 +51,7 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
         )
 
 
-def update_repositories(args: argparse.Namespace) -> str:
+def update_repositories(args: argparse.Namespace) -> str | dict[str, Any]:
     config_migration.check_legacy_environment()
     config_migration.migrate_legacy_settings()
     stored = config_settings.load_config_strict()
@@ -58,7 +61,7 @@ def update_repositories(args: argparse.Namespace) -> str:
 
     repositories = config_repositories.parse(raw, check_paths=False)
     if args.repos_subcommand == "list":
-        return json.dumps(repositories, ensure_ascii=False, indent=2)
+        return repositories
     repo_id, local = config_repositories.identifier(args.repo)
     exists = repo_id in repositories
     if args.repos_subcommand == "add" and exists:
@@ -97,10 +100,33 @@ def update_repositories(args: argparse.Namespace) -> str:
 
 def dispatch(args: argparse.Namespace) -> None:
     result = update_repositories(args)
-    if args.repos_subcommand == "list":
-        print(result)
+    if isinstance(result, dict):
+        if args.json or not is_human_terminal(sys.stdout):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif result:
+            _print_repositories(result)
+        else:
+            print("登録済みのリポジトリはない。")
     else:
         outcome.report_success(f"repository登録を更新した: {result}")
+
+
+def _print_repositories(repositories: dict[str, Any]) -> None:
+    edit = {"allow": "可", "awi": "AWIのみ", "deny": "不可"}
+    for repo, entry in sorted(repositories.items()):
+        print(repo)
+        print(f"  編集: {edit[entry['edit']]} / 巡回: {'対象' if entry['process_loop'] else '対象外'}")
+        print(f"  検証OS: {', '.join(entry['platforms'])}")
+        if path := entry.get("path"):
+            print(f"  作業ツリー: {path}")
+        if branches := entry.get("branches"):
+            print(f"  系統: {', '.join(branches)}（省略時: {entry['default_branch']}）")
+        for target, source in entry.get("merge_from", {}).items():
+            print(f"  リリース前の取込: {source} → {target}")
+        if entry.get("github_issues"):
+            print("  GitHub Issue・PRの取込: 有効")
+        if (authors := entry.get("github_issue_trusted_authors")) is not None:
+            print(f"  Issueの自動投入を許す投稿者: {', '.join(authors) or 'なし'}")
 
 
 def _apply_branch_arguments(args: argparse.Namespace, item: dict[str, Any]) -> None:

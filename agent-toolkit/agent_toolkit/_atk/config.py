@@ -268,33 +268,107 @@ def _migration_revision(path: pathlib.Path, local: dict[str, Any], shared: dict[
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def _migration_required(initial: bool, local: dict[str, Any], shared: dict[str, str]) -> set[str]:
+    if initial:
+        return set()
+    return {key for key, value in local.items() if value != shared.get(key, _MUTABLE_KEY_DEFAULTS[key])}
+
+
+def _migration_local_value(key: str, value: Any) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{key}の保存値は文字列で指定してください")
+    _config_settings.validate_mutable_setting(key, value)
+    return _config_settings.normalize_setting(key, value)
+
+
+def _print_shared_comparison(
+    revision: str, local: dict[str, Any], shared: dict[str, str], *, initial: bool, force_json: bool
+) -> None:
+    comparison = _config_migration.compare_shared_values(local, shared)
+    defaults = _migration_shared_defaults(local, shared)
+    not_shared = {"codex_fast_mode": _MUTABLE_KEY_DEFAULTS["codex_fast_mode"]} if initial and "codex_fast_mode" in local else {}
+    if force_json or not is_human_terminal(sys.stdout):
+        print(
+            json.dumps(
+                {
+                    "revision": revision,
+                    "local": local,
+                    "shared": shared,
+                    "comparison": comparison,
+                    "shared_defaults": defaults,
+                    "initial_not_shared": not_shared,
+                    "initial": initial,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    print("共有設定の比較（未適用）")
+    print("初回: 共有設定ファイルがない" if initial else "既存の共有設定ファイルと比較")
+    if comparison:
+        print("キー | 比較 | ローカル保存値 | 共有保存値 | 移行後の値・選択")
+    labels = {"equal": "一致", "different": "差あり", "local_only": "ローカルのみ", "shared_only": "共有のみ"}
+    required = _migration_required(initial, local, shared)
+    invalid_initial = False
+    for key, kind in sorted(comparison.items()):
+        here = json.dumps(local[key], ensure_ascii=False) if key in local else "未保存"
+        there = json.dumps(shared[key], ensure_ascii=False) if key in shared else "未保存"
+        shared_value = there if key in shared else f"初期値 {json.dumps(defaults[key], ensure_ascii=False)}"
+        if key in not_shared:
+            after = f"共有へ移さない（初期値 {not_shared[key]}）"
+        elif initial or key in required:
+            try:
+                adopted = json.dumps(_migration_local_value(key, local[key]), ensure_ascii=False)
+            except ValueError as error:
+                invalid_initial |= initial
+                after = f"ローカル値は移行できない: {error}"
+                if not initial:
+                    after += f" / --keep-shared {key}: {shared_value}"
+            else:
+                after = adopted if initial else f"--keep-local {key}: {adopted} / --keep-shared {key}: {shared_value}"
+        else:
+            after = shared_value
+        print(f"{key} | {labels[kind]} | {here} | {there} | {after}")
+    if not local:
+        print("移行するローカル共有設定はない。適用は不要。")
+        return
+    if invalid_initial:
+        print("移行できないローカル値を直してから、もう一度比較する。")
+        return
+    print("環境変数や一時指定があれば、移行後もその値が優先される。")
+    print("適用時は共有先と通信し、同期を確認した後に移行元のローカル値を除く。")
+    if required:
+        print("--keep-local で選んだ値は他のホストにも同期する。")
+        print("選択が必要なキーごとに上の --keep-local または --keep-shared を1つ選び、次の行の末尾に追加してから実行する。")
+    else:
+        print("選択は不要。次のコマンドで適用する。")
+    print(f"  atk config migrate-shared --apply {revision}")
+
+
 def _migration_values(
     path: pathlib.Path, local: dict[str, Any], shared: dict[str, str], choices: dict[str, str]
 ) -> dict[str, str]:
-    if not path.exists():
+    initial = not path.exists()
+    required = _migration_required(initial, local, shared)
+    if initial:
         selected = {key: value for key, value in local.items() if key != "codex_fast_mode"}
-        required: set[str] = set()
     else:
-        required = {key for key, value in local.items() if value != shared.get(key, _MUTABLE_KEY_DEFAULTS[key])}
         selected = {key: local[key] for key in required if choices.get(key) == "local"}
     if required != choices.keys():
         raise _next_action.ActionableError(
             "異なる設定ごとに選択が必要: " + "、".join(sorted(required)),
             next_action=f"{_MIGRATION_NEXT_ACTION}。残す値を--keep-local KEYまたは--keep-shared KEYで指定する",
         )
-    normalized = {}
-    for key, value in selected.items():
-        if not isinstance(value, str):
-            raise ValueError(f"{key}の保存値は文字列で指定してください")
-        _config_settings.validate_mutable_setting(key, value)
-        normalized[key] = _config_settings.normalize_setting(key, value)
-    return shared | normalized
+    return shared | {key: _migration_local_value(key, value) for key, value in selected.items()}
 
 
 def _migrate_shared_settings(args: argparse.Namespace) -> None:
     path = _shared_write_path()
     if path is None:
         raise _next_action.ActionableError("共有設定の同期先がない", next_action="private-notesの同期先を設定してから移行する")
+    if args.json and args.apply is not None:
+        raise ValueError("--jsonは比較だけの実行で指定する")
     keep_local, keep_shared = args.keep_local, args.keep_shared
     choices = dict.fromkeys(keep_local, "local") | dict.fromkeys(keep_shared, "shared")
     if len(choices) != len(keep_local) + len(keep_shared) or (choices and args.apply is None):
@@ -313,24 +387,7 @@ def _migrate_shared_settings(args: argparse.Namespace) -> None:
             shared = _config_settings.load_shared_settings(path)
             revision = _migration_revision(path, local, shared)
             if args.apply is None:
-                print(
-                    json.dumps(
-                        {
-                            "revision": revision,
-                            "local": local,
-                            "shared": shared,
-                            "comparison": _config_migration.compare_shared_values(local, shared),
-                            "shared_defaults": _migration_shared_defaults(local, shared),
-                            "initial_not_shared": (
-                                {"codex_fast_mode": _MUTABLE_KEY_DEFAULTS["codex_fast_mode"]}
-                                if not path.exists() and "codex_fast_mode" in local
-                                else {}
-                            ),
-                            "initial": not path.exists(),
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+                _print_shared_comparison(revision, local, shared, initial=not path.exists(), force_json=args.json)
                 return
             if revision != args.apply:
                 raise _next_action.ActionableError("比較後にローカルか共有の設定が変わった", next_action=_MIGRATION_NEXT_ACTION)
@@ -698,6 +755,7 @@ def build_parser(config: argparse.ArgumentParser) -> None:
         array.add_argument("value", metavar="VALUE", help="追加・削除する要素1件。")
     config_repositories_cli.build_parser(sub)
     migrate = _atk_help.add_command(sub, "migrate-shared", **_atk_help.HELP["atk config migrate-shared"])
+    migrate.add_argument("--json", action="store_true", help="比較の結果をJSONで表示する")
     migrate.add_argument("--apply", metavar="REVISION", help="比較で取得した版を指定して適用する。")
     migrate.add_argument("--keep-local", action="append", default=[], metavar="KEY", help="手元の値を全ホストで使う。")
     migrate.add_argument("--keep-shared", action="append", default=[], metavar="KEY", help="共有側の値を使う。")

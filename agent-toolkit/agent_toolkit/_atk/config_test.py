@@ -77,7 +77,7 @@ def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_pat
     snapshot = json.loads(capsys.readouterr().out)
     assert snapshot["settings"]["review_model"]["effective"] == "claude:sonnet/medium"
     assert _saved(tmp_path) == {"review_model": "claude:sonnet/medium", "codex_fast_mode": "true"}
-    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda _stream=None: True)
     monkeypatch.setattr(config_module, "_auto_fast_report", lambda: "Codex自動速度: 通常（テスト）")
     assert _main(tmp_path, "config", "show") == 0
     assert "review_model claude:sonnet/medium\n" in capsys.readouterr().out
@@ -92,14 +92,14 @@ def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_pat
 
     with monkeypatch.context() as offline:
         offline.setattr(sync, "run_git", local_git)
-        assert _main(tmp_path, "config", "migrate-shared") == 0
+        assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
     preview = json.loads(capsys.readouterr().out)
     if losing_migration:
         assert preview["comparison"] == {"review_model": "equal", "codex_fast_mode": "local_only"}
         assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) == 2
         assert "比較後にローカルか共有の設定が変わった" in capsys.readouterr().err
         assert _saved(tmp_path)["review_model"] == "claude:sonnet/medium"
-        assert _main(tmp_path, "config", "migrate-shared") == 0
+        assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
         preview = json.loads(capsys.readouterr().out)
     assert preview["comparison"] == {"review_model": "different", "codex_fast_mode": "local_only"}
     assert not preview["initial"]
@@ -133,7 +133,7 @@ def test_config_show_auto_fast_without_app_server(tmp_path, monkeypatch, capsys,
     def unexpected(*_args, **_kwargs):
         pytest.fail("設定参照でCodex app-serverを起動した")
 
-    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda _stream=None: True)
     monkeypatch.setattr(config_module.codex_models, "with_app_server", unexpected)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     instant = datetime.datetime(2026, 11, 26, tzinfo=datetime.UTC)
@@ -155,7 +155,7 @@ def test_config_listing_projects_legacy_values_without_writing(tmp_path, monkeyp
     def unexpected(*_args, **_kwargs):
         pytest.fail("設定参照でCodex app-serverを起動した")
 
-    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda _stream=None: True)
     monkeypatch.setattr(config_module.codex_models, "with_app_server", unexpected)
     if legacy in {"serve", "unused-serve"}:
         _write_config(tmp_path, {"serve_host": "saved-host"} if legacy == "unused-serve" else {})
@@ -252,6 +252,46 @@ def test_shared_migration_hint_uses_actual_stored_keys(tmp_path, monkeypatch, ca
     assert _config_file(tmp_path).read_bytes() == original
 
 
+@pytest.mark.parametrize("initial", [False, True])
+def test_shared_migration_comparison_has_terminal_and_machine_forms(tmp_path, monkeypatch, capsys, initial):
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    files = {".gitkeep": ""} if initial else {"atk-config.json": '{"review_model":"claude:sonnet/medium"}'}
+    notes = git_repository.init_repository(tmp_path / "notes", initial_branch="main", origin=str(remote), files=files)
+    git_repository.commit_all(notes, "initialize")
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    original = {"review_model": "codex:sol/medium", "codex_fast_mode": "false"}
+    _write_config(tmp_path, original)
+
+    assert _main(tmp_path, "config", "migrate-shared") == 0
+    machine = capsys.readouterr().out
+    preview = json.loads(machine)
+    assert preview["initial"] is initial
+    assert set(preview) == {"revision", "local", "shared", "comparison", "shared_defaults", "initial_not_shared", "initial"}
+    with monkeypatch.context() as terminal:
+        terminal.setattr(config_module, "is_human_terminal", lambda stream: stream is sys.stdout)
+        assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
+        assert capsys.readouterr().out == machine
+        assert _main(tmp_path, "config", "migrate-shared") == 0
+        shown = capsys.readouterr().out
+        assert f"atk config migrate-shared --apply {preview['revision']}" in shown
+        assert "codex:sol/medium" in shown and "比較" in shown
+        if initial:
+            assert "初回" in shown and "共有へ移さない（初期値 auto）" in shown
+            assert "--keep-" not in shown
+        else:
+            assert "差あり" in shown and "初期値" in shown
+            assert "--keep-local review_model" in shown and "--keep-shared review_model" in shown
+        _write_config(tmp_path, {})
+        assert _main(tmp_path, "config", "migrate-shared") == 0
+        assert "適用は不要" in capsys.readouterr().out
+    _write_config(tmp_path, original)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setenv("CODEX_CI", "1")
+    assert _main(tmp_path, "config", "migrate-shared") == 0
+    assert capsys.readouterr().out == machine
+
+
 def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeypatch, capsys):
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     notes = git_repository.init_repository(
@@ -260,7 +300,7 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
     git_repository.commit_all(notes, "initialize")
     git_repository.run_git(notes, "push", "-u", "origin", "main")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
-    monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
+    monkeypatch.setattr(config_module, "is_human_terminal", lambda _stream=None: True)
     original = {"review_model": "codex:sol/medium", "codex_fast_mode": "false"}
     _write_config(tmp_path, original)
     git = sync.run_git
@@ -271,7 +311,7 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
         return git(args, cwd, **kwargs)
 
     monkeypatch.setattr(sync, "run_git", fail_push)
-    assert _main(tmp_path, "config", "migrate-shared") == 0
+    assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
     preview = json.loads(capsys.readouterr().out)
     assert preview["initial"]
     assert preview["initial_not_shared"] == {"codex_fast_mode": "auto"}

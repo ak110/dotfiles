@@ -6,11 +6,13 @@ import argparse
 import datetime
 import json
 import os
+import sys
 import time
 from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk import config_settings, help_text
+from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import claude_usage_limit, registry_index, session_registry, usage_observation, usage_settings
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -213,11 +215,13 @@ def build_parser(sub: Any) -> None:
         **help_text.HELP["atk config temporary clear"],
     )
     clear.add_argument("key", nargs="?", help="このキーの一時指定だけを解除する。省略時は全て解除する。")
-    help_text.add_command(
+    show = help_text.add_command(
         actions,
         "show",
         **help_text.HELP["atk config temporary show"],
     )
+    for command in (set_, clear, show):
+        command.add_argument("--json", action="store_true", help="一時指定の状態をJSONで表示する")
 
 
 def _display_scope(scope: str) -> str:
@@ -250,12 +254,17 @@ def dispatch(
         elif args.temporary_action == "clear":
             update_temporary(args.key, None, None)
         state = read_settings()
-        print(
-            json.dumps(
-                {"temporary": {key: state.get(key) for key in ("values", "until")}, "effective": temporary_settings()},
-                ensure_ascii=False,
-            )
-        )
+        effective = temporary_settings()
+        temporary = {key: state.get(key) for key in ("values", "until")}
+        if args.json or not is_human_terminal(sys.stdout):
+            print(json.dumps({"temporary": temporary, "effective": effective}, ensure_ascii=False))
+        elif temporary["values"]:
+            print(f"一時指定の期限: {temporary['until'] or '明示解除まで'}")
+            for key, value in sorted(temporary["values"].items()):
+                status = "適用期間内" if key in effective else "期限切れ"
+                print(f"{key}: {value}（{status}）")
+        else:
+            print("一時指定はない。通常設定を使う。")
         return
     if args.set_claude_reset_inventory is not None:
         usage_settings.save_claude_reset_inventory(args.set_claude_reset_inventory)

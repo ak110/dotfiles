@@ -26,6 +26,17 @@ def isolated_usage(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(usage_refresh, "ensure_fresh", lambda **_kwargs: None)
 
 
+def test_temporary_terminal_summary_preserves_json(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(config_usage, "is_human_terminal", lambda _stream: True)
+    assert _main(tmp_path, "config", "temporary", "set", "codex_fast_mode", "false") == 0
+    shown = capsys.readouterr().out
+    assert "明示解除まで" in shown and "codex_fast_mode: false（適用期間内）" in shown
+    assert _main(tmp_path, "config", "temporary", "show", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["effective"] == {"codex_fast_mode": "false"}
+    assert _main(tmp_path, "config", "temporary", "clear") == 0
+    assert "一時指定はない" in capsys.readouterr().out
+
+
 def test_temporary_expiry_uses_current_normal_setting(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     first = "codex:model-one/low"
     temporary = "claude:temporary-model/high"

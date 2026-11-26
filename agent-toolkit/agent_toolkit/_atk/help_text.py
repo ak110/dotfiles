@@ -58,17 +58,17 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config temporary set": {
         "summary": "1つの一時設定を変更する",
-        "description": "1つの一時設定を変更する。\n\n目的: KEYをVALUEで一時指定する。\n利用場面: 通常設定を保ったまま次の起動へ別の値を適用するとき。\n対象と出力: 上書き集合へ追加し、--untilを集合全体の期限にする。保存値と実効値をJSONで返す。稼働中のturnは切り替えない。\n前提: 値は通常設定と同じ書式。期限は時差付きISO 8601で指定する。\n復元・後始末: temporary clearで解除する。期限の省略時は明示解除まで維持する。",
+        "description": "1つの一時設定を変更する。\n\n目的: KEYをVALUEで一時指定する。\n利用場面: 通常設定を保ったまま次の起動へ別の値を適用するとき。\n対象と出力: 上書き集合へ追加し、--untilを集合全体の期限にする。保存値と期限を表示する。--json、エージェント環境、標準出力が端末でない場合は保存値と実効値をJSONで返す。稼働中のturnは切り替えない。\n前提: 値は通常設定と同じ書式。期限は時差付きISO 8601で指定する。\n復元・後始末: temporary clearで解除する。期限の省略時は明示解除まで維持する。",
         "epilog": "実行例:\n\n  atk config temporary set codex_fast_mode true\n  atk config temporary set claude_worker_connections payg --until 2030-01-01T12:00:00+09:00",
     },
     "atk config temporary clear": {
         "summary": "キーの一時指定、または全ての一時指定を解除する",
-        "description": "キーの一時指定、または全ての一時指定を解除する。\n\n目的: 通常設定の適用へ戻す。\n利用場面: 緊急運用や一時的な変更を終えるとき。\n対象と出力: 指定したキーの一時値を除き、キーを省略した場合は全て除く。保存値と実効値をJSONで返す。通常設定は変更しない。\n前提: なし。\n復元・後始末: 再指定にはtemporary setを使う。",
+        "description": "キーの一時指定、または全ての一時指定を解除する。\n\n目的: 通常設定の適用へ戻す。\n利用場面: 緊急運用や一時的な変更を終えるとき。\n対象と出力: 指定したキーの一時値を除き、キーを省略した場合は全て除く。保存値と期限を表示する。--json、エージェント環境、標準出力が端末でない場合は保存値と実効値をJSONで返す。通常設定は変更しない。\n前提: なし。\n復元・後始末: 再指定にはtemporary setを使う。",
         "epilog": "実行例:\n\n  atk config temporary clear",
     },
     "atk config temporary show": {
         "summary": "一時指定と適用期限を表示する",
-        "description": "一時指定と適用期限を表示する。\n\n目的: 保存値と期限・実効値を確認する。\n利用場面: 通常設定との違いや期限切れを確かめるとき。\n対象と出力: ローカルの一時指定をJSONで表示する。\n前提: なし。\n復元・後始末: 読取だけのため不要。",
+        "description": "一時指定と適用期限を表示する。\n\n目的: 保存値と期限・実効値を確認する。\n利用場面: 通常設定との違いや期限切れを確かめるとき。\n対象と出力: ローカルの一時指定と期限を表示する。--json、エージェント環境、標準出力が端末でない場合はJSONで返す。\n前提: なし。\n復元・後始末: 読取だけのため不要。",
         "epilog": "実行例:\n\n  atk config temporary show",
     },
     "atk lane integrate": {
@@ -352,11 +352,11 @@ HELP: dict[str, dict[str, str]] = {
         "description": "保存値を比較し、採用する値を指定して共有へ移行する。\n\n"
         "目的: 移行前の値を本人や認可されたエージェントが比較し、同期後にだけローカル値を除く。\n"
         "利用場面: 共有設定の書込みが未移行のローカル値のため止まった時。\n"
-        "対象と出力: 比較だけの実行では通信せず、ローカル値、手元の共有値、差の種類と版をJSONで返す。"
+        "対象と出力: 比較だけの実行では通信せず、人の端末では差と移行後の値、必要な選択、次のコマンドを表示する。--json、エージェント環境、標準出力が端末でない場合は従来のJSONを返す。"
         "環境変数や一時設定の値は出力しない。共有ファイルがなく旧速度設定がある場合だけ、initial_not_sharedに移行後の初期値autoを示す。既存の共有ファイルがあれば、別のホストの初回移行でも旧速度設定は比較と選択の対象になる。--applyは指定した版にだけ変更を適用する。\n"
         "前提: private-notesの同期先が必要。--keep-localの値は他のホストにも届く。\n"
         "復元・後始末: 同期を確認できない場合はローカル値を除かない。設定が変わった場合は比較からやり直す。",
-        "epilog": "実行例:\n\n  atk config migrate-shared\n"
+        "epilog": "実行例:\n\n  atk config migrate-shared\n  atk config migrate-shared --json\n"
         "  atk config migrate-shared --apply <REVISION> --keep-shared review_model",
     },
     "atk config get": {
@@ -411,8 +411,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk config repos remove example.org/team/repo",
     },
     "atk config repos list": {
-        "summary": "repository登録をJSONで一覧表示する",
-        "description": "repository登録をJSONで一覧表示する。\n\n目的: edit・path・process_loop・platformsと、系統を登録したrepositoryのbranches・default_branch・merge_fromを確認する。\n利用場面: 編集や設定変更の前に扱いを確認するとき。\n対象と出力: repositoriesの正規化済みJSON mapを表示する。旧設定がある初回は移行結果を保存する。\n前提: 登録がなければ空のmapを表示する。\n復元・後始末: 一覧表示だけなら不要。",
+        "summary": "リポジトリの登録内容を一覧表示する",
+        "description": "リポジトリの登録内容を一覧表示する。\n\n目的: edit・path・process_loop・platformsと、系統を登録したrepositoryのbranches・default_branch・merge_fromを確認する。\n利用場面: 編集や設定変更の前に扱いを確認するとき。\n対象と出力: 人の端末では編集可否・巡回対象・検証OSと登録属性を表示する。--json、エージェント環境、標準出力が端末でない場合は従来のJSON mapを返す。旧設定がある初回は移行結果を保存する。\n前提: 登録がなければその旨を表示する（JSONでは空のmap）。\n復元・後始末: 一覧表示だけなら不要。",
         "epilog": "実行例:\n\n  atk config repos list",
     },
     "atk config apply-preset": {
