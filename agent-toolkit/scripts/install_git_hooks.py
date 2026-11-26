@@ -12,7 +12,7 @@ from agent_toolkit._common import commit_hook_environment, host_homes  # noqa: E
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--remove", action="store_true", help="検査用の設定を消し、利用者の設定を保持する")
+    parser.add_argument("--remove", action="store_true", help="検査用の設定を消し、ユーザーの設定を保持する")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     codex_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")

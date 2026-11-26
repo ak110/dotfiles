@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 
+from agent_toolkit._common.process_tree import run_with_timeout
+
 from pytools._internal.common import format_cli_error
 
 _TOOL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./:-]*")
@@ -19,7 +21,7 @@ _BINARY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 def _run(
     argv: list[str], cwd: pathlib.Path, environment: dict[str, str], *, timeout: int = 30
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
+    return run_with_timeout(
         argv,
         cwd=cwd,
         env=environment,
