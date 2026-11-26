@@ -703,3 +703,43 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
             await page.set_viewport_size({"width": width, "height": 900})
             await compare.scroll_into_view_if_needed()
             await page.screenshot(path=pathlib.Path(directory) / f"003-comparison-{width}.png")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("keep", [True, False])
+async def test_shared_conflict_keeps_keyboard_choice_on_periodic_update(
+    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, keep: bool
+) -> None:
+    snapshot = config.settings_snapshot(tmp_path)
+    model = snapshot["settings"]["execute_model"]
+    original = "claude:sonnet/medium"
+    latest = "claude:sonnet/high"
+    draft = "codex:sol/high"
+    model.update(shared=True, saved=original)
+    page = screen_harness.page
+    await page.route("**/api/settings**", lambda route: route.fulfill(json=snapshot))
+    await page.clock.install()
+    await page.goto(screen_harness.base_url + "/settings")
+    await page.get_by_label("設定を絞り込む").fill("execute_model")
+    editor = page.locator('#settings-shared [data-setting="execute_model"]')
+    field = editor.get_by_label("保存値")
+    await field.fill(draft)
+    model["saved"] = latest
+    await page.clock.fast_forward(30_000)
+    conflict = editor.get_by_role("alert")
+    expect = playwright.async_api.expect
+    await expect(conflict).to_contain_text(latest)
+    choice = conflict.get_by_role("button", name="入力を残す" if keep else "保存値を使う")
+    await field.focus()
+    for _ in range(3):
+        await page.keyboard.press("Tab")
+        if await choice.evaluate("button => button === document.activeElement"):
+            break
+    await expect(choice).to_be_focused()
+    await conflict.evaluate("node => { window.previousConflict = node; }")
+    await page.clock.fast_forward(30_000)
+    await page.wait_for_function("() => !window.previousConflict.isConnected")
+    await expect(choice).to_be_focused()
+    await page.keyboard.press("Enter")
+    await expect(conflict).to_have_count(0)
+    await expect(field).to_have_value(draft if keep else latest)

@@ -138,7 +138,10 @@ function rememberSettingFocus(active) {
   if (navigation.contains(active)) return {group: active.dataset.group};
   const editor = active.closest("[data-editor]");
   const label = active.labels?.[0]?.textContent;
-  if (!editor || !label) return null;
+  if (!editor) return null;
+  const sharedAction = active.dataset.sharedConflictAction;
+  if (sharedAction) return {editor: editor.dataset.editor, shared: true, sharedAction};
+  if (!label) return null;
   return {
     editor: editor.dataset.editor,
     shared: shared.contains(editor),
@@ -157,6 +160,10 @@ function restoreSettingFocus(focus) {
   }
   const editor = (focus.shared ? shared : content).querySelector(`[data-editor="${CSS.escape(focus.editor)}"]`);
   if (!editor) return;
+  if (focus.sharedAction) {
+    editor.querySelector(`[data-shared-conflict-action="${CSS.escape(focus.sharedAction)}"]`)?.focus({preventScroll: true});
+    return;
+  }
   const fields = editorFields(editor).filter(field => field.labels[0]?.textContent === focus.label);
   const [target] = fields;
   if (fields.length !== 1 || target.closest("[hidden]")) return;
@@ -431,6 +438,8 @@ function renderShared(savedKey) {
         const replace = button("保存値を使う", () => resolve(false));
         preserve.dataset.conflictAction = "";
         replace.dataset.conflictAction = "";
+        preserve.dataset.sharedConflictAction = "keep";
+        replace.dataset.sharedConflictAction = "replace";
         conflict.append(" ", preserve, " ", replace);
         prior.append(conflict);
       }
