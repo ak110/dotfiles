@@ -130,16 +130,13 @@
 }
 #screen-plans main .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   justify-content: flex-end;
   padding: 8px 16px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-}
-/* 配色・境界・角丸・無効時表示・寸法は共通規則が定める。本規則は移動ボタンの最小幅だけを指定する。 */
-#screen-plans main .toolbar {
-  flex-wrap: nowrap;
 }
 #screen-plans main .toolbar .spacer {
   flex: 1;
@@ -263,6 +260,7 @@
     display: block;
   }
   #screen-plans main .toolbar {
+    flex-wrap: nowrap;
     padding-inline: var(--space-2);
   }
   #screen-plans #plans-menu-btn {

@@ -193,6 +193,53 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("width", [320, 768, 769, 900, 1000, 1280])
+async def test_plan_toolbar_keeps_actions_in_view_while_scrolling(screen_harness: _ScreenHarness, width: int) -> None:
+    page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 800})
+    screen_harness.plan_path.write_text("# 先頭\n\n" + "計画の段落\n\n" * 100 + "最後の段落\n", encoding="utf-8")
+    await page.goto(screen_harness.base_url + "/plans")
+    main = page.locator("#screen-plans main")
+    toolbar = main.locator(".toolbar")
+    first = toolbar.get_by_role("button", name="先頭へ", exact=True)
+    last = toolbar.get_by_role("button", name="末尾へ", exact=True)
+    controls = [toolbar.locator(f"#{name}") for name in ("copy-btn", "copy-path-btn", "prev-btn", "next-btn")]
+    if width <= 768:
+        menu = toolbar.locator("#plans-menu-btn")
+        await menu.click()
+        await page.locator("#files .file").first.click()
+        controls.append(menu)
+    controls.extend((first, last))
+    expect = playwright.async_api.expect
+    await expect(last).to_be_enabled()
+    await expect(controls[0]).to_be_enabled()
+    await expect(controls[1]).to_be_enabled()
+
+    async def check_toolbar() -> float:
+        pane = await main.bounding_box()
+        bar = await toolbar.bounding_box()
+        assert pane is not None and bar is not None
+        assert await toolbar.evaluate("element => getComputedStyle(element).position") == "sticky"
+        rows = []
+        for control in controls:
+            box = await control.bounding_box()
+            assert box is not None, control
+            assert pane["x"] <= box["x"] and box["x"] + box["width"] <= pane["x"] + pane["width"], (control, box, pane)
+            assert bar["y"] <= box["y"] < box["y"] + box["height"] <= min(bar["y"] + bar["height"], 800)
+            rows.append(box["y"])
+        if width == 1280:
+            assert max(rows) - min(rows) <= 1, rows
+        return bar["y"]
+
+    toolbar_top = await check_toolbar()
+    await last.click()
+    await expect(main.get_by_text("最後の段落")).to_be_in_viewport()
+    assert await check_toolbar() == pytest.approx(toolbar_top, abs=1)
+    await first.click()
+    assert await main.evaluate("element => element.scrollTop") == 0
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
