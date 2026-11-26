@@ -175,10 +175,11 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 未設定の環境では、executeを`codex:sol/medium,claude:opus[1m]/medium`の順に試す。
 以前に保存した候補列はそのまま使う。
 
-工程別モデルと`codex_fast_mode`は、同じprivate-notesを同期する環境で共有する。
+工程別モデル、`codex_fast_mode`、`usage_reset_permissions`は、同じprivate-notesを同期する環境で共有する。
+reset許可の回数は、共有先の予約台帳で全端末の合計として数える。
 ファイルの場所と共有設定から解決したキーは`atk config show`の標準エラーで確認できる。
 特定のホストだけ変える場合は`atk config temporary`か`AGENT_TOOLKIT_CONFIG_<KEY>`を使う。
-共有するキーのローカル値が残っている場合は、[共有設定への移行](claude-code-connections.md#共有設定への移行)を先に行う。
+共有するキーのローカル値が残っている場合は、[共有設定への移行](claude-code-settings.md#共有設定への移行)を先に行う。
 `set`で保存済みでも上書き元の案内が出たときは、その設定を解除して`get`で確かめる。
 
 初期設定ではCodexの5時間枠の解除を待つ。

@@ -7,6 +7,7 @@ import contextlib
 import errno
 import hashlib
 import json
+import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -18,11 +19,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent_toolkit._agents_server import session_errors
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._atk import config
+from agent_toolkit._atk import config, reset_reservations
 from agent_toolkit._common import codex_weekly
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.usage_settings import deadline, validate_permissions
+
+_LOG = logging.getLogger(__name__)
 
 type Request = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 type Outcome = Literal["reset", "alreadyRedeemed", "nothingToReset", "noCredit"]
@@ -88,6 +91,8 @@ class _Attempt(_Boundary):
     credit_id: str | None = None
     permission_id: str | None = None
     used_permissions: dict[str, int] = Field(default_factory=dict)
+    # 共有先の予約台帳へ端末内の使用数を移した許可。移した後は端末内の数を合計に加えない。  # pyfltr: allow-comment
+    carried_permissions: list[str] = Field(default_factory=list)
 
 
 def configured_permissions() -> list[dict[str, Any]]:
@@ -109,10 +114,33 @@ def active_permissions() -> list[dict[str, Any]]:
     return _open_permissions(configured_permissions(), time.time())
 
 
+def _used(previous: _Attempt | None, shared_used: dict[str, int] | None) -> dict[str, int]:
+    local = previous.used_permissions if previous is not None else {}
+    if shared_used is None:
+        return dict(local)
+    carried = set(previous.carried_permissions) if previous is not None else set()
+    return {
+        identifier: shared_used.get(identifier, 0) + (0 if identifier in carried else local.get(identifier, 0))
+        for identifier in local.keys() | shared_used.keys()
+    }
+
+
+def _shared_used(notes: Path | None, permissions: list[dict[str, Any]]) -> dict[str, int] | None:
+    if notes is None:
+        return None
+    return {permission["id"]: reset_reservations.read_used(notes, permission["id"]) for permission in permissions}
+
+
 def _permitted(
-    permissions: list[dict[str, Any]], email: str, identity: str, account_id: Any, previous: _Attempt | None, now: float
+    permissions: list[dict[str, Any]],
+    email: str,
+    identity: str,
+    account_id: Any,
+    previous: _Attempt | None,
+    now: float,
+    shared_used: dict[str, int] | None = None,
 ) -> list[tuple[float, str]]:
-    used = previous.used_permissions if previous is not None else {}
+    used = _used(previous, shared_used)
     permitted = []
     for permission in _open_permissions(permissions, now):
         if permission["account"] not in (email, identity, account_id):
@@ -127,7 +155,9 @@ def _permitted(
     return permitted
 
 
-def has_permission(permissions: list[dict[str, Any]], account: Any, account_id: Any, *, state_dir: Path) -> bool:
+def has_permission(
+    permissions: list[dict[str, Any]], account: Any, account_id: Any, *, state_dir: Path, shared_notes: Path | None = None
+) -> bool:
     if not permissions or not isinstance(account, dict) or account.get("type") != "chatgpt":
         return False
     email = account.get("email")
@@ -135,7 +165,8 @@ def has_permission(permissions: list[dict[str, Any]], account: Any, account_id: 
         return False
     identity = hashlib.sha256(email.encode("utf-8")).hexdigest()
     path = state_dir / "agents-server" / "codex-auto-reset" / f"{identity}.json"
-    return bool(_permitted(permissions, email, identity, account_id, _read_attempt(path), time.time()))
+    shared_used = _shared_used(shared_notes, permissions)
+    return bool(_permitted(permissions, email, identity, account_id, _read_attempt(path), time.time(), shared_used))
 
 
 async def check_auto_reset(
@@ -147,11 +178,13 @@ async def check_auto_reset(
     active: bool = True,
     pace: float | None = None,
     on_permission_confirmed: Callable[[], None] | None = None,
+    shared_notes: Path | None = None,
 ) -> AutoResetResult:
-    """1回の確認を行う。消費確定後の再取得失敗は成功と利用枠未確認を分けて返す。
+    """1回の確認を行う。消費確定後の再取得失敗は成功と利用枠未確認を分けて返す。  pyfltr: allow-comment
 
     state_dirは既存のstate_dirそのものを受け取り、配下の専用領域だけを使う。
     RPCはrequestが返すresult本文を受け取る。設定の有効性は呼出元で判定する。
+    shared_notesを渡すと、許可の回数を共有先の予約台帳で全端末の合計として数え、予約の確定後にだけ消費を送る。
     その他の通信失敗・不正応答・状態破損は呼出元へ伝播する。
     """
     if not 0 < rpc_timeout < float("inf"):
@@ -184,7 +217,8 @@ async def check_auto_reset(
             return AutoResetResult(reset_confirmed=True, rate_limits=raw, diagnostic="同じweekly窓のresetは成功確認済み")
         used_permissions = dict(previous.used_permissions) if previous is not None else {}
         now = time.time()
-        permitted = _permitted(permissions, email, identity, raw.get("accountId"), previous, now)
+        shared_used = await asyncio.to_thread(_shared_used, shared_notes, permissions)
+        permitted = _permitted(permissions, email, identity, raw.get("accountId"), previous, now, shared_used)
         if not permitted:
             return AutoResetResult(rate_limits=raw, diagnostic="現在のアカウント・対象・期間・回数に対応するreset許可がない")
         if on_permission_confirmed is not None:
@@ -205,14 +239,38 @@ async def check_auto_reset(
             if reset_credits is None or _Credits.model_validate(reset_credits).availableCount == 0:
                 return AutoResetResult(rate_limits=raw, diagnostic="利用可能なreset creditがない")
             credit = _available_credit(reset_credits)
+            carried_permissions = list(previous.carried_permissions) if previous is not None else []
+            key = str(uuid.uuid4())
+            if shared_notes is not None:
+                limit = next(item["count"] for item in permissions if item["id"] == permission_id)
+                carried = 0 if permission_id in carried_permissions else used_permissions.get(permission_id, 0)
+                try:
+                    await asyncio.to_thread(
+                        reset_reservations.reserve,
+                        shared_notes,
+                        permission_id=permission_id,
+                        limit=limit,
+                        key=key,
+                        account=identity,
+                        resets_at=weekly.resetsAt,
+                        carried=carried,
+                        permissions=permissions,
+                        now=now,
+                    )
+                except reset_reservations.ReservationError as error:
+                    return AutoResetResult(
+                        rate_limits=raw, diagnostic=f"共有先でreset許可の回数を予約できないため消費を見送った: {error}"
+                    )
+                carried_permissions = sorted({*carried_permissions, permission_id})
             used_permissions[permission_id] = used_permissions.get(permission_id, 0) + 1
             attempt = _Attempt(
                 resets_at=weekly.resetsAt,
-                idempotency_key=str(uuid.uuid4()),
+                idempotency_key=key,
                 status="pending",
                 credit_id=credit.id if credit is not None else None,
                 permission_id=permission_id,
                 used_permissions=used_permissions,
+                carried_permissions=carried_permissions,
             )
             await run_file_operation(_write_attempt, path, attempt)
         params = {"idempotencyKey": attempt.idempotency_key}
@@ -231,6 +289,14 @@ async def check_auto_reset(
         await run_file_operation(
             _write_attempt, path, attempt.model_copy(update={"status": "success" if confirmed else "closed"})
         )
+        if shared_notes is not None:
+            try:
+                await asyncio.to_thread(
+                    reset_reservations.finish, shared_notes, attempt.idempotency_key, "success" if confirmed else "closed"
+                )
+            except (reset_reservations.ReservationError, OSError, ValueError) as error:
+                # 結果を共有先へ書けなくても予約はpendingで数え続けるため、回数の上限は超えない。  # pyfltr: allow-comment
+                _LOG.warning("Codex自動resetの結果を共有先へ記録できない: %s", error)
         if confirmed:
             try:
                 raw = await _rpc(request, "account/rateLimits/read", {}, rpc_timeout)

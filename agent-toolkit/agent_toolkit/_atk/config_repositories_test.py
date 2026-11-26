@@ -91,7 +91,7 @@ def test_repair_missing_process_loop_path(tmp_path: pathlib.Path, capsys: pytest
     assert _main(tmp_path, "config", "repos", "set", "example.test/team/repo", "--path", str(repository)) == 0
     assert config.resolve_configured_repositories()[0].worktree == repository
     assert _main(tmp_path, "config", "repos", "set", "example.test/team/repo", "--no-process-loop", "--path", "") == 0
-    assert json.loads(_saved(tmp_path)["repositories"])["example.test/team/repo"]["path"] == ""
+    assert "path" not in json.loads(_saved(tmp_path)["repositories"])["example.test/team/repo"]
 
 
 def test_repository_read_preserves_unrelated_legacy_migration(tmp_path: pathlib.Path) -> None:
@@ -125,7 +125,6 @@ def test_repository_read_preserves_unrelated_legacy_migration(tmp_path: pathlib.
         {"edit": "allow", "platforms": ["macos"]},
         {"edit": "allow", "platforms": ["linux", "linux"]},
         {"edit": "allow", "path": 1},
-        {"edit": "allow", "process_loop": True},
         {"edit": "allow", "extra": True},
     ],
 )

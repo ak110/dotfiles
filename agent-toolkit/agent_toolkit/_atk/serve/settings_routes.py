@@ -10,7 +10,7 @@ import typing
 
 import quart
 
-from agent_toolkit._atk import config, config_migration, config_settings, git_sync, usage_refresh
+from agent_toolkit._atk import config, config_migration, config_settings, config_shared_migration, git_sync, usage_refresh
 from agent_toolkit._atk.serve.config import ServeConfig
 from agent_toolkit._atk.serve.shell_routes import json_no_store, no_store, render_index, safe_base_path
 from agent_toolkit._atk.wi.web_input import WebInputError, web_input_error_from
@@ -24,6 +24,8 @@ def _remote_hosts(*, read_only: bool = False) -> tuple[str, ...]:
 
 
 def _setting_timeout(operation: str, payload: dict[str, typing.Any] | None) -> int:
+    if operation.startswith("atk config migrate-shared"):
+        return int(git_sync.LOCK_WAIT_TIMEOUT_SECONDS + git_sync.LOCK_HOLD_TIMEOUT_SECONDS) + 60
     if operation == "atk config update" and payload is not None:
         action, key = payload.get("action"), payload.get("key")
         writes_shared = (
@@ -171,6 +173,57 @@ def _remote_update(host: str, payload: dict[str, typing.Any]) -> None:
         raise ValueError("SSH先のatkが設定を保存できませんでした。SSH先で設定と値の書式を確認してください")
 
 
+_MIGRATION_TOKEN = re.compile(r"[A-Za-z0-9_:./@-]+")
+
+
+def _migration_payload(payload: dict[str, typing.Any]) -> tuple[str, str, dict[str, config_shared_migration.Choice]]:
+    action = payload.get("action")
+    if action == "compare":
+        return action, "", {}
+    revision, choices = payload.get("revision"), payload.get("choices", {})
+    if action != "apply" or not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{64}", revision) is None:
+        raise ValueError("差を確認し直してから移行してください")
+    if not isinstance(choices, dict) or any(
+        not isinstance(key, str) or not _MIGRATION_TOKEN.fullmatch(key) or value not in ("local", "shared")
+        for key, value in choices.items()
+    ):
+        raise ValueError("差のある項目ごとに残す値を選んでください")
+    return action, revision, typing.cast(dict[str, config_shared_migration.Choice], choices)
+
+
+def _shared_migration(host: str, payload: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """共有設定への移行をCLIと同じ処理で比較・適用する。SSH先は同じCLIを呼ぶ。  pyfltr: allow-comment"""
+    action, revision, choices = _migration_payload(payload)
+    if not host:
+        if action == "compare":
+            return config_shared_migration.compare()
+        return {"moved": config_shared_migration.apply(revision, choices)}
+    try:
+        snapshot, runner = _remote_snapshot(host, read_only=True)
+    except _ReadOnlyUnsupported:
+        snapshot, runner = {"legacy": True}, _ssh
+    if snapshot.get("legacy") or not isinstance(snapshot.get("shared_migration"), dict):
+        raise ValueError("SSH先のatkが旧版のため移行できません。SSH先のatkを更新してください")
+    if action == "compare":
+        result = runner(host, "atk config migrate-shared --json", None)
+        if result.returncode != 0:
+            raise ValueError("SSH先で共有設定との差を確認できません。SSH先のprivate-notesの同期を確認してください")
+        plan = json.loads(result.stdout)
+        if not isinstance(plan, dict) or plan.get("format") != config_shared_migration.FORMAT:
+            raise ValueError("SSH先のatkが旧版のため移行できません。SSH先のatkを更新してください")
+        return plan
+    options = "".join(f" --keep-{value} {key}" for key, value in sorted(choices.items()))
+    try:
+        result = runner(host, f"atk config migrate-shared --apply {revision}{options}", None)
+    except subprocess.TimeoutExpired as error:
+        raise _unconfirmed_remote_save() from error
+    if runner is _ssh_unelevated and result.returncode == 124:
+        raise _unconfirmed_remote_save()
+    if result.returncode != 0:
+        raise ValueError("SSH先で移行できませんでした。差を確認し直してから再実行してください")
+    return {"moved": None}
+
+
 def _unconfirmed_remote_save() -> WebInputError:
     return WebInputError(
         "保存処理の結果を確認できません",
@@ -203,6 +256,7 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 if name in snapshots
                 else "pending",
                 "shared_identity": snapshots.get(name, {}).get("shared_identity"),
+                "provider_warnings": snapshots.get(name, {}).get("provider_warnings", []),
                 "settings": {
                     key: {field: item.get(field) for field in ("saved", "shared", "migration_pending")}
                     for key, item in snapshots.get(name, {}).get("settings", {}).items()
@@ -334,6 +388,21 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
         except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
             message = error if isinstance(error, ValueError) else ValueError("設定を読み込めませんでした")
             raise web_input_error_from(message, next_action="ホストの設定とSSHの接続を確認する") from error
+
+    @app.post("/api/settings/shared-migration")
+    async def settings_shared_migration() -> quart.Response:
+        payload = await quart.request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise WebInputError("JSONオブジェクトを指定してください", next_action="画面から差を確認し直す")
+        try:
+            host = await asyncio.to_thread(_request_host)
+            async with locks.setdefault(host, asyncio.Lock()):
+                if host and payload.get("action") == "apply":
+                    snapshots.pop(host, None)
+                result = await asyncio.to_thread(_shared_migration, host, payload)
+        except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
+            raise web_input_error_from(error, next_action="差を確認し直してから移行する") from error
+        return json_no_store(result)
 
     @app.post("/api/settings")
     async def settings_post() -> quart.Response:

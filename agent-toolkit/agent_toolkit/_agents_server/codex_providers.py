@@ -16,7 +16,7 @@ from typing import Any
 from agent_toolkit._agents_server import api_credits, codex_auto_reset, engine_availability
 from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._atk import codex_connection, usage_refresh
+from agent_toolkit._atk import codex_connection, reset_reservations, usage_refresh
 from agent_toolkit._atk import config as atk_config
 from agent_toolkit._common import codex_fast_mode, codex_usage_limit, runtime_environment, state_paths
 
@@ -209,7 +209,12 @@ async def select(
                     if permissions:
                         root = await run_file_operation(state_paths.state_dir)
                         auto_reset_permitted = await run_file_operation(
-                            codex_auto_reset.has_permission, permissions, account, snapshot_id, state_dir=root
+                            codex_auto_reset.has_permission,
+                            permissions,
+                            account,
+                            snapshot_id,
+                            state_dir=root,
+                            shared_notes=await run_file_operation(reset_reservations.shared_notes),
                         )
                 except OSError, ValueError:
                     _LOG.exception("Codex自動resetの許可を確認できません。設定と台帳を確認してください")

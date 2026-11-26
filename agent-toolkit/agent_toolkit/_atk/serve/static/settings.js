@@ -34,7 +34,7 @@ const {button, element, renderComparison, renderHost, renderShared, renderShared
     get activeGroup() { return activeGroup; },
     set activeGroup(value) { activeGroup = value; },
   },
-  operate, saveShared, selectHost, filterSettings, updateUnsaved, updateWriteControls, setWriteUnavailable,
+  operate, saveShared, migrateShared, selectHost, filterSettings, updateUnsaved, updateWriteControls, setWriteUnavailable,
   rememberSettingFocus, restoreSettingFocus, editorFields,
 });
 
@@ -211,6 +211,36 @@ function restoreEditors(drafts, editorKey) {
     if (editor.dataset.editor === editorKey) savedEditor = editor;
   }
   return savedEditor;
+}
+
+async function migrateShared(payload, output) {
+  if (busy || loading) return null;
+  busy = true;
+  updateWriteControls();
+  const target = host;
+  status.textContent = payload.action === "apply" ? "共有へ移行中…" : "差を確認中…";
+  output.textContent = "";
+  try {
+    const query = target ? "?" + new URLSearchParams({host: target}) : "";
+    const response = await fetch(BASE_PATH + "/api/settings/shared-migration" + query, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error([data.error, data.next_action].filter(Boolean).join(" "));
+    status.textContent = "";
+    if (payload.action !== "apply") return data;
+    busy = false;
+    await loadHost();
+    revealSettingResult(null, `共有へ移行しました（${data.moved}件）。`, true);
+    return null;
+  } catch (error) {
+    status.textContent = "";
+    revealSettingResult(output, error.message, true);
+    return null;
+  } finally {
+    busy = false;
+    updateWriteControls();
+  }
 }
 
 async function saveShared(payload, output) {

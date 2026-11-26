@@ -117,3 +117,39 @@ server-managed settingsで配信する場合は、サーバーがその会話の
 
 `atk serve`の「設定」で値の出所と反映の時機を確認し、保存値を変更する。
 画面を開けない環境では、`atk config show`で実効値を確認し、`atk config --help`で利用できる操作を調べる。
+
+### 設定の共有
+
+同じprivate-notesを同期する端末では、設定とリポジトリの登録属性をprivate-notesの`atk-config.json`で共有する。
+共有しないのは次の端末固有の設定だけで、理由は「設定」の各項目に表示される。
+
+- `agents_concurrency`、`dotfiles_mode`、`serve_host`、`serve_port`、`serve_plans_root`、`remote_hosts`
+- 週次処理を実行する端末を選ぶ`weekly_*_auto_start`と`weekly_research_x_api`
+- リポジトリ登録の`path`（cloneの場所）
+
+同期先の無い環境では全ての設定を端末に保存する。
+環境変数と一時指定は従来どおり保存値より優先する。
+
+別の端末で登録済みのリポジトリは、その端末のcloneを1コマンドで関連付ける。
+
+```bash
+atk config repos set github.com/example/project --path ~/project
+```
+
+cloneのoriginが登録と違う場合は関連付けない。
+pathの無い登録は`atk config repos list`に「この端末には未登録」と表示され、その端末では巡回しない。
+originが無くパスでしか識別できない登録は、端末側だけに残る。
+
+### 共有設定への移行
+
+端末に共有前の値が残っている場合は、`atk serve`の「設定」の「ホスト別」で対象の端末（ローカルまたはSSH先）を選び、「共有へ移行」で移す。
+
+1. 「差を確認」を押す。
+2. 共有の値と違う項目だけ、「この端末の値」か「共有の値」を選ぶ。
+   差の無い項目は選ばずにそのまま移る。
+3. 「移行」を押す。
+
+選んだ値は同じ共有先を使う全ての端末に反映される。
+比較の後に値が変わった場合や同期できない場合は、端末の値を残したまま止まるので、もう一度「差を確認」から行う。
+旧版のatkのSSH先は移行の対象にならないため、先にそのatkを更新する。
+CLIでは`atk config migrate-shared`で同じ比較を表示し、表示された`--apply`のコマンドで適用する。

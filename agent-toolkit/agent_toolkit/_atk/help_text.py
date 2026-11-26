@@ -350,10 +350,11 @@ HELP: dict[str, dict[str, str]] = {
     "atk config migrate-shared": {
         "summary": "ホストのローカル設定と共有設定を比較・移行する",
         "description": "保存値を比較し、採用する値を指定して共有へ移行する。\n\n"
-        "目的: 移行前の値を本人や認可されたエージェントが比較し、同期後にだけローカル値を除く。\n"
+        "目的: 移行前の値を本人や認可されたエージェントが比較し、同期後にだけローカル値を除く。`atk serve`の「設定」の「共有へ移行」と同じ処理である。\n"
         "利用場面: 共有設定の書込みが未移行のローカル値のため止まった時。\n"
-        "対象と出力: 比較だけの実行では通信せず、人の端末では差と移行後の値、必要な選択、次のコマンドを表示する。--json、エージェント環境、標準出力が端末でない場合は従来のJSONを返す。"
-        "環境変数や一時設定の値は出力しない。共有ファイルがなく旧速度設定がある場合だけ、initial_not_sharedに移行後の初期値autoを示す。既存の共有ファイルがあれば、別のホストの初回移行でも旧速度設定は比較と選択の対象になる。--applyは指定した版にだけ変更を適用する。\n"
+        "対象と出力: 比較は共有先を取得してから行い、人の端末では項目ごとの差と必要な選択、次のコマンドを表示する。--json、エージェント環境、標準出力が端末でない場合はJSON（format・revision・items・required）を返す。"
+        "リポジトリ登録は`repositories:<ID>`の項目として比較し、共有先に無い登録はそのまま取り込む。移行後の端末にはpathだけが残る。"
+        "環境変数や一時設定の値は出力しない。共有ファイルがなく旧速度設定がある場合だけ、旧速度設定は共有へ移さない。--applyは指定した版にだけ変更を適用する。\n"
         "前提: private-notesの同期先が必要。--keep-localの値は他のホストにも届く。\n"
         "復元・後始末: 同期を確認できない場合はローカル値を除かない。設定が変わった場合は比較からやり直す。",
         "epilog": "実行例:\n\n  atk config migrate-shared\n  atk config migrate-shared --json\n"
@@ -402,8 +403,9 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config repos set": {
         "summary": "登録済みrepositoryの指定属性を変更する",
-        "description": '登録済みrepositoryの属性を変更する。\n\n目的: 指定した属性だけを更新して他の属性を保持する。\n利用場面: 編集可否・ローカルパス・検証OS・系統を変えるとき。\n対象と出力: config.jsonを更新する。パスはcwd起点の絶対パスへ正規化する。\n前提: 登録済みの識別子を指定する。--no-process-loopで対象から外す。--branches ""で系統の登録（default_branchの系統と取り込み元を含む）を外す。登録から外した系統を宛先に持つWIはblocked_reason=branch-unregisteredで着手不能になる。\n復元・後始末: 同じ操作で以前の値を設定できる。',
-        "epilog": "実行例:\n\n  atk config repos set example.org/team/repo --edit deny --no-process-loop",
+        "description": '登録済みrepositoryの属性を変更する。\n\n目的: 指定した属性だけを更新して他の属性を保持する。\n利用場面: 編集可否・ローカルパス・検証OS・系統を変えるとき。\n対象と出力: private-notesに同期先がある場合、パス以外の属性は共有設定へ、パスはこの端末のconfig.jsonへ保存する。別の端末で登録済みのrepositoryは--pathだけでこの端末のcloneを関連付ける。パスはcwd起点の絶対パスへ正規化し、originが登録と違うcloneは拒否する。\n前提: 登録済みの識別子を指定する。--no-process-loopで対象から外す。--branches ""で系統の登録（default_branchの系統と取り込み元を含む）を外す。登録から外した系統を宛先に持つWIはblocked_reason=branch-unregisteredで着手不能になる。\n復元・後始末: 同じ操作で以前の値を設定できる。',
+        "epilog": "実行例:\n\n  atk config repos set example.org/team/repo --edit deny --no-process-loop\n"
+        "  atk config repos set example.org/team/repo --path ~/repo",
     },
     "atk config repos remove": {
         "summary": "repository登録を削除する",

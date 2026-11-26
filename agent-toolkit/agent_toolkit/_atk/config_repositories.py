@@ -167,50 +167,146 @@ def identifier(value: str) -> tuple[str, str | None]:
     return remote.normalize_remote_url(value), None
 
 
-def parse(value: str, *, check_paths: bool = True) -> dict[str, dict[str, Any]]:
+SHARED_ATTRIBUTES = (
+    "edit",
+    "process_loop",
+    "platforms",
+    "branches",
+    "default_branch",
+    "merge_from",
+    "github_issues",
+    "github_issue_trusted_authors",
+)
+
+"""同じprivate-notesを使う端末で共有する登録属性。`path`だけを端末側に持つ。  pyfltr: allow-comment"""
+
+
+def is_shared_id(repo_id: str) -> bool:
+    """正規化したリモートURLで識別でき、別端末でも同じ対象と確定できる登録かを返す。  pyfltr: allow-comment"""
+    try:
+        return remote.normalize_remote_url(repo_id) == repo_id
+    except ValueError:
+        return False
+
+
+def _load_object(value: str) -> dict[str, Any]:
     try:
         data = json.loads(value)
     except json.JSONDecodeError as error:
         raise ValueError("repositoriesはrepository識別子をキーとするJSON objectで指定する") from error
     if not isinstance(data, dict):
         raise ValueError("repositoriesはJSON objectで指定する")
+    return data
+
+
+def parse_shared(value: str) -> dict[str, dict[str, Any]]:
+    """共有先に保存した登録属性（pathを持たない）を検証して返す。  pyfltr: allow-comment"""
     repositories: dict[str, dict[str, Any]] = {}
-    for key, raw in data.items():
+    for key, raw in _load_object(value).items():
+        if not is_shared_id(key):
+            raise ValueError(f"共有する登録は正規化したリモートURLで指定する: {key}")
+        if not isinstance(raw, dict) or "path" in raw:
+            raise ValueError(f"共有する登録{key}にはpathを含めない")
+        repositories[key] = _parse_item(key, raw, None, check_paths=False, require_path=False)
+    return repositories
+
+
+def is_link(item: dict[str, Any]) -> bool:
+    return item.keys() == {"path"}
+
+
+def parse_local(value: str) -> dict[str, dict[str, Any]]:
+    """端末側の登録を返す。リモートURLの登録は`path`だけの関連付けを受け付ける。  pyfltr: allow-comment"""
+    repositories: dict[str, dict[str, Any]] = {}
+    for key, raw in _load_object(value).items():
+        if isinstance(raw, dict) and raw.keys() == {"path"} and is_shared_id(key):
+            if not isinstance(raw["path"], str) or not raw["path"]:
+                raise ValueError(f"{key}のpathは空でない文字列で指定する")
+            repositories[key] = {"path": normalize_path(raw["path"])}
+        else:
+            repositories.update(parse(json.dumps({key: raw}), check_paths=False))
+    return repositories
+
+
+def merge(shared: dict[str, dict[str, Any]], local: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """共有属性と端末側のpathを合成する。移行前の属性付きの端末側登録はその端末の値を使う。  pyfltr: allow-comment"""
+    result = {repo_id: dict(item) for repo_id, item in shared.items()}
+    for repo_id, item in local.items():
+        if is_link(item):
+            if repo_id in result:
+                result[repo_id]["path"] = item["path"]
+        else:
+            result[repo_id] = dict(item)
+    return result
+
+
+def split(repositories: dict[str, dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    """合成済みの登録を、共有属性と端末側の値（pathの関連付けと共有できない登録）へ分ける。  pyfltr: allow-comment"""
+    shared: dict[str, dict[str, Any]] = {}
+    local: dict[str, dict[str, Any]] = {}
+    for repo_id, item in repositories.items():
+        if not is_shared_id(repo_id):
+            local[repo_id] = dict(item)
+            continue
+        shared[repo_id] = {key: value for key, value in item.items() if key != "path"}
+        if item.get("path"):
+            local[repo_id] = {"path": item["path"]}
+    return shared, local
+
+
+def parse(value: str, *, check_paths: bool = True) -> dict[str, dict[str, Any]]:
+    repositories: dict[str, dict[str, Any]] = {}
+    for key, raw in _load_object(value).items():
         repo_id, local = identifier(key)
         if repo_id in repositories:
             raise ValueError(f"同じrepositoryの登録が重複している: {repo_id}")
-        try:
-            attributes = RepositoryAttributes.model_validate(raw)
-        except pydantic.ValidationError as error:
-            raise ValueError(f"{key}のrepository属性が不正: {error}") from error
-        enabled = attributes.process_loop
-        platforms = attributes.platforms
-        if len(set(platforms)) != len(platforms):
-            raise ValueError(f"{key}のplatformsに重複がある")
-        path = attributes.path if "path" in attributes.model_fields_set else local
-        item: dict[str, Any] = {
-            "edit": attributes.edit,
-            "process_loop": enabled,
-            "platforms": platforms,
-            **_validate_branches(key, attributes),
-        }
-        if attributes.github_issues:
-            item["github_issues"] = True
-        authors = attributes.github_issue_trusted_authors
-        if authors is not None:
-            if any(re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", author) is None for author in authors):
-                raise ValueError(f"{key}のgithub_issue_trusted_authorsにはGitHubのアカウント名を指定する")
-            item["github_issue_trusted_authors"] = list(dict.fromkeys(author.lower() for author in authors))
-        if path is not None:
-            item["path"] = normalize_path(path)
-        if enabled and not item.get("path"):
-            raise ValueError(f"{key}のprocess-loop対象にはpathが必要")
-        if enabled and check_paths:
-            location = locate(pathlib.Path(item["path"])) if "path" in item else None
-            if location is None or location.repo_id != repo_id:
-                raise ValueError(f"{key}のprocess-loop対象には同じrepositoryの実在するworktreeのpathが必要")
-        repositories[repo_id] = item
+        repositories[repo_id] = _parse_item(
+            key, raw, local, check_paths=check_paths, require_path=not is_shared_id(repo_id), repo_id=repo_id
+        )
     return repositories
+
+
+def _parse_item(
+    key: str,
+    raw: Any,
+    local: str | None,
+    *,
+    check_paths: bool,
+    require_path: bool,
+    repo_id: str | None = None,
+) -> dict[str, Any]:
+    repo_id = repo_id or key
+    try:
+        attributes = RepositoryAttributes.model_validate(raw)
+    except pydantic.ValidationError as error:
+        raise ValueError(f"{key}のrepository属性が不正: {error}") from error
+    enabled = attributes.process_loop
+    platforms = attributes.platforms
+    if len(set(platforms)) != len(platforms):
+        raise ValueError(f"{key}のplatformsに重複がある")
+    path = attributes.path if "path" in attributes.model_fields_set else local
+    item: dict[str, Any] = {
+        "edit": attributes.edit,
+        "process_loop": enabled,
+        "platforms": platforms,
+        **_validate_branches(key, attributes),
+    }
+    if attributes.github_issues:
+        item["github_issues"] = True
+    authors = attributes.github_issue_trusted_authors
+    if authors is not None:
+        if any(re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", author) is None for author in authors):
+            raise ValueError(f"{key}のgithub_issue_trusted_authorsにはGitHubのアカウント名を指定する")
+        item["github_issue_trusted_authors"] = list(dict.fromkeys(author.lower() for author in authors))
+    if path is not None:
+        item["path"] = normalize_path(path)
+    if enabled and require_path and not item.get("path"):
+        raise ValueError(f"{key}のprocess-loop対象にはpathが必要")
+    if enabled and check_paths:
+        location = locate(pathlib.Path(item["path"])) if "path" in item else None
+        if location is None or location.repo_id != repo_id:
+            raise ValueError(f"{key}のprocess-loop対象には同じrepositoryの実在するworktreeのpathが必要")
+    return item
 
 
 def migrate(config: dict[str, Any]) -> dict[str, Any]:

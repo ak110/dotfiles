@@ -85,24 +85,13 @@ def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_pat
     assert _saved(tmp_path)["codex_fast_mode"] == "true"
     assert _main(tmp_path, "config", "set", "write_model", "codex:sol/medium") != 0
     assert "migrate-shared" in capsys.readouterr().err
-    run_git = sync.run_git
-
-    def local_git(args, *positional, **kwargs):
-        assert args[0] not in {"fetch", "push", "pull", "ls-remote"}
-        return run_git(args, *positional, **kwargs)
-
-    with monkeypatch.context() as offline:
-        offline.setattr(sync, "run_git", local_git)
-        assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
+    # 比較は共有先を取得してから行うため、別のcloneが先に移行した値とも比べる。  # pyfltr: allow-comment
+    assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
     preview = json.loads(capsys.readouterr().out)
-    if losing_migration:
-        assert preview["comparison"] == {"review_model": "equal", "codex_fast_mode": "local_only"}
-        assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) == 2
-        assert "比較後にローカルか共有の設定が変わった" in capsys.readouterr().err
-        assert _saved(tmp_path)["review_model"] == "claude:sonnet/medium"
-        assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
-        preview = json.loads(capsys.readouterr().out)
-    assert preview["comparison"] == {"review_model": "different", "codex_fast_mode": "local_only"}
+    assert {item["key"]: item["kind"] for item in preview["items"]} == {
+        "review_model": "different",
+        "codex_fast_mode": "different",
+    }
     assert not preview["initial"]
     assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) != 0
     assert _saved(tmp_path)["review_model"] == "claude:sonnet/medium"
@@ -246,14 +235,15 @@ def test_shared_migration_hint_uses_actual_stored_keys(tmp_path, monkeypatch, ca
         assert args[0] not in {"fetch", "push", "pull", "ls-remote"}
         return run_git(args, *positional, **kwargs)
 
-    monkeypatch.setattr(sync, "run_git", forbid_transport)
-    assert _main(tmp_path, "config", "show") == 0
+    with monkeypatch.context() as offline:
+        offline.setattr(sync, "run_git", forbid_transport)
+        assert _main(tmp_path, "config", "show") == 0
     shown = capsys.readouterr()
     assert ("未移行の共有設定がある" in shown.err) == bool(expected_keys)
     if "base_engine" in stored:
         assert "execute_model claude:" in shown.out
     assert _main(tmp_path, "config", "migrate-shared") == 0
-    assert set(json.loads(capsys.readouterr().out)["local"]) == expected_keys
+    assert {item["key"] for item in json.loads(capsys.readouterr().out)["items"]} == expected_keys
     assert _config_file(tmp_path).read_bytes() == original
 
 
@@ -272,7 +262,7 @@ def test_shared_migration_comparison_has_terminal_and_machine_forms(tmp_path, mo
     machine = capsys.readouterr().out
     preview = json.loads(machine)
     assert preview["initial"] is initial
-    assert set(preview) == {"revision", "local", "shared", "comparison", "shared_defaults", "initial_not_shared", "initial"}
+    assert set(preview) == {"format", "revision", "initial", "items", "required", "invalid", "pending"}
     with monkeypatch.context() as terminal:
         terminal.setattr(config_module, "is_human_terminal", lambda stream: stream is sys.stdout)
         assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
@@ -282,7 +272,7 @@ def test_shared_migration_comparison_has_terminal_and_machine_forms(tmp_path, mo
         assert f"atk config migrate-shared --apply {preview['revision']}" in shown
         assert "codex:sol/medium" in shown and "比較" in shown
         if initial:
-            assert "初回" in shown and "共有へ移さない（初期値 auto）" in shown
+            assert "初回" in shown and "共有へ移さない" in shown
             assert "--keep-" not in shown
         else:
             assert "差あり" in shown and "初期値" in shown
@@ -322,7 +312,7 @@ def test_migration_does_not_drop_local_values_while_push_fails(tmp_path, monkeyp
     assert _main(tmp_path, "config", "migrate-shared", "--json") == 0
     preview = json.loads(capsys.readouterr().out)
     assert preview["initial"]
-    assert preview["initial_not_shared"] == {"codex_fast_mode": "auto"}
+    assert [item["key"] for item in preview["items"] if item["kind"] == "not_shared"] == ["codex_fast_mode"]
     assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"]) != 0
     assert _saved(tmp_path) == original
     assert "共有先へ移行できない" in capsys.readouterr().err
@@ -383,7 +373,7 @@ def test_snapshot_distinguishes_shared_edit_from_unmigrated_effective_value(tmp_
         assert settings[key]["source"] == "移行前のローカル保存値"
         assert settings[key]["shared"] is True
         assert settings[key]["shared_sync"] is upstream
-        assert "atk config migrate-shared" in settings[key]["description"]
+        assert settings[key]["migration_pending"] is upstream
         assert "同期先を設定するまで" not in settings[key]["description"]
     assert settings["codex_fast_mode"]["saved"] == "auto"
     assert settings["review_model"]["saved"] == config_settings.MODEL_DEFAULTS["review_model"]
@@ -633,7 +623,10 @@ def test_explicit_migration_only_drops_values_from_verified_snapshot(tmp_path, m
     _write_config(tmp_path, original)
     assert _main(tmp_path, "config", "migrate-shared") == 0
     preview = json.loads(capsys.readouterr().out)
-    assert preview["comparison"] == {"execute_model": "local_only", "review_model": "local_only"}
+    assert {item["key"]: item["kind"] for item in preview["items"]} == {
+        "execute_model": "local_only",
+        "review_model": "local_only",
+    }
     changed_local = {**original, "execute_model": "codex:sol/high"}
     git = sync.run_git
 
@@ -694,7 +687,7 @@ def test_migration_revision_includes_fallback_for_missing_shared_key(tmp_path, m
     _write_config(tmp_path, original)
     assert _main(tmp_path, "config", "migrate-shared") == 0
     preview = json.loads(capsys.readouterr().out)
-    assert preview["shared_defaults"]["execute_model"] != "codex:sol/low"
+    assert preview["items"][0]["shared_effective"] != "codex:sol/low"
     monkeypatch.setitem(config_settings.MUTABLE_KEY_DEFAULTS, "execute_model", "codex:sol/low")
     assert _main(tmp_path, "config", "migrate-shared", "--apply", preview["revision"], "--keep-shared", "execute_model") == 2
     assert "比較後に" in capsys.readouterr().err

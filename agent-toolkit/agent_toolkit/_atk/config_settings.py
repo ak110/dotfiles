@@ -129,9 +129,6 @@ ARRAY_KEYS = SERVE_HOSTS_KEYS
 PROVIDER_KEYS = frozenset({"codex_credits_provider", "codex_payg_provider"})
 
 CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.endswith("_connections"))
-SHARED_SETTING_KEYS = (
-    frozenset(MODEL_DEFAULTS) | CONNECTION_ORDER_KEYS | {"codex_fast_mode", "claude_usage_limit_wait", "codex_usage_limit_wait"}
-)
 SHARED_SETTINGS_FILENAME = "atk-config.json"
 SHARED_SETTINGS_MIGRATION_MESSAGE = "chore: migrate shared agent settings"
 
@@ -166,6 +163,29 @@ MUTABLE_KEY_DEFAULTS = {
     **SERVE_KEY_DEFAULTS,
     **WI_ATTACHMENT_LIMIT_DEFAULTS,
 }
+
+# 同じprivate-notesを使う端末は共有を既定とし、端末ごとに残す設定だけを理由とともに列挙する。  # pyfltr: allow-comment
+HOST_SETTING_REASONS = {
+    "agents_concurrency": "CPU・メモリと他のプロセスの負荷に合わせる上限のため",
+    "dotfiles_mode": "端末の役割に応じた導入範囲のため",
+    "serve_host": "各端末の待受アドレスと到達を許す範囲のため",
+    "serve_port": "端末ごとの使用状況とポート転送時の衝突を避けるため",
+    "serve_plans_root": "各端末の計画の保存パスのため",
+    "remote_hosts": "接続元ごとにSSHの別名の対応先と許す接続が異なるため",
+    "weekly_meta_auto_start": "同じキューに対して定時起動する1台を選ぶため",
+    "weekly_architecture_auto_start": "設計点検を実行する端末とその費用を選ぶため",
+    "weekly_ui_sweep_auto_start": "画面の起動・検証環境を持つ端末を選ぶため",
+    "weekly_research_auto_start": "週次調査の実行を認めた端末を選ぶため",
+    "weekly_research_x_api": "有償取得の承認が実行端末の認証と支出上限に結び付くため",
+}
+
+SPLIT_SETTING_KEYS = frozenset({"repositories"})
+
+"""共有属性と端末側のパスへ分けて保存するキー。  pyfltr: allow-comment"""
+
+SHARED_SETTING_KEYS = frozenset(MUTABLE_KEY_DEFAULTS) - HOST_SETTING_REASONS.keys() - SPLIT_SETTING_KEYS
+
+SHARED_FILE_KEYS = SHARED_SETTING_KEYS | SPLIT_SETTING_KEYS
 
 # 旧接続設定キーと移行先。保存値は読込時に移行先へ移し、環境変数とget・setでは移行先を示して拒否する。
 RETIRED_CONNECTION_KEYS = {
@@ -344,12 +364,15 @@ def load_shared_settings(path: pathlib.Path) -> dict[str, str]:
         if path.is_symlink():
             raise ValueError("シンボリックリンクは使えません")
         data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or data.keys() - SHARED_SETTING_KEYS:
+        if not isinstance(data, dict) or data.keys() - SHARED_FILE_KEYS:
             raise ValueError("共有する設定キーだけをJSON objectで指定してください")
         for key, value in data.items():
             if not isinstance(value, str):
                 raise ValueError(f"{key}は文字列で指定してください")
-            validate_mutable_setting(key, value)
+            if key == "repositories":
+                config_repositories.parse_shared(value)
+            else:
+                validate_mutable_setting(key, value)
     except FileNotFoundError:
         return {}
     except (OSError, ValueError) as error:
@@ -361,7 +384,7 @@ def load_shared_settings(path: pathlib.Path) -> dict[str, str]:
 
 
 @contextlib.contextmanager
-def _local_config_lock(path: pathlib.Path) -> Generator[None]:
+def local_config_lock(path: pathlib.Path) -> Generator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.with_suffix(".lock").open("a+b") as lock:
         file_lock.acquire_lock(lock)
@@ -371,27 +394,14 @@ def _local_config_lock(path: pathlib.Path) -> Generator[None]:
             file_lock.release_lock(lock)
 
 
-def _write_config_locked(path: pathlib.Path, config: dict[str, Any]) -> None:
+def write_config_locked(path: pathlib.Path, config: dict[str, Any]) -> None:
     atomic_write(path, json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
 
 def save_config(config: dict[str, Any]) -> None:
     path = config_file_path()
-    with _local_config_lock(path):
-        _write_config_locked(path, config)
-
-
-def drop_migrated_local_settings(expected: dict[str, Any]) -> None:
-    path = config_file_path()
-    with _local_config_lock(path):
-        current = load_config_strict()
-        pending = {key: current[key] for key in SHARED_SETTING_KEYS if key in current}
-        if pending != expected:
-            raise _next_action.ActionableError(
-                "移行中にローカル設定が変わった",
-                next_action="atk config migrate-sharedで現在の差を確認し直す",
-            )
-        _write_config_locked(path, {key: value for key, value in current.items() if key not in expected})
+    with local_config_lock(path):
+        write_config_locked(path, config)
 
 
 def config_env_name(key: str) -> str:
@@ -544,7 +554,7 @@ def validate_mutable_setting(key: str, value: str) -> None:
     elif key in SERVE_HOSTS_KEYS:
         parse_remote_hosts(value)
     elif key == "repositories":
-        config_repositories.parse(value)
+        config_repositories.parse_local(value)
     elif key == "usage_reset_permissions":
         validate_permissions(value)
     elif key == "agents_concurrency":
@@ -583,7 +593,8 @@ def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
         repositories = repository_settings()
         result = []
         for repo_id, item in repositories.items():
-            if not item["process_loop"]:
+            # pathの無い共有登録は、この端末にcloneを関連付けるまで巡回しない。  # pyfltr: allow-comment
+            if not item["process_loop"] or not item.get("path"):
                 continue
             location = config_repositories.locate(pathlib.Path(item["path"]))
             if location is None:
@@ -613,10 +624,28 @@ def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]
     if migrated != data:
         save_config(migrated)
     data = migrated
-    value = runtime_environment.environment().get(config_env_name("repositories")) or data.get("repositories", "{}")
+    explicit = runtime_environment.environment().get(config_env_name("repositories"))
+    if explicit:
+        return config_repositories.parse(explicit, check_paths=check_paths)
+    value = data.get("repositories", "{}")
     if not isinstance(value, str):
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
-    return config_repositories.parse(value, check_paths=check_paths)
+    merged = _merged_repositories(value)
+    if check_paths:
+        for repo_id, item in merged.items():
+            if item["process_loop"] and item.get("path"):
+                location = config_repositories.locate(pathlib.Path(item["path"]))
+                if location is None or location.repo_id != repo_id:
+                    raise ValueError(f"{repo_id}のprocess-loop対象には同じrepositoryの実在するworktreeのpathが必要")
+    return merged
+
+
+def _merged_repositories(local: str) -> dict[str, dict[str, Any]]:
+    path = shared_settings_path()
+    shared = load_shared_settings(path).get("repositories") if path is not None else None
+    if shared is None:
+        return config_repositories.parse_local(local)
+    return config_repositories.merge(config_repositories.parse_shared(shared), config_repositories.parse_local(local))
 
 
 def repository_branch_settings() -> dict[str, config_repositories.BranchSettings]:
@@ -694,6 +723,8 @@ def raw_mutable_setting(key: str, *, fallback: str | None = None, local: Mapping
         return explicit
     if local is None:
         local = load_config()
+    if key in SPLIT_SETTING_KEYS:
+        return json.dumps(_merged_repositories(local.get(key, "{}")), ensure_ascii=False)
     if key in local:
         return local[key]
     if key in SHARED_SETTING_KEYS and (path := shared_settings_path()) is not None:
@@ -706,7 +737,7 @@ def normalize_setting(key: str, value: str) -> str:
     if key in PATH_KEYS:
         return config_repositories.normalize_path(value)
     if key == "repositories":
-        return json.dumps(config_repositories.parse(value), ensure_ascii=False)
+        return json.dumps(config_repositories.parse_local(value), ensure_ascii=False)
     if key in CONNECTION_ORDER_KEYS:
         return ",".join(parse_connection_order(value))
     return value

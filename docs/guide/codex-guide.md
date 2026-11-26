@@ -173,6 +173,7 @@ atk config set codex_credits_provider my-credits
 atk config set codex_payg_provider my-payg
 ```
 
+provider IDは同じprivate-notesを使う端末で共有するため、各端末の`config.toml`に同じIDの定義を置く。
 APIキーでCodexへログインしている場合は、`openai`を`codex_payg_provider`（クレジットなら`codex_credits_provider`）へ設定する。
 API料金は接続先の課金規則に従い、同じ会話の継続にも発生する。
 ChatGPTのtokenをAPIキーとして使わない。
@@ -186,6 +187,8 @@ ChatGPTのtokenをAPIキーとして使わない。
 
 `agents_server`のCodex委譲先では、`usage_reset_permissions`に対象アカウント・期間・回数を明示した場合だけ、自動resetでcreditを消費できる。
 消費許可の初期値は空である。
+許可は同じprivate-notesを使う端末で共有し、回数は全端末の合計で数える。
+消費の前に共有先へ予約を書き、同期できない間は消費しない。
 条件と設定例は[利用枠とreset許可](claude-code-models.md#利用枠とreset許可)を参照する。
 
 ```bash
