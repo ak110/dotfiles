@@ -803,6 +803,8 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     assert not blocked(commands[0])
 
     answer(ask("approval-before"), approved)
+    if asynchronous:
+        answer(({"tool_use_id": "missing"}, {}), revise)
     assert not blocked(commands[0])
     answer(ask("choice-two"), "修正して進める")
     plain_reason = blocked(commands[0])
@@ -844,11 +846,6 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     answer(ask("unrelated"), approved)
     prompt(approved)
     assert blocked(commands[0])
-    if asynchronous:
-        prompt(
-            '<send_user_message_question_reply>[{"questionItemId":"["request_user_input_async","missing",0]","answer":"この方針で進める"}]</send_user_message_question_reply>'
-        )
-        assert blocked(commands[0])
     send("方針（案） 2件目の方針")
     answer(ask("extra-title", "2件目の"), approved)
     assert blocked(commands[0])
@@ -860,7 +857,11 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     answer(ask("not-resent", "2件目の"), approved)
     assert blocked(commands[0])
     send("方針（案） 2件目の")
-    answer(ask("new-approval", "2件目の"), approved)
+    issued = ask("new-approval", "2件目の")
+    if asynchronous:
+        answer(({"tool_use_id": "missing"}, {}), approved)
+        assert blocked(commands[0])
+    answer(issued, approved)
     for command in commands:
         assert not blocked(command)
     print("\n".join(outputs))
