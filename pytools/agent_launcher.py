@@ -158,22 +158,15 @@ def _enable_model_completion(command_name: str) -> None:
     enable_completion(parser)
 
 
-def _interactive_claude(argv: list[str], isatty: TerminalChecker) -> bool:
+def _can_retain_claude_output(argv: list[str], isatty: TerminalChecker) -> bool:
     if not (isatty(0) and isatty(1)):
         return False
-
-    # pyfltr: allow-comment -- 不明な起動は従来経路に任せ、版の更新で増えた引数を自動終了の対象にしない。
-    match argv:
-        case [] | ["--continue" | "-c" | "--resume" | "-r"]:
-            return True
-        case ["--resume" | "-r", session]:
-            return bool(session.strip()) and not session.startswith("-")
-        case [prompt]:
-            return not prompt.startswith("-") and len(prompt.split()) >= 2
-        case ["--", prompt]:
-            return bool(prompt.strip())
-        case _:
+    for token in argv:
+        if token == "--":
+            break
+        if token.partition("=")[0] in {"-p", "--print", "-v", "--version", "-h", "--help"}:
             return False
+    return True
 
 
 def _wait_for_claude(command: list[str], env: dict[str, str]) -> int:
@@ -252,7 +245,7 @@ def _run_model(
             return codex_launcher.run_interactive(pathlib.Path(command_bin), [*model_args, *argv], full=full)
         if not full and codex_launcher.uses_startup_features(argv):
             model_args = (*startup_features.codex_arguments(), *model_args)
-    if wrapper in {"opus", "sonnet", "fable"} and _interactive_claude(argv, isatty):
+    if wrapper in {"opus", "sonnet", "fable"} and _can_retain_claude_output(argv, isatty):
         assert wrapper is not None
         try:
             return _run_completion_launcher([command_bin, *model_args, *argv], wrapper, home, os_name)

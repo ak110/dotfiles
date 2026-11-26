@@ -9,6 +9,7 @@ type Job = { id: string; durable?: boolean; prompt?: string };
 
 type Options = {
   completion?: string;
+  completionSurfaces?: ("terminal" | "desktop")[];
   request?: string;
   jobs?: Job[];
   decisions?: Record<string, "allow" | "ask" | "deny">;
@@ -31,6 +32,9 @@ function engine(on: On, options: Options): { calls: string[]; writes: Map<string
   const writes = new Map<string, string>();
   const argv: (readonly string[])[] = [];
   on("session.id", () => ({ value: "sess-1" }));
+  if (options.completion !== undefined) {
+    on("session.surfaces", () => ({ value: options.completionSurfaces ?? ["terminal"] }));
+  }
   on("env.get", (_$, e) => ({
     value: e.name === "HOME" ? "/home/tester" :
       e.name === "AGENT_TOOLKIT_COMPLETION_LAUNCH_ID" && options.completion !== undefined ? LAUNCH : undefined,
@@ -389,12 +393,12 @@ test("協調の終了要求はcron一覧を取得できなければ取り消す"
 });
 
 test("協調の終了要求は次のturn.startより前でも利用者の入力で取り消す", async ($, on) => {
-  const { calls, writes } = engine(on, { completion: "approved" });
+  const { calls, writes } = engine(on, { completion: "approved", completionSurfaces: [] });
   const input: string[] = [];
-  on("session.surfaces", () => ({ value: [] }));
   on("prompt.submit", (_$, e) => { input.push(e.text); return { text: e.text }; });
   await $.prompt.submit({ text: "作業を続けて", wait: false, origin: { kind: "composer" } });
   expect(input).toEqual(["作業を続けて"]);
+  expect(writes.get(COMPLETION_PATH)).toBe("{}");
   await $.turn.complete(MAIN_TURN);
   expect(calls).not.toContain("command:exit");
   expect(writes.get(COMPLETION_PATH)).toBe("{}");
@@ -406,6 +410,16 @@ for (const command of ["Bash", "agents-server委譲"]) {
     on("state.get", { plugin: "agent-toolkit", key: "backgroundWaits" }, () => ({ value: { value: { task: { id: "task", command } }, version: 1 } }));
     await $.turn.complete(MAIN_TURN);
     expect(calls).not.toContain("command:exit");
+    expect(writes.get(COMPLETION_PATH)).toBe("{}");
+  });
+}
+
+
+for (const surfaces of [[], ["desktop"], ["terminal", "desktop"]] satisfies Options["completionSurfaces"][]) {
+  test(`端末だけの対話画面でなければ協調の終了を取り消す: ${JSON.stringify(surfaces)}`, async ($, on) => {
+    const { calls, writes } = engine(on, { completion: "approved", completionSurfaces: surfaces });
+    await $.turn.complete(MAIN_TURN);
+    expect(calls).toEqual([]);
     expect(writes.get(COMPLETION_PATH)).toBe("{}");
   });
 }

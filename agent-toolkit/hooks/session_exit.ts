@@ -159,7 +159,9 @@ async function completeAndExit(
     const raw = await $.fs.read(path);
     const state = JSON.parse(raw);
     if (state?.session !== sessionId || !["requested", "approved"].includes(state.status)) return;
-    if (aborted || state.status !== "approved" || await hasOtherCrons($) ||
+    const surfaces = await $.session.surfaces();
+    const terminalOnly = surfaces.includes("terminal") && surfaces.every((surface) => surface === "terminal");
+    if (aborted || state.status !== "approved" || !terminalOnly || await hasOtherCrons($) ||
         Object.keys((await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {}).length > 0 ||
         await collectCommonTasks($) !== null || await $.fs.read(path) !== raw || !unchanged()) {
       await cancelCompletion($, path);

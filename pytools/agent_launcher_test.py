@@ -589,19 +589,6 @@ sys.exit({status})
         ["--resume", "--print", "hello"],
         ["-r", "-p", "hello"],
         ["--resume", "session-a", "-p"],
-        ["mcp", "list"],
-        ["auth", "status"],
-        ["auto-mode"],
-        ["plugins"],
-        ["--bg", "hello"],
-        ["--background", "hello"],
-        ["--desktop", "--resume", "session-a"],
-        ["--debug", "hooks", "plugins", "list"],
-        ["--plugin-url", "https://example.invalid/plugin.zip", "mcp", "list"],
-        ["--unknown-launch-mode"],
-        ["--unknown-launch-mode=value", "--continue"],
-        ["--unknown-launch-mode", "value", "mcp", "list"],
-        ["new-management-command"],
         ["--version"],
     ],
 )
@@ -630,7 +617,24 @@ def test_claude_entrypoints_keep_noninteractive_path(
 
 
 @pytest.mark.parametrize("entrypoint", [agent_launcher.main_opus, agent_launcher.main_sonnet, agent_launcher.main_fable])
-@pytest.mark.parametrize("args", [[], ["--resume"], ["-r", "session-a"], ["--continue"], ["two words"], ["--", "hello"]])
+@pytest.mark.parametrize(
+    "args",
+    [
+        [],
+        ["hello"],
+        ["--model", "sonnet"],
+        ["--model=sonnet", "hello"],
+        ["--model", "sonnet", "--resume", "session-a"],
+        ["--model", "sonnet", "-r"],
+        ["--model=sonnet", "--continue"],
+        ["--resume"],
+        ["-r", "session-a"],
+        ["--continue"],
+        ["two words"],
+        ["--", "hello"],
+        ["--", "--print"],
+    ],
+)
 @pytest.mark.parametrize("fds", [{0, 1}, {0}, {1}])
 def test_claude_resume_checks_both_terminal_descriptors(
     entrypoint: Entrypoint,
@@ -652,3 +656,42 @@ def test_claude_resume_checks_both_terminal_descriptors(
         )
     assert error.value.code == (21 if fds == {0, 1} else 19)
     assert bool(child) is (fds == {0, 1})
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["mcp", "list"],
+        ["auth", "status"],
+        ["auto-mode"],
+        ["plugins"],
+        ["--bg", "hello"],
+        ["--background", "hello"],
+        ["--desktop", "--resume", "session-a"],
+        ["--debug", "hooks", "plugins", "list"],
+        ["--plugin-url", "https://example.invalid/plugin.zip", "mcp", "list"],
+        ["--unknown-launch-mode"],
+        ["--unknown-launch-mode=value", "--continue"],
+        ["--unknown-launch-mode", "value", "mcp", "list"],
+        ["new-management-command"],
+    ],
+)
+def test_claude_unclassified_launch_does_not_exit_or_append_on_its_own(
+    args: list[str],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent_toolkit._common.completion_exit import LAUNCH_ENV
+
+    def wait(command: list[str], env: dict[str, str]) -> int:
+        assert command[-len(args) :] == args
+        assert env[LAUNCH_ENV]
+        print("本体出力")
+        return 19
+
+    monkeypatch.setattr(agent_launcher, "_wait_for_claude", wait)
+    with pytest.raises(SystemExit) as error:
+        agent_launcher.main_opus(args, home=tmp_path, resolve=lambda *_: pathlib.Path("claude"), isatty=lambda _: True)
+    assert error.value.code == 19
+    assert capsys.readouterr().out == "本体出力\n"
