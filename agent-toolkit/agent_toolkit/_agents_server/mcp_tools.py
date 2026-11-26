@@ -129,10 +129,6 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
         return await function_hook_requests.request(identifier, operation, inputs)
     except function_hook_requests.HookRequestRejected as error:
         if operation == "send_to_user" and error.resend:
-            if isinstance(message := inputs.get("message"), str) and "`missing-prevention`" in str(error):
-                await run_file_operation(
-                    send_misdetection.remember_rejection, identifier, "missing-prevention", message, inputs.get("tool_use_id")
-                )
             next_action = await run_file_operation(
                 resend_guidance,
                 identifier,
@@ -140,6 +136,7 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
                 tool_name=CLAUDE_TOOL_NAME,
                 tool_use_id=inputs.get("tool_use_id"),
                 kind=inputs.get("kind"),
+                check=send_misdetection.rejection_check(str(error)),
             )
         elif operation == "send_to_user":
             next_action = _UI_UNAVAILABLE_NEXT_ACTIONS[operation]["claude"]
@@ -809,18 +806,14 @@ async def send_to_user(
         "response-language" not in retry
         and response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN
     ):
-        identifier = _manager().launcher_session_id()
-        if identifier:
-            await run_file_operation(
-                send_misdetection.remember_rejection, identifier, "response-language", message, tool_use_id
-            )
         action = await run_file_operation(
             resend_guidance,
-            identifier,
+            _manager().launcher_session_id(),
             message,
             tool_name=CLAUDE_TOOL_NAME,
             tool_use_id=tool_use_id,
             kind=kind,
+            check="response-language",
         )
         raise ActionableError(
             "本文を日本語で書き直すまで画面へ表示していない。" + send_misdetection.retry_hint("response-language"),

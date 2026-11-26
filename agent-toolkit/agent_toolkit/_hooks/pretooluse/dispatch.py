@@ -323,8 +323,9 @@ def _retry_send(
         tool_use_id=payload.get("tool_use_id"),
         kind=tool_input.get("kind"),
         edit_body=edit_body,
+        check=send_misdetection.rejection_check(reason),
     )
-    return Decision(block=f"{reason}\n\n{guidance}")
+    return Decision(block=f"{reason}\n\n次の操作: {guidance}")
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
@@ -452,10 +453,6 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 norm_excuse_gate.text_block(payload, message, "ユーザーへの送達", retry=retry)
             )
         if reason is not None:
-            if isinstance(message, str):
-                for check in send_misdetection.RETRY:
-                    if send_misdetection.retry_hint(check) in reason:
-                        send_misdetection.remember_rejection(session_id, check, message, payload.get("tool_use_id"))
             return _retry_send(payload, tool_name, tool_input, session_id, reason, edit_body=edit_body)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")

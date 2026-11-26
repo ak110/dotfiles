@@ -14,6 +14,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolRequestParams, CallToolResult
 
 from agent_toolkit._agents_server import mcp_tools, service_context
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import function_hook_requests, runtime_environment, send_misdetection, session_record_paths
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -227,7 +228,6 @@ async def test_conversation_mod_rejection_returns_operation_recovery(
 async def test_send_rejection_preserves_body_only_when_resend_can_recover(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, case: str
 ) -> None:
-    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
 
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
@@ -315,18 +315,35 @@ async def test_send_to_user_keeps_warnings_in_result_when_stash_fails(
 
 
 @pytest.mark.asyncio
-async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, tmp_path):
+@pytest.mark.parametrize("tool_use_id", ["toolu_fixture", "repl_fixture", None])
+async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, tmp_path, tool_use_id):
     identifier = "a" * 32
-    request = AsyncMock(return_value={"ok": True, "id": identifier})
+    rejected = function_hook_requests.HookRequestRejected("判定名は `missing-prevention`。", resend=True)
+    request = AsyncMock(side_effect=[rejected, {"ok": True, "id": identifier}])
     monkeypatch.setattr(function_hook_requests, "request", request)
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "misdetection-mcp"))
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
     monkeypatch.setattr(session_record_paths, "stop_log_path", lambda sid: tmp_path / f"{sid}.log")
-    message = "引用の例を提示する。"
+    monkeypatch.setattr(managed_temp, "resolve_session_temp", lambda _sid: tmp_path)
+    monkeypatch.setattr(managed_temp, "create_session_temp", lambda *_args: tmp_path)
+    message = "期待: 語の例を示す。\n原因: 用語の見出しの例。\n処置: 動作は変えない。"
 
     environment = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
     with runtime_environment.bind(runtime_environment.CallerContext(environment, tmp_path)):
-        send_misdetection.remember_rejection("misdetection-mcp", "missing-prevention", message, identifier)
+        params = CallToolRequestParams.model_validate(
+            {
+                "name": "send_to_user",
+                "arguments": {"message": message},
+                **({"_meta": {"claudecode/toolUseId": tool_use_id}} if tool_use_id else {}),
+            }
+        )
+        async with mcp_tools._request_scope(params):  # pylint: disable=protected-access
+            with pytest.raises(ToolError, match="誤検出なら") as rejection:
+                await mcp_tools.mcp.call_tool("send_to_user", {"message": message})
+        saved = tmp_path / "message.md"
+        assert saved.read_text(encoding="utf-8") == message
+        assert ("message: await file" in str(rejection.value)) == (tool_use_id == "repl_fixture")
+        request.reset_mock()
         with pytest.raises(ToolError, match="申告できる判定"):
             await mcp_tools.mcp.call_tool(
                 "send_to_user",
@@ -362,4 +379,4 @@ async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, t
     )
     summary = send_misdetection.summary("misdetection-mcp")
     assert "missing-prevention: 1件" in summary
-    assert identifier in summary
+    assert str(tmp_path / "message.md") in summary

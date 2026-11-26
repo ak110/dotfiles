@@ -82,17 +82,21 @@ def retry_hint(check: str) -> str:
     )
 
 
+def rejection_check(reason: str) -> str | None:
+    return next((check for check in sorted(RETRY) if f"判定名は `{check}`。" in reason), None)
+
+
 def _body_key(check: str, message: str) -> str:
     return hashlib.sha256((check + "\0" + message).encode(errors="surrogatepass")).hexdigest()
 
 
-def remember_rejection(session_id: str, check: str, message: str, location: object = None) -> None:
+def remember_rejection(session_id: str, check: str, message: str, location: str) -> None:
     if not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
         return
     key = _body_key(check, message)
 
     def update(state: dict) -> dict:
-        seen = {**state.get("send_misdetection_rejections", {}), key: location if isinstance(location, str) else key}
+        seen = {**state.get("send_misdetection_rejections", {}), key: location}
         state["send_misdetection_rejections"] = dict(list(seen.items())[-200:])
         return state
 
