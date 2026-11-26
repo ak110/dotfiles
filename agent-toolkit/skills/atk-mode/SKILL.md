@@ -27,9 +27,9 @@ Codexは`playbooks/host-codex.md`「読む節」。
 4. 取り消せないことの前で止まる（`quality-principles-constraints.md`）。
 5. 逸脱（`quality-principles-deviation.md`）: 対処前に`agent-basics:bugfix`を起動し、同じ前提で修正が2回失敗したら前提を検証する。
 6. 作る者と確かめる者を分ける（`quality-principles-verification.md`）。
-7. 始めた仕事は自分で完了まで担う（`quality-principles-ownership.md`）。
+7. 始めた仕事は完了まで担う（`quality-principles-ownership.md`）。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）。
-9. 足す前に引き、構造で守れるものは構造で守る（`quality-principles-subtraction.md`）。
+9. 足す前に引いて構造で守り、既存例と照合して決める（`quality-principles-subtraction.md`）。
 
 確認は不可逆操作の事前承認・本人固有の判断や入力に限る。
 

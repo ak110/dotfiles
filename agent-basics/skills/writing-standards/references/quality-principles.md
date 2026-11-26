@@ -12,7 +12,7 @@
 6. 作る者と確かめる者を分ける（`quality-principles-verification.md`）: 独立した文脈が、外から確認できる証拠で確かめる。
 7. 始めたものは自分で終わらせる（`quality-principles-ownership.md`）: 始めた者が終了を観測して回収する。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）: 読み手が持たない前提を補い、定義は1か所に置く。
-9. 足す前に引き、構造で守れるものは構造で守る（`quality-principles-subtraction.md`）。
+9. 足す前に引き、構造で守れるものは構造で守る（`quality-principles-subtraction.md`）: 決める前に同種の既存例と照合し、合わせるか違える理由を示す。
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
