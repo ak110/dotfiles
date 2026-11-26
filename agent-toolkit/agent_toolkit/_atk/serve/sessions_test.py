@@ -9,8 +9,9 @@ import typing
 
 import pytest
 
+from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
-from agent_toolkit._atk.serve import sessions
+from agent_toolkit._atk.serve import sessions, sessions_models
 from agent_toolkit._testing import serve_remote_support
 from agent_toolkit._testing.serve_sessions_support import (
     _claude_record,
@@ -460,19 +461,14 @@ async def test_remote_failure_warning_names_next_action(tmp_path: pathlib.Path, 
     ],
 )
 def test_session_reports_use_exact_tool_names_and_correlate_results(engine, result, expected):
-    from agent_toolkit._atk import session_record_format
-    from agent_toolkit._atk.serve import sessions_models
-
-    call = {
-        "type": "response_item",
-        "payload": {
-            "type": "function_call",
-            "name": "mcp__agents_server__send_to_user",
-            "call_id": "report-1",
-            "arguments": json.dumps({"message": "**報告する本文**"}),
-        },
+    payload = {
+        "type": "function_call",
+        "name": "mcp__agents_server__send_to_user",
+        "call_id": "report-1",
+        "arguments": json.dumps({"message": "**報告する本文**"}),
     }
-    other = {**call, "payload": {**call["payload"], "name": "foreign_send_to_user", "call_id": "not-report"}}
+    call = {"type": "response_item", "payload": payload}
+    other = {**call, "payload": {**payload, "name": "foreign_send_to_user", "call_id": "not-report"}}
     result_record = {
         "type": "response_item",
         "payload": {"type": "function_call_output", "call_id": "report-1", "output": json.dumps(result, ensure_ascii=False)},
@@ -528,9 +524,6 @@ def test_session_reports_use_exact_tool_names_and_correlate_results(engine, resu
 
 
 def test_delegate_view_contains_only_request_and_last_assistant():
-    from agent_toolkit._atk import session_record_format
-    from agent_toolkit._atk.serve import sessions_models
-
     messages = [
         ("user", "委譲元の依頼"),
         ("assistant", "中間の発話"),

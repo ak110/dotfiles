@@ -198,7 +198,8 @@ def _detail_events(
             arguments = _json_object(raw)
             body = arguments.get("message") if arguments else None
             if event.name in _REPORT_TOOLS and isinstance(body, str):
-                result_index, result = results.get(event.call_id, (None, None))
+                result_entry = results.get(event.call_id) if event.call_id is not None else None
+                result_index, result = result_entry if result_entry is not None else (None, None)
                 display[index].update(
                     kind="user_report", text=body, delivery_status=_report_status(result), result_index=result_index
                 )

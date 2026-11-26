@@ -6,7 +6,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._common import session_state
+from agent_toolkit._common import completion_exit, session_state
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
 from agent_toolkit._hooks import background_tasks as _background_tasks
@@ -445,8 +445,6 @@ def test_queued_notifications_yield_without_overriding_block(
     ("case", "approved"), [("clear", True), ("blocked", False), ("background", False), ("unrelated", False)]
 )
 def test_stop_completion_exit_verdict(case, approved, monkeypatch, tmp_path):
-    from agent_toolkit._common import completion_exit
-
     _set_state_directory(monkeypatch, tmp_path)
     launch = "a" * 32
     monkeypatch.setenv(completion_exit.LAUNCH_ENV, launch)

@@ -17,6 +17,7 @@ from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import process_identity
+lazy from agent_toolkit._common import completion_exit, transcript
 
 _NO_VALUE = frozenset(
     {
@@ -459,8 +460,6 @@ def main() -> int:
 
 
 def request_completion_exit() -> int:
-    from agent_toolkit._common import completion_exit, transcript
-
     launch = os.environ.get(completion_exit.LAUNCH_ENV, "")
     session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     path = completion_exit.state_path(launch)

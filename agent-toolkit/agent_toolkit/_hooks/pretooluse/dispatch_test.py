@@ -14,6 +14,7 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit import atk, hook
+from agent_toolkit._common import session_state
 from agent_toolkit._hooks import user_prompt_submit
 from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
@@ -658,9 +659,6 @@ def test_external_source_url_uses_ascii_uri_characters(line: str, expected: str)
 def test_policy_reapproval_blocks_only_until_new_matching_approval(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tool: str
 ) -> None:
-
-    from agent_toolkit._common import session_state
-
     monkeypatch.setattr(session_state, "state_path", lambda sid: tmp_path / f"{sid}.json")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     private_notes = tmp_path / "notes"
@@ -753,10 +751,10 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
             post(tool, payload, body, {})
         return payload, body
 
-    def answer(asked: tuple[dict, dict], value: str) -> None:
+    def answer(asked: tuple[dict, dict], value: str, *, index: int | float = 0) -> None:
         payload, body = asked
         if asynchronous:
-            replies = [{"questionItemId": json.dumps([tool, payload["tool_use_id"], 0]), "answer": value}]
+            replies = [{"questionItemId": json.dumps([tool, payload["tool_use_id"], index]), "answer": value}]
             prompt(f"<send_user_message_question_reply>{json.dumps(replies)}</send_user_message_question_reply>")
         else:
             answers = (
@@ -861,6 +859,9 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     if asynchronous:
         answer(({"tool_use_id": "missing"}, {}), approved)
         assert blocked(commands[0])
+        for index in (False, 0.0, 1):
+            answer(issued, approved, index=index)
+            assert blocked(commands[0]), (type(index), index)
     answer(issued, approved)
     for command in commands:
         assert not blocked(command)

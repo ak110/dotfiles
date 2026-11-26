@@ -8,6 +8,7 @@ import json
 import shlex
 from typing import Any
 
+# pylint: disable-next=useless-import-alias  # 呼び出し元へ互換名を再公開するため。
 from agent_toolkit._common.session_conversation_rows import compact_assistant_reports as compact_assistant_reports
 
 _MIN_RECLAIMED_EXCERPT_BYTES = 96

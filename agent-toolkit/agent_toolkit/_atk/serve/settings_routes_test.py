@@ -183,11 +183,11 @@ def test_background_snapshot_never_falls_back_to_legacy_reads(monkeypatch, suppo
 
     monkeypatch.setattr(settings_routes, "run_with_timeout", run)
     if supported:
-        snapshot, _runner = settings_routes._remote_snapshot("host", read_only=True)
+        snapshot, _runner = settings_routes._remote_snapshot("host", read_only=True)  # noqa: SLF001  # pylint: disable=protected-access
         assert snapshot == {"settings": {}}
     else:
-        with pytest.raises(settings_routes._ReadOnlyUnsupported):
-            settings_routes._remote_snapshot("host", read_only=True)
+        with pytest.raises(settings_routes._ReadOnlyUnsupported):  # noqa: SLF001  # pylint: disable=protected-access
+            settings_routes._remote_snapshot("host", read_only=True)  # noqa: SLF001  # pylint: disable=protected-access
     assert calls == ["uname -s", "atk config snapshot --read-only"] + ([] if supported else ["atk config snapshot --help"])
 
 

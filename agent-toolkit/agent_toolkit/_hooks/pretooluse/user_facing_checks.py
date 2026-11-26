@@ -231,7 +231,7 @@ _APPROVED = _POLICY_APPROVAL_OPTIONS[0]["label"]
 def normalize_policy_question(tool_name: str, tool_input: dict) -> dict:
     if tool_name != _ASYNC_QUESTION or not isinstance(questions := tool_input.get("questions"), list):
         return tool_input
-    normalized = []
+    normalized: list[dict[str, object]] = []
     for question in questions:
         title = question.get("title") if isinstance(question, dict) else None
         if not isinstance(title, str) or not title.startswith("方針の承認："):
@@ -395,8 +395,9 @@ def observe_async_policy_reply(session_id: str, prompt: str) -> None:
                 or len(identity) != 3
                 or identity[0] != _ASYNC_QUESTION
                 or not isinstance(call_id := identity[1], str)
-                or type(identity[2]) is not int
-                or identity[2] != 0
+                or not isinstance(index := identity[2], int)
+                or isinstance(index, bool)
+                or index != 0
                 or not isinstance(answer := reply.get("answer"), str)
             ):
                 continue

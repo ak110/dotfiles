@@ -261,13 +261,13 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 hosts = (host,) if host else await asyncio.to_thread(_remote_hosts, read_only=True)
                 await asyncio.gather(*(refresh_remote(name) for name in hosts if name not in unsupported))
             if background and host:
-                snapshot = snapshots.get(host)
-                if snapshot is None or host in errors:
+                background_snapshot = snapshots.get(host)
+                if background_snapshot is None or host in errors:
                     raise ValueError(errors.get(host, "リモート設定の自動取得を待っています"))
                 hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
                 return json_no_store(
                     {
-                        **snapshot,
+                        **background_snapshot,
                         "hosts": hosts,
                         "automatic_errors": {key: errors[key] for key in hosts if key in errors},
                         "automatic_unsupported": sorted(unsupported.intersection(hosts)),

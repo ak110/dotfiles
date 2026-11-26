@@ -12,6 +12,7 @@ import psutil
 import pytest
 
 from agent_toolkit._atk import agents_exit_session
+from agent_toolkit._common import completion_exit
 
 
 @pytest.mark.parametrize(
@@ -329,8 +330,6 @@ def test_request_completion_exit_is_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from agent_toolkit._common import completion_exit
-
     session, launch = "session-a", "a" * 32
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)

@@ -15,8 +15,8 @@ _POLICY = (
 _OFFICIAL = r"(?:claude|codex)"
 
 
-@pytest.fixture
-def bash(host_environ: Callable[[], dict[str, str]]) -> tuple[str, dict[str, str]]:
+@pytest.fixture(name="bash")
+def _bash(host_environ: Callable[[], dict[str, str]]) -> tuple[str, dict[str, str]]:
     host = host_environ()
     if os.name == "nt":
         # pyfltr: allow-comment -- System32のbash.exeはWSL起動用であり、Windows CIではGit Bashを使う。
@@ -32,7 +32,7 @@ def bash(host_environ: Callable[[], dict[str, str]]) -> tuple[str, dict[str, str
         if host.get("CI") == "true":
             pytest.fail("CIではBash（WindowsではGit Bash）が必要。")
         pytest.skip("公式名の起動設定を評価するBashが見つからない。")
-    env = {key: host[key] for key in ("SystemRoot", "WINDIR") if key in host}
+    env: dict[str, str] = {key: host[key] for key in ("SystemRoot", "WINDIR") if key in host}
     return executable, env
 
 

@@ -116,7 +116,7 @@ async def test_visible_usage_retries_every_five_minutes(
 ) -> None:
     attempts = 0
 
-    def refresh_for_display(*, force: bool = False):
+    def refresh_for_display(**_kwargs):
         nonlocal attempts
         attempts += 1
         return {

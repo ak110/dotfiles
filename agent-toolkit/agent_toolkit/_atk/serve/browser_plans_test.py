@@ -27,6 +27,8 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _valid_diagram_markdown,
     _write_entries,
 )
+from agent_toolkit._testing import plan_fixture
+from agent_toolkit._testing.serve_browser_wi_support import _entry_path
 
 pytestmark = [
     pytest.mark.browser,
@@ -469,9 +471,6 @@ async def test_plan_collection_failures_show_operation(screen_harness: _ScreenHa
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.cpu_limit(0.75, reason="Chromiumの2つのタブと計画・WI画面の遷移を実サーバーで確認する")
 async def test_plan_wi_links_open_here_and_support_middle_click(screen_harness: _ScreenHarness) -> None:
-    from agent_toolkit._testing import plan_fixture
-    from agent_toolkit._testing.serve_browser_wi_support import _entry_path
-
     root = screen_harness.root.parent
     filename = "20261011-203736-001.md"
     legacy = "旧式 WI.md"

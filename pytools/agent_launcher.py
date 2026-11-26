@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import NoReturn
 
 from agent_toolkit._common import startup_features
-lazy from agent_toolkit._common import codex_models
+lazy from agent_toolkit._common import codex_models, completion_exit, host_homes
 
 from pytools._internal import common
 from pytools._internal.cli import enable_completion
@@ -285,8 +285,6 @@ def _wait_for_claude(command: list[str], env: dict[str, str]) -> int:
 
 
 def _run_completion_launcher(command: list[str], wrapper: str, home: pathlib.Path, os_name: str) -> int:
-    from agent_toolkit._common import completion_exit, host_homes
-
     launch = uuid.uuid4().hex
     env = {**os.environ, completion_exit.LAUNCH_ENV: launch}
     root = host_homes.claude_config_dir(env, home=home)

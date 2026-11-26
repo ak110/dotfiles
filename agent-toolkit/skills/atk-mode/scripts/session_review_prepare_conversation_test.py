@@ -10,6 +10,8 @@ from typing import Any
 import pytest
 import session_review_evidence as evidence
 import session_review_prepare as prepare
+from agent_toolkit._atk import session_record_format
+from agent_toolkit._atk.serve import sessions_models
 from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing import session_evidence_support as support
 from agent_toolkit._testing.session_review_prepare_support import (
@@ -326,9 +328,6 @@ def test_prepare_omits_tool_result_bodies_in_claude_conversation(
     assert "依頼" in conversation
     call_rows = [line for line in conversation.splitlines() if line.startswith("- 呼出 ")]
     assert len(call_rows) == 4
-    from agent_toolkit._atk import session_record_format
-    from agent_toolkit._atk.serve import sessions_models
-
     records, broken = session_record_format.parse_records(transcript.read_text(encoding="utf-8"), include_positions=True)
     detail = sessions_models.build_detail("claude", records, broken_lines=broken, subagents=None, subagents_unavailable=False)
     labels = [row["label"].replace("record:", f"claude:{transcript.stem}:") for row in detail["conversation"]]
@@ -423,9 +422,6 @@ def test_prepare_summarizes_codex_tool_activity(
     for name in ("sed", "checked", "found", "linted"):
         assert f"{name}-line-" not in conversation
     assert "Chunk ID: abc" not in conversation
-
-    from agent_toolkit._atk import session_record_format
-    from agent_toolkit._atk.serve import sessions_models
 
     records, broken = session_record_format.parse_records(transcript.read_text(encoding="utf-8"), include_positions=True)
     detail = sessions_models.build_detail("codex", records, broken_lines=broken, subagents=None, subagents_unavailable=False)

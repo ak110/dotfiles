@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import NoReturn
 
 import pytest
+from agent_toolkit._common.completion_exit import LAUNCH_ENV
 
 from pytools import agent_launcher
 
@@ -647,8 +648,6 @@ def test_claude_resume_checks_both_terminal_descriptors(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent_toolkit._common.completion_exit import LAUNCH_ENV
-
     launches: list[str] = []
 
     def wait(_command: list[str], env: dict[str, str]) -> int:
@@ -703,8 +702,6 @@ def test_claude_noninteractive_launch_preserves_posix_execv(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from agent_toolkit._common.completion_exit import LAUNCH_ENV
-
     monkeypatch.delenv(LAUNCH_ENV, raising=False)
 
     def execv(path: str, command: list[str]) -> NoReturn:
