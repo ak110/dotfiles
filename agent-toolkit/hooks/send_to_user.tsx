@@ -158,7 +158,7 @@ export const missingPreventionRejection = automatedMessage(
   "block",
   "報告は未送信である。bugfixの記録（`期待:`・`原因:`・`処置:`）に`再発防止:`の行が無い。" +
     "採用する策と変える成果物、採らない区分名と理由、または未解決で調査へ引き継ぐ場合の観測した事象・次に確かめる問い・引継先（`agent-basics:bugfix/references/prevention.md`「`再発防止:`の行」）を`再発防止:`の行に書き、同じ報告をsend_to_userで送り直せ。" +
-    '判定名は `missing-prevention`。誤検出の場合だけ同じ本文に `misdetection=[{"check":"missing-prevention","reason":"理由"}]` を付けて再送する。',
+    '判定名は `missing-prevention`。',
 );
 
 export function missingPreventionLine(message: string): boolean {
