@@ -264,7 +264,7 @@ async def test_saved_report_uses_one_validated_snapshot(monkeypatch, tmp_path, c
     saved = root / reference / "message.md"
     saved.parent.mkdir()
     visible = "検査した長文を一度だけ表示する。\n" * 100
-    saved.write_text(visible, encoding="utf-8")
+    saved.write_bytes(visible.encode("utf-8"))
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: session))
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
     monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
