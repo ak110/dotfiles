@@ -127,6 +127,20 @@ def claude_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list
         line = record.get("_serve_line")
         kind = record.get("type")
         timestamp = record.get("timestamp") if isinstance(record.get("timestamp"), str) else None
+        attachment = record.get("attachment")
+        if kind == "attachment" and isinstance(attachment, dict):
+            origin = attachment.get("origin")
+            prompt = attachment.get("prompt")
+            if (
+                attachment.get("type") == "queued_command"
+                and isinstance(origin, dict)
+                and origin.get("kind") == "human"
+                and attachment.get("commandMode") != "task-notification"
+                and isinstance(prompt, str)
+            ):
+                events.append(SessionEvent(kind="user", timestamp=timestamp, text=prompt, line=line, ordinal=0))
+                startup = False
+            continue
         if kind == "system" and record.get("subtype") == "compact_boundary":
             metadata = record.get("compactMetadata")
             events.append(

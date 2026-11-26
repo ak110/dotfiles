@@ -396,7 +396,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   }
   function moveUser(delta) {
     const current = Number(currentPosition());
-    const candidates = visibleEvents.filter(({event, index}) => event.kind === "user" && (index - current) * delta > 0);
+    const candidates = visibleEvents.filter(({event, index}) => event.user_navigation && (index - current) * delta > 0);
     const target = delta === 1 ? candidates[0] : candidates.at(-1);
     if (target) moveToEvent(target.index);
   }

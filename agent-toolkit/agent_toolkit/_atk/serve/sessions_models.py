@@ -210,6 +210,8 @@ def _detail_events(
         elif kind == "tool_result":
             item["kind"] = "tool-failure" if (event.detail or {}).get("is_error") is True else "tool-result"
         conversation.append(item)
+    for entry in display:
+        entry["user_navigation"] = entry["kind"] == "user" and not delegation
     selected, _ = session_conversation_rows.compact_assistant_reports(conversation)
     if delegation and selected:
         rows = session_conversation_rows.delegate_rows(selected)
