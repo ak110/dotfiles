@@ -491,14 +491,7 @@ async def test_handoff_guidance_after_direct_model_availability_failure(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "codex:after/medium")
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        started = await mcp_tools.start(
-            mode="explore",
-            cwd=str(tmp_path),
-            prompt="調査",
-            model_type="codex:luna/medium",
-            model_override="observation",
-            model_override_evidence="公開起動の診断を観測する",
-        )
+        started = await manager.start("codex:luna/medium", "調査", str(tmp_path), launch_kind="explore")
         predecessor = manager.sessions[started["session_id"]]
         error = {"codexErrorInfo": "usageLimitExceeded"}
         _complete(predecessor, message="残作業", error=error)

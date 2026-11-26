@@ -219,17 +219,17 @@
 ## 実機の観測だけを目的とする起動
 
 応答の内容を使わず、実機の確認、対照実験、識別子の観測だけのためにエージェントCLIか`agents_server`の委譲を起動する時の指定である。
-検証の対象がモデル、effort、設定、ツールに左右されない限り、軽量の工程のモデル別名とeffort `low`を使い、版付きの古いIDに固定しない。
+観測にも作業に合う工程設定を使い、観測のために候補やeffortを変更しない。
 共有状態の隔離は`agent-basics:writing-standards/references/investigation.md`「エージェントCLIを検証で起動する時の隔離」に従う。
 
-- `agents_server`: `model_type`へ`claude:haiku/low`か`codex:luna/low`を渡す。
-  `model_override=observation`と`model_override_evidence`（観測する事象）を併記する。
+- `agents_server`: `task`は役割の工程を使い、それ以外では該当する工程名を渡す。
   検証の対象が`delegate`か`task`の起動そのものでない限り、`mode`は`explore`か`shell`にする。
-- Claude CodeのCLI: `--model haiku --effort low --no-session-persistence --setting-sources ""`を指定する。
+- Claude CodeのCLI: 工程設定のClaude候補に合わせて`--model`と`--effort`を指定し、`--no-session-persistence --setting-sources ""`を付ける。
   加えて`--tools "" --strict-mcp-config --disable-slash-commands --system-prompt <文>`を指定する。
   プロンプトは`--`の後ろに置く（`--tools ""`が後続の位置引数を値として取るため）。
   `--bare`はOAuthの認証を読まないので使わない。
-- CodexのCLI: `-c model_reasoning_effort=low --ignore-user-config --ignore-rules`を指定し、記録が不要なら`--ephemeral`も加える。
+- CodexのCLI: 工程設定のCodex候補に合わせてモデルとeffortを指定し、`--ignore-user-config --ignore-rules`を付ける。
+  記録が不要なら`--ephemeral`も加える。
   `codex exec`はChatGPTの認証で系列名`luna`を拒否するため、`luna`系列の最新の完全なIDを指定する。
 
 ## 再委譲する場合に守る事項

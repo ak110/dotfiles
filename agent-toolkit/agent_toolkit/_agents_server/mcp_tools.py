@@ -338,14 +338,14 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     *,
     model_override: Annotated[
         Literal["user_instruction", "observation", "fallback_failure"] | None,
-        Field(description=parameter_description("上書き区分。ユーザー指示・軽量モデルの観測・自動切替の不具合に限る。")),
+        Field(description=parameter_description("候補外の起動は本人指定か、全候補の週間上限を確認した場合に限る。")),
     ] = None,
     model_override_evidence: Annotated[
         str | None,
         Field(
             description=parameter_description(
-                "本人指定の所在はsession:<会話ID>:<行番号>、wi:<WI名>、answer:<UWI名>。観測・切替失敗はその内容を記す。"
-                "自由本文のdelegateの切替失敗はphase:<失敗した工程名>を渡す。"
+                "本人指定の所在はsession:<会話ID>:<行番号>、wi:<WI名>、answer:<UWI名>。"
+                "週間上限による代替はphase:<起動した工程名>を渡す。上限はサーバーが確認する。"
             )
         ),
     ] = None,
