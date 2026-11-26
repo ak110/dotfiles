@@ -132,6 +132,7 @@ class CodexResource:
         self._task: asyncio.Task[None] | None = None
         self.process: Any = None
         self.parent_environment: dict[str, str] | None = None
+        self._supports_outgoing_speed = False
 
     @classmethod
     def create(
@@ -223,6 +224,7 @@ class CodexResource:
             }
         )
         controller = cls(Resource(runtime, identifier, runtime.target), notification, server_request, failure)
+        controller._supports_outgoing_speed = True
         return controller
 
     @property
@@ -266,6 +268,12 @@ class CodexResource:
         on_sent: Callable[[], None] | None = None,
         outgoing_speed: dict | None = None,
     ) -> dict:
+        if outgoing_speed is not None and not self._supports_outgoing_speed:
+            if params is None:
+                params = {}
+            with codex_fast_mode.apply_legacy_outgoing_metadata(params, outgoing_speed):
+                pass
+            outgoing_speed = None
         ticket = str(uuid.uuid4()) if on_sent is not None else None
         self._requests += 1
         if ticket is not None and on_sent is not None:
@@ -384,6 +392,7 @@ class CodexResource:
         return {
             **self.resource.descriptor(),
             "sequence": self._sequence,
+            "supports_outgoing_speed": self._supports_outgoing_speed,
             "environment": self.parent_environment,
             "pid": self.process.pid if self.process is not None else None,
         }
@@ -398,6 +407,7 @@ class CodexResource:
         failure: Callable[[BaseException], Awaitable[None]],
     ) -> CodexResource:
         client = cls(Resource.attach(runtime, descriptor), notification, server_request, failure)
+        client._supports_outgoing_speed = descriptor.get("supports_outgoing_speed") is True
         client._sequence = descriptor["sequence"]
         client.parent_environment = descriptor["environment"]
         client.process = types.SimpleNamespace(pid=descriptor["pid"])

@@ -141,7 +141,7 @@ function rememberSettingFocus(active) {
   if (navigation.contains(active)) return {group: active.dataset.group};
   const editor = active.closest("[data-editor]");
   const label = active.labels?.[0]?.textContent;
-  if (!editor) return null;
+  if (!editor || (!shared.contains(active) && !content.contains(active))) return null;
   const sharedAction = active.dataset.sharedConflictAction;
   if (sharedAction) return {editor: editor.dataset.editor, shared: true, sharedAction};
   if (!label) return null;
@@ -169,7 +169,7 @@ function restoreSettingFocus(focus) {
   }
   const fields = editorFields(editor).filter(field => field.labels[0]?.textContent === focus.label);
   const [target] = fields;
-  if (fields.length !== 1 || target.closest("[hidden]")) return;
+  if (fields.length !== 1 || target === document.activeElement || target.closest("[hidden]")) return;
   for (let details = target.closest("details:not([open])"); details; details = details.closest("details:not([open])")) {
     details.open = true;
   }
@@ -403,9 +403,10 @@ async function saveShared(payload, output) {
 function renderShared(savedKey) {
   const data = localData;
   if (!data) return;
-  const focus = rememberSettingFocus(document.activeElement);
   const old = new Map([...shared.querySelectorAll("[data-setting]")].map(node => [node.dataset.setting, node]));
-  const note = element("p", "保存先: private-notesの共有設定ファイル");
+  const focus = shared.contains(document.activeElement) ? rememberSettingFocus(document.activeElement) : null;
+  const note = element("p");
+  note.dataset.sharedComparison = "";
   const nodes = [note];
   const sections = new Map();
   for (const [key, item] of Object.entries(data.settings)) {
@@ -459,6 +460,16 @@ function renderShared(savedKey) {
     detail.append(actions, output);
     nodes.push(detail);
   }
+  shared.replaceChildren(...nodes);
+  renderSharedComparison();
+  restoreSettingFocus(focus);
+}
+
+function renderSharedComparison() {
+  const note = shared.querySelector("[data-shared-comparison]");
+  const data = localData;
+  if (!note || !data) return;
+  note.replaceChildren("保存先: private-notesの共有設定ファイル");
   for (const [name, peer] of Object.entries(data.comparison ?? {})) {
     const common = Object.keys(data.settings).filter(key => sameSharedSetting(peer, key));
     const summary = peer.state === "pending" ? "未取得" : peer.state === "error" ? "取得失敗" :
@@ -467,8 +478,6 @@ function renderShared(savedKey) {
       "同じ共有設定を使用";
     note.append(element("span", ` · ${name}: ${summary}`));
   }
-  shared.replaceChildren(...nodes);
-  if (focus?.shared) restoreSettingFocus(focus);
 }
 
 function showAutomaticErrors(data) {
@@ -618,7 +627,7 @@ function render(data) {
     renderShared();
   } else if (localData && data.comparison) {
     localData = {...localData, comparison: data.comparison};
-    renderShared();
+    renderSharedComparison();
   }
   renderComparison(data);
   const root = document.createDocumentFragment();
@@ -844,7 +853,6 @@ async function loadHost(background = false, retry = false) {
     }
     const initial = await request(undefined, !background && Boolean(host) && !displayedData, background, retry && !displayedHost);
     if (generation !== loadGeneration) return;
-    const focus = rememberSettingFocus(document.activeElement);
     const scroll = content.closest("main");
     const scrollTop = scroll.scrollTop;
     const prior = content.hasChildNodes() ? rememberEditors() : savedDrafts?.editors ?? new Map();
@@ -858,6 +866,7 @@ async function loadHost(background = false, retry = false) {
     }
     const drafts = initial.cached ? rememberEditors() : prior;
     const previous = editingSnapshot ?? (initial.cached ? initial : undefined);
+    const focus = rememberSettingFocus(document.activeElement);
     const rendered = {...data, settings: {...data.settings}};
     for (const [key, latest] of Object.entries(data.settings)) {
       const slot = `setting:${key}`;

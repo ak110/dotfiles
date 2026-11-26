@@ -198,6 +198,19 @@ def apply_outgoing_metadata(params: dict[str, Any], metadata: dict[str, Any]) ->
         yield
 
 
+@contextlib.contextmanager
+def apply_legacy_outgoing_metadata(params: dict[str, Any], metadata: dict[str, Any]) -> Generator[None]:
+    if metadata["tier"] == "priority" and metadata["observed_at"] is not None:
+        metadata = {
+            **metadata,
+            "tier": "default",
+            "source": "unavailable",
+            "explanation": "旧版のApp Server仲介では送信直前の高速判定を確認できない",
+        }
+    with apply_outgoing_metadata(params, metadata):
+        yield
+
+
 def _cache_decision(
     provider: str | None,
     workspace: str | None,

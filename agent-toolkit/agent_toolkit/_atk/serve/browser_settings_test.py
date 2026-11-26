@@ -821,15 +821,22 @@ async def test_shared_conflict_keeps_keyboard_choice_on_periodic_update(
     await expect(field).to_have_value(draft if keep else latest)
 
 
+@pytest.mark.parametrize("same_shared", [True, False])
 @pytest.mark.asyncio(loop_scope="session")
 async def test_remote_settings_retry_clears_the_recovered_hosts_status_everywhere(
-    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, same_shared: bool
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     config_settings.save_config({"remote_hosts": '["cold", "offline"]'})
-    snapshot = config.settings_snapshot(tmp_path)
+    local = config.settings_snapshot(tmp_path)
+    local["shared_identity"] = "local"
+    local_item = local["settings"]["execute_model"]
+    local_item.update(shared=True, shared_sync=True, saved="claude:sonnet/medium", effective="claude:sonnet/medium")
+    snapshot = copy.deepcopy(local)
+    snapshot["shared_identity"] = "local" if same_shared else "remote"
+    monkeypatch.setattr(config, "settings_snapshot", lambda *_args, **_kwargs: copy.deepcopy(local))
     snapshot["codex_fast_start"] = {
         "speed": "通常",
         "source": "直前の成功判定",
@@ -837,10 +844,13 @@ async def test_remote_settings_retry_clears_the_recovered_hosts_status_everywher
         "reason": "Plus",
     }
     unavailable = {"cold", "offline"}
+    release = threading.Event()
 
     def remote_snapshot(host: str, **_kwargs):
         if host in unavailable:
             raise ValueError("SSH接続に失敗しました")
+        if not _kwargs.get("read_only"):
+            assert release.wait(8)
         return copy.deepcopy(snapshot), None
 
     monkeypatch.setattr(settings_routes, "_remote_snapshot", remote_snapshot)
@@ -858,8 +868,25 @@ async def test_remote_settings_retry_clears_the_recovered_hosts_status_everywher
     await page.get_by_label("設定対象ホスト").select_option("cold")
     await expect(fast).to_contain_text("（cold）: 取得できませんでした")
     unavailable.remove("cold")
+    shared_field = shared.locator('[data-setting="execute_model"]').get_by_label("保存値")
     await status.get_by_role("button", name="再取得").click()
+    try:
+        await shared_field.fill("codex:sol/high")
+        await shared_field.evaluate("field => { field.setSelectionRange(6, 9); window.recoveryInput = field; }")
+    finally:
+        release.set()
     await expect(fast).to_contain_text("（cold）: 通常（直前の成功判定）")
+    await expect(shared_field).to_be_focused()
+    assert await shared_field.evaluate(
+        "field => field === window.recoveryInput && field.selectionStart === 6 && field.selectionEnd === 9"
+    )
+    await page.keyboard.type("x")
+    await expect(shared_field).to_have_value("codex:x/high")
+    peer_field = page.locator('#settings-content [data-setting="execute_model"]').get_by_label("保存値")
+    if same_shared:
+        await expect(peer_field).to_have_count(0)
+    else:
+        await expect(peer_field).to_have_value("claude:sonnet/medium")
     await expect(shared).not_to_contain_text("cold: 取得失敗")
     await expect(shared).to_contain_text("offline: 取得失敗")
     await expect(status).not_to_contain_text("cold:")

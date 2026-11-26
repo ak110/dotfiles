@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import datetime
 import json
 import os
 import pathlib
@@ -13,7 +15,7 @@ import pytest
 from agent_toolkit._agents_server import service, service_io, service_transport
 from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
-from agent_toolkit._common import process_tree, runtime_environment
+from agent_toolkit._common import codex_fast_mode, process_tree, runtime_environment, state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -326,3 +328,70 @@ async def test_full_notification_queue_does_not_wait_for_sent_callback() -> None
         assert broker.backlog(client.resource.identifier) == (1, 1)
     finally:
         await client.close()
+
+
+@pytest.mark.parametrize("legacy", [True, False])
+@pytest.mark.parametrize("mode", ["false", "true", "auto"])
+@pytest.mark.asyncio
+async def test_retained_resource_delivers_each_request_once_across_broker_versions(tmp_path, monkeypatch, legacy, mode):
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    broker = ResourceBroker("old")
+    origin = {"generation": "old", "process": "origin"}
+    old_runtime = service_io.Runtime("old", origin, broker)
+    runtime = service_io.Runtime("new", {"generation": "new", "process": "new"}, ResourceBroker("new"))
+    sent: list[tuple[str, str]] = []
+
+    async def ignore(*_args) -> None:
+        pass
+
+    async def forward(target, name, arguments):
+        assert target == origin
+        return await getattr(broker, name)(**json.loads(json.dumps(arguments)))
+
+    monkeypatch.setattr(service_io.service_rpc, "request", forward)
+    descriptor: dict[str, Any]
+    if legacy:
+
+        async def request(method, params, ticket):
+            if method == "turn/start":
+                assert ticket is not None
+            sent.append((method, params["serviceTier"]))
+            return {"result": {}}
+
+        identifier = broker.register({"request": request, "close": ignore})
+        descriptor = {"identifier": identifier, "origin": origin, "sequence": 0, "environment": {}, "pid": None}
+    else:
+
+        class Raw(_RawCodex):
+            async def request(self, method, _params, *, on_sent_async, before_send=None):
+                with before_send() if before_send is not None else contextlib.nullcontext():
+                    sent.append((method, _params["serviceTier"]))
+                await on_sent_async()
+                return {}
+
+        original = service_io.CodexResource.create(old_runtime, Raw, ignore, ignore, ignore)
+        descriptor = await original.detach()
+        identifier = descriptor["identifier"]
+    assert await broker.transfer(identifier, old_runtime.owner, runtime.owner)
+    client = service_io.CodexResource.attach(runtime, descriptor, ignore, ignore, ignore)
+    now = datetime.datetime.now(datetime.UTC)
+    tier = "default" if mode == "false" else "priority"
+    decision = codex_fast_mode.FastTier(tier, mode, observed_at=now if mode == "auto" else None)
+    expected = "default" if legacy and mode == "auto" else tier
+    observed: list[str] = []
+    outgoing = codex_fast_mode.outgoing_metadata("openai", decision, record_start=False)
+    try:
+        await client.request("thread/resume", {}, outgoing_speed=outgoing)
+        params: dict[str, Any] = {}
+        await client.request(
+            "turn/start", params, outgoing_speed=outgoing, on_sent=lambda: observed.append(params["serviceTier"])
+        )
+        assert sent == [("thread/resume", expected), ("turn/start", expected)]
+        assert observed == [expected]
+    finally:
+        if legacy:
+            await client.detach()
+            await broker.release(identifier, runtime.owner)
+            await broker.discard(identifier, runtime.owner)
+        else:
+            assert await client.close() == []
