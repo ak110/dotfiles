@@ -444,5 +444,5 @@
 #screen-sessions .reading-toolbar input[type="search"] { min-inline-size: 0; }
 #screen-sessions .event { scroll-margin-top: calc(var(--reading-height, 0px) + var(--space-2)); }
 #screen-sessions .event-linked, #screen-sessions .event-search-match { outline: 2px solid var(--color-primary); }
-#screen-sessions .event-link { margin-inline-start: auto; }
+#screen-sessions .event-link { margin-inline-start: auto; flex: none; white-space: nowrap; }
 ::highlight(session-search) { background-color: Mark; color: MarkText; }

@@ -23,9 +23,10 @@ const conflicts = new Map();
 let fieldCount = 0;
 const guide = "https://github.com/ak110/dotfiles/blob/master/docs/guide/";
 
-function element(tag, text = "") {
+function element(tag, text = "", className = "") {
   const result = document.createElement(tag);
   result.textContent = text;
+  if (className) result.className = className;
   return result;
 }
 

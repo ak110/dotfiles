@@ -121,7 +121,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
         }
       });
     }
-    if (event.name) {
+    if (event.name && event.kind !== "user_report") {
       const name = document.createElement("span");
       name.textContent = event.name;
       summary.append(name);

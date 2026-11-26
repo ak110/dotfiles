@@ -417,3 +417,13 @@
 :is(#screen-wi, .wi-reference-layer) .detail-dialog::backdrop {
   overflow: hidden;
 }
+
+.wi-reference-layer > dialog.wi-reference-dialog:not([style]) {
+  inset: 0;
+  margin: auto;
+  max-height: calc(100svh - 2rem);
+}
+.wi-reference-layer > dialog.wi-reference-dialog:not([style]) .dialog-frame {
+  height: auto;
+  max-height: calc(100svh - 2rem);
+}

@@ -202,8 +202,10 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
         if command == "uname -s":
             return subprocess.CompletedProcess(args, 0, b"Linux\n", b"")
         if host == "old-host":
-            if command == "atk config snapshot":
+            if command in {"atk config snapshot", "atk config snapshot --read-only"}:
                 return subprocess.CompletedProcess(args, 2, b"", b"")
+            if command == "atk config snapshot --help":
+                return subprocess.CompletedProcess(args, 0, b"usage: atk config snapshot", b"")
             assert command == "atk config show"
             return subprocess.CompletedProcess(
                 args, 0, b"serve_host old\nserve_sessions_codex_home old-path\nusage_reset_permissions []\n", b""
@@ -680,7 +682,11 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
     await page.get_by_label("設定対象ホスト").select_option("remote")
     await expect(editor.get_by_label("保存値")).to_have_value("codex:sol/high")
     await expect(page.locator('#settings-content [data-setting="execute_model"]')).to_have_count(0)
-    await editor.get_by_role("button", name="保存").click()
+    button = editor.get_by_role("button", name="保存")
+    for width in (1440, 400):
+        await page.set_viewport_size({"width": width, "height": 900})
+        assert await button.evaluate("button => getComputedStyle(button.parentElement).justifyContent") == "flex-end"
+    await button.click()
     await expect(editor.get_by_role("alert")).to_contain_text("設定を保存しました")
     assert posts == [{"action": "set", "key": "execute_model", "value": "codex:sol/high"}]
     peer["shared_identity"] = "different-branch"
