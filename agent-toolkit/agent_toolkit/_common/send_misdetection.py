@@ -25,7 +25,6 @@ RETRY = frozenset(
         "understanding-alternative",
         "norm-excuse",
         "prevention-kind",
-        "clock-claim",
         "response-language",
         "missing-prevention",
     }

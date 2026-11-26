@@ -164,10 +164,19 @@ def test_send_misdetection_leaves_unclaimed_checks_active(tmp_path, monkeypatch)
     message = "発話の理解: 対象を確認した。"
     args = {
         "message": message,
-        "misdetection": [{"check": "clock-claim", "reason": "時刻ではない。"}],
+        "misdetection": [{"check": "prevention-kind", "reason": "記録ではない。"}],
     }
-    send_misdetection.remember_rejection("misdetection", "clock-claim", message)
+    send_misdetection.remember_rejection("misdetection", "prevention-kind", message, "call-example")
     payload = {"session_id": "misdetection", "tool_input": args}
     decision = pretooluse._decide(payload, tool, args, "misdetection", is_codex=False)
     assert decision.block is not None
     assert "understanding-alternative" in decision.block
+
+
+def test_masked_clock_warning_is_left_to_successful_display():
+    tool = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
+    args = {"message": "時刻の表記例は15:2x。"}
+    decision = pretooluse._decide({"session_id": "clock-display"}, tool, args, "clock-display", is_codex=False)
+    assert decision.allow
+    assert not decision.context
+    assert not decision.notices

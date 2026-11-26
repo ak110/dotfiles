@@ -460,17 +460,10 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (
-            clock_claims.warning(
-                [message],
-                payload,
-                masked_hint=send_misdetection.retry_hint("clock-claim"),
-                skip_masked="clock-claim" in retry,
-            )
+            clock_claims.warning([message], payload, skip_masked=True)
             if is_send_to_user_tool(tool_name) and isinstance(message, str)
             else None
         )
-        if timing and isinstance(message, str) and send_misdetection.retry_hint("clock-claim") in timing:
-            send_misdetection.remember_rejection(session_id, "clock-claim", message, payload.get("tool_use_id"))
         return Decision(allow=True, context=timing, notices=tuple(send_warnings))
     if tool_name == "Skill":
         return Decision()
