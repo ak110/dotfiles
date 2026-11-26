@@ -512,7 +512,7 @@ def _explicit_whole_contract(value: str) -> pathlib.Path:
             f"whole_contract_pathの全体作業契約を使えません: {value}: {reason}。委譲先は起動していない。",
             next_action=(
                 "既存の全体作業契約の絶対パスを`whole_contract_path`へ指定するか、"
-                "`skills/atk-mode/references/work-contract.md`に従ってそのパスへ記録を作成し、同じ入力で`start`を再発行する"
+                "`skills/atk-mode/references/work-contract.md`に従い、目的・完遂事項・守る制約をそのパスへ記録して同じ入力で`start`を再発行する"
             ),
         )
     return path
@@ -543,7 +543,7 @@ def _resolve_whole_contract(whole_contract_path: str | None, launcher_session_id
             f"全体作業契約が未作成です: {expected}。"
             "委譲先が作業が長引いた時や圧縮の後に目的を見失わないよう、契約の無い起動は拒否する。委譲先は起動していない。",
             next_action=(
-                f"`skills/atk-mode/references/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する。"
+                "`skills/atk-mode/references/work-contract.md`に従い、目的・完遂事項・守る制約を期待パスへ記録して`start`を再発行する。"
                 f"別の記録を使う場合は{_WHOLE_CONTRACT_REISSUE}"
             ),
         )

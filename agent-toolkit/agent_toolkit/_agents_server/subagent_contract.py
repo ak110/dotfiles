@@ -16,6 +16,7 @@ _LOG = logging.getLogger(__name__)
 _UPDATE_LOCK = threading.Lock()
 
 RECORD_NAME = "work-contract.md"
+_STARTUP_REQUEST = "startup-request.md"
 
 _HEADER = (
     "# 担当の作業契約\n"
@@ -25,8 +26,11 @@ _HEADER = (
     "差分の指定がない訂正を受けた担当は、該当箇所だけを書き換える。\n"
     "進捗と再開位置は引き継ぎ記録、上位の目的と制約は全体作業契約に置く。\n"
 )
-_ACTIVE = "\n## 現在の依頼\n\n"
-_UNCONFIRMED = "\n## 配送結果が不明な変更（現行の依頼ではない）\n\n"
+_PURPOSE = "## 目的"
+_COMPLETION = "## 完遂事項"
+_CONSTRAINTS = "## 守る制約"
+_UNCONFIRMED = "\n**配送結果が不明な変更（現行の依頼ではない）**\n\n"
+_INITIALIZE = f"[`{_STARTUP_REQUEST}`]({_STARTUP_REQUEST})から着手時に一度だけ、この契約の3区分を記入する。"
 
 
 def task_request(subagent_md_path: str, inputs: Mapping[str, str]) -> str:
@@ -49,7 +53,12 @@ def _path(session_id: str) -> pathlib.Path:
 def create(session_id: str, request: str) -> str | None:
     try:
         path = _path(session_id)
-        atomic_write(path, f"{_HEADER}{_ACTIVE}{request.strip()}\n")
+        request = request.strip()
+        headings = [line for line in request.splitlines() if line.startswith("## ")]
+        if headings != [_PURPOSE, _COMPLETION, _CONSTRAINTS] or not request.startswith(_PURPOSE + "\n"):
+            atomic_write(path.with_name(_STARTUP_REQUEST), request + "\n")
+            request = f"{_PURPOSE}\n\n{_INITIALIZE}\n\n{_COMPLETION}\n\n{_CONSTRAINTS}"
+        atomic_write(path, f"{_HEADER}\n{request}\n")
     except (managed_temp.ManagedTempError, OSError) as error:
         _LOG.warning("委譲先の作業契約を作成できない: session_id=%s", session_id, exc_info=True)
         return f"委譲先の作業契約を作成できない（{type(error).__name__}: {error}）。担当は起動済みである。"
@@ -61,14 +70,17 @@ def inherit(predecessor_id: str, session_id: str) -> str | None:
     if source is None or not (source / RECORD_NAME).is_file():
         return None
     try:
-        atomic_write(_path(session_id), (source / RECORD_NAME).read_bytes())
+        destination = _path(session_id)
+        if (startup := source / _STARTUP_REQUEST).is_file():
+            atomic_write(destination.with_name(_STARTUP_REQUEST), startup.read_bytes())
+        atomic_write(destination, (source / RECORD_NAME).read_bytes())
     except (managed_temp.ManagedTempError, OSError) as error:
         _LOG.warning("前任の作業契約を引き継げない: %s -> %s", predecessor_id, session_id, exc_info=True)
         return f"前任の作業契約を後任へ引き継げない（{type(error).__name__}: {error}）。"
     return None
 
 
-def _edit_request(active: str, changes: Mapping[str, str]) -> str:
+def _edit_request(active: str, changes: Mapping[str, str], *, structured: bool = False) -> str:
     edits: list[tuple[int, int, str]] = []
     for old, new in changes.items():
         if old:
@@ -83,7 +95,14 @@ def _edit_request(active: str, changes: Mapping[str, str]) -> str:
         active = f"{active[:start]}{new}{active[end:]}"
         right = start
     addition = changes.get("")
-    return f"{active.rstrip()}\n\n{addition}" if addition else active
+    if not addition:
+        return active
+    if structured:
+        tasks, heading, constraints = active.partition("\n" + _CONSTRAINTS)
+        if not heading:
+            raise ValueError("守る制約の見出しが無い")
+        return f"{tasks.rstrip()}\n\n{addition}\n\n{heading.lstrip()}{constraints}"
+    return f"{active.rstrip()}\n\n{addition}"
 
 
 def apply_followup(session_id: str, changes: Mapping[str, str], delivery: str) -> str | None:
@@ -98,19 +117,25 @@ def apply_followup(session_id: str, changes: Mapping[str, str], delivery: str) -
             body = path.read_text(encoding="utf-8")
             if not body.startswith(_HEADER):
                 raise ValueError("現行の依頼を持つ作業契約ではない")
-            unresolved, marker, active = body.removeprefix(_HEADER).partition(_ACTIVE)
+            unresolved, marker, active = body.removeprefix(_HEADER).lstrip("\n").partition(_PURPOSE + "\n")
             if not marker:
-                raise ValueError("現在の依頼の見出しが無い")
-            entry = "- " + "、".join(f"{old!r} → {new!r}" for old, new in sorted(changes.items())) + "\n"
-            pending = unresolved.removeprefix(_UNCONFIRMED).splitlines(keepends=True)
+                raise ValueError("目的の見出しが無い")
+            entry = "- " + "、".join(f"{old!r} → {new!r}" for old, new in sorted(changes.items()))
+            pending = unresolved.removeprefix(_UNCONFIRMED.lstrip("\n")).strip().splitlines()
             if delivery == "reply_ambiguous":
                 if entry not in pending:
                     pending.append(entry)
             else:
-                active = _edit_request(active, changes)
+                if active.startswith("\n" + _INITIALIZE + "\n"):
+                    startup = path.with_name(_STARTUP_REQUEST)
+                    atomic_write(startup, _edit_request(startup.read_text(encoding="utf-8"), changes).strip() + "\n")
+                else:
+                    active = _edit_request(active, changes, structured=True)
                 pending = [line for line in pending if line != entry]
-            unresolved = _UNCONFIRMED + "".join(pending) if pending else ""
-            atomic_write(path, f"{_HEADER}{unresolved}{_ACTIVE}{active.strip()}\n")
+            unresolved = _UNCONFIRMED + "\n".join(pending) + "\n" if pending else ""
+            updated = f"{_HEADER}{unresolved}\n{marker}{active.rstrip()}\n"
+            if updated != body:
+                atomic_write(path, updated)
     except (managed_temp.ManagedTempError, OSError, ValueError) as error:
         _LOG.warning("委譲先の作業契約を更新できない: session_id=%s", session_id, exc_info=True)
         return f"委譲先の作業契約を更新できない（{error}）。追送の配送結果はdeliveryを確認し、契約だけを更新する。"

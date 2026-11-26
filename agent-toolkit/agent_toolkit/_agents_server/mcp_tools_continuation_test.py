@@ -93,9 +93,10 @@ async def test_followup_updates_only_explicit_contract_changes_after_delivery(
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        started = await mcp_tools.start(
-            str(tmp_path), prompt="目的: 原稿を整える。\n担当A: 書式確認\n担当B: 内容確認", mode="explore"
+        request = (
+            "## 目的\n\n原稿を整える。\n\n## 完遂事項\n\n- 担当A: 書式確認\n- 担当B: 内容確認\n\n## 守る制約\n\n- 公開しない。"
         )
+        started = await mcp_tools.start(str(tmp_path), prompt=request, mode="explore")
         session_id = started["session_id"]
         directory = managed_temp.find_session_temp(session_id)
         assert directory is not None
@@ -115,7 +116,7 @@ async def test_followup_updates_only_explicit_contract_changes_after_delivery(
         delivered = delivery_payload(backend.prompts[-1])
         assert prompt in delivered and 'kind="work-contract-update"' in delivered
         body = contract.read_text(encoding="utf-8")
-        assert body.partition("## 現在の依頼")[2].strip() == "目的: 原稿を整える。\n担当B: 書式確認\n担当C: 内容確認"
+        assert body.endswith(request.replace("担当B", "担当C").replace("担当A", "担当B") + "\n")
         assert prompt not in body and "進捗を教えて" not in body
 
 
