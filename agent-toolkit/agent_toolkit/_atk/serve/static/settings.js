@@ -68,6 +68,7 @@ function rememberEditors(savedSlot) {
     editor.dataset.editor,
     {
       open: editor.open,
+      directAccountOpen: editor.querySelector("[data-permission-direct]")?.closest("details")?.open,
       values: editor.dataset.editor === savedSlot ? [] : editorFields(editor).map(input => {
         const instant = input.dataset.instantDisplay === input.value ? input.dataset.instant : "";
         if (editor.open && input.matches("[data-permission-account]") &&
@@ -205,6 +206,8 @@ function restoreEditors(drafts, editorKey) {
       }
       if (input.hasAttribute("data-draft-trigger")) input.dispatchEvent(new Event("change"));
     });
+    const directAccount = editor.querySelector("[data-permission-direct]")?.closest("details");
+    if (directAccount && previous?.directAccountOpen) directAccount.open = true;
     if (editor.dataset.editor === editorKey) savedEditor = editor;
   }
   return savedEditor;
