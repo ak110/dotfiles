@@ -37,6 +37,14 @@ def test_nonunique_change_does_not_apply_any_of_the_changes() -> None:
     assert _body("contract-a") == before
 
 
+def test_overlapping_change_does_not_apply_any_of_the_changes() -> None:
+    assert subagent_contract.create("contract-a", "目的A\n担当A: 書式確認") is None
+    before = _body("contract-a")
+    changes = {"目的A": "目的B", "担当A": "担当B", "担当A: 書式確認": ""}
+    assert subagent_contract.apply_followup("contract-a", changes, "reply_started") is not None
+    assert _body("contract-a") == before
+
+
 def test_sessions_do_not_share_contracts() -> None:
     assert subagent_contract.create("contract-b", "目的B") is None
     assert subagent_contract.create("contract-c", "目的C") is None

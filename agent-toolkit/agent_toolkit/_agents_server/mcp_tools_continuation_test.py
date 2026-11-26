@@ -86,13 +86,16 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reverse_order", [False, True])
 async def test_followup_updates_only_explicit_contract_changes_after_delivery(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, reverse_order: bool
 ) -> None:
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        started = await mcp_tools.start(str(tmp_path), prompt="目的: 書式点検\n対象: 文書A\n制約: 変更しない", mode="explore")
+        started = await mcp_tools.start(
+            str(tmp_path), prompt="目的: 原稿を整える。\n担当A: 書式確認\n担当B: 内容確認", mode="explore"
+        )
         session_id = started["session_id"]
         directory = managed_temp.find_session_temp(session_id)
         assert directory is not None
@@ -103,16 +106,17 @@ async def test_followup_updates_only_explicit_contract_changes_after_delivery(
         assert delivery_payload(backend.prompts[-1]) == "進捗を教えて"
 
         _complete(manager.sessions[session_id])
+        edits = [("担当A", "担当B"), ("担当B", "担当C")]
+        prompt = "担当Aを担当Bへ、担当Bを担当Cへ訂正する。"
         await mcp_tools.mcp.call_tool(
             "send_message",
-            {"session_id": session_id, "prompt": "対象を文書Bへ訂正", "contract_changes": {"対象: 文書A": "対象: 文書B"}},
+            {"session_id": session_id, "prompt": prompt, "contract_changes": dict(edits[::-1] if reverse_order else edits)},
         )
         delivered = delivery_payload(backend.prompts[-1])
-        assert "対象を文書Bへ訂正" in delivered and 'kind="work-contract-update"' in delivered
+        assert prompt in delivered and 'kind="work-contract-update"' in delivered
         body = contract.read_text(encoding="utf-8")
-        assert "対象: 文書B" in body and "対象: 文書A" not in body
-        assert "目的: 書式点検" in body and "制約: 変更しない" in body
-        assert "対象を文書Bへ訂正" not in body and "進捗を教えて" not in body
+        assert body.partition("## 現在の依頼")[2].strip() == "目的: 原稿を整える。\n担当B: 書式確認\n担当C: 内容確認"
+        assert prompt not in body and "進捗を教えて" not in body
 
 
 @pytest.mark.asyncio

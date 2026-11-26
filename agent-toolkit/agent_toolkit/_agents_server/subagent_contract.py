@@ -68,6 +68,24 @@ def inherit(predecessor_id: str, session_id: str) -> str | None:
     return None
 
 
+def _edit_request(active: str, changes: Mapping[str, str]) -> str:
+    edits: list[tuple[int, int, str]] = []
+    for old, new in changes.items():
+        if old:
+            start = active.find(old)
+            if start < 0 or active.find(old, start + 1) >= 0:
+                raise ValueError("置換・取消の元の文が現在の依頼に一意に存在しない")
+            edits.append((start, start + len(old), new))
+    right = len(active)
+    for start, end, new in sorted(edits, reverse=True):
+        if end > right:
+            raise ValueError("置換・取消の対象が同じ箇所に重なっている")
+        active = f"{active[:start]}{new}{active[end:]}"
+        right = start
+    addition = changes.get("")
+    return f"{active.rstrip()}\n\n{addition}" if addition else active
+
+
 def apply_followup(session_id: str, changes: Mapping[str, str], delivery: str) -> str | None:
     if not changes or delivery not in {"steered", "reply_started", "reply_ambiguous"}:
         return None
@@ -89,14 +107,7 @@ def apply_followup(session_id: str, changes: Mapping[str, str], delivery: str) -
                 if delta not in pending:
                     pending += delta
             else:
-                for old, new in changes.items():
-                    if not old:
-                        active = f"{active.rstrip()}\n\n{new}"
-                        continue
-                    start = active.find(old)
-                    if start < 0 or active.find(old, start + 1) >= 0:
-                        raise ValueError("置換・取消の元の文が現在の依頼に一意に存在しない")
-                    active = f"{active[:start]}{new}{active[start + len(old) :]}"
+                active = _edit_request(active, changes)
                 pending = pending.replace(delta, "", 1)
             unresolved = f"{_UNCONFIRMED}{pending}" if pending else ""
             atomic_write(path, f"{_HEADER}{unresolved}{_ACTIVE}{active.strip()}\n")
