@@ -206,6 +206,12 @@ def _cmd_config_show(home: pathlib.Path) -> int:
             if error is errors.get(key) and isinstance(error, _next_action.ActionableError):
                 action += "。設定を変更するコマンドは、旧キーの置換と設定の保存を行うことがある"
             _outcome.report_warning(f"{key}の実効値を表示できない: {error}", next_action=action)
+    for error in dict.fromkeys(error for key, error in errors.items() if key not in _MUTABLE_KEY_DEFAULTS):
+        incomplete = True
+        action = (
+            error.next_action if isinstance(error, _next_action.ActionableError) else "該当する旧環境変数を解除して再実行する"
+        )
+        _outcome.report_warning(str(error), next_action=action)
     for key, value in settings.items():
         print(f"{key} {value}")
     if (path := _config_settings.shared_settings_path()) is not None:

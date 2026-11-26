@@ -189,15 +189,12 @@ def test_retired_connection_keys_are_rejected_with_targets(tmp_path, capsys, mon
     rc = _main(tmp_path, "config", "show")
     shown = capsys.readouterr()
     assert "codex_fast_mode auto\n" in shown.out
-    if key == "claude_api_env_file":
-        assert rc == 0
-    else:
-        assert rc == 2
-        assert all(f"\n{target} " not in shown.out for target in targets)
-        assert all(
-            (target if " " in target or "設定" in target else f"AGENT_TOOLKIT_CONFIG_{target.upper()}") in shown.err
-            for target in targets
-        )
+    assert rc == 2
+    assert all(f"\n{target} " not in shown.out for target in targets)
+    assert all(
+        (target if " " in target or "設定" in target else f"AGENT_TOOLKIT_CONFIG_{target.upper()}") in shown.err
+        for target in targets
+    )
     with pytest.raises(_next_action.ActionableError, match=f"AGENT_TOOLKIT_CONFIG_{key.upper()}"):
         config_module.resolve_mutable_setting("claude_worker_connections")
 

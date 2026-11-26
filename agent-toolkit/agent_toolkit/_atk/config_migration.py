@@ -594,20 +594,21 @@ def check_legacy_environment(*, errors: dict[str, ValueError] | None = None) -> 
         "旧環境変数を解除し、接続設定の新しい環境変数へ置き換えて再実行する",
         errors=errors,
     )
-    if errors is not None:
-        return
     _check_retired_environment(
         "調査",
         {key: (target,) for key, target in _config_settings.RETIRED_RESEARCH_KEYS.items()},
         "値を控えて旧環境変数を解除し、次の操作で移してから再実行する",
+        errors=errors,
     )
 
-    retired = _config_settings.config_env_name("usage_auto_allocation")
+    key = "usage_auto_allocation"
+    retired = _config_settings.config_env_name(key)
     if retired in runtime_environment.environment():
-        raise _next_action.ActionableError(
-            f"廃止した設定の環境変数が設定されています: {retired}",
-            next_action="旧環境変数を解除して再実行する。候補順は工程別の`*_model`キーで指定する",
-        )
+        with _conversion((key,), errors):
+            raise _next_action.ActionableError(
+                f"廃止した設定の環境変数が設定されています: {retired}",
+                next_action="旧環境変数を解除して再実行する。候補順は工程別の`*_model`キーで指定する",
+            )
 
 
 def _check_retired_environment(
@@ -625,7 +626,10 @@ def _check_retired_environment(
         )
         for key in found
     ]
-    targets = {target for key in found for target in destinations[key] if target in _config_settings.MUTABLE_KEY_DEFAULTS}
+    targets: set[str] = set()
+    for key in found:
+        current = set(destinations[key]).intersection(_config_settings.MUTABLE_KEY_DEFAULTS)
+        targets.update(current or {key})
     with _conversion(targets, errors):
         raise _next_action.ActionableError(
             f"廃止した旧{kind}設定の環境変数が設定されています: "

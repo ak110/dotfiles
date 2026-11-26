@@ -497,8 +497,10 @@ def test_removed_allocation_setting_is_deleted_and_rejected(tmp_path, monkeypatc
         assert _main(tmp_path, "config", *action) == 2
         assert "usage_auto_allocationは廃止" in capsys.readouterr().err
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
-    assert _main(tmp_path, "config", "show") == 0
-    assert "execute_model claude:opus\n" in capsys.readouterr().out
+    assert _main(tmp_path, "config", "show") == 2
+    shown = capsys.readouterr()
+    assert "execute_model claude:opus\n" in shown.out
+    assert "AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION" in shown.err
     assert _main(tmp_path, "config", "get", "execute_model") == 2
     assert "廃止した設定の環境変数が設定されています: AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION" in capsys.readouterr().err
 
