@@ -85,9 +85,10 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     return Object.values(input).find((value) => typeof value === "string") || "";
   }
 
-  function renderEvent(event, index, nested = false) {
+  function renderEvent(event, index, linkTarget, nested = false) {
     const block = document.createElement("details");
     block.className = `event kind-${event.kind}`;
+    if (matchesLinkTarget(event, linkTarget)) block.classList.add("event-linked");
     block.dataset.eventIndex = String(index);
     if (event.line != null) {
       block.dataset.recordLine = String(event.line);
@@ -154,7 +155,7 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
       block.append(formatted);
       decorateWiReferences(formatted);
       if (!conversationOnly && !nested && Number.isInteger(event.result_index)) {
-        block.append(renderEvent(currentDetail.events[event.result_index], event.result_index, true));
+        block.append(renderEvent(currentDetail.events[event.result_index], event.result_index, linkTarget, true));
       }
       return block;
     }
@@ -215,12 +216,10 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
   // イベントは記録の先頭からの順で並び、追記で既存の位置は変わらないため、位置を識別に使う。  // pyfltr: allow-comment
   function captureDetailState() {
     const openStates = new Map();
-    const linkedEvents = new Set();
     for (const block of detailEl.querySelectorAll("details[data-event-index]")) {
       openStates.set(block.dataset.eventIndex, block.open);
-      if (block.classList.contains("event-linked")) linkedEvents.add(block.dataset.eventIndex);
     }
-    return {openStates, linkedEvents, renderLimit, scrollTop: detailEl.parentElement.scrollTop};
+    return {openStates, renderLimit, scrollTop: detailEl.parentElement.scrollTop};
   }
 
   // ローカルの記録は本文の後に費用を別に取得するため、取得中は前回の値か「算出中」を表示する。  // pyfltr: allow-comment
@@ -297,6 +296,16 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     });
     return url.href;
   }
+  function linkTargetFromUrl() {
+    if (!location.pathname.endsWith("/sessions")) return null;
+    const params = new URLSearchParams(location.search);
+    const [host, engine, path] = ["host", "engine", "path"].map(key => params.get(key));
+    if (!params.has("line") || !isSelected(selected, {host, engine, path})) return null;
+    return {line: Number(params.get("line")), ordinal: params.has("ordinal") ? Number(params.get("ordinal")) : null};
+  }
+  function matchesLinkTarget(event, target) {
+    return target && event.line === target.line && (target.ordinal === null || event.ordinal === target.ordinal);
+  }
   function detailEvents(detail) {
     if (conversationOnly) return (detail.conversation ?? []).flatMap(row => {
       const source = detail.events[row.index];
@@ -318,16 +327,13 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     return detail.events.flatMap((event, index) => event.report_index == null ? [{event, index}] : []);
   }
   function appendEvents(end, preserved) {
+    const linkTarget = linkTargetFromUrl();
     for (const {event, index} of visibleEvents.slice(renderLimit, end)) {
-      const block = renderEvent(event, index);
-      if (preserved) {
-        for (const target of [block, block.querySelector("details[data-event-index]")]) {
-          if (!target) continue;
-          const key = target.dataset.eventIndex;
-          target.open = preserved.openStates.get(key) ?? target.open;
-          if (preserved.linkedEvents.has(key)) target.classList.add("event-linked");
-        }
-      }
+      const block = renderEvent(event, index, linkTarget);
+      const open = preserved?.openStates.get(String(index));
+      if (open !== undefined) block.open = open;
+      const nested = block.querySelector("details[data-event-index]");
+      if (nested) nested.open = preserved?.openStates.get(nested.dataset.eventIndex) ?? nested.open;
       detailEl.append(block);
     }
     // 描画を要求した範囲を保ち、次の追記もこの範囲内ならスクロールせず表示する。  // pyfltr: allow-comment
@@ -353,14 +359,10 @@ export function createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTim
     return target;
   }
   function moveToUrlEvent() {
-    const params = new URLSearchParams(location.search);
-    if (!params.has("line")) return;
-    const line = Number(params.get("line"));
-    const ordinal = params.has("ordinal") ? Number(params.get("ordinal")) : null;
-    const matches = currentDetail.events.flatMap((event, index) =>
-      event.line === line && (ordinal === null || event.ordinal === ordinal) ? [index] : []);
+    const linkTarget = linkTargetFromUrl();
+    if (!linkTarget) return;
+    const matches = currentDetail.events.flatMap((event, index) => matchesLinkTarget(event, linkTarget) ? [index] : []);
     const target = matches.map(moveToEvent).filter(Boolean);
-    target.forEach(block => block.classList.add("event-linked"));
     target[0]?.scrollIntoView({block: "start"});
   }
   function currentSearch() { return document.getElementById("session-search").value.trim(); }

@@ -566,6 +566,55 @@ async def test_session_line_link_survives_record_notification_during_open(screen
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("ordinal", [None, 1])
+async def test_session_line_link_tracks_record_position_after_repair(
+    screen_harness: _ScreenHarness, ordinal: int | None
+) -> None:
+    (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
+
+    def message(text: str) -> str:
+        return json.dumps({"type": "user", "cwd": "/home/aki/proj", "message": {"content": text}})
+
+    linked = json.dumps(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": text} for text in ("先行", "後続")]},
+        }
+    )
+    filler = [message("長い会話の発話")] * 22
+
+    def replace_record(earlier: str, target: str) -> None:
+        replacement = record.with_suffix(".replacement")
+        lines = [message("開始"), earlier, *filler, target, *filler, ""]
+        replacement.write_text("\n".join(lines), encoding="utf-8")
+        replacement.replace(record)
+
+    replace_record("not-json", linked)
+    params: dict[str, str | int] = {"host": "browser-test", "engine": "claude", "path": record.as_posix(), "line": 25}
+    if ordinal is not None:
+        params["ordinal"] = ordinal
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions?" + urlencode(params))
+    markers = page.locator("#detail .event-linked")
+    main = page.locator("#screen-sessions main")
+    expect = playwright.async_api.expect
+    expected = [["25", "0"], ["25", "1"]] if ordinal is None else [["25", "1"]]
+    positions = "nodes => nodes.map(node => [node.dataset.recordLine, node.dataset.recordOrdinal])"
+    await expect(markers).to_have_count(len(expected))
+    assert await markers.evaluate_all(positions) == expected
+    await main.evaluate("element => { element.scrollTop = 0; }")
+
+    replace_record(message("修復した発話"), linked)
+    await expect(page.locator("#detail [data-record-line='2']")).to_contain_text("修復した発話", timeout=10000)
+    assert await markers.evaluate_all(positions) == expected
+    assert await main.evaluate("element => element.scrollTop") == 0
+
+    replace_record(message("修復した発話"), "not-json")
+    await expect(page.locator("#detail [data-record-line='25']")).to_have_count(0, timeout=10000)
+    await expect(markers).to_have_count(0)
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_report_markdown_and_result_follow_the_view_mode(screen_harness: _ScreenHarness) -> None:
     (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
     entries = [
