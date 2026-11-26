@@ -746,7 +746,7 @@ def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
     """保存済み範囲の分析と報告のローカルcommitを確認して、同じbatchだけを確定する。  pyfltr: allow-comment"""
     diagnostics: dict[str, Any] | None = None
     try:
-        notes = private_notes.default_private_notes()
+        notes = session_review.resolve_report_notes(manifest.get("report_notes"))
         gap = add.check_run_report_sync(
             notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True, local_only=True
         )

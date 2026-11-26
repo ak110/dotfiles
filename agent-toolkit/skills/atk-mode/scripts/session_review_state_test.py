@@ -1,12 +1,13 @@
 import pathlib
 
+import filelock
 import pytest
 import session_review_state
 from agent_toolkit._common import session_review
 
 
 @pytest.mark.parametrize("condition", ["empty", "unconfirmed", "completed", "resolved", "running", "failed"])
-def test_finish_validates_batch_without_committing_targets(tmp_path, monkeypatch, condition):
+def test_finish_validates_batch_without_committing_targets(tmp_path, monkeypatch, capsys, condition):
     """報告同期前のfinishはpendingを変更せず、確定済みのbatchへ遅延書込しない。"""
     session_review.record({"hook_event_name": "SessionStart", "session_id": "one"}, host="codex")
     target = session_review.pending()[0]
@@ -32,6 +33,9 @@ def test_finish_validates_batch_without_committing_targets(tmp_path, monkeypatch
         assert session_review.read(path)["status"] == condition
     elif condition in {"completed", "resolved"}:
         assert path.read_bytes() == before
+        assert "保存済みの実行記録で確定結果を確認する" in capsys.readouterr().err
+    else:
+        assert "準備と分析が終わってから" in capsys.readouterr().err
 
 
 def test_failure_report_does_not_mark_new_generation(tmp_path: pathlib.Path) -> None:
@@ -74,3 +78,28 @@ def test_batch_commit_requires_analysis_and_report_sync(tmp_path, analyzed, sync
     assert writer.path.read_bytes() == before
     assert session_review.pending() == [target]
     assert session_review.previous_scope(target) is None
+
+
+def test_finish_outside_batch_points_to_batch_invocation(monkeypatch, capsys):
+    monkeypatch.delenv(session_review.BATCH_ENV, raising=False)
+    assert session_review_state.main(["finish"]) == 2
+    message = capsys.readouterr().err
+    assert "atk run-skill agent-toolkit:review-session --args batch" in message
+    assert "再実行" not in message
+
+
+@pytest.mark.parametrize("error", [OSError("read failed"), filelock.Timeout("report.lock")])
+def test_finish_report_read_failure_points_to_access_recovery(tmp_path, monkeypatch, capsys, error):
+    writer = session_review.BatchWriter(tmp_path / "batch.json")
+    writer.create({"run_id": "batch", "targets": [], "prepared": [{}]})
+    monkeypatch.setenv(session_review.BATCH_ENV, str(writer.path))
+
+    def check(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(session_review_state.add_reports, "check_run_report_sync", check)
+    assert session_review_state.main(["finish"]) == 2
+    message = capsys.readouterr().err
+    assert type(error).__name__ in message
+    assert "読み取り権限とロックの保持状況" in message
+    assert not writer.load().analysis_succeeded

@@ -36,6 +36,8 @@ script, notes, target_repo, scenario = sys.argv[1:]
 manifest = os.environ[session_review.BATCH_ENV]
 if scenario == "unbound":
     os.environ.pop(session_review.BATCH_ENV)
+scope = "review-session batch" if scenario == "unqualified-scope" else session_review.BATCH_SCOPE
+
 def save(destination):
     add.add_entries(
         pathlib.Path(destination),
@@ -44,7 +46,7 @@ def save(destination):
         source="run-skill",
         now=datetime.datetime.now(datetime.UTC),
         entry_type="uwi",
-        scope=session_review.BATCH_SCOPE,
+        scope=scope,
         question_type="post-approval",
     )
 
@@ -63,7 +65,7 @@ if scenario in {"unbound", "retry-after-missing"}:
     assert finish() == 2
     if scenario == "unbound":
         sys.exit(0)
-if scenario == "wrong-destination":
+if scenario in {"wrong-destination", "unqualified-scope"}:
     try:
         save(pathlib.Path(notes).with_name("other-notes"))
     except ValueError as error:
@@ -89,6 +91,8 @@ def _isolate_session_inputs(monkeypatch):
         ("retry-after-missing", None),
         ("stale-run-id", None),
         ("wrong-destination", None),
+        ("unqualified-scope", None),
+        ("changed-default", None),
         ("missing-run-id", None),
         ("uncommitted", None),
         ("unrelated-commit", None),
@@ -171,6 +175,8 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
             hook = origin / "hooks" / "pre-receive"
             hook.write_text("#!/bin/sh\necho 'fixture rejection token=secret-to-hide' >&2\nexit 1\n", encoding="utf-8")
             hook.chmod(0o755)
+        if saved == "changed-default":
+            monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "changed-notes"))
         return result.returncode
 
     args = run_skill_batch_test._args("manual")
@@ -187,8 +193,10 @@ def test_unsynced_report_failure_names_stage_and_stop_decisions(tmp_path, monkey
             ("batch-finish", "report-committed"),
         ]
         assert all(entry["run_id"] == record["run_id"] and entry["notes"] == str(notes) for entry in record["report_steps"])
-    if saved == "wrong-destination":
+    if saved in {"wrong-destination", "unqualified-scope"}:
         assert record["report_steps"][1]["status"] == "wrong-destination"
+    if saved == "changed-default":
+        assert record["report_steps"][-1]["notes"] == str(notes)
     if reason is None:
         assert record["status"] == "completed"
         assert session_review.pending() == []
@@ -249,6 +257,7 @@ def test_report_lock_contention_keeps_analysis_and_resumes_without_child(tmp_pat
     args = run_skill_batch_test._args("manual")
     args.batch_manifest, args.run_id, args.resume_record = str(manifest), unfinished["run_id"], object()
 
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "changed-notes"))
     assert run_skill_batch.dispatch(args, lambda _: pytest.fail("分析済みの子を再実行した")) == 0
     assert session_review.read(manifest)["status"] == "completed"
     assert len(calls) == 1 and not session_review.pending()

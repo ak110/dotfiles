@@ -12,7 +12,54 @@ import time
 
 import filelock
 from agent_toolkit._atk.wi import add_reports
-from agent_toolkit._common import private_notes, session_review
+from agent_toolkit._common import next_action, session_review
+
+
+def _finish() -> dict[str, str | bool]:
+    value = os.environ.get(session_review.BATCH_ENV)
+    if not value:
+        raise next_action.ActionableError(
+            "finishはrun-skillが起動したbatch内で実行する",
+            next_action="振り返りを始める場合は `atk run-skill agent-toolkit:review-session --args batch` を実行する",
+        )
+    writer = session_review.BatchWriter(pathlib.Path(value))
+    batch = writer.load()
+    if batch.status in {session_review.BatchStatus.COMPLETED, session_review.BatchStatus.RESOLVED}:
+        raise next_action.ActionableError(
+            "確定済みbatchは更新できない",
+            next_action="保存済みの実行記録で確定結果を確認する",
+        )
+    notes = session_review.resolve_report_notes(batch.report_notes)
+    try:
+        gap = add_reports.check_run_report_sync(notes, run_id=batch.run_id, scope=session_review.BATCH_SCOPE, local_only=True)
+    except (OSError, ValueError, RuntimeError, filelock.Timeout, subprocess.SubprocessError) as error:
+        writer.record_report_step("analysis-finish", {"notes": str(notes), "status": type(error).__name__})
+        raise next_action.ActionableError(
+            f"報告用UWIの保存を確認できない（{type(error).__name__}）",
+            next_action=next_action.recover_from_failure(
+                component="報告用UWIの保存確認",
+                evidence="batchの実行記録",
+                first_step="保存先の読み取り権限とロックの保持状況を確かめる",
+                retry="保存先を読み取れるようになってから同じbatch内でfinishを再実行する",
+            ),
+        ) from error
+    writer.record_report_step(
+        "analysis-finish", {"notes": str(notes), "status": "report-committed" if gap is None else gap.reason}
+    )
+    if gap is not None:
+        raise next_action.ActionableError(
+            gap.reason,
+            next_action="保存先を確認し、同じ実行IDの報告用UWIを保存・commitしてからbatch内でfinishを再実行する",
+        )
+    try:
+        manifest = writer.analyze()
+    except ValueError as error:
+        writer.record_report_step("analysis-finish", {"status": "analysis-incomplete"})
+        raise next_action.ActionableError(
+            str(error),
+            next_action="未準備・未確認の記録範囲を確かめ、準備と分析が終わってからfinishを実行する",
+        ) from error
+    return {"run_id": manifest["run_id"], "analysis_succeeded": True}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,39 +86,17 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
         else:
-            value = os.environ.get(session_review.BATCH_ENV)
-            if not value:
-                raise ValueError("finishはrun-skillが起動したbatch内で実行する")
-            path = pathlib.Path(value)
-            writer = session_review.BatchWriter(path)
-            batch = writer.load()
-            if batch.status in {session_review.BatchStatus.COMPLETED, session_review.BatchStatus.RESOLVED}:
-                raise ValueError("確定済みbatchは更新できない")
-            notes = pathlib.Path(batch.report_notes) if batch.report_notes else private_notes.default_private_notes()
-            run_id = batch.run_id
-            try:
-                gap = add_reports.check_run_report_sync(notes, run_id=run_id, scope=session_review.BATCH_SCOPE, local_only=True)
-            except (OSError, ValueError, RuntimeError, filelock.Timeout, subprocess.SubprocessError) as error:
-                writer.record_report_step("analysis-finish", {"notes": str(notes), "status": type(error).__name__})
-                raise ValueError("報告用UWIの保存を確認できない") from error
-            writer.record_report_step(
-                "analysis-finish", {"notes": str(notes), "status": "report-committed" if gap is None else gap.reason}
-            )
-            if gap is not None:
-                raise ValueError(f"報告用UWIを確かめてからfinishを再実行する: {gap.reason}")
-            try:
-                manifest = writer.analyze()
-            except ValueError:
-                writer.record_report_step("analysis-finish", {"status": "analysis-incomplete"})
-                raise
-            result = {"run_id": manifest["run_id"], "analysis_succeeded": True}
+            result = _finish()
+    except next_action.ActionableError as error:
+        print(f"失敗: {error.message}", file=sys.stderr)
+        return 2
     except (OSError, ValueError, KeyError, TypeError) as error:
-        next_action = (
-            "同じ実行の報告用UWIと分析対象の準備結果を確認し、batch内でfinishを再実行する"
+        recovery = (
+            "batchの実行記録を確認し、読めない場合はログを保全して起動元へ返す"
             if args.command == "finish"
             else "--preparedの準備結果と元記録を確認し、成功した準備結果で再実行する"
         )
-        print(f"失敗: {error}\n次の操作: {next_action}", file=sys.stderr)
+        print(f"失敗: {error}\n次の操作: {recovery}", file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False))
     return 0

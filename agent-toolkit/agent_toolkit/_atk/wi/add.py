@@ -54,7 +54,6 @@ from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, 
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import delegated_session, external_source_review, session_review, skill_modes, weekly_work
-from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_loop_session as _process_loop_session
 from agent_toolkit._common import uwi_watch as _uwi_watch
 from agent_toolkit._common.session_state import read_state
@@ -141,6 +140,12 @@ def _active_batch() -> tuple[session_review.BatchWriter, session_review.ReviewBa
     return writer, batch
 
 
+def _active_report_batch(scope: object) -> tuple[session_review.BatchWriter, session_review.ReviewBatch] | None:
+    if isinstance(scope, str) and skill_modes.canonical_scope(scope) == session_review.BATCH_SCOPE:
+        return _active_batch()
+    return None
+
+
 @contextlib.contextmanager
 def _track_batch_report_save(
     private_notes: pathlib.Path,
@@ -149,7 +154,7 @@ def _track_batch_report_save(
     scope: str | None,
     parsed_messages: list[tuple[dict[str, object], str]],
 ) -> Generator[None]:
-    active = _active_batch() if entry_type == WI_TYPE_UWI and scope == session_review.BATCH_SCOPE else None
+    active = _active_report_batch(scope) if entry_type == WI_TYPE_UWI else None
     if active is None or not any(
         data.get("source", source) == "run-skill" and data.get("run_skill_report") == "true" for data, _ in parsed_messages
     ):
@@ -160,7 +165,7 @@ def _track_batch_report_save(
     writer.record_report_step("save-start", {**details, "status": "attempted"})
     status = "failed"
     try:
-        expected_notes = pathlib.Path(batch.report_notes) if batch.report_notes else _private_notes.default_private_notes()
+        expected_notes = session_review.resolve_report_notes(batch.report_notes)
         if private_notes.resolve() != expected_notes.resolve():
             status = "wrong-destination"
             raise WebInputError(
@@ -181,9 +186,7 @@ def run_report_metadata(
         new_report
         and data.get("source") == "run-skill"
         and data.get("run_skill_report") == "true"
-        and isinstance(raw_scope, str)
-        and skill_modes.canonical_scope(raw_scope) == session_review.BATCH_SCOPE
-        and (active := _active_batch())
+        and (active := _active_report_batch(raw_scope))
     ):
         return {**data, "run_skill_run_id": active[1].run_id}
     if data.get("run_skill_run_id"):

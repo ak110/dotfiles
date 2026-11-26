@@ -26,6 +26,7 @@ from agent_toolkit._common import (
     delegated_session,
     mcp_environment,
     next_action,
+    private_notes,
     session_activity,
     session_family,
     session_launchers,
@@ -130,6 +131,10 @@ class ReviewBatch(pydantic.BaseModel):
         if self.status == BatchStatus.USAGE_LIMIT_PAUSED and self.usage_resume_at is None:
             raise ValueError("利用上限で中断したbatchに再開予定時刻が無い")
         return self
+
+
+def resolve_report_notes(saved: str | None) -> pathlib.Path:
+    return pathlib.Path(saved) if saved else private_notes.default_private_notes()
 
 
 class ScopeEntry(pydantic.BaseModel):
