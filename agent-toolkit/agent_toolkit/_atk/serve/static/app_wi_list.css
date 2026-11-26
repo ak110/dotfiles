@@ -291,7 +291,7 @@
     padding-inline: var(--space-1);
   }
   #screen-wi .summary-cell { grid-area: 1 / 1; }
-  #screen-wi .status-cell { grid-area: 1 / 2; }
+  #screen-wi .status-cell { grid-area: 1 / 2; align-self: stretch; }
   #screen-wi .entry-meta {
     grid-area: 2 / 1 / 3 / -1;
     display: flex;
