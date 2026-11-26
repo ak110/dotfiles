@@ -8,10 +8,8 @@
 `master`への更新はPRのマージコミットだけに限定し、直接pushを許可しない。
 PRの作成は、条件が成立する`agent-toolkit:atk-mode`の作業`process-wi`と、恒常的な認可または明示指定により公開まで扱う協調モードではエージェントが実施する。
 公開範囲の明示指定を優先し、それ以外では手動で行う。
-同じ最上位セッションでのリリースPR作成・マージは1件までとする。
-マージ後に生じた差分は`develop`へのpushとCI成功まで検収し、次のセッションで累積差分を1件のPRとして扱う。
-PR作成、必須check、レビュー、マージ後同期の固定費を同じセッションで重ねないためである。
-実施可否と条件の判定は`release-dotfiles`スキルが定める。
+PR作成、必須check、レビュー、マージ後同期の固定費を抑えつつmasterへの反映を遅らせすぎないよう、通常変更は時間でまとめる。
+リリースの実施可否と周期は[release-dotfiles「developとmasterのリリース運用」](../../.claude/skills/release-dotfiles/SKILL.md#developとmasterのリリース運用)が定める。
 head branchの機械的な限定は設けない。
 
 repository設定ではマージコミットを有効にし、squash merge、rebase mergeおよびauto-mergeを無効にする。

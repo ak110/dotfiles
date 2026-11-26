@@ -18,4 +18,4 @@
 - [Claude Code plugin cache](operations-plugin-cache.md)
 - [週次の費用指標](operations-cost-metrics.md)
 - [chezmoiの命名規則](operations-chezmoi.md)
-- [日次リリース](../../.claude/skills/release-dotfiles/SKILL.md)
+- [リリース周期と実施手順](../../.claude/skills/release-dotfiles/SKILL.md)
