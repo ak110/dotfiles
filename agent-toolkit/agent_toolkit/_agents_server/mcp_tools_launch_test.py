@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools, tool_descriptions
+from agent_toolkit._agents_server import launch_requests, mcp_tools, model_override, tool_descriptions
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
@@ -38,6 +38,7 @@ async def test_start_observation_is_bound_before_returning_to_mcp(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """公開startは応答より先に、実際に起動したsessionへ起動識別子を渡す。"""
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -51,6 +52,7 @@ async def test_start_observation_is_bound_before_returning_to_mcp(
 
 @pytest.mark.asyncio
 async def test_start_tools_accept_model_type_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     requested = _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -83,6 +85,7 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
 
 @pytest.mark.asyncio
 async def test_start_tools_use_task_settings_without_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     requested = _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -114,6 +117,7 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
 async def test_role_override_warning_keeps_requested_candidate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, role: str, override: str | None
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     requested = _recording_candidates(monkeypatch)
     document = launch_requests.resolve_task_document_path(role)
     async with _manager_with_fake("codex") as (manager, _):
@@ -139,6 +143,7 @@ async def test_role_override_warning_keeps_requested_candidate(
 async def test_free_prompt_direct_candidates_warn_without_rejection(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     requested = _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -151,6 +156,7 @@ async def test_free_prompt_direct_candidates_warn_without_rejection(
 
 @pytest.mark.asyncio
 async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -289,6 +295,7 @@ async def test_start_rejects_role_only_model_types_for_freeform_modes(
 async def test_start_freeform_modes_keep_lightweight_stages_and_explicit_candidates(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: tool_descriptions.StartMode
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     requested = _recording_candidates(monkeypatch)
     models = ["review", "review_fast", "chores", "chores_fast", "write", "codex:model/high"]
     async with _manager_with_fake("codex") as (manager, _backend):
@@ -338,6 +345,7 @@ async def test_start_launches_repository_process_task_with_execute(
 async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     requested: list[str] = []
 
     def candidates(model_type: str, **_kwargs: Any) -> list[tuple[str, str, str]]:
@@ -468,6 +476,7 @@ async def test_write_model_requires_user_instruction_before_candidate_resolution
 async def test_freeform_execute_and_exec_use_execute_model_not_write_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:implementation/high")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:drafting/medium")
     contract = tmp_path / "work-contract.md"

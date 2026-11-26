@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools, plugin_root, session_handoff
+from agent_toolkit._agents_server import launch_requests, mcp_tools, model_override, plugin_root, session_handoff
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import delegated_session, task_documents
 from agent_toolkit._common.next_action import ActionableError
@@ -144,12 +144,14 @@ async def test_lightweight_start_does_not_allocate_record(
     monkeypatch: pytest.MonkeyPatch,
     mode: Literal["explore", "shell", "write"],
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     allocate = AsyncMock(side_effect=AssertionError("軽量起動で記録先を生成した"))
     monkeypatch.setattr(launch_requests, "delegate_request", allocate)
     result = {"session_id": "child", "status": "running", "label": "軽量"}
     manager = SimpleNamespace(
         start_explore=AsyncMock(return_value=result),
         start_write=AsyncMock(return_value=result),
+        model_override_context=lambda: ({}, None),
         start_shell=AsyncMock(return_value=result),
     )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)

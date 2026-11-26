@@ -28,6 +28,7 @@ from agent_toolkit._agents_server import (
     unavailable_candidates,
     wait_targets,
 )
+from agent_toolkit._agents_server import model_override as _model_override
 from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import (
@@ -57,13 +58,11 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 START_RESOURCE_GUARD: contextvars.ContextVar[Callable[[SessionState | None], Awaitable[None]] | None] = contextvars.ContextVar(
     "START_RESOURCE_GUARD", default=None
 )
-WRITE_MODEL_USER_EVIDENCE: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "WRITE_MODEL_USER_EVIDENCE", default=None
-)
+WRITE_MODEL_AUTHORIZED: contextvars.ContextVar[bool] = contextvars.ContextVar("WRITE_MODEL_AUTHORIZED", default=False)
 
 
-def _require_write_model_evidence(model_type: str | None, user_evidence: str | None) -> None:
-    if model_type == "write" and not (user_evidence or "").strip():
+def _require_write_model_evidence(model_type: str | None, authorized: bool) -> None:
+    if model_type == "write" and not authorized:
         raise ActionableError(
             "`write_model`を使う工程`write`にはユーザーの指示が必要です。委譲先は起動していない。",
             next_action=(
@@ -74,15 +73,17 @@ def _require_write_model_evidence(model_type: str | None, user_evidence: str | N
         )
 
 
-def model_override_warnings(
+async def check_model_override(
+    manager: ManagerStart,
     model_type: str | None,
     *,
     default_type: str | None = None,
     reason: str | None = None,
     evidence: str | None = None,
     inherited: bool = False,
+    launch: Mapping[str, Any],
 ) -> list[dict[str, str]]:
-    _require_write_model_evidence(model_type, evidence if reason == "user_instruction" else None)
+    _require_write_model_evidence(model_type, reason == "user_instruction" and bool((evidence or "").strip()) and not inherited)
     if model_type is None or (
         model_type != "write" and model_type in _atk_config.MODEL_TYPES and (default_type is None or model_type == default_type)
     ):
@@ -98,10 +99,23 @@ def model_override_warnings(
         or not (evidence or "").strip()
     ):
         raise ActionableError(
-            "候補列の直接指定・役割の工程の変更にはmodel_overrideとmodel_override_evidenceが必要です",
+            "候補列の直接指定・役割の工程の変更にはmodel_overrideとmodel_override_evidenceが必要です。委譲先は起動していない。",
             next_action=next_action,
         )
     assert evidence is not None
+    if reason == "user_instruction":
+        if len(model_type.splitlines()) != 1 or "\r" in model_type or "\n" in model_type:
+            raise ActionableError("モデルの指定は1行で渡す。委譲先は起動していない。", next_action=next_action)
+        launcher, state_root = await run_file_operation(manager.model_override_context)
+        await run_file_operation(
+            _model_override.require,
+            evidence,
+            model_type,
+            default_type or ("write" if model_type == "write" else launch["mode"]),
+            launch=launch,
+            launcher=launcher,
+            state_root=state_root,
+        )
     if reason == "observation":
         candidates = _atk_config.parse_unresolved_model_candidates(model_type)
         if not candidates or not all(
@@ -122,6 +136,9 @@ def model_override_warnings(
 
 
 class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancestors  # 責務別のmixinへ分割したため。
+    def model_override_context(self) -> tuple[dict[str, Any], pathlib.Path | None]:
+        return self.launcher_record_context(), self._state_root()
+
     async def _resolve_start_candidates(
         self,
         model_type: str,
@@ -217,7 +234,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         startup_inputs: Mapping[str, str] | None = None,
         explicit_role_model: bool = False,
     ) -> dict[str, Any]:
-        _require_write_model_evidence(model_type, WRITE_MODEL_USER_EVIDENCE.get())
+        _require_write_model_evidence(model_type, WRITE_MODEL_AUTHORIZED.get())
         validate_prompt(prompt)
         validate_cwd(cwd)
         ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
@@ -508,12 +525,19 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         successor_type = model_type if model_type is not None else inherited_type
         if task_documents.launched_task_document(predecessor.prompt) is None:
             launch_requests.validate_model_type_for_mode(predecessor.launch_kind, successor_type)
-        warnings = model_override_warnings(
+        warnings = await check_model_override(
+            self,
             successor_type,
-            default_type=role_type if model_type is not None or successor_type not in _atk_config.MODEL_TYPES else None,
+            default_type=role_type,
             reason=model_override,
             evidence=model_override_evidence,
             inherited=model_type is None,
+            launch={
+                "mode": "handoff",
+                "cwd": predecessor.cwd,
+                "handoff_from": predecessor.session_id,
+                "label": predecessor.label or None,
+            },
         )
         if isinstance(current, SessionState):
             # 終了通知がCLIの後始末より先に届いても、後任と前任が同じworktreeへ同時に作用しない。
@@ -531,7 +555,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         with (
             startup_features.selection(predecessor.startup_profile),
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
-            WRITE_MODEL_USER_EVIDENCE.set(model_override_evidence if model_override == "user_instruction" else None),
+            WRITE_MODEL_AUTHORIZED.set(successor_type == "write" and bool(warnings)),
         ):
             response = await self._start_with_admission(
                 successor_type,

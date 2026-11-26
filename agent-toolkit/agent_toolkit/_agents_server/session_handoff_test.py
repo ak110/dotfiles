@@ -14,6 +14,7 @@ from agent_toolkit._agents_server import (
     handoff_next_action,
     launch_requests,
     mcp_tools,
+    model_override,
     record_paths,
     resume_waits,
     session_handoff,
@@ -118,6 +119,7 @@ async def test_public_start_rejects_mixed_handoff_inputs(extra: dict[str, str]) 
 async def test_public_handoff_selects_explicit_model_and_keeps_full_input(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path, engine: str
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     del record_extractor
     before = f"{engine}:provider/before@medium" if engine == "opencode" else f"{engine}:before/medium"
     after = f"{engine}:provider/after@medium" if engine == "opencode" else f"{engine}:after/medium"
@@ -516,6 +518,7 @@ async def test_handoff_guidance_after_direct_model_availability_failure(
 async def test_handoff_requires_user_instruction_for_write_again(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path
 ) -> None:
+    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     del record_extractor
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:drafting/medium")
     async with _manager_with_fake("codex") as (manager, backend):
@@ -535,6 +538,7 @@ async def test_handoff_requires_user_instruction_for_write_again(
             assert backend.start_calls == [("drafting", "medium", "write")]
         response = await mcp_tools.start(
             handoff_from=session_id,
+            model_type="write",
             model_override="user_instruction",
             model_override_evidence="ユーザーが前任と後任に write_model を指定",
         )

@@ -22,7 +22,8 @@
    - 出力の`temporary_evidence`は、渡す計画と条件表が参照する一時領域のパスの件数（`referenced`）と、現存しないパス（`missing`）を示す。
      `missing`が空でない事例は、評価の前に、証拠を欠測と明記した評価用の計画を`store`で保存して`fixtures`へ指定する。
    - 出力の`start`を`agents_server`の`start`へ渡す。
-   - ユーザーがモデルの比較を指示した場合は、`model_type`に比較対象、`model_override`に`user_instruction`、`model_override_evidence`に指示の要旨を追加する。
+   - ユーザーがモデルの比較を指示した場合は、`model_type`に比較対象、`model_override`に`user_instruction`を指定する。
+     `model_override_evidence`には`agent-toolkit:atk-mode/references/model-settings.md`「本人指定による上書き」で定める原文・回答の所在を渡す。
    - 指示がなければ同じ工程の設定で、モデル以外の違いを比較する。
      事例ごとの出力先の名前、合成素材の事例の計画の名前とcommit件名は、欠陥の事例と正常対照で同じ形の中立の名前になる。
      事例IDと種類は出力の`case`と`kind`だけにあるため、担当へは`start`だけを渡す。

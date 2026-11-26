@@ -105,7 +105,8 @@ Claude統括が上限で停止した場合は、旧CLIの終了確認後に同�
 作業を依頼しているエージェントへ、委譲先と切り替え先のモデルを指示する。
 前任の終了後に`start`の`handoff_from`に前任の識別子を渡して引き継ぐ。
 前任が候補列を直接指定していた場合は、`model_type`に前任の役割の工程名（役割がなければ起動区分の既定の工程名）を指定する。
-許可された例外として候補列を直接渡す場合は、`model_type`に候補列、`model_override`に区分、`model_override_evidence`にその根拠を指定する。
+許可された例外として候補列を直接渡す場合は、`model_type`に候補列、`model_override`に区分、`model_override_evidence`に根拠を指定する。
+本人指定では[上書きの手順](../../agent-toolkit/skills/atk-mode/references/model-settings.md#本人指定による上書き)で定める原文・回答の所在を渡す。
 前任の会話を要約するモデルは呼ばず、新しい会話へ記録を渡す。
 切替元・切替先はClaude・Codex・Antigravity・OpenCodeに対応する。
 

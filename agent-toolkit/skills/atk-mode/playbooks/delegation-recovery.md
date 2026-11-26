@@ -134,7 +134,7 @@ Codexで元担当（同じ作業のために起動済みの委譲先）を扱う
 3. 利用上限での候補切替・解除待ち・再開はサーバーに任せる。
    ユーザーが切替を指示した時に前任が実行中なら、`kill`で終了を確かめる。
    ユーザーが即時停止を求めたら`force=true`を指定する。
-   `start`へ`handoff_from`と後任の候補列を`model_type`で渡し、`model_override=user_instruction`と`model_override_evidence`に指示の要旨を添える。
+   `start`へ`handoff_from`と後任の候補列を`model_type`で渡し、`model_override=user_instruction`と、[本人指定による上書き](../references/model-settings.md#本人指定による上書き)で定める後任を指定した原文・回答の所在を`model_override_evidence`に添える。
    ユーザーが`atk config`の工程別のモデル設定を変えた場合は、その変更を切替の指示として扱い、工程名を`model_type`へ渡して現在の設定で引き継げる。
    この場合`agents_server`は前任を終了して引き継ぎの起動を案内するため、委譲元はその終了の結果から後任を起動する。
    引き継ぎの起動は、新しい会話へ起動の本文、追送、各turnの最終応答を要約せずに渡し、前任の会話を置き換える（Claude、Codex、Antigravity、OpenCodeに共通）。

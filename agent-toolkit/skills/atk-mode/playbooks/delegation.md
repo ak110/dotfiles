@@ -116,8 +116,7 @@
 軽量起動にはプロジェクトの規範が自動で届かないため、作業に必要な指示は依頼文で渡す。
 `handoff_from`で前任から後任を起こす引き継ぎ起動は、前任の起動の区分を継ぐ（`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`）。
 
-1. 委譲は`agents_server`を標準とする。
-   `atk agents wait`で終了を機械的に観測でき、工程別のモデル設定でeffortも指定できる。
+1. 委譲は`agents_server`を標準とし、`atk agents wait`で終了を観測する。
 2. `mode`は作業の形で選ぶ。
    - 役割文書がある作業は`task`で渡し、手順、権限、検証、返却の形式は役割文書に任せる。
    - 対話・要求の組み直し、複数対象の網羅や長い記録の分類、成果ファイルの作成や全公開操作と呼び出し元の対応表の検収を伴う調査は`delegate`にする。
@@ -126,7 +125,7 @@
      委譲元が作業範囲、書き込み所有権、完成判定を定め、通常の作業契約を使って検収する。
      レーンと役割の契約が必要な場合は所定の `exec` を使う。
    - 単一対象の結論と所在を返す調査は`explore`、終了状態と要約で成り立つコマンド実行は`shell`にする。
-   - 軽量の文章起草で `write_model` を使うのは、ユーザーが指定した場合に限る。
+   - 画像・画面の品質レビューにも担当に応じて `review` または `review_fast` を使い、候補列を独自に組まない。
 3. 次の場合に限り、Claude Codeの`Agent`ツールとCodexの`spawn_agent`を使う。
    - `agents_server`のMCPツールを呼べない場合。
      切り替えた工程、本来の設定値（engine、モデル、effort）、理由を報告に書く。
@@ -175,7 +174,8 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
    - フォアグラウンドで孫の終了を見る委譲先には、孫の起動手段と、その終了を見る公開の待機機能（`atk agents wait`、Codexの`wait_agent`）を組で渡す。
    役割の起動では、必須入力と資源の実在と版をサーバーが確かめるので、この確認と行数の添付を省いてよい。
    不足か不一致を解けない時は起動を見送り、不足の項目、無かったパス、不一致の対象と観測値を報告する。
-4. 本書「実行手段」で手段と`mode`を、`agent-toolkit:atk-mode/references/model-settings.md`でモデルを決める。
+4. 本書「実行手段」で手段と`mode`を、[工程別モデル設定](../references/model-settings.md#工程別モデル設定)で工程を決め、役割起動では`model_type`を省く。
+   ユーザーが上書きや`write_model`を指定した場合だけ、[本人指定の手順](../references/model-settings.md#本人指定による上書き)で原文・回答を確かめる。
 5. 書き込みを伴う時は、本書「作業ツリーの保護」で書き込み先と主体を確定する。
 6. 依頼文を`agent-toolkit:atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」で組み、入れる要素を同書「入力の適格性と追送」で選ぶ。
    役割文書を持つ委譲は本書「`<役割名>.parent.md`を持つ委譲の起動」に従う。
@@ -214,7 +214,7 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
 3. 各modeの入力は、公開の`start`の説明とスキーマで確かめ、`cwd`へ作業ディレクトリの絶対パスを渡す。
    `explore`と`write`は`prompt`を、`shell`は`command`と`summary_policy`を使い、スキルの手順を要する作業は`task`か`delegate`へ回す。
    shellの要約に関わる暫定規範は`summary_policy`に入れ、実行に関わる条件は適合するコマンドを渡した上で同じ欄に明示する。
-   工程が `write` になる起動は、ユーザーが指定した場合だけ `model_override=user_instruction` と `model_override_evidence` に実際の指示の根拠を渡す。
+   工程が `write` になる起動は、[本人指定による上書き](../references/model-settings.md#本人指定による上書き)に従い、原文・回答の所在を渡す。
 4. `explore`は読み取り専用とし、後続の入力には`atk agents wait`が保存した`agent_message_path`を直接指定する。
 5. `shell`と`write`の書き込み先を、生成物も含めて他の担当と重ならない範囲に限り、同じ担当の交代は先行の終了後に行う。
 6. `session_id`を保持し、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`で終了状態と結果本文を回収する。
