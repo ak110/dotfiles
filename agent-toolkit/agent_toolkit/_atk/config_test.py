@@ -150,35 +150,57 @@ def test_config_show_auto_fast_without_app_server(tmp_path, monkeypatch, capsys,
 
 
 @pytest.mark.parametrize("arguments", [(), ("show",), ("list",)])
-@pytest.mark.parametrize("legacy", ["model", "connection", "serve"])
-def test_config_listing_withholds_values_until_local_migration(tmp_path, monkeypatch, capsys, arguments, legacy):
+@pytest.mark.parametrize("legacy", ["retired", "model", "connection", "serve", "unused-serve"])
+def test_config_listing_projects_legacy_values_without_writing(tmp_path, monkeypatch, capsys, arguments, legacy):
     def unexpected(*_args, **_kwargs):
         pytest.fail("設定参照でCodex app-serverを起動した")
 
     monkeypatch.setattr(config_module, "is_human_terminal", lambda: True)
     monkeypatch.setattr(config_module.codex_models, "with_app_server", unexpected)
-    if legacy == "serve":
-        _write_config(tmp_path, {})
+    if legacy in {"serve", "unused-serve"}:
+        _write_config(tmp_path, {"serve_host": "saved-host"} if legacy == "unused-serve" else {})
         path = _config_file(tmp_path).with_name("serve.toml")
         path.write_text('host = "legacy-review-host"\n', encoding="utf-8")
         key = "serve_host"
     elif legacy == "model":
-        path = _write_config(tmp_path, {"base_engine": "claude", "execute_model": "claude:stale"})
+        path = _write_config(tmp_path, {"base_engine": "claude", "execute_model": "not-valid"})
         key = "execute_model"
-    else:
+    elif legacy == "connection":
         path = _write_config(tmp_path, {"codex_model_providers": "openai,custom"})
         key = "codex_payg_provider"
-    original = path.read_bytes()
+    else:
+        path = _write_config(tmp_path, {"usage_auto_allocation": "true"})
+        key = "codex_fast_mode"
+    original = {file.name: file.read_bytes() for file in path.parent.iterdir()}
 
-    assert _main(tmp_path, "config", *arguments) == 2
-    rejected = capsys.readouterr()
-    assert not rejected.out
-    assert "atk config get codex_fast_mode" in rejected.err
-    assert path.read_bytes() == original
+    assert _main(tmp_path, "config", *arguments) == 0
+    before = capsys.readouterr()
+    assert "Codex自動速度:" in before.err
+    assert {file.name: file.read_bytes() for file in path.parent.iterdir()} == original
     assert _main(tmp_path, "config", "get", key) == 0
     resolved = capsys.readouterr().out.strip()
     assert _main(tmp_path, "config", *arguments) == 0
-    assert f"{key} {resolved}\n" in capsys.readouterr().out
+    assert f"{key} {resolved}\n" in before.out
+    assert capsys.readouterr().out == before.out
+
+
+@pytest.mark.parametrize("arguments", [(), ("show",), ("list",)])
+def test_config_listing_omits_only_unresolved_values(tmp_path, capsys, arguments):
+    path = _write_config(tmp_path, {"base_engine": "unknown", "codex_model_providers": "openai,paid-a,paid-b"})
+    legacy = path.with_name("serve.toml")
+    legacy.write_text('port = "invalid"\nhost = "legacy-host"\n', encoding="utf-8")
+    original = {file.name: file.read_bytes() for file in path.parent.iterdir()}
+
+    assert _main(tmp_path, "config", *arguments) == 2
+    shown = capsys.readouterr()
+    assert "serve_host legacy-host\n" in shown.out
+    assert "codex_fast_mode auto\n" in shown.out
+    for key in ("execute_model", "codex_payg_provider", "serve_port"):
+        assert f"\n{key} " not in shown.out
+        assert f"{key}の実効値を表示できない" in shown.err
+    for reason in ("ASCIIカンマ区切り", "自動移行できません", "整数ではない", "次の操作"):
+        assert reason in shown.err
+    assert {file.name: file.read_bytes() for file in path.parent.iterdir()} == original
 
 
 def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -393,7 +415,9 @@ def test_removed_allocation_setting_is_deleted_and_rejected(tmp_path, monkeypatc
         assert _main(tmp_path, "config", *action) == 2
         assert "usage_auto_allocationは廃止" in capsys.readouterr().err
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
-    assert _main(tmp_path, "config", "show") == 2
+    assert _main(tmp_path, "config", "show") == 0
+    assert "execute_model claude:opus\n" in capsys.readouterr().out
+    assert _main(tmp_path, "config", "get", "execute_model") == 2
     assert "廃止した設定の環境変数が設定されています: AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION" in capsys.readouterr().err
 
 

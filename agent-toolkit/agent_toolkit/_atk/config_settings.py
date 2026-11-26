@@ -8,7 +8,7 @@ import os
 import pathlib
 import re
 import sys
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from typing import Any
 
 lazy import platformdirs
@@ -686,13 +686,14 @@ def mutable_setting_default(key: str) -> str:
     return MUTABLE_KEY_DEFAULTS[key]
 
 
-def raw_mutable_setting(key: str, *, fallback: str | None = None) -> str:
+def raw_mutable_setting(key: str, *, fallback: str | None = None, local: Mapping[str, str] | None = None) -> str:
     """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
     default = mutable_setting_default(key)
     explicit = runtime_environment.environment().get(config_env_name(key), "")
     if explicit:
         return explicit
-    local = load_config()
+    if local is None:
+        local = load_config()
     if key in local:
         return local[key]
     if key in SHARED_SETTING_KEYS and (path := shared_settings_path()) is not None:

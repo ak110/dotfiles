@@ -115,7 +115,8 @@ CLIライブラリ全体から`sys.exit`を除く案は単発CLIの終了コー�
 解決順はCLI、`AGENT_TOOLKIT_SERVE_HOST`・`AGENT_TOOLKIT_SERVE_PORT`、`atk config`の実効値（`AGENT_TOOLKIT_CONFIG_SERVE_*`、保存値、省略時の値）とし、統合前の上書きの順を保つ。
 
 旧`serve.toml`（`AGENT_TOOLKIT_SERVE_CONFIG`の指定先を含む）は、`atk serve`の設定解決と`atk config get/set`の時点で移行する。
-`atk config show`・`list`・サブコマンドなしでは移行せず、旧設定があれば一覧を出さずに移行操作を案内する。
+`atk config show`・`list`・サブコマンドなしでは移行せず、同じ変換規則で旧ファイルの値を読み取る。
+保存値がなく旧ファイルからも確定できない項目は省いて原因を示す。
 統一設定に無いキーだけを補い、保存後に旧ファイルを`<旧ファイル名>.migrated`へ改名する。
 保存済みのキーを上書きしないことで明示保存値を保ち、改名で移行元を無くすことで再実行が移行済みの値を変えないようにする。
 旧ファイルを残して毎回補う案は、旧ファイルを編集しても保存済みのキーだけが反映されず、どの値が有効になるかが分かりにくくなるため採らない。

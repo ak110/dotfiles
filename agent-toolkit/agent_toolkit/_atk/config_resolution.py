@@ -53,10 +53,18 @@ def mutable_setting_source(
     return "省略時の値"
 
 
-def resolve_mutable_setting(key: str, *, fallback: str | None = None, read_only: bool = False) -> str:
+def resolve_mutable_setting(
+    key: str,
+    *,
+    fallback: str | None = None,
+    read_only: bool = False,
+    local: Mapping[str, str] | None = None,
+    local_error: ValueError | None = None,
+) -> str:
     if key not in config_settings.MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
-    config_migration.check_legacy_environment()
+    if local is None:
+        config_migration.check_legacy_environment()
     if not read_only:
         config_migration.migrate_legacy_settings()
     env_name = config_settings.config_env_name(key)
@@ -67,11 +75,9 @@ def resolve_mutable_setting(key: str, *, fallback: str | None = None, read_only:
     )
     value = env_value or temporary_settings().get(key)
     if value is None:
-        value = (
-            config_settings.raw_mutable_setting(key)
-            if fallback is None
-            else config_settings.raw_mutable_setting(key, fallback=fallback)
-        )
+        if local_error is not None:
+            raise local_error
+        value = config_settings.raw_mutable_setting(key, fallback=fallback, local=local)
     try:
         config_settings.validate_mutable_setting(key, value)
     except ValueError as error:

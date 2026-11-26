@@ -344,7 +344,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config show": {
         "summary": "XDG関連パスとモデル設定を一覧表示する",
-        "description": "XDG関連パスとモデル設定を一覧表示する。\n\n目的: XDG関連パス、モデル設定、Codexの速度、Claude・Codexの接続設定などを`<キー> <値>`で1キー1行ずつ表示する。モデル設定はexecute・review・review_fast・chores・chores_fast・orchestrate・writeの7工程の順に並べる。参考一覧外のモデル名・effortも表示する。各キーの受理値と初期値は`atk config set --help`に示す。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧を書く。通信や設定の移行は行わない。旧設定が残っていれば一覧を出さず、ローカルで移行する操作を案内する。端末で表示する場合、Codexの速度がautoなら、このホストでの最後の委譲起動時の判定と時刻を標準エラーに表示する。記録がなければ起動時に判定する旨を示す。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "XDG関連パスとモデル設定を一覧表示する。\n\n目的: XDG関連パス、モデル設定、Codexの速度、Claude・Codexの接続設定などを`<キー> <値>`で1キー1行ずつ表示する。モデル設定はexecute・review・review_fast・chores・chores_fast・orchestrate・writeの7工程の順に並べる。参考一覧外のモデル名・effortも表示する。各キーの受理値と初期値は`atk config set --help`に示す。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針である。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧を書く。通信や設定の移行は行わない。旧設定は移行後の値を読み取りだけで求める。確定できない項目は表示せず、原因と次の操作を標準エラーに示して終了2で返す。端末で表示する場合、Codexの速度がautoなら、このホストでの最後の委譲起動時の判定と時刻を標準エラーに表示する。記録がなければ起動時に判定する旨を示す。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
     },
     "atk config migrate-shared": {

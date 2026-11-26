@@ -64,8 +64,8 @@ def test_legacy_serve_toml_is_migrated_once_and_renamed(tmp_path, capsys):
     legacy.parent.mkdir(parents=True)
     legacy.write_text("unknown = 1\n" + _SERVE_TOML, encoding="utf-8")
 
-    assert _main(tmp_path, "config", "show") == 2
-    assert not capsys.readouterr().out
+    assert _main(tmp_path, "config", "show") == 0
+    assert "serve_host toml-host\n" in capsys.readouterr().out
     assert legacy.exists()
     assert not _config_file(tmp_path).exists()
 

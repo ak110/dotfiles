@@ -147,15 +147,20 @@ def resolved_settings(home: pathlib.Path, *, read_only: bool = False) -> dict[st
     if not read_only:
         _config_migration.migrate_legacy_settings()
         _config_migration.migrate_serve_settings()
+    return {
+        **_setting_paths(home),
+        **{key: resolve_mutable_setting(key, read_only=True) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
+    }
+
+
+def _setting_paths(home: pathlib.Path) -> dict[str, str]:
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
-    settings = {
+    return {
         "config_dir": str(_config_settings.config_dir()),
         "state_dir": str(_state_paths.state_dir()),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes.default_private_notes(home)),
-        **{key: resolve_mutable_setting(key, read_only=True) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
     }
-    return settings
 
 
 _UNKNOWN_CANDIDATE_NEXT_ACTION = "意図した名前か確認し、誤記なら同じキーへ`atk config set <KEY> <VALUE>`で設定し直す"
@@ -182,37 +187,46 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
     return warnings
 
 
-def _cmd_config_show(home: pathlib.Path) -> None:
+def _cmd_config_show(home: pathlib.Path) -> int:
     human = is_human_terminal()
-    settings = resolved_settings(home, read_only=True)
-    if _config_migration.has_legacy_settings(_config_settings.load_config_strict()) or (
-        _config_migration.legacy_serve_config_path().exists()
-    ):
-        raise _next_action.ActionableError(
-            "旧設定が未移行のため現在値を一覧できない",
-            next_action=(
-                "`atk config get codex_fast_mode`で旧設定をローカルで移行し、"
-                "旧環境変数で指定していた場合は解除してから一覧を再表示する"
-            ),
-        )
+    stored = _config_settings.load_config_strict()
+    local, errors = _config_migration.preview_local_settings(stored)
+    settings = _setting_paths(home)
+    incomplete = False
+    for key in _MUTABLE_KEY_DEFAULTS:
+        try:
+            settings[key] = resolve_mutable_setting(key, read_only=True, local=local, local_error=errors.get(key))
+        except ValueError as error:
+            incomplete = True
+            action = (
+                error.next_action
+                if isinstance(error, _next_action.ActionableError)
+                else f"設定ファイルで{key}に関係する値を直して一覧を再表示する"
+            )
+            if error is errors.get(key) and isinstance(error, _next_action.ActionableError):
+                action += "。設定を変更するコマンドは、旧キーの置換と設定の保存を行うことがある"
+            _outcome.report_warning(f"{key}の実効値を表示できない: {error}", next_action=action)
     for key, value in settings.items():
         print(f"{key} {value}")
     if (path := _config_settings.shared_settings_path()) is not None:
         shared = _config_settings.load_shared_settings(path)
-        local = _config_settings.load_config()
         temporary = usage_settings.temporary_settings()
         active = [
             key
             for key in sorted(shared)
-            if key not in local and key not in temporary and not runtime_environment.environment().get(_config_env_name(key))
+            if key in settings
+            and key not in local
+            and key not in temporary
+            and not runtime_environment.environment().get(_config_env_name(key))
         ]
         print(f"共有設定ファイル: {path}", file=sys.stderr)
         if active:
             print("共有設定から解決したキー: " + "、".join(active), file=sys.stderr)
         if git_sync.has_remote(path.parent) and _pending_shared(local):
             print(f"未移行の共有設定がある。{_MIGRATION_NEXT_ACTION}。", file=sys.stderr)
-    if human and settings["codex_fast_mode"] == "auto":
+    if human and settings.get("codex_fast_mode") == "auto":
         print(_auto_fast_report(), file=sys.stderr)
+    return 2 if incomplete else 0
 
 
 def _auto_fast_report() -> str:
@@ -709,7 +723,7 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
             _config_migration.migrate_legacy_settings()
             config_usage.dispatch(args, resolve=resolve_mutable_setting, refresh=refresh)
         elif sub in {"show", "list"}:
-            _cmd_config_show(home)
+            return _cmd_config_show(home)
         elif sub == "snapshot":
             print(json.dumps(settings_snapshot(home, read_only=getattr(args, "read_only", False))))
         elif sub == "update":

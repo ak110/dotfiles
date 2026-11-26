@@ -81,8 +81,8 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 ```
 
 `atk config show`は通信や設定の移行をせず、現在値を一覧する。
-旧設定が残っているときは一覧を表示せず、`atk config get codex_fast_mode` でローカル移行してから再表示するよう案内する。
-`atk config get <キー>`は旧設定を移行した上で指定キーの値を返す。
+旧設定からも読み取りだけで移行後の値を求め、確定できない項目だけを省いて原因と次の操作を示す。
+`atk config get <キー>`は値を返す前に、旧キーの置換と保存や旧`serve.toml`の改名など、必要な設定ファイルを移行する。
 端末で `codex_fast_mode` が `auto` の場合、`atk config show` はこのホストでの最後の委譲起動時の自動判定と、その時刻を標準エラーに表示する。
 これは過去の判定であり、記録がなければ委譲の起動時に判定する旨を表示する。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数を設定すると保存値より優先する。

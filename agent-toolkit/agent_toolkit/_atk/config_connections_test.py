@@ -154,7 +154,7 @@ def test_retired_connection_settings_migrate_once_and_are_removed(tmp_path, caps
             path.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
             old["claude_api_env_file"] = str(path)
     _write_config(tmp_path, {**old, "codex_fast_mode": "true"})
-    assert _main(tmp_path, "config", "show") == 2
+    assert _main(tmp_path, "config", "show") == 0
     assert _saved(tmp_path) == {**old, "codex_fast_mode": "true"}
     capsys.readouterr()
     assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
@@ -186,11 +186,18 @@ def test_retired_connection_keys_are_rejected_with_targets(tmp_path, capsys, mon
         assert all(target in err for target in targets)
     assert not _config_file(tmp_path).exists()
     monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", "value")
-    assert _main(tmp_path, "config", "show") == 2
-    err = capsys.readouterr().err
-    assert all(
-        (target if " " in target or "設定" in target else f"AGENT_TOOLKIT_CONFIG_{target.upper()}") in err for target in targets
-    )
+    rc = _main(tmp_path, "config", "show")
+    shown = capsys.readouterr()
+    assert "codex_fast_mode auto\n" in shown.out
+    if key == "claude_api_env_file":
+        assert rc == 0
+    else:
+        assert rc == 2
+        assert all(f"\n{target} " not in shown.out for target in targets)
+        assert all(
+            (target if " " in target or "設定" in target else f"AGENT_TOOLKIT_CONFIG_{target.upper()}") in shown.err
+            for target in targets
+        )
     with pytest.raises(_next_action.ActionableError, match=f"AGENT_TOOLKIT_CONFIG_{key.upper()}"):
         config_module.resolve_mutable_setting("claude_worker_connections")
 
@@ -227,7 +234,7 @@ def test_fixed_credentials_migrate_without_enabling_payg(tmp_path, capsys):
     credits_file.write_text("ANTHROPIC_API_KEY=credits-for-test\n", encoding="utf-8")
     payg.write_text("ANTHROPIC_API_KEY=payg-for-test\n", encoding="utf-8")
     _write_config(tmp_path, {"claude_credits_env_file": str(credits_file), "claude_payg_env_file": str(payg)})
-    assert _main(tmp_path, "config", "show") == 2
+    assert _main(tmp_path, "config", "show") == 0
     shown = capsys.readouterr()
     assert "claude_credits_env_file" not in shown.out
     assert "claude_payg_env_file" not in shown.out
