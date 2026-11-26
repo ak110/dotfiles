@@ -164,10 +164,12 @@ _CLAUDE_LAUNCH_VALUE_OPTIONS = {
     "--agents",
     "--append-system-prompt",
     "--autocompact",
+    "--cloud",
     "-d",
     "--debug",
     "--debug-file",
     "--effort",
+    "--environment",
     "--fallback-model",
     "--from-pr",
     "--input-format",
@@ -195,6 +197,8 @@ _CLAUDE_LAUNCH_VALUE_OPTIONS = {
     "-w",
     "--worktree",
 }
+# pyfltr: allow-comment -- 2.1.332のヘルプ本文では [-file] と略記される。値付きでmcp --helpへ渡して解釈を確認した。
+_CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS = {"--append-system-prompt-file", "--system-prompt-file"}
 _CLAUDE_LAUNCH_VARIADIC_OPTIONS = {
     "--add-dir",
     "--allowedTools",
@@ -258,7 +262,11 @@ def _can_retain_claude_output(argv: list[str], isatty: TerminalChecker) -> bool:
         if not token.startswith("-"):
             return token not in _CLAUDE_MANAGEMENT_COMMANDS
         index += 1
-        if token in _CLAUDE_LAUNCH_VALUE_OPTIONS and index < len(options) and not options[index].startswith("-"):
+        if (
+            token in (_CLAUDE_LAUNCH_VALUE_OPTIONS | _CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS)
+            and index < len(options)
+            and not options[index].startswith("-")
+        ):
             index += 1
         elif token in _CLAUDE_LAUNCH_VARIADIC_OPTIONS:
             while index < len(options) and not options[index].startswith("-"):

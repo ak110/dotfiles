@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import re
 import stat
 import subprocess
 import sys
@@ -719,3 +720,48 @@ def test_claude_noninteractive_launch_preserves_posix_execv(
         entrypoint(args, home=tmp_path, os_name="posix", resolve=lambda *_: tmp_path / "claude", isatty=lambda _: True)
     assert error.value.code == 19
     assert capsys.readouterr().out == "本体出力\n"
+
+
+def _claude_launch_help_contract() -> tuple[set[str], set[str], set[str], set[str]]:
+    help_text = pathlib.Path(__file__).with_name("fixtures").joinpath("claude-2.1.332-help.txt").read_text(encoding="utf-8")
+    option_text, command_text = help_text.split("\nOptions:\n", 1)[1].split("\nCommands:\n", 1)
+    single: set[str] = set()
+    variadic: set[str] = set()
+    for names, value in re.findall(
+        r"^  (-[a-zA-Z0-9-]+(?:, -[a-zA-Z0-9-]+)*) (<[^>]+>|\[[^\]]+\])",
+        option_text,
+        re.MULTILINE,
+    ):
+        (variadic if "..." in value else single).update(names.split(", "))
+    hidden = {f"{option}-file" for option in re.findall(r"(--[a-z-]+)\[-file\]", option_text)}
+    management = {
+        name
+        for aliases in re.findall(r"^  ([a-z][a-z-]*(?:\|[a-z][a-z-]*)*)(?= +)", command_text, re.MULTILINE)
+        for name in aliases.split("|")
+    }
+    return single, variadic, hidden, management
+
+
+def test_claude_launch_option_and_command_lists_match_published_help() -> None:
+    single, variadic, hidden, management = _claude_launch_help_contract()
+    assert single == agent_launcher._CLAUDE_LAUNCH_VALUE_OPTIONS
+    assert variadic == agent_launcher._CLAUDE_LAUNCH_VARIADIC_OPTIONS
+    assert hidden == agent_launcher._CLAUDE_LAUNCH_HIDDEN_VALUE_OPTIONS
+    assert management == agent_launcher._CLAUDE_MANAGEMENT_COMMANDS
+
+
+def _claude_value_prefixes() -> list[list[str]]:
+    single, variadic, hidden, _ = _claude_launch_help_contract()
+    prefixes = [[option, "value"] for option in sorted(single | hidden)]
+    # pyfltr: allow-comment -- 可変長引数は裸の位置引数まで消費するため、実物で成立する2形に限る。
+    prefixes.extend([option, "first", "second", "--verbose"] for option in sorted(variadic))
+    prefixes.extend([f"{option}=value"] for option in sorted(variadic))
+    return prefixes
+
+
+@pytest.mark.parametrize("prefix", _claude_value_prefixes())
+def test_each_value_option_before_a_claude_management_command_excludes_launch(prefix: list[str]) -> None:
+    assert not agent_launcher._can_retain_claude_output([*prefix, "mcp", "list"], lambda _: True)
+    assert agent_launcher._can_retain_claude_output([*prefix, "hello"], lambda _: True) == (
+        prefix[0] not in {"--cloud", "--environment"}
+    )
