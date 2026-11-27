@@ -62,7 +62,8 @@ Claude・Codexの実行中turnにはsteerする。Antigravity・OpenCodeの実�
 `reply_failed`は新しいturnを開始できなかったこと、`reply_ambiguous`は開始の成否を確定できなかったことを示し、
 いずれも`atk agents wait`で状態を確認してから次の操作を選ぶ。
 実行中の担当への訂正は保持したengine・model・effortで継続する。
-終了した役割が現在の工程の候補外なら配送せず、`handoff_from`による引き継ぎを案内する。
+終了した役割のモデルが現在の工程の候補外でも、同じWIの同じ役割への本人指定に一致すれば配送する。
+どちらにも一致しなければ配送せず、`handoff_from`による引き継ぎを案内する。
 相対effort操作を受理した会話は、その変更を次turnから使う。
 採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
 保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
@@ -234,7 +235,8 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
     "候補列の直接指定と役割の工程を`write`以外へ変える場合はmodel_overrideとmodel_override_evidenceが必須。"
-    "handoff_fromでは前任の候補列を継承しない。"
+    "handoff_fromでは前任の候補列を自動で継承しない。同じWIの本人コメントを根拠にする場合は"
+    "model_override=user_instructionとmodel_override_evidence=wi:<WI名.md>を指定する。"
     "自由本文の実装・修正は`mode=delegate, model_type=execute`を使う。レーンと役割の契約が必要なら所定の`exec`を使う。"
     "自由本文では`orchestrate`を、軽量modeでは`execute`も拒否する。"
     "本人指示による上書きは対象、工程、全候補を原文・回答と起動前に照合する。根拠には原文・回答の所在を指定する。"

@@ -10,13 +10,22 @@ from typing import Any
 import yaml
 
 from agent_toolkit._agents_server.launch_requests_materials import exec_review_wi_names
+from agent_toolkit._agents_server.state import SessionResumeState, SessionState
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import lane_records
 from agent_toolkit._atk.session_record_format import as_text
 from agent_toolkit._atk.wi import frontmatter, layout, processing_owner, repo, user_comment, uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.uwi_body import ANSWER_MARKER
-from agent_toolkit._common import operation_approvals, session_launchers, session_record_paths, session_registry, wi_layout
+from agent_toolkit._common import (
+    codex_models,
+    operation_approvals,
+    session_launchers,
+    session_record_paths,
+    session_registry,
+    task_documents,
+    wi_layout,
+)
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text, report_lines
 
@@ -129,25 +138,26 @@ def _repository_codex_selection(model_type: str, phase: str, launch: Mapping[str
 
 
 _WI_ROLES = {"execute": "実装担当", "review": "実行レビュー担当", "review_fast": "実行レビュー担当"}
+_WI_TASK_PHASES = {"exec.subagent.md": {"execute"}, "exec-review.subagent.md": {"review", "review_fast"}}
 
 
-def _legacy_wi_model(comment: str, phase: str, model_type: str) -> bool:
+def _legacy_wi_model(comment: str, phase: str) -> str | None:
     role = _WI_ROLES.get(phase)
     if role is None:
-        return False
-    values: list[object] = []
+        return None
+    values: list[str] = []
     for line in report_lines(comment):
         text = line.strip()
         if text.startswith("担当モデル: {"):
             try:
                 named = yaml.compose(text, Loader=yaml.SafeLoader)
             except yaml.YAMLError:
-                return False
+                return None
             if not isinstance(named, yaml.MappingNode) or len(named.value) != 1:
-                return False
+                return None
             _, models = named.value[0]
             if not isinstance(models, yaml.MappingNode):
-                return False
+                return None
             values.extend(
                 value.value
                 for key, value in models.value
@@ -157,19 +167,21 @@ def _legacy_wi_model(comment: str, phase: str, model_type: str) -> bool:
             values.append(match[1].strip().removeprefix("`").removesuffix("`"))
         elif match := re.fullmatch(rf"{role}は\s*`([^`]+)`\s*を使って(?:ください)?。", text):
             values.append(match[1])
-    return bool(values) and all(value == model_type for value in values)
+    return values[0] if values and all(value == values[0] for value in values) else None
 
 
-def _assigned_wi(launch: Mapping[str, Any], filename: str) -> bool:
-    if launch["mode"] != "task":
+def _assigned_wi(launch: Mapping[str, Any], filename: str, phase: str) -> bool:
+    if launch["mode"] not in {"task", "handoff"}:
         return False
     params = launch.get("extra_params") or {}
     document = pathlib.Path(launch.get("subagent_md_path") or "").name
+    if phase not in _WI_TASK_PHASES.get(document, ()):
+        return False
     if document == "exec-review.subagent.md":
         bases = {value.strip() for value in re.split(r"[、,，､]", params.get("レビュー基準", ""))}
         if "CI記録" in bases:
             return False
-        scope = {"計画": params["計画"]} if "計画" in bases else {}
+        scope = {"計画": params.get("計画", "")} if "計画" in bases else {}
         if "WI" in bases and (record := params.get("WI記録")):
             scope["WI記録"] = record
         return exec_review_wi_names(scope) == {filename}
@@ -183,6 +195,100 @@ def _assigned_wi(launch: Mapping[str, Any], filename: str) -> bool:
     return assigned is not None and assigned["lane_wis"] == [filename]
 
 
+def wi_task_context(session: SessionState | SessionResumeState, phase: str) -> dict[str, Any] | None:
+    document = task_documents.launched_task_document(session.prompt)
+    if document is None or phase not in _WI_TASK_PHASES.get(document.name, ()):
+        return None
+    filename = f"{session.label}.md"
+    if wi_layout.DATED_NAME.fullmatch(filename) is None:
+        return None
+    # 旧版では成功したWI根拠だけが自由本文と区別できる起動時の記録になる。 pyfltr: allow-comment
+    proven = f"モデル設定の上書き: 工程={phase}; 指定値={session.model_type}; 区分=user_instruction; 根拠=wi:{filename}。"
+    if session.task_role != document.name and not (session.model_override_record or "").startswith(proven):
+        return None
+    try:
+        params = task_documents.task_prompt_inputs(session.prompt)
+    except ValueError:
+        return None
+    return {
+        "mode": "handoff",
+        "cwd": session.cwd,
+        "label": session.label,
+        "subagent_md_path": str(document),
+        "extra_params": params,
+    }
+
+
+def wi_reply_matches(session: SessionState | SessionResumeState, phase: str) -> bool:
+    launch = wi_task_context(session, phase)
+    if launch is None:
+        return False
+    try:
+        registry = session_registry.registry_directory()
+        launcher = session.launcher_session_id if isinstance(session, SessionState) else None
+        if launcher is None and session_launchers.valid_launcher(session.session_id):
+            launcher = session_launchers.read_launcher(registry / f"{session.session_id}.json")
+        ancestry = _ancestry(launcher, None)
+        filename = f"{session.label}.md"
+        if not ancestry or (record := _wi_record(filename, session.cwd)) is None:
+            return False
+        comment = _assigned_user_comment(record[0], record[1], filename, ancestry, launch=launch, phase=phase)
+        if not comment or (requested := _legacy_wi_model(comment, phase)) is None:
+            return False
+        identity = (session.engine, session.model, session.effort)
+        candidates = _atk_config.parse_stage_model_candidates(requested)
+        if identity in candidates:
+            return True
+        aliases = [item for item in candidates if item[0] == session.engine and codex_models.requires_catalog(item)]
+        if not aliases:
+            return False
+        catalog = codex_models.list_models()
+        for item in aliases:
+            try:
+                if codex_models.resolve_candidate(item, catalog) == identity:
+                    return True
+            except codex_models.CatalogResolutionError:
+                continue
+    except OSError, ValueError, RuntimeError, yaml.YAMLError:
+        return False
+    return False
+
+
+def _wi_record(filename: str, cwd: str) -> tuple[str, dict[str, Any], str] | None:
+    if wi_layout.DATED_NAME.fullmatch(filename) is None:
+        return None
+    root = uwi_scan.private_notes_root()
+    path = layout.unique_dated_entry_path(root, filename) if root is not None else None
+    if path is None:
+        return None
+    raw = frontmatter.decode_entry_text(path.read_bytes())
+    parsed = frontmatter.parse_frontmatter(raw)
+    if parsed is None:
+        return None
+    metadata, body = parsed
+    if metadata.get("state") not in WI_PROCESSABLE_STATES or metadata.get("target_repo") != repo.resolve_repo_id_or_raise(
+        None, cwd=pathlib.Path(cwd)
+    ):
+        return None
+    return raw, metadata, body
+
+
+def _assigned_user_comment(
+    raw: str, metadata: Mapping[str, Any], filename: str, ancestry: tuple[str, ...], *, launch: Mapping[str, Any], phase: str
+) -> str | None:
+    owner = processing_owner.from_text(raw)
+    if (
+        metadata.get("type") == WI_TYPE_AWI
+        and pathlib.Path(filename).stem == launch.get("label")
+        and owner is not None
+        and owner.host == socket.gethostname()
+        and owner.session in ancestry
+        and _assigned_wi(launch, filename, phase)
+    ):
+        return user_comment.extract_user_comment(raw)
+    return None
+
+
 def _matches_wi(
     evidence: str,
     expected: str,
@@ -193,36 +299,12 @@ def _matches_wi(
     model_type: str,
 ) -> bool:
     kind, _, filename = evidence.partition(":")
-    if kind not in {"wi", "answer"} or wi_layout.DATED_NAME.fullmatch(filename) is None:
+    if kind not in {"wi", "answer"} or (record := _wi_record(filename, launch["cwd"])) is None:
         return False
-    root = uwi_scan.private_notes_root()
-    path = layout.unique_dated_entry_path(root, filename) if root is not None else None
-    if path is None:
-        return False
-    raw = frontmatter.decode_entry_text(path.read_bytes())
-    parsed = frontmatter.parse_frontmatter(raw)
-    if parsed is None:
-        return False
-    metadata, body = parsed
-    if metadata.get("state") not in WI_PROCESSABLE_STATES or metadata.get("target_repo") != repo.resolve_repo_id_or_raise(
-        None, cwd=pathlib.Path(launch["cwd"])
-    ):
-        return False
+    raw, metadata, body = record
     if kind == "wi":
-        owner = processing_owner.from_text(raw)
-        if not (
-            metadata.get("type") == WI_TYPE_AWI
-            and path.stem == launch.get("label")
-            and owner is not None
-            and owner.host == socket.gethostname()
-            and owner.session in ancestry
-            and _assigned_wi(launch, filename)
-        ):
-            return False
-        comment = user_comment.extract_user_comment(raw)
-        return bool(
-            comment and (comment == expected or (launch["mode"] == "task" and _legacy_wi_model(comment, phase, model_type)))
-        )
+        comment = _assigned_user_comment(raw, metadata, filename, ancestry, launch=launch, phase=phase)
+        return bool(comment and (comment == expected or _legacy_wi_model(comment, phase) == model_type))
     question, marker, answer = body.partition(ANSWER_MARKER)
     return (
         metadata.get("type") == WI_TYPE_UWI
@@ -242,6 +324,7 @@ def require(
     launch: Mapping[str, Any],
     launcher: Mapping[str, Any],
     state_root: pathlib.Path | None,
+    wi_task: Mapping[str, Any] | None = None,
 ) -> None:
     scope = "start-" + operation_approvals.fingerprint(launch)
     expected = directive(scope, phase, model_type)
@@ -261,7 +344,14 @@ def require(
         forms = (expected, *direct, directive(scope, phase, "codex")) if repository_codex else (expected, *direct)
         if ancestry and (
             _matches_record(evidence, forms, launcher, ancestry, repository_codex=repository_codex)
-            or _matches_wi(evidence, expected, ancestry, launch=launch, phase=phase, model_type=model_type)
+            or _matches_wi(
+                evidence,
+                expected,
+                ancestry,
+                launch=wi_task if wi_task is not None and evidence.startswith("wi:") else launch,
+                phase=phase,
+                model_type=model_type,
+            )
             or (
                 repository_codex
                 and _matches_wi(
@@ -276,8 +366,8 @@ def require(
         "本人の原文・回答を取得できないか、今回の対象・工程・全候補に一致しない。委譲先は起動していない。",
         next_action=(
             "役割起動ではmodel_typeを省き、自由本文では目的に合う工程名を指定する。"
-            "本人が今回の上書きを指定する場合は次の指定を本人の発話か既存の確認の回答に残し、"
-            "model_override_evidenceにsession:<会話ID>:<行番号>、wi:<WI名>、answer:<UWI名>のいずれかを渡す: "
+            "同じWIの本人コメントに担当モデルがあればmodel_override_evidence=wi:<WI名.md>を渡す。"
+            "今回の操作だけの上書きにはsession:<会話ID>:<行番号>かanswer:<UWI名>と、対象に一致する本人指定を使う: "
             f"{expected}"
         ),
     )

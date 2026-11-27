@@ -14,6 +14,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     launch_prompts,
+    model_override,
     plugin_root,
     shared_roots,
 )
@@ -395,7 +396,7 @@ async def reject_stale_role_reply(session: SessionState | SessionResumeState) ->
             reason = f"役割のmodel_typeが{session.model_type}から{current}へ変更された"
         else:
             try:
-                if not await run_file_operation(_configured_role_contains, session, original, current):
+                if not await run_file_operation(_role_reply_matches, session, original, current):
                     reason = f"終了した担当のモデルが現行の工程{current}の候補に含まれない"
             except (OSError, ValueError, RuntimeError) as error:
                 reason = f"現行の工程{current}と起動情報を比較できない: {error}"
@@ -416,6 +417,17 @@ async def reject_stale_role_reply(session: SessionState | SessionResumeState) ->
                 + "。後任へ未配送の指示を渡す"
             ),
         )
+
+
+def _role_reply_matches(session: SessionState | SessionResumeState, role: pathlib.Path, phase: str) -> bool:
+    try:
+        if _configured_role_contains(session, role, phase):
+            return True
+    except OSError, ValueError, RuntimeError:
+        if model_override.wi_reply_matches(session, phase):
+            return True
+        raise
+    return model_override.wi_reply_matches(session, phase)
 
 
 def _configured_role_contains(session: SessionState | SessionResumeState, role: pathlib.Path, phase: str) -> bool:

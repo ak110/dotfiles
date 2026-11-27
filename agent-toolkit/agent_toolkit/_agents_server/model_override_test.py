@@ -516,3 +516,122 @@ async def test_existing_wi_model_requires_a_matching_user_field(
         else:
             await mcp_tools.mcp.call_tool("start", inputs)
             assert backend.start_calls == [("explicit", "high", "delegate")]
+
+
+@pytest.mark.parametrize("route", ["handoff", "reply", "restored-reply", "restored-handoff"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "same",
+        "configured",
+        "legacy",
+        "legacy-cancelled",
+        "other-wi",
+        "unspecified",
+        "cancelled",
+        "other-role",
+        "other-candidate",
+        "free-body",
+    ],
+)
+@pytest.mark.asyncio
+async def test_wi_model_for_handoff_and_completed_reply(tmp_path, monkeypatch, route, change):
+    requested = "codex:astra/high"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:configured/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "notes"))
+    monkeypatch.setattr(repo, "resolve_repo_id_or_raise", lambda *_args, **_kwargs: _REPO)
+    entry = tmp_path / "notes" / "2026" / "11" / _WI
+    entry.parent.mkdir(parents=True)
+
+    def save_comment(comment, *, target=entry):
+        target.write_text(
+            f"---\nstate: processing\ntarget_repo: {_REPO}\ntype: awi\n"
+            f"processing_owner: {{host: {socket.gethostname()}, session: {_OWNER}}}\n---\n\n{comment}\n",
+            encoding="utf-8",
+        )
+
+    saved_comment = f"## ユーザーコメント\n\n実装担当: {requested}"
+    save_comment(saved_comment)
+    inputs = {
+        "model_type": requested,
+        "model_override": "user_instruction",
+        "model_override_evidence": f"wi:{_WI}",
+    }
+    async with _manager_with_fake("codex") as (manager, backend):
+        record = tmp_path / "session.jsonl"
+        _save(record, _human("保存済みのWIを続ける。"))
+        _record(monkeypatch, manager, record)
+        monkeypatch.setattr(manager, "launcher_session_id", lambda: _OWNER)
+        monkeypatch.setattr(session_handoff, "prepare_prompt", lambda original: original.prompt)
+        catalog = await backend.list_models()
+        monkeypatch.setattr(launch_requests.codex_models, "list_models", lambda: catalog)
+        params = _lane_inputs(tmp_path, _WI)
+        if change in {"configured", "free-body"}:
+            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", requested)
+        if change == "free-body":
+            _, prompt, _, _ = launch_requests.task_document_request("exec", params, launcher_session_id=_OWNER)
+            first = await mcp_tools.start(
+                cwd=str(tmp_path), mode="delegate", label=entry.stem, model_type="execute", prompt=prompt
+            )
+        else:
+            first = await mcp_tools.start(
+                cwd=str(tmp_path),
+                subagent_md_path="exec",
+                label=entry.stem,
+                extra_params=params,
+                model_type=None if change == "configured" else requested,
+                model_override=None if change == "configured" else "user_instruction",
+                model_override_evidence=None if change == "configured" else inputs["model_override_evidence"],
+            )
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:configured/high")
+        child = manager.sessions[first["session_id"]]
+        if change.startswith("legacy"):
+            child.task_role = None
+        if route.startswith("restored"):
+            child.publish_registry = True
+        _complete(child, message="計画を保存した")
+        if route.startswith("restored"):
+            await child.publish_registration_async()
+            del manager.sessions[child.session_id]
+        assert backend.start_calls == [("gpt-6-astra", "high", "delegate")]
+
+        if change == "other-wi":
+            other = entry.with_name("20261126-224649-002.md")
+            save_comment(saved_comment, target=other)
+            _lane_inputs(tmp_path, other.name)
+            inputs["model_override_evidence"] = f"wi:{other.name}"
+        elif change == "unspecified":
+            save_comment("## 実装案\n\n" + saved_comment.splitlines()[-1])
+        elif change.endswith("cancelled"):
+            save_comment("## ユーザーコメント\n\n実装担当: 取消")
+        elif change == "other-role":
+            save_comment(saved_comment.replace("実装担当", "実行レビュー担当"))
+        elif change == "other-candidate":
+            save_comment(saved_comment.replace("astra/high", "astra/medium"))
+
+        if route.endswith("handoff"):
+            operation = mcp_tools.mcp.call_tool("start", {"handoff_from": child.session_id, **inputs})
+        else:
+            operation = mcp_tools.mcp.call_tool("send_message", {"session_id": child.session_id, "prompt": "実装開始"})
+
+        if change in {"same", "legacy", "configured"}:
+            await operation
+            if route.endswith("handoff"):
+                assert backend.start_calls == [("gpt-6-astra", "high", "delegate")] * 2
+                successor = manager.sessions["codex-session-2"]
+                _complete(successor)
+                save_comment("## ユーザーコメント\n\n実装担当: 取消")
+                with pytest.raises(ToolError, match="追送は配送していない"):
+                    await mcp_tools.mcp.call_tool("send_message", {"session_id": successor.session_id, "prompt": "実装開始"})
+                assert backend.send_calls == 0
+            elif route == "restored-reply":
+                assert backend.resume_calls == [child.session_id]
+            else:
+                assert backend.send_calls == 1
+        else:
+            with pytest.raises(ToolError, match="委譲先は起動していない|追送は配送していない"):
+                await operation
+            assert len(backend.start_calls) == 1
+            assert not backend.release_calls
+            assert backend.send_calls == 0
+            assert not backend.resume_calls
