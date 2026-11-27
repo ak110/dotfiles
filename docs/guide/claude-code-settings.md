@@ -115,8 +115,15 @@ server-managed settingsで配信する場合は、サーバーがその会話の
 
 ## atk config
 
-`atk serve`の「設定」で値の出所と反映の時機を確認し、保存値を変更する。
+`atk serve`の「設定」は`execute_model`などCLIと同じキー名を項目名にし、日本語の説明を小さい補足として表示する。
+キーボードで項目や入力欄へ移動した時も説明を読み上げる。
+値の出所と反映の時機を確認し、保存値を変更する。
 画面を開けない環境では、`atk config show`で実効値を確認し、`atk config --help`で利用できる操作を調べる。
+
+設定ディレクトリは、Linuxでは`$XDG_CONFIG_HOME/agent-toolkit`、未指定なら`~/.config/agent-toolkit`である。
+Windowsでは`%LOCALAPPDATA%\agent-toolkit`を使い、`%APPDATA%`（Roaming）は使わない。
+呼出元が`LOCALAPPDATA`を渡さない場合は`%USERPROFILE%\AppData\Local\agent-toolkit`へ置く。
+実際のパスは`atk config get config_dir`で確認する。
 
 ### 設定の共有
 
@@ -127,10 +134,12 @@ server-managed settingsで配信する場合は、サーバーがその会話の
 
 リポジトリでは編集可否、検証OS、系統、GitHubの取り込み設定を共有する。
 cloneの場所と巡回の有無は端末ごとに保存する。
-保存先のパスや認証情報は共有しない。
+端末ごとの保存先のパスは共有しない。
+Claudeの認証情報とXのBearerトークンは[接続用の共有設定](claude-code-connections.md#認証の用意)へ保存する。
 Codexは[接続先のIDだけを共有する](claude-code-connections.md#接続の使い分け)。
 
-同期先の無い環境では全ての設定を端末に保存する。
+同期先の無い環境では、接続用の3項目を除く設定を端末に保存する。
+`claude_credits_env`・`claude_payg_env`・`weekly_research_x_env`は同期先がなくてもprivate-notesの`atk-config.json`へ保存する。
 環境変数と一時指定は従来どおり保存値より優先する。
 
 別の端末で登録済みのリポジトリは、その端末のcloneを1コマンドで関連付ける。

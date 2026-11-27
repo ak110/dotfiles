@@ -20,7 +20,7 @@ from agent_toolkit._agents_server import (
     session_handoff,
     state,
 )
-from agent_toolkit._atk import claude_connection
+from agent_toolkit._atk import claude_connection, config_env
 from agent_toolkit._common import delegated_session
 from agent_toolkit._common.claude_usage_limit import UsageLimitState
 from agent_toolkit._testing.agents_server_support import AssistantMessage, QueueClaudeClient, configure_claude_payg
@@ -86,7 +86,7 @@ async def test_api_only_continues_same_conversation(
 ) -> None:
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=api-key\n")
-    fixed_env_file = str(configure_claude_payg(monkeypatch, str(api), worker="payg").absolute())
+    configure_claude_payg(monkeypatch, str(api), worker="payg")
     options: list[Any] = []
 
     def factory(value: Any) -> QueueClaudeClient:
@@ -109,7 +109,7 @@ async def test_api_only_continues_same_conversation(
             )
         assert resumed.session_id == "existing"
         assert resumed.claude_connection == "payg"
-        assert resumed.claude_api_env_file == fixed_env_file
+        assert resumed.claude_api_env_file == config_env.reference("claude_payg_env")
         assert resumed.claude_subscription_retry_at is None
         assert options[0].resume == "existing"
         assert options[0].env["ANTHROPIC_API_KEY"] == "api-key"

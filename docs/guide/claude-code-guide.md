@@ -133,8 +133,10 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
   X APIは `weekly_research_x_api` を `true` にするまで呼ばない。
   最低取得枠が上限に収まる場合は全購読を毎週読み、超える場合は週ごとに対象を入れ替える。
   Xの検索は直近7日が対象のため、輪番で読まなかった週の投稿は取得できないことがある。
-  `X_BEARER_TOKEN`は`atk config get config_dir`が返すディレクトリの`x-api.env`に置く。
-  旧設定で指定したファイルは自動で移る。
+  `X_BEARER_TOKEN=値`は設定画面の共有項目`weekly_research_x_env`へ入力する。
+  `atk config set weekly_research_x_env <KEY=VALUEの複数行文字列>`でも保存でき、確認時は秘密値を伏せる。
+  旧設定で指定したファイルと固定名の`x-api.env`は初回に取り込み、成功後は`.imported`へ退避する。
+  保存先と秘密値の保持・削除は[接続設定](claude-code-connections.md#認証の用意)と同じである。
   1回の上限は100投稿・20ユーザー
 - `agent-toolkit:atk-mode export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
 

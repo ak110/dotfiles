@@ -191,6 +191,11 @@ def test_retired_connection_keys_are_rejected_with_targets(tmp_path, capsys, mon
     assert "codex_fast_mode auto\n" in shown.out
     assert rc == 2
     assert all(f"\n{target} " not in shown.out for target in targets)
+    if key == "claude_api_env_file":
+        assert "旧ファイル" in shown.err and "claude-payg.env" in shown.err
+        with pytest.raises(_next_action.ActionableError, match="認証env"):
+            config_module.resolve_mutable_setting("claude_worker_connections")
+        return
     assert all(
         (target if " " in target or "設定" in target else f"AGENT_TOOLKIT_CONFIG_{target.upper()}") in shown.err
         for target in targets
@@ -242,7 +247,7 @@ def test_fixed_credentials_migrate_without_enabling_payg(tmp_path, capsys):
     assert not credits_file.exists() and not payg.exists()
     choices = claude_connection.candidates("delegate", env={})
     assert [choice.kind for choice in choices.connections] == ["credits"]
-    assert choices.connections[0].api_env_file == str(tmp_path / "config" / "claude-credits.env")
+    assert claude_connection.connection_overrides(choices.connections[0])["ANTHROPIC_API_KEY"] == "credits-for-test"
 
 
 def test_credential_migration_does_not_replace_existing_fixed_env(tmp_path, capsys):

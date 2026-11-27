@@ -1,8 +1,8 @@
 """Claude会話の役割と利用可能な認証から、接続候補と隔離した環境を決める。  pyfltr: allow-comment
 
 接続はサブスクリプション（`subscription`）、有限のAPIクレジット（`credits`）、従量課金API（`payg`）の3種別で、
-認証を設定ディレクトリの種別別envファイル、役割ごとの使用順を`claude_orchestrator_connections`・`claude_worker_connections`が持つ。
-認証ファイルがなく、使用順も設定していない環境は、親環境と通常の認証解決を引き継ぐ`inherit`接続だけを使う。
+認証を共有設定の種別別env項目、役割ごとの使用順を`claude_orchestrator_connections`・`claude_worker_connections`が持つ。
+認証も使用順も設定していない環境は、親環境と通常の認証解決を引き継ぐ`inherit`接続だけを使う。
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import os
 import pathlib
 from collections.abc import Mapping
 
-from agent_toolkit._atk import config_migration, config_settings
+from agent_toolkit._atk import config_env, config_migration, config_settings
 from agent_toolkit._atk.config_resolution import connection_order, connections_configured
 from agent_toolkit._atk.config_settings import CONNECTION_KINDS, connection_order_key
 from agent_toolkit._common import claude_connection as settings
@@ -66,11 +66,13 @@ def managed() -> bool:
 
 
 def _api_env_file(kind: str) -> tuple[str | None, str | None]:
-    fixed = config_settings.config_dir() / config_settings.CLAUDE_ENV_FILENAMES[kind]
-    path = str(fixed.absolute())
+    key = f"claude_{kind}_env"
+    path = config_env.reference(key)
     reason = "空、またはAPI認証・接続方式の変数に値が無い"
     try:
         values = settings.read_api_env_file(path)
+        if not values:
+            return None, None
     except FileNotFoundError:
         return None, None
     except OSError, ValueError:
@@ -81,16 +83,17 @@ def _api_env_file(kind: str) -> tuple[str | None, str | None]:
     if any(values.get(name) for name in _API_AUTH_KEYS):
         return path, None
     return None, next_action.with_next_action(
-        f"API環境ファイルを使えません（{kind}）: {path}: {reason}",
-        f"{fixed.name}の権限・記述を確認する。接続に使わない場合は設定ディレクトリから移す",
+        f"共有設定{key}を使えません: {reason}",
+        f"設定画面またはatk config set {key}で認証・接続方式を設定する。使わない場合は空にする",
     )
 
 
 def isolation_env_files() -> tuple[str, ...]:
     config_migration.migrate_legacy_settings()
-    root = config_settings.config_dir()
     return tuple(
-        str(path.absolute()) for name in config_settings.CLAUDE_ENV_FILENAMES.values() if (path := root / name).is_file()
+        config_env.reference(key)
+        for key in ("claude_credits_env", "claude_payg_env")
+        if config_settings.raw_mutable_setting(key)
     )
 
 

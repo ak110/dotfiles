@@ -73,7 +73,7 @@ def test_listing_matches_persistent_migration_for_each_group(tmp_path, monkeypat
     if "weekly_research_x_accounts" in config:
         assert effects and effects[0]["accounts"] == ("Alice",)
     if group == "fixed-state":
-        assert not source.exists() and path.with_name("claude-credits.env").is_file()
+        assert not source.exists() and path.with_name("claude-credits.env.imported").is_file()
     capsys.readouterr()
     assert _main(tmp_path, "config", "show") == 0
     assert capsys.readouterr().out == before
@@ -108,18 +108,18 @@ def test_missing_legacy_x_file_does_not_block_config_use(tmp_path, capsys):
     assert _main(tmp_path, "config", "set", "codex_fast_mode", "true") == 0
     assert _saved(tmp_path)[key] == missing
     assert _saved(tmp_path)["codex_fast_mode"] == "true"
-    assert not capsys.readouterr().err
+    assert "移行が未完了" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("kind", ["credits", "payg"])
-def test_missing_claude_file_already_at_fixed_path_does_not_block_config(tmp_path, capsys, kind):
+def test_missing_claude_file_already_at_fixed_path_preserves_repair_guidance(tmp_path, capsys, kind):
     key = f"claude_{kind}_env_file"
     path = _config_file(tmp_path).parent / f"claude-{kind}.env"
     _write_config(tmp_path, {key: str(path)})
 
-    assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
-    assert capsys.readouterr().out.strip() == "auto"
-    assert key not in _saved(tmp_path)
+    assert _main(tmp_path, "config", "get", "codex_fast_mode") == 2
+    assert "旧ファイル" in capsys.readouterr().err
+    assert key in _saved(tmp_path)
 
 
 @pytest.mark.parametrize(

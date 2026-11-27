@@ -22,7 +22,7 @@ function displayName(names, key) {
 }
 
 export function settingName(key) {
-  return displayName(SETTING_NAMES, key);
+  return key;
 }
 
 const FAST_MODE_LABELS = {auto: "自動判定", true: "高速", false: "通常"};
@@ -141,7 +141,7 @@ export function createSettingsView({
 
   function sharedScope(syncs) {
     return syncs
-      ? "保存先: 同じprivate-notesを使うホストで共有されます。このホストだけ変えるには一時指定を使ってください。"
+      ? "保存先: private-notesのatk-config.json。Git同期により同じprivate-notesを使う全ホストで共有されます。"
       : "保存先: このホストのprivate-notes。同期先が未設定のため、他のホストには反映されません。";
   }
 
@@ -200,6 +200,10 @@ export function createSettingsView({
     const overview = element("span", "", "settings-row-overview");
     const name = element("span", "", "settings-row-label");
     name.append(element("strong", title));
+    const help = element("span", [SETTING_NAMES[key], item.description].filter(Boolean).join("。"), "secondary-text setting-description");
+    help.id = `settings-description-${++fieldCount}`;
+    name.append(help);
+    summary.setAttribute("aria-describedby", help.id);
     const unsaved = element("span", "未保存", "settings-draft-state secondary-text");
     unsaved.hidden = true;
     name.append(unsaved);
@@ -278,13 +282,18 @@ export function createSettingsView({
       const editor = form(controls, () => save({action: "set", key, value: input.value}, output));
       editor.classList.add("settings-scalar-form");
       const input = field(editor, "保存値", item.saved, item.choices,
-        !item.choices && item.saved?.length > (key.endsWith("_model") ? 30 : 48) ? "multiline" : "text", labels);
+        item.environment || (!item.choices && item.saved?.length > (key.endsWith("_model") ? 30 : 48)) ? "multiline" : "text", labels);
       if (key === "serve_port") input.inputMode = "numeric";
       output.id = `${input.id}-result`;
-      input.setAttribute("aria-describedby", output.id);
+      input.setAttribute("aria-describedby", `${help.id} ${output.id}`);
       submit(editor, "保存");
     }
     controls.append(output);
+    if (item.error) controls.append(element("p", item.error, "notice notice-warning"));
+    if (item.environment) {
+      controls.append(element("p", `保存先: ${item.storage}。${item.shared_sync ? "Git同期で全ホストに共有する。" : "Gitの同期先がないため他ホストへは未反映。"}秘密値の[REDACTED]は保持、値の入力で上書き、行の削除で変数を削除する。`, "secondary-text"));
+      controls.append(element("p", item.import_status, "secondary-text"));
+    }
     const timing = reflection(key, item, data);
     if (timing) controls.append(element("p", `反映: ${timing}`, "secondary-text settings-reflection"));
     controls.append(details);
@@ -447,7 +456,7 @@ export function createSettingsView({
   function groupId(key) {
     return key.endsWith("_model") ? "models" : (key.startsWith("serve_") || key === "remote_hosts") ? "serve" :
       key === "repositories" ? "repos" : /usage|reset/.test(key) ? "usage" :
-      /connections|provider|env_file/.test(key) ? "connections" : "other";
+      /connections|provider|_env$/.test(key) ? "connections" : "other";
   }
 
   let sharedEditors = new Map();

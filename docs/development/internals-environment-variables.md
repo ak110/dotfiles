@@ -7,6 +7,10 @@
 委譲先を示す印と委譲元の識別子は`agent_toolkit/_common/delegated_session.py`が管理し、その他の処理はこれらが提供する定数や関数を利用する。
 
 - `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`が管理するリポジトリのルートパス（未指定時は`~/private-notes/`）。
+- `AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV`・`AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV`: Claudeの共有接続envを上書きする複数行の`KEY=VALUE`。
+  設定の確認時は秘密値だけを伏せ、起動時は`_common/env_values.py`で読み取る。
+- `AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ENV`: Xの共有接続envを上書きする複数行の`KEY=VALUE`。
+  設定の確認時は秘密値だけを伏せ、起動時は`_common/env_values.py`で読み取る。
 - `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力用フラグ。
 - `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信したpayloadのダンプ出力先。
 - `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行において、次に起動するセッションの指定情報を起動側処理へ渡すための一時ファイルパス。

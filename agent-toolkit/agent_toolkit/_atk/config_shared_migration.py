@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from agent_toolkit._atk import config_repositories, outcome, reset_reservations
 from agent_toolkit._atk import config_settings as _settings
+from agent_toolkit._common import env_values
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 lazy from agent_toolkit._atk import config_repository_readers, git_sync
@@ -244,7 +245,21 @@ def write_path() -> pathlib.Path:
 
 def preview(local: dict[str, Any], path: pathlib.Path, shared: dict[str, str]) -> dict[str, Any]:
     """定期取得と設定表示のため、共有先を取得せず手元の値で判定する。  pyfltr: allow-comment"""
-    return _plan(path, pending(local), shared)
+    return public_plan(_plan(path, pending(local), shared))
+
+
+def public_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    return plan | {
+        "items": [
+            item
+            | {
+                field: env_values.public(item["key"], value) if isinstance(value, str) else value
+                for field in ("local", "shared", "shared_effective")
+                for value in (item[field],)
+            }
+            for item in plan["items"]
+        ]
+    }
 
 
 def compare(*, fetch: bool = True) -> dict[str, Any]:
@@ -254,7 +269,7 @@ def compare(*, fetch: bool = True) -> dict[str, Any]:
         with wi_sync.repo_lock(notes):
             if fetch:
                 _sync(notes, path)
-            return _plan(path, *_read(path))
+            return public_plan(_plan(path, *_read(path)))
     except subprocess.SubprocessError as error:
         raise _next_action.ActionableError(
             f"{path}の共有先を確認できない: {error}", next_action="private-notesの同期を確認する"
