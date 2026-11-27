@@ -134,14 +134,14 @@ checksum = "sha256:e2edda75bfb089654705cf65a13b58933bfd5f57148e8ebda916f58a2474f
 url = "https://nodejs.org/dist/v26.13.1/node-v26.13.1-win-x64.zip"
 
 [[tools."npm:@google/gemini-cli"]]
-version = "0.68.0"
-aube = { path = ".mise/locks/npm-google-gemini-cli/0.68.0", digest = "sha256:92d1d6eee4ddb18e2a651ddf578065dd34b670225d412209194668fa801ea0f3" }
+version = "0.70.0"
+aube = { path = ".mise/locks/npm-google-gemini-cli/0.70.0", digest = "sha256:0978eb3c6cc273ff3d9a8e99caed0a27e5382951cac10688fc4b40a3ab3d8cc8" }
 backend = "npm:@google/gemini-cli"
 specifiers = ["latest"]
 
 [[tools."npm:aws-cdk"]]
-version = "2.1148.1"
-aube = { path = ".mise/locks/npm-aws-cdk/2.1148.1", digest = "sha256:35062eabe6d72434d84895b93d2dc7852f49ad247b30be661cee7ad2b8f3dcec" }
+version = "2.1149.0"
+aube = { path = ".mise/locks/npm-aws-cdk/2.1149.0", digest = "sha256:d835fd92c00f201a3e4c8b2dc41fd31e52e53a4b62b3fb3d148891ba2ad0c02c" }
 backend = "npm:aws-cdk"
 specifiers = ["latest"]
 
