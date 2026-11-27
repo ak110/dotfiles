@@ -213,7 +213,7 @@ HELP: dict[str, dict[str, str]] = {
             "confirmedならconfirmed、一つでもinsufficientならinsufficientを記録する。規範以外の変更も集約対象とする。"
             "pending・not_requiredは--fileを省略して全体判定と理由を保存する。処理結果節のない旧項目には"
             "既存本文を保持して節と全体効果行を末尾へ追記する。pendingは日数によらず確認待ちとして保持する。"
-            "一覧は`atk wi list --state=adopted --effect-check=pending`で絞り込める。\n"
+            "一覧は`atk wi list --state=adopted --effect-check=pending`で対象を限定できる。\n"
             "前提: --worktreeは対象リポジトリを指定する。ファイル別判定では対応commitの解決を要する。"
             "--fileはリポジトリ相対パス、--checked-onはYYYY-MM-DD、--review-recordは判定の記録位置を指定する。"
             "pending・not_requiredには--reason、insufficientには保存済み是正先の--corrective-awiが必須。"
@@ -434,7 +434,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk weekly": {
         "summary": "日曜14時の週枠の作業を実行し、OSのスケジューラへ定時起動を登録する",
-        "description": "日曜14時の週枠の作業を実行し、OSのスケジューラへ定時起動を登録する。\n\n目的: 週次のメタ分析と外部情報の調査を、ホストの現地時刻で日曜14時を単位とする週枠ごとに1回だけ実行する。\n利用場面: `run`は`atk serve`の定期の判定とOSのスケジューラが呼ぶ。`atk serve`を常駐させないホストでは`install`で定時起動を登録し、不要になれば`uninstall`で解除する。\n対象と出力: `run`は最新の週枠で結果のUWIが未保存の作業のうち、このホストで有効なもの（`weekly_meta_auto_start`、`weekly_research_auto_start`）を前景で1件ずつ`atk run-skill`の経路で実行する。日曜14時より前は前週の未完了の枠だけを追い、2回以上逃した枠は最新の1回だけを実行する。`install`はLinuxでは`atk-weekly.service`と`atk-weekly.timer`をsystemdのユーザー設定へ書いて有効にし、Windowsではタスクスケジューラへ`agent-toolkit-weekly`を登録する。\n前提: `install`はPATHのうちプラグインの一時配置以外の`atk`か、`--atk-command`の絶対パスを登録する。Linuxの登録はinstall時のPATHを固定する。\n復元・後始末: `uninstall`で登録を解除する。`run`の実行記録は状態ディレクトリの`session-review/weekly/`に残る。",
+        "description": "日曜14時の週枠の作業を実行し、OSのスケジューラへ定時起動を登録する。\n\n目的: 週次のメタ分析と外部情報の調査を、ホストの現地時刻で日曜14時を単位とする週枠ごとに1回だけ実行する。\n利用場面: `run`は`atk serve`の定期の判定とOSのスケジューラが呼ぶ。`atk serve`を常駐させないホストでは`install`で定時起動を登録し、不要になれば`uninstall`で解除する。\n対象と出力: `run`は最新の週枠で結果のUWIが未保存の作業のうち、このホストで有効なもの（`weekly_meta_auto_start`、`weekly_research_auto_start`）を前景で1件ずつ`atk run-skill`の経路で実行する。日曜14時より前は前週の未完了の枠だけを追跡し、2回以上逃した枠は最新の1回だけを実行する。`install`はLinuxでは`atk-weekly.service`と`atk-weekly.timer`をsystemdのユーザー設定へ書いて有効にし、Windowsではタスクスケジューラへ`agent-toolkit-weekly`を登録する。\n前提: `install`はPATHのうちプラグインの一時配置以外の`atk`か、`--atk-command`の絶対パスを登録する。Linuxの登録はinstall時のPATHを固定する。\n復元・後始末: `uninstall`で登録を解除する。`run`の実行記録は状態ディレクトリの`session-review/weekly/`に残る。",
         "epilog": "実行例:\n\n  atk weekly run\n  atk weekly install\n  atk weekly uninstall",
     },
     "atk wait-schedule": {
