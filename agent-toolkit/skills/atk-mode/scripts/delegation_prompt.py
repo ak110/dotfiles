@@ -34,12 +34,14 @@ def generate(request: PromptRequest) -> dict[str, str]:
         if request.session_id and request.history_file:
             raise ValueError("session_idとhistory_fileは排他的に指定する")
         history = session_registry.LaunchInfo()
+        cwd = ""
         if request.session_id:
             resolution = session_registry.resolve(request.session_id)
             info = resolution.resume_info or resolution.handoff_info
             if info is None:
                 raise ValueError("session_idの起動記録を解決できない。役割文書か既存記録を指定する")
             history = info.launch_info
+            cwd = info.cwd
         elif request.history_file:
             path = pathlib.Path(request.history_file)
             if not path.is_absolute():
@@ -48,6 +50,7 @@ def generate(request: PromptRequest) -> dict[str, str]:
             if not isinstance(payload, dict):
                 raise ValueError("history_fileはpromptとfollowup_promptsを保持するJSONオブジェクトが必要")
             history = session_registry.LaunchInfo.from_record(payload)
+            cwd = payload.get("cwd", "")
         if request.subagent_md_path:
             if history.prompt:
                 raise ValueError("保持済みの役割とsubagent_md_pathは同時に指定しない")
@@ -59,6 +62,7 @@ def generate(request: PromptRequest) -> dict[str, str]:
             prompt=request.prompt,
             instruction=request.instruction,
             extra_params=request.extra_params,
+            cwd=cwd,
         )
     return {"kind": request.kind, "prompt": prompt}
 
@@ -70,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             + " 要求JSONはkindをinitialまたはcontinuationにする。initialはsubagent_md_pathと任意のextra_paramsを指定する。"
             "continuationはsession_idまたはhistory_fileの一方を指定し、instructionとextra_params、またはpromptを指定する。"
             "session_idとhistory_fileは併用できず、保持済みの役割があるcontinuationへsubagent_md_pathは指定できない。"
+            "CI表の検索ではhistory_fileに保存された絶対cwdを使う。cwdを持たないか空の記録は対象作業ツリーから呼び出す。"
             "生成結果は起動せず、startまたは既存の委譲手段へ渡す本文だけを返す。"
         )
     )

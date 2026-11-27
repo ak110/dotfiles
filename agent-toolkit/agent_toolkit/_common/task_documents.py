@@ -484,6 +484,11 @@ def task_prompt_header(task_document: pathlib.Path) -> str:
     return f"{_TASK_PROMPT_HEADER_PREFIX}{task_document}{_TASK_PROMPT_HEADER_SUFFIX}"
 
 
+def is_builtin_task_prompt_header(line: str, task_document: pathlib.Path) -> bool:
+    pattern = rf"`?{re.escape(str(task_document))}`?\s*の手順を実行せよ。?"
+    return re.fullmatch(pattern, line.strip()) is not None
+
+
 def launched_task_document(launch_prompt: str) -> pathlib.Path | None:
     """起動本文の1行目が`task`の見出しなら、その`<役割名>.subagent.md`の絶対パスを返す。
 

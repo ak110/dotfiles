@@ -187,6 +187,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             instruction=instruction,
             extra_params=extra_params,
             supplement=supplement,
+            cwd=current.cwd if current is not None else "",
         )
         delivery_prompt = subagent_contract.mark_contract_update(prompt) if contract_changes else prompt
         response = await self._deliver_message(session_id, delivery_prompt)

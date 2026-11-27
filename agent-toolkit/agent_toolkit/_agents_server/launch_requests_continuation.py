@@ -4,12 +4,14 @@ import contextlib
 import json
 import pathlib
 import re
+import subprocess
 from collections.abc import Mapping
 
 from agent_toolkit._agents_server.launch_requests_inputs import _PLUGIN_ROOT_VARIABLE, named_input_lines
 from agent_toolkit._common import runtime_environment, task_documents
 from agent_toolkit._common.next_action import ActionableError
 lazy from agent_toolkit._atk import review_table
+lazy from agent_toolkit._git import command as git_command
 
 _SUPPLEMENT_BOUNDARY = "\n\n## 補足\n\n"
 
@@ -42,6 +44,7 @@ def continuation_prompt(
     instruction: str | None = None,
     extra_params: Mapping[str, str] | None = None,
     supplement: str | None = None,
+    cwd: object = "",
 ) -> str:
     first_line = launch_prompt.split("\n", 1)[0]
     documents = task_documents.find_task_documents(first_line)
@@ -162,22 +165,24 @@ def continuation_prompt(
                 next_action=f"{name}へ実在するファイルの絶対パスだけを渡す。空白を含むファイル名はそのまま指定する",
             )
     if contract.instruction == "再レビューせよ" and documents[0].name == "exec-review.subagent.md":
-        _check_review_responses(launch_prompt, params["round"])
+        _check_review_responses(launch_prompt, documents[0], params["round"], cwd)
     body = "\n".join([contract.instruction, *named_input_lines(params)])
     return body if supplement is None else f"{body}{_SUPPLEMENT_BOUNDARY}{supplement}"
 
 
-def _check_review_responses(launch_prompt: str, round_input: str) -> None:
-    inputs = task_documents.task_prompt_inputs(launch_prompt)
+def _check_review_responses(launch_prompt: str, document: pathlib.Path, round_input: str, cwd: object) -> None:
+    first_line, _, remainder = launch_prompt.partition("\n")
+    if task_documents.is_builtin_task_prompt_header(first_line, document) and "\n入力:\n" not in launch_prompt:
+        inputs = task_documents.parse_named_inputs(remainder.splitlines())
+    else:
+        inputs = task_documents.task_prompt_inputs(launch_prompt)
     if plan := inputs.get("計画"):
         first = pathlib.Path(json.loads(plan)[0] if plan.lstrip().startswith("[") else plan)
         if not first.is_absolute():
             return
         table = first.with_suffix(".exec-review.tsv")
     elif inputs.get("CI記録"):
-        oid = inputs.get("修正系列の開始時のHEAD", "")
-        if not re.fullmatch("[0-9a-f]{7,64}", oid):
-            return
+        oid = _review_series_oid(inputs.get("修正系列の開始時のHEAD", ""), cwd)
         table = runtime_environment.home() / ".claude" / "plans" / f"ci-{oid}.exec-review.tsv"
     else:
         return
@@ -195,3 +200,36 @@ def _check_review_responses(launch_prompt: str, round_input: str) -> None:
             next_action="今回のラウンド番号をroundに指定して再レビューを送り直す",
         ) from error
     review_table.require_recheck_responses(table, round_value)
+
+
+def _review_series_oid(oid: str, cwd: object) -> str:
+    next_action = "対象のGit作業ツリーで修正系列の開始時のHEADを確認し、再レビューを送り直す"
+    if not re.fullmatch("[0-9a-f]{7,64}", oid):
+        raise ActionableError(
+            "修正系列の開始時のHEADは7桁以上のコミットOIDで指定する。再レビューは未配送", next_action=next_action
+        )
+    if not isinstance(cwd, str) or (cwd and not pathlib.Path(cwd).is_absolute()):
+        raise ActionableError("記録のcwdには対象作業ツリーの絶対パスを指定する。再レビューは未配送", next_action=next_action)
+    try:
+        result = git_command.run(
+            ["rev-parse", "--verify", "--short=7", "--end-of-options", f"{oid}^{{commit}}"],
+            cwd=cwd or None,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ActionableError(
+            f"修正系列の開始時のHEADを解決できないため再レビューは未配送: {oid}: {error}", next_action=next_action
+        ) from error
+    if result.returncode:
+        raise ActionableError(
+            f"修正系列の開始時のHEADを解決できないため再レビューは未配送: {oid}: {result.stderr.strip()}",
+            next_action=next_action,
+        )
+    short = result.stdout.strip()
+    if not short or not oid.startswith(short):
+        raise ActionableError(
+            f"修正系列の開始時のHEADを一意なコミットOIDへ解決できないため再レビューは未配送: {oid}",
+            next_action=next_action,
+        )
+    return short

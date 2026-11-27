@@ -17,7 +17,7 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import review_table
 from agent_toolkit._common import codex_models, session_registry, state_paths, task_documents
 from agent_toolkit._common.next_action import ActionableError
-from agent_toolkit._testing import review_bodies
+from agent_toolkit._testing import git_repository, review_bodies
 from agent_toolkit._testing.agents_server_support import (
     BlockingContinuationClaudeClient,
     FailedResumeBackend,
@@ -487,7 +487,13 @@ async def test_send_message_includes_stopped_previous_result_regardless_of_deadl
     [
         ("plan", True),
         ("plans", True),
-        ("ci", True),
+        ("ci-short", True),
+        ("ci-long", True),
+        ("ci-full", True),
+        ("ci-unresolved", True),
+        ("ci-refname", True),
+        ("ci-missing", False),
+        ("ci-answered", False),
         ("old-round", False),
         ("own-record", False),
         ("other-track", False),
@@ -508,24 +514,33 @@ async def test_rereview_delivery_waits_for_previous_findings(
     second.write_text("# 計画\n", encoding="utf-8")
     inputs = f"レビュー基準: 計画\n計画: {plan}"
     table = plan.with_suffix(".exec-review.tsv")
+    cwd = tmp_path
     if case == "plans":
         inputs = f"レビュー基準: 計画\n計画: {json.dumps([str(plan), str(second)])}"
-    elif case in {"ci", "direct"}:
+    elif case.startswith("ci-") or case == "direct":
         plans = tmp_path / ".claude" / "plans"
         plans.mkdir(parents=True, exist_ok=True)
-        if case == "ci":
-            inputs = "レビュー基準: CI記録\nCI記録: 修正結果\n修正系列の開始時のHEAD: abc1234"
-            table = plans / "ci-abc1234.exec-review.tsv"
+        if case.startswith("ci-"):
+            cwd = git_repository.init_repository(tmp_path / "repo", commit_message="対象の基点")
+            full = git_repository.git_output(cwd, "rev-parse", "HEAD")
+            short = git_repository.git_output(cwd, "rev-parse", "--short=7", "HEAD")
+            supplied = {"ci-long": full[: len(short) + 1], "ci-full": full, "ci-unresolved": "0" * len(full)}.get(case, short)
+            if case == "ci-refname":
+                supplied = "0" * 7
+                git_repository.run_git(cwd, "branch", supplied)
+            inputs = f"レビュー基準: CI記録\nCI記録: 修正結果\n修正系列の開始時のHEAD: {supplied}"
+            table = plans / f"ci-{short}.exec-review.tsv"
         else:
             inputs = "レビュー基準: WI\nWI記録: 20261127-120000-001.md\n開始時のHEAD: abc1234"
             table = plans / "wi-abc1234-20261127-120000-001.exec-review.tsv"
-    if case != "missing":
+    invalid_oid = case in {"ci-unresolved", "ci-refname"}
+    if case not in {"missing", "ci-missing"} and not invalid_oid:
         review_table.init(table)
         issue_round = "1" if case == "old-round" else "2"
         track = "independent" if case == "other-track" else "exec-review"
         location = "担当の記録: 受入結果" if case == "own-record" else "module.py:10"
         review_table.add(table, issue_round, track, location, "指摘", "詳細" if case == "own-record" else "")
-        if case in {"answered", "old-round"}:
+        if case in {"answered", "ci-answered", "old-round"}:
             if case == "old-round":
                 review_table.add(table, "2", "exec-review", "module.py:11", "指摘")
             review_table.respond(
@@ -539,13 +554,16 @@ async def test_rereview_delivery_waits_for_previous_findings(
             )
     prompt = f"`{role}`の手順を実行せよ\n入力:\n{inputs}\n"
     async with _manager_with_fake("codex") as (manager, backend):
-        session = await backend.start(prompt, str(tmp_path), "direct", "high")
+        session = await backend.start(prompt, str(cwd), "direct", "high")
         session.prompt = prompt
         if rejected:
-            with pytest.raises(ActionableError, match="未応答") as error:
+            expected = "解決できないため再レビューは未配送" if invalid_oid else "未応答"
+            with pytest.raises(ActionableError, match=expected) as error:
                 await manager.send_message(session.session_id, instruction="再レビューせよ", extra_params={"round": "3"})
-            assert "row-id 1" in error.value.message
-            assert "atk review-table" in error.value.message
+            if not invalid_oid:
+                assert str(table) in error.value.message
+                assert "row-id 1" in error.value.message
+                assert "atk review-table" in error.value.message
             assert backend.send_calls == 0
         else:
             await manager.send_message(session.session_id, instruction="再レビューせよ", extra_params={"round": "3"})

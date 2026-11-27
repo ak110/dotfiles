@@ -130,7 +130,7 @@ def _check_agent_prompt(prompt: str) -> Decision:
         return Decision()
     accepted = declaration.accepted
     violations: list[str] = []
-    if not lines or not _is_canonical_first_line(lines[0], document):
+    if not lines or not task_documents.is_builtin_task_prompt_header(lines[0], document):
         violations.append(lines[0] if lines else "")
     in_value = False
     for line in lines[1:]:
@@ -175,11 +175,6 @@ def _check_agent_prompt(prompt: str) -> Decision:
             ),
         )
     )
-
-
-def _is_canonical_first_line(line: str, document: pathlib.Path) -> bool:
-    pattern = rf"`?{re.escape(str(document))}`?\s*の手順を実行せよ。?"
-    return re.fullmatch(pattern, line.strip()) is not None
 
 
 def _execution_document(prompt: str) -> pathlib.Path | None:
