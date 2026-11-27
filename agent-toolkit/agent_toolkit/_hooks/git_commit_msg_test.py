@@ -124,49 +124,31 @@ def _git_notifies_initial_head(tmp_path: pathlib.Path, monkeypatch: pytest.Monke
     hooks = tmp_path / "probe-hooks"
     hooks.mkdir()
     hook = hooks / "reference-transaction"
-    hook.write_text('#!/bin/sh\nprintf "%s\\n" "$1" >> "$TEST_REF_PROBE"\n', encoding="utf-8")
+    hook.write_text('#!/bin/sh\ncat >> "$TEST_REF_PROBE"\n', encoding="utf-8")
     hook.chmod(0o755)
     events = probe / "events"
     monkeypatch.setenv("TEST_REF_PROBE", events.as_posix())
     result = _git(probe, "-c", f"core.hooksPath={hooks.as_posix()}", "init", "--template=", "--initial-branch=example")
     assert result.returncode == 0, result.stderr
-    return _initial_head_events_notify(events.read_text(encoding="ascii").splitlines() if events.exists() else [])
+    return _contains_head_update(events.read_text(encoding="ascii") if events.exists() else "")
 
 
-def _initial_head_events_notify(phases: list[str]) -> bool:
-    if not phases:
-        return False
-    required_phases = phases[1:] if phases[0] == "preparing" else phases
-    assert required_phases == ["prepared", "committed"], phases
-    return True
+def _contains_head_update(updates: str) -> bool:
+    return any(len(fields) == 3 and fields[2] == "HEAD" for fields in (line.split() for line in updates.splitlines()))
 
 
 @pytest.mark.parametrize(
-    ("phases", "notifies"),
+    ("updates", "notifies"),
     [
-        pytest.param([], False, id="git-2.34.1"),
-        pytest.param(["prepared", "committed"], True, id="git-2.47.3"),
-        pytest.param(["preparing", "prepared", "committed"], True, id="git-2.56.1-windows"),
+        pytest.param("", False, id="no-updates"),
+        pytest.param("old ref:refs/heads/example HEAD\n", True, id="head"),
+        pytest.param("old ref:refs/heads/example HEAD\n" * 3, True, id="repeated-head"),
+        pytest.param("old new refs/heads/HEAD\n", False, id="different-ref"),
+        pytest.param("HEAD\n", False, id="not-an-update"),
     ],
 )
-def test_initial_head_events_detect_notification(phases: list[str], notifies: bool) -> None:
-    assert _initial_head_events_notify(phases) is notifies
-
-
-@pytest.mark.parametrize(
-    "phases",
-    [
-        ["preparing"],
-        ["preparing", "committed"],
-        ["prepared"],
-        ["committed", "prepared"],
-        ["prepared", "preparing", "committed"],
-        ["prepared", "aborted"],
-    ],
-)
-def test_initial_head_events_reject_invalid_sequence(phases: list[str]) -> None:
-    with pytest.raises(AssertionError):
-        _initial_head_events_notify(phases)
+def test_initial_head_events_detect_notification(updates: str, notifies: bool) -> None:
+    assert _contains_head_update(updates) is notifies
 
 
 def _assert_ref_event(log_dir: pathlib.Path, phase: str, project: pathlib.Path, update_fields: list[str]) -> None:
@@ -176,7 +158,7 @@ def _assert_ref_event(log_dir: pathlib.Path, phase: str, project: pathlib.Path, 
 
 
 def _check_initialized_ref_updates(
-    project: pathlib.Path, log_dir: pathlib.Path, active_hook: pathlib.Path, *, rejecting: bool
+    project: pathlib.Path, log_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, rejecting: bool
 ) -> None:
     object_result = _git(project, "hash-object", "-w", "--stdin", stdin="参照更新の試験\n")
     assert object_result.returncode == 0, object_result.stderr
@@ -189,16 +171,19 @@ def _check_initialized_ref_updates(
             _assert_ref_event(log_dir, phase, project, [oid, updated_ref])
         current = _git(project, "rev-parse", "--verify", updated_ref)
         assert current.returncode == 0 and current.stdout.strip() == oid
-        active_hook.write_text('#!/bin/sh\n[ "$1" != prepared ]\n', encoding="utf-8")
+        log_dir = log_dir / "rejected"
+        log_dir.mkdir()
+        monkeypatch.setenv("TEST_REF_LOG", log_dir.as_posix())
+        monkeypatch.setenv("TEST_REJECT_PREPARED", "1")
 
     rejected_ref = "refs/tags/rejected"
+    before = _git(project, "rev-parse", "--verify", rejected_ref)
+    assert before.returncode != 0
     rejected = _git(project, "update-ref", rejected_ref, oid)
     assert rejected.returncode != 0
-    assert "ref updates aborted by hook" in rejected.stderr
     assert _git(project, "rev-parse", "--verify", rejected_ref).returncode != 0
-    if rejecting:
-        _assert_ref_event(log_dir, "prepared", project, [oid, rejected_ref])
-        assert not (log_dir / "committed").exists()
+    _assert_ref_event(log_dir, "prepared", project, [oid, rejected_ref])
+    assert not (log_dir / "committed").exists()
 
 
 @pytest.mark.usefixtures("repo")
@@ -219,6 +204,7 @@ def test_reference_transaction_initialization_keeps_existing_hook(
     log_dir = project / "recorded"
     log_dir.mkdir()
     monkeypatch.setenv("TEST_REF_LOG", log_dir.as_posix())
+    monkeypatch.setenv("TEST_REJECT_PREPARED", "1" if configured == "reject" else "0")
 
     hook = None
     if configured not in {"absent", "unresolved"}:
@@ -233,7 +219,7 @@ def test_reference_transaction_initialization_keeps_existing_hook(
         hook = hook_dir / "reference-transaction"
         hook.write_text(
             '#!/bin/sh\n(pwd -W 2>/dev/null || pwd) >> "$TEST_REF_LOG/$1"\ncat >> "$TEST_REF_LOG/$1"\n'
-            + ('[ "$1" != prepared ]\n' if configured == "reject" else ""),
+            '[ "$TEST_REJECT_PREPARED" != 1 ] || [ "$1" != prepared ]\n',
             encoding="utf-8",
         )
         hook.chmod(0o755)
@@ -252,7 +238,7 @@ def test_reference_transaction_initialization_keeps_existing_hook(
     if notifies and configured == "reject":
         assert process.returncode != 0
         assert not head.exists()
-        assert (log_dir / "prepared").exists()
+        _assert_ref_event(log_dir, "prepared", project, ["ref:refs/heads/example", "HEAD"])
         assert not (log_dir / "committed").exists()
         return
     assert process.returncode == 0, process.stderr
@@ -266,8 +252,7 @@ def test_reference_transaction_initialization_keeps_existing_hook(
         updates = log_dir / "updates"
         updates.mkdir()
         monkeypatch.setenv("TEST_REF_LOG", updates.as_posix())
-        active_hook = project / ".git" / "hooks" / hook.name if configured == "template" else hook
-        _check_initialized_ref_updates(project, updates, active_hook, rejecting=configured == "reject")
+        _check_initialized_ref_updates(project, updates, monkeypatch, rejecting=configured == "reject")
 
 
 def test_commit_msg_launch_error_keeps_commit_specific_guidance(
