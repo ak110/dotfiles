@@ -130,10 +130,43 @@ def _git_notifies_initial_head(tmp_path: pathlib.Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("TEST_REF_PROBE", events.as_posix())
     result = _git(probe, "-c", f"core.hooksPath={hooks.as_posix()}", "init", "--template=", "--initial-branch=example")
     assert result.returncode == 0, result.stderr
-    if not events.exists():
+    return _initial_head_events_notify(events.read_text(encoding="ascii").splitlines() if events.exists() else [])
+
+
+def _initial_head_events_notify(phases: list[str]) -> bool:
+    if not phases:
         return False
-    assert events.read_text(encoding="ascii").splitlines() == ["prepared", "committed"]
+    required_phases = phases[1:] if phases[0] == "preparing" else phases
+    assert required_phases == ["prepared", "committed"], phases
     return True
+
+
+@pytest.mark.parametrize(
+    ("phases", "notifies"),
+    [
+        pytest.param([], False, id="git-2.34.1"),
+        pytest.param(["prepared", "committed"], True, id="git-2.47.3"),
+        pytest.param(["preparing", "prepared", "committed"], True, id="git-2.56.1-windows"),
+    ],
+)
+def test_initial_head_events_detect_notification(phases: list[str], notifies: bool) -> None:
+    assert _initial_head_events_notify(phases) is notifies
+
+
+@pytest.mark.parametrize(
+    "phases",
+    [
+        ["preparing"],
+        ["preparing", "committed"],
+        ["prepared"],
+        ["committed", "prepared"],
+        ["prepared", "preparing", "committed"],
+        ["prepared", "aborted"],
+    ],
+)
+def test_initial_head_events_reject_invalid_sequence(phases: list[str]) -> None:
+    with pytest.raises(AssertionError):
+        _initial_head_events_notify(phases)
 
 
 def _assert_ref_event(log_dir: pathlib.Path, phase: str, project: pathlib.Path, update_fields: list[str]) -> None:
