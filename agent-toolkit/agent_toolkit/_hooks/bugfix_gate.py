@@ -6,8 +6,10 @@
 import json
 import re
 lazy import os
+lazy from pathlib import PurePath
 
 lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common.bash_invocations import extract_bash_effects
 lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
@@ -22,31 +24,43 @@ QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\
 
 _failure_notice = notice.formatter("verification-bugfix")
 FAILURE_STATE_KEY = "verification_bugfix"
+# pyfltr: allow-comment -- Codex 0.172.0の保存出力64KiBがJSONで最大6倍に広がる分と、後続記録の余裕を持つ。
+_COMMAND_TRANSCRIPT_TAIL_BYTES = 1024 * 1024
 
 
-def _ci_exit_code(payload: dict) -> int | None:
+def _shell_exit_code(payload: dict) -> int | None:
     response = payload.get("tool_response")
     code = response.get("exit_code") if isinstance(response, dict) else None
     if isinstance(code, int) and not isinstance(code, bool):
         return code
     path = payload.get("transcript_path")
     identifier = payload.get("tool_use_id")
-    if not is_codex_payload(payload) or not isinstance(path, str) or not isinstance(identifier, str) or not identifier:
+    turn_id = payload.get("turn_id")
+    if not (
+        is_codex_payload(payload)
+        and isinstance(path, str)
+        and isinstance(identifier, str)
+        and identifier
+        and isinstance(turn_id, str)
+        and turn_id
+    ):
         return None
-    # Codexの応答文字列には終了コードがない。wait-ciの完了時だけ末尾を読み、
-    # 同じturn・実行IDのホスト記録を使う。長い会話全体を毎回解析しない。
+    # pyfltr: allow-comment -- Codexのシェル応答は出力本文だけで、終了コードは会話の実行記録に残る。
     try:
         size = os.stat(path).st_size
     except OSError, ValueError:
         return None
-    data = transcript.read_transcript_bytes(path, offset=max(0, size - 262144))
+    offset = max(0, size - _COMMAND_TRANSCRIPT_TAIL_BYTES)
+    data = transcript.read_transcript_bytes(path, offset=max(0, offset - 1))
+    if offset and data is not None:
+        data = data.partition(b"\n")[2]
     for line in reversed(split_lines(data or b"")):
         try:
             record = json.loads(line)
         except ValueError:
             continue
         event = record.get("payload") if isinstance(record, dict) and record.get("type") == "event_msg" else None
-        if not isinstance(event, dict) or event.get("type") != "item_completed" or event.get("turn_id") != payload["turn_id"]:
+        if not isinstance(event, dict) or event.get("type") != "item_completed" or event.get("turn_id") != turn_id:
             continue
         item = event.get("item")
         if (
@@ -72,6 +86,28 @@ def _wait_ci_operation(tool_name: str, tool_input: dict) -> bool:
     )
 
 
+def _has_single_verification_exit(tool_input: dict) -> bool:
+    command = tool_input.get("command")
+    if not isinstance(command, str):
+        return False
+    segments = extract_execution_segments(command)
+    if len(segments) != 1 or not segments[0].tokens:
+        return False
+    effects = extract_bash_effects(command)
+    if len(effects) != 1:
+        return False
+    effect = effects[0]
+    if not effect.execution_known or not effect.arguments_known or not effect.assignments_definite:
+        return False
+    if effect.background or effect.captured or effect.cwd_scope:
+        return False
+    tokens = effect.segment.tokens
+    if not tokens or PurePath(tokens[0]).name not in {"pyfltr", "pytest", "py.test"}:
+        return False
+    # pyfltr: allow-comment -- 実行前置語とファイルを開くリダイレクトは、検証前の失敗を返しうる。
+    return segments[0].raw_tokens in {tokens, (*tokens, "2>&1")}
+
+
 def observe_verification(payload: dict) -> None:
     """現在の検証結果の失敗を、既存セッション状態へ対応付ける。  pyfltr: allow-comment"""
     session_id = payload.get("session_id")
@@ -89,8 +125,18 @@ def observe_verification(payload: dict) -> None:
         )
     if _wait_ci_operation(tool_name, tool_input):
         # wait-ciの1はCI失敗、6は途中の新規失敗。待機timeoutやrun未登録は別の状態である。
-        failed = _ci_exit_code(payload) in (1, 6)
+        failed = _shell_exit_code(payload) in (1, 6)
     elif is_verification_operation(tool_name, tool_input):
+        if (
+            not failed
+            and tool_name == "Bash"
+            and not isinstance(code, int)
+            and is_codex_payload(payload)
+            and _has_single_verification_exit(tool_input)
+        ):
+            recorded_code = _shell_exit_code(payload)
+            # pyfltr: allow-comment -- 126・127はシェルの起動失敗、128以上はシグナルとの区別がつかない。
+            failed = recorded_code is not None and 0 < recorded_code < 126
         failed = failed or isinstance(code, int) and not isinstance(code, bool) and code != 0
     else:
         return
