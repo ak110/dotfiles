@@ -1,10 +1,36 @@
 """agent-toolkit/agent_toolkit/_common/inherited_venv.py のテスト。"""
 
+import json
 import os
 
 import pytest
 
 from agent_toolkit._common import inherited_venv as _inherited_venv
+
+pytestmark = pytest.mark.windows
+
+
+@pytest.mark.parametrize("value", [None, "", "/project/.venv"])
+def test_launch_restoration_preserves_caller_virtual_environment(value: str | None) -> None:
+    caller = {key: value for key in ("PYTHONPATH", "UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV") if value is not None}
+    caller["PATH"] = os.pathsep.join(["/project/.venv/bin", "", "/usr/bin"])
+    launched = {**caller, "PYTHONPATH": "/distribution", "UV_PROJECT_ENVIRONMENT": "/shared", "PATH": "/runtime/bin"}
+    launched.pop("VIRTUAL_ENV", None)
+    _inherited_venv.record_launch_changes(launched, caller)
+    _inherited_venv.restore_launch_environment(launched)
+    assert launched == caller
+
+
+def test_launch_restoration_keeps_later_edits_and_ignores_malformed_records() -> None:
+    environment = {
+        "PYTHONPATH": "/after-launch",
+        "PATH": "unchanged",
+        _inherited_venv.LAUNCH_RESTORE_KEY: json.dumps(
+            {"PYTHONPATH": [None, "/distribution"], "PATH": [42, "unchanged"], "IGNORED": "invalid"}
+        ),
+    }
+    _inherited_venv.restore_launch_environment(environment)
+    assert environment == {"PYTHONPATH": "/after-launch", "PATH": "unchanged"}
 
 
 class TestStripInheritedVenv:

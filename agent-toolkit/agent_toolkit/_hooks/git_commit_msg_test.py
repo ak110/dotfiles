@@ -14,6 +14,8 @@ from agent_toolkit._hooks.pretooluse import commit_identity
 from agent_toolkit._hooks.pretooluse.shell_checks_git import commit_input_unchanged_by_options
 from agent_toolkit._testing.git_repository import init_repository
 
+pytestmark = pytest.mark.windows
+
 _BAD = "試験\n\n20261126-123456-001.md"
 _ID = RuntimeIdentity("codex", "gpt-6.2-sol", "medium", "observed")
 _TRAILER = co_author_trailer(_ID)
@@ -101,6 +103,17 @@ def test_existing_commit_msg_uses_original_config_and_can_rewrite(repo: pathlib.
     else:
         assert result.returncode == 0, result.stderr
         assert _git(repo, "show", "-s", "--format=%B").stdout.rstrip() == _GOOD
+
+
+def test_existing_commit_msg_invalid_rewrite_is_rejected(repo: pathlib.Path) -> None:
+    hook = repo / ".git" / "hooks" / "commit-msg"
+    hook.write_text(f'#!/bin/sh\nprintf "%s\\n" {shlex.quote(_BAD)} > "$1"\n', encoding="utf-8")
+    hook.chmod(0o755)
+    head = _git(repo, "rev-parse", "HEAD").stdout
+    result = _git(repo, "commit", "--allow-empty", "-m", _GOOD)
+    assert result.returncode != 0
+    assert "違反が2件" in result.stderr
+    assert _git(repo, "rev-parse", "HEAD").stdout == head
 
 
 def test_default_comment_cleanup_and_verbatim_limitation(repo: pathlib.Path) -> None:

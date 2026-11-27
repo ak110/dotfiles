@@ -172,6 +172,8 @@ def main() -> int:
                 raise FileNotFoundError("共有依存環境が回収されたため、update-dotfilesで再準備してください")
             arguments = [str(python), str(target), *options.arguments]
             environment = plugin_environment.direct_environment(root, caller_environment, selected=selected)
+            if target == root / "agent_toolkit/_hooks/git_commit_msg.py":
+                inherited_venv.record_launch_changes(environment, caller_environment)
             if target == root / "agent_toolkit/hook.py":
                 # 親の強制終了時も、POSIXの子が依存環境を使う間は回収を防ぐ。
                 pass_fds = () if os.name == "nt" else (usage_lock.fileno(),)

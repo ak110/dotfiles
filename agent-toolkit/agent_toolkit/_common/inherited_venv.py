@@ -34,7 +34,7 @@ def strip_inherited_venv(env: MutableMapping[str, str]) -> None:
     一致する`PATH`の要素だけとする。
     POSIXの`PATH`では空要素がカレントディレクトリを表すため、空要素は解決順序を保つよう残す。
     """
-    _restore_launch_environment(env)
+    restore_launch_environment(env)
     runtime = env.pop(PLUGIN_RUNTIME_ENVIRONMENT_KEY, None)
     caller_project = env.pop(CALLER_PROJECT_ENVIRONMENT_KEY, None)
     if runtime and env.get("UV_PROJECT_ENVIRONMENT") == runtime:
@@ -82,7 +82,7 @@ def record_launch_value(env: MutableMapping[str, str], key: str, caller_value: s
     env[LAUNCH_RESTORE_KEY] = json.dumps(changes, ensure_ascii=True, sort_keys=True)
 
 
-def _restore_launch_environment(env: MutableMapping[str, str]) -> None:
+def restore_launch_environment(env: MutableMapping[str, str]) -> None:
     encoded = env.pop(LAUNCH_RESTORE_KEY, None)
     if encoded is None:
         return
