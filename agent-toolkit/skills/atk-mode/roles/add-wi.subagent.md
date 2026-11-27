@@ -37,7 +37,7 @@ WI投入担当が、受け取った要求を調査して成立性を確かめ、
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`、`agent-toolkit:atk-mode/playbooks/wi-saving.md` |
+| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:atk-mode/playbooks/wi-drafting.md`、`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`、`agent-toolkit:atk-mode/playbooks/wi-saving.md` |
 | 通常AWIの本文を起草・判定する前 | `agent-toolkit:atk-mode/references/awi-body.md` |
 | 受領した要求にUWIが含まれる場合 | `agent-toolkit:atk-mode/references/uwi-format.md` |
 | 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-basics:bugfix`の確認観点の表のうち、条件が成立した行の資料 |

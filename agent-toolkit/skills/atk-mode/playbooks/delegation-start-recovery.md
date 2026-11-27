@@ -22,7 +22,9 @@
 
 `Agent`ツールを使う条件は`agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」が定める（`agents_server`が標準である）。
 
-1. モデル、effort、バックグラウンドでの実行、省略時の値は、起動の時に公開されているスキーマとagent定義のfrontmatterで決める。
+1. モデルは`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従い、`atk config get <工程>_model`の候補列の最初の`claude:`候補から選ぶ。
+   `[1m]`などの接尾辞を除いて`Agent`の列挙値へ写し、Claudeの候補が無いか写せなければ未完了として返す。
+   effort、バックグラウンドでの実行、省略時の値は、起動時の公開スキーマとagent定義のfrontmatterで決める。
    `Agent`の起動が通信タイムアウトしたら、起動結果と稼働観測で依頼の受理を確かめる。
    agent ID・稼働・完了通知のいずれかで起動した担当を確認できたら、起動し直さず同じ担当を観測する。
    起動結果が未受理を明示し、拒否や利用上限など別の制約がなければ、依頼と起動条件を変えずに一度だけ再試行する。

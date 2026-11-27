@@ -8,18 +8,14 @@
 
 ## 手順
 
-1. 「対象の調査基点」を確定してから、投入条件と起票目的に応じた調査結果を「投入条件の判定」「起票目的別の調査出口」に従って決める。
-2. 原文と現物から前提と観測を確かめる（本書「前提と観測の確認」）。
+1. 「対象の調査基点」を確定してから、投入条件は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「投入条件の判定」、起票目的に応じた調査結果は本書「起票目的別の調査出口」に従って決める。
+2. 原文と現物から前提と観測を確かめる（`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「前提と観測の確認」）。
 3. 全状態の既存WIを検索し、重複と、未処理のWIへの統合を比べる（本書「重複判定」「AWIの粒度と統合」）。
-4. 要件、委譲元の判断、未確定事項を分け、残るユーザー判断を確認へ回す（本書「確定した要件と委譲元の判断」「未確定事項と確認」）。
+4. 要件、委譲元の判断、未確定事項を分け、残るユーザー判断を確認へ回す（`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定した要件と委譲元の判断」「未確定事項と確認」）。
 5. 原因と変更する定義の所有者、対象集合の採否、実現方式を決め、1つの案にする（`agent-toolkit:atk-mode/references/drafting-decisions.md`）。
-6. 本文を起草する（本書「本文の起草」）。
-7. 確定を判定し、検収の構成を選ぶ（本書「確定の判定」「直接起草と独立した検収の選択」）。
+6. 本文を起草する（`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「本文の起草」）。
+7. 確定を判定し、検収の構成を選ぶ（`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定の判定」「直接起草と独立した検収の選択」）。
 8. `agent-toolkit:atk-mode/playbooks/wi-saving.md`の手順で保存する。
-
-## 投入条件の判定
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「投入条件の判定」に従う。
 
 ## 起票目的別の調査出口
 
@@ -47,10 +43,6 @@
 工程が進んだことを理由に、既知の未完了事項を新しく見つけた独立の問題へ分類し直さない。
 後続の`process-wi`は原因分析から実装と検証までを担い、調査の未完了だけを起票の不備とはせず、確定済みの事実・処置・ユーザー判断を再利用し、引き継ぎの保存、元作業の完了、問題自体の解消を分けて報告する。
 
-## 前提と観測の確認
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「前提と観測の確認」に従う。
-
 ### 対象の調査基点
 
 現物を根拠にする新規AWIは、採否を左右する最初の読み取りより前に宛先を選ぶ。
@@ -60,10 +52,6 @@
 各操作の直前に短縮OIDを解決し、隔離worktree、dry-runと保存の `--draft-base BRANCH OID` に完全OIDを使う。
 `BRANCH`は宛先の`refs/heads/<ブランチ>`か、宛先に実在し、`/`を含まないブランチ名で指定する。
 取得に使う`origin/<系統>`は渡さない。
-
-### 出所と観測の取得
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「出所と観測の取得」に従う。
 
 ## 重複判定
 
@@ -111,34 +99,6 @@ AWIの粒度は要求の同一性で決め、同じユーザー目的・成果�
 統合する場合は、その比較に沿って既存WIの本文を変更する対象（ファイル、手順書）と目的で組み直し、同じファイルへの変更を1か所にまとめ、節の機械的な連結は避ける。
 独立して採否と完成判定が成り立つ要求を1件に混ぜて巨大にすることは避け、統合しない場合はその理由を方針の提示と報告に書く。
 既存WIを更新する順序（調査の前に保留にする、`processing`の項目は本文を置き換えずに追記し、変更の要求は新しいAWIにする）は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」に従う。
-
-## 確定した要件と委譲元の判断
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定した要件と委譲元の判断」に従う。
-
-## 未確定事項と確認
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「未確定事項と確認」に従う。
-
-## 本文の起草
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「本文の起草」に従う。
-
-### ユーザーが読む部分の合格基準
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「ユーザーが読む部分の合格基準」に従う。
-
-### エージェント向け文書の構成
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「エージェント向け文書の構成」に従う。
-
-## 確定の判定
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定の判定」に従う。
-
-## 直接起草と独立した検収の選択
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「直接起草と独立した検収の選択」に従う。
 
 ## 返す報告に含める項目
 

@@ -12,7 +12,7 @@
 起動候補を事前に特定せず、`agent-toolkit:atk-mode/references/delegation-prompt.md`に従って依頼する。
 高速化では保つ処理を、レビューではエンドユーザーへの影響と根拠を指定する。
 
-実行時はモデルを問わず、原則2と`agent-toolkit:atk-mode`の「プロダクトへの責任」「ユーザーの方針」に従う。
+実行時はモデルを問わず、原則2と`agent-toolkit:atk-mode`の「判断の原則」「ユーザーの方針」に従う。
 処理の削除や指摘数ではなく結果を確かめ、画面では見た目と使いやすさも確かめる。
 承認と受領の判断は`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「受領後の扱い」に従う。
 モデル固有の助言は対象が確かめられる場合だけ適用する。
@@ -53,8 +53,9 @@
    起動者の説明や失敗理由の文字列、5時間上限、期限を確かめられない記録は根拠にならない。
    次の初回起動にはまた工程設定を使う。
 5. `agents_server`では`start`で起動し、サーバーが候補を順に評価する（起動の入力は`agent-toolkit:atk-mode/playbooks/delegation.md`）。
-   `Agent`ツールで起動する時は、直前に`atk config get <工程>_model`を1回実行し、先頭の候補をengine、model、effortへ分けて渡す。
-   Claude以外のengineを実行する手段が無ければ、未完了として返すか続行できない理由を報告する。
+   `Agent`ツールで代わりに起動する時は、直前に`atk config get <工程>_model`を1回実行し、候補列の最初の`claude:`候補を使う。
+   `[1m]`などの接尾辞を除いて、モデル名を`Agent`の公開スキーマの列挙値へ写す。
+   Claudeの候補が無いか列挙値へ写せない場合は、候補を補わず未完了として返す。
    定義側でモデルを固定した委譲先には、modelを上書きしない。
 6. 起動の応答で`session_id`と`status`を受け取り、候補が切り替わった時は除外の理由と採用した候補を確かめる。
    終了の`wait`で`model_type`、engine、model、effortを確かめ、WIの指定値があれば実際の値と比べて引き継ぎ記録へ残す。

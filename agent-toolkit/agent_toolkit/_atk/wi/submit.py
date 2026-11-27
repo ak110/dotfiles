@@ -21,7 +21,7 @@ import pydantic
 
 from agent_toolkit._atk import orchestrator, outcome, run_skill, run_skill_state
 from agent_toolkit._atk.managed_temp.removal import release_stable_plugin_root
-from agent_toolkit._atk.wi import add, background_sync, frontmatter, layout, sync, uwi_scan
+from agent_toolkit._atk.wi import add, background_sync, frontmatter, layout, submit_recovery, sync, uwi_scan
 from agent_toolkit._common import (
     diagnostic_process,
     plugin_environment,
@@ -535,6 +535,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
 
     os.environ["AGENT_TOOLKIT_RUN_SKILL_ID"] = run["run_id"]
     try:
+        submit_recovery.save(notes, run, path)
         if not add.has_committed_run_report(notes, run_id=run["run_id"], scope=SKILL):
             with sync.repo_lock(notes, timeout=30):
                 reports = []
@@ -558,7 +559,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
                     f"独立WI投入の処置が未完了である。\n実行: {run['run_id']}\n"
                     f"受付: {', '.join(run['request_ids'])}\n理由: {run.get('failure')}\n"
                     f"記録: {path}\n同じ実行と保存済みWIを照会し、"
-                    f"会話がある場合は`atk run-skill --resume {run['run_id']}`で残工程を再開する。\n"
+                    f"`atk wi submit --resume {run['request_ids'][0]}`で残工程を再開する。\n"
                 )
                 add.add_entries(
                     notes,

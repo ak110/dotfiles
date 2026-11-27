@@ -60,7 +60,9 @@
 
 本文段階の入力は、作成主体が次の順でそろえる。
 
-1. 保存前に原稿を原文と読み比べ、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runで検証する。
+1. 原要求の検収結果がまだ無い逐語引用節付きの通常AWIでは、先行のdry-runを省き、原稿と要求原本を渡す。
+   原要求の合格後は`--origin-review`付きdry-runで検証する。
+   それ以外は、保存前に原稿を原文と読み比べ、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」手順3のdry-runで検証する。
    受領済みの抽出が一致しない時の更新は`agent-toolkit:atk-mode/references/draft-semantic-review.md`「ユーザーが読む部分」に従う。
 2. 原稿、要求原本、dry-runが返した冒頭の所在を渡す。
    dry-runが`情報:`で先送りの候補を示した原稿は、その出力を保存した実行記録の所在も渡す（単一原稿は`調査原本`、対応表は該当する要素の`dry-run出力`）。
