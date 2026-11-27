@@ -1,135 +1,18 @@
-"""操作の直前に起動を求めるagent-basicsのスキルの表と、その操作の静的な判定と案内。
-
-表（`OPERATION_SKILLS`）は入口`atk-mode`が操作・判断の前に起動を求める4つのスキルに限る。
-案内は主体と文脈（会話圧縮・clearで初期化）ごとにスキル1件につき1回の非遮断の通知とし、
-案内済みのスキルとClaude Codeの`Skill`で起動済みのスキルについては操作を判定しない。
-書込先の解析（`written_paths`）は終了工程の証拠の採取も使う。
-"""
+"""書込先と検証操作を解析し、成果作業と実際の失敗の観測に使う。  pyfltr: allow-comment"""
 
 from __future__ import annotations
 
-import dataclasses
 import os
 import pathlib
 import re
-lazy import tempfile
-lazy from collections.abc import Callable, Sequence
+lazy from collections.abc import Sequence
 
-lazy from agent_toolkit._atk import managed_temp
-lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import shell_cwd
-lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
-lazy from agent_toolkit._common.output_policy import rules
-lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.uv_arguments import is_python_token
-lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import tool_input as _tool_input
-lazy from agent_toolkit._hooks.message_format import llm_notice
-lazy from agent_toolkit._hooks.notice import stage_delivery
-lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
-lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
-
-_SEARCH_COMMANDS = frozenset({"rg", "find"})
-_GREP_COMMANDS = frozenset({"grep", "egrep", "fgrep"})
-_GREP_RECURSIVE_LONG_OPTIONS = frozenset({"--recursive", "--dereference-recursive"})
-_GREP_RECURSIVE_SHORT_OPTIONS = frozenset("rR")
-_GREP_SHORT_OPTIONS_WITH_VALUE = frozenset("efmABCDd")
-"""値を取る`grep`の短縮オプション。束ねた短縮オプションの中でこの文字より後ろは値として読む。"""
-_GREP_LONG_OPTIONS_WITH_VALUE = frozenset(
-    {
-        "--regexp",
-        "--file",
-        "--max-count",
-        "--after-context",
-        "--before-context",
-        "--context",
-        "--devices",
-        "--directories",
-        "--label",
-        "--include",
-        "--exclude",
-        "--exclude-from",
-        "--exclude-dir",
-        "--binary-files",
-    }
-)
-
-
-@dataclasses.dataclass(frozen=True)
-class OperationSkill:
-    skill_name: str
-    short_name: str
-    operation: str
-    matches: Callable[[str, dict, str], bool]
-    """ツール名、ツール入力、操作時点のcwdから、操作に当たるかを返す。"""
-
-
-def _grep_is_recursive(arguments: Sequence[str]) -> bool:
-    index = 0
-    while index < len(arguments):
-        token = arguments[index]
-        index += 1
-        if token == "--":
-            return False
-        if token.startswith("--"):
-            option, separator, _value = token.partition("=")
-            if option in _GREP_RECURSIVE_LONG_OPTIONS:
-                return True
-            if option in _GREP_LONG_OPTIONS_WITH_VALUE and not separator:
-                index += 1
-            continue
-        if not token.startswith("-") or token == "-":
-            continue
-        for position, char in enumerate(token[1:], start=1):
-            if char in _GREP_RECURSIVE_SHORT_OPTIONS:
-                return True
-            if char in _GREP_SHORT_OPTIONS_WITH_VALUE:
-                if position == len(token) - 1:
-                    index += 1
-                break
-    return False
-
-
-def _is_search_segment(segment: _shell_segments.ExecutionSegment) -> bool:
-    if not segment.resolved or not segment.tokens:
-        return False
-    name = pathlib.PurePath(segment.tokens[0]).name
-    if name in _SEARCH_COMMANDS:
-        return True
-    if name in _GREP_COMMANDS:
-        return _grep_is_recursive(segment.tokens[1:])
-    subcommand = _shell_checks.git_subcommand_tokens(segment)
-    return subcommand is not None and subcommand[0] == "grep"
-
-
-def _is_search_operation(tool_name: str, tool_input: dict) -> bool:
-    if tool_name in {"Grep", "Glob"}:
-        return True
-    if tool_name != "Bash":
-        return False
-    command = tool_input.get("command")
-    if not isinstance(command, str):
-        return False
-    return any(_is_search_segment(pipeline[0]) for pipeline in _shell_segments.extract_execution_pipelines(command))
-
-
-_ROOT_CAUSE_HEADING = re.compile(r"^## 原因分析[ \t]*$", re.MULTILINE)
-
-
-def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
-    """`agent-basics:bugfix`の起動の契機とする原因分析の記述かを返す。
-
-    編集ツールは変更後の断片（Claude Codeの`Write`・`Edit`・`MultiEdit`とCodexの`apply_patch`）、
-    Bashはコマンド文字列に、`## 原因分析`だけから成る行がある場合を対象とする。
-    """
-    if tool_name == "Bash":
-        command = tool_input.get("command")
-        return isinstance(command, str) and _ROOT_CAUSE_HEADING.search(command) is not None
-    fields = _tool_input.new_content_fields(tool_name, tool_input)
-    return fields is not None and any(_ROOT_CAUSE_HEADING.search(value) for _, value in fields)
 
 
 def _python_write_paths(code: str) -> list[str]:
@@ -268,18 +151,8 @@ def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
     return (operands if inline else operands[1:]) if inplace else []
 
 
-def _static_write_path(path: str, *, partial: bool = False) -> str | None:
-    """静的に確定した書込先を返す。未知の展開を含むパスは実パスとして確定しないため`None`を返す。
-
-    `partial`が真なら、文書種別の識別など末尾だけを使う用途へ、最後の展開より後ろが`/`で始まる末尾を返す。
-    `$ROOT/path.md`の末尾`/path.md`は実在の場所を表さないため、実パスを求める用途では`partial`を使わない。
-    """
-    if STATIC_UNKNOWN not in path:
-        return path
-    if not partial:
-        return None
-    suffix = path.rsplit(STATIC_UNKNOWN, 1)[1]
-    return suffix if suffix.startswith("/") else None
+def _static_write_path(path: str) -> str | None:
+    return path if STATIC_UNKNOWN not in path else None
 
 
 def _gawk_write_paths(arguments: tuple[str, ...]) -> list[str]:
@@ -332,13 +205,13 @@ def _is_discard_path(path: pathlib.Path) -> bool:
         return False
 
 
-def _bash_write_paths(command: str, cwd: str | None = None, *, partial: bool = False) -> list[str]:
-    """リダイレクト・tee・sponge・gawk・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
+def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
+    """リダイレクト・tee・sponge・gawk・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。  pyfltr: allow-comment
 
     リダイレクト先は実行するコマンドの確定と独立して構文から決まるため、未知の実行
     （`$COMMAND > out`、リダイレクトだけの文など）の静的な出力先も返す。コマンド名に依存する書込先は、
     実行するコマンドを確定できた呼出しだけから求める。本文と環境変数を実行して解決しない。
-    未知の展開を含むパスは返さない。`partial`が真なら、文書種別の識別に使う静的な末尾も返す。
+    未知の展開を含むパスは返さない。
     gawkのinplaceとspongeも内容の書込先として扱う。touch・ln・mkdir・truncateは本文の編集とは限らず、
     書込先の指定にも別の解釈を要するため対象へ含めない。
     """
@@ -346,7 +219,7 @@ def _bash_write_paths(command: str, cwd: str | None = None, *, partial: bool = F
 
     def append_paths(found: list[str], base: shell_cwd.CwdResolution) -> None:
         for raw in found:
-            value = _static_write_path(raw, partial=partial)
+            value = _static_write_path(raw)
             if value is None:
                 continue
             path = pathlib.Path(value).expanduser()
@@ -401,127 +274,22 @@ def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
     ]
 
 
-def _is_agent_document_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
-    if tool_name == "Bash":
-        command = tool_input.get("command")
-        return isinstance(command, str) and any(
-            is_agent_doc_target_file(path) for path in _bash_write_paths(command, cwd or None, partial=True)
-        )
-    operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
-    return operations is not None and any(
-        is_agent_doc_target_file(path) and not _is_discard_path(pathlib.Path(path))
-        for operation in operations
-        for path in operation.display_paths
-    )
-
-
-def is_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
-    if tool_name == "Bash":
-        command = tool_input.get("command")
-        if not isinstance(command, str):
-            return False
-        handoff = _delegated_session.handoff_path(os.environ)
-        paths = _bash_write_paths(command, cwd or None)
-        if handoff and paths and all(path == handoff for path in paths):
-            return False
-        return _is_agent_document_writing(tool_name, tool_input, cwd) or _bash_body_writing(command, cwd)
-    operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
-    handoff = _delegated_session.handoff_path(os.environ)
-    paths = [path for operation in operations or [] for path in operation.display_paths]
-    if handoff and paths and all(path == handoff for path in paths):
-        return False
-    return any(
-        operation.path
-        and not _is_discard_path(pathlib.Path(operation.path))
-        and operation.kind != _tool_input.KIND_DELETE
-        and (
-            bool(operation.whole_after_text)
-            if operation.is_whole_write
-            else any(fragment.before != fragment.after for fragment in operation.fragments)
-        )
-        for operation in operations or []
-    )
-
-
-def _is_temporary_path(path: str) -> bool:
-    """成果物ではない一時領域（managed-tempの一時rootと、Claude Codeの一時領域）の配下かを返す。
-
-    Claude Codeはタスク出力とscratchpadを`<一時ディレクトリ>/claude-<uid>/`の下へ置く。
-    一時ディレクトリ全体は作業ツリーの検証用複製なども置かれ得るため含めない。
-    """
-    candidate = pathlib.Path(path).resolve()
-    roots = [managed_temp.temp_root_path()]
-    if hasattr(os, "getuid"):
-        roots.append(pathlib.Path(tempfile.gettempdir()) / f"claude-{os.getuid()}")
-    return any(candidate.is_relative_to(root.resolve()) for root in roots)
-
-
-def _is_artifact_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
-    written = written_paths(tool_name, tool_input, cwd)
-    if written and all(_is_temporary_path(path) for path in written):
-        return False
-    return is_body_writing(tool_name, tool_input, cwd)
-
-
-def _bash_body_writing(command: str, cwd: str = "") -> bool:
-    for invocation, base in shell_cwd.bash_invocation_cwds(command, cwd):
-        tokens = invocation.static_tokens
-        name = pathlib.PurePath(tokens[0]).name
-        outputs: list[str] = []
-        if name == "sed":
-            outputs = _sed_write_paths(tokens[1:])
-        elif name == "perl":
-            outputs = _perl_write_paths(tokens[1:])
-        elif name == "gawk":
-            outputs = _gawk_write_paths(tokens[1:])
-        elif is_python_token(name) and len(tokens) > 2 and tokens[1] == "-c":
-            outputs = _python_write_paths(tokens[2])
-        if name in {"cat", "tee"} and invocation.inline_input:
-            outputs = [target for target in invocation.static_outputs if isinstance(target, str)]
-            if name == "tee":
-                outputs.extend(_stream_write_paths(tokens[1:]))
-        for raw in outputs:
-            value = _static_write_path(raw, partial=True)
-            if value is None or value == "-":
-                continue
-            path = pathlib.Path(value).expanduser()
-            if not path.is_absolute() and base.resolved:
-                path = pathlib.Path(base.path) / path
-            if not _is_discard_path(path):
-                return True
-    for body in heredoc_bodies(command):
-        preceding = list(shell_cwd.bash_invocation_cwds(command[: body.start], cwd))
-        if preceding:
-            invocation, base = preceding[-1]
-            tokens = invocation.segment.tokens
-            if (
-                is_python_token(pathlib.PurePath(tokens[0]).name)
-                and tokens[1:] in {(), ("-",)}
-                and any(
-                    not _is_discard_path(
-                        pathlib.Path(base.path) / pathlib.Path(path).expanduser()
-                        if base.resolved
-                        else pathlib.Path(path).expanduser()
-                    )
-                    for path in _python_write_paths(command[body.start : body.end])
-                )
-            ):
-                return True
-    return False
-
-
 _VERIFICATION_MCP_TOOL_NAMES = frozenset({"mcp__plugin_agent-toolkit_pyfltr__run", "mcp__pyfltr__run"})
-"""検証を実行するpyfltrのMCPツール。Claude Codeの配布プラグインと、Codex・委譲先の`pyfltr`サーバーの綴りを含む。"""
+
 
 _PYFLTR_RUN_SUBCOMMANDS = frozenset({"run", "fast", "ci", "run-for-agent"})
+
+
 _TASK_TARGETS = frozenset({"test", "check", "lint", "format", "verify"})
+
+
 _QUERY_OPTIONS = frozenset({"--help", "-h", "--version", "--collect-only", "--co"})
-"""検証を実行せずに照会だけを行うオプション。"""
+
+
 _UV_VALUE_OPTIONS = frozenset(
     {"--with", "--with-editable", "--with-requirements", "--python", "-p", "--project", "--directory", "--package"}
     | {"--extra", "--group", "--env-file", "--from", "--index", "-w"}
 )
-"""`uv run`・`uvx`の値を取るオプション。実行するコマンドの位置を求めるときは、直後の値もオプションの一部として除く。"""
 
 
 def _skip_runner_options(tokens: Sequence[str]) -> Sequence[str]:
@@ -570,102 +338,3 @@ def is_verification_operation(tool_name: str, tool_input: dict) -> bool:
     if not isinstance(command, str):
         return False
     return any(_is_verification_tokens(invocation.segment.tokens) for invocation in extract_bash_invocations(command))
-
-
-OPERATION_SKILLS: tuple[OperationSkill, ...] = (
-    OperationSkill("agent-basics:search", "search", "検索", lambda name, data, _cwd: _is_search_operation(name, data)),
-    OperationSkill(
-        "agent-basics:bugfix", "bugfix", "原因分析の記述", lambda name, data, _cwd: _is_root_cause_writing(name, data)
-    ),
-    OperationSkill("agent-basics:writing-standards", "writing-standards", "本文の作成・更新", _is_artifact_body_writing),
-    OperationSkill(
-        "agent-basics:check-execution",
-        "check-execution",
-        "検証の実行",
-        lambda name, data, _cwd: is_verification_operation(name, data),
-    ),
-)
-"""操作の直前に起動を求めるスキルの表。案内の文面と対象はこの表だけから作る。"""
-
-NOTIFIED_KEY = "operation_skills_notified"
-_OBSERVED_KEY = "operation_skills_observed"
-SELF_CHECKED_KEY = "operation_skills_self_checked"
-
-
-def canonical_skill_name(skill_name: object) -> str | None:
-    return next(
-        (entry.skill_name for entry in OPERATION_SKILLS if skill_name in {entry.skill_name, entry.short_name}),
-        None,
-    )
-
-
-def notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
-    if not session_id or _delegated_session.is_lightweight_delegated(os.environ):
-        return []
-    subject = _agent_id.resolve_hook_agent_id(payload)
-    state = read_state(session_id)
-    delivered, observed = state.get(NOTIFIED_KEY), state.get(_OBSERVED_KEY)
-    advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
-    done = observed.get(subject, []) if isinstance(observed, dict) else []
-    cwd = str(payload.get("cwd", ""))
-    texts = []
-    policy = rules()
-    for entry in OPERATION_SKILLS:
-        known = entry.skill_name in done or (policy["suppress_repeats"] and entry.skill_name in advised)
-        if known or not entry.matches(tool_name, tool_input, cwd):
-            continue
-        text = llm_notice(
-            policy["search_guidance"].format(operation=entry.operation, skill=entry.skill_name),
-            "pretooluse",
-        )
-        stage_delivery(text, session_id, NOTIFIED_KEY, subject, entry.skill_name)
-        texts.append(text)
-    return texts
-
-
-def unconfirmed_skills(session_id: str, subject: str) -> list[str]:
-    """案内したのに起動を確認できず、点検でまだ確認を促していないスキル名を返す。  pyfltr: allow-comment
-
-    促し終えた記録は、点検の通知の配送時に`SELF_CHECKED_KEY`へ入る（通知が採用されなければ次の点検で再び返す）。
-    """
-    if not session_id:
-        return []
-    state = read_state(session_id)
-    delivered, observed, checked = state.get(NOTIFIED_KEY), state.get(_OBSERVED_KEY), state.get(SELF_CHECKED_KEY)
-    advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
-    done = observed.get(subject, []) if isinstance(observed, dict) else []
-    seen = checked.get(subject, []) if isinstance(checked, dict) else []
-    return [name for name in advised if isinstance(name, str) and name not in done and name not in seen]
-
-
-def observe_skill(session_id: str, subject: str, skill_name: object) -> None:
-    """Claude Codeの`Skill`で起動した表のスキルを、その主体へ以後案内しないよう記録する。"""
-    name = canonical_skill_name(skill_name)
-    if name is None or not session_id:
-        return
-
-    def record(state: dict) -> dict | None:
-        records = state.get(_OBSERVED_KEY)
-        records = dict(records) if isinstance(records, dict) else {}
-        values = records.get(subject)
-        values = list(values) if isinstance(values, list) else []
-        if name in values:
-            return None
-        records[subject] = [*values, name]
-        state[_OBSERVED_KEY] = records
-        return state
-
-    update_state(session_id, record)
-
-
-def forget_subject(session_id: str, subject: str) -> None:
-
-    def forget(state: dict) -> dict | None:
-        updates = {}
-        for key in (NOTIFIED_KEY, _OBSERVED_KEY, SELF_CHECKED_KEY):
-            records = state.get(key)
-            if isinstance(records, dict) and subject in records:
-                updates[key] = {name: value for name, value in records.items() if name != subject}
-        return {**state, **updates} if updates else None
-
-    update_state(session_id, forget)

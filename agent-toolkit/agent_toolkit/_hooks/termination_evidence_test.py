@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._testing import git_repository
-from agent_toolkit._testing.termination_evidence_support import _tool, human_input, public_decision
+from agent_toolkit._testing.termination_evidence_support import _tool, human_input
 from agent_toolkit._testing.termination_evidence_support import isolated_session as isolated_session
 
 pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
@@ -35,15 +35,14 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
     ],
 )
 def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch, case):
-    policy = "完了報告は指示まで省く。\n"
-    repo = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": policy})
+    repo = git_repository.init_repository(tmp_path / "repo", files={"README.md": "成果"})
     other = git_repository.init_repository(tmp_path / "other", files={"README.md": "別の成果"})
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     human_input(tmp_path, "request", "成果を作成する")
 
     if case.startswith("other-"):
-        _tool(repo, "initial-edit", "Edit", {"file_path": str(repo / "CLAUDE.md")}, {"exit_code": 0}, codex=False)
+        _tool(repo, "initial-edit", "Edit", {"file_path": str(repo / "README.md")}, {"exit_code": 0}, codex=False)
     commands = {
         "cd": f"cd {shlex.quote(str(repo))} && git add file && git commit -m 変更",
         "pipeline": "git add file && git commit -m 変更 2>&1 | tail -3",
@@ -78,26 +77,15 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
         manifest.parent.mkdir()
         manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     _tool(repo, "action", tool, data, response, codex=case.startswith("codex-skill"))
-    document = {
-        "session_id": "evidence-test",
-        "action": "omit-completion",
-        "work_id": "work-1",
-        "input_id": "request",
-        "reason": "適用規範に従う",
-        "policy_file": str(repo / "CLAUDE.md"),
-        "quote": policy,
-        "target_repo": str(repo),
-    }
-    status, reason = public_decision(tmp_path, document)
-    rejected = case.startswith("other-") or case.startswith("unknown")
-    assert status == (2 if rejected else 0), reason
-    work = termination_evidence.session_works({"session_id": "evidence-test"})[0][1]
-    assert bool(termination_evidence.missing_completion(work)) is rejected
-    termination_evidence.unscoped_self_edits({"session_id": "evidence-test"}, work)
-    if case.startswith("unknown"):
-        assert "特定できなかった成果作業" in reason and "commit" in reason
-        assert "report-completion" in reason and "ユーザーへ報告" in reason
-        assert "同じコマンドで再実行" not in reason
+    works = termination_evidence.session_works({"session_id": "evidence-test"})
+    assert len(works) == 1
+    work = works[0][1]
+    expected = [str(repo), str(other)] if case.startswith("other-") else [None] if case.startswith("unknown") else [str(repo)]
+    assert work["repositories"] == expected
+    if case in {"other-edit", "other-redirect"}:
+        assert work["edits"] == {str(repo): ["README.md"], str(other): ["README.md"]}
+    elif case.startswith("unknown"):
+        assert work["deliverables"] == ["commit"]
 
 
 @pytest.mark.parametrize("tool", ["Bash", "PowerShell"])

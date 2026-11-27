@@ -9,14 +9,8 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import private_notes
 from agent_toolkit._hooks import rules_context
-from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, denial_reason
-
-
-@pytest.fixture(autouse=True)
-def _skip_unrelated_document_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 def _payload(repository: pathlib.Path, kind: str, *, target: pathlib.Path | None = None) -> dict:

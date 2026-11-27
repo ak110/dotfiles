@@ -99,11 +99,8 @@ SessionStartで起動だけを通知されたCodexは`atk-mode`の`SKILL.md`とC
 2. PowerShellでは標準出力も`[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)`でUTF-8にする。
    同じコマンドで続けて`[Console]::Write((Get-Content -LiteralPath '<絶対パス>' -Raw -Encoding utf8 -ErrorAction Stop))`を実行して全文を読む。
    行範囲は同じ出力設定で`-Raw`を外し、`Get-Content`の結果を`Select-Object -Skip <開始行-1> -First <行数> | ForEach-Object { [Console]::WriteLine($_) }`に渡す。
-3. 本文の初回の取得では、内側の`exec_command`と外側の`functions.exec`の`max_output_tokens`をともに20000と明示する。
-   文章主体ならUTF-8のバイト数÷3の切り上げで見積もり、外側の予算には内側の合計とJSONの包絡を含め、超える見積りなら最初から行範囲かセルを分ける。
-   nativeの`original token count`が予算を超えた時は、その値以上の枠を両層で確保できる場合だけ1回取り直し、できなければ行範囲へ分ける。
-   分割の最後は`sed -n '<開始行>,$p' -- <絶対パス>`で末尾まで取り、1行だけで枠を超える場合は行範囲の分割で解けない制約として扱う。
-   読み込み支援のhookが両層の予算と分割範囲を含む実行例を返した場合は、対象と範囲を確かめて使う。
+3. 必要な資料は判断前に読み、取得済みの同じ版は再取得しない。
+   取得範囲と内側・外側の出力枠は資料とツールの制約に合わせ、省略を観測したら必要な未取得部分を回収する。
 4. 本文を受け取ったかは、実際に受信した範囲を要求と比べて決める。
    外側の`functions.exec`だけで起きた出力の省略は、内側の`exec_command`のPostToolUseでは捕捉されない。
    hookの通知の有無、内側の実行結果、コマンド文字列、終了コードは、本文を受け取った証明から外す。

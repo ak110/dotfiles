@@ -1,4 +1,4 @@
-r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態の記録とplan file書式の判定。
+r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態の記録とplan file書式の判定。  pyfltr: allow-comment
 
 Bash / Write / Edit / MultiEdit / apply_patch / Read / Skill / Agent / Task / AskUserQuestion / agents_server MCPの実行後に
 イベントを検出し、セッション状態ファイルに記録する。
@@ -15,11 +15,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 2. write-planスキル呼び出し検出 (Skill)
 3. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
-5. exit-sessionの実行結果に基づく
-   `process_wi_skill_invoked`のリセット (Skill)、
-   操作の直前に起動を求めるスキルの起動の記録（以後その主体へ起動の案内を出さない。`pretooluse/operation_skills.py`）。
-   スキルの入口（`SKILL.md`）の現在の全文を返した読取も、そのスキルの起動として記録する（Read / Bash。`full_reads.py`）。
-   Codex・Antigravityはスキルを入口の読取で始めるためである。`agent-basics:bugfix`の起動は検証の失敗後の案内も止める
+5. exit-sessionの実行結果に基づく`process_wi_skill_invoked`のリセット
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの命名が計画名の解決に使用）
 7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
@@ -32,9 +28,8 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 11. `AskUserQuestion`の自由記述の回答へ、UserPromptSubmitと同じ現物確認・内容別の注記を返す (AskUserQuestion)
 12. ホストの上限を超えて退避した出力の抜粋を、未読と保存先、次の操作を示す本文へ置き換える
     `updatedToolOutput` (Bash / PowerShell。`persisted_output`が判定する)
-13. メインが成功した前景Bashでcommit・pushを行った後に、report-completionの起動条件を通知する
-14. 一定間隔ごとの進捗のセルフチェック通知（全ツール共通。`progress_self_check`が判定する）
-15. Codexが省略した出力へ、省略を回収する操作の通知 (Bash。`codex_truncation`が判定する)
+13. 一定間隔ごとの進捗のセルフチェック通知（全ツール共通。`progress_self_check`が判定する）
+14. Codexが省略した出力へ、省略を回収する操作の通知 (Bash。`codex_truncation`が判定する)
 """
 
 import json
@@ -43,7 +38,7 @@ lazy import asyncio
 lazy import shlex
 
 from agent_toolkit._common.next_action import recover_from_failure
-from agent_toolkit._hooks.bugfix_gate import BUGFIX_SKILL, QUOTED_MATERIAL_RE, mark_started, observe_verification
+from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE, observe_verification
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
@@ -60,14 +55,11 @@ lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import (
     clock_claims,
     codex_truncation,
-    command_timing,
-    full_reads,
     permission_denial_notice,
     process_wi_notifications,
     review_receipt,
     session_title,
     termination_evidence,
-    work_contract,
 )
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
@@ -76,8 +68,7 @@ lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.pretooluse import operation_skills, user_facing_checks
-lazy from agent_toolkit._hooks.pretooluse.large_reads import session_record_reference_warning
+lazy from agent_toolkit._hooks.pretooluse import user_facing_checks
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 _HOOK_ID = "posttooluse"
@@ -409,27 +400,6 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
     _record_bash_response_state(session_id, command, payload.get("tool_response"))
 
 
-def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
-    response = payload.get("tool_response")
-    if (
-        not is_main_agent_context(payload)
-        or tool_input.get("run_in_background")
-        or _background_task_id_from_response(response) is not None
-        or isinstance(response, dict)
-        and (response.get("exit_code", 0) != 0 or response.get("interrupted"))
-    ):
-        return None
-    command = tool_input.get("command")
-    if not isinstance(command, str) or not termination_evidence.published_git_operations(command):
-        return None
-    operation = f"完了報告の手順書`{termination_evidence.completion_playbook_path()}`を全文読んでください"
-    return _llm_notice(
-        f"作業完了報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
-        tag="notice",
-        subject=json.dumps([payload.get("cwd"), command, response], ensure_ascii=False, sort_keys=True),
-    )
-
-
 def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str, event_name: str) -> list[str]:
     _background_tasks.observe_repl_bash(payload, completed=True)
 
@@ -489,7 +459,6 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                         notices.append(content_notice)
     elif tool_name == "Skill" and event_name == "PostToolUse":
         skill = tool_input.get("skill")
-        operation_skills.observe_skill(session_id, resolve_hook_agent_id(payload), skill)
         if not payload.get("agent_id") and isinstance(skill, str):
             arguments = tool_input.get("args")
             session_title.observe_skill(session_id, skill, arguments if isinstance(arguments, str) else None)
@@ -523,8 +492,6 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         notices.extend(_observe_edit_tool(session_id, tool_name, tool_input, cwd))
     elif tool_name in ATK_SHELL_TOOLS:
         _observe_bash_tool(payload, session_id, tool_input)
-        if tool_name == "Bash" and (completion_notice := _completion_report_notice(payload, tool_input)) is not None:
-            notices.append(completion_notice)
     return notices
 
 
@@ -542,18 +509,6 @@ def _mount_periodic_recheck(session_id: str) -> list[str]:
     return [warning] if isinstance(warning, str) and warning else []
 
 
-def _observe_skill_reads(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str) -> None:
-    subject = resolve_hook_agent_id(payload)
-    response = payload.get("tool_response")
-    for path in full_reads.full_reads(tool_name, tool_input, response, cwd, full_reads.is_skill_entry_name):
-        if (entry := full_reads.skill_entry(path)) is None:
-            continue
-        skill = f"{entry[0]}:{entry[1]}"
-        operation_skills.observe_skill(session_id, subject, skill)
-        if skill == BUGFIX_SKILL:
-            mark_started(session_id, subject)
-
-
 def main(payload_text: str) -> int:
     begin_delivery()
     notices: list[str] = []
@@ -562,20 +517,8 @@ def main(payload_text: str) -> int:
         payload, session_id, tool_name, tool_input, cwd, event_name = parsed
         function_hook_requests.cleanup(session_id)
         set_warning_session_id(session_id)
-        background_task_id = (
-            _background_task_id_from_response(payload.get("tool_response"))
-            if tool_input.get("run_in_background")
-            else _structured_background_task_id(payload.get("tool_response"))
-        )
-        notices.extend(command_timing.observe(payload, background_task_id=background_task_id))
         if tool_name in {"Bash", "exec_command", "functions.exec"}:
             clock_claims.observe(payload, tool_input.get("command"), session_id)
-        if (
-            is_codex_payload(payload)
-            and tool_name in {"exec_command", "functions.exec_command", "functions.exec"}
-            and (record_warning := session_record_reference_warning(tool_name, tool_input, cwd))
-        ):
-            notices.append(record_warning)
         if (
             is_codex_payload(payload)
             and tool_name == "Bash"
@@ -594,15 +537,8 @@ def main(payload_text: str) -> int:
                 )
         elif event_name == "PostToolUse" and review_receipt.is_mcp_delivery(tool_name):
             review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
-        if event_name == "PostToolUse" and tool_name != "Skill":
-            _observe_skill_reads(payload, session_id, tool_name, tool_input, cwd)
-            if tool_name == "Read" or tool_name in ATK_SHELL_TOOLS:
-                _persisted_output.observe(payload, session_id, tool_name, tool_input, cwd)
-        if event_name == "PostToolUse" and is_main_agent_context(payload):
-            if (progress_warning := work_contract.progress_update_warning(session_id)) is not None:
-                notices.append(_llm_notice(progress_warning))
-            if (quote_warning := work_contract.quote_update_warning(session_id, payload.get("transcript_path"))) is not None:
-                notices.append(_llm_notice(quote_warning))
+        if event_name == "PostToolUse" and (tool_name == "Read" or tool_name in ATK_SHELL_TOOLS):
+            _persisted_output.observe(payload, session_id, tool_name, tool_input, cwd)
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:

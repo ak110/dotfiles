@@ -1,8 +1,7 @@
-"""成果作業と、完了報告の起動証拠になる操作の抽出。"""
+"""成果作業と非同期対象の操作の抽出。  pyfltr: allow-comment"""
 
 from __future__ import annotations
 
-import os
 import pathlib
 lazy import subprocess
 lazy from typing import Any
@@ -10,24 +9,19 @@ lazy from typing import Any
 lazy from agent_toolkit._agents_server import tool_names
 lazy from agent_toolkit._atk.managed_temp import temp_root_path
 lazy from agent_toolkit._atk.wi import uwi_scan
-lazy from agent_toolkit._common import session_state, shell_cwd, skill_modes
+lazy from agent_toolkit._common import shell_cwd, skill_modes
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
-lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command, join_words
 lazy from agent_toolkit._git import command as git_command
-lazy from agent_toolkit._hooks import agent_id, full_reads
+lazy from agent_toolkit._hooks import full_reads
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens, git_commit_options
-lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.termination_evidence_state import (
     _GIT_PUSH_VALUE_OPTIONS,
-    COMPLETION_REPORT,
-    STATE_KEY,
     TARGET_ENTRY_WORKS,
-    completion_playbook_path,
 )
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
@@ -93,7 +87,7 @@ def _saved_operations(command: str) -> list[str]:
 def _started_work(skill: object, arguments: object) -> str | None:
     if _skill_name(skill) == skill_modes.ENTRY_SKILL:
         work = (arguments.split() or [""])[0] if isinstance(arguments, str) else ""
-        return work if work in {COMPLETION_REPORT, *TARGET_ENTRY_WORKS} else None
+        return work if work in TARGET_ENTRY_WORKS else None
     return None
 
 
@@ -106,26 +100,7 @@ def _read_work(path: pathlib.Path) -> str | None:
     parts = path.parts
     if len(parts) < 4 or parts[-4:-1] != ("skills", skill_modes.ENTRY_SKILL, "playbooks") or not path.is_file():
         return None
-    return next((work for work in (COMPLETION_REPORT, *TARGET_ENTRY_WORKS) if parts[-1] == f"{work}.md"), None)
-
-
-def _completion_read(payload: dict[str, Any], tool_input: dict[str, Any]) -> bool:
-    """Claude CodeのメインのReadが、完了報告の手順書の現在の本文全体を1回の応答で返したかを返す。"""
-    if not agent_id.is_main_agent_context(payload):
-        return False
-    response = payload.get("tool_response")
-    return full_reads.read_tool_full_read(tool_input, response, _is_completion_playbook) is not None
-
-
-def _is_completion_playbook(path: pathlib.Path) -> bool:
-    return _read_work(path) == COMPLETION_REPORT
-
-
-def _is_installed_completion_playbook(path: pathlib.Path) -> bool:
-    try:
-        return path.samefile(completion_playbook_path())
-    except OSError:
-        return False
+    return next((work for work in TARGET_ENTRY_WORKS if parts[-1] == f"{work}.md"), None)
 
 
 def _read_works(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.CwdResolution, response: str) -> list[str]:
@@ -153,12 +128,8 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     if not after or failed:
         return []
     codex = is_codex_payload(payload)
-    if tool_name == "Read" and not codex and not is_antigravity_payload(payload):
-        return [{"kind": "completion"}] if _completion_read(payload, tool_input) else []
     if tool_name == "Skill" and not codex:
         skill = _started_work(tool_input.get("skill"), tool_input.get("args"))
-        if skill == COMPLETION_REPORT:
-            return [{"kind": "completion"}]
         if skill is not None:
             record: dict[str, Any] = {"kind": "deliverable", "labels": [_start_label(skill)], "entry_work": skill}
             if isinstance(payload.get("cwd"), str) and (repository := _git_root(payload["cwd"])) is not None:
@@ -192,31 +163,17 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
         # Codex・Antigravityはスキルを読取で始めるため、手順書の全文を受け取った読取を起動証拠にする。
         response = payload.get("tool_response")
         shared_read = codex or is_antigravity_payload(payload)
-        claude_read = (
-            not shared_read
-            and tool_name == "Bash"
-            and agent_id.is_main_agent_context(payload)
-            and isinstance(response, dict)
-            and response.get("interrupted") is not True
-            and isinstance(response.get("stdout"), str)
-        )
-        text = full_reads.response_text(response) if claude_read or shared_read else ""
+        text = full_reads.response_text(response) if shared_read else ""
         for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else "", effects=True):
             if not invocation.execution_known:
                 continue
             single = join_words(invocation.segment.tokens)
             item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
             repository = _invocation_repository(invocation, current) if item_labels else None
-            if text and current.resolved and claude_read:
-                if any(full_reads.invocation_full_reads(invocation, current, text, _is_installed_completion_playbook)):
-                    records.append({"kind": "completion"})
-            elif text and current.resolved:
+            if text and current.resolved and shared_read:
                 for work in _read_works(invocation, current, text):
-                    if work == COMPLETION_REPORT:
-                        records.append({"kind": "completion"})
-                    else:
-                        item_labels.append(_start_label(work))
-                        repository = _git_root(current.path)
+                    item_labels.append(_start_label(work))
+                    repository = _git_root(current.path)
             if item_labels:
                 records.append(
                     {"kind": "deliverable", "labels": item_labels, "repository": str(repository) if repository else None}
@@ -265,52 +222,3 @@ def _temporary_git_repository(root: pathlib.Path) -> bool:
         return result.returncode == 0 and bool(common) and (root / common).resolve().is_relative_to(temporary)
     except OSError, subprocess.TimeoutExpired:
         return False
-
-
-def _uncommitted_paths(repository: str, paths: list[str]) -> list[str] | None:
-    try:
-        result = git_command.run(
-            ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", *paths],
-            cwd=repository,
-            capture_output=True,
-            check=False,
-            timeout=5,
-        )
-    except OSError, subprocess.TimeoutExpired:
-        return None
-    if result.returncode:
-        return None
-    fields = result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
-    changed = []
-    index = 0
-    while index < len(fields):
-        field = fields[index]
-        index += 1
-        if len(field) < 4:
-            continue
-        if field[3:] in paths:
-            changed.append(field[3:])
-        if "R" in field[:2] or "C" in field[:2]:
-            index += 1
-    return sorted(set(changed))
-
-
-def unscoped_self_edits(payload: dict[str, Any], work: dict[str, Any]) -> list[str]:
-    """協調Claudeメインの作業が残す、公開範囲が未確定の未コミットの自編集を返す。"""
-    if is_codex_payload(payload) or not agent_id.is_main_agent_context(payload):
-        return []
-    state = session_state.read_state(payload["session_id"])
-    if state.get("process_wi_skill_invoked") or is_process_loop_session(payload["session_id"], os.environ):
-        return []
-    data = state.get(STATE_KEY)
-    reference = data.get("inputs", {}).get(work.get("reference"), {}) if isinstance(data, dict) else {}
-    if reference.get("human") is not True or work.get("publish_scope"):
-        return []
-    changed: list[str] = []
-    for repository, paths in work.get("edits", {}).items():
-        current = _uncommitted_paths(repository, paths)
-        if current is None:
-            append_stop_log(payload["session_id"], "self_edit_state_unavailable", {"repository": repository})
-            continue
-        changed.extend(str(pathlib.Path(repository) / path) for path in current)
-    return changed

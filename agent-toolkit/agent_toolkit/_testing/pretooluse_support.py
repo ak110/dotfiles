@@ -8,14 +8,11 @@ import pathlib
 import subprocess
 import sys
 
-import pytest
-
 from agent_toolkit import hook as _hook
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import persisted_output_reference
 from agent_toolkit._common.session_state import state_path
 from agent_toolkit._testing import git_repository
-lazy from agent_toolkit._hooks.pretooluse import operation_skills
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
@@ -367,13 +364,3 @@ def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str = "codex-
         "session_id": session_id,
         "turn_id": "turn-1",
     }
-
-
-def run_without_skill_notices(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """操作の直前のスキルの案内が対象外の判定試験で、その案内だけを空にして公開hookを呼ぶ。
-
-    案内そのものの試験（`operation_skills_test.py`）は`_run`を使う。他の判定と公開応答は製品を通す。
-    """
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
-        return _run(payload, env_overrides)

@@ -41,10 +41,9 @@ def _run_busy_loop_turns(
     _replace_checks(
         monkeypatch,
         {
-            "plan_save_advisor": ("approve", ""),
             "agents_server_session_advisor": ("approve", ""),
             "user_response_advisor": ("approve", ""),
-            "termination_order_advisor": ("block", "別の遮断"),
+            "permission_denial_notice": ("block", "別の遮断"),
             "queued_notification_advisor": ("approve", ""),
         },
     )

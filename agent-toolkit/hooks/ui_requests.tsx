@@ -1,6 +1,6 @@
 import type { EngineInterface, On } from "claude-code";
 import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
-import { deliveryGuidance, missingPreventionLine, missingPreventionRejection, reportWarnings } from "./send_to_user.tsx";
+import { deliveryGuidance, reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
 import { mountPeriodicRecheck } from "./periodic_recheck.ts";
@@ -73,16 +73,11 @@ export function register(on: On): void {
         let autoMode: { hard_deny?: unknown; soft_deny?: unknown } | undefined;
         let flagAutoModePresent: boolean | undefined;
         let reason = "未対応の会話操作";
-        let resend: boolean | undefined;
         let warnings: string[] | undefined;
         const skipped = Array.isArray(request.input.misdetection_checks) ? request.input.misdetection_checks : [];
         if (request.operation === "send_to_user" &&
             (typeof request.input.message !== "string" || request.input.body_ref != null)) {
           reason = "検査済みの本文がない。報告は未送信です。";
-        } else if (request.operation === "send_to_user" && typeof request.input.message === "string" &&
-            !skipped.includes("missing-prevention") && missingPreventionLine(request.input.message)) {
-          reason = missingPreventionRejection;
-          resend = true;
         } else if (request.operation === "send_to_user" && typeof request.input.message === "string") {
           const messages = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {};
           await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, { ...messages, [request.id]: request.input.message });
@@ -178,7 +173,7 @@ export function register(on: On): void {
         }
         if (request.expires * 1000 > Date.now() && await $.fs.exists(source)) {
           const response = responseBase.replace(/\.txt$/, `-${request.id}.txt`);
-          await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, warnings, resend, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
+          await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, warnings, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
           if (request.operation === "send_to_user" && ok) sendGuidanceDelivered = true;
           if (request.detached) cleanupNeeded = true;
         } else if (request.operation === "periodic_recheck" && reason) {

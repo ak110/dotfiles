@@ -116,11 +116,8 @@ def test_single_lane_list_preserves_start_of_circuit(tmp_path, monkeypatch, caps
         assert listing.progress_new_wis(session) is None
         return
     assert progress_self_check.claim_notice(payload, now=1.0) is None
-    try:
-        notice = progress_self_check.claim_notice(payload, now=1801.0)
-        assert notice is not None and new_name in notice and held.name not in notice
-    finally:
-        progress_self_check.release_reservations()
+    notice = progress_self_check.claim_notice(payload, now=1801.0)
+    assert notice is not None and new_name in notice and held.name not in notice
 
 
 @pytest.mark.parametrize("configured", [False, True])
@@ -172,13 +169,10 @@ def test_circuit_resume_uses_legacy_start(tmp_path, monkeypatch, configured, exp
     assert snapshot.progress_sources(session) == legacy
     payload = {"session_id": session, "cwd": str(tmp_path)}
     assert progress_self_check.claim_notice(payload, now=1.0) is None
-    try:
-        notice = progress_self_check.claim_notice(payload, now=1801.0)
-        assert notice is not None
-        assert (late.name in notice) == valid
-        assert ("新着WIは未確認" in notice) != valid
-    finally:
-        progress_self_check.release_reservations()
+    notice = progress_self_check.claim_notice(payload, now=1801.0)
+    assert notice is not None
+    assert (late.name in notice) == valid
+    assert ("新着WIは未確認" in notice) != valid
 
 
 @pytest.mark.parametrize("destination", ["develop", "maintenance", "feature/work"])
@@ -209,12 +203,9 @@ def test_new_wis_survive_branch_registration_during_the_same_conversation(tmp_pa
     outside = _write_awi_file(notes, "20261124-085011-003.md", target_repo="github.com/example/outside")
     payload = {"session_id": session, "cwd": str(tmp_path)}
     assert progress_self_check.claim_notice(payload, now=1.0) is None
-    try:
-        notice = progress_self_check.claim_notice(payload, now=1801.0)
-        assert notice is not None and all(notice.count(name) == 1 for name in names.values())
-        assert old.name not in notice and outside.name not in notice
-    finally:
-        progress_self_check.release_reservations()
+    notice = progress_self_check.claim_notice(payload, now=1801.0)
+    assert notice is not None and all(notice.count(name) == 1 for name in names.values())
+    assert old.name not in notice and outside.name not in notice
     rows = listing.progress_new_wis(session, targets=frozenset({(repo, destination)}))
     assert rows is not None
     expected = {names[destination]} if destination in names else set(names.values())
@@ -236,12 +227,9 @@ def test_removed_branch_is_unobservable_and_cannot_be_acknowledged_as_no_new_wis
     configured = (config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git", branch="maintenance"),)
     payload = {"session_id": session, "cwd": str(tmp_path)}
     assert progress_self_check.claim_notice(payload, now=1.0) is None
-    try:
-        notice = progress_self_check.claim_notice(payload, now=1801.0)
-        assert notice is not None and "新着WIは未確認" in notice
-        assert all(value in notice for value in (repo, "develop", "maintenance", "atk config repos list", "手動照合"))
-    finally:
-        progress_self_check.release_reservations()
+    notice = progress_self_check.claim_notice(payload, now=1801.0)
+    assert notice is not None and "新着WIは未確認" in notice
+    assert all(value in notice for value in (repo, "develop", "maintenance", "atk config repos list", "手動照合"))
 
 
 @pytest.mark.parametrize(
@@ -328,12 +316,9 @@ def test_own_processing_wis_leave_progress_notice(tmp_path, monkeypatch):
     run("return-to-inbox", names[2], f"--target-repo={repo}")
 
     assert progress_self_check.claim_notice(payload, now=1.0) is None
-    try:
-        notice = progress_self_check.claim_notice(payload, now=1801.0)
-        assert notice is not None and outside in notice and names[2] in notice
-        assert all(name not in notice for name in names[:2])
-    finally:
-        progress_self_check.release_reservations()
+    notice = progress_self_check.claim_notice(payload, now=1801.0)
+    assert notice is not None and outside in notice and names[2] in notice
+    assert all(name not in notice for name in names[:2])
 
 
 def test_new_merge_stays_pending_until_adoption(tmp_path, monkeypatch):

@@ -2,7 +2,6 @@ import datetime
 import json
 import os
 import pathlib
-import subprocess
 import time
 import types
 import typing
@@ -13,11 +12,8 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import plans as _atk_plans
 from agent_toolkit._plan import locations as _locations
-from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import plan_fixture as _plan_fixture
-from agent_toolkit._testing import stop_check_runner as _stop_check_runner
-from agent_toolkit._testing.helpers import _write_transcript
 
 
 def _fix_creation_clock(monkeypatch: pytest.MonkeyPatch, clock: str) -> None:
@@ -422,27 +418,6 @@ def test_cli_rejects_removed_detail_source() -> None:
 _CONVERSATION_ENVS = ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
 
 
-def _run_plan_save_advisor(home: pathlib.Path, state_dir: pathlib.Path, session_id: str) -> dict:
-    """保存確認のStopフックを別プロセスで起動し、出力した判定を返す。
-
-    フックは入力の`session_id`が所有記録の会話と一致する計画だけを通知する。起動したプロセスの環境は使わないため、会話を表す環境変数は除く。
-    """
-    transcript = _write_transcript(
-        state_dir,
-        [{"type": "assistant", "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "完了"}]}}],
-    )
-    env = {key: value for key, value in os.environ.items() if key not in _CONVERSATION_ENVS}
-    env.update(
-        {"HOME": str(home), "USERPROFILE": str(home), "TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)}
-    )
-    payload = json.dumps({"session_id": session_id, "transcript_path": str(transcript)})
-    result: subprocess.CompletedProcess[str] = _fork_runner.run_script(
-        pathlib.Path(_stop_check_runner.__file__), argv=("plan_save_advisor",), input=payload, env=env
-    )
-    assert result.returncode == 0, result.stderr
-    return json.loads(result.stdout) if result.stdout else {}
-
-
 @pytest.mark.parametrize(
     ("environment", "owner"),
     [
@@ -453,7 +428,7 @@ def _run_plan_save_advisor(home: pathlib.Path, state_dir: pathlib.Path, session_
     ],
     ids=["codex-top-level", "claude-top-level", "delegate-with-owner", "process-root"],
 )
-def test_public_plan_create_owner_reaches_listing_and_save_advisor(
+def test_public_plan_create_owner_reaches_listing(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -481,16 +456,6 @@ def test_public_plan_create_owner_reaches_listing_and_save_advisor(
     assert listed.value.code == 0
     (line,) = capsys.readouterr().out.splitlines()
     assert line.split("\t")[:2] == [str(main), owner or "なし"]
-
-    state_dir = tmp_path / "hook-state"
-    state_dir.mkdir()
-    assert not _run_plan_save_advisor(home, state_dir, "other-conversation")
-    for session in ("codex-thread", "claude-session", "owner-session", "delegate-thread"):
-        result = _run_plan_save_advisor(home, state_dir, session)
-        if session == owner:
-            assert str(main) in result["hookSpecificOutput"]["additionalContext"]
-        else:
-            assert not result
 
 
 @pytest.mark.parametrize(

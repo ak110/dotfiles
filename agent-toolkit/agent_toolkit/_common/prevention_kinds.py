@@ -1,8 +1,7 @@
 """`再発防止:`の行の先頭に置く対策の種類の語と、その判定。  pyfltr: allow-comment
 
 語の定義元は`agent-basics:bugfix`の`references/prevention.md`「`再発防止:`の行」である。
-AWIの原因分析の保存時の検査（`_plan/structure/sections_bugs.py`）と報告の必須記録の検査
-（`_hooks/bugfix_gate.py`）で使う。
+AWIの原因分析の保存時の検査（`_plan/structure/sections_bugs.py`）で使う。
 """
 
 import re

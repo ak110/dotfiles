@@ -15,7 +15,7 @@
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得または作成した計画バンドルの所有元として記録する、委譲元セッションの識別子。
   `agents_server`が起動した子セッションのみが保持するため、Codex backendの委譲先を含めてメイン向けの入口の起動の案内の追加を省略する判定にも使用する。
 - `AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`: `agents_server`がClaude backendおよびCodex backendの委譲先へ渡す起動区分（`delegate`、`explore`、`shell`、`write`）。
-  軽量起動の判定（`is_lightweight_delegated`）がこれを参照し、操作の直前のスキルの案内（`pretooluse/operation_skills.py`）を軽量の委譲先へ出さない判定に用いる。
+  軽量起動の判定（`is_lightweight_delegated`）がこれを参照し、組み込みの汎用Agent定義の起動を軽量の委譲先では遮断しない判定に用いる。
   Function hooks moduleは参照しない。
 - `AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT`: Codex backendが開始・再開時に選んだagent-toolkitの資料rootの絶対パス。
   App Serverの子環境と内側MCPへ渡し、hookの通知が示す資料のパス、終了工程の手順書の解決、CLI案内が同じ実体を使う。

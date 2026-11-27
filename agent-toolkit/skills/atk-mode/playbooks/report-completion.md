@@ -2,7 +2,7 @@
 
 目的: メインが成果の反映・回収・公開を終えてから事実どおりに報告し、ユーザーが報告だけで結果と残る判断を把握できるようにする。
 成果物の検収を終えたら、最終報告を書く前に本書を読み、反映、回収、判断の保存、公開、報告の確定、報告用UWI、送達と終了を一続きに行う手順書である。
-この手順書を全文読むことが終了工程の開始であり、Stop hookはその読み取りを完了報告の起動証拠として扱う（`agent-toolkit:atk-mode/references/termination-evidence.md`「受理する証拠」）。
+最後に元要求・成果・未回収対象・本人へ届ける結果を照合し、完了の判定を全文取得の記録で代用しない。
 結果は不都合なものも含めて報告し、観測した事実、推論、未確認を分ける（`agent-basics:writing-standards/references/quality-principles-facts.md`）。
 
 ## 適用の判定
@@ -12,8 +12,8 @@
 - 適用しない: 成果物の確定を伴わない単発の調査回答、単純な事実回答、確認質問、途中報告、待機と失敗の報告、委譲先が委譲元へ返す報告。
 - 常駐が起動した統括は、その実行の報告を所有する。
   統括から明示的に委譲されたリポジトリ担当は、成果と残工程を統括へ返す。
-  この担当除外は役割文書で判断し、`omit-completion`の記録の対象外とする。
-- プロジェクト規範が起動を省くと定める場合は、本書を読まずに`agent-toolkit:atk-mode/references/termination-evidence.md`を読み、省略を記録して通常の報告をする。
+  この担当除外は役割文書で判断する。
+- プロジェクト規範が本手順を省くと定める場合は、その規範に従って結果を報告する。
 - 反映、公開、UWIの保存、セッションの終了を操作できない環境では、得た成果と確認した証拠で結果を説明し、未実施の反映・公開・保存を区別して書く。
   残る操作は、それを実行できるClaude CodeかCodexへ引き継ぐ。
 
@@ -27,7 +27,7 @@
 | 振り返り結果報告、AWI投入結果報告を書く | `agent-toolkit:atk-mode/references/report-formats-retrospective.md` |
 | 自律モードで報告用UWIを書く | `agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」と`agent-toolkit:atk-mode/references/uwi-format.md` |
 | 独立したWI投入を受け付けて投入元の終了を判定する | `agent-toolkit:atk-mode/playbooks/wi-submission.md` |
-| Stop hookが起動不足を示した、中止・置換・待機・技術的不成立を記録する | `agent-toolkit:atk-mode/references/termination-evidence.md` |
+| 中止・置換・待機・技術的不成立を記録する | `agent-toolkit:atk-mode/references/termination-evidence.md` |
 
 ## 完了の到達水準
 

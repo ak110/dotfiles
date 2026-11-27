@@ -35,15 +35,12 @@
 
 ## 進捗の点検系
 
-- `progress_self_check`: `_hooks/progress_self_check.py`が、呼出主体（`agent_id`、無ければ`main`）ごとに次の3値をepoch秒で保持する。
-  `started_at`は初回観測、`last_notified_at`は通知が最終出力へ採用された最後の時刻、`reserved_at`は期日到達で通知を生成した時刻である。
+- `progress_self_check`: `_hooks/progress_self_check.py`が、呼出主体（`agent_id`、無ければ`main`）ごとに初回観測の`started_at`と最後の通知生成の`last_notified_at`をepoch秒で保持する。
   PostToolUseとUserPromptSubmitが`update_state`で読み書きし、初回観測は記録だけにする。
-  実発話・機械注入・PostToolUseを区別せず、`last_notified_at`から1800秒以上たった最初の観測で`source="progress-self-check"`の通知を生成し、`reserved_at`を記録する。
-  生成しただけでは期日を消費しない。
-  `notice.record_delivery`が最終出力へ採用した通知の生成時刻を`progress_self_check_delivered`へ記録し、次の観測がその最大値を`last_notified_at`へ畳み込む。
-  `reserved_at`は60秒の間だけ同じ主体の並列な生成を抑止し、hook.pyがPostToolUseとUserPromptSubmitの処理の終了時に未採用の予約を解除する。
-  Antigravityの保留通知は後の注入で配送記録を残すため、予約は失効時間に任せる。
-  通知時刻はhookが通知を採用した証拠に限り、点検を実施した証拠の対象からは除く。
+  実発話・機械注入・PostToolUseを区別せず、`last_notified_at`から1800秒以上たった最初の観測で`source="progress-self-check"`の通知を生成する。
+  Claude Codeメインの定期再確認では、発火時刻の揺れを吸収するため期日を60秒早める。
+  同じ主体の並列な生成は、通知時刻の排他更新で抑止する。
+  通知の時刻は点検を実施した証拠にしない。
   リセットは無く、生存期間はセッション状態ファイルと同一とする。
 - `new_wi_notice_snapshot`: 進捗点検と新着通知で、各通知の受信主体に最後に届けた新着WIの識別子を保持する。
   `notice.record_delivery`が最終出力への採用時に前の集合を置き換える。

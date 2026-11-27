@@ -238,31 +238,3 @@ def test_compaction_oversized_contract_delivers_location(tmp_path, monkeypatch, 
     assert str(path) in context and "現在の目的・要件を確かめてください" in context
     assert "保存済みのAWIへ移した要求が残っていれば、" in context
     assert "要件" * 10 not in context
-
-
-def test_posttooluse_warns_after_contract_quote_edit(tmp_path, monkeypatch):
-    contract = tmp_path / "work-contract.md"
-    transcript = tmp_path / "conversation.jsonl"
-    original = "「· 経過時間は不明 · 行動・文脈使用量は不明」とかも固定で出す意味全く無いでしょ。"
-    transcript.write_text(
-        json.dumps({"type": "user", "message": {"content": [{"type": "text", "text": original}]}}) + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.setattr(work_contract, "record_path", lambda _session: contract)
-    edited = original.replace("とかも", "も")
-    payload = {
-        "session_id": "contract-quote-flow",
-        "hook_event_name": "PostToolUse",
-        "tool_name": "Edit",
-        "tool_input": {"file_path": str(contract)},
-        "transcript_path": str(transcript),
-        "cwd": str(tmp_path),
-    }
-    contract.write_text(f"## 追加要求\n- 原文: 「{original}」\n", encoding="utf-8")
-    assert "実ユーザー発話と一致しない" not in run_hook("posttooluse", payload).stdout
-    contract.write_text(f"## 追加要求\n- 原文: 「{edited}」\n", encoding="utf-8")
-    result = run_hook("posttooluse", payload)
-    assert result.returncode == 0
-    assert "2行目" in json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]

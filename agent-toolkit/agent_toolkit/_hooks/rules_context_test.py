@@ -14,7 +14,6 @@ import pytest
 from agent_toolkit._common import plugin_environment
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import rules_context, rules_context_codex
-from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
 from agent_toolkit._testing.rules_context_support import _output, _session_start_length_report
@@ -177,7 +176,6 @@ def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     update_state(
         session_id,
         lambda _state: {
-            operation_skills.NOTIFIED_KEY: {"main": ["agent-basics:search"], "child-1": ["agent-basics:search"]},
             "notice_fingerprints": {main_notice: ["main"], child_notice: ["child"]},
         },
     )
@@ -193,7 +191,6 @@ def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     assert rules_context.main(json.dumps(payload)) == 0
     output = _output(capsys)
     state = read_state(session_id)
-    assert state[operation_skills.NOTIFIED_KEY] == {"main": ["agent-basics:search"]}
     assert state["notice_fingerprints"] == {main_notice: ["main"]}
     assert f"このサブエージェント専用の一時領域: {tmp_path / 'agent-child-1'}" in output
     assert "--conversation-digest" not in output

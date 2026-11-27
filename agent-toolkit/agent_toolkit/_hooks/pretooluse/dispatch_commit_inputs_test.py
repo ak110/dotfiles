@@ -15,25 +15,6 @@ from agent_toolkit._testing.dispatch_support import _existing_work_contract as _
 _LOW_TRAILER = "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>"
 
 
-@pytest.mark.parametrize("tool", ["Read", "Grep"])
-def test_original_record_warning_offers_public_extraction(tmp_path, monkeypatch, capsys, tool):
-    home = tmp_path / "claude"
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
-    record = home / "projects/project/record.jsonl"
-    record.parent.mkdir(parents=True)
-    record.write_text("{}\n", encoding="utf-8")
-    key = "file_path" if tool == "Read" else "path"
-    payload = {"tool_name": tool, "tool_input": {key: str(record)}, "cwd": str(tmp_path)}
-    assert pretooluse.main(json.dumps(payload)) == 0
-    notice = capsys.readouterr().out
-    assert "session-review-evidence" in notice
-    assert "委譲元へ返し" not in notice
-    assert str(record) in notice
-    payload["tool_input"] = {key: str(tmp_path / "AGENTS.md")}
-    assert pretooluse.main(json.dumps(payload)) == 0
-    assert "session-review-evidence" not in capsys.readouterr().out
-
-
 def test_claude_commit_block_lists_all_violations_for_variable_repository_path(
     capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:

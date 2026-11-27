@@ -10,7 +10,6 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.pretooluse_support import (
     _plan_file_state_env,
     _run,
-    run_without_skill_notices,
 )
 
 
@@ -23,7 +22,7 @@ def _existing_work_contract(tmp_path, monkeypatch):
 
 
 def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    return run_without_skill_notices(payload, env_overrides=env_overrides)
+    return _run(payload, env_overrides=env_overrides)
 
 
 def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:

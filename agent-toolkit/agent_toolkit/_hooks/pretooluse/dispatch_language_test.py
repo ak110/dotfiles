@@ -8,10 +8,8 @@ import sys
 
 import pytest
 
-from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
-from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _write_session_state
-from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
+from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _run, _write_session_state
 
 
 class TestResponseLanguageCheck:
@@ -105,10 +103,7 @@ class TestRemovedChecksAreSilent:
         assert result.stderr == ""
 
     @pytest.mark.parametrize("deny_substring", ["必ず", "絶対に"])
-    def test_edit_and_non_edit_tools_pass_without_output(
-        self, tmp_path: pathlib.Path, deny_substring: str, monkeypatch
-    ) -> None:
-        monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
+    def test_edit_and_non_edit_tools_pass_without_output(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
         home = tmp_path / "home"
         (home / ".claude" / "plans").mkdir(parents=True)
         payloads = [

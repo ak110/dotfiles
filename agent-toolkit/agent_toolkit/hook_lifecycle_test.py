@@ -9,21 +9,16 @@ from typing import Any, cast
 import pytest
 
 from agent_toolkit import hook as _hook
-from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import session_activity, session_registry, state_paths
-from agent_toolkit._common.persisted_output_reference import CODEX_NOTICE_REFERENCE_PREFIX
 from agent_toolkit._testing.hook_support import _call_hook_in_process
 
 
-@pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.cpu_limit(
     4.25,
-    reason=(
-        "公開Pre/Stopを反復し、2sessionと両hostで状態分離・案内の1回の配送・Stop3回を確認する（Linux CI CPU合計最大1.987秒）。"
-    ),
+    reason=("公開Stopを反復し、未配送の完了通知と入力状態の分離を確認する。"),
 )
 def test_repeated_calls_in_one_process_follow_input_and_session_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, codex: bool
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv("TMPDIR", str(tmp_path))
@@ -31,58 +26,6 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     empty_transcript = tmp_path / "empty.jsonl"
     empty_transcript.write_text("", encoding="utf-8")
-    for session in ("repeat-session", "other-session"):
-        directory = managed_temp.resolve_session_temp(session)
-        (directory / "work-contract.md").write_text("目的: 操作反復の検証\n", encoding="utf-8")
-
-    def pretooluse(session_id: str, command: str, expected_code: int = 0) -> str:
-        return _call_hook_in_process(
-            monkeypatch,
-            "pretooluse",
-            {
-                "session_id": session_id,
-                "transcript_path": str(empty_transcript if session_id == "repeat-session" else tmp_path / "other.jsonl"),
-                "cwd": str(tmp_path),
-                "tool_name": "Bash",
-                "tool_input": {"command": command},
-                **({"turn_id": "repeat-turn"} if codex else {}),
-            },
-            expected_code=expected_code,
-        )
-
-    context = pretooluse("repeat-session", "grep -rn needle .")
-    message = json.loads(context)["hookSpecificOutput"]["additionalContext"]
-    assert 'kind="block"' not in message
-    assert "agent-basics:search" in message
-    assert not pretooluse("repeat-session", "ls")
-    assert not pretooluse("repeat-session", "grep -rn needle .")
-    _call_hook_in_process(
-        monkeypatch,
-        "posttooluse",
-        {
-            "hook_event_name": "PostToolUse",
-            "session_id": "repeat-session",
-            "cwd": str(tmp_path),
-            "tool_name": "Skill",
-            "tool_input": {"skill": "agent-basics:search"},
-            **({"turn_id": "repeat-turn"} if codex else {}),
-        },
-    )
-    assert not pretooluse("repeat-session", "grep -rn needle .")
-
-    def response_context(output: str, identifier: str) -> dict:
-        result = json.loads(output)
-        body = result["hookSpecificOutput"]["additionalContext"]
-        if codex and CODEX_NOTICE_REFERENCE_PREFIX in body:
-            path = pathlib.Path(body.split(CODEX_NOTICE_REFERENCE_PREFIX, 1)[1].splitlines()[0])
-            assert path.resolve().is_relative_to(managed_temp.resolve_session_temp(identifier).resolve())
-            result["hookSpecificOutput"]["additionalContext"] = path.read_text(encoding="utf-8")
-        return result
-
-    assert response_context(pretooluse("other-session", "grep -rn needle ."), "other-session") == response_context(
-        context, "repeat-session"
-    )
-
     # 未配送の完了通知が残るtranscriptでは配送のためにターンを終え、残らないtranscriptでは何も返さない。
     # キューの記録の形は`_hooks/queued_notification_advisor_test.py`の生成と同じとする。
     notification = (

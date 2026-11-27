@@ -17,12 +17,10 @@ from agent_toolkit import atk, hook
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
-from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
+from agent_toolkit._testing.dispatch_support import _assert_plain_pass
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
-from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
-from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _write_session_state
-from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
+from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _run, _write_session_state
 
 
 @pytest.mark.parametrize(
@@ -166,131 +164,6 @@ def test_continuation_format_errors_pass_to_tool(tmp_path: pathlib.Path, host: s
         env_overrides=_plan_file_state_env(tmp_path),
     )
     _assert_plain_pass(result, host)
-
-
-@pytest.mark.parametrize("root_kind", ["claude", "codex"])
-@pytest.mark.parametrize("codex", [False, True], ids=["claude-hook", "codex-hook"])
-@pytest.mark.parametrize(
-    "operation",
-    [
-        "read",
-        "grep-directory",
-        "cat",
-        "sed",
-        "awk",
-        "rg",
-        "grep-pattern-option",
-        "head",
-        "sed-without-terminator",
-        "relative",
-        "substitution",
-        "inline-open",
-        "inline-path",
-        "inline-variable",
-        "script-argument",
-    ],
-)
-def test_original_record_access_is_guided_through_shared_pretooluse(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    root_kind: str,
-    codex: bool,
-    operation: str,
-) -> None:
-    path = _original_record(tmp_path, root_kind, monkeypatch)
-    quoted = shlex.quote(str(path))
-    commands = {
-        "cat": f"cat -- {quoted} | cat",
-        "sed": f"sed -n '1,2p' -- {quoted}",
-        "awk": f"awk '{{print}}' {quoted}",
-        "rg": f"rg -n -F -- assistant {quoted}",
-        "grep-pattern-option": f"grep -e assistant -- {quoted}",
-        "head": f"head -n 2 {quoted}",
-        "sed-without-terminator": f"sed -n '3,$p' {quoted}",
-        "relative": f"cd {shlex.quote(str(path.parent))} && cat {shlex.quote(path.name)}",
-        "substitution": f"printf '%s' \"$(cat {quoted})\"",
-        "inline-open": "python3 -c " + shlex.quote(f"open({str(path)!r}).read()"),
-        "inline-path": "python3 -c " + shlex.quote(f"from pathlib import Path; Path({str(path)!r}).read_text()"),
-        "inline-variable": "uv run --frozen python -c " + shlex.quote(f"p={str(path)!r}; open(p).read()"),
-        "script-argument": f"python3 analyze.py {quoted}",
-    }
-    tool_name = "Read" if operation == "read" else "Grep" if operation == "grep-directory" else "Bash"
-    tool_input = (
-        {"file_path": str(path)}
-        if tool_name == "Read"
-        else {"pattern": "assistant", "path": str(path.parent)}
-        if tool_name == "Grep"
-        else {"command": commands[operation]}
-    )
-    payload = {
-        "tool_name": tool_name,
-        "tool_input": tool_input,
-        "cwd": str(tmp_path),
-        **({"turn_id": "codex-turn"} if codex else {}),
-    }
-    assert pretooluse.main(json.dumps(payload)) == 0
-    captured = capsys.readouterr()
-    assert not captured.err
-    context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
-    assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
-    assert "session-review-evidence" in context and "session-records.md" in context
-    assert "--transcript" in context and "「本文の検索」" in context
-
-
-@pytest.mark.parametrize("codex", [False, True], ids=["claude-hook", "codex-hook"])
-@pytest.mark.parametrize(
-    "operation",
-    [
-        "attributes",
-        "find",
-        "mention",
-        "search-pattern",
-        "search-option",
-        "dedicated",
-        "inline-mention",
-        "inline-attributes",
-        "inline-unexecuted",
-        "inline-string-method",
-        "script-without-input",
-        "ordinary",
-        "derived",
-        "unknown",
-    ],
-)
-def test_non_original_body_access_does_not_receive_record_warning(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    codex: bool,
-    operation: str,
-) -> None:
-    path = _original_record(tmp_path, "claude", monkeypatch)
-    quoted = shlex.quote(str(path))
-    commands = {
-        "attributes": f"ls {quoted}",
-        "find": f"find {shlex.quote(str(path.parent))} -name '*.jsonl'",
-        "mention": f"printf '%s' {quoted}",
-        "search-pattern": f"rg -F -- {quoted} ordinary.txt",
-        "search-option": f"rg --glob {quoted} -- assistant ordinary.txt",
-        "dedicated": f"atk run-script session-review-evidence -- --transcript {quoted} --fixed-string assistant",
-        "inline-mention": "python3 -c " + shlex.quote(f"print({str(path)!r})"),
-        "inline-attributes": "python3 -c " + shlex.quote(f"from pathlib import Path; Path({str(path)!r}).exists()"),
-        "inline-unexecuted": "python3 -c " + shlex.quote(f"def example(): open({str(path)!r}).read()"),
-        "inline-string-method": "python3 -c " + shlex.quote(f"p={str(path)!r}; p.read_text()"),
-        "script-without-input": "python3 analyze.py",
-        "ordinary": f"cat {shlex.quote(str(tmp_path / 'ordinary.jsonl'))}",
-        "derived": f"cat {shlex.quote(str(tmp_path / 'bundle/conversation.jsonl'))}",
-        "unknown": "cat $RECORD",
-    }
-    payload = {
-        "tool_name": "Bash",
-        "tool_input": {"command": commands[operation]},
-        "cwd": str(tmp_path),
-        **({"turn_id": "codex-turn"} if codex else {}),
-    }
-    assert pretooluse.main(json.dumps(payload)) == 0
-    assert "session-review-evidence" not in capsys.readouterr().out
 
 
 def _question_decision(tmp_path: pathlib.Path, question: dict, **payload: str) -> str:

@@ -17,13 +17,8 @@ from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import function_hook_requests
 from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._hooks.pretooluse import dispatch, operation_skills, user_facing_checks
+from agent_toolkit._hooks.pretooluse import dispatch, user_facing_checks
 from agent_toolkit._hooks.pretooluse.decision import Decision
-
-
-@pytest.fixture(autouse=True)
-def _isolate_skill_notices(monkeypatch):
-    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 def _reason(payload: dict, tool: str, inputs: dict, capsys) -> str | None:
