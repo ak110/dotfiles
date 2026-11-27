@@ -61,7 +61,7 @@ def test_only_processing_conversation_can_exit(
     assert "processing_owner" not in _metadata(notes, name)
 
 
-@pytest.mark.parametrize("reason", [None, '利用者の確認: "終了済み"'])
+@pytest.mark.parametrize("reason", [None, 'ユーザーの確認: "終了済み"'])
 def test_same_host_handoff_without_process_records(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reason: str | None
 ) -> None:
@@ -80,7 +80,7 @@ def test_same_host_handoff_without_process_records(
     assert "担当の引き継ぎ:" in result and result.count("## 処理結果") == 1
     assert "稼働中のホストプロセスを確認できなかった" in result
     assert "ホストプロセスの終了を確認" not in result
-    assert ('利用者の確認: \\"終了済み\\"' in result) is (reason is not None)
+    assert ('ユーザーの確認: \\"終了済み\\"' in result) is (reason is not None)
 
 
 @pytest.mark.parametrize("human", [False, True])
