@@ -6,10 +6,9 @@
 各項目の値は、スキルや資料の可否に依存しない解消の操作を書く。
 """
 
-import pathlib
 import re
 
-_ROOT = pathlib.Path(__file__).resolve().parents[1]
+from scripts.verification_scan_rules import scan_files
 
 ALLOWED_BLOCK_HOOKS = {
     "permission_denial_notice": "拒否1件につき質問・報告・終了のいずれかを1回止め、既存の拒否確認手順を示す",
@@ -25,9 +24,7 @@ ALLOWED_BLOCK_HOOKS = {
 
 def test_block_hooks_are_listed() -> None:
     found: set[str] = set()
-    for path in _ROOT.rglob("*.py"):
-        if path.name.endswith("_test.py"):
-            continue
+    for path in scan_files(__file__):
         text = path.read_text(encoding="utf-8")
         for literal, name in re.findall(r"(?:block_formatter|_block_notice_formatter)\(\s*(?:\"([^\"]+)\"|(\w+))\s*\)", text):
             constant = re.search(rf"^{name}\s*=\s*\"([^\"]+)\"", text, re.MULTILINE) if name else None

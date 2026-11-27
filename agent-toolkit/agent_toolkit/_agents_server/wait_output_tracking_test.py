@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from typing import Any
 
 import pytest
 
@@ -205,6 +206,37 @@ async def test_child_session_collected_by_agents_wait_leaves_auto_resume_targets
 
     assert session.live_child_session_ids == {"child-2"}
     assert resume_waits.has_pending_auto_resume_targets(session)
+
+
+@pytest.mark.parametrize("background", [False, True])
+@pytest.mark.asyncio
+async def test_claude_wait_output_does_not_consume_child_restarted_during_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, background: bool
+) -> None:
+    session = state.SessionState("parent", str(tmp_path), engine="claude")
+    for child in ("old-child", "other-child"):
+        session.record_child_activity(child)
+    text = "\n".join(json.dumps({"session_id": child, "status": "completed"}) for child in ("old-child", "other-child"))
+    path = tmp_path / "wait.out"
+    path.write_text(text + "\n", encoding="utf-8")
+    session.agents_wait_background_outputs.add(str(path))
+    run = wait_output_tracking.run_file_operation
+
+    async def restart_after_read(function, /, *args: Any):
+        collected = await run(function, *args)
+        wait_output_tracking.consume_agents_server_tool_result(
+            session, "send_message", {"session_id": "old-child"}, {"delivery": "reply_started"}
+        )
+        return collected
+
+    monkeypatch.setattr(wait_output_tracking, "run_file_operation", restart_after_read)
+    if background:
+        await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
+    else:
+        await wait_output_tracking.consume_agents_wait_output_async(session, text)
+
+    assert session.live_child_session_ids == {"old-child"}
+    assert set(session.claude_child_completion_tokens) == {"old-child"}
 
 
 def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Path) -> None:

@@ -24,6 +24,86 @@ from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _run
 
 
 @pytest.mark.parametrize(
+    ("tool_name", "command", "host", "expected_reason"),
+    [
+        (
+            "Bash",
+            "cat > record.md <<'EOF'\n作業記録\nEOF\npgrep -f pytest",
+            "claude-code",
+            "`pgrep -f`のパターンがこのコマンド自身の本文に一致する",
+        ),
+        ("PowerShell", "atk config temporary clear", "codex", "モデル・接続設定"),
+        ("exec_command", "atk config temporary clear", "codex", "モデル・接続設定"),
+        ("functions.exec_command", "atk config temporary clear", "codex", "モデル・接続設定"),
+    ],
+    ids=["bash", "powershell-classification", "exec_command", "functions.exec_command"],
+)
+def test_public_shell_denial_explains_unexecuted_command(
+    tool_name: str, command: str, host: str, expected_reason: str, tmp_path: pathlib.Path
+) -> None:
+    payload = {"tool_name": tool_name, "tool_input": {"command": command}, "cwd": str(tmp_path)}
+    if host == "codex":
+        payload["turn_id"] = "codex-turn"
+
+    result = _run(payload)
+
+    assert result.returncode == 0 and not result.stderr
+    output = json.loads(result.stdout)
+    assert not validate_hook_output("PreToolUse", output, host=host)
+    specific = output["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    reason = specific["permissionDecisionReason"]
+    assert expected_reason in reason
+    assert reason.count("全体が実行されていない") == 1
+    assert "連結した他のコマンド" in reason
+    assert "リダイレクトや出力オプションによるファイルの作成" in reason
+    assert "前段が作るはずだったファイルの有無を確認" in reason
+    if host == "claude-code":
+        assert output["systemMessage"].count("全体が実行されていない") == 1
+    else:
+        assert "systemMessage" not in output
+
+
+def test_public_commit_denial_keeps_commit_retry_guidance(tmp_path: pathlib.Path) -> None:
+    result = _run(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "git add a.md && git commit -m '件名\n本文'"},
+            "cwd": str(tmp_path),
+        }
+    )
+
+    assert result.returncode == 0 and not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    reason = specific["permissionDecisionReason"]
+    assert "件名と本文の間の空行" in reason
+    assert reason.count("全体が実行されていない") == 1
+    assert "`git add`" in reason
+    assert "同じコマンド全体へ修正を加えて再実行してください" in reason
+
+
+def test_repository_protection_denial_guidance_depends_on_tool(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    monkeypatch.setattr(
+        pretooluse.repository_protection,
+        "path_restriction",
+        lambda *args, **kwargs: ("対象リポジトリの編集は許可されていない。", "対象の編集可否を確認してください。"),
+    )
+    for tool_name, tool_input in (
+        ("Bash", {"command": "git commit --amend"}),
+        ("Edit", {"file_path": str(tmp_path / "a.md"), "old_string": "旧", "new_string": "新"}),
+    ):
+        result = _run({"tool_name": tool_name, "tool_input": tool_input, "cwd": str(tmp_path)})
+
+        assert result.returncode == 0 and not result.stderr
+        specific = json.loads(result.stdout)["hookSpecificOutput"]
+        assert specific["permissionDecision"] == "deny"
+        reason = specific["permissionDecisionReason"]
+        assert "対象リポジトリの編集は許可されていない" in reason
+        assert reason.count("全体が実行されていない") == (1 if tool_name == "Bash" else 0)
+
+
+@pytest.mark.parametrize(
     ("command", "protected"),
     [
         ("atk config temporary set orchestrate_model codex:sol/medium", True),
@@ -44,14 +124,17 @@ from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _run
     ],
 )
 @pytest.mark.parametrize("is_codex", [False, True])
-def test_model_setting_command_uses_host_permission(command, protected, is_codex, capsys):
-    tool_input = {"command": command}
-    payload = {"session_id": "permission-test", "tool_input": tool_input}
-    decision = pretooluse._decide(payload, "Bash", tool_input, "permission-test", is_codex=is_codex)
-    assert pretooluse._emit(decision, [], is_codex=is_codex) == 0
-    output = capsys.readouterr().out
-    actual = json.loads(output)["hookSpecificOutput"].get("permissionDecision") if output else None
+def test_model_setting_command_uses_host_permission(command, protected, is_codex):
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+    if is_codex:
+        payload["turn_id"] = "codex-turn"
+    result = _run(payload)
+    assert result.returncode == 0 and not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"] if result.stdout else {}
+    actual = specific.get("permissionDecision")
     assert actual == (("deny" if is_codex else "ask") if protected else None)
+    if actual == "ask":
+        assert specific["permissionDecisionReason"] == "モデル・接続設定または一時指定の変更を許可しますか。"
 
 
 @pytest.mark.parametrize(("is_codex", "approve", "writes"), [(False, True, True), (False, False, False), (True, True, False)])

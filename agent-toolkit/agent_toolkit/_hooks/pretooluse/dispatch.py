@@ -97,6 +97,7 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks.agents_server_observations import start_observation_input
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.message_format import llm_notice
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import commit_identity, intake_edit, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
@@ -139,6 +140,7 @@ lazy from agent_toolkit._hooks.pretooluse.warning_context import (
 )
 
 _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
+_SHELL_TOOL_NAMES: frozenset[str] = frozenset({"Bash", "PowerShell", "exec_command", "functions.exec_command"})
 _MAIN_ONLY_MCP_TOOLS = frozenset(
     f"{prefix}{name}"
     for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
@@ -224,7 +226,7 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
             user_facing_checks.record_policy_question(payload, session_id, tool_name, tool_input)
             if not is_codex and tool_name == "Bash" and str(payload.get("tool_use_id", "")).startswith("repl_"):
                 observe_repl_bash(payload)
-        return _emit(decision, pending_notices, is_codex=is_codex)
+        return _emit(decision, pending_notices, is_codex=is_codex, shell_tool=tool_name in _SHELL_TOOL_NAMES)
 
 
 def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
@@ -233,7 +235,7 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
     読取を観測できないホスト（Antigravityなど）でも作業を止めないためである。
     """
     found: list[tuple[str, str]] = []
-    if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
+    if tool_name in _SHELL_TOOL_NAMES:
         from agent_toolkit._hooks.review_receipt import missing_before_response  # pylint: disable=import-outside-toplevel
 
         if missing := missing_before_response(payload, session_id, tool_input):
@@ -344,7 +346,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         if generic_block:
             return dataclasses.replace(launch, block=generic_block)
         return dataclasses.replace(launch, notices=(*launch.notices, generic_notice)) if generic_notice else launch
-    if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
+    if tool_name in _SHELL_TOOL_NAMES:
         shell = _decide_bash_tool(payload, tool_input, session_id, is_codex=is_codex) if tool_name == "Bash" else Decision()
         if shell.block is not None:
             return shell
@@ -391,14 +393,22 @@ def _completion_prerequisite(payload: dict, session_id: str) -> str | None:
     return None
 
 
-def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> int:
+def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool, shell_tool: bool = False) -> int:
     pending_notices.extend(decision.notices)
     hook_output: dict[str, object] = {"hookEventName": "PreToolUse"}
     # Codexは入力書換えを伴うallowだけを受理する。通常通過の権限判定はホストへ委ねる。
     force_allow = decision.allow and not is_codex
     if decision.block is not None:
         hook_output["permissionDecision"] = "deny"
-        hook_output["permissionDecisionReason"] = decision.block
+        reason = decision.block
+        if shell_tool:
+            reason += "\n\n" + llm_notice(
+                "このコマンドは全体が実行されていない。連結した他のコマンドの実行も、"
+                "リダイレクトや出力オプションによるファイルの作成も行われていない。\n"
+                "分割して再実行する場合は、前段が作るはずだったファイルの有無を確認してから後段を実行してください。",
+                "pretooluse",
+            )
+        hook_output["permissionDecisionReason"] = reason
     elif decision.ask is not None and not is_codex:
         hook_output["permissionDecision"] = "ask"
         hook_output["permissionDecisionReason"] = decision.ask

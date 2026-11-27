@@ -29,7 +29,7 @@ from agent_toolkit._agents_server import (
     session_identity,
 )
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._agents_server.claude_channels import _CommandChannel
+from agent_toolkit._agents_server.claude_channels import ChildCompletionDelivery, ChildCompletionPrompt, _CommandChannel
 from agent_toolkit._agents_server.claude_diagnostics import (
     _DEBUG_LOG_DIR_NAME,
     _DEBUG_LOG_RETENTION,
@@ -237,6 +237,8 @@ class ClaudeServerManager(ClaudeStream):
             # 渡し先を決めてから次のturnを始めるまでに待機を増やさないよう、同期で確かめる。
             launch_requests_preflight.require_working_directory(cwd)
             begin_reply(existing_session, preserve_waits=True)
+            if isinstance(prompt, ChildCompletionPrompt):
+                prompt.child_delivery.reply_key = (existing_session.turn_seq, existing_session.started_at)
         selected = connection_kind
         role = "orchestrator" if model_type == "orchestrate" else "delegate"
         _LOG.info("claude_connection_attempt connection=%s role=%s resumed=true", selected, role)
@@ -414,20 +416,28 @@ class ClaudeServerManager(ClaudeStream):
             result_contract_recovery_consumed=session.result_contract_recovery_consumed,
         )
 
-    async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
+    async def send_message(
+        self, session: SessionState, prompt: str, *, child_delivery: ChildCompletionDelivery | None = None
+    ) -> dict[str, Any]:
 
         lock = self._reply_locks.get(session.session_id)
         if lock is None:
             lock = self._reply_locks[session.session_id] = asyncio.Lock()
         async with lock:
-            return await self._send_message_owned(session, prompt)
+            if child_delivery is None:
+                return await self._send_message_owned(session, prompt)
+            return await self._send_message_owned(session, prompt, child_delivery=child_delivery)
 
-    async def _send_message_owned(self, session: SessionState, prompt: str) -> dict[str, Any]:
+    async def _send_message_owned(
+        self, session: SessionState, prompt: str, *, child_delivery: ChildCompletionDelivery | None = None
+    ) -> dict[str, Any]:
         channel = self._channels.get(session.session_id)
+        extra = {} if child_delivery is None else {"child_delivery": child_delivery}
+        retry = child_delivery is not None and session.claude_child_resume_retry_turn == session.turn_seq
         if channel is None:
-            if service_io.rehoming(session.session_id):
+            if service_io.rehoming(session.session_id) or retry:
                 previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
-                await self._resume_next_turn(session, prompt)
+                await self._resume_next_turn(session, prompt, **extra)
                 return {"delivery": "reply_started", "previous_result": previous}
             raise SessionOwnerGoneError("the Claude session owner task has ended")
         # 通常の追送と、孫sessionの終了・利用上限・過負荷の後の自動再開は、いずれもここで次のturnを始める。
@@ -435,23 +445,30 @@ class ClaudeServerManager(ClaudeStream):
         held_without_pending = session.awaiting_auto_resume and not resume_waits.has_pending_auto_resume_targets(session)
         if (session.terminal or held_without_pending) and session.claude_applied_effort != session.effort:
             previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
-            await self._resume_next_turn(session, prompt)
+            await self._resume_next_turn(session, prompt, **extra)
             return {"delivery": "reply_started", "previous_result": previous}
         role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
 
         if (session.terminal or held_without_pending) and claude_connection.outside_order(session.claude_connection, role):
             previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
-            await self._resume_next_turn(session, prompt)
+            await self._resume_next_turn(session, prompt, **extra)
             return {"delivery": "reply_started", "previous_result": previous}
         if (session.terminal or held_without_pending) and _returns_to_subscription(session):
-            return await self._return_to_subscription(session, prompt)
-        async with session.turn_control_lock:
-            if not session.terminal and session.interrupt_requested:
-                raise ActionableError(
-                    "the active Claude turn is being interrupted", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION
-                )
-            future = channel.send("prompt", prompt)
-            actual_delivery, previous_result = await future
+            return await self._return_to_subscription(session, prompt, **extra)
+        try:
+            async with session.turn_control_lock:
+                if not session.terminal and session.interrupt_requested:
+                    raise ActionableError(
+                        "the active Claude turn is being interrupted",
+                        next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION,
+                    )
+                future = channel.send("prompt", prompt, **extra)
+                actual_delivery, previous_result = await future
+        except SessionOwnerGoneError:
+            if not retry or child_delivery is None or child_delivery.outcome != "not_sent":
+                raise
+            await self._resume_next_turn(session, prompt, child_delivery=child_delivery)
+            return {"delivery": "reply_started", "previous_result": None}
         result: dict[str, Any] = {"delivery": actual_delivery}
         if actual_delivery in {"reply_started", "reply_failed", "reply_ambiguous"}:
             result["previous_result"] = previous_result
@@ -466,7 +483,9 @@ class ClaudeServerManager(ClaudeStream):
         if delivery != "effort_applied":
             raise RuntimeError(f"Claude effort設定を確認できない: {delivery}")
 
-    async def _return_to_subscription(self, session: SessionState, prompt: str) -> dict[str, Any]:
+    async def _return_to_subscription(
+        self, session: SessionState, prompt: str, *, child_delivery: ChildCompletionDelivery | None = None
+    ) -> dict[str, Any]:
         """APIへ移した会話を、次のturnの指示とともにサブスクリプションの新しい所有タスクで再開する。
 
         接続は所有タスクの起動時に決まるため、上限でAPIへ移した場合と同じ再開の処理で同じsession IDを続ける。
@@ -480,14 +499,21 @@ class ClaudeServerManager(ClaudeStream):
         session.claude_connection_failures.pop("subscription", None)
         _LOG.info("claude_subscription_return session_id=%s", session.session_id)
         try:
-            await self._resume_next_turn(session, prompt)
+            if child_delivery is None:
+                await self._resume_next_turn(session, prompt)
+            else:
+                await self._resume_next_turn(session, prompt, child_delivery=child_delivery)
         except BaseException:
             session.claude_connection, session.claude_api_env_file, session.claude_subscription_retry_at = saved
             raise
         return {"delivery": "reply_started", "previous_result": previous_result}
 
-    async def _resume_next_turn(self, session: SessionState, prompt: str) -> None:
-        resume_prompt = ResumePrompt(prompt)
+    async def _resume_next_turn(
+        self, session: SessionState, prompt: str, *, child_delivery: ChildCompletionDelivery | None = None
+    ) -> None:
+        if child_delivery is not None and not child_delivery.accept(session):
+            raise RuntimeError("子の完了通知を待っていたターンは終了しました")
+        resume_prompt = ResumePrompt(prompt) if child_delivery is None else ChildCompletionPrompt(prompt, child_delivery)
         try:
             await self.resume(
                 session.session_id,
@@ -501,6 +527,15 @@ class ClaudeServerManager(ClaudeStream):
                 turn_seq=session.turn_seq,
                 existing_session=session,
             )
+        except Exception:
+            if (
+                child_delivery is not None
+                and child_delivery.outcome == "not_sent"
+                and child_delivery.owns_reply(session)
+                and not session.terminal
+            ):
+                child_delivery.held.restore(session)
+            raise
         finally:
             resume_prompt.close()
 

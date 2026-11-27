@@ -266,7 +266,10 @@ def test_structured_denial_defers_notice_receipts_until_injection(tmp_path, monk
     monkeypatch.setattr(dispatch, "_decide", decide)
     raw = _payload(tmp_path, toolCall={"name": "run_command", "args": {"CommandLine": "echo ok"}})
     session = raw["conversationId"]
-    assert _run(raw, "PreToolUse", capsys) == {"decision": "deny", "reason": "拒否理由"}
+    result = _run(raw, "PreToolUse", capsys)
+    assert result["decision"] == "deny"
+    assert result["reason"].startswith("拒否理由\n\n")
+    assert result["reason"].count("全体が実行されていない") == 1
     state = session_state.read_state(session)
     assert not state.get("notice_fingerprints")
     assert not state.get("operation_skill_delivered_agents", {}).get("read-guidance:test")

@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 import subprocess
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._common.markdown_headings import h2_section_bodies
@@ -12,6 +13,8 @@ from agent_toolkit._git import command as git_command
 
 from pytools._internal import repository_references
 from pytools._internal.common import format_cli_error
+from scripts.verification_scan_rules import required_scan_tests
+from scripts.verification_script_uses import required_script_tests
 
 _HELP_TEST = "agent-toolkit/agent_toolkit/atk_help_test.py"
 _LINK_TEST = "markdown_link_anchor_invariant_test.py"
@@ -47,6 +50,37 @@ def _diff(root: pathlib.Path, base: str, *args: str) -> bytes:
         )
         raise ValueError(f"統合候補の差分を取得できない: {format_cli_error(diagnostic)}")
     return result.stdout
+
+
+def _changes(root: pathlib.Path, base: str) -> dict[str, str]:
+    if re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", base) is None:
+        raise ValueError("統合先の基点には完全なcommit OIDを指定する")
+    fields = os.fsdecode(_diff(root, base, "--name-status", "-z")).split("\0")[:-1]
+    return {name: kind for kind, name in zip(fields[::2], fields[1::2], strict=True)}
+
+
+def _listed_paths(root: pathlib.Path, *args: str) -> set[pathlib.Path]:
+    listed = git_command.run(["-C", str(root), "ls-files", "-z", *args], capture_output=True, timeout=60)
+    if listed.returncode:
+        diagnostic = subprocess.CompletedProcess(
+            listed.args, listed.returncode, os.fsdecode(listed.stdout), os.fsdecode(listed.stderr)
+        )
+        raise ValueError(f"追跡ファイルを取得できない: {format_cli_error(diagnostic)}")
+    paths = {(root / os.fsdecode(name)).resolve() for name in listed.stdout.split(b"\0") if name}
+    if any(not path.is_relative_to(root) for path in paths):
+        raise ValueError("Gitが列挙したファイルがリポジトリ外を参照している")
+    return paths
+
+
+def _scoped_required_tests(
+    root: pathlib.Path, base: str, changes: Mapping[str, str], paths: Iterable[pathlib.Path]
+) -> list[dict[str, str]]:
+    if not changes:
+        return []
+    tests = (path for path in paths if _is_test(path) and path.is_file())
+    sources = (name for name in changes if not _is_test(pathlib.PurePosixPath(name)))
+    rows = required_scan_tests(changes) + required_script_tests(root, tests, sources, base=base)
+    return [row for row in rows if (root / row["test"]).is_file()]
 
 
 def _role_generation_python(source: str, entries: set[str]) -> dict[str, str]:
@@ -148,10 +182,9 @@ def _changes_role_generation(root: pathlib.Path, base: str, name: str, change: s
     return _role_generation_source(name, before) != _role_generation_source(name, after)
 
 
-def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
-    if re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", base) is None:
-        raise ValueError("統合先の基点には完全なcommit OIDを指定する")
-    names = [os.fsdecode(name) for name in _diff(root, base, "--name-only", "-z").split(b"\0") if name]
+def _diff_contracts(root: pathlib.Path, base: str, names: Mapping[str, str]) -> list[dict[str, str]]:
+    if not names:
+        return []
     patch = _diff(root, base, "--unified=0").decode("utf-8", errors="replace")
     changes = re.split(r"^diff --git ", patch, flags=re.MULTILINE)[1:]
     if len(names) != len(changes):
@@ -207,6 +240,13 @@ def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
     return [{"test": test, "reason": reason} for test, reason in sorted(found)]
 
 
+def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
+    changes = _changes(root, base)
+    if not changes:
+        return []
+    return _diff_contracts(root, base, changes) + _scoped_required_tests(root, base, changes, _listed_paths(root, "--", "*.py"))
+
+
 def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = None) -> dict[str, Any]:
     """直接importは必須、文字列参照と同接頭辞は意味判定の候補にする。
 
@@ -214,24 +254,29 @@ def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = N
     静的importで確定できる範囲と、命名・本文から得た探索候補を分け、網羅性は保証しない。
     """
     root = root.resolve()
-    changed: set[pathlib.Path] = set()
-    relative_files: list[str] = []
+    requested: set[pathlib.Path] = set()
     for name in files:
         path = (root / name).resolve()
-        if not path.is_relative_to(root) or not path.is_file():
+        if not path.is_relative_to(root):
             raise ValueError(f"リポジトリ内のファイルでない: {name}")
-        relative_files.append(path.relative_to(root).as_posix())
-        if not _is_test(path):
-            changed.add(path)
-    listed = git_command.run(["-C", str(root), "ls-files", "-z", "--", "*.py"], capture_output=True, timeout=60)
-    if listed.returncode:
-        diagnostic = subprocess.CompletedProcess(
-            listed.args, listed.returncode, os.fsdecode(listed.stdout), os.fsdecode(listed.stderr)
-        )
-        raise ValueError(f"追跡ファイルを取得できない: {format_cli_error(diagnostic)}")
-    paths = {(root / os.fsdecode(name)).resolve() for name in listed.stdout.split(b"\0") if name}
-    if any(not path.is_relative_to(root) for path in paths):
-        raise ValueError("追跡ファイルがリポジトリ外を参照している")
+        requested.add(path)
+    paths = _listed_paths(root, "--", "*.py")
+    head = git_command.run(["-C", str(root), "rev-parse", "--verify", "HEAD"], capture_output=True, text=True, timeout=60)
+    if head.returncode:
+        raise ValueError(f"HEADを取得できない: {format_cli_error(head)}")
+    head_oid = head.stdout.strip()
+    changes = _changes(root, base or head_oid)
+    for path in requested:
+        if not path.is_file() and changes.get(path.relative_to(root).as_posix()) != "D":
+            raise ValueError(f"リポジトリ内のファイルでない: {path}")
+    existing = {path for path in requested if path.is_file()}
+    changed = {path for path in existing if not _is_test(path)}
+    relative_files = [path.relative_to(root).as_posix() for path in existing]
+    selected_cross = _diff_contracts(root, base or head_oid, changes)
+    if base is None and existing:
+        literal = [f":(literal){name}" for name in relative_files]
+        for path in _listed_paths(root, "--others", "--exclude-standard", "--", *literal):
+            changes.setdefault(path.relative_to(root).as_posix(), "A")
     support = _support_references(paths, root, changed)
     hook_entries = _hook_entry_references(paths, root, changed)
     candidates: list[dict[str, Any]] = []
@@ -278,13 +323,9 @@ def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = N
                     }
                 )
     reference_contracts = _reference_contracts(root, relative_files)
-    head = git_command.run(["-C", str(root), "rev-parse", "--verify", "HEAD"], capture_output=True, text=True, timeout=60)
-    if head.returncode:
-        raise ValueError(f"HEADを取得できない: {format_cli_error(head)}")
-    head_oid = head.stdout.strip()
-    selected_cross = cross_contracts(root, base or head_oid)
     if base is None:
         selected_cross = [item for item in selected_cross if item["reason"] == "role-document-generation"]
+    selected_cross += _scoped_required_tests(root, base or head_oid, changes, paths)
     return {
         "head": head_oid,
         **({"base": base} if base is not None else {}),
@@ -400,7 +441,7 @@ def _imported_modules(tree: ast.AST, path: pathlib.Path) -> set[str]:
 def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]:
     candidates = snapshot["candidates"]
     assert isinstance(candidates, list)
-    contracts = {item["test"] for item in snapshot.get("reference_contracts", [])}
+    contracts = {item["test"] for group in ("reference_contracts", "cross_contracts") for item in snapshot.get(group, [])}
     ambiguous = {
         (item["source"], item["test"]) for item in candidates if not item["required"] and item["test"] not in contracts
     }
@@ -431,7 +472,6 @@ def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]
         raise ValueError("利用試験の曖昧候補に意味判定が不足している。候補JSONへ根拠付きdecisionsを記録する")
     return sorted(
         {item["test"] for item in candidates if item["required"] or decisions.get((item["source"], item["test"]), False)}
-        | {item["test"] for item in snapshot.get("cross_contracts", [])}
         | contracts
     )
 

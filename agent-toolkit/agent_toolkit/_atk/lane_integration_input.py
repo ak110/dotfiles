@@ -306,7 +306,7 @@ def amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing.
 def has_worktree_changes(tree: pathlib.Path) -> bool:
     status = _lane_records.git(tree, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=none")
 
-    return any(entry and not entry.startswith("1 .M SC.. ") for entry in status.split("\0"))
+    return any(entry and not entry.startswith(("# ", "1 .M SC.. ")) for entry in status.split("\0"))
 
 
 def assert_integration_tree(

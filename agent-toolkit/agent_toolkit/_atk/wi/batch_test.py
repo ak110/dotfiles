@@ -10,7 +10,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as add_module
-from agent_toolkit._atk.wi import batch
+from agent_toolkit._atk.wi import add_drafts, batch, frontmatter
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import show as show_module
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -212,7 +212,7 @@ def test_parse_rejects_non_show_format(text: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "frontmatter",
+    "header",
     [
         "target_repo: github.com/example/foo\n",
         "target_repo: github.com/example/foo\ntype: plan\n",
@@ -221,8 +221,8 @@ def test_parse_rejects_non_show_format(text: str) -> None:
         "target_repo:\n- github.com/example/foo\ntype: awi\n",
     ],
 )
-def test_parse_rejects_invalid_frontmatter(frontmatter: str) -> None:
-    text = f"### a.md [inbox]\n---\n{frontmatter}---\n\n本文\n\n"
+def test_parse_rejects_invalid_frontmatter(header: str) -> None:
+    text = f"### a.md [inbox]\n---\n{header}---\n\n本文\n\n"
 
     with pytest.raises(WebInputError):
         batch.parse_show_batch(text)
@@ -714,8 +714,12 @@ def test_show_all_output_round_trips_into_another_repository(
         source=None,
         now=_FIXED_DT,
         target_commit="b" * 40,
+        draft_namespace="work-contract",
     )
     originals = {name: (source_notes / "2024" / "01" / name).read_text(encoding="utf-8") for name in generated}
+    for text in originals.values():
+        parsed = frontmatter.parse_frontmatter(text)
+        assert parsed is not None and add_drafts.RETRY_FINGERPRINT in parsed[0]
 
     mapping, _skipped, warnings = batch.add_batch_entries(
         target_notes,

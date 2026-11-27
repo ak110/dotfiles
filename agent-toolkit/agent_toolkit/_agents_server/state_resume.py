@@ -284,7 +284,8 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True, prese
     session.record_turn_running()
     if not preserve_waits:
         session.live_child_session_ids.clear()
-        session.terminal_child_session_ids.clear()
+        session.discard_child_completions(session.terminal_child_session_ids)
+        session.claude_child_completion_tokens.clear()
         session.codex_terminal_subagent_thread_ids.clear()
         session.agents_wait_background_outputs.clear()
         session.child_tool_uses.clear()

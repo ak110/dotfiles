@@ -2,7 +2,6 @@
 
 import pathlib
 import re
-import subprocess
 
 import pytest
 from agent_toolkit._agents_server import launch_prompts, launch_requests_inputs
@@ -28,6 +27,8 @@ from agent_toolkit._testing.normative_contract import (
     section_text,
 )
 
+from scripts.verification_scan_rules import scan_files
+
 
 def test_all_launch_contract_inputs_are_generated() -> None:
     """返却生成の対象表にない起動契約も、入力宣言との同期を保つ。"""
@@ -47,7 +48,9 @@ def _early_recipient_reads(text: str, recipient: str) -> list[str]:
 def test_callers_do_not_preread_launched_role_documents() -> None:
     """起動契約の読込表は委譲先を先読みさせない。同じ担当の直接実行は別経路とする。"""
     root = pathlib.Path(__file__).resolve().parent
+    sources = set(scan_files(__file__, "launch-contracts"))
     for parent, role in task_documents.launch_contract_documents(root):
+        assert parent in sources
         recipient = f"{role}{task_documents.TASK_DOCUMENT_SUFFIX}"
         assert not _early_recipient_reads(parent.read_text(encoding="utf-8"), recipient), parent
 
@@ -181,8 +184,8 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
     entry = plugin_root / "skills" / "atk-mode"
-    parents = task_documents.role_documents(plugin_root, ".parent.md")
-    recipients = task_documents.role_documents(plugin_root)
+    parents = scan_files(__file__, "parents")
+    recipients = scan_files(__file__, "recipients")
 
     shared = [
         entry / "playbooks" / name
@@ -224,10 +227,9 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
     宣言外の項目を渡す委譲元の手順は、`agents_server`の`start`が起動を拒否するため成立しない。
     全ての`<役割名>.subagent.md`の宣言が読めること（不正な`mode:`を含まないこと）も同時に確かめる。
     """
-    plugin_root = pathlib.Path(__file__).resolve().parent
-    recipients = {path.name: path for path in task_documents.role_documents(plugin_root)}
+    recipients = {path.name: path for path in scan_files(__file__, "recipients")}
     errors: list[str] = []
-    parents = task_documents.role_documents(plugin_root, ".parent.md")
+    parents = scan_files(__file__, "parents")
     launched = {target for parent in parents for target in _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)[0]}
     for parent in parents:
         targets, _ = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
@@ -249,7 +251,7 @@ def test_every_task_document_declares_worktree_write() -> None:
     `atk lane integrate`の稼働判定は、宣言を読めない役割の担当を書込主体として数え、統合を止める。
     起動対象を持たない役割文書も判定の対象になるため、起動関係からではなく全文書を列挙して確かめる。
     """
-    documents = task_documents.role_documents(pathlib.Path(__file__).resolve().parent)
+    documents = scan_files(__file__, "recipients")
     errors = [
         declaration for document in documents if isinstance(declaration := task_documents.read_declaration(document), str)
     ]
@@ -285,13 +287,10 @@ def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Pat
 
 def test_recurrence_viewpoint_heading_marks_only_viewpoint_files() -> None:
     root = pathlib.Path(__file__).resolve().parent.parent
-    tracked = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"], capture_output=True, check=True
-    ).stdout.decode("utf-8")
     collected = [
         path
-        for path in (root / name for name in tracked.split("\0") if name)
-        if path.is_file() and re.search(r"^# 再発防止セルフチェック観点", path.read_text(encoding="utf-8"), flags=re.MULTILINE)
+        for path in scan_files(__file__)
+        if re.search(r"^# 再発防止セルフチェック観点", path.read_text(encoding="utf-8"), flags=re.MULTILINE)
     ]
     assert root / "agent-toolkit/skills/atk-mode/references/recurrence-self-check-items.md" in collected
     for path in collected:

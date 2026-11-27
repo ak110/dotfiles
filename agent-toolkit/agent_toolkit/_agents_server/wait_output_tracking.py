@@ -80,17 +80,19 @@ async def consume_claude_agents_server_message_async(session: SessionState, mess
 
 
 async def consume_agents_wait_output_async(session: SessionState, text: str) -> None:
+    observed_activity = session.claude_child_completion_tokens.copy() if session.engine == "claude" else None
     collected = await run_file_operation(_collected_from_wait_output, text)
     session.agents_wait_background_outputs.update(background_output.output_paths(text))
-    _discard_initial_turn_collections(session, collected)
+    _discard_initial_turn_collections(session, collected, observed_activity)
 
 
 async def consume_agents_wait_background_outputs_async(session: SessionState) -> None:
     paths = tuple(session.agents_wait_background_outputs)
     if not paths:
         return
+    observed_activity = session.claude_child_completion_tokens.copy() if session.engine == "claude" else None
     collected = await run_file_operation(_read_background_outputs, paths)
-    _discard_initial_turn_collections(session, collected)
+    _discard_initial_turn_collections(session, collected, observed_activity)
 
 
 def _read_background_outputs(paths: tuple[str, ...]) -> set[str]:
@@ -118,8 +120,7 @@ def consume_agents_server_tool_result(
             return
         session_id = arguments.get("session_id") if operation == "resume" else result.get("session_id")
         if isinstance(session_id, str) and session_id:
-            session.live_child_session_ids.add(session_id)
-            session.terminal_child_session_ids.discard(session_id)
+            session.record_child_activity(session_id)
         return
     if operation == "release":
         session_id = arguments.get("session_id")
@@ -134,7 +135,7 @@ def consume_agents_server_tool_result(
         return
     if result.get("status") in TERMINAL_STATUSES | {"expired"} and session_id in session.live_child_session_ids:
         session.live_child_session_ids.discard(session_id)
-        session.terminal_child_session_ids.add(session_id)
+        session.record_child_completion(session_id)
 
 
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
@@ -204,10 +205,14 @@ def consume_agents_wait_background_outputs(session: SessionState) -> None:
     _discard_initial_turn_collections(session, collected)
 
 
-def _discard_initial_turn_collections(session: SessionState, children: set[str]) -> None:
+def _discard_initial_turn_collections(
+    session: SessionState, children: set[str], observed_activity: dict[str, str] | None = None
+) -> None:
     tracked = session.live_child_session_ids | session.terminal_child_session_ids
     for child in children & tracked:
         if not session_layout.valid_session_id(child):
+            continue
+        if observed_activity is not None and observed_activity.get(child) != session.claude_child_completion_tokens.get(child):
             continue
 
         current = session_registry.resolve(child)
@@ -256,7 +261,7 @@ def _lines_outside_wait_bodies(text: str) -> list[str]:
 
 def _discard_collected(session: SessionState, collected: set[str]) -> None:
     session.live_child_session_ids.difference_update(collected)
-    session.terminal_child_session_ids.difference_update(collected)
+    session.discard_child_completions(collected)
 
 
 def _agents_server_tool_name(tool_name: str) -> str | None:

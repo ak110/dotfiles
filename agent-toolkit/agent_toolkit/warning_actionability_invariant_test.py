@@ -6,6 +6,8 @@ import re
 
 import pytest
 
+from scripts.verification_scan_rules import scan_files
+
 _DECLARATIVE_ACTION = re.compile(
     r"(?:確認する|取得する|再読する|実行する|戻る|進む|保存する|報告する|再試行する)(?=[。.!！]|$)"
 )
@@ -137,19 +139,16 @@ def test_warning_actionability_invariant() -> None:
     violations: list[str] = []
     sources = {}
     modules = {}
-    for root in (repository / "agent-toolkit" / "agent_toolkit", repository / "pytools"):
-        for path in root.rglob("*.py"):
-            if path.name.endswith("_test.py") or "_testing" in path.parts:
-                continue
-            source = path.read_text(encoding="utf-8-sig")
-            sources[path] = source
-            relative = path.relative_to(repository).with_suffix("").parts
-            if relative[0] == "agent-toolkit":
-                relative = relative[1:]
-            if relative[-1] == "__init__":
-                relative = relative[:-1]
-            definitions = _definitions(ast.parse(source))
-            modules[".".join(relative)] = {key: _strings(value, definitions) for key, value in definitions.items()}
+    for path in scan_files(__file__):
+        source = path.read_text(encoding="utf-8-sig")
+        sources[path] = source
+        relative = path.relative_to(repository).with_suffix("").parts
+        if relative[0] == "agent-toolkit":
+            relative = relative[1:]
+        if relative[-1] == "__init__":
+            relative = relative[:-1]
+        definitions = _definitions(ast.parse(source))
+        modules[".".join(relative)] = {key: _strings(value, definitions) for key, value in definitions.items()}
     for path, source in sources.items():
         violations.extend(f"{path}:{line}" for line in _violations(source, modules))
     assert not violations, "\n".join(violations)

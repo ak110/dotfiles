@@ -11,6 +11,7 @@ import pytest
 from agent_toolkit._hooks import work_contract
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook
+from scripts.verification_scan_rules import scan_files
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _ALLOWED_BARE_IDENTIFIERS = frozenset(
@@ -74,7 +75,7 @@ def _literal_text(node: ast.expr, constants: dict[str, str]) -> str | None:
 
 
 def _collect_notice_texts() -> list[tuple[str, str]]:
-    sources = [path for path in sorted(_HOOK_SOURCE_ROOT.rglob("*.py")) if not path.name.endswith("_test.py")]
+    sources = scan_files(__file__)
     trees = {path: ast.parse(path.read_text(encoding="utf-8")) for path in sources}
     constants: dict[str, str] = {}
     for tree in trees.values():

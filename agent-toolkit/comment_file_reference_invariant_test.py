@@ -8,38 +8,23 @@ import ast
 import io
 import pathlib
 import re
-import subprocess
 import tokenize
 
 import pytest
 from agent_toolkit._testing.git_repository import commit_all, init_repository
+
+from scripts.verification_scan_rules import scan_files
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
 _FILE_NAME_PATTERN = re.compile(r"[A-Za-z0-9_.*/\\-]*?([A-Za-z0-9_*-]+\.py)(?![A-Za-z0-9_])")
 
 
 def _tracked_names() -> set[str]:
-    result = subprocess.run(
-        ["git", "-C", str(_PLUGIN_ROOT), "ls-files", "-z", "--", ":/"],
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    return {pathlib.PurePosixPath(path).name for path in result.stdout.split("\0") if path and (_PLUGIN_ROOT / path).is_file()}
+    return {path.name for path in scan_files(__file__, "names", repository=_PLUGIN_ROOT.parent)}
 
 
 def _plugin_python_files() -> list[pathlib.Path]:
-    result = subprocess.run(
-        ["git", "-C", str(_PLUGIN_ROOT), "ls-files", "-z", "--", "*.py"],
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    return [_PLUGIN_ROOT / path for path in result.stdout.split("\0") if path and (_PLUGIN_ROOT / path).is_file()]
+    return scan_files(__file__, repository=_PLUGIN_ROOT.parent)
 
 
 def _docstring_and_comment_lines(source: str) -> list[tuple[int, str]]:

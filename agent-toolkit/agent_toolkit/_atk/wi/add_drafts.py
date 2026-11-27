@@ -9,7 +9,7 @@ from graphlib import CycleError, TopologicalSorter
 
 from agent_toolkit._atk import outcome
 from agent_toolkit._atk.wi import filenames, frontmatter, layout
-from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._git import command as _git_command
@@ -18,6 +18,7 @@ KEY = "key"
 NEEDS = "needs"
 PROPOSAL_ID_KEY = "proposal_id"
 FINGERPRINT = "proposal_fingerprint"
+RETRY_FINGERPRINT = "draft_retry_fingerprint"
 _KEY = re.compile(r"[A-Za-z0-9_-]+")
 _REFERENCE = re.compile(r"\{\{key:([^{}]*)\}\}")
 _NEXT = "原稿のkey・needs・本文の参照を見直してから、原稿の組を再投入する"
@@ -86,6 +87,24 @@ def _registered(private_notes: pathlib.Path, proposals: set[str], *, reject_dupl
                         next_action="登録済みWIを確かめ、別のproposal_idを付ける",
                     )
                 result.setdefault(value, (path.name, parsed[0].get(FINGERPRINT)))
+    return result
+
+
+def retry_fingerprint(namespace: str, data: dict[str, object], body: str) -> str:
+    # target_commitは起草の基点であり、更新後に同じ原稿を再投入しても別の要求にはならない。 pyfltr: allow-comment
+    stable = {key: value for key, value in sorted(data.items()) if key != "target_commit"}
+    content = frontmatter.normalize_newlines(frontmatter.serialize_frontmatter(stable, body))
+    return hashlib.sha256(f"{namespace}\0{content}".encode()).hexdigest()
+
+
+def registered_retries(private_notes: pathlib.Path) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for path in layout.iter_entry_paths(private_notes):
+        parsed = frontmatter.parse_frontmatter(frontmatter.decode_entry_text(path.read_bytes()))
+        if parsed is not None and parsed[0].get("type") == WI_TYPE_AWI:
+            fingerprint = parsed[0].get(RETRY_FINGERPRINT)
+            if isinstance(fingerprint, str):
+                result.setdefault(fingerprint, path.name)
     return result
 
 
@@ -205,10 +224,14 @@ def _check_registered(draft: Draft, name: str, fingerprint: object, referenced: 
             next_action=f"別のproposal_idを指定するか、`atk wi edit {name} --body-file <原稿>`で更新する",
         )
     else:
-        outcome.report_warning(
-            f"同じ原稿は登録済みのため再登録しなかった: {name}",
-            next_action=f"`atk wi show {name}`で登録済みの内容を確かめる",
-        )
+        warn_already_registered(name)
+
+
+def warn_already_registered(name: str) -> None:
+    outcome.report_warning(
+        f"同じ原稿は登録済みのため再登録しなかった: {name}",
+        next_action=f"`atk wi show {name}`で登録済みの内容を確かめる",
+    )
 
 
 DRAFT_BASIS_NEXT = "上流があれば取得し、無ければ宛先ブランチを使って基点を選び直す。影響する前提を調べ、原稿を検収し直す"

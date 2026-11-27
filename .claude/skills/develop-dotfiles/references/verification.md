@@ -60,6 +60,9 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
   該当節は「.claude/skills/develop-dotfiles/references/verification.md：変更範囲の検証の値：2026年10月4日」である。
 - 合成後に必要な横断テストは、`scripts/pyfltr_precommit.py --consumer-tests --against <統合先の完全OID> <変更ファイル...>` の `cross_contracts` を通常の利用側に加える。
   規範の記録と時刻の不変条件、CLI登録・ヘルプ、Markdownの参照、追跡する語句、子プロセスの終了を、該当する差分に限って確かめる。
+  リポジトリを走査するテストは、各テストと選定器が共有する走査範囲に変更がある場合に加える。
+  スクリプトの登録と静的な呼び出しをたどって解決できる利用側も加える。
+  動的な呼び出しは直接影響範囲の調査で補う。
 - コミットフックの実行範囲: `pyfltr fast`は`<ツール名>-fast`がtrueのツールだけを実行し、本リポジトリではpylint・mypy・pyrightなどを含まない。
   そのため、計画のlint（`uv run --frozen pyfltr run --disable=pytest <変更パス>`）全体をフックの成功で置き換えられない。
   実効値は`uv run --frozen pyfltr config list --all`の`*-fast`、実行済みのツールは`uv run --frozen pyfltr list-runs`の`commands`で確かめる。

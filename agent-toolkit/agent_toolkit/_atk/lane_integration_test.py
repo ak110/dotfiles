@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 import yaml
 
-from agent_toolkit._atk import lane, lane_integration_input, plans_checkout, run_script
+from agent_toolkit._atk import lane, lane_integration_input, lane_records, plans_checkout, run_script
 from agent_toolkit._common import session_registry
 from agent_toolkit._plan import commit_mapping, locations
 from agent_toolkit._testing import git_repository, wi_entry_files
@@ -23,7 +23,7 @@ from agent_toolkit._testing.lane_integration_support import (
     _merged_integration,
     _write_empty_finalization_manifest,
 )
-from agent_toolkit._testing.lane_support import _create, _create_args, _invoke, _selection
+from agent_toolkit._testing.lane_support import _create, _create_args, _create_in, _invoke, _selection
 
 
 @pytest.mark.parametrize(
@@ -139,6 +139,79 @@ def test_integrate_public_lifecycle(
         assert code == 0 and final["selection_integrated"] is True, stderr
     code, deleted, stderr = _invoke(capsys, "delete")
     assert code == 0 and deleted["removed"] == ["lane-01"], stderr
+
+
+def test_stash_header_does_not_hide_worktree_changes(tmp_path: pathlib.Path) -> None:
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
+    path = repo / "tracked.txt"
+    path.write_text("基点", encoding="utf-8")
+    git_repository.commit_all(repo, "基点")
+    git_repository.run_git(repo, "config", "status.showStash", "true")
+    git_repository.run_git(repo, "update-ref", "--create-reflog", "refs/stash", "HEAD")
+    # Git 2.34.1 はstash件数をporcelain v2には出さない。  pyfltr: allow-comment
+    assert git_repository.git_output(repo, "status", "--porcelain=v2", "-z") in ("", "# stash 1\0")
+    assert not lane_integration_input.has_worktree_changes(repo)
+
+    path.write_text("未保存の変更", encoding="utf-8")
+    assert lane_integration_input.has_worktree_changes(repo)
+    git_repository.run_git(repo, "add", "--", path.name)
+    assert lane_integration_input.has_worktree_changes(repo)
+    git_repository.commit_all(repo, "変更")
+    assert not lane_integration_input.has_worktree_changes(repo)
+    (repo / "# stash 1").touch()
+    assert lane_integration_input.has_worktree_changes(repo)
+
+
+@pytest.mark.cpu_limit(5.0, reason="実Gitの統合・途中停止・同じ入力での再試行・回収の状態列を通す。")
+def test_integrate_unlisted_ci_lane_resumes_finalization_and_can_be_deleted(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
+    selected = tmp_path / "selection.yaml"
+    _integration_selection(selected, monkeypatch, repo)
+    original = selected.read_bytes()
+    code, record, stderr = _create_in(capsys, monkeypatch, "lane-test-session", repo, selected, lane_id="lane-03")
+    assert code == 0, stderr
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature.txt").write_text("修正", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "修正")
+    git_repository.run_git(repo, "config", "status.showStash", "true")
+    git_repository.run_git(repo, "update-ref", "--create-reflog", "refs/stash", "HEAD")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"plans": [], "wis": [], "verification": [], "handoff": str(handoff)}), encoding="utf-8")
+    args = _integration_args(record, repo, manifest, head)
+    save = lane_records.save
+
+    def interrupt_finalization(path: pathlib.Path, value: dict[str, Any]) -> None:
+        if value.get("integration", {}).get("phase") == "finalized":
+            raise OSError("最終化の保存失敗")
+        save(path, value)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(lane_records, "save", interrupt_finalization)
+        code, _, stderr = _invoke(capsys, *args)
+    assert code != 0 and "最終化の保存失敗" in stderr
+    record_path = pathlib.Path(record["record_path"])
+    assert json.loads(record_path.read_text(encoding="utf-8"))["integration"]["phase"] == "git-integrated"
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
+    reflog = git_repository.git_output(repo, "reflog", "show", "--format=%H")
+    assert selected.read_bytes() == original
+    code, retained, stderr = _invoke(capsys, "delete")
+    assert code != 0 and retained.get("retained"), stderr
+    assert record_path.exists()
+
+    for _ in range(2):
+        code, result, stderr = _invoke(capsys, *args)
+        assert code == 0, stderr
+        assert result["phase"] == "finalized" and result["integrated_head"] == head
+        assert result["selection_integrated"] is True
+    assert git_repository.git_output(repo, "reflog", "show", "--format=%H") == reflog
+    assert selected.read_bytes() == original
+    code, result, stderr = _invoke(capsys, "delete")
+    assert code == 0 and not result.get("retained"), stderr
+    assert not worktree.exists()
 
 
 def test_processed_wis_uses_explicit_names_without_interpreting_argv() -> None:
