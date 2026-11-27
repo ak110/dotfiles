@@ -86,16 +86,16 @@ def test_agent_rule_path_of_undetailed_wi_is_accepted_from_handoff(
 
 
 @pytest.mark.parametrize(
-    ("handoff", "warned"),
-    [((), True), (("- 形式検証の判定: 当てない（既存の排他で直列化している）\n",), False)],
+    "handoff",
+    [(), ("- 形式検証の判定: 当てない（既存の排他で直列化している）\n",)],
     ids=["missing", "handoff"],
 )
-def test_formal_verification_judgment_reads_wi_bodies_and_handoff(
-    repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path, handoff: tuple[str, ...], warned: bool
+def test_formal_verification_words_do_not_gate_wi_list(
+    repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path, handoff: tuple[str, ...]
 ) -> None:
     errors, warnings = _check(repo, tmp_path, (_EXEMPT,), handoff_texts=handoff)
     assert not errors, errors
-    assert any("形式検証の判定" in warning for warning in warnings) is warned, warnings
+    assert not any("形式検証の判定" in warning for warning in warnings), warnings
 
 
 def test_wi_list_plan_rejects_sections(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:

@@ -1,9 +1,7 @@
-import datetime
 import io
 import json
 import pathlib
 import sys
-import time
 
 import pytest
 
@@ -17,15 +15,13 @@ _OPTIONS = (
 
 
 @pytest.mark.parametrize("tool", ["request_user_input", "request_user_input_async"])
-def test_codex_policy_reapproval_accepts_revision_in_assistant_text(
+def test_codex_policy_reapproval_requires_matching_real_answer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tool: str
 ) -> None:
     monkeypatch.setattr(session_state, "state_path", lambda sid: tmp_path / f"{sid}.json")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     asynchronous = tool == "request_user_input_async"
-    rollout = tmp_path / "rollout.jsonl"
-    rollout.write_text(json.dumps({"type": "session_meta", "payload": {}}) + "\n", encoding="utf-8")
-    base = {"session_id": "codex", "turn_id": "turn", "cwd": str(tmp_path), "transcript_path": str(rollout)}
+    base = {"session_id": "codex", "turn_id": "turn", "cwd": str(tmp_path)}
 
     def run(entry: str, payload: dict) -> str:
         capsys.readouterr()
@@ -39,19 +35,13 @@ def test_codex_policy_reapproval_accepts_revision_in_assistant_text(
             return result["reason"]
         return scoped.get("permissionDecisionReason", "") if scoped.get("permissionDecision") == "deny" else ""
 
-    def write(text: str, *, role: str = "assistant", kind: str = "output_text") -> None:
-        stamp = datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        item = {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}
-        with rollout.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps({"timestamp": stamp, "type": "response_item", "payload": item}, ensure_ascii=False) + "\n")
-
     def ask(call: str, value: str, modifier: str = "") -> None:
         question = f"送った{modifier}方針で進めてよいですか？"
         labels = [option["label"] for option in _OPTIONS]
         item = (
-            {"title": f"方針の承認：{question}", "options": labels}
+            {"title": question, "options": labels}
             if asynchronous
-            else {"header": "方針の承認", "question": question, "options": list(_OPTIONS), "id": "p"}
+            else {"header": "進め方", "question": question, "options": list(_OPTIONS), "id": "p"}
         )
         body = {"questions": [item]}
         common = {**base, "tool_name": tool, "tool_input": body, "tool_use_id": call}
@@ -69,34 +59,13 @@ def test_codex_policy_reapproval_accepts_revision_in_assistant_text(
         body = {"command": "git commit -m test"}
         return run("pretooluse", {**base, "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": body})
 
-    def wait_next_rollout_millisecond() -> None:
-        time.sleep(0.002)
-
     approved, revise = "この方針で進める", "修正して進める"
-    write("方針（案）\n目標: 修正前に書いた本文")
     ask("first", revise)
-    reason = blocked()
-    assert "応答の本文に書いて" in reason and "/mcp" not in reason
-    ask("before-revision", approved)
-    assert blocked()
-    write("進捗: 改訂版を作成中")
-    write("方針（案）\n目標: ユーザーの発話", role="user", kind="input_text")
-    write("方針（案） 2件目の\n目標: 別の方針")
-    write("方針（案）\n \n")
-    ask("progress-only", approved)
-    assert blocked()
-    write("方針（案）\n目標: 既存の一行だけを確定する")
-    wait_next_rollout_millisecond()
-    ask("revised", revise)
-    ask("stale", approved)
-    assert blocked()
-    write("方針（案）\n目標: 再度の修正を反映した")
-    ask("revised-again", approved)
+    assert "実回答" in blocked()
+    ask("revised", approved)
     assert not blocked()
-    ask("modified", revise, "2件目の")
-    write("方針（案）\n目標: 修飾なし")
-    ask("modified-mismatch", approved, "2件目の")
+    ask("modified", revise, "対象が長い2件目の改訂版の")
+    ask("other-scope", approved)
     assert blocked()
-    write("方針（案） 2件目の\n目標: 修飾あり")
-    ask("modified-match", approved, "2件目の")
+    ask("modified-match", approved, "対象が長い2件目の改訂版の")
     assert not blocked()

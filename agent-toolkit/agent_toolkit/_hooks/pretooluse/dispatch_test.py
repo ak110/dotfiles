@@ -15,7 +15,6 @@ import pytest
 
 from agent_toolkit import atk, hook
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import user_prompt_submit
 from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
@@ -307,10 +306,10 @@ def _question_decision(tmp_path: pathlib.Path, question: dict, **payload: str) -
 
 
 @pytest.mark.parametrize("codex", [False, True])
-def test_recommendation_is_reviewed_once(tmp_path: pathlib.Path, codex: bool) -> None:
+def test_recommendation_passes_first_time(tmp_path: pathlib.Path, codex: bool) -> None:
     question = {"question": "進めてよいですか？", "options": [{"label": "進める", "description": "推奨する案"}]}
     host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
-    assert "confirmation.md" in _question_decision(tmp_path, question, **host)
+    assert not _question_decision(tmp_path, question, **host)
     assert not _question_decision(tmp_path, question, **host)
     assert not _question_decision(tmp_path, {**question, "options": [{"label": "進める"}]}, **host)
     assert not _question_decision(tmp_path, question, agent_id="child", **host)
@@ -372,22 +371,14 @@ _APPROVAL = {"header": "方針の承認", "question": "送った2件目の方針
     ],
 )
 @pytest.mark.parametrize("codex", [False, True])
-def test_policy_approval_requires_fixed_form(tmp_path: pathlib.Path, question: dict, codex: bool) -> None:
+def test_policy_approval_accepts_varied_form(tmp_path: pathlib.Path, question: dict, codex: bool) -> None:
     host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
     for _ in range(2):
         decision = _question_decision(tmp_path, question, **host)
-        assert "送った方針で進めてよいですか？" in decision
+        assert not decision
 
 
-@pytest.mark.parametrize("codex", [False, True])
-def test_policy_approval_notice_explains_modifier_characters(tmp_path: pathlib.Path, codex: bool) -> None:
-    host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
-    question = {**_APPROVAL, "question": "送った最終 版の方針で進めてよいですか？"}
-    for _ in range(2):
-        assert "修飾は文字と数字だけで書き" in _question_decision(tmp_path, question, **host)
-
-
-def test_policy_approval_rejects_additional_question(tmp_path: pathlib.Path) -> None:
+def test_policy_approval_allows_additional_question(tmp_path: pathlib.Path) -> None:
     result = _run(
         {
             "tool_name": "AskUserQuestion",
@@ -396,7 +387,8 @@ def test_policy_approval_rejects_additional_question(tmp_path: pathlib.Path) -> 
         },
         env_overrides=_plan_file_state_env(tmp_path),
     )
-    assert "送った方針で進めてよいですか？" in result.stdout
+    assert result.returncode == 0
+    assert "permissionDecisionReason" not in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -426,248 +418,6 @@ def test_fixed_policy_approval_passes_first_time(tmp_path: pathlib.Path, codex: 
     assert not _question_decision(tmp_path, question, **host)
 
 
-@pytest.mark.parametrize(
-    "body, missing",
-    [
-        ("## 発話の理解\n**目的:** 保存\n**手段:** 既存機能", True),
-        ("発話の理解: 保存する。別案: なし。\n結果: 保存した。", False),
-        ("発話の理解: 保存する。 別案：なし（既存の指定がある）。\n\n結果: 保存した。", False),
-        (r"発話の理解: バッククォート（\`）を扱う。別案: なし。", False),
-        ("発話の理解: 「単独の `」を扱う。別案: なし。", False),
-        ("## 発話の理解\n単独の ` を使う。別案: なし。\n\n別段落の ` は閉じない。", False),
-        ("## 発話の理解\n- 目的: 単独の ` を使う。\n- 別案: なし。\n- 補足: 単独の ` は文字。", False),
-        ("## 発話の理解\n単独の ` を使う。別案: なし。\n### 補足\n単独の ` は文字。", False),
-        ("## 発話の理解\n書式例は `記入例。別案: なし。\n同じ段落内の続き`。", True),
-        ("発話の理解: 保存する。\n別案: 既存機能を使う。", False),
-        ("発話の理解: 保存する。\n\n別案: 後続段落の別案。", True),
-        ("発話の理解: 「書式。別案: なし。」を引用した。\n結果: 保存した。", True),
-        ("発話の理解: `書式。別案:` の書き方を確認する。\n結果: 保存した。", True),
-        ("## 発話の理解\n- 目的: 保存\n- **別案:** 既存機能を使う", False),
-        ("**発話の理解:** 保存だけを行う。", False),
-        ("**発話の理解:** 保存だけを行う。\n\n**進捗:** 保存先を確認した。", False),
-        ("**発話の理解:** 保存する。\n対象は別紙。\n\n**進捗:** 次工程。\n別案: 外の区画", True),
-        ("## 発話の理解\n目的: 保存\n手段: 既存機能\n## 実行\n別案: 別の話題", True),
-    ],
-)
-def test_send_review_identifies_missing_alternative(body: str, missing: bool) -> None:
-    result = _run({"tool_name": "mcp__agents_server__send_to_user", "tool_input": {"message": body}})
-    assert result.returncode == 0, result.stderr
-    output = json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
-    assert (output.get("permissionDecision") == "deny") is missing
-
-
-@pytest.mark.parametrize(
-    "body, has_original",
-    [
-        ("発話の理解: 保存する。別案: なし。\n\n原文: 別の話題", False),
-        ("発話の理解: 保存する。別案: なし。\n原文: 引用", True),
-    ],
-)
-def test_original_text_label_stays_in_understanding_section(body: str, has_original: bool) -> None:
-    result = _run({"tool_name": "mcp__agents_server__send_to_user", "tool_input": {"message": body}})
-    assert result.returncode == 0, result.stderr
-    output = json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
-    assert (output.get("permissionDecision") == "deny") is has_original
-    if has_original:
-        assert "「原文」の見出しがある" in output["permissionDecisionReason"]
-
-
-@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
-def test_policy_question_requires_all_external_sources(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, work: str
-) -> None:
-    contract = tmp_path / "work-contract.md"
-    monkeypatch.setattr(user_facing_checks.source_review_receipt, "ready", lambda _: True)
-    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
-    prompt = f"/atk-mode {work} https://example.com/a"
-    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
-    question = _APPROVAL
-    malformed = {**question, "question": "上の方針で進めますか？"}
-    form_error = _question_decision(tmp_path, malformed)
-    assert "質問が決まった形でない" in form_error
-    assert "external-source-review.md" not in form_error
-    assert "external-source-review.md" in _question_decision(tmp_path, question)
-    table = tmp_path / "external-source-review.md"
-    comparison = "削る・まとめる・置き換える案"
-    header = (
-        f"| 採否と理由 | {comparison} | 資料URL | 既存の対応箇所 | 資料の主張（原文の抜粋） | 既存との差分 | 配布先での扱い |\n"
-        "| --- | --- | --- | --- | --- | --- | --- |\n"
-    )
-    good = "なし。既存の設計手順を調べ、重複が無かった"
-    for value in ("", " **なし。** ", "——"):
-        table.write_text(
-            header + f"| 不採用 | {value} | https://example.com/a | 設計手順 | 原文 | 新しい手段 | 配布規範にも照合 |\n",
-            encoding="utf-8",
-        )
-        reason = _question_decision(tmp_path, question)
-        assert "3行目" in reason and comparison in reason
-    a = header + f"| 不採用 | {good} | https://example.com/a | 設計手順 | 原文 | 新しい手段 | 配布規範にも照合 |\n"
-    legacy = a.replace(" 配布先での扱い |", "").replace(" 配布規範にも照合 |", "")
-    blank = a.replace("配布規範にも照合", "")
-    for incomplete in (legacy, blank):
-        table.write_text(incomplete, encoding="utf-8")
-        assert "配布先での扱い" in _question_decision(tmp_path, question)
-        assert not _question_decision(tmp_path, {"question": "どの系統を選びますか？"})
-    table.write_text(a, encoding="utf-8")
-    assert not _question_decision(tmp_path, question)
-    contract.write_text("# 作業契約\n## 原本\n- https://example.com/b\n", encoding="utf-8")
-    assert "https://example.com/b" in _question_decision(tmp_path, question)
-    table.write_text(
-        a + f"| 不採用 | {good} | https://example.com/b | 設計手順 | 原文 | 新しい手段 | 配布規範にも照合 |\n", encoding="utf-8"
-    )
-    assert not _question_decision(tmp_path, question)
-    assert not _question_decision(tmp_path, {"question": "どの系統を選びますか？"})
-
-
-@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
-@pytest.mark.parametrize(
-    ("source", "url", "comparison", "blocked"),
-    [
-        ("資料（{url}）を参考に", "https://example.com/a", "重複を統合する", False),
-        ("資料**{url}**を参考に", "https://example.com/a", "重複を統合する", False),
-        ('資料: "{url}"', "https://example.com/a%2A_%28b%29", "重複を統合する", False),
-        ("資料: __{url}__", "https://example.com/a_b", "重複を統合する", False),
-        ("資料: ({url})", "https://example.com/a(b)?x=1&y=2#f", "重複を統合する", False),
-        ("資料: [{url}]({url})", "https://[2001:db8::1]/a(b)", "重複を統合する", False),
-        ("資料: {url}。次も確認", "https://example.com/%E8%B3%87%E6%96%99", "重複を統合する", False),
-        ("資料: {url}", "https://example.com/a", "なし<br>", True),
-        ("資料: {url}", "https://example.com/a", "**なし**<BR />&nbsp;！", True),
-        ("資料: {url}", "https://example.com/a", '<span title=">理由">無し</span>', True),
-        ("資料: {url}", "https://example.com/a", "＜ｂｒ＞　―", True),
-        ("資料: {url}", "https://example.com/a", "なし<br>既存手順を調べ、重複がなかった", False),
-    ],
-)
-def test_external_source_markup_boundaries(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    work: str,
-    source: str,
-    url: str,
-    comparison: str,
-    blocked: bool,
-) -> None:
-    monkeypatch.setattr(user_facing_checks.source_review_receipt, "ready", lambda _: True)
-    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: tmp_path / "work-contract.md")
-    prompt = f"/atk-mode {work} {source.format(url=url)}"
-    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
-    (tmp_path / "external-source-review.md").write_text(
-        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） |"
-        " 既存との差分 | 配布先での扱い |\n"
-        "| --- | --- | --- | --- | --- | --- | --- |\n"
-        f"| <{url}> | 設計手順 | {comparison} | 不採用 | 原文 | 新しい手段 | 配布規範にも照合 |\n",
-        encoding="utf-8",
-    )
-    reason = _question_decision(tmp_path, _APPROVAL)
-    if blocked:
-        assert "3行目" in reason and "削る・まとめる・置き換える案" in reason
-    else:
-        assert not reason
-
-
-@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
-@pytest.mark.parametrize("from_contract", [False, True], ids=["startup", "contract"])
-@pytest.mark.parametrize(
-    ("markup", "separator"),
-    [
-        (markup, separator)
-        for markup in ("**{}**", "`{}`", "[資料]({})", "({})", "{}。", "__{}__")
-        for separator in (None, " と ", "と", "")
-        if separator != "" or markup not in {"**{}**", "__{}__"}
-    ],
-)
-def test_external_source_url_boundaries(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    work: str,
-    from_contract: bool,
-    separator: str | None,
-    markup: str,
-) -> None:
-    contract = tmp_path / "work-contract.md"
-    monkeypatch.setattr(user_facing_checks.source_review_receipt, "ready", lambda _: True)
-    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
-    urls = ["https://example.com/a(b)?x=%2A&y=1#z"]
-    if separator is not None:
-        urls.append("https://[2001:db8::1]/a_b")
-    body = "資料" + (separator or "").join(markup.format(url) for url in urls) + "を確認"
-    if from_contract:
-        contract.write_text(f"## 原本\n- {body}\n", encoding="utf-8")
-    prompt = f"/atk-mode {work} " + ("資料を確認" if from_contract else body)
-    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
-    table = tmp_path / "external-source-review.md"
-    table.write_text(
-        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） |"
-        " 既存との差分 | 配布先での扱い |\n"
-        "| --- | --- | --- | --- | --- | --- | --- |\n"
-        + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 | 原文 | 新しい手段 | 配布規範にも照合 |\n" for url in urls),
-        encoding="utf-8",
-    )
-    assert not _question_decision(tmp_path, _APPROVAL)
-
-
-@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
-@pytest.mark.parametrize("from_contract", [False, True], ids=["startup", "contract"])
-@pytest.mark.parametrize("infix", ["_", "__", "*"])
-@pytest.mark.parametrize("markup", ["<{}>", "**{}**", "__{}__"])
-@pytest.mark.parametrize("rows", ["complete", "prefix-only", "one-missing"])
-def test_external_source_url_identity(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    work: str,
-    from_contract: bool,
-    infix: str,
-    markup: str,
-    rows: str,
-) -> None:
-    contract = tmp_path / "work-contract.md"
-    monkeypatch.setattr(user_facing_checks.source_review_receipt, "ready", lambda _: True)
-    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
-    prefix = "https://example.com/a"
-    urls = [f"{prefix}{infix}1", f"{prefix}{infix}2"]
-    body = "資料" + "と".join(markup.format(url) for url in urls)
-    if from_contract:
-        contract.write_text(f"## 原本\n- {body}\n", encoding="utf-8")
-    prompt = f"/atk-mode {work} " + ("資料を確認" if from_contract else body)
-    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
-    entries = {"complete": urls, "prefix-only": [prefix], "one-missing": urls[:1]}[rows]
-    (tmp_path / "external-source-review.md").write_text(
-        "| 資料URL | 既存の対応箇所 | 削る・まとめる・置き換える案 | 採否と理由 | 資料の主張（原文の抜粋） |"
-        " 既存との差分 | 配布先での扱い |\n"
-        "| --- | --- | --- | --- | --- | --- | --- |\n"
-        + "".join(
-            f"| <{url}> | 設計手順 | 重複を統合する | 採用 | 原文 | 新しい手段 | 配布規範にも照合 |\n" for url in entries
-        ),
-        encoding="utf-8",
-    )
-    reason = _question_decision(tmp_path, _APPROVAL)
-    if rows == "complete":
-        assert not reason
-    else:
-        assert urls[1] in reason
-
-
-def test_external_source_url_preserves_ipv6_address() -> None:
-    urls = user_facing_checks.external_source_review.contract_urls("## 原本\n- https://[2001:db8::1]/source")
-    assert urls == {"https://[2001:db8::1]/source"}
-
-
-@pytest.mark.parametrize(
-    ("line", "expected"),
-    [
-        ("https://example.com/a, 次", "https://example.com/a"),
-        ("https://example.com/a. 次", "https://example.com/a"),
-        ("<https://example.com/a.>", "https://example.com/a."),
-        ("**https://example.com/a****https://example.com/b**", "https://example.com/a****https://example.com/b"),
-        ("https://example.com/a__b*", "https://example.com/a__b*"),
-        ("https://example.com/a%ZZは別の文字列", "https://example.com/a"),
-        ("https://example.com/aを参照", "https://example.com/a"),
-        ("https://example.com/a$&'+,;=~b?x=1&y=2#z", "https://example.com/a$&'+,;=~b?x=1&y=2#z"),
-    ],
-)
-def test_external_source_url_uses_ascii_uri_characters(line: str, expected: str) -> None:
-    assert list(pretooluse.work_contract.source_urls(line)) == [expected]
-
-
 @pytest.mark.parametrize("tool", ["AskUserQuestion", "request_user_input", "request_user_input_async"])
 @pytest.mark.cpu_limit(1.0, reason="各ホストの公開hook入口と再承認前後の全操作を同一セッションで通す。")
 def test_policy_reapproval_blocks_only_until_new_matching_approval(
@@ -683,7 +433,6 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
     for kind, filename in (("awi", "20261126-095854-001.md"), ("uwi", "20261126-095854-002.md")):
         (dated / filename).write_text(f"---\ntype: {kind}\nstate: inbox\n---\n# 確認\n", encoding="utf-8")
-    checks = user_facing_checks
     approved = "この方針で進める"
     revise = "大体よいが、入力ごとにAWI相当を作るように修正して"
     asynchronous = tool == "request_user_input_async"
@@ -754,7 +503,7 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
 
     def ask(call: str, modifier: str = "") -> tuple[dict, dict]:
         question = f"送った{modifier}方針で進めてよいですか？"
-        options = list(checks._POLICY_APPROVAL_OPTIONS)
+        options = list(_APPROVAL_OPTIONS)
         item = (
             {"title": f"方針の承認：{question}", "options": [option["label"] for option in options]}
             if asynchronous
@@ -797,13 +546,7 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
         if asynchronous
         else {"header": "方針の承認", "options": []}
     )
-    reason = pre(tool, {"questions": [malformed]})
-    assert "決まった形でない" in reason
-    if asynchronous:
-        assert "title" in reason and 'optionsを["この方針で進める", "修正して進める"]' in reason
-    else:
-        assert "見出し「方針の承認」" in reason
-    outputs = [f"形式拒否 {tool}: {reason}"]
+    assert not pre(tool, {"questions": [malformed]})
 
     ordinary = (
         {"questions": [{"title": "確認", "options": ["はい"]}]}
@@ -822,20 +565,12 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     assert not blocked(commands[0])
     answer(ask("choice-two"), "修正して進める")
     plain_reason = blocked(commands[0])
-    assert plain_reason and "1行目は「方針（案）」です" in plain_reason
-    outputs.append(f"修飾なしの最終案内 {tool}: {plain_reason}")
+    assert plain_reason and "実回答" in plain_reason
     send("方針（案）")
     answer(ask("cleared-plain"), approved)
     answer(ask("revision", "2件目の"), revise)
     modified_reason = blocked(commands[0])
-    assert modified_reason and "1行目は「方針（案） 2件目の」です" in modified_reason
-    assert "件名、補足、本文は2行目以降" in modified_reason
-    if host:
-        assert "応答の本文に書いて" in modified_reason and "/mcp" not in modified_reason
-        assert "send_to_userは使わない" in modified_reason
-    else:
-        assert "/mcp" in modified_reason
-    outputs.append(f"修飾ありの最終案内 {tool}: {modified_reason}")
+    assert modified_reason and "適用対象" in modified_reason and "実回答" in modified_reason
     for shell in ("Bash", "exec_command", "functions.exec_command"):
         for command in commands:
             assert "問い直" in (blocked(command, shell) or "")
@@ -857,25 +592,14 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     assert not blocked(commands[0], sid="unrelated", payload={"agent_id": "child"})
     (tmp_path / "copied.json").write_bytes((tmp_path / f"{session}.json").read_bytes())
     assert not blocked(commands[0], sid="copied")
-    send("進捗")
-    answer(ask("progress", "2件目の"), approved)
-    send("方針（案） 2件目の", ok=False)
-    answer(ask("failed", "2件目の"), approved)
-    send("方針（案）")
+    send("方針の改訂内容は定型の見出しなしで説明する。")
     answer(ask("unrelated"), approved)
     prompt(approved)
     assert blocked(commands[0])
-    send("方針（案） 2件目の方針")
-    answer(ask("extra-title", "2件目の"), approved)
-    assert blocked(commands[0])
     old = ask("old", "2件目の")
-    send("方針（案） 2件目の")
+    answer(ask("new-revision", "2件目の"), revise)
     answer(old, approved)
     assert blocked(commands[0])
-    answer(ask("new-revision", "2件目の"), revise)
-    answer(ask("not-resent", "2件目の"), approved)
-    assert blocked(commands[0])
-    send("方針（案） 2件目の")
     issued = ask("new-approval", "2件目の")
     if asynchronous:
         answer(({"tool_use_id": "missing"}, {}), approved)
@@ -886,7 +610,6 @@ def test_policy_reapproval_blocks_only_until_new_matching_approval(
     answer(issued, approved)
     for command in commands:
         assert not blocked(command)
-    print("\n".join(outputs))
 
 
 def test_policy_reapproval_bounded_event_order(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -918,7 +641,7 @@ def test_policy_reapproval_bounded_event_order(monkeypatch: pytest.MonkeyPatch) 
                     {
                         "header": "方針の承認",
                         "question": text,
-                        "options": list(checks._POLICY_APPROVAL_OPTIONS),
+                        "options": list(_APPROVAL_OPTIONS),
                     }
                 ]
             }
@@ -953,18 +676,36 @@ def test_policy_reapproval_bounded_event_order(monkeypatch: pytest.MonkeyPatch) 
                     answer("approval", approval_text, labels[0])
                 history = order[:tick]
                 expected = "revise" in history and not (
-                    revision == delivery == approval
-                    and all(action in history for action in ("revise", "deliver", "issue", "approve"))
-                    and order == ("revise", "deliver", "issue", "approve")
+                    revision == approval
+                    and all(action in history for action in ("revise", "issue", "approve"))
+                    and order.index("revise") < order.index("issue") < order.index("approve")
                 )
                 actual = state[checks._APPROVAL_STATE].get("waits", {})
                 remaining = {revision} if expected else set()
-                if second_wait and not (
-                    other == delivery == approval
-                    and {"deliver", "issue", "approve"}.issubset(history)
-                    and order.index("deliver") < order.index("issue")
-                ):
+                if second_wait and not (other == approval and {"issue", "approve"}.issubset(history)):
                     remaining.add(other)
                 assert set(actual) == remaining, (revision, delivery, approval, history)
             checked += 1
     assert checked == 192
+
+
+@pytest.mark.parametrize("tool", ["AskUserQuestion", "ExitPlanMode", "mcp__agents_server__send_to_user"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "発話の理解: 原文: 対象を確認した。",
+        "既存の基準で足りるため規範は足さない。",
+        "形式検証の判定という見出しはないが、保証範囲と費用を比較した。",
+    ],
+)
+def test_quality_wording_passes_without_first_rejection(tool: str, text: str, capsys: pytest.CaptureFixture[str]) -> None:
+    inputs = (
+        {"questions": [{"question": text}]}
+        if tool == "AskUserQuestion"
+        else {"plan" if tool == "ExitPlanMode" else "message": text}
+    )
+    payload = {"session_id": "quality-wording", "turn_id": "turn", "tool_name": tool, "tool_input": inputs}
+    assert pretooluse.main(json.dumps(payload)) == 0
+    output = capsys.readouterr().out
+    result = json.loads(output) if output else {}
+    assert result.get("hookSpecificOutput", {}).get("permissionDecision") != "deny"

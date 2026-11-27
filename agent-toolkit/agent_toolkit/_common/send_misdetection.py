@@ -21,10 +21,6 @@ class Claim(TypedDict):
 
 RETRY = frozenset(
     {
-        "understanding-original",
-        "understanding-alternative",
-        "norm-excuse",
-        "prevention-kind",
         "response-language",
         "missing-prevention",
     }

@@ -6,7 +6,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 
-from agent_toolkit._atk import managed_temp, research_sources
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import add
@@ -43,8 +43,6 @@ from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
-from agent_toolkit._common import delegated_session, external_source_review, session_review
-from agent_toolkit._common.session_state import read_state
 
 
 def _require_process_wi_timing(
@@ -77,54 +75,10 @@ def _require_process_wi_timing(
     return timing == "this-run"
 
 
-def _draft_namespace(args: argparse.Namespace) -> str | None:
-    explicit = getattr(args, "source_contract", None)
-    if explicit is not None:
-        path = pathlib.Path(explicit)
-        return path.parent.name if path.is_absolute() and path.is_file() else None
+def _draft_namespace() -> str | None:
     session = add.resolve_submitter_session()
     temp = managed_temp.find_session_temp(session) if session is not None else None
     return temp.name if temp is not None and (temp / "work-contract.md").is_file() else None
-
-
-def _check_external_source_review(
-    args: argparse.Namespace, messages: list[str], local_worktree: pathlib.Path | None
-) -> str | None:
-    explicit = getattr(args, "source_contract", None)
-    session = delegated_session.current_conversation_session_id(os.environ)
-    temp = managed_temp.find_session_temp(session) if session is not None and explicit is None else None
-    contract = pathlib.Path(explicit) if explicit is not None else temp / "work-contract.md" if temp else None
-    if explicit is not None and (contract is None or not contract.is_absolute()):
-        return "`--source-contract`には作業契約の絶対パスを指定してください。"
-    body = ""
-    if contract is not None:
-        try:
-            body = contract.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            if explicit is not None:
-                return f"`{contract}`を読み取れません。"
-        except OSError, UnicodeError:
-            return f"`{contract}`を読み取れません。"
-    recorded = None
-    if session is not None and explicit is None:
-        entry = read_state(session).get(external_source_review.EXTERNAL_SOURCE_ENTRY_KEY)
-        if isinstance(entry, dict):
-            recorded = entry.get("urls")
-    urls = external_source_review.contract_urls(body, recorded)
-    configured_slot = os.environ.get(session_review.WEEKLY_SLOT_ENV, "")
-    if configured_slot.startswith("research@"):
-        for message in messages:
-            frontmatter, _body = parse_entry_message(message, entry_type=args.type)
-            if args.source is not None:
-                frontmatter = {"source": args.source, **frontmatter}
-            metadata = add.run_report_metadata(frontmatter, question_type=args.question_type, scope=args.scope, new_report=True)
-            if metadata.get("weekly_slot") == configured_slot:
-                collected = research_sources.collected_source_urls(configured_slot)
-                if collected is None:
-                    return "週次の資料URLの記録がありません。`atk run-script research-sources` で取得してください。"
-                urls = collected
-                break
-    return external_source_review.check_table(contract, urls, local_worktree or pathlib.Path.cwd())
 
 
 def cmd_add(
@@ -253,7 +207,7 @@ def cmd_add(
     canonical_dependencies = add.normalize_dependencies(args.depends_on, dependency_dir)
     choices = normalize_choices(",".join(args.choices)) if args.choices is not None else None
     saved_details: dict[str, dict[str, object | None]] = {}
-    namespace = _draft_namespace(args)
+    namespace = _draft_namespace()
     sources = [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
     try:
         if args.dry_run:
@@ -306,11 +260,6 @@ def cmd_add(
                 for message in messages:
                     parse_entry_message(message, entry_type=WI_TYPE_UWI)
             compare_draft_openings(messages, sources, compare_paths=args.compare_opening_file, is_uwi=args.type == WI_TYPE_UWI)
-        if source_error := _check_external_source_review(args, messages, local_worktree):
-            raise WebInputError(
-                source_error,
-                next_action="作業契約と隣の external-source-review.md を直し、必要なら --source-contract で指定して再実行する",
-            )
         generated = add.add_entries(
             private_notes,
             messages=messages,

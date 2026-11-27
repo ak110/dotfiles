@@ -1,256 +1,33 @@
 from __future__ import annotations
 
 import argparse
-import datetime
 import hashlib
 import json
 import pathlib
 import re
 import time
-from collections.abc import Iterable
 
-lazy from markdown_it import MarkdownIt
-lazy from markdown_it.token import Token
-
-from agent_toolkit._common import external_source_review
 from agent_toolkit._common import response_language_check as _response_language_check
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import agent_id as _agent_id
-from agent_toolkit._hooks import bugfix_gate, norm_excuse_gate, source_review_receipt, work_contract
-from agent_toolkit._hooks import notice as _notice
 from agent_toolkit._hooks.pretooluse.content_checks import _warn_mojibake
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.notices import _block_notice
 from agent_toolkit._hooks.pretooluse.warning_context import format_warning_context
 lazy from agent_toolkit._atk.wi import cli, entries
 lazy from agent_toolkit._common import private_notes
-lazy from agent_toolkit._common import transcript as _transcript
-lazy from agent_toolkit._common.markdown_headings import without_literal_blocks
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
-lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
 lazy from agent_toolkit._plan.owner_records import resolve_conversation_session_id
 
 USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
-_MARKDOWN_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+)$")
-_STRONG_HEADING = re.compile(r"^\s*(\*\*|__)([^:：]+?)([:：]?)\1\s*([:：]?)(.*)$")
-_UNDERSTANDING_HEADING = re.compile(r"^発話の理解\s*(?:[:：]\s*(.*)|$)")
-_ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
-
-
-_ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*(?:[-*+][^\S\n]+)?[*_]*別案(?:[*_]*[^\S\n]*[:：]|[:：][*_]+)")
-_INLINE_ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*[*_]*別案[*_]*[^\S\n]*[:：]")
-_ALTERNATIVE_BOUNDARY = re.compile(r"[「」『』。\n]")
-_QUOTE_END = {"「": "」", "『": "』"}
-_POLICY_APPROVAL = re.compile(r"方針[^？?\n]{0,80}で(?:進めて|起草して|実施して)(?:よい|いい)")
-SOURCE_REVIEW_FILE = external_source_review.TABLE_NAME
-_SOURCE_REVIEW_WORK = re.compile(r"^\s*-?\s*作業[:：]\s*`?([^\s`]+)`?\s*$")
-
-
-def _understanding_section_lines(message: str) -> Iterable[tuple[str, bool]]:
-    section_level = 0
-    plain_paragraph = False
-    paragraph_break = False
-    for line in without_literal_blocks(message).splitlines():
-        heading = _MARKDOWN_HEADING.match(line)
-        strong = _STRONG_HEADING.match(line)
-        if strong and strong[5] and not (strong[3] or strong[4]):
-            strong = None
-        if heading:
-            level = len(heading[1])
-            title = heading[2].strip(" #*_")
-        elif strong:
-            level = 6
-            title = strong[2].strip() + (strong[3] or strong[4]) + strong[5]
-        else:
-            level = 0
-            title = line.strip()
-        if (target := _UNDERSTANDING_HEADING.fullmatch(title)) is not None:
-            section_level = level or 6
-            paragraph_break = False
-            plain_paragraph = not level and target[1] is not None
-            if target[1] or plain_paragraph:
-                yield target[1] or "", plain_paragraph
-            continue
-        if (heading and level <= section_level) or (plain_paragraph and not line.strip()):
-            section_level = 0
-            continue
-        if not section_level:
-            continue
-        if (
-            strong
-            and (paragraph_break or not strong[5].strip())
-            and not (_ORIGINAL_TEXT_LABEL.match(line) or _ALTERNATIVE_LABEL.match(line))
-        ):
-            section_level = 0
-            continue
-        paragraph_break = not line.strip()
-        yield line, plain_paragraph
-
-
-def _without_heading_marker(line: str) -> str:
-    return heading[2].strip(" #*_") if (heading := _MARKDOWN_HEADING.match(line)) else line
-
-
-def has_original_text_label_in_understanding(message: str) -> bool:
-    return any(_ORIGINAL_TEXT_LABEL.match(_without_heading_marker(line)) for line, _ in _understanding_section_lines(message))
-
-
-def _alternative_text(token: Token) -> str:
-    if token.type == "text":
-        return token.content
-    if token.type in {"softbreak", "hardbreak"}:
-        return "\n"
-    if token.type in {"em_open", "em_close", "strong_open", "strong_close"}:
-        return token.markup
-    return "\0"
-
-
-def _has_alternative(lines: list[str]) -> bool:
-    text = "\n".join(lines)
-    if "`" in text:
-        text = "\n".join(
-            "".join(_alternative_text(child) for child in block.children or [])
-            for block in MarkdownIt("commonmark").parse(text)
-            if block.type == "inline"
-        )
-    else:
-        text = "\n".join(map(_without_heading_marker, lines))
-    if _ALTERNATIVE_LABEL.match(text):
-        return True
-    quote_ends: list[str] = []
-    for boundary in _ALTERNATIVE_BOUNDARY.finditer(text):
-        mark = boundary[0]
-        if mark in _QUOTE_END:
-            quote_ends.append(_QUOTE_END[mark])
-        elif quote_ends:
-            if mark == quote_ends[-1]:
-                quote_ends.pop()
-        elif (
-            mark == "。"
-            and _INLINE_ALTERNATIVE_LABEL.match(text, boundary.end())
-            or mark == "\n"
-            and _ALTERNATIVE_LABEL.match(text, boundary.end())
-        ):
-            return True
-    return False
-
-
-def missing_alternative(message: str) -> bool:
-    section = list(_understanding_section_lines(message))
-    lines = [line for line, _ in section if not bugfix_gate.is_classification_line(_without_heading_marker(line))]
-    required = sum(bool(line.strip()) for line in lines) > 1 or any(plain for _, plain in section)
-    return required and not _has_alternative(lines)
-
-
-def external_source_review_needed(session_id: str, tool_input: dict, *, cwd: str | None = None) -> str | None:
-    fields = _user_facing_text_fields("AskUserQuestion", tool_input)
-    if not any(
-        field.endswith((".header", ".question")) and (value == "方針の承認" or _POLICY_APPROVAL.search(value))
-        for field, value in fields
-    ):
-        return None
-    contract = work_contract.record_path(session_id)
-    try:
-        body = contract.read_text(encoding="utf-8") if contract is not None else ""
-    except OSError, UnicodeError:
-        body = ""
-    lines = without_literal_blocks(body).splitlines()
-    entry = read_state(session_id).get(work_contract.EXTERNAL_SOURCE_ENTRY_KEY)
-    if isinstance(entry, dict):
-        if entry.get("work") not in work_contract.EXTERNAL_SOURCE_WORKS:
-            return None
-        recorded = entry.get("urls")
-    elif any(
-        (match := _SOURCE_REVIEW_WORK.fullmatch(line)) and match[1] in work_contract.EXTERNAL_SOURCE_WORKS for line in lines
-    ):
-        recorded = None
-    else:
-        return None
-    directory = pathlib.Path(cwd).resolve() if cwd else pathlib.Path.cwd()
-    root = next((path for path in (directory, *directory.parents) if (path / ".git").exists()), directory)
-    urls = external_source_review.contract_urls(body, recorded)
-    if error := external_source_review.check_table(contract, urls, root):
-        return error
-    if urls and not source_review_receipt.ready(session_id):
-        return "`agent-basics:writing-standards/references/design-heuristics.md`を全文読んでください。"
-    return None
-
-
-_POLICY_APPROVAL_HEADER = "方針の承認"
-POLICY_APPROVAL_MODIFIER_LIMIT = 6
-_POLICY_APPROVAL_QUESTION = re.compile(
-    rf"送った(?P<modifier>[^\W_]{{0,{POLICY_APPROVAL_MODIFIER_LIMIT}}})方針で進めてよいですか[？?]"
-)
-_POLICY_APPROVAL_CLAUSE = re.compile(
-    r"を|(?:[一-龯々][ぁ-ゖ]*(?:[うくぐすつぶむるただ]|ない|ず|ぬ)|しない|せ[ずぬ]|(?:ら?れ|でき)[るた])(?:版)?の?$"
-)
-_POLICY_APPROVAL_OPTIONS = (
-    {"label": "この方針で進める", "description": "送った方針のとおりに着手する"},
-    {"label": "修正して進める", "description": "修正点を自由記述で伝える"},
-)
-
-
-def policy_approval_form_invalid(tool_input: dict) -> bool:
-    questions = tool_input.get("questions")
-    if not isinstance(questions, list) or not any(
-        isinstance(question, dict)
-        and (
-            question.get("header") == _POLICY_APPROVAL_HEADER
-            or (isinstance(text := question.get("question"), str) and _POLICY_APPROVAL.search(text))
-        )
-        for question in questions
-    ):
-        return False
-    if len(questions) != 1:
-        return True
-    question = questions[0]
-    options = question.get("options")
-    return not (
-        question.get("header") == _POLICY_APPROVAL_HEADER
-        and not question.get("multiSelect")
-        and isinstance(text := question.get("question"), str)
-        and (match := _POLICY_APPROVAL_QUESTION.fullmatch(text)) is not None
-        and not _POLICY_APPROVAL_CLAUSE.search(match["modifier"])
-        and isinstance(options, list)
-        and len(options) == len(_POLICY_APPROVAL_OPTIONS)
-        and all(
-            isinstance(option, dict)
-            and option.get("label") == expected["label"]
-            and option.get("description") == expected["description"]
-            and not option.get("preview")
-            for option, expected in zip(options, _POLICY_APPROVAL_OPTIONS, strict=True)
-        )
-    )
-
+_POLICY_APPROVAL_QUESTION = re.compile(r"送った(?P<modifier>[^\n]*?)方針で進めて(?:よい|いい)ですか[？?]")
 
 _APPROVAL_STATE = "policy_reapproval"
 _APPROVAL_TOOLS = {"AskUserQuestion", "request_user_input", "request_user_input_async"}
 _ASYNC_QUESTION = "request_user_input_async"
-_APPROVED = _POLICY_APPROVAL_OPTIONS[0]["label"]
-
-
-def normalize_policy_question(tool_name: str, tool_input: dict) -> dict:
-    if tool_name != _ASYNC_QUESTION or not isinstance(questions := tool_input.get("questions"), list):
-        return tool_input
-    normalized: list[dict[str, object]] = []
-    for question in questions:
-        title = question.get("title") if isinstance(question, dict) else None
-        if not isinstance(title, str) or not title.startswith("方針の承認："):
-            normalized.append({})
-            continue
-        options = question.get("options")
-        normalized.append(
-            {
-                "header": _POLICY_APPROVAL_HEADER,
-                "question": title.removeprefix("方針の承認："),
-                "options": list(_POLICY_APPROVAL_OPTIONS)
-                if options == [item["label"] for item in _POLICY_APPROVAL_OPTIONS]
-                else None,
-            }
-        )
-    return {"questions": normalized}
+_APPROVED = "この方針で進める"
 
 
 def _policy_data(state: dict, session_id: str, *, create: bool = False) -> dict:
@@ -270,78 +47,23 @@ def record_policy_question(payload: dict, session_id: str, tool_name: str, tool_
         return
     if not _agent_id.is_main_agent_context(payload):
         return
-    normalized = normalize_policy_question(tool_name, tool_input)
-    questions = normalized.get("questions")
+    questions = tool_input.get("questions")
     if not isinstance(questions, list) or len(questions) != 1 or not isinstance(questions[0], dict):
         return
     question = questions[0]
-    if question.get("header") != _POLICY_APPROVAL_HEADER or policy_approval_form_invalid(normalized):
-        return
-    match = _POLICY_APPROVAL_QUESTION.fullmatch(question["question"])
+    text = question.get("title" if tool_name == _ASYNC_QUESTION else "question")
+    match = _POLICY_APPROVAL_QUESTION.search(text) if isinstance(text, str) else None
     if match is None:
         return
-    key = tool_input["questions"][0].get("id") if tool_name == "request_user_input" else question["question"]
+    key = tool_input["questions"][0].get("id") if tool_name == "request_user_input" else text
     modifier = match["modifier"]
-    transcript = payload.get("transcript_path") if is_codex_payload(payload) else None
 
     def update(state: dict) -> dict:
         data = _policy_data(state, session_id, create=True)
-        waits = data.get("waits", {})
-        if isinstance(transcript, str) and transcript and modifier in waits and waits[modifier] is None:
-            delivered = _codex_policy_delivery(transcript, modifier, data.get("corrected", {}).get(modifier, 0))
-            if delivered is not None:
-                waits[modifier] = delivered
         data.setdefault("questions", {}).setdefault(call_id, [tool_name, modifier, key, time.time_ns(), False])
         return state
 
     update_state(session_id, update)
-
-
-def _policy_modifier(message: str) -> str | None:
-    first = message.split("\n", 1)[0]
-    return first.removeprefix("方針（案）").strip() if first.startswith("方針（案）") else None
-
-
-def _codex_policy_delivery(transcript: str, modifier: str, corrected: int) -> int | None:
-    """Codexの記録から、修正回答の後にアシスタント本文で届けた改訂版の時刻（ns）を返す。  pyfltr: allow-comment
-
-    Codexではsend_to_userが送達できず、正規の伝達手段は本文（最終応答を含む）である。
-    記録の読み方は`norm_excuse_gate._codex_turn_texts`と同じく`response_item`の`output_text`を使う。
-    記録の時刻はミリ秒精度のため、修正回答の時刻もミリ秒へ切り捨てて比べる。
-    """
-    lines = _transcript.read_transcript_lines(transcript)
-    delivered: int | None = None
-    for line in lines or ():
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            continue
-        item = entry.get("payload") if isinstance(entry, dict) else None
-        if (
-            entry.get("type") != "response_item"
-            or not isinstance(item, dict)
-            or item.get("type") != "message"
-            or item.get("role") != "assistant"
-            or not isinstance(blocks := item.get("content"), list)
-            or not isinstance(stamp := entry.get("timestamp"), str)
-        ):
-            continue
-        text = "".join(
-            block["text"]
-            for block in blocks
-            if isinstance(block, dict) and block.get("type") == "output_text" and isinstance(block.get("text"), str)
-        )
-        try:
-            moment = int(datetime.datetime.fromisoformat(stamp).timestamp() * 1000) * 1_000_000
-        except ValueError:
-            continue
-        if (
-            _policy_modifier(text) == modifier
-            and text.partition("\n")[2].strip()
-            and moment >= corrected // 1_000_000 * 1_000_000
-        ):
-            delivered = moment
-    return delivered
 
 
 def _result_object(response: object) -> dict:
@@ -371,32 +93,19 @@ def _apply_policy_answer(data: dict, call_id: str, question: list, answer: str) 
     if answer != _APPROVED:
         waits[modifier] = None
         corrected[modifier] = time.time_ns()
-    elif modifier in waits and waits[modifier] is not None and waits[modifier] < asked:
+    elif modifier in waits and corrected.get(modifier, asked) < asked:
         del waits[modifier]
         corrected.pop(modifier, None)
 
 
-def observe_policy_result(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> None:
-    delivery = tool_name == "mcp__agents_server__send_to_user"
-    if (not delivery and tool_name not in _APPROVAL_TOOLS) or not _agent_id.is_main_agent_context(payload):
+def observe_policy_result(payload: dict, session_id: str, tool_name: str, _tool_input: dict) -> None:
+    if tool_name not in _APPROVAL_TOOLS or not _agent_id.is_main_agent_context(payload):
         return
     response = _result_object(payload.get("tool_response"))
     call_id = payload.get("tool_use_id")
 
     def update(state: dict) -> dict | None:
         data = _policy_data(state, session_id)
-        if delivery:
-            message = tool_input.get("message")
-            if response.get("ok") is not True or not isinstance(message, str):
-                return None
-            modifier = _policy_modifier(message)
-            if modifier is None:
-                return None
-            waits = data.get("waits", {})
-            if modifier not in waits:
-                return None
-            waits[modifier] = time.time_ns()
-            return state
         if not isinstance(call_id, str):
             return None
         question = data.get("questions", {}).get(call_id)
@@ -504,42 +213,16 @@ def policy_reapproval_block(payload: dict, tool_name: str, tool_input: dict, ses
             and tokens[1:3] in {("wi", "add"), ("wi", "edit")}
             and _saves_awi(tokens)
         ):
-            headings = "、".join(f"「方針（案）{f' {modifier}' if modifier else ''}」" for modifier in waits) if main else ""
             return _block_notice(
                 "方針の修正回答に対する再承認を待っているため、確定操作を止めました。",
                 fix=(
-                    (
-                        f"改訂版を応答の本文に書いてください。send_to_userは使わないでください。1行目は{headings}です。"
-                        if is_codex_payload(payload)
-                        else f"同じ会話のsend_to_userで改訂版を送ってください。再送する方針の1行目は{headings}です。"
-                    )
-                    + "修飾なしの形は「方針（案）」、修飾ありの例は「方針（案） 2件目の」です。"
-                    + "件名、補足、本文は2行目以降に書き、"
-                    + (
-                        "本文を書いた後で同じ修飾の方針の承認を問い直してください。"
-                        if is_codex_payload(payload)
-                        else "送達の後で同じ修飾の方針の承認を問い直してください。"
-                        "送達できない場合は同じ会話で /mcp を実行してagents_serverへ再接続してください。"
-                    )
+                    "修正を反映した方針と適用対象を示して承認を問い直し、同じ対象への実回答を得てください。"
+                    "発行の成功や無回答は承認に数えません。"
                     if main
-                    else "委譲元が再送と再承認を行うまで確定できません。結果を委譲元へ返して待ってください。"
+                    else "委譲元が同じ対象への再承認を得るまで確定できません。結果を委譲元へ返して待ってください。"
                 ),
             )
     return None
-
-
-def recommendation_review_needed(payload: dict, session_id: str, tool_input: dict) -> bool:
-    if not session_id or not any(
-        ".options[" in field and ("推奨" in value or re.search(r"\brecommended\b", value, re.IGNORECASE))
-        for field, value in _user_facing_text_fields("AskUserQuestion", tool_input)
-    ):
-        return False
-    return not _notice.consume_resend(
-        session_id,
-        _agent_id.resolve_hook_agent_id(payload),
-        "recommendation_review_by_actor",
-        json.dumps(tool_input, sort_keys=True, ensure_ascii=False),
-    )
 
 
 def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
@@ -570,15 +253,6 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
     return fields
 
 
-def scope_review_text(tool_name: str, tool_input: dict) -> str:
-    if tool_name == "AskUserQuestion":
-        return "\n".join(value for _, value in _user_facing_text_fields(tool_name, tool_input))
-    values = [tool_input.get(name) for name in ("message", "prompt", "instruction")]
-    if isinstance(extra := tool_input.get("extra_params"), dict):
-        values.extend(extra.values())
-    return "\n".join(value for value in values if isinstance(value, str))
-
-
 def language_retry(payload: dict, tool_name: str, tool_input: dict, *, remember: bool) -> bool:
     session_id = payload.get("session_id", "")
     if not isinstance(session_id, str) or not session_id:
@@ -605,10 +279,6 @@ def language_retry(payload: dict, tool_name: str, tool_input: dict, *, remember:
 def decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: dict) -> Decision:
     # 記述言語だけは表示前に遮断する。「遮断と警告の選択」が定める例外で、文字化けは警告に留める。  # pyfltr: allow-comment
     fields = _user_facing_text_fields(tool_name, tool_input)
-    if excuse_block := norm_excuse_gate.text_block(
-        _payload, "\n".join(text for _, text in fields), "ユーザーへの質問・計画の提示"
-    ):
-        return Decision(block=excuse_block)
     recoverable = all(_response_language_check.explanation_is_japanese(text) for _, text in fields)
     repeated = language_retry(_payload, tool_name, tool_input, remember=recoverable)
     for name, text in fields:

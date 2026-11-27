@@ -50,15 +50,11 @@ MCPが公開する操作は、状態取得・要求準備・所有する委譲�
 - `questions`: PreToolUseが承認質問の呼出ID、質問ツール名、修飾、回答キー、発行時刻を記録する。
   非同期の発行はPostToolUseで観測し、UserPromptSubmitが呼出IDと質問番号の一致で回答を特定する。
   回答の取り込み後はその質問を取り除く。
-- `waits`: PostToolUseの同期回答、またはUserPromptSubmitの非同期回答で修正が返ると、修飾ごとの待ちを設定し、前の送達時刻を消す。
-  PostToolUseが成功した同じ修飾の送達を記録し、その後に発行した同じ修飾への承認で待ちを取り除く。
-- `corrected`: 修正回答を取り込んだ時刻を修飾ごとに記録し、待ちを取り除く時に消す。
-  Codexでは会話内modが無く、`send_to_user`は設計上送達できない。
-  そこで承認質問のPreToolUseがrollout（`transcript_path`）を読み、`corrected`以後のアシスタント本文を探す。
-  本文（`response_item`の`message`・`assistant`・`output_text`）の1行目が同じ修飾の「方針（案）」なら、その時刻を送達として記録する。
-  rolloutの読み方は`norm_excuse_gate._codex_turn_texts`に合わせた。
-  Stopの`last_assistant_message`は最終応答だけでターンの途中の本文を含まず、本文の直後に同じターンで問い直す流れを判定できないため使わない。
-  rolloutの時刻はミリ秒精度のため、`corrected`もミリ秒へ切り捨てて比べる。
+- `waits`: PostToolUseの同期回答、またはUserPromptSubmitの非同期回答で修正が返ると、適用対象ごとの待ちを設定する。
+  修正回答より後に発行した同じ対象への承認質問に、実回答の承認が返ると待ちを取り除く。
+  改訂版の見出しや送達本文の書式は、承認の条件にしない。
+- `corrected`: 修正回答を取り込んだ時刻を適用対象ごとに記録し、待ちを取り除く時に消す。
+  修正回答より前の質問への古い承認を、改訂後の承認として使わない。
 - 確定操作のPreToolUseは待ちが1件でもあれば遮断する。
   委譲先は自分の起動時点の値でなく、操作の直前に所有会話の状態を読む。
 

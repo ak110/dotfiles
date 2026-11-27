@@ -63,9 +63,7 @@ CHECK_MODULE_NAMES = (
     "agents_server_session_advisor",
     "user_response_advisor",
     "permission_denial_notice",
-    "hook_notice_response_gate",
     "bugfix_gate",
-    "norm_excuse_gate",
     "termination_order_advisor",
     "process_loop_exit_gate",
     "queued_notification_advisor",
@@ -75,7 +73,6 @@ CHECK_MODULE_NAMES = (
 CODEX_CHECK_MODULE_NAMES = (
     "response_language_advisor",
     "run_skill_report_gate",
-    "norm_excuse_gate",
     "process_loop_exit_gate",
 )
 
@@ -398,15 +395,11 @@ def evaluate(payload_text: str) -> dict[str, object]:
                 return _finalize({})
             update_state(session_id, lambda item: _set_consecutive_block_count(item, block_count + 1))
         reports = dict(zip(blocking_checks, block_reasons, strict=True))
-        ordered = [
-            reports.pop(name)
-            for name in ("bugfix_gate", "hook_notice_response_gate", "delivered_repost_gate")
-            if name in reports
-        ]
+        ordered = [reports.pop(name) for name in ("bugfix_gate", "delivered_repost_gate") if name in reports]
         send_steps = (
             [delivered_repost_gate.send_fix()]
             if "delivered_repost_gate" not in blocking_checks
-            and any(name in blocking_checks for name in ("bugfix_gate", "hook_notice_response_gate"))
+            and "bugfix_gate" in blocking_checks
             and delivered_repost_gate.send_required(entries)
             else []
         )

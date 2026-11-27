@@ -69,14 +69,14 @@ async def test_rejected_delivery_with_unknown_result_is_not_replayed(tmp_path, m
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     sid, body = "known-case", "同じ本文"
-    assert send_misdetection.remember_rejection(sid, "norm-excuse", body, "call")
+    assert send_misdetection.remember_rejection(sid, "response-language", body, "call")
     unknown = ActionableError("表示結果不明", next_action="表示の有無を先に確かめる")
     unknown.__cause__ = TimeoutError("modから応答なし")
     request = AsyncMock(side_effect=unknown)
     with pytest.raises(ActionableError):
         await send_retry.deliver(request, {"message": body}, sid, set(), body)
     with pytest.raises(ValueError, match="未送達記録を確認できない"):
-        await send_retry.deliver(request, {"message": body}, sid, {"norm-excuse"}, body)
+        await send_retry.deliver(request, {"message": body}, sid, {"response-language"}, body)
     request.assert_awaited_once()
 
 
@@ -85,7 +85,7 @@ async def test_known_rejection_cannot_be_retried_without_state_write(tmp_path, m
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     sid, body = "write-failure-case", "同じ本文"
-    assert send_misdetection.remember_rejection(sid, "norm-excuse", body, "call")
+    assert send_misdetection.remember_rejection(sid, "response-language", body, "call")
     monkeypatch.setattr(session_state, "update_state", lambda *_args: False)
     request = AsyncMock()
     with pytest.raises(ActionableError, match="未送達記録を更新できない"):

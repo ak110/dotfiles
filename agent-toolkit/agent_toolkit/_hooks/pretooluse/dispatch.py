@@ -91,8 +91,6 @@ lazy from agent_toolkit._hooks import (
     clock_claims,
     command_timing,
     delivered_repost_gate,
-    hook_notice_response_gate,
-    norm_excuse_gate,
     permission_denial_notice,
     repository_protection,
     work_contract,
@@ -156,11 +154,6 @@ _MAIN_ONLY_MCP_TOOLS = frozenset(
     f"{prefix}{name}"
     for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
     for name in ("send_to_user", "send_to_user_preflight", "compact_conversation", "apply_runtime_changes")
-)
-_SCOPE_REVIEW_MCP_TOOLS = frozenset(
-    f"{prefix}{name}"
-    for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
-    for name in ("start", "send_message", "send_to_user")
 )
 
 
@@ -284,29 +277,6 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
     return [text for text in notices if text]
 
 
-def _send_understanding_block(message: object, retry: set[str] | None = None) -> str | None:
-    retry = retry or set()
-    if (
-        "understanding-original" not in retry
-        and isinstance(message, str)
-        and user_facing_checks.has_original_text_label_in_understanding(message)
-    ):
-        return _block_notice(
-            "「発話の理解」に「原文」の見出しがある。" + send_misdetection.retry_hint("understanding-original"),
-            fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送してください。",
-        )
-    if (
-        "understanding-alternative" not in retry
-        and isinstance(message, str)
-        and user_facing_checks.missing_alternative(message)
-    ):
-        return _block_notice(
-            "「発話の理解」に「別案」の項目がない。" + send_misdetection.retry_hint("understanding-alternative"),
-            fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
-        )
-    return None
-
-
 def _retry_send(
     payload: dict, tool_name: str, tool_input: dict, session_id: str, reason: str, *, edit_body: bool = True
 ) -> Decision:
@@ -350,68 +320,6 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             return Decision(block=_block_notice(str(error), fix="同じ会話の拒否通知にある`body_ref`を指定する。"))
         hydrated = {key: value for key, value in tool_input.items() if key != "body_ref"} | {"message": text}
         tool_input = hydrated
-    if (tool_name == "AskUserQuestion" or tool_name in _SCOPE_REVIEW_MCP_TOOLS) and (
-        reminder := work_contract.scope_review_before_send(
-            session_id,
-            payload.get("transcript_path"),
-            user_facing_checks.scope_review_text(tool_name, tool_input),
-            actor=_agent_id.resolve_hook_agent_id(payload),
-        )
-    ):
-        reason = _block_notice(
-            f"決定の原文と適用範囲を見直すため、まだ送信していない。\n\n{reminder}",
-            fix="今回の対象と除外を確かめ、必要なら本文を直して再送してください。",
-        )
-        if isinstance(reason, str) and is_send_to_user_tool(tool_name):
-            return _retry_send(payload, tool_name, tool_input, session_id, reason)
-        return Decision(block=reason)
-    question_tools = {"request_user_input", "request_user_input_async"} if is_codex else {"AskUserQuestion"}
-    if tool_name in question_tools and _agent_id.is_main_agent_context(payload):
-        if user_facing_checks.policy_approval_form_invalid(user_facing_checks.normalize_policy_question(tool_name, tool_input)):
-            return Decision(
-                block=_block_notice(
-                    "方針の承認の質問が決まった形でないため、まだ送っていない。再発行しても同じ形では送れない。",
-                    fix=(
-                        "非同期の質問は1つだけにし、titleを「方針の承認：送った方針で進めてよいですか？」、"
-                        'optionsを["この方針で進める", "修正して進める"]の文字列配列にしてください。'
-                        "修飾を使う場合は「送った」と「方針」の間に「2件目の」などを入れてください。"
-                        if tool_name == "request_user_input_async"
-                        else "質問は1つだけにし、見出し「方針の承認」、問い「送った方針で進めてよいですか？」、"
-                        "選択肢「この方針で進める」（説明「送った方針のとおりに着手する」）と"
-                        "「修正して進める」（説明「修正点を自由記述で伝える」）の2つにしてください（推奨の付記は付けない）。"
-                        f"方針の識別に修飾が必要なら、「2件目の」など{user_facing_checks.POLICY_APPROVAL_MODIFIER_LIMIT}文字以内にしてください。"
-                        "修飾は文字と数字だけで書き、改行、読点、列挙記号、括弧、述語を含む文は入れないでください。"
-                        "方針の項目と技術の選択は、質問の前に送る材料（`send_to_user`など）に書いてください。"
-                        "本人固有の論点は、承認より前に別の呼び出しで尋ねてください。"
-                    ),
-                )
-            )
-        if not is_codex and (
-            error := user_facing_checks.external_source_review_needed(session_id, tool_input, cwd=payload.get("cwd"))
-        ):
-            return Decision(
-                block=_block_notice(
-                    f"外部資料の対応表が不足しているため、方針の承認はまだ求めていない。\n{error}",
-                    fix=(
-                        f"セッション一時領域の`{user_facing_checks.SOURCE_REVIEW_FILE}`に、各主張の必須列と既存との差分を書いてください。差分がなければ既存の対応箇所を`path:行`で示してください。"
-                        "`agent-basics:writing-standards/references/design-heuristics.md`"
-                        "「外部資料に基づく改善案の評価」の配布範囲も確かめてください。"
-                    ),
-                )
-            )
-        if user_facing_checks.recommendation_review_needed(payload, session_id, tool_input):
-            return Decision(
-                block=_block_notice(
-                    "推奨のある質問はまだ送っていない。",
-                    fix=(
-                        "`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってください。"
-                        "事前承認・方針全体の合意・認可・本人固有の入力は確認してください。"
-                        "全体として受け入れられた方針で、確定した対象・結果・範囲を保つ実現方式の変更は技術判断です。"
-                        "有効な指定手段の変更は確認し、それ以外の技術判断は質問から外して方針へ書いてください。"
-                        "見直して必要と判断した問いは再発行できます。"
-                    ),
-                )
-            )
     claims, error = send_misdetection.parse(tool_input.get("misdetection")) if is_send_to_user_tool(tool_name) else ([], None)
     if error or (claims and (error := send_misdetection.validate_displayed(session_id, claims))):
         return Decision(
@@ -424,42 +332,29 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 "同じ本文と判定の未送達記録を確認できない。", fix="未送達の通知と同じ本文・判定かを確かめてください。"
             )
         )
-    if tool_name == "AskUserQuestion" and (
-        notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
-    ):
-        return Decision(block=notice_block)
     if reapproval_block := user_facing_checks.policy_reapproval_block(payload, tool_name, tool_input, session_id):
         return Decision(block=reapproval_block)
     if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
         return Decision(block=_block_notice(publication_block[0], fix=publication_block[1]))
-    if tool_name == "ExitPlanMode":
-        from agent_toolkit._hooks.plan_presentation import check_before_presentation  # pylint: disable=import-outside-toplevel
-
-        if invalid_plan := check_before_presentation(session_id, str(payload.get("cwd", "")), tool_input.get("plan")):
-            return Decision(block=_block_notice(invalid_plan, fix="指摘を直し、同じ計画を提示してください。"))
     if tool_name in user_facing_checks.USER_FACING_TEXT_TOOL_NAMES:
         return user_facing_checks.decide_user_facing_text_tool(payload, tool_name, tool_input)
     send_warnings: list[str] = []
     if is_send_to_user_tool(tool_name):
         message = tool_input.get("message")
         kind = tool_input.get("kind")
-        reason = _send_understanding_block(message, retry)
+        reason = None
         edit_body = True
-        if reason is None and send_to_user.is_completion(message, kind):
+        if send_to_user.is_completion(message, kind):
             reason = _completion_prerequisite(payload, session_id)
             edit_body = reason is None
         bugfix_block = None
         if reason is None:
             bugfix_block = bugfix_gate.send_block(payload, message, kind=kind, warnings=send_warnings)
-            reason = bugfix_block or norm_excuse_gate.text_block(payload, message, "ユーザーへの送達", retry=retry)
-        notice_block = hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
-        if notice_block is not None or reason is not None:
-            combined = "\n\n".join(item for item in (reason, notice_block) if item)
-            if notice_block is not None or bugfix_block is not None:
-                combined += "\n\n" + delivered_repost_gate.send_fix()
-            return _retry_send(
-                payload, tool_name, tool_input, session_id, combined, edit_body=edit_body or notice_block is not None
-            )
+            reason = bugfix_block
+        if reason is not None:
+            if bugfix_block is not None:
+                reason += "\n\n" + delivered_repost_gate.send_fix()
+            return _retry_send(payload, tool_name, tool_input, session_id, reason, edit_body=edit_body)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (

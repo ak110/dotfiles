@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
-import itertools
 import json
 import os
 import pathlib
@@ -12,8 +11,6 @@ import re
 from collections.abc import Iterator
 
 from agent_toolkit._common import automated_prompt, delegated_session, runtime_inserted
-from agent_toolkit._common.diagnostic_redaction import redact_secrets
-from agent_toolkit._common.external_source_review import EXTERNAL_SOURCE_ENTRY_KEY, source_urls
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
@@ -43,118 +40,6 @@ RETURN_CRITERION = (
 
 SHORT_NOTICE = "作業の目的と現行の要求を見失わないよう、作業契約の原本を読んでください: "
 """通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
-
-_RECORD_REFERENCE = re.compile(r"`([^\n`]+):([1-9][0-9]{0,7})`")
-_QUOTED_TERM = re.compile(r"「([^」\n]+)」|`([^`\n]+)`")
-_EXCLUDED_ACTION = re.compile(r"(?:^|[。、： \s])([^。、\s]{2,12})は対象外")
-_DECISION_NAME = r"(?:決定|方針|指示|合意|取り決め)"
-_RELIANCE = r"(?:に従う|に従い|を根拠に(?:する|し)|を[^。\n]{0,24}適用(?:する|した))(?=[。\n、]|$)"
-_DECISION_CUE = re.compile(rf"{_DECISION_NAME}(?={_RELIANCE})")
-_DECLARED_SUBJECT = re.compile(r"(?:^|[。、： ]|^- )([^。、： ]{4,30})は(?=[^。]*(?:に限|のみ|だけ))")
-_SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
-
-
-EXTERNAL_SOURCE_WORKS = frozenset({"add-awi-by-user", "process-user-comments", "implement"})
-
-
-def observe_external_source_entry(session_id: str, work: str, arguments: str) -> None:
-    urls = sorted(set(source_urls(arguments))) if work in EXTERNAL_SOURCE_WORKS else []
-    entry = {"work": work, "urls": urls}
-    update_state(session_id, lambda state: {**state, EXTERNAL_SOURCE_ENTRY_KEY: entry})
-
-
-def scope_review_before_send(session_id: str, raw_transcript: object, message: str, *, actor: str) -> str | None:
-    path = record_path(session_id)
-    if path is None or not message.strip() or not isinstance(raw_transcript, str) or not raw_transcript:
-        return None
-    transcript = pathlib.Path(raw_transcript)
-    names = {raw_transcript, transcript.name, transcript.stem, session_id, f"claude:{session_id}", f"codex:{session_id}"}
-    candidates: dict[int, dict[str, tuple[str, set[str]]]] = {}
-    try:
-        for decision in path.read_text(encoding="utf-8").splitlines():
-            for loc in _RECORD_REFERENCE.finditer(decision):
-                name, number = loc.groups()
-                # 現ホストが渡す当該会話の記録だけを読む。契約に書かれた任意のpathは開かない。  # pyfltr: allow-comment
-                if name not in names:
-                    continue
-                terms = {
-                    term
-                    for match in _QUOTED_TERM.finditer(_RECORD_REFERENCE.sub("", decision))
-                    if len(term := match[1] or match[2]) >= 4
-                }
-                line = _RECORD_REFERENCE.sub("", decision)
-                terms.update(_DECLARED_SUBJECT.findall(line))
-                terms.update(_SCOPE_FIELD.findall(line))
-                reference = re.escape(loc[0].strip("`"))
-                cited = re.search(rf"{reference}`?\s*(?:の{_DECISION_NAME})?{_RELIANCE}", message)
-                if cited or _applies_decision(message, decision, terms):
-                    key = hashlib.sha256(f"{loc[0]}\n{decision.strip()}".encode()).hexdigest()
-                    candidates.setdefault(int(number), {})[key] = (decision.strip(), terms)
-    except OSError, UnicodeError:
-        return None
-    if not candidates:
-        return None
-
-    prior = read_state(session_id).get("scope_reviewed_before_send", {})
-    checked = set(prior.get(actor, [])) if isinstance(prior, dict) else set()
-    candidates = {
-        line: remaining
-        for line, decisions in candidates.items()
-        if (remaining := {key: value for key, value in decisions.items() if key not in checked})
-    }
-    if not candidates:
-        return None
-    observed: dict[str, str] = {}
-    try:
-        with transcript.open(encoding="utf-8", errors="replace") as stream:
-            for line_number, raw in enumerate(itertools.islice(stream, max(candidates)), 1):
-                if line_number not in candidates:
-                    continue
-                if (utterance := _original_user_text(raw)) is not None:
-                    for key, (decision, terms) in candidates[line_number].items():
-                        observed[key] = _scope_review_entry(decision, utterance, terms)
-    except OSError:
-        return None
-    if not observed:
-        return None
-
-    reminders: list[str] = []
-
-    def mark(state: dict) -> dict | None:
-        prior = state.get("scope_reviewed_before_send", {})
-        first = dict(prior) if isinstance(prior, dict) else {}
-        checked = set(first.get(actor, []))
-        reminders.extend(value for key, value in observed.items() if key not in checked)
-        if not reminders:
-            return None
-        first[actor] = sorted(checked | observed.keys())
-        return {**state, "scope_reviewed_before_send": first}
-
-    update_state(session_id, mark)
-    return "\n\n".join(reminders) if reminders else None
-
-
-def _applies_decision(message: str, decision: str, terms: set[str]) -> bool:
-    excluded = _EXCLUDED_ACTION.findall(decision)
-    return any(
-        any(term in part for term in terms)
-        and (
-            _DECISION_CUE.search(part)
-            or any(action + sense in part for action in excluded for sense in ("する", "予定", "に含め", "を許可"))
-        )
-        for part in re.split(r"[。\n]", message)
-    )
-
-
-def _scope_review_entry(decision: str, utterance: str, terms: set[str]) -> str:
-    parts = [part for part in re.split(r"(?<=。)|\n", utterance) if any(term in part for term in terms)]
-    excerpt = "".join(parts) or utterance
-    original = (
-        f"原文の抜粋: {json.dumps(redact_secrets(excerpt), ensure_ascii=False)}"
-        if excerpt and len(excerpt) <= 800
-        else "契約の参照位置で、原文の該当部分を確認してください。"
-    )
-    return f"契約: {redact_secrets(decision)}\n{original}"
 
 
 def _original_user_text(raw: str, *, include_answers: bool = False) -> str | None:

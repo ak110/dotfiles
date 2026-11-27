@@ -24,7 +24,7 @@
 
 対象WIの本文が実装と実行レビューの基準である。
 詳細化が要るAWIは、計画を作る前に`atk wi edit --detail`で本文を置き換えて詳細化済みの印を付ける（`write-plan.md`「詳細化」）。
-`plan-check`は、一覧のWI本文をprivate-notesから読み、詳細化済みの印、編集するエージェント向け文書のパス（`--agent-rule-path`）、形式検証の判定の欠落（WI本文と`--handoff-file`の引き継ぎ記録）を検査する。
+`plan-check`は、一覧のWI本文をprivate-notesから読み、詳細化済みの印と編集するエージェント向け文書のパス（`--agent-rule-path`）を検査する。
 変更範囲の検証コマンド、進捗、検証結果、再開の情報、詳細化しないWIの`形式検証の判定:`の行は、引き継ぎ記録へ書く（`agent-toolkit:atk-mode/references/work-contract.md`「引き継ぎ記録」）。
 予測補正記録は対象AWIの本文へ保存する（`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「予測補正記録」）。
 WI実装commitの対応は対応記録ファイル（`agent-toolkit:atk-mode/references/commit-wi-records.md`）へ保存する。
