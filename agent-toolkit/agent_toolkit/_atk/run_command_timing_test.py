@@ -49,7 +49,7 @@ def test_journal_keeps_initial_wait_once(monkeypatch: pytest.MonkeyPatch, tmp_pa
         on_wait_interval(dataclasses.replace(wait, finished_at="end", elapsed=0.1, outcome="acquired"))
         yield
 
-    monkeypatch.setattr(run_command.execution_slot, "hold", hold)
+    monkeypatch.setattr(run_command.verification_slot, "hold", hold)
     monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
     observed, code, failure = run_command.execute([sys.executable, "-c", "pass"], tmp_path, 10, verification=True)
     assert code == 0 and failure is None
@@ -81,7 +81,7 @@ def test_slot_wait_journal_survives_completion_and_interruption(
         "    def competing(owner):\n"
         "        (root/'competing').touch()\n"
         "        if sys.argv[1]=='interrupt': raise KeyboardInterrupt\n"
-        "    execution_slot.hold=functools.partial(execution_slot.hold,on_wait=competing)\n"
+        "    run_command.verification_slot.hold=functools.partial(run_command.verification_slot.hold,on_wait=competing)\n"
         "    try:\n"
         "        result=run_command.execute([sys.executable,'-c','print(42)'],root,10,verification=True)\n"
         "    except KeyboardInterrupt:\n"
