@@ -42,6 +42,21 @@ def _age(path: pathlib.Path, *, days: float, now: float) -> None:
     os.utime(path, (stamp, stamp))
 
 
+def test_session_expiry_keeps_reset_consumption_records_byte_for_byte(tmp_path: pathlib.Path) -> None:
+    now = time.time()
+    base = tmp_path / "agents-server"
+    reset = base / "codex-auto-reset" / "account.json"
+    expired = base / "expired-root" / "root.json"
+    original = b'{"used": 1, "status": "completed"}\n'
+    for path in (reset, expired):
+        path.parent.mkdir(parents=True)
+        path.write_bytes(original)
+        _age(path, days=8, now=now)
+    shared_sweep.sweep_stale_shared_state(keep_root_session_id=None, state_root=tmp_path, now=now)
+    assert reset.read_bytes() == original
+    assert not expired.parent.exists()
+
+
 def test_instance_diagnostics_follow_references(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
     now = time.time()

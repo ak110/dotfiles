@@ -6,6 +6,7 @@ import re
 import subprocess
 
 from agent_toolkit._common import delegated_session, process_loop_session, session_state
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
 from agent_toolkit._git import command as git_command
 from agent_toolkit._git.remote import resolve_repo_identifier
@@ -287,7 +288,11 @@ def _check(
         if targets is None:
             return (
                 "公開対象を確定できないため、開始時集合との比較を行っていない。",
-                "公開先のリポジトリとブランチを確認し、コマンドで明示して再試行してください。",
+                "実行ツールの作業ディレクトリ（exec_commandのworkdir、Bashでは現在のcwd）を対象リポジトリに指定・照合し、"
+                "単独のgit push <remote> <source>:refs/heads/<destination>で再試行してください。"
+                "git -C、timeout付き、cd … && git push …の複合形は公開先の解析対象外です。"
+                "別のシェル呼び出しでcdしても作業ディレクトリは引き継がれません。"
+                "単独形の場合はremoteのpush URLが1つで、宛先ブランチを解決できることを確認してください。",
                 None,
             )
         command = tool_input.get("command")
@@ -295,6 +300,8 @@ def _check(
         if push and push[3] and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64}):refs/heads/[A-Za-z0-9_./-]+", push[3]):
             return None
         rows = progress_new_wis(owner, targets=targets, track_merges=True)
+    except ActionableError as error:
+        return f"公開前に処理可能な新着WIを取得できない。{error.reason}", error.next_action, None
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
         return (
             f"公開前に処理可能な新着WIを取得できない（{type(error).__name__}）。",
