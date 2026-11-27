@@ -59,7 +59,7 @@
 - エンドユーザーの環境で実行するパス（`hooks.json`の`command`、エージェントやスキルの本文の実行コマンドの例など）は`${CLAUDE_PLUGIN_ROOT}/<相対パス>`で書く。
   rootは導入先で決まるため、リポジトリ相対のパスはエンドユーザーの環境で解決に失敗する。
   各ファイルの役割を説明するだけの参照は、リポジトリ相対のパスでよい。
-- 別のプラグイン（agent-toolkitからagent-basicsなど）の資料は、配布時に版ごとの別のディレクトリへ置かれて相対パスでは届かないため、読込表でも本文でも`agent-basics:`か`agent-toolkit:`で始まる論理名で指す。
+- 別のプラグイン（agent-toolkitからagent-basicsなど）の資料は、配布時にバージョンごとの別のディレクトリへ置かれて相対パスでは届かないため、読込表でも本文でも`agent-basics:`か`agent-toolkit:`で始まる論理名で指す。
   `agent_toolkit_reference_delivery_invariant_test.py`が、所有プラグインのrootの外を指す相対パスを拒否する。
 - Agent PluginsのMCP定義をCodex向けに変換する時は、`args`、`cwd`、`env`の`${CLAUDE_PLUGIN_ROOT}`を`${PLUGIN_ROOT}`へ置き換える。
 

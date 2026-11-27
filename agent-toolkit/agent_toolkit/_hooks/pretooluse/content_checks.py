@@ -180,7 +180,7 @@ _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         (
             "`[project.dependencies]`・`[project.optional-dependencies]`の編集は、"
             "`uv.lock`を同期させるため`uv add`・`uv remove`を使ってください。"
-            "`[tool.*]`と版数の編集はそのまま進めてよい。"
+            "`[tool.*]`とバージョンの編集はそのまま進めてよい。"
         ),
     ),
     (

@@ -59,7 +59,7 @@
 1. 計画準備の返却の扱いと、待機が要る場合の`実装開始`か`実装なし`の返却は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「計画準備の受領」に従う。
    実行レビューとユーザビリティレビューの起動、指摘の修正、収束の判定は、レーン担当が`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`で行う。
    メインは`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の受領を担う。
-2. 実行レビューの前に、取得版、入力・環境の条件、要求別の観測箇所を`agent-toolkit:atk-mode/playbooks/verification.md`の検証記録へ対応付けさせる（保存済みの結果の適用の可否と追加の観測の範囲は実行レビュー担当が判断する）。
+2. 実行レビューの前に、取得したバージョン、入力・環境の条件、要求別の観測箇所を`agent-toolkit:atk-mode/playbooks/verification.md`の検証記録へ対応付けさせる（保存済みの結果の適用の可否と追加の観測の範囲は実行レビュー担当が判断する）。
 3. 選定結果の担当モデル、起動側が解決したモデルの候補、終了後の実行ログから観測した実行のidentityを別々の値として比べ、不一致は値と出所を分け、観測できなければ未観測として後続へ渡す。
 4. レーン担当から確認事項や事後承認の対象を受けたら、その時点で根拠と既存の認可を確かめる。
    発行の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`で決める。
@@ -87,7 +87,7 @@
 3. 各AWIの終了区分を決める。
    採用・不採用・回答取込・回答待ちの遷移と権限は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態遷移」「承認型UWIと元項目」「回答済みUWIの取り込み」に従う。
    - 外部環境の状態変化や上流の変更を待つ未実装の項目: `agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」の境界に従ってUWIか依存・冷却を設定し、`inbox`へ戻す。
-   - 反映後の観測、公開工程の後の採用指示、版数の更新による延期: 同書「延期adoptと反映後の観測」で延期の対象と観測結果を判定し、採否・再開記録・状態を保存する。
+   - 反映後の観測、公開工程の後の採用指示、バージョンの更新による延期: 同書「延期adoptと反映後の観測」で延期の対象と観測結果を判定し、採否・再開記録・状態を保存する。
 
 ## 統合とAWI終了
 

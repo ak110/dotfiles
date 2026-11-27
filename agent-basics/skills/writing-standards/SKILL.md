@@ -90,6 +90,7 @@ description: >
 | 文書の一部の節でも次の内容を書く時（文書の種類を問わない）: 読者に利点や訴求を伝える記述（手続き文書や技術文書の「メリット」節、導入の勧め、紹介・宣伝文を含む）、操作手順や技術の説明、読者に判断・決定・行動を求める記述（変更の説明、障害報告、提案、議事録、規程、作業項目）、書き手の体験や感想、スライド、特定の相手へ送るメール・チャット・依頼文、調査や実験の結果、脚本・台本 | `references/writing-genres.md` |
 | ユーザーの入力素材（背景を説明しながらの指示、原文、引用）を文章へ取り込む時と、原文を書き直す時 | `references/writing-genres.md` |
 | 情報をどの文書へ書き分けるかを決める時、文書の種類と役割を選ぶ時、設計の記録（ADRを含む）を作成・変更・レビューする時 | `references/document-types.md` |
+| ADRを書く・改稿する・レビューする時 | `references/adr.md` |
 | 造語や独自の言い換えを避ける時、名前を付ける時（新しい概念名、識別子、工程・担当の名前、画面の表示名）、既存の対象を名前で指す時、同名・同種の対象が複数の主体・プロジェクト・変更前後にまたがる記述をする時 | `references/defined-names.md` |
 | 文章チェック（textlint、markdownlint、口語表現、ダッシュ記号、typos）の対象・実行方法を選ぶ時、実行する時、診断へ対応する時、文の書き直しを委ねる時と受け取る時 | `references/textlint-violations.md` |
 | 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む） | `references/tone-examples.md` |
@@ -116,7 +117,7 @@ description: >
 | プログラムの出力メッセージ（エラー、警告、ログ、CLIの出力やヘルプなど）を新設・変更する時と、その変更をレビューする時 | `references/program-messages.md` |
 | テスト設計・検証手法を選ぶ時、テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md`、`references/testing-design.md` |
 | テストの網羅範囲の管理方法を設計・変更・レビューする時、画面を操作する探索的な試行の要否を決める時、状態遷移・並行処理・認可の検証を設計する時 | `references/testing.md`、`references/testing-design.md` |
-| 依存パッケージ、コンテナーイメージ、言語処理系、CI・自動ビルドのツールやactionの版指定を選ぶ・変える作業の起草、計画、実装、レビューの時（配布物が渡す`uvx --from`、`dependencies`、`uv run --with`、PEP 723の版指定、Python対応版の追加、pnpmの導入と版の更新を含む） | `references/dependency-management.md` |
+| 依存パッケージ、コンテナーイメージ、言語処理系、CI・自動ビルドのツールやactionのバージョン指定を選ぶ・変える作業の起草、計画、実装、レビューの時（配布物が渡す`uvx --from`、`dependencies`、`uv run --with`、PEP 723のバージョン指定、Python対応バージョンの追加、pnpmの導入とバージョンの更新を含む） | `references/dependency-management.md` |
 | 自分の配布物のバージョン番号を決める・上げる・レビューする時と、依存先のバージョン番号から互換性を判断する時 | `references/versioning.md` |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` |
 

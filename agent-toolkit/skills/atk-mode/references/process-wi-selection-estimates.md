@@ -10,7 +10,7 @@
 
 `全工程の見込み`の`並列数`と`工程`は必須で、`巨大WI`を省略した場合は空の列として読む。
 モデル同時数は資源とサービスの上限以下とし、根拠の資源・サービス・コストを原記録へ対応させる。
-`検証同時数`は共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）の定義と、対象リポジトリの検証が使うpyfltrの版と`PYFLTR_EXECUTION_SLOTS`から決め、`根拠.検証`へ記録する。
+`検証同時数`は共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）の定義と、対象リポジトリの検証が使うpyfltrのバージョンと`PYFLTR_EXECUTION_SLOTS`から決め、`根拠.検証`へ記録する。
 保存済みの旧記録でこの値が無い場合は、従来の容量で読む。
 選定で使う同時数はCPUコア数から自動で決めず、資源、実際のAPIとCLIの制限、`agent-toolkit:atk-mode/playbooks/delegation.md`「要否判定」から意味判断の所有者が決める。
 これとは別に、マシン全体で作業中の委譲先の上限はagents_serverが論理CPU数から求めて起動時に強制するため、モデル同時数はこの上限を超えない値にする。

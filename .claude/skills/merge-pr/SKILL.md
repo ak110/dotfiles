@@ -69,9 +69,9 @@ PRの状態を尋ねられただけの時は、状態を1回取得して報告�
    1. `origin/master`の完全OIDに対応する`Release statusLine`のrunを完全なdatabase IDで特定し、`prepare`ジョブが省かれずに実行されたrunの完了を待つ。
       `gate`以外の全ジョブが省かれたrunは対象外として次のrunを待ち、`prepare`の実行可否が決まるまで監視する。
       master CIの失敗でrun自体が作られない場合は本書「失敗時の対応」に従う。
-   2. `Cargo.toml`の版数に対応する`statusline-v<version>`タグが`origin/master`を指すことを確かめる。
+   2. `Cargo.toml`のバージョンに対応する`statusline-v<version>`タグが`origin/master`を指すことを確かめる。
    3. GitHub Releaseがあり、`pytools/_internal/setup_statusline_binary.py`の`ASSET_NAME_POSIX`と`ASSET_NAME_WINDOWS`の名前の添付物があることを確かめる。
-   4. 先に新しい版が配布されていた場合は旧版へのlatestの巻き戻りがないことを確かめる。
+   4. 先に新しいバージョンが配布されていた場合は以前のバージョンへのlatestの巻き戻りがないことを確かめる。
       同じ`origin/master`の完全OIDに対応する結果だけを検収の対象とする。
 7. マージ後に到着したレビューを1回だけ確かめる（GitHub Copilotのレビューはマージの後に遅れて届くことがある）。
    `atk review-audit pending --repo <OWNER>/<REPO>`の終了コードが0で、JSONの`reviews`と`threads`が取れて対象PRがどちらにも無ければ、取得を省く。

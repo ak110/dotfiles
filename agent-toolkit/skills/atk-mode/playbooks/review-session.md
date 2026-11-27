@@ -170,9 +170,9 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
 
 1. `atk run-script research-sources`で未読の変更履歴とX投稿を取得する。
    各`model_sources`は`since`より後を無料で調べる（`agent-basics:fetch-sources`）。
-2. 固定の変更履歴（`changelog:*`と`web:antigravity`）は全未読版を読み、`truncated`なら`url`の原本を確認し、公式の詳細履歴へのリンクがあればたどる。
-   読めない版は理由を記録する。
-3. `research-sources` の取得結果で `comparison_required: false` の版上げだけを事前に除く（本文が空か版名だけ）。
+2. 固定の変更履歴（`changelog:*`と`web:antigravity`）は全未読バージョンを読み、`truncated`なら`url`の原本を確認し、公式の詳細履歴へのリンクがあればたどる。
+   読めないバージョンは理由を記録する。
+3. `research-sources` の取得結果で `comparison_required: false` のバージョン番号の更新だけを事前に除く（本文が空かバージョン番号だけ）。
    残る資料は現状と全状態のWIを照らし、`request-intake.md`の手順2〜5で主張ごとの対応表を作る。
    実現済み・既出・便益なしも事前に除かず、差分と採否の列で判定する。
    既存規定を維持する案と、削除・統合・置換する案を同じ表で比較する。
@@ -180,9 +180,9 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
    検収者を起動できなければ同手順の記録を残し、報告を保存せず、資料も既読にしない。
    `atk wi add` の資料URL・書式検査と、選ばれた提案の投入前レビューはそのまま行う。
    ホスト変更で規範の点検が必要なら`refine-prompt`を提案する。
-4. 固定の変更履歴は版ごとの採否と理由を記録する。
+4. 固定の変更履歴はバージョンごとの採否と理由を記録する。
    報告用UWIの「調べて提案しなかった主なもの」には、配布する規範での扱いも理由に含める。
-   全版を評価した変更履歴と読了したその他の`model_sources`だけを`atk run-script research-sources -- --mark-read <source>...`へ渡す。
+   全バージョンを評価した変更履歴と読了したその他の`model_sources`だけを`atk run-script research-sources -- --mark-read <source>...`へ渡す。
    唯一の書き込み成果として`result_uwi`に従い、起動入力の報告先へUWIを1件保存する。
 
 巡回がUWI本文に従い、ユーザーの実際の回答で選ばれた提案だけをAWIにする。
@@ -194,11 +194,11 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
 1. `atk config repos`の全登録先について、現在の既定ブランチとその完全なcommit OIDを確かめる。
    作業中の変更は点検対象に混ぜない。
 2. キューの全状態から `weekly_slot` が `architecture@` で始まる直近の報告用UWIを選ぶ。
-   同じリポジトリの記載版が解決でき、現在の版と一致する時だけ省く。
-   省いた先と比較した両方の版を記録する。
-   初回、報告なし・読取不能、リポジトリの記載なし、記載版の解決不能では省かない。
-   現在の基準版を確かめられない先は対象なしに数えず、診断して解消できなければ報告を保存せず終了する。
-3. 省かなかった先は差分に限らず、基準版のリポジトリ全体を `agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」で点検する。
+   同じリポジトリの記載されたcommitが解決でき、現在のcommitと一致する時だけ省く。
+   省いた先と比較した両方のcommitを記録する。
+   初回、報告なし・読取不能、リポジトリの記載なし、記載されたcommitの解決不能では省かない。
+   現在の対象commitを確かめられない先は対象なしに数えず、診断して解消できなければ報告を保存せず終了する。
+3. 省かなかった先は差分に限らず、対象commitのリポジトリ全体を `agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」で点検する。
    `agent-basics:harden-from-history`の履歴の読み方を使い、重複、肥大化、使われなくなった機構の根拠と是正案を整理する。
    点検したリポジトリごとに完全なcommit OIDを報告に残す。
 
@@ -211,7 +211,7 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
    同じ役割の要素は`agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」の観察点で比べる。
    通常表示と操作後の両方で、主ラベルや配置から分かることを補足が言い直していないか、判断に必要な情報が欠けていないかも確かめる。
    自動更新も、`agent-basics:writing-standards/references/ui-ux.md`「視覚と構造」の基準に照らす。
-   点検した画面、操作と条件、点検した版を記録する。
+   点検した画面、操作と条件、点検したバージョンを記録する。
    崩れは再現条件と画面の証拠を取る。
 3. 崩れの証拠は `agent-basics:verify-skill`「生成するスキルの節」の引き渡しに従う。
    別ホストの読者が報告に記す所在から開けることを、報告の保存前に確かめる。

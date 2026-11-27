@@ -29,7 +29,9 @@ class GenerationRegistry:
             if not _allowed_reader(data, version):
                 if current is not None and _allowed_reader(data, current["version"]):
                     return dict(current)
-                raise ValueError("設定の移行後は旧版の管理サービスを起動できません。新版から再接続してください")
+                raise ValueError(
+                    "設定の移行後は旧バージョンの管理サービスを起動できません。新しいバージョンから再接続してください"
+                )
             if generation not in entries:
                 requested = agents_generation_index.version_tuple(version)
                 accepted = agents_generation_index.version_tuple(current["version"]) if current else ()
@@ -61,7 +63,7 @@ class GenerationRegistry:
             entries = data["generations"]
             entry = entries[generation]
             if not _allowed_reader(data, entry["version"]):
-                raise ValueError("設定の移行後は旧版を受付先として公開できません")
+                raise ValueError("設定の移行後は旧バージョンを受付先として公開できません")
             if entry.get("process") != process:
                 entry.pop("handover_source", None)
                 entry.pop("handover_confirmed", None)

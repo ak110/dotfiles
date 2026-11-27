@@ -1,7 +1,8 @@
 # Claude Codeの手順書
 
 Claude Codeで動くエージェントが、ホストに固有のツール、通知、hookのイベントを扱う時の手順書である。
-方針: ツールの公開状況と通知の配送はClaude Codeの版、設定、プロバイダーで変わるため、可否と状態は実際の呼び出し結果と終了の観測で決める（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
+方針: ツールの公開状況と通知の配送はClaude Codeのバージョン、設定、プロバイダーで変わる。
+可否と状態は実際の呼び出し結果と終了の観測で決める（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
 `agent-basics:writing-standards/references/quality-principles-ownership.md`「完遂と引き継ぎ」に従う。
 
 ## 読む節
@@ -24,7 +25,7 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 - プラグインの再読み込みと`agents_server`・`pyfltr`のMCP再接続は、メインが`apply_runtime_changes`で予約し、ターンを終えて反映の結果を確認する。
   巡回の統括の反映は、[巡回する](process-loop.md#巡回する)の手順5に従う。
   ユーザーに操作を頼まず、再接続の予約が失敗した時か接続を失った後に限り`/mcp`での復旧を依頼する。
-- Windows版のBashツールは引用符付きのheredocや単一引用符の中でも`\\`を`\`へ縮めるため、エスケープを含むコードはWriteでmanaged-tempへ保存して実行する。
+- Windowsで動くBashツールは引用符付きのheredocや単一引用符の中でも`\\`を`\`へ縮めるため、エスケープを含むコードはWriteでmanaged-tempへ保存して実行する。
 - `mcp__plugin_agent-toolkit_agents_server__send_to_user`を使える時は、`agent-toolkit:atk-mode/references/delivery.md`「Claude Codeの本文送信と再送」に従う（地の文はAPIで要約されうる）。
   最終の完了報告には `kind: "completion"` を指定する。
 
@@ -154,6 +155,8 @@ Code Modeを使えない場合は通常の公開ツールやCLIを使う。
 6. 子孫の工程を中止、変更、再開させる指示も、同じ手順で直接の子へ送る。
    直接の子が停止していてもまず同じIDへの継続を試し、成立しない時だけ孫以下へ直接1回送り、送信元のエージェント名、役割、指示の理由を本文に書く。
 7. 最上位のメインが委譲の木の全体を取り下げるのは、`ListAgents`が使える時に限り、委譲元と列挙された全ての子孫を止めて、その系統に稼働中のエージェントが無いことを確かめる。
+   一覧が複数ページに分かれている時は、公開された続きの取得方法で全ページを確認する。
+   取得しきれなければ、未取得のページに子孫がいないとはみなさない。
    `ListAgents`が使えなければ未知の子孫の不在を確かめられないため、取り下げを始めずに保持したIDと観測を続行不能の理由として報告する。
    取り下げの途中で届いた子孫の完了通知は記録に留め、取り下げを続ける。
 

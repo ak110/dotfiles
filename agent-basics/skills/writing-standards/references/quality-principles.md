@@ -19,4 +19,4 @@
 | 設計の判定順（3段判定）に関する判断・作業の前 | `design-heuristics.md` |
 | 変更と検証の範囲に関する判断・作業の前 | `design-heuristics.md` |
 | 文書と既存コードの不一致に関する判断・作業の前 | `investigation.md` |
-| 外部部品の版の追従に関する判断・作業の前 | `dependency-management.md` |
+| 外部部品のバージョンの追従に関する判断・作業の前 | `dependency-management.md` |

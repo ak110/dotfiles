@@ -60,8 +60,8 @@ uvとPEP 723のスクリプト（`# /// script`のメタデータ）には次の
 
 - `pyproject.toml`がある階層の下で`uv run`すると、そのプロジェクトがインストールされる。
   独立したスクリプトは`uv run --no-project --script <path>`で実行する。
-- `.python-version`はスクリプトの`requires-python`より優先され、その版が無いと`error: No interpreter found for Python <ver>`で失敗する。
-  `--no-project`では避けられないため、`uv run --python <ver> --script <path>`で版を指定する。
+- `.python-version`はスクリプトの`requires-python`より優先され、そのバージョンが無いと`error: No interpreter found for Python <ver>`で失敗する。
+  `--no-project`では避けられないため、`uv run --python <ver> --script <path>`でバージョンを指定する。
 - `uv run --script`の仮想環境のキャッシュはスクリプトのパスごとに分かれる場合がある（キャッシュキーの規則は公式に定めが無い）。
   時間制限のある実行の前に温める時は、実行時に使う絶対パスで温める。
 - プロジェクトのlockfileを使う`uv run`には`--frozen`か`--locked`を付ける（prekなどは親の`UV_FROZEN`を引き継がない）。
@@ -79,7 +79,7 @@ uvとPEP 723のスクリプト（`# /// script`のメタデータ）には次の
 
 ## Python新構文と導入バージョン
 
-新しい構文を使えるかは、対象コードが対応するPythonの版と、`peps.python.org`のメタデータの`Python-Version`で判断する。
+新しい構文を使えるかは、対象コードが対応するPythonのバージョンと、`peps.python.org`のメタデータの`Python-Version`で判断する。
 例えばPEP 758（Python 3.14）は`except`と`except*`の例外型の括弧を省けるが、`as`で束縛する時は括弧が要る。
 
 ## テストコード（pytest）
@@ -87,7 +87,7 @@ uvとPEP 723のスクリプト（`# /// script`のメタデータ）には次の
 - テストファイルの配置はプロジェクトの方針に従い、無ければ同居（隣に`<name>_test.py`を置き配布物から除く）か集約（`tests/<module>_test.py`）を選ぶ。
 - 入力だけが違うテストは`@pytest.mark.parametrize`、戻り値を使わないfixtureは`@pytest.mark.usefixtures`で書き、外側から`parametrize`、`asyncio`、`usefixtures`の順に重ねる。
 - 空のコレクションの検証は`assert not x`と書く（pylintの`use-implicit-booleaness-not-comparison`）。
-- pyfltrで大きなテストスイートを実行する時は、計測に基づいて`[tool.pyfltr]`の`command-timeout`を延ばす（現行の版の値と挙動は<https://ak110.github.io/pyfltr/llms.txt>で確かめる）。
+- pyfltrで大きなテストスイートを実行する時は、計測に基づいて`[tool.pyfltr]`の`command-timeout`を延ばす（現行のバージョンの値と挙動は<https://ak110.github.io/pyfltr/llms.txt>で確かめる）。
 - fixture関数の名前は`_`で始めてテストから参照する名前を`name`引数で公開し、複数の値を返すfixtureは型エイリアスかdataclassで各値の意味を示す。
 - `pytest-asyncio`は`asyncio_mode = "strict"`で使い、テストに`@pytest.mark.asyncio`、fixtureに`@pytest_asyncio.fixture`を付ける（strictでは`@pytest.fixture`と`async def`の組み合わせは働かない）。
 - monkeypatchの代用の関数は、副作用と戻り値をlambdaに混ぜず`def`で定義し、対象のAPIへ引数が増えても呼び出しが失敗しないよう引数の末尾に`**kwargs`を置く。

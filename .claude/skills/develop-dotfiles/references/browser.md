@@ -26,5 +26,5 @@
   手動で起動したプロセスは`agent-toolkit:atk-mode/references/operations.md`「待機とバックグラウンド実行」に従い、参照を終えた一時データは`agent-toolkit:atk-mode/playbooks/managed-temp.md`「作業用ディレクトリ」に従う。
 - ブラウザーテストの失敗出力にある「ブラウザー失敗証拠」の保存先から`failure.txt`と`*-trace.zip`を取得し、`uv run --frozen playwright show-trace <trace.zipの絶対パス>`で標準のTrace Viewerを開く。
   CIではブラウザー失敗証拠のartifactから取得し、ローカルの証拠はmanaged-tempの保持期限内に確かめる。
-- 描画結果の確認には、ブラウザー操作ツールのほかに、`pyproject.toml`の依存にあるPython版Playwright（`uv run --frozen python`経由）も使える。
+- 描画結果の確認には、ブラウザー操作ツールのほかに、`pyproject.toml`の依存にあるPlaywrightのPythonパッケージ（`uv run --frozen python`経由）も使える。
   導入済みのブラウザーバイナリは`~/.cache/ms-playwright`で確かめる。

@@ -32,7 +32,7 @@ startup_documents:
    `なし`なら同書「取得」の代替取得を使う。
 2. Copilotのレビューは、同書「対象」から「判定済みの記録」までを行う。
 3. Dependabotアラートは、同書「判定済みの記録」の手順4から`agent-toolkit:atk-mode/playbooks/process-wi-dependabot-audit.md`へ進む。
-   判定の記録は版付きで行う。
+   判定の記録は確認SHA付きで行う。
    取得・比較・markには同じ確認SHA（通常取得は`dependabot.revision`、代替取得は`default_branch`が指すブランチで固定した完全SHA）を使う。
    取得に成功した0件は判定対象なしとし、機能無効・権限不足と区別して取得状態を返す。
 4. 却下とmarkの条件は`agent-toolkit:atk-mode/playbooks/process-wi-dependabot-audit.md`「却下」「判定したアラートの記録」に従う。
@@ -50,9 +50,9 @@ GitHubへの書き込み: <返信、threadの解決およびコメント投稿�
 記録したreview本文: <`atk review-audit mark`で記録したreview本文のdatabaseId。無い場合は「なし」>
 取得対象外のPull Request: <inline commentの取得対象へ入らなかったPull Request番号。無い場合は「なし」>
 代替取得で除いた判定済み: <GraphQLで代替取得した場合に、判定済みとして除いたdatabaseIdの一覧と件数。代替取得しなかった場合は「なし」>
-Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest/package、解決済み版・修正版、判定区分、処置。API終了コードと応答number/state、未処置の理由と次回再取得を含む。無い場合は「なし」>
-要修正のDependabotアラート: <番号、マニフェスト、パッケージ、修正版と対処案。無い場合は「なし」>
-記録したDependabotアラート: <版付きmarkが成功した番号と確認SHA。却下失敗・未判定は含めない。無い場合は「なし」>
+Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest/package、解決済みのバージョン・修正済みのバージョン、判定区分、処置。API終了コードと応答number/state、未処置の理由と次回再取得を含む。無い場合は「なし」>
+要修正のDependabotアラート: <番号、マニフェスト、パッケージ、修正済みのバージョンと対処案。無い場合は「なし」>
+記録したDependabotアラート: <確認SHA付きmarkが成功した番号と確認SHA。却下失敗・未判定は含めない。無い場合は「なし」>
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 

@@ -6,7 +6,7 @@ cmd.exeで実行するバッチファイル（`.cmd`、`.bat`）を作る時と�
 
 ## 基本構造
 
-- 新しいスクリプトはPowerShellで書き、`.cmd`は旧版との互換が要る時とPowerShellを使えない環境に限る。
+- 新しいスクリプトはPowerShellで書き、`.cmd`は古いバージョンとの互換が要る時とPowerShellを使えない環境に限る。
 - 遅延環境変数（`setlocal enabledelayedexpansion`）は`!VAR!`が要るブロックだけで有効にする。
 - 任意の入力をそのままコマンドとして実行せず、`if`と`goto`で固定の候補へ振り分ける（努力目標）。
 

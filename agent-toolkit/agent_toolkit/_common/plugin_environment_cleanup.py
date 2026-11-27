@@ -95,7 +95,7 @@ def cleanup(required: Sequence[Path], environment: Mapping[str, str], *, python_
             if metadata.is_file():
                 row["sources"] = json.loads(metadata.read_text(encoding="utf-8"))
             if target.absolute() in required_set:
-                row["reason"] = "更新後の有効版が必要とする環境"
+                row["reason"] = "更新後に有効なバージョンが必要とする環境"
                 continue
             prefix = os.path.normcase(str(target.absolute()))
             if uncertain or any(prefix in value for value in references):

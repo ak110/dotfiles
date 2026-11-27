@@ -21,8 +21,8 @@
    - linked worktreeは複製元の信頼設定を共有するため複製元のルートの`mise.toml`への1回の実行で十分である。
    - 検証用の複製では複製先の`mise.toml`の絶対パスを指定し、状態ディレクトリを差し替えた環境では自動チェックの時と同じ環境変数を渡す。
    - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を上書きして複製元を未信頼へ戻すため、指定を避ける。
-3. 専用worktreeの変更を`atk`で動かす場合（`atk serve`を含む）は、起動するファイルごとに選ばれる版を確かめる。
-   - PATH上の`atk`が複製元の`bin/atk`を指す時、cwdが同じリポジトリのworktree配下ならそのworktreeの`agent-toolkit/scripts/atk`へ処理を委ね、Git管理外や別リポジトリでは複製元の版を実行する（`uv run atk`も同じ判定）。
+3. 専用worktreeの変更を`atk`で動かす場合（`atk serve`を含む）は、起動するファイルごとに選ばれる実体を確かめる。
+   - PATH上の`atk`が複製元の`bin/atk`を指す時、cwdが同じリポジトリのworktree配下ならそのworktreeの`agent-toolkit/scripts/atk`へ処理を委ね、Git管理外や別リポジトリでは複製元の実装を実行する（`uv run atk`も同じ判定）。
    - 配布物の`scripts/atk`は、その配布物の固定のルートで起動する。
    - 検証や調査を委譲する時は、委譲先と入れ子で呼ぶコマンドへ`<対象worktreeの絶対パス>/agent-toolkit/scripts/atk`を渡す。
    - 使うCLIの`info`サブコマンドで、動作するルートが検証の対象と一致することを確かめる。

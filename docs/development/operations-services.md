@@ -34,14 +34,14 @@
   変更後は`sudo apachectl configtest`で構文を確認してから`sudo systemctl reload apache2`を実行する。
   既存の`/atk/`を開くエンドユーザーのアクセス先と表示は変わらない
 
-### 公開単位ごとの反映と稼働版の確認
+### 公開単位ごとの反映と稼働中のバージョンの確認
 
 利用環境が古い版のままにならないよう、公開単位ごとに次を行う。
 
 1. CIと必要なリリースの検収結果から、ホストが追跡する公開系統の完全OIDを渡す。
    developを追跡するホストには検収済みのdevelop、masterを追跡するホストには検収済みのmasterのOIDを使う。
    主checkoutの現在のHEADでは代用しない。
-   配布版は `git show <公開OID>:agent-toolkit/.claude-plugin/plugin.json` の `version` を使い、OIDとともに記録する。
+   配布物のバージョンは `git show <公開OID>:agent-toolkit/.claude-plugin/plugin.json` の `version` を使い、OIDとともに記録する。
 2. 対象ホストで `update-dotfiles` を実行し、成功を確認する。
    稼働中のunitを使うホストでは `systemctl --user restart atk-serve.service` を実行する。
    `systemctl --user show atk-serve.service --property=LoadState --property=ActiveState --property=SubState` で稼働を確認する。
@@ -55,14 +55,14 @@
 
 `atk serve` は実プロセスが起動時に確定したcheckoutのOIDを返す。
 起動対象に未コミットの変更がある時はOIDを確定しない。
-`agents_server` は現在の受付世代に認証した接続で問い合わせ、実プロセスが返した世代と登録済みの配布版を、公開OIDの配布版とコードから求めた世代と比べる。
+`agents_server` は現在の受付世代に認証した接続で問い合わせ、実プロセスが返した世代と登録済みの配布物のバージョンを、公開OIDの配布物のバージョンとコードから求めた世代と比べる。
 再起動の終了コードやHTTP 200だけでは反映を確認できない。
 各段階の結果と未完了の操作を記録し、失敗した時は成功済みのpush・リリースをやり直さず未完了段階から再開する。
 
-### 画面で稼働版を確認する
+### 画面で稼働中のバージョンを確認する
 
-dotfilesのcheckoutから起動した `atk serve` では、公開版と稼働版が異なるサービスを画面上部に表示する。
-公開版はcheckoutが追跡するoriginのブランチから取得する。
+dotfilesのcheckoutから起動した `atk serve` では、公開されたバージョンで稼働していないサービスを画面上部に表示する。
+公開されたバージョンはcheckoutが追跡するoriginのブランチから取得する。
 未公開のローカルコミットは比較に使わない。
 「版を再確認」を押すか画面を開き直すと再照会し、一致すれば表示が消える。
 公開先に接続できない、公開コミットのオブジェクトがローカルに無い、サービスに接続できないなどの場合は、取得不能と表示する。

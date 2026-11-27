@@ -12,7 +12,7 @@
 - `agent-toolkit/skills/atk-mode/references/omission-check.md`「点検類型」の(j)
 - `agent-toolkit/skills/atk-mode/references/choice-construction.md`「根拠の確定」
 
-1. 使うworktreeの版の`atk info`でplugin rootを確かめ、`atk run-script multi-turn-trials -- --list`で課題を取る。
+1. 対象worktreeの`atk info`でplugin rootを確かめ、`atk run-script multi-turn-trials -- --list`で課題を取る。
    `protection-removal-agent`、`protection-removal-user`、`purpose-boundary`を使う。
    前の2課題は保護の由来による確認の判断を、後の1課題は目的の確認の後の`technical-autonomy`などを比べる。
 2. 固定課題の手順は`agent-toolkit:atk-mode/playbooks/refine-prompt-trials.md`にある。

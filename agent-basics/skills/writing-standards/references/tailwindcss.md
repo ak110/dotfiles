@@ -1,7 +1,7 @@
 # Tailwind CSS記述スタイル
 
 Tailwind CSSで実装する担当がビルドで検出できるクラスとテーマを使い、画面を使う人に操作に応じた表示を届ける。
-対象の版: Tailwind CSS v4系（公式ドキュメント <https://tailwindcss.com/docs>。v3からの移行点を含む）。
+対象のバージョン: Tailwind CSS v4系（公式ドキュメント <https://tailwindcss.com/docs>。v3からの移行点を含む）。
 本書は、Tailwind CSSを使うコードを書く・直す・レビューする時に、v4で誤りやすい事項を示す。
 一般知識で導ける作法を書かないのは`agent-basics:writing-standards/references/quality-principles-subtraction.md`の適用である。
 

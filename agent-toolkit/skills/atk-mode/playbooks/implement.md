@@ -36,7 +36,7 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - 保留中のAWIを列挙した計画を`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って作る（`source: implement`のAWIは詳細化の対象外で、本文をそのまま実装と実行レビューの基準にする）。
      実行レビュー指摘管理表と対応記録は計画と同じstemに置き、手順7で一時資源を回収する前に`atk plans commit`で計画バンドルを保存する。
    - 実装・テスト・変更範囲の検証（`agent-basics:check-execution`と対象リポジトリの検証規範）を行い、`agent-toolkit:atk-mode/playbooks/commit.md`に従って一時ブランチへcommitする。
-   - 配布物の版数はマージ用ブランチで上げない。
+   - 配布物のバージョンはマージ用ブランチで上げない。
      更新が必要な場合は、更新種別と根拠をAWIへ書く。
 5. 独立文脈の実行レビューを受けて収束させる。
    - `agent-toolkit:atk-mode/roles/exec-review.parent.md`に従い、実装を担当していない実行レビュー担当を、レビュー基準`計画`と`WI`で、手順4の計画と保留中のAWIを渡して起動する（指摘管理表は計画と同じstemに解決される）。
@@ -51,7 +51,7 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - `edit`が対象OIDのCI未完了・取消・失敗を返した場合は、保留を解かず、同じOIDの必要なCIの成功後に再実行する。
    - CI非対象とCLIが確定した場合は、同じ完全OIDの同等検証と独立文脈レビューを終えてから保存する。
      証拠の書式は `atk wi verify-merge --help` に従う。
-   - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
+   - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・バージョン更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
    - `agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」に従う。
    - 必要な証拠を確保した後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。
 8. 完了を報告する。
@@ -83,7 +83,7 @@ AWIは保存・保留した項目だけを戻す。
    - 分岐からのmergeとなった場合は、変更箇所と関連する利用側を検証する。
    - 競合または全体検証の失敗が起きた場合は、メイン自身が解消・再検証・実行レビューを進める（解消の規模が大きい場合は通常レーンへ切り替えてよい）。
 5. 終了と公開後の後始末をする。
-   - `atk wi adopt <WIファイル名> --commit <統合後の対象OID> --target-repo=<主作業ツリー>`でAWIを終了し、取り込んだcommitを他の処理対象WIと同じ通常の公開工程（版数更新、push、CIの検収、リリース）へ合流させる。
+   - `atk wi adopt <WIファイル名> --commit <統合後の対象OID> --target-repo=<主作業ツリー>`でAWIを終了し、取り込んだcommitを他の処理対象WIと同じ通常の公開工程（バージョン更新、push、CIの検収、リリース）へ合流させる。
    - AWIに書いた更新種別と根拠は、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の公開担当へ渡す。
    - リモート作業ブランチの削除は、公開工程でベースブランチへの`git push`成功を確認した後に公開担当が実行する。
      削除前に`merge_branch`が共有ブランチでないことと、リモート先端が`merge_commit`のまま変わっていないことを再確認し、`git push origin --delete <merge_branch>`を実行する（同名のローカルブランチがあれば`git branch -D`で削除する）。

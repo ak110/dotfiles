@@ -107,12 +107,12 @@ def test_resource_instructions_name_caller_launcher_on_version_skew(
     server_command, _note = launch_prompts.plugin_environment.launcher_command(_SERVER_ROOT)
     if expected == "caller":
         caller_command, _note = launch_prompts.plugin_environment.launcher_command(caller)
-        assert f"版{caller_version}（起動部分: {caller_command}）" in text
-        assert f"版{server_version}" in text
+        assert f"バージョンは {caller_version}（起動部分: {caller_command}）" in text
+        assert f"バージョン {server_version}" in text
         assert "合否は、委譲元の起動部分で実行した結果で決めよ" in text
     else:
-        assert "委譲元のCLIの版は不明" in text
-        assert f"版{server_version}、起動部分: {server_command}" in text
+        assert "委譲元のCLIのバージョンは不明" in text
+        assert f"バージョン {server_version}、起動部分: {server_command}" in text
         assert "委譲元が同じ原稿・引数で実行した結果を使え" in text
         assert "委譲先の起動部分での結果だけで合否を確定したり、原稿を差し戻したりしてはいけない" in text
         assert "CLIの判定は未確認" in text

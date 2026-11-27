@@ -203,7 +203,7 @@ def start_dependency_failure(engine: str, error: ImportError) -> str | None:
         if not pathlib.Path(sysconfig.get_path("purelib")).is_dir():
             details.append("実行系が参照するsite-packagesがありません")
     except (OSError, UnicodeError, configparser.Error) as diagnostic_error:
-        details.append(f"実行環境の版を確認できません: {diagnostic_error}")
+        details.append(f"実行環境のバージョンを確認できません: {diagnostic_error}")
     return (
         f"Claudeの依存を読み込めません: {error}（{'。'.join(details)}）。"
         "ホストを再読み込みするかセッションを再起動して、現在の仮想環境で再実行する"
