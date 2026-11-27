@@ -38,6 +38,7 @@ def _repo_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pa
         {"session_id": "session-1", "model": _ID.model, "effort": _ID.effort}, is_codex=True
     )
     monkeypatch.setenv("CODEX_THREAD_ID", "session-1")
+    monkeypatch.delenv(commit_hook_environment.CLAUDE_ACTOR_ENV, raising=False)
     monkeypatch.setenv(commit_hook_environment.HOOKS_ENV, str(hooks))
     monkeypatch.setenv("PYTHONPATH", str(package))
     monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'color.ui'='never' " + commit_hook_environment.config_parameter(hooks))
