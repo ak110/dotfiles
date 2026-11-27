@@ -30,16 +30,14 @@
 5. 引き継ぎ記録の検証コマンドを実行し、変更したコマンドも同じ記録に残す。
    計画が無ければ引き継ぎ記録で確定したコマンドを使い、同じ実行と判定の基準を当てる。
 6. 結果を本書「完成条件証拠の検証記録」の形で残す。
-7. 修正の後は、影響する検証だけを新しいHEADで再実行する（限定した再検証）。
-   先に取得した成功と限定した再実行の成功を合わせる時の適用可否は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」で判定し、完全なテスト名、取得した版、合否を要求へ対応付ける。
-   成功の根拠は、取得できた出力と記録された終了状態に限る。
+7. 再検証と成功の再利用は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」で判定し、完全なテスト名、取得した版、合否を要求へ対応付ける。
 
 公開前の全体検証は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」に従う。
 完成条件の観測手段と未確認の範囲は`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」に従う。
 
 ### レーンの検証基準版
 
-レーンで変更に着手する直前に取得したHEADを検証の基準版として保持し、保存した実行結果の取得時点と対応付ける。
+基準版は`agent-basics:check-execution/references/diagnostics.md`「基準版と変更行への帰属」に従い、レーンの着手直前のHEADを使う。
 
 ### 直接影響範囲の類型
 
@@ -48,8 +46,6 @@
 ### 範囲の決め方
 
 決め方の定義は`agent-basics:check-execution/references/verification-scope.md`「範囲の決め方」にある。
-危険になりうる箇所の一覧を広げる前に、その変更が安全である根拠になる1〜2個の事実（例: この呼び出しは既に使われていない値だけを消す）を見つけ、実物を動かして確かめる。
-その事実が成り立てば多くの懸念が一度に消え、成り立たなければ、その事実に依存する利用側を範囲へ加える。
 
 ## 統合実行ツール経由の起動
 

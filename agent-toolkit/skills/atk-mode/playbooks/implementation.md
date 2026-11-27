@@ -47,7 +47,7 @@
 7. Git管理外のファイルは、各ファイルの最初の変更の直前に本文をmanaged-temp（`agent-toolkit:atk-mode/playbooks/managed-temp.md`）へ複製し、原本と複製の絶対パスの対を引き継ぎ記録へ残す（実行レビュー担当が変更の前後を比べるため）。
 8. 変更の前に作成規範を確かめ、担当のファイルと直接影響範囲だけを変える。
    ソースの初回編集前に、`agent-basics:writing-standards`「作業を始める」のコードを書く手順でコメントとdocstringの基準を使う。
-   同じ版を取得済みなら読み直さない。
+   本文の取得と再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
    コメント検査を持つプロジェクトでは、その手順に従い初回の代表編集で結果を得てから、同じ書き方を展開する。
    生成元を変えたら、生成と配布の手段も合わせて直す。
 9. 要件か外部仕様の水準の技術判断が実装中に生じたら、その時点の結論をレビュー指摘管理表（公開の時点で計画なしで進行中の項目では引き継ぎ記録）へ書いて実装を続ける。
@@ -138,10 +138,9 @@
   内部の群は別のレーンや別の要求にせず、計画、検収、commitの対応、統合、メインへの返却はレーンが持つ。
 - 担当のモデル: ユーザーのモデル指定が下位の書き込み担当にも適用される場合だけ、その値を下位担当の`model_type`へ渡す。
   指定のある場合は`model_override=user_instruction`と、`agent-toolkit:atk-mode/references/model-settings.md`「本人指定による上書き」で定める原文・回答の所在を`model_override_evidence`へ渡す。
-  指定が無ければ`execute`を避け、確定済みの書き込みと、確定した比較の観点による一次確認は`chores`で起動する。
-  定型の走査、事実の収集、確定したコマンドの実行、判断が一意な表記の変更は`chores_fast`で起動する（工程の区分は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
+  指定が無ければ`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」で、確定した作業に合う工程を選ぶ。
   スクリプトで済む処理はモデルを起動せずに実行する。
-  起動、必読の資料、検収、修正を含む総費用で比べて分け、小さな反復を1件ずつ委譲する構成は避ける。
+  分割は`agent-toolkit:atk-mode/playbooks/delegation.md`「要否判定」「委譲単位の確定」で決め、小さな反復を1件ずつ委譲する構成は避ける。
 - 検証: 書き込み担当は、変更したファイルと特定した利用側のテストとlintだけを実行する。
   レーンは全ての書き込みが終わってから、`agent-basics:check-execution/references/verification-scope.md`「ローカルとCIの分担」の上限で変更範囲の検証を1回実行する。
   同じOSアカウントの検証は共有の実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）の数までしか同時に動かず、書き込みの途中に重ねると他のレーンを待たせ、最終の状態も検証できない。

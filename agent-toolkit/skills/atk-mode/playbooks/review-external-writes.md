@@ -57,7 +57,7 @@
 
 ### 受領
 
-1. 結果は引数なしの`atk agents wait`で受け取る。
+1. 結果は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`で受け取る。
 2. 指摘の採否は`agent-toolkit:atk-mode/playbooks/review-fix.md`に従って確定し、採用した指摘を文面へ反映してから投稿する。
    初回レビューは投稿前に行う。
    事実の主張か対象の範囲が変われば、同じ担当へ差し替え後の文面と根拠の所在・変わった評価前提を渡し、再レビューの要否を照会する。

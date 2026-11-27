@@ -10,7 +10,7 @@
 1. `agent-basics:review-standards`「役割ごとの着手」の独立した検収から始める。
    差分の前に要求から期待結果を定めるため、`agent-basics:review-standards/references/reviewer.md`と`agent-basics:review-standards/references/reviewer-execution.md`をこの時点で読む。
    変更成果物にだけ当てる作成規範は`agent-basics:writing-standards`で選ぶ。
-   取得済みの同じ版は再利用する。
+   本文の取得と再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
 2. 起動入力に`全体作業契約`があれば、`agent-toolkit:atk-mode/references/work-contract.md`「工程境界での要求と成果の確認」で読み、判定を自分の記録に残す。
 3. 対象worktreeは`cwd`、リポジトリはGitの共通ディレクトリ、対象HEADは起動入力の`対象HEAD`（省略時は着手時のHEAD）、変更ファイルはその固定版から解決する。
    プロジェクト規範と適用するスキルは対象worktreeと現在のplugin rootから解決する。

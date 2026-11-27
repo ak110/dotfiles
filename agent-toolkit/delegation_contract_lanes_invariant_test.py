@@ -108,7 +108,8 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     prefix = wi_constants.OBSERVATION_ONLY_RESUME_LINE.removeprefix("- 再開区分: ")
     assert f"`再開区分`が`{prefix}`である場合に限り" in _h2_section(selection_text, "処理対象の決定")
     termination = _h2_section(lanes, "採否の確定と終了区分")
-    assert "`再開区分: 再実装へ戻す`" in termination
+    assert "process-wi-observation.md" in termination and "延期adoptと反映後の観測" in termination
+    assert "`再開区分: 再実装へ戻す`" in _h2_section(finish, "反映後の観測の再開記録")
     assert "atk wi record-observation" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
 
     template = _selection_format(plugin_root).split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]

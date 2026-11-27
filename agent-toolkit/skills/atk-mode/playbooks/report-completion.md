@@ -17,8 +17,7 @@
 - 反映、公開、UWIの保存、セッションの終了を操作できない環境では、得た成果と確認した証拠で結果を説明し、未実施の反映・公開・保存を区別して書く。
   残る操作は、それを実行できるClaude CodeかCodexへ引き継ぐ。
 
-最後の会話圧縮の後に本書を読んでいれば、次の作業でも読み直さずに必要な工程を行う。
-圧縮の後に残る工程で本書が必要なら、本書の全文を読み直す。
+本文の取得と会話圧縮後の再取得は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 ## 条件と行動
 
@@ -90,17 +89,16 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    確定できない対象は、不足する判断・認可・入力か具体的な競合と、再開の条件を作業記録に残し、報告の未達へ書く。
    会話圧縮や担当交代の後も同じ作業記録から復元し、`済`の対象へAWIを重ねて投入しない。
    改善点の調査と是正は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「作業中の改善点の報告」が定める。
-6. 自律モードでは、作業結果を回答を求めない報告用UWI（`--question-type=report`）として保存する。
+6. 自律モードでは、作業結果を`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」に従って保存する。
    常駐のprocess-loopでは前回報告以降に公開・反映・必要なリリースまで届いた成果を、dotfilesはリリースごと、リリース周期の無いリポジトリは公開ごとに1件へまとめる。
    判断が必要な事項と未達は随時UWIで届ける。
    それ以外はセッションにつき1件とする。
-   報告用UWIは保存した時点で`adopted`となり、質問・回答欄を持たず、未回答の一覧と選定の対象に入らない。
+   報告用UWIの保存状態と質問・回答欄は`agent-toolkit:atk-mode/references/uwi-format.md`「構成」に従う。
    `completion_report: true`は、process-loopの`--once`、`abort`、ユーザーの中断、会話を替える交代で終了する完了報告にだけ置く。
    継続中の成果の報告や公開後の案内には付けず、報告の保存・送達後は[巡回する](process-loop.md#巡回する)の手順2へ戻る。
    更新のための本人再開では完了報告を作らず、予約後に終了する。
    本人にしか決められない事項や本人にしかできない操作が残る場合だけ、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってその事項だけを個別のUWIにし、報告の未達・持ち越しにファイル名を書く。
    エージェントが再試行・対処できる未達と、自ら確定した技術判断は、回答を求める理由にしない。
-   本文と保存は`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」に従う。
    `atk run-skill`による実行では、`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保つ。
    scopeは自由記述を含まないスキル名とモードの組とし、起動入力の`accepted_scopes`の先頭を使う。
    例えばbatchのscopeは`agent-toolkit:review-session batch`である。
@@ -114,9 +112,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    - 協調モードの `add-awi-by-user`、`implement`、`process-user-comments` では、送達成功を確かめてから最後のツール呼び出しとして `atk agents-exit-session --after-completion` を実行する。
      ユーザーの回答・承認・本人作業を待つ場合は呼ばない。
      環境による対象判定はコマンドに任せ、自動終了しない理由が返った場合も通常どおりターンを終える。
-   - 最終報告後に追加の応答を促された時は、新しい結果・訂正だけを届ける。
-     報告が未送達か終了工程が残るなら、残る工程を済ませる。
-     追加事項も残工程も無ければ、固定文付きの報告を送達済みなら`…`だけ、通常本文の報告で固定文がまだなら固定文1行で終える。
+   - 最終報告後の追加応答と再送は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
      Claude Codeの終え方は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
    - Codexの送達順は`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」に従う。
    - ホスト本体を停止する場合は、報告の保存検収と送達を終え、停止操作を最後のツール呼び出しにする。

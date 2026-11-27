@@ -3,7 +3,7 @@
 ## 再発の記録
 
 本節は、dotfilesの不具合を原因分析した担当（process-wiのレーン、add-awi-by-user、review-sessionなど）に適用する。
-`agent-basics:bugfix`の問い6で同じ害への既存の対策が見つかった場合は再発として扱い、`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」で防げなかった理由を分類する。
+再発の判定と分類は`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」に従う。
 該当する場合は分析の中で次の事項を記録する。
 記録は振り返りが原因の違いを問わず同じ害の再発を数え、同じ対策を繰り返す前に条文や仕組みを見直す材料になる。
 

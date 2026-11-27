@@ -41,7 +41,6 @@ description: >
 1. 要求の結果を直接観測できる手段と環境を、`agent-basics:writing-standards/references/testing-design.md`「検証単位の選定」で選ぶ。
    着手の直前に基準版を記録する（`agent-basics:check-execution/references/diagnostics.md`「基準版と変更行への帰属」）。
 2. 実行するチェックとテストを、実際の差分が変えた契約から`agent-basics:check-execution/references/verification-scope.md`で選ぶ。
-   ローカルは直接の利用側までとし、リポジトリ全体のテストと静的検査はCIに委ねる。
 3. 正規の検証コマンドを選ぶ。
    構築・起動・単発実行の個別ツールを直接呼ぶ前に、作業ディレクトリからリポジトリルートまでのタスクランナー定義と、README・プロジェクト規範の案内を確かめる。
    定義の例は`Makefile`、`mise.toml`、`justfile`、`Taskfile.yml`、`package.json`の`scripts`、`pyproject.toml`のタスクで、ツール固有の設定ファイルが無くても起動方法を持つことがある。

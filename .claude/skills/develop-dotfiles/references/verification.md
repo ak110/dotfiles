@@ -3,8 +3,8 @@
 dotfilesの変更を、テストの配置から公開前の検証まで確かめる手順書である。
 検証の一般の規則（対象の選び方、成功の再利用、再実行、結果と所要時間の判定）は`agent-basics:check-execution`と`agent-toolkit:atk-mode/playbooks/verification.md`にある。
 本書はdotfilesに固有の値（起動の形、実行枠の数、CIのジョブ、対象のテスト、所要時間の基準値）を持つ。
-本リポジトリでは全体のテストと静的チェックをCIが担うため、ローカルでは変更ファイルと特定した利用側のテスト・lint、CIが実行しないチェックを実行する。
-合否は終了コードに加えて個別のテストの結果で判定する（`agent-basics:check-execution/references/diagnostics.md`「合否の判定」）。
+本リポジトリではCIが全体のテストと静的チェックを担い、ローカルの対象は本書「変更範囲の検証の値」で選ぶ。
+合否は`agent-basics:check-execution/references/diagnostics.md`「合否の判定」に従う。
 
 ## テスト配置
 
@@ -116,7 +116,7 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 
 ## push前のチェックとCIだけが実行するチェック
 
-push前には、変更箇所と関連のテスト・lint、CIが実行しないチェックを確かめる（一般の規則は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」）。
+push前の検証は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」に従う。
 
 1. `make sync`で仮想環境を`uv.lock`と`.python-version`へ合わせる。
 2. 生成型を前提とする`function-hooks-types`を単独で先に実行する（`uv run --frozen pyfltr run --commands=function-hooks-types`）。
