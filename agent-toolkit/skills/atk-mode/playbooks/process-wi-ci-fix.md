@@ -87,7 +87,7 @@ push先・run監視・証拠の保存と後始末は`agent-toolkit:atk-mode/play
 公開を直接実行するメイン・リポジトリ担当と、`agent-toolkit:atk-mode/roles/session-termination.subagent.md`の公開担当が、全体検証かCIの失敗を受けた時の手順である。
 
 1. 最初に観測した失敗から、CIの成功か本工程の終了までを1つの修正系列として扱う。
-   `agent-basics:bugfix`を起動し、ログ、参照実装、期待値から直接原因を特定して、本書「修正commitが必要なCI失敗を修正するエージェント」の7項目のCI記録を持つ。
+   `agent-basics:bugfix`に従い、本書「修正commitが必要なCI失敗を修正するエージェント」の7項目のCI記録を持つ。
 2. 修正が必要なら、統括が`agent-toolkit:atk-mode/roles/exec.parent.md`に従い、通常のレーンの専用worktreeを対象作業ツリーとする`CI修正担当`を起動する。
    主作業ツリーを公開担当へ渡さず、修正は新しいcommitとして通常の検証・必要なレビュー・`atk lane integrate`の直列統合を経て次の公開単位へ入れる。
    原因commitに対応する保存済みの計画があれば、本書「修正系列」手順1の`入力計画`の取得と、修正系列の終了時の再保存を公開担当が行い、計画の`private-notes/plans/`からの相対パスと再保存の結果を引き継ぎ記録へ残す。

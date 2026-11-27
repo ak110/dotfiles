@@ -32,7 +32,6 @@
    - 初回の起動時の各AWIの再開位置は選定結果から読ませ、担当全体の`再開位置`は中断した同じ担当を再開する場合だけ渡す。
    - 各WIの`担当モデル.実装担当`がユーザー由来なら、同じレーンの`start`へ`model_type`として渡す。
      指定のある場合は`model_override=user_instruction`と、`agent-toolkit:atk-mode/references/model-settings.md`「本人指定による上書き」で定める原文・回答の所在を`model_override_evidence`へ渡す。
-     指定値と実行値の比較と記録は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う。
      異なる指定が混ざる場合はWI名と設定値を明示し、どの指定も独断で捨てずに起動する。
    - 初回の`書込担当一覧`は合意済みのセッションIDと担当範囲から確定する。
      担当が自分のIDを加えるので、起動の結果の`session_id`は自分の記録の一覧へ加えるだけで追送しない。
@@ -77,9 +76,9 @@
    確認待ちの間も、回答を待たずに進められる他のレーンの作業を続ける。
    計画の確定後の工程では要求の由来を判定し直さず、計画で確定した採否をそのまま使う。
 2. 回答が得られない場合は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に従ってUWIを登録する。
-   続けて`agent-toolkit:atk-mode/references/states-and-dependencies.md`「承認型UWIと元項目」に従い、元AWIの`depends_on`へUWIを加えて`inbox`へ戻す。
+   続けて`agent-toolkit:atk-mode/references/states-and-dependencies.md`「承認型UWIと元項目」に従う。
    - UWIの本文には、元AWIのファイル名、対象、必要な回答、回答で分かれる結果を書く。
-   - 回答後の再開工程は、計画の有無によらず`atk wi edit <元AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`で元AWIの本文へ追記する。
+   - 回答後の再開工程は、計画の有無によらず元AWIへ追記する（`agent-toolkit:atk-mode/playbooks/wi-saving.md`「追記」）。
    - 採否は回答を受けてから決める。
    - 完成条件の観測を求めるUWIは、`agent-toolkit:atk-mode/references/draft-semantic-review.md`に従って原稿と元WIの必要な結果を比べ、元WIの現行の完成条件と再開記録の同じ観測結果へ対応付ける。
      UWIの保存は観測の完了ではなく、回答の受領時にも元の原本と既存の証拠を比べて各完成条件の結果を確かめてから採否と再開を決める。
@@ -109,7 +108,7 @@
 4. 統合前の稼働の判定では、所有セッション、合意済みの`書込担当一覧`、統合を呼ぶ担当の委譲元の連鎖を共通の認可の集合とする。
    合意済みの担当は`--writer-session`で指定する（`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」）。
    完了済みのレーンと所属WIの記録は、追加の作業に備えて保つ。
-5. 資源は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」の時点で`atk lane delete`で回収し、ターンごとの`SessionEnd`では回収しない。
+5. 資源は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」に従い、ターンごとの`SessionEnd`では回収しない。
    未統合、dirty、稼働中、状態不明、途中で失敗した対象は、理由と残る操作を回収対象の外へ保存し、再実行では残りから再開する。
    セッションのmanaged-tempと証拠のファイルは専用worktreeの中に置かない（回収の対象から外すため）。
    統合済みの判定を確かめてからbranchを`-D`で削除するのは、通常の`-d`がupstreamを基準に判定し、push前のローカル統合を未統合として削除を拒否するためである。
@@ -130,7 +129,7 @@
    - 複数の計画がある場合は、引き継ぎ記録に蓄えた全ての計画、対象AWIの集合、進捗、保存状態を突き合わせてから渡す。
    - 計画に含まれない項目は、引き継ぎ記録のAWIの集合、レビュー指摘管理表、`git merge-base <専用branch> <ベースbranch>`と`git log <その結果>..<専用branch>`のcommit履歴から再開する工程を決め、`再開位置: 計画なし`として渡す。
    - 計画ファイルか引き継ぎ記録の実在、AWIの集合の一致、専用worktreeの元の所有主体の終了を事前に確かめる。
-   - 反映後の観測だけが残る項目は、AWI本文へ追記された再開記録に基づき、選定結果の観測のみの再開位置をそのまま渡し、レーン担当は`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「再開」に従って観測だけを行う。
+   - 観測のみの再開位置をそのままレーン担当へ渡し、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「再開」に従う。
    - 再開するレーンへ回答済みのUWIや、依存の解消・`unhold`で`inbox`へ戻った元の項目を渡す場合は、渡す前に`atk wi show --pull`で状態を照会する。
      `inbox`の項目は`atk wi start-processing`で`processing`へ移す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」）。
 2. 残った専用worktreeとbranchを安全に再利用できる場合は、同じ絶対パス、branch、最新のHEAD、再開位置を新しいレーン担当へ渡す。
@@ -162,11 +161,11 @@
 
 ## 統合後の変更範囲の検証の失敗
 
-レーン担当が、mergeの後の変更範囲の検証が失敗した時の手順である（是正の着手前に`agent-basics:bugfix`を起動する）。
+レーン担当が、mergeの後の変更範囲の検証が失敗した時の手順である。
 
 1. レビュー済みのHEADでは再現せず、統合先との組み合わせでだけ起きた失敗: 失敗した検証が確かめる契約の送信側・受信側・実装・テストを整理し、専用worktreeに是正commitを作る。
    是正で変えた定義・文言・構成・実行前提の変更前の値を固定文字列で探し、それを消費する実装・検査・テストを変更範囲の検証の対象へ戻す（`agent-basics:check-execution/references/verification-scope.md`「範囲の決め方」）。
-   是正前のHEADで得た成功は是正の検証に使わず、是正後のHEADで変更範囲の検証を再実行して、成功と、処理を妨げる警告が無いことを確かめる。
+   是正前のHEADで得た成功は是正の検証に使わず、是正後のHEADで`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」と同スキル`references/diagnostics.md`「合否の判定」に従う。
    commitと検証の証拠（警告の判定の根拠を含む）を「続行できない理由」としてメインへ返し、再指示を受けたら`agent-toolkit:atk-mode/references/lane-integration-format.md`「マージありの統合」へ戻る。
 2. 是正対象の失敗がレーンの変更と同じ原因を持つ場合: 是正の範囲と完了の判定は`agent-basics:bugfix`の問い5（類似見直し）と問い7（確認）に従い、認可範囲外の対象を含めば次の手順で伝える。
 3. レビュー済みHEADで再現する失敗: コマンドと出力を保持し、`agent-basics:bugfix` で調査・認可内の是正後に手順1と同じ方法で検証する。
@@ -179,7 +178,7 @@
 ## レーンの変更範囲の検証の失敗
 
 レーン担当が、引き継ぎ記録で確定した変更範囲の検証コマンド（旧形式の計画では`## 検証`の`変更範囲の検証`行）の失敗に当たった時の手順である。
-`agent-basics:bugfix`を起動し、比較の検証で失敗の原因の所在を特定してから、認可された範囲で直す。
+`agent-basics:bugfix`に従い、比較の検証で失敗の原因の所在を特定してから、認可された範囲で直す。
 
 1. 失敗を既存の不具合、変更範囲外の要因、環境差に帰する前に、起動コマンドの形式、入力、並列度、実行環境をそろえて、ベースブランチと専用worktreeの両方で結果を比べ、それぞれの結果と残る条件の差を検証結果に書く（危険な副作用がある場合は安全な同等の条件と残る差を書く）。
 2. 原因と影響範囲を特定し、認可された範囲で直して再検証する。

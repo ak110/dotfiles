@@ -43,8 +43,8 @@
    不足か不一致は同じthreadへ再提出を求める。
 2. 受入シナリオごとの公開の呼び出し手段、入力値、期待結果と実際の結果を、検証済み、未実施、条件の変更に分ける。
    委譲元が担う実機の観測、質問への回答の保存、完成条件の変更の判断は、申告を受けた時点で担当と再開先を引き継ぎ記録へ対応付ける。
-3. 完成条件証拠を求める対象では、`検証結果`と引き継ぎ記録が`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」を満たすことを確かめ、不足は同じ担当へ差し戻す。
-4. 修正で新しい操作、機構、副作用を採用していたら、本書「計画準備の受領」手順3の禁止条件と突き合わせ、不適合なら相違点を添えて同じ担当へ差し戻す。
+3. 完成条件証拠を求める対象では、`検証結果`と引き継ぎ記録を`agent-toolkit:atk-mode/playbooks/verification.md`「完成条件証拠の検証記録」で検収する。
+4. 修正で新しい操作、機構、副作用を採用していたら、本書「計画準備の受領」手順3の禁止条件と突き合わせる。
 5. 検収を終えたら、`レビュー修正担当`の返却は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「レビュー修正」で再レビューへ進める。
    `CI修正担当`の返却は`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「修正系列」手順4へ進める。
 
@@ -166,7 +166,7 @@ WIへ直接書かれた質問（AWIの`## ユーザーコメント`、UWIの`## 
    1. `adoptしたWI`の実装commitを`atk run-script plan-commits -- <計画の絶対パス> --worktree <統合先worktree>`で取得する（計画が無ければ`--handoff`と`--allowed-awi`で引き継ぎ記録から）。
       実装commitを持たない項目は、実装差分が無いことを充足の根拠から判断する。
    2. `変更したエージェント向け文書`のうち、現在の担当に関係する既読の文書、残る工程で読む文書、役割や継続中の工程の契約を変える文書を、統合先worktreeから読み直して以後の判断と公開工程へ適用する。
-      未配布の採用版に従うなら、`agent-toolkit:atk-mode/references/work-contract.md`「記録する内容」「更新する時点」のとおり全体作業契約の暫定規範へ記録して配下へ渡す。
+      未配布の採用版は、`agent-toolkit:atk-mode/references/work-contract.md`「記録する内容」「更新する時点」に従う。
    3. 変更した文書に`<役割名>.parent.md`かその`起動対象:`の`<役割名>.subagent.md`があれば、両方を同じplugin rootから採用する。
       統合済みworktreeのrootに全ての起動対象が実在し委譲の起動契約の確認に合格する場合だけそのrootへ移り、それ以外は起動開始時のrootを使い続ける。
    4. 最後の独立したレビューの後に統合中に加わった変更（merge後の検証失敗の是正など）は、変更後のHEADで成功した直接影響範囲の検証と照らし合わせる。
@@ -201,5 +201,5 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 変更したエージェント向け文書: <["リポジトリ相対パス"]形式のJSON配列。無い場合は[]>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:lane-integration:end -->

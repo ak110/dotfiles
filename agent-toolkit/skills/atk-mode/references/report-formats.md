@@ -13,7 +13,7 @@
 - 送達の前に各文が加える情報を確かめ、依頼や起動した手順から既知の工程説明を省く。
   登録が成功した時の後続実装の説明もこの基準で扱い、未達、失敗、制約、予想との差は残す。
 - 本人に求める判断はユーザー確認の本文で示し、報告には決まった結果と根拠、未達がある場合はその範囲を記す。
-- ユーザーの対応が必要な未完了事項は、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」で個別UWIの要否を判定し、保存した場合は既存の見出し（`### 投入したWI`など）で所在を書く。
+- 個別UWIの所在は、既存の見出し（`### 投入したWI`など）に書く。
 - 自明な取得、再実行、実機確認の手順の案内は、成果や検証結果に添えてよい。
 - 見出しは規定の構成を使い、判断や行動を促す独自の見出しを足さない。
 
@@ -63,7 +63,6 @@
   処理対象として取得した項目と、`adopted`・`rejected`で完了した項目は除く（ユーザーが終了時に確認済みのため）。
   報告の直前に、投入した全ファイル名を`atk wi show <ファイル名>... --summary-only --target-repo=<対象リポジトリの絶対パス> --skip-pull`へ渡す。
   出力の`### <ファイル名> [<状態>]`の行で状態を確かめ、続く行からAWIのH1タイトルか、UWIの質問本文の先頭行を取る。
-  ユーザーに委ねた判断や行動を保存した個別UWIの所在も、ここで伝える。
   `target_repo`が現在の対象リポジトリと違う場合だけ、末尾に半角空白1つと`(target_repo=<正規化リモートURLか絶対パス>)`を足す。
   該当が0件なら欄を省く。
   ただし登録の有無を尋ねられた時は、冒頭で答える。
@@ -85,7 +84,7 @@
 - 仕様として確定した解釈でも、外部から観測される結果を変える選択は、成果欄に結果を書いた場合も判断欄へ理由と対案を書く。
 - 判断欄は承認を求めるものではなく、報告の後に承認を待たない。
   後日ユーザーが異論を示したら、その判断と、それを前提にした後続の判断を更新する。
-- 判断欄へ記録する前に、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」を適用し、ユーザー固有の判断が必要な値が残れば、報告で確定扱いにする前に確認する。
+- 判断欄へ記録する前に、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 
 ## 検証結果と実行記録
 
@@ -152,12 +151,12 @@
 ## 報告用UWIの確認と保存
 
 本節は`agent-toolkit:atk-mode/playbooks/report-completion.md`が定める報告用UWIに適用する。
-報告用UWIは`--question-type=report`で識別し、本人の判断を求める個別UWIには共通の起草手順を適用する。
+本人の判断を求める個別UWIには共通の起草手順を適用する。
 通常WIの共通起草の3資料は、報告用だけの保存のためには取得しない。
 由来、認可、保存先、回答済みUWIとの整合は、`agent-toolkit:atk-mode/playbooks/wi-saving.md`の該当する操作の契約に従う。
 
 1. 元の要求と実施結果・根拠を比べ、未達、未確認、持ち越しを成果と分ける。
-   事実の出所は`agent-basics:writing-standards/references/quality-principles-facts.md`「結果の返却」に従い、未確定のユーザー固有の判断は確認の手順へ渡す。
+   `agent-basics:writing-standards/references/quality-principles-facts.md`「結果の返却」と`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 2. 原稿をファイルへ保存し、dry-runで検証する。
    新規は`atk wi add --type=uwi --question-type=report --dry-run --body-file <原稿の絶対パス> --source <起動スキルに対応するsource>`を使う。
    更新は`atk wi edit <UWI名> --dry-run --body-file <原稿の絶対パス>`を使う。

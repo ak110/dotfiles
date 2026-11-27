@@ -33,14 +33,14 @@
 - 読み取りにはホストのReadを使い、無ければ`cat`か`sed -n '<開始行>,<終了行>p' -- <絶対パス>`、JSONには`jq`を使う。
   規範の読み方は`agent-basics:writing-standards/references/read-method.md`に従う。
 - コマンドはハーネスの標準の実行・バックグラウンド実行・待機の機能で実行する。
-- 一時領域の作成・寿命・回収は`agent-toolkit:atk-mode/playbooks/managed-temp.md`に従う。
+- `agent-toolkit:atk-mode/playbooks/managed-temp.md`に従う。
 
 ### パスと検索
 
 - 既存のパスは入力・基準文書・取得済みの出力から解決し、推測したパスは実在を検索で確かめる。
   外部コマンドへは絶対パスを渡し、cwdを使うCLIは対象のworktreeで起動する。
-- 検索の手段、終了コード、母集団と出力量は`agent-basics:search`に従う。
-- 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変える時は、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。
+- `agent-basics:search`に従う。
+- 外部から観測できる名前と値を変える時は、`agent-basics:check-execution/references/verification-scope.md`「直接影響範囲の類型」に従う。
   直接影響範囲は`agent-toolkit:atk-mode/references/awi-body.md`「直接影響範囲」が定める。
 - Git識別子と別worktreeの指定は`agent-toolkit:atk-mode/references/git-identifier.md`に従う。
   前工程から受け取ったパスや識別子は、移動や終了を伴う操作の後で同一性を確かめ直す。
@@ -70,8 +70,7 @@
 
 ### 待機とバックグラウンド実行
 
-- 起動した実行の識別子と保存出力の所在を保持し、未完了なら同じ識別子と公開の待機機能で、同じターンのうちに終了と出力を回収する。
-  監視の期限到達、通知の未着、終了コードファイルの未生成だけでは、本体の終了と判定しない。
+- `agent-basics:writing-standards/references/quality-principles-ownership.md`「実行の回収」に従い、回収は同じターンのうちに終える。
   完了通知は結果を回収するきっかけとして扱い、待機中の重複発行とフォアグラウンドでの固定時間の待ちは避ける。
 - 待機でターンを終えるのは、委譲先やバックグラウンドタスクの通知で同じセッションの再開が保証される時だけとする。
   保証が無ければ公開の待機手段で同じターンに回収し、報告など残りの工程へ進む。
@@ -102,7 +101,7 @@
 
 ### 完了と不在の確認
 
-- 削除や回収の完了は、対象が無いことで確かめる。
+- `agent-basics:writing-standards/references/quality-principles-ownership.md`「実行の回収」に従う。
   `test -e <絶対パス>; echo "test_e_rc=$?"`を読み取り専用の確認として別の呼び出しで実行するか、除去の完了を終了コードに含む操作コマンドの結果を使う。
   `ls`、`find`、`git rev-parse`が非0で終わったことだけでは、不在の根拠にならない。
 
@@ -124,7 +123,7 @@
 1. 稼働中のセッション・プロセスの実在と用途、worktreeへの参照、ロック、Git登録と統合の状況、差分の内容と作成記録を調べる。
    由来と不要の判定には、名前の類似、更新時刻、同じOSアカウント以外の根拠も確かめる。
 2. 使用中・編集中の作業と未保存の成果を守るため、現在の担当への引き継ぎか終了の待ちを行う。
-   本人固有の判断と承認は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
+   `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
    委譲先は書き込み範囲を守り、範囲外の処置は委譲元へ返す。
 3. 操作の直前に、個別の識別子が処置の対象を指すことを確かめ、確定した対象だけを処置する。
 4. 結果と根拠を報告し、保持する場合は保護の対象か残るユーザーの判断と、再開の条件を書く。

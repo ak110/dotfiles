@@ -54,7 +54,7 @@ startup_documents:
    参照だけで起動できなければ許可された配信手段を試し、検証できる範囲を進める。
 4. プロジェクトの手順で起動し、配信コードが対象HEADと一致することを確かめて描画する。
    配信したHEADを記録する。
-5. 本番データへの書き込み、commitやpush、外部サービスへの通信など、検証環境の外へ影響が残る操作は、実データから切り離した`検証環境`でだけ行う（`agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」の手順1）。
+5. 検証環境外へ影響が残る操作は、`agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」手順1に従う。
    `主要シナリオ`がそれ以外の環境でその操作を要する時と、`検証環境`で許されない操作を要する時は、その操作を見合わせ、該当する手順を`続行できない理由`に書いて返す。
 6. まだ保存していないキャプチャと取得した記録は、`agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」の手段でmanaged-temp配下へ保存する。
 
@@ -114,5 +114,5 @@ Webで判定が`未確定`の場合は、上記の固定行に続けて`E2E環�
 試行: <手段> | <実行したコマンド> | <終了コードまたは失敗の観測>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 環境による未確定の判定と試行結果は本節の固有結果として保持する。

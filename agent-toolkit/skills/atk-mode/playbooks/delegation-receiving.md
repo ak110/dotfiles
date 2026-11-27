@@ -1,7 +1,7 @@
 # 委譲の受領と検収
 
 委譲先の返却を受け取り、成果を検収し、後続へ渡すまでの手順書である。
-方針: 委譲先の申告は他者の報告であり、委譲元が原本と成果物の実物で確かめてから受理する（原則6、`agent-basics:writing-standards/references/quality-principles-verification.md`）。
+方針: 委譲元は`agent-basics:review-standards/SKILL.md`「判断の初動」に従って受理する。
 受理した事実と未確認の範囲は分けて扱う（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
 節の順に上から実行する。
 process-wiのレーンの返却は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`を上から実行し、本書は同書が指す段だけを使う。
@@ -168,7 +168,7 @@ process-wiのレーンの返却は`agent-toolkit:atk-mode/playbooks/lane-receipt
      確かめた範囲は引用の外へ補い、確かめていない主張は委譲先からの未検証の報告と分かる形にする。
      書式（済・予定・即時対応・不要）は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「作業中の改善点の報告」に従う。
    - 委譲先は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従って上流へ中継する。
-8. ツールや実行基盤の異常を示す同種の報告が2回現れたら、中継とは別に`agent-basics:bugfix`を起動して原因を調べる（調査は委譲してよい）。
+8. ツールや実行基盤の異常を示す同種の報告が2回現れたら、中継とは別に`agent-basics:bugfix`に従って調べる（調査は委譲してよい）。
 
 ## 委譲元への返却
 

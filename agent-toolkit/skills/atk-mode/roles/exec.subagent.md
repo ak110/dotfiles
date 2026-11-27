@@ -174,7 +174,7 @@ AWI本文を読んだら、本文が明示する担当とモデルの組を選�
 対象worktreeは`cwd`、複製元と対象外のworktreeはGitの共通ディレクトリとlinked worktree、プロジェクト規範は`cwd`でホストが読む指示ファイルから解決する。
 書き込み先は対象worktreeに限り、対象外のworktreeと複製元は読み取り専用とする。
 対象リポジトリではcommitとfast-forwardのmergeを行い、pushは委譲元に任せる。
-private-notesへの計画の保存とWIの状態の変更は、`atk`の通常の公開機能で行う。
+private-notesの操作は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「対象リポジトリとprivate-notesの区別」に従う。
 委譲の入力の禁止がこれらにも及ぶか分からなければ、委譲元へ確かめる。
 
 担当種別ごとの操作の許可は次のとおりである。
@@ -240,4 +240,4 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 終了の結果では、担当モデル、起動候補、物理記録から観測した`engine`、`model`、`effort`を分けて報告する。
 不一致は各値とその由来を引き継ぎ記録へ残し、観測できなかった値は未確認とする。
 
-工程の区切りでは、本書の役割固有の行と、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行、一行返却を使う。
+工程の区切りでは、本書の役割固有の行と、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」を使う。

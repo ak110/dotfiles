@@ -91,10 +91,10 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 結果: <統合済みの完全OID、処理したAWIと現在の状態・採否、公開へ渡す延期adoptの対象>
 ```
 
-続行不能の場合は`状態:`行の代わりに`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
+続行不能の場合は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従い、他の行は保持する。
 統括担当はこの返却を、その対象の`blocked`として完了報告に載せる。
 `user_decision`・`authorization`・`inaccessible_input`の不足をユーザーだけが提供できる場合は、統括担当が同じprocess-wiの実行内で処置する。
 
 処置は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」手順3に従う。
-統括自身か割当先が、事前承認型UWIを保存して元AWIへ依存を登録し、`inbox`へ差し戻す。
+統括自身か割当先が、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「承認型UWIと元項目」に従う。
 統括は保存結果を検収する。

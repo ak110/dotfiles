@@ -2,7 +2,7 @@
 
 WIの作成から実行レビューまでの成果物をつなぎ、利用主体が使う公開インターフェース（コマンド、画面、APIなど）を通じて要求が満たされるようにするための工程表と用語を定める。
 後続の工程は前工程の出口条件を入力とし、前工程で確定した判断を起草し直さない。
-WIの説明・例示を最終成果物へ転記する工程では、`agent-toolkit:atk-mode/references/awi-body.md`「チェックの対象範囲」に従い、要件と逐語指定を保って転記先の品質基準・lintへ合わせる。
+WIの説明・例示を最終成果物へ転記する時は、`agent-toolkit:atk-mode/references/awi-body.md`「チェックの対象範囲」に従う。
 
 ## 工程表
 
@@ -21,7 +21,7 @@ process-wiでの同じ実行への追加は`agent-toolkit:atk-mode/playbooks/pro
 実行レビューの独立性は保ち、実行レビューは提出されたテストと検証結果を確かめ、対象を実際に動かす再検証は実装担当が担う。
 
 専念型では作成主体が調査から保存までを一貫して終える。
-付随型（他の作業中に投入する場合）では、独立したWI投入担当による原稿の返却、親エージェントによる意味の検収、同じ担当への保存指示の2段階を保つ。
+付随型は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`「起動方法」に従う。
 専念型を使う場面は`agent-toolkit:atk-mode/roles/add-wi.parent.md`「起動方法」に定める。
 調査、引用、原因分析、重複確認、成立性の確認、起草、保存の手順は作成主体の種類によらず同じで、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`と`agent-toolkit:atk-mode/playbooks/wi-saving.md`にある。
 重複確認の要否は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「重複判定」で起点ごとに決める。

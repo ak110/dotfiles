@@ -26,7 +26,7 @@
 <!-- input-contract:similar-review:end -->
 
 1. 確定した原因から、次の3つの入力を決める。
-   - `判定規則`: 確定した原因を、破られた条件か誤った判断の規則として1文で書く。
+   - `判定規則`: `agent-basics:bugfix/references/similar-review.md`「探す対象を決める」で確定した値。
    - `母集団`: 対象リポジトリと版、探す範囲の取得先、WIの投入開始日、ログの開始日時と観測終了時点。
      探す範囲は現存するファイルと直近7日間の作業項目・会話の記録とし、原因が他の範囲に及ぶ時だけ、成立の根拠を添えて広げる。
    - `判定基準`: 該当・保留・非該当を分ける条件と、必要な調査の深さ。
@@ -53,7 +53,7 @@
 ## 類似見直し担当の返却契約
 
 次の形式のみを返す。
-状態行、続行不能の区分と理由は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 
 ```text
 状態: completed

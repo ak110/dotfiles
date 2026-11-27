@@ -146,7 +146,7 @@ Codexで元担当（同じ作業のために起動済みの委譲先）を扱う
 5. 構成を変えず、同じ工程の利用可能な候補から代替を選ぶ。
    `Agent`ツールでは、候補を設定の順で確かめ、呼べないengineは利用不能として扱う。
    設定内に候補が残らず、手順1の例外も成立しない場合は、利用できない理由を返す。
-6. `Agent`ツールの後任には、前任の起動時の本文と、`引き継ぎ記録先`があればそれを`（継続）`として渡す。
+6. `Agent`ツールの後任の入力は、`agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」に従い、前任の起動時の本文とともに渡す。
    `atk run-script session-review-prepare`が生成した`conversation.md`を読み、引き継ぎ記録と合わせて確定事項と残る工程を戻し、追加の入力と各ターンの最終応答は全文を渡す。
    詳細は`atk run-script session-review-evidence -- --codex-thread-id <id>`か`--claude-session-id <id>`に`--detail <記録位置>`を付けて照会する。
    コマンドを実行できない後任へは記録ファイルの絶対パスを渡し、Antigravityの前任は`atk agents logs <session_id> --format markdown`の出力を渡す。

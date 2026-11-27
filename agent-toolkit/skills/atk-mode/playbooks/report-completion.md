@@ -3,7 +3,7 @@
 目的: メインが成果の反映・回収・公開を終えてから事実どおりに報告し、ユーザーが報告だけで結果と残る判断を把握できるようにする。
 成果物の検収を終えたら、最終報告を書く前に本書を読み、反映、回収、判断の保存、公開、報告の確定、報告用UWI、送達と終了を一続きに行う手順書である。
 最後に元要求・成果・未回収対象・本人へ届ける結果を照合し、完了の判定を全文取得の記録で代用しない。
-結果は不都合なものも含めて報告し、観測した事実、推論、未確認を分ける（`agent-basics:writing-standards/references/quality-principles-facts.md`）。
+結果は不都合なものも含めて報告し、`agent-basics:writing-standards/references/quality-principles-facts.md`「結果の返却」に従う。
 
 ## 適用の判定
 
@@ -34,7 +34,7 @@
 代表箇所だけの変更は途中経過として報告する。
 既知の不具合と未達の明示要件は、未達事項として区別して書く。
 環境の制約で確かめられない範囲は、実施できる検証を終えたうえで、未確認の範囲と理由を報告する。
-個別のUWIとユーザーへの操作依頼は、未確認の範囲とは別の理由（ユーザーにしか決められない判断、ユーザーにしかできない操作）がある時に使う。
+個別のUWIとユーザーへの操作依頼は、`agent-toolkit:atk-mode/references/delivery.md`「個別UWI」に従う。
 
 現行の作業契約（`agent-toolkit:atk-mode/references/work-contract.md`）の各要求と残る完成条件を、「証拠」「明示的な取り下げや置換」「ユーザーの対応が必要な未完了事項」のいずれかへ対応付ける。
 未処理の追加入力があれば統合し、残る元の工程を終えてから全体を判定する。
@@ -47,7 +47,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 回復できる残工程は続け、外部の前提の不足で終える場合は、未達、理由、再開の条件を同じ実行の報告へ保存する。
 
 完了済みの作業を再開する根拠は、新しい要求、結果に影響する変更、新しい失敗、未検証の完成条件に限る。
-報告の不足は保存済みの証拠で補い、検証済みの作業はその証拠を再利用する。
+報告の不足を補う検証は、`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
 
 独立したWI投入は、`agent-toolkit:atk-mode/playbooks/wi-submission.md`の受付票で、所有を移した要求と移していない要求を区別する。
 投入元は製品のwriter、公開とCIの検収、本回の報告と結果の保存を終えたうえで、所有を移した投入を待機の対象から外して終了できる。
@@ -63,21 +63,20 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 
 1. 常時稼働サーバーを持つプロジェクトでは、本書「常時稼働サーバーへの反映」を行う。
 2. 自分が作った作業用領域を、`agent-toolkit:atk-mode/playbooks/managed-temp.md`の寿命の区分に従って回収する。
-   過去のエージェントが残した資源と誤変更は、`agent-toolkit/skills/atk-mode/references/operations.md`「プロセス終了の安全規定」で調べ、不要な範囲を回収・是正する。
+   `agent-toolkit:atk-mode/references/operations.md`「プロセス終了の安全規定」に従う。
    process-wiの登録済みレーンの資源は、追加作業や公開後の工程に備えてこの時点では保持する。
    通常終了では`atk agents-exit-session`が回収する。
-   巡回では統括が成果の保存とwriterの停止を確かめてから、`atk lane delete`で個別に回収する。
+   巡回の回収は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」に従う。
    未回収の対象は保持の理由を調べ、認可の範囲で解消できるものは同じ回収操作で再判定する。
    別セッションが現に使う資源は保護し、使用主体、保持理由、次回の再判定を報告する。
-   それ以外で本人の判断・認可・操作が残る資源は、対象・保持理由・必要な判断か操作・再開条件を個別のUWIにする。
-   報告用UWIへの記載だけで終えない。
+   個別UWIが必要な資源には、対象・保持理由・必要な判断か操作・再開条件を書く。
 3. このセッションでユーザーが確定した判断のうち未保存のもの（`agent-toolkit/skills/atk-mode/SKILL.md`「硬い制約」の保存対象）を保存するか、AWIを投入する。
-   保存では`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」の、程度の限定と確度を保つ規定を適用する。
+   保存は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」に従う。
 4. 協調モードでcommitを作り、確認済みの公開範囲がcommitより先へ及ぶ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`でその範囲の公開を終える。
    `agent-toolkit:atk-mode`の作業`process-wi`と`agent-toolkit:atk-mode`の作業`process-wi single-lane`はそれぞれの工程の中で公開する。
 5. 元の要求が求めた結果を各工程の成果から確かめる。
    是正を受けた場合は、作業契約の完遂事項と既存の変更・検証記録を見て、原因・対策・確認の根拠がそろっているかを確かめる。
-   起動や書式の通過、既存の規則の存在は再発防止の証拠にせず、原因に有効な処置と確認、または実際に被覆する既存対策を確かめる。
+   `agent-basics:bugfix/references/prevention.md`「案を比べる」に従う。
    確認できない分は未達として、何を確かめれば再開できるかを示す。
    協調モードの本文は `agent-toolkit:atk-mode/references/report-formats.md`「作業完了報告のフォーマット」で確定する。
    公開・反映・回収は、依頼の結果や次の行動に関わる到達点と、未実施なら必要だった操作・理由を報告する。
@@ -93,12 +92,10 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    常駐のprocess-loopでは前回報告以降に公開・反映・必要なリリースまで届いた成果を、dotfilesはリリースごと、リリース周期の無いリポジトリは公開ごとに1件へまとめる。
    判断が必要な事項と未達は随時UWIで届ける。
    それ以外はセッションにつき1件とする。
-   報告用UWIの保存状態と質問・回答欄は`agent-toolkit:atk-mode/references/uwi-format.md`「構成」に従う。
    `completion_report: true`は、process-loopの`--once`、`abort`、ユーザーの中断、会話を替える交代で終了する完了報告にだけ置く。
    継続中の成果の報告や公開後の案内には付けず、報告の保存・送達後は[巡回する](process-loop.md#巡回する)の手順2へ戻る。
    更新のための本人再開では完了報告を作らず、予約後に終了する。
-   本人にしか決められない事項や本人にしかできない操作が残る場合だけ、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってその事項だけを個別のUWIにし、報告の未達・持ち越しにファイル名を書く。
-   エージェントが再試行・対処できる未達と、自ら確定した技術判断は、回答を求める理由にしない。
+   個別UWIのファイル名を報告の未達・持ち越しに書く。
    `atk run-skill`による実行では、`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保つ。
    scopeは自由記述を含まないスキル名とモードの組とし、起動入力の`accepted_scopes`の先頭を使う。
    例えばbatchのscopeは`agent-toolkit:review-session batch`である。
@@ -112,7 +109,6 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    - 協調モードの `add-awi-by-user`、`implement`、`process-user-comments` では、送達成功を確かめてから最後のツール呼び出しとして `atk agents-exit-session --after-completion` を実行する。
      ユーザーの回答・承認・本人作業を待つ場合は呼ばない。
      環境による対象判定はコマンドに任せ、自動終了しない理由が返った場合も通常どおりターンを終える。
-   - 最終報告後の追加応答と再送は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
      Claude Codeの終え方は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
    - Codexの送達順は`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」に従う。
    - ホスト本体を停止する場合は、報告の保存検収と送達を終え、停止操作を最後のツール呼び出しにする。
@@ -126,7 +122,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 
    回答や委譲結果の待機、中止・置換、技術的不成立は通常の完了と分け、残工程と再開の条件を報告し、`agent-toolkit:atk-mode/references/termination-evidence.md`に従って記録する。
    送達の失敗、実害を防ぐStop hookの遮断、新しいユーザーの指示は、それぞれの回復・続行の手順へ進む。
-   送達後に実際の新しい問題が分かった場合は、その問題を調べて処置する（再検証はその問題に必要な範囲に限る）。
+   送達後に実際の新しい問題が分かった場合は、その問題を調べて処置し、再検証は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
    自律モードでは報告用UWIを更新し、協調モードではユーザーの判断や次の操作を変える訂正だけを届ける。
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 

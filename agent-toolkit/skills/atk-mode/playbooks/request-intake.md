@@ -69,7 +69,7 @@
 6. `agent-toolkit:atk-mode/references/omission-check.md`「点検類型」の全類型を点検してから、方針を決める。
    外部資料の主張と比較先の意味、配布先・利用場面、採否の根拠は既存のレビューで確かめる。
    読めない範囲は「差分なし」に数えない。
-7. 確認する（ユーザー本人にしかできない判断だけを問い、技術で決まる判断はエージェントが確定して根拠を示すため）。
+7. `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従って確認する。
    - 手順4で推奨できる関連機能が1件以上あれば、候補と推奨を先に送り、どれを採用するかを本人の選好として同じセッションで問う。
      採否は方針の承認より前に別の呼び出しで問い、後のセッションやUWIへ先送りしない。
      採用分は今回のAWIか実装の範囲に入れ、採らない候補は理由とともに報告する。
@@ -90,7 +90,7 @@
      「完成形が依頼から決まる」依頼では、本人の選好・未開示の制約・認可（本人による準備とは別の、操作の認可を含む）が残る時だけ確認する。
      各問いは`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」の二段で見直す。
      本人にしかできない準備が残れば`agent-toolkit:atk-mode/playbooks/confirmation.md`「本人にしかできない準備の先行依頼」で着手前に依頼する。
-   - 手段は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」で選ぶ（Claude Codeでは`AskUserQuestion`）。
+   - 手段は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
    - 適用範囲を問う時は、点検類型(i)で成立した派生先を`agent-toolkit:atk-mode/references/choice-construction.md`「候補の構成」へ渡す。
    - 判断の材料を先に送り、質問には問いと最小限の前提を残す。
      材料は、課題、変更対象と内容、未確認の前提、依頼どおりの案、種類の異なる案と不採用の理由、採らない資料の主張、点検済みの推奨である。

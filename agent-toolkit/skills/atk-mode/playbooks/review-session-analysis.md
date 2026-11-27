@@ -5,7 +5,7 @@
 会話の記録から問題と改善の機会を見つけ、原因と対策を確定し、AWIの投入と振り返り結果報告の材料までを作る。
 記録から見つけた問題は逸脱として扱い、原因の掘り下げ、前提、類似見直し、再発防止の選び方は`agent-basics:bugfix`に従う（原則5、`agent-basics:writing-standards/references/quality-principles-deviation.md`）。
 本書が持つのは、振り返りに固有の入力（prepareの出力、会話の流れ、候補ID、batchの範囲、既存のWIキュー）の扱いと、振り返りで起きる判断である。
-事実は観測した範囲で言い、省略された表示と未確認の範囲を不在や確認済みの根拠にしない（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
+`agent-basics:writing-standards/references/quality-principles-facts.md`「結果の返却」に従う。
 batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出典を保つ。
 
 改善点の受付IDが証拠に含まれる場合は、`agent-toolkit:atk-mode/playbooks/main-reporting.md` の受付手順で観測と確定済みの処置を確認する。
@@ -58,7 +58,7 @@ batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出�
 
 ### 工程4
 
-選別した問題ごとに、メイン自身が`agent-basics:bugfix`を起動し、事象、期待された契約、実際の結果、発生条件を入力にする。
+選別した問題ごとにメイン自身が`agent-basics:bugfix`に従い、事象、期待された契約、実際の結果、発生条件を入力にする。
 同じセッションで前に起動していても振り返りごとに適用し、WI投入担当の分析をメインの原因分析の代わりにしない。
 
 1. 既存の上位の規範、対象の目的、技術的な常識から導ける事項かを、`agent-basics:bugfix/references/premises.md`「規範に従った結果の失敗」で確かめる。
@@ -70,9 +70,9 @@ batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出�
    過去のAWIとの比較は本書「原因と対策」に従い、既存の未完了AWIによる被覆、起票、実装と配布、今回の条件での解消を分けて工程5へ渡す。
 3. 工程2・3の費用の比較を使い、欠陥の有無の判定と実施方法の採否を分けて確定する。
    不具合と確定した問題には、同じ作業での処置、実条件を覆う既存対策、または登録する対策・調査を対応付ける。
-   原因か方式が未確定なら、観測事実、仮説、次に確かめる問いを分けて調査の要求にする。
+   原因か方式が未確定なら、`agent-basics:writing-standards/references/quality-principles-facts.md`「結果の返却」に従い、次に確かめる問いを調査の要求にする。
    費用だけを理由に不具合を見送らない。
-   再発防止を採用しない時は、理由が`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」の区分に当たることを確かめる。
+   `agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」に従う。
 4. 再利用の価値がある成功の手順、誤記の訂正、重複の整理と参照の補修も、既存の記録と比べて選ぶ。
    知見の保存と再利用は`agent-basics:writing-standards/references/investigation.md`「経験の保存と適用」に従い、恒久の変更が必要なものを工程5へ渡す。
 
@@ -135,7 +135,7 @@ batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出�
 - 候補の操作の実行主体は、要約の表現から推測せず、各記録位置に付く`record-provenance`の由来（役割文書、起動モード、起動元の記録）で決める。
 - ユーザー介入、WIの記入欄の是正（`wi-user-response`）、エスカレーションの全文、hook通知の前後の応答は、索引の短い概要で判断せず、保存された証拠から全文を取る。
 - `post-delivery-response-candidate` は、送達成功後から次のユーザー入力までに出た通常本文であり、再掲とは限らない。
-  保存された証拠で送達した報告と応答を比べ、短い訳や言い換えも、内容が同じなら再掲、新しい結果があれば追加とする。
+  保存された証拠で報告と応答を比べる時は、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
   内容を確かめた再掲、新しい結果を含む応答、未確認を分ける。
   字面一致・長文の旧集計は比較にだけ使い、確認済み件数に足さない。
 - 評価が必須の候補（1行JSONの`mandatory_candidates`）は全件を評価する。
@@ -154,7 +154,7 @@ batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出�
 検索の条件は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「重複判定」に従う。
 `similar_records`が空でも、表現の違う是正の事例を本文の検索で補う。
 目的、事象、原因、適用の条件、実装と配布の状態、処理の後の観測を比べ、結果を未反映、未適用、範囲不足、適用後の同原因、別原因、効果未確認に分ける（`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」）。
-原因が違っても同じ害なら反復として記録し、反復した問題には過去の項目名、前回の対策の種類、解消されずに残った条件を`再発:`の行に書く。
+反復した問題には、`agent-basics:bugfix/references/recurrence.md`「`再発:`の行」に従って記録し、過去の項目名も添える。
 後日の効果の観測と延期の採用は、`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」の対象と再開の手順に従う。
 
 ### 採用済みAWIの効果の確認
@@ -199,7 +199,7 @@ AWIの節の分担は`agent-toolkit:atk-mode/references/awi-body.md`「節の構
    判定と、条文を文脈へ入れた出所を示す`channel`を、AWIの`原因:`の行へ書く。
 2. `absent`は起動の契機の欠落か参照の時点の問題、`dropped-by-compaction`は会話圧縮の問題、`present`は条文の判定条件、責務の所在、想起性の問題とする。
    一致した`channel`が`user`と`assistant`だけなら、会話の中の言及として扱う。
-3. 適用されなかった規範を前回の対策として`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」で扱い、想起性を改善する案と、その案で誤りを防げる見込みの根拠をAWIへ書く。
+3. 適用されなかった規範は`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」に従い、想起性を改善する案と、その案で誤りを防げる見込みの根拠をAWIへ書く。
 
 `present`の未適用で実際のモデル階層が対策の選定を左右する時は、記録から確かめたモデル階層を`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「代替時の組合せの目安」と比べる。
 上位の階層なら性能不足を原因とせず、条文の追加より先に既存の条文の削除、緩和、集約、単純化、一般化を比べる。

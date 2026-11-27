@@ -40,7 +40,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 ## 要求から公開までの担当
 
 1. 要求の具体化: メインが元の要求・回答・既存の認可を確かめ、対象を選定して配分する。
-   ユーザー固有の判断が必要な箇所は、その回答に依存する処理の前に確認する。
+   `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 2. 計画と実装: レーン担当が割り当てられた要求から計画・実装・検証を進め、実行レビューの入力を確定する。
    レーン数によらない継続と受け渡しの条件は`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`に従う。
 3. 独立文脈レビュー: 実装を担当していないレビュー担当が成果を検収する。
@@ -55,7 +55,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 
 `run-skill`に由来するUWIの`source`と`scope`は[由来と承認](origin-and-approval.md)で定め、報告用UWIだけに付ける属性は[完了報告](../playbooks/report-completion.md)で定める。
 回答済みの確認UWIは、由来によらず、既存の着手条件でprocess-wiの選定対象に含める。
-報告用UWIは保存時に`adopted`となり、回答欄を持たず、選定対象に入らない。
+報告用UWIの状態と選定対象は`agent-toolkit:atk-mode/references/uwi-format.md`「構成」に従う。
 
 ## 要求の登録と判断待ちからの再開
 
@@ -68,7 +68,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 本文の形式は`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。
 由来は`agent-toolkit:atk-mode/references/origin-and-approval.md`、状態と依存関係は`agent-toolkit:atk-mode/references/states-and-dependencies.md`に従う。
 
-ユーザーの対応が必要な未完了事項は、実行モードを問わず共通の確認基準で個別のUWIを登録するかを判定し、報告では保存先のパスを示す。
+未完了事項の扱いは`agent-toolkit:atk-mode/references/delivery.md`「個別UWI」に従う。
 会話中に回答を得た事項はUWIとして重ねて登録せず、回答を得ないまま終わった確認事項はUWIへ引き継ぐ。
 保存の条件、自律モードでの確認の手段、UWIへの切り替えは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
 ユーザーは`atk wi answer`か`atk serve`から回答する。

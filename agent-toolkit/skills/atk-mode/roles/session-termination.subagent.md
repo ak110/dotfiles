@@ -41,7 +41,7 @@ push先はカレントブランチの上流追跡ブランチとし、カレン�
    公開中に統合した変更は次のpushに入れる。
    受け取った`bump種別`を使い、全体検証には同書「検証とCI」の分岐を適用する。
 2. 全体検証かCIの失敗は`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「検証またはCIの失敗」へ進む。
-   CI定義の判定、baselineの作成、CIの監視、公開後の操作を前提不足で終えられない時は`agent-toolkit:atk-mode/playbooks/publish.md`へ進み、未完了の工程から再開する。
+   CI定義の判定、baselineの作成、CIの監視、公開後の操作の前提が不足する時は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能からの再開」に従う。
 
 ## プロジェクト固有の公開後の操作
 
@@ -53,7 +53,7 @@ push先はカレントブランチの上流追跡ブランチとし、カレン�
 1. 残る完成条件を、届く環境を探して観測する。
    人が観測主体と書かれていても、`agent-toolkit:atk-mode/references/awi-body.md`の観測主体の規定に従う。
 2. 次の項目は`adopt`せずに`processing`を保ち、`実行した公開工程`に記録する（扱いは`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」）。
-   - 反映後の新しいプロセスでしか観測できず、この担当では観測を終えられない項目: 残る条件と観測の手段を記録し、人間を観測主体とする条件では探した環境と観測できなかった理由も書く。
+   - 自分では観測を終えられない項目は、`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」に従う。
    - 観測結果が完成条件を満たさなかった項目: 満たさなかった条件と実際の観測結果を記録する。
 3. `adopt`のメモの先頭の1文は、commitの記録より前に書く。
    基準は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「終了」に従う（用語は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「ユーザーが読む部分の合格基準」）。
@@ -82,7 +82,7 @@ CIの結果: <CI成功|CI定義なし|CI実行対象外。後二者は共通判�
 延期後にadoptしたAWI: <実際にadoptしたAWIファイル名のJSON文字列配列。反映後の新プロセスでしか観測できない条件が残る項目と、観測が完成条件を満たさなかった項目を含めない。無い場合は[]>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 `CI実行対象外`では`実行した公開工程`に終了8の出力、project・commit・ref・errorsの保存先とローカル全体検証の成功を記す。
 CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）や公開後操作の前提不足に起因する場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能の受渡し」に従う。
 対象、失敗した操作とその対象、診断結果、確認済みの工程、成功済みの公開後操作、残りの工程、再開位置を記載する。

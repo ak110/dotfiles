@@ -3,7 +3,7 @@
 dotfilesの変更を、テストの配置から公開前の検証まで確かめる手順書である。
 検証の一般の規則（対象の選び方、成功の再利用、再実行、結果と所要時間の判定）は`agent-basics:check-execution`と`agent-toolkit:atk-mode/playbooks/verification.md`にある。
 本書はdotfilesに固有の値（起動の形、実行枠の数、CIのジョブ、対象のテスト、所要時間の基準値）を持つ。
-本リポジトリではCIが全体のテストと静的チェックを担い、ローカルの対象は本書「変更範囲の検証の値」で選ぶ。
+`agent-basics:check-execution/references/verification-scope.md`「ローカルとCIの分担」に従う。
 合否は`agent-basics:check-execution/references/diagnostics.md`「合否の判定」に従う。
 
 ## テスト配置

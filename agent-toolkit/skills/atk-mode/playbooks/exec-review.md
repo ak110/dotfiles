@@ -82,7 +82,7 @@
 ### WIの完成条件
 
 - 任意の節や引用位置の記録を省いた旧形式のAWIも、書かれた内容から検収する。
-- リポジトリ全体の検証とCIの成功は、個別のWIの完成条件として判定せず、公開工程判定（`agent-toolkit:atk-mode/references/workflow-phases.md`「用語」）へ渡す。
+- `agent-toolkit:atk-mode/references/workflow-phases.md`「用語」の公開工程判定に従う。
 
 ### ユーザー要求単位
 

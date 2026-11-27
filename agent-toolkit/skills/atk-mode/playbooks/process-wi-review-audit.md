@@ -90,7 +90,7 @@ Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。
 <!-- return-contract:copilot-review-audit:end -->
 

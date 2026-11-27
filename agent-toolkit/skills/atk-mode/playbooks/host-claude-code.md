@@ -2,7 +2,7 @@
 
 Claude Codeで動くエージェントが、ホストに固有のツール、通知、hookのイベントを扱う時の手順書である。
 方針: ツールの公開状況と通知の配送はClaude Codeの版、設定、プロバイダーで変わるため、可否と状態は実際の呼び出し結果と終了の観測で決める（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
-起動した委譲、バックグラウンド処理、定期の再確認は、起動した主体が終了を観測して回収する（原則7、`agent-basics:writing-standards/references/quality-principles-ownership.md`）。
+`agent-basics:writing-standards/references/quality-principles-ownership.md`「完遂と引き継ぎ」に従う。
 
 ## 読む節
 
@@ -46,7 +46,6 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 
 - 作業完了報告の確定、対象作業での自動終了の要求、通常本文で報告した後の固定文の扱いは`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」に従う。
 - 確認の前置きを送っただけでターンを閉じず、質問は本書「ユーザー確認（AskUserQuestion）」の手段で尋ねる。
-- 送達済みの本文と追加応答は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
   空の応答は再生成を求められるため、未送達でも伝える内容の無い待機は`…`を返し、ホストの無発話の注意を受けた時も同じ終え方を保つ。
 - process-loopの統括と`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`process-loop`か`run-skill`）では、担当の工程を終えた時だけ`…`を完了の1文に替え、報告の抜粋や補足は含めない。
 - 完了通知を待つ区切りは`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「完了通知を待ってターンを終える場合」に従う。
@@ -139,7 +138,7 @@ Code Modeを使えない場合は通常の公開ツールやCLIを使う。
 
 ### 背景ジョブ完了通知と実プロセスの終了順
 
-バックグラウンドタスクの完了通知を受けた後も同じ`atk agents wait`の実プロセスが残っている場合があり、同じ待機を重ねて発行するのは誤りである（後続の扱いは`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`）。
+バックグラウンドタスクの完了通知後も実プロセスが残る場合の扱いは、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「`atk agents wait`の応答の扱い」に従う。
 ホストの停止通知では、外側のタスクと子のプロセスの終了を分け、`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`「ホストによる背景待機の停止後」で元の出力の回収と監視の再開を決める。
 
 ### 完了通知と中継の実行順
@@ -180,7 +179,7 @@ Code Modeを使えない場合は通常の公開ツールやCLIを使う。
 1. 検証やビルドなど時間のかかるコマンドは、Bashツールの`timeout`を上限まで上げてフォアグラウンドで実行し、収まらなければホストのバックグラウンド実行と実行識別子で回収する（検証を保てるなら複数回のフォアグラウンド実行へ分けてよい）。
 2. ツールの側でバックグラウンド実行を指定したコマンドにシェルの`&`や`nohup`を重ねると、シェルの終了が先に完了通知として届く。
 3. `nohup`や`setsid`による切り離しは、完了通知が届かず監視と本体の寿命が分かれるため、エージェント自身が一時的に応答できなくなる工程に限り、リモートの実行ではSSHの接続も保つ。
-4. フォアグラウンドの上限でバックグラウンドへ移された実行は、通知された識別子と出力ファイルを使い、`agent-toolkit:atk-mode/references/operations.md`「待機とバックグラウンド実行」で回収する。
+4. フォアグラウンドの上限でバックグラウンドへ移された実行は、`agent-toolkit:atk-mode/references/operations.md`「待機とバックグラウンド実行」に従う。
 5. 終了状態と出力は、起動の結果が示す出力ファイルの絶対パスから得る。
    このファイルは全ての出力と`[exited with code <整数>]`の形の終了状態の行を持ち、再起動で失効する実行識別子と違ってディスクに残るため、待機を引き継ぐ時はこのパスも渡す。
 6. 完了か失敗かは、実行識別子によるプロセスの生存の確認と出力ファイルの末尾の終了状態の行で判定し、ファイルが空なら保留する。
@@ -221,7 +220,7 @@ Claude Codeのメインが、他の担当やCIの監視の結果を後続の工�
 
 1. `mcp__plugin_agent-toolkit_agents_server__compact_conversation`が無い環境では、前提が成り立たなかったことを引き継ぎ記録に残して通常の待機へ進む（Codexは本手順の対象外）。
 2. このツールを引数なしで1回呼び、予約の受付と圧縮の完了を区別して、圧縮が終わるまで予約を1件に保つ。
-3. `agents_server`の結果は、Bashのバックグラウンド機能が公開されていれば、引数なしの単独の`atk agents wait`をバックグラウンドで起動して待つ（`session_id`は結果の突き合わせだけに使う）。
+3. `agents_server`の結果は、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機手段の選択」「待機区間の構成」に従う。
    バックグラウンド機能が無い時（SessionStartがバックグラウンド実行の無効を通知し、Bashの公開入力に`run_in_background`が無い時）は、フォアグラウンドのBashへ`timeout=600000`を指定して同じターンで回収する。
    CIの監視では、起動済みの`wait_ci.py`のタスクを保つ。
 4. バックグラウンドの待機では今のターンを終えて、届いた完了通知と保存された全ての出力から終了状態を回収し、フォアグラウンドの待機ではCLI自身の期限で返る終了コードを回収して、終わっていなければ同じコマンドで待ち続ける。

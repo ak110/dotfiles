@@ -66,7 +66,7 @@ description: >
 6. developのみの公開も含め、CIと必要なリリースを確認した公開単位ごとに `update-dotfiles` から稼働版の確認まで続ける。
    ホストごとの追跡系統に対応する公開OID・配布版を `docs/development/operations-services.md`「公開単位ごとの反映と稼働版の確認」の手順へ渡す。
    巡回では統括にプラグイン・MCPの反映と本人再開を引き継ぎ、その結果と導入済みの両サービスの版の一致が揃うまで公開完了を返さない。
-   反映に失敗したら、公開済みのOIDと結果を保ち、未完了の工程から再開する。
+   反映に失敗したら、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能からの再開」に従う。
 7. 今回`master`へ反映した使い方の変更を採用記録から拾い、公開版のガイドを確かめる。
    `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」に従って設定の要否を環境ごとに確かめ、専用の案内UWIを登録する。
    `develop`へのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。

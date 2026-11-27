@@ -4,6 +4,11 @@ UWIを処理するエージェントが、ユーザーの回答を元の作業�
 
 回答が得られたUWIを元の作業へ反映する手順と、`atk run-skill`で起動したセッションが過去の実行で作られたUWIを処理する手順を定める。
 
+## 回答待ちの再開情報
+
+回答後の再開手順は引き継ぎ記録へ書き、別セッションで必要な情報は`atk wi edit --append`で元AWI本文へ追記する。
+計画が無い場合も元AWIへ追記する。
+
 ## 回答後の状態遷移
 
 投入済みで未回答のUWIを持つ間は、定期確認の時機（`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`）ごとに`atk wi`で回答の有無を確かめる。
@@ -22,7 +27,7 @@ UWIを処理するエージェントが、ユーザーの回答を元の作業�
 
 標準の2択の事後承認型UWIに肯定の回答が得られた時の遷移は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従い、同じUWIへの`adopt`の再実行や追加の是正は不要である。
 問題の指摘を含む回答、事前承認型UWIへの回答は、次の手順を一連の作業として順に終える。
-報告用UWIは保存時に`adopted`となり、回答欄を持たず、回答の処理対象に入らない。
+報告用UWIは`agent-toolkit:atk-mode/references/uwi-format.md`「構成」に従い、回答の処理対象から除く。
 
 1. 質問と回答を取得する。
    ユーザーが回答を伝えたUWIは`atk wi show <UWIファイル名> --pull`で取得し、通常の定期確認には`atk wi show <UWIファイル名>`を使う。

@@ -18,7 +18,6 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    1回の実行レビューは`cwd`から解決する1つのリポジトリだけを対象とし、リポジトリが異なる基準はレビューを分ける。
    対象WIの`担当モデル.実行レビュー担当`がユーザー由来なら、その値を`model_type`と比較用の入力`担当モデル`へ渡し、WIごとに違えばレビューを分ける。
    指定のある場合は`model_override=user_instruction`と、`agent-toolkit:atk-mode/references/model-settings.md`「本人指定による上書き」で定める原文・回答の所在を`model_override_evidence`へ渡す。
-   指定値と実行値の比較と記録は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う。
 3. 単一計画の初回でない起動は、起動方法ごとの次の資料を読んでから入力を決める。
    - 内部の群は`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`を読む。
    - 複数の計画は`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`を読む。
@@ -161,7 +160,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    同じ待機判定でも、作業を待機と数える誤りと待機を作業と数える誤りは逆向きである。
    `agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」の比較を、該当行の番号と合わせて既存の記録に残す。
    起動側はそろうまで次の局所修正を依頼せず、確定結果は管理表の応答に残す。
-4. 同じ指摘なら、局所の修正の前に`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」で前回の修正が防げなかった理由を特定させる。
+4. 同じ指摘なら、`agent-basics:bugfix/references/recurrence.md`「前回の対策を調べる」に従う。
 5. 新たに認可された要求は元の合否を先に確定し、別ラウンドかAWIへ分ける。
    要件や認可の変更が未確定なら本書「エスカレーションの事由別の扱い」へ回し、レビュー契約の不足なら`review_contract`を直してから再レビューへ渡す。
 
@@ -177,7 +176,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 ## エスカレーションの事由別の扱い
 
 担当から判断要請を受けた委譲元（レーン担当からはメイン、修正担当からは起動した担当）が使う。
-処置の前に、担当が付けた区分（「要件」「要求の変更」など）を`agent-toolkit:atk-mode/playbooks/confirmation.md`「要件と技術判断を分ける」で確かめ、ユーザーにしか決められない残りを同書「確認要否の判定」で分ける。
+処置の前に、`agent-toolkit:atk-mode/playbooks/confirmation.md`「要件と技術判断を分ける」「確認要否の判定」に従う。
 登録漏れ、判定行の不備、検証の失敗、技術的に解消できる実装の欠陥など担当の内部で補える不足は同じ担当に直させ、エスカレーションは担当が補えない判断、認可、入力、外部環境の不足に限る。
 
 | 事由 | 委譲元の処置 | 再開位置の記録 |

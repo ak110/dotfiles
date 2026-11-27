@@ -16,7 +16,7 @@
 長い先頭項目と並行して処理する分は、初期選定の下限まで先頭から選ぶ。
 開始後の追加は次の手順で判断し、着手済みの項目の完遂は保つ。
 
-1. 追加の操作の前に`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で、発話と発生条件から是正要求、今回混入した不良、同じ実行への明示の追加を分類する。
+1. 追加の操作の前に`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」に従う。
    追加の承認前に`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「受領後の扱い」の前提・削減・採否の基準に従う。
    混入した不良は元の要求で是正し、独立した既存不良は即時対応の要否を判定する。
    本節の操作は、同節で今回の正式改善と確定したAWI、明示の追加、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」で必要と確定した作業に使う。
@@ -113,7 +113,7 @@
    必須是正は本書「処理中に確定した必須是正レーン」で検収まで続ける。
 10. 確定した集合と準備済みの作業ツリーは、通常レーンの数にかかわらず`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`の単一担当の実行契約へ渡す。
     追加WIは手順5で選んだ担当と資源へ渡し、初期選定で確定した工程調整の担当体制を保つ。
-    通常のレーン担当以外が行う場合も、選定の所属レーン、書き込み所有権、実行レビュー、統合とWI終了の契約を保つ。
+    通常のレーン担当以外が行う場合も、選定の所属レーンと、`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「書き込み所有権とレーンの境界」、実行レビュー、統合とWI終了の契約に従う。
 
 ### 既存WIの再開
 
@@ -206,9 +206,9 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --transfer-wi <追�
 2. 実行中にユーザーから追加の指示があれば、既存の処理条件と比べて採否を決めた差分だけを処理条件へ反映する。
    比較と採否は`agent-toolkit:atk-mode/playbooks/review-fix.md`「担当種別ごとの修正」、範囲と論理関係の解釈は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」に従う。
    公開工程に入る前に届いた直接の実装要求も、同じ主題である限り処理を続けるための追加条件として扱い、公開工程の開始後に届いた指示は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「対象外の不良と是正要求」で扱う。
-   主題が続いているかは元の要求・現物・既存の認可から自分で判断し、ユーザーだけが決められる目的・範囲・認可が残る場合に限って変更の前に確認する。
+   主題の継続は元の要求・現物・既存の認可で判定し、変更前の確認は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 3. 追加の指示で既存の要件が変わる場合は、変更前の要件で作業ツリーの外へ作った成果物（キューの項目、IssueやMRの本文など）を確かめ、終了・改訂・取り消しなどの方針を決めて追送の指示に含める。
-   技術的な判断や既存の認可の内側で済む処置は自分で確定して報告する。
+   `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
    作業ツリーの状態に関係なく編集できる外部の成果物はメインが中継に合わせて直し、作業ツリーの中の差分はレーン担当が計画と実装で追随させる（メインが専用worktreeを引き取った場合はメインが追随させる）。
 4. 追送の指示には`agent-toolkit:atk-mode/references/delegation-prompt.md`「入力の適格性と追送」の規則を適用し、採用した要件の差分と外部の成果物の処置だけを渡す。
    commitの分け方、検証の手順、pushの判断など、レーン担当の規範で決める手段は含めない。

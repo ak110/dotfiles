@@ -55,7 +55,7 @@ writes_worktree: false
 - 種別: 不明瞭 / 冗長 / 不足 / 誤り / 過剰な指定 / その他
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 入力不足の場合は、対象プロンプトの不足情報と取得不能の根拠を記す。
 
 `点検資料`がある場合は、各指摘へ次の4行を加え、末尾に点検済み・未点検範囲と未試行の比較を記載する。

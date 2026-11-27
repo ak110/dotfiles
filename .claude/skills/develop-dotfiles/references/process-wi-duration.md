@@ -11,7 +11,7 @@
 実測による補正は`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「見込みの補正の算出」に従う。
 
 各WIの実装・必要な品質確認と、そのWIを含む公開のCI・反映を検収した時点を計測の終点とする。
-選定と統合は公開待ちでも続け、前回報告以降に届いた成果をリリースごとの報告用UWI1件へまとめる。
+選定と統合は公開待ちでも続ける。
 常駐の統括の終了は`agent-toolkit:atk-mode/playbooks/process-loop.md`「中断と再開」の条件に限る。
 着手後は選んだ全件と必要な品質工程を保持し、同じ巡回で完遂する。
 目標を超えた回は、原因と改善をAWIとして登録して次の巡回で処理する。
