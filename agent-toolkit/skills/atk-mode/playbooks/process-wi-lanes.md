@@ -98,7 +98,8 @@
    レーン担当は群の保存が終わった順にレビューを始め、全群の完了を待つ一斉の初回レビューは避ける。
    共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）へ群ごとに早く投入し、群別の対象の和集合と元WIの全条件の対応を保つ。
    受理済みの同じ本文・環境・契約の結果は再利用し、全群の取り込み後に群間の契約、共有の生成物、組合せの差分と未達条件を検収してから統合入力を確定する。
-2. Git統合、全計画の保存、WIの採否の確定、選定の統合状態の更新は、同じ所有登録から`atk lane integrate`が一括で行う。
+2. 統合待ちの集約と失敗時の切り分けは`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合キュー」に従う。
+   Git統合、全計画の保存、WIの採否の確定、選定の統合状態の更新は、各所有登録から`atk lane integrate`で行う。
    引数とmanifestの作り方は`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」に従い、メイン自身が呼ぶ場合も独立文脈のレビューと完成条件の判定を通った同じ入力を使う。
    直列になる更新と先行レーンの待機は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従う。
 3. 終了コード0、`phase: finalized`、統合結果のOID、計画ファイルの保存、終了対象のAWIの採否の確定を確かめる。

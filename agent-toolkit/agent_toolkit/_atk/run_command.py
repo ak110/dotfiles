@@ -16,7 +16,7 @@ from pyfltr.command import execution_slot
 
 from agent_toolkit._atk import managed_temp, outcome
 from agent_toolkit._atk.environment import is_human_terminal
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import process_tree, verification_slot
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.inherited_venv import strip_inherited_venv
 from agent_toolkit._git import command as _git_command
@@ -197,7 +197,9 @@ def execute(
 
     # 検証は開始から子孫の回収まで実行枠を保持する。子のpyfltrとpytestは祖先の所有を継承する。
     ownership = (
-        execution_slot.hold(label=shlex.join(argv), on_wait_interval=record_wait) if verification else contextlib.nullcontext()
+        verification_slot.hold(priority="integration", label=shlex.join(argv), on_wait_interval=record_wait)
+        if verification
+        else contextlib.nullcontext()
     )
     observed: dict[str, Any] | None = None
     try:
