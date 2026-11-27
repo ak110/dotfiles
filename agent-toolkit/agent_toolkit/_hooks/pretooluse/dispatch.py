@@ -1,4 +1,4 @@
-r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
+r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。  pyfltr: allow-comment
 
 任意ツールの実行前に以下のチェックを順に実行する。
 block系checkは1プロセスで直列実行し、最初の違反を終了0の構造化denyで返す。
@@ -30,7 +30,6 @@ Agent / Task:
 
 Bash:
 
-- 規範資料を見出しだけに限定して抽出する読取の警告 (warn)
 - 区切り語を引用しないheredocの本文にあるコマンド置換の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - 読取の引数・診断破棄、atk出力の接続とwaitの背景化の警告 (warn)
@@ -51,8 +50,6 @@ Write / Edit / MultiEdit / apply_patch:
 
 全ツール共通:
 
-- 操作の直前に起動を求めるスキル（`operation_skills.OPERATION_SKILLS`の検索・原因分析の記述・本文の作成と更新・
-  検証の実行）の、主体と文脈ごとにスキル1件につき1回の案内 (notice)
 - 委譲先の全体作業契約が起動後に更新された場合の、更新後の版ごとに1回の案内 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
@@ -89,15 +86,11 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks import (
     bugfix_gate,
     clock_claims,
-    command_timing,
     delivered_repost_gate,
-    hook_notice_response_gate,
-    norm_excuse_gate,
     permission_denial_notice,
     repository_protection,
     work_contract,
 )
-lazy from agent_toolkit._hooks import notice as _notice
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -105,8 +98,7 @@ lazy from agent_toolkit._hooks.agents_server_observations import start_observati
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
-lazy from agent_toolkit._hooks.pretooluse import commit_identity, intake_edit, publication_gate, user_facing_checks
-lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
+lazy from agent_toolkit._hooks.pretooluse import commit_identity, intake_edit, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
     _AGENTS_SERVER_SEND_TOOLS,
@@ -121,12 +113,7 @@ lazy from agent_toolkit._hooks.pretooluse.content_checks import (
     _collect_edit_operation_warnings,
 )
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
-lazy from agent_toolkit._hooks.pretooluse.large_reads import (
-    bash_read_paths,
-    check_bundled_read,
-    check_large_bash_read,
-    session_record_reference_warning,
-)
+lazy from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
@@ -156,11 +143,6 @@ _MAIN_ONLY_MCP_TOOLS = frozenset(
     f"{prefix}{name}"
     for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
     for name in ("send_to_user", "send_to_user_preflight", "compact_conversation", "apply_runtime_changes")
-)
-_SCOPE_REVIEW_MCP_TOOLS = frozenset(
-    f"{prefix}{name}"
-    for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
-    for name in ("start", "send_message", "send_to_user")
 )
 
 
@@ -221,12 +203,12 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
             )
         if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
             pending_notices.append(warning)
-        if decision.block is None:
-            pending_notices.extend(_operation_skills.notices(payload, tool_name, tool_input, session_id))
-            if not is_antigravity_payload(payload) and (
-                boundary := intake_edit.notice(payload, tool_name, tool_input, session_id)
-            ):
-                pending_notices.append(boundary)
+        if (
+            decision.block is None
+            and not is_antigravity_payload(payload)
+            and (boundary := intake_edit.notice(payload, tool_name, tool_input, session_id))
+        ):
+            pending_notices.append(boundary)
         contract_update = work_contract.delegated_notice(session_id, agent=_agent_id.resolve_hook_agent_id(payload))
         if contract_update:
             pending_notices.append(
@@ -240,20 +222,17 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
             )
         if decision.block is None:
             user_facing_checks.record_policy_question(payload, session_id, tool_name, tool_input)
-            command_timing.start(payload)
-            if not is_codex and tool_name == "Skill":
-                bugfix_gate.observe_repl_skill_start(payload, session_id)
             if not is_codex and tool_name == "Bash" and str(payload.get("tool_use_id", "")).startswith("repl_"):
                 observe_repl_bash(payload)
         return _emit(decision, pending_notices, is_codex=is_codex)
 
 
 def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
-    """資料の未取得は遮断せず警告し、未対応のまま進めた操作は進捗点検で列挙して確認させる。  pyfltr: allow-comment
+    """未取得のレビュー資料と退避出力を警告する。  pyfltr: allow-comment
 
     読取を観測できないホスト（Antigravityなど）でも作業を止めないためである。
     """
-    found: list[tuple[str, str, str]] = []
+    found: list[tuple[str, str]] = []
     if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
         from agent_toolkit._hooks.review_receipt import missing_before_response  # pylint: disable=import-outside-toplevel
 
@@ -262,7 +241,6 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
                 (
                     "レビュー返却が指定した資料の取得を確認できないまま、採否を記録する操作である。",
                     f"{'、'.join(missing)}を取得し、採否が変わるなら記録を直してください。",
-                    "レビュー返却が指定した資料の取得を確認できない採否の記録",
                 )
             )
     if is_send_to_user_tool(tool_name) and isinstance(message := tool_input.get("message"), str):
@@ -273,38 +251,12 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
                 (
                     "画面へ送る根拠に未取得の退避出力がある。",
                     f"`{unread}`の全文を取得し、根拠が変わるなら報告を訂正してください。",
-                    "未取得の退避出力を根拠にした報告",
                 )
             )
-    actor = _agent_id.resolve_hook_agent_id(payload)
     notices = []
-    for body, fix, label in found:
-        _notice.record_skipped(session_id, actor, label)
+    for body, fix in found:
         notices.append(_llm_notice(body, tag="warn", fix=fix, removable_cause=True, escalate_on_repeat=False))
     return [text for text in notices if text]
-
-
-def _send_understanding_block(message: object, retry: set[str] | None = None) -> str | None:
-    retry = retry or set()
-    if (
-        "understanding-original" not in retry
-        and isinstance(message, str)
-        and user_facing_checks.has_original_text_label_in_understanding(message)
-    ):
-        return _block_notice(
-            "「発話の理解」に「原文」の見出しがある。" + send_misdetection.retry_hint("understanding-original"),
-            fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送してください。",
-        )
-    if (
-        "understanding-alternative" not in retry
-        and isinstance(message, str)
-        and user_facing_checks.missing_alternative(message)
-    ):
-        return _block_notice(
-            "「発話の理解」に「別案」の項目がない。" + send_misdetection.retry_hint("understanding-alternative"),
-            fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
-        )
-    return None
 
 
 def _retry_send(
@@ -334,10 +286,6 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             )
         )
     if tool_name in _MAIN_ONLY_MCP_TOOLS and tool_name.endswith("__send_to_user_preflight"):
-        from agent_toolkit._hooks import termination_evidence  # pylint: disable=import-outside-toplevel
-
-        if not session_id or not termination_evidence.evidence_available(payload):
-            return Decision(block="完了報告の前提を確認できない。本文は表示していない。")
         prerequisite = _completion_prerequisite(payload, session_id)
         return Decision(block=prerequisite) if prerequisite else Decision(allow=True, updated_input={"checked": True})
     hydrated = None
@@ -350,68 +298,6 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             return Decision(block=_block_notice(str(error), fix="同じ会話の拒否通知にある`body_ref`を指定する。"))
         hydrated = {key: value for key, value in tool_input.items() if key != "body_ref"} | {"message": text}
         tool_input = hydrated
-    if (tool_name == "AskUserQuestion" or tool_name in _SCOPE_REVIEW_MCP_TOOLS) and (
-        reminder := work_contract.scope_review_before_send(
-            session_id,
-            payload.get("transcript_path"),
-            user_facing_checks.scope_review_text(tool_name, tool_input),
-            actor=_agent_id.resolve_hook_agent_id(payload),
-        )
-    ):
-        reason = _block_notice(
-            f"決定の原文と適用範囲を見直すため、まだ送信していない。\n\n{reminder}",
-            fix="今回の対象と除外を確かめ、必要なら本文を直して再送してください。",
-        )
-        if isinstance(reason, str) and is_send_to_user_tool(tool_name):
-            return _retry_send(payload, tool_name, tool_input, session_id, reason)
-        return Decision(block=reason)
-    question_tools = {"request_user_input", "request_user_input_async"} if is_codex else {"AskUserQuestion"}
-    if tool_name in question_tools and _agent_id.is_main_agent_context(payload):
-        if user_facing_checks.policy_approval_form_invalid(user_facing_checks.normalize_policy_question(tool_name, tool_input)):
-            return Decision(
-                block=_block_notice(
-                    "方針の承認の質問が決まった形でないため、まだ送っていない。再発行しても同じ形では送れない。",
-                    fix=(
-                        "非同期の質問は1つだけにし、titleを「方針の承認：送った方針で進めてよいですか？」、"
-                        'optionsを["この方針で進める", "修正して進める"]の文字列配列にしてください。'
-                        "修飾を使う場合は「送った」と「方針」の間に「2件目の」などを入れてください。"
-                        if tool_name == "request_user_input_async"
-                        else "質問は1つだけにし、見出し「方針の承認」、問い「送った方針で進めてよいですか？」、"
-                        "選択肢「この方針で進める」（説明「送った方針のとおりに着手する」）と"
-                        "「修正して進める」（説明「修正点を自由記述で伝える」）の2つにしてください（推奨の付記は付けない）。"
-                        f"方針の識別に修飾が必要なら、「2件目の」など{user_facing_checks.POLICY_APPROVAL_MODIFIER_LIMIT}文字以内にしてください。"
-                        "修飾は文字と数字だけで書き、改行、読点、列挙記号、括弧、述語を含む文は入れないでください。"
-                        "方針の項目と技術の選択は、質問の前に送る材料（`send_to_user`など）に書いてください。"
-                        "本人固有の論点は、承認より前に別の呼び出しで尋ねてください。"
-                    ),
-                )
-            )
-        if not is_codex and (
-            error := user_facing_checks.external_source_review_needed(session_id, tool_input, cwd=payload.get("cwd"))
-        ):
-            return Decision(
-                block=_block_notice(
-                    f"外部資料の対応表が不足しているため、方針の承認はまだ求めていない。\n{error}",
-                    fix=(
-                        f"セッション一時領域の`{user_facing_checks.SOURCE_REVIEW_FILE}`に、各主張の必須列と既存との差分を書いてください。差分がなければ既存の対応箇所を`path:行`で示してください。"
-                        "`agent-basics:writing-standards/references/design-heuristics.md`"
-                        "「外部資料に基づく改善案の評価」の配布範囲も確かめてください。"
-                    ),
-                )
-            )
-        if user_facing_checks.recommendation_review_needed(payload, session_id, tool_input):
-            return Decision(
-                block=_block_notice(
-                    "推奨のある質問はまだ送っていない。",
-                    fix=(
-                        "`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってください。"
-                        "事前承認・方針全体の合意・認可・本人固有の入力は確認してください。"
-                        "全体として受け入れられた方針で、確定した対象・結果・範囲を保つ実現方式の変更は技術判断です。"
-                        "有効な指定手段の変更は確認し、それ以外の技術判断は質問から外して方針へ書いてください。"
-                        "見直して必要と判断した問いは再発行できます。"
-                    ),
-                )
-            )
     claims, error = send_misdetection.parse(tool_input.get("misdetection")) if is_send_to_user_tool(tool_name) else ([], None)
     if error or (claims and (error := send_misdetection.validate_displayed(session_id, claims))):
         return Decision(
@@ -424,42 +310,20 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 "同じ本文と判定の未送達記録を確認できない。", fix="未送達の通知と同じ本文・判定かを確かめてください。"
             )
         )
-    if tool_name == "AskUserQuestion" and (
-        notice_block := hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
-    ):
-        return Decision(block=notice_block)
     if reapproval_block := user_facing_checks.policy_reapproval_block(payload, tool_name, tool_input, session_id):
         return Decision(block=reapproval_block)
-    if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
-        return Decision(block=_block_notice(publication_block[0], fix=publication_block[1]))
-    if tool_name == "ExitPlanMode":
-        from agent_toolkit._hooks.plan_presentation import check_before_presentation  # pylint: disable=import-outside-toplevel
-
-        if invalid_plan := check_before_presentation(session_id, str(payload.get("cwd", "")), tool_input.get("plan")):
-            return Decision(block=_block_notice(invalid_plan, fix="指摘を直し、同じ計画を提示してください。"))
     if tool_name in user_facing_checks.USER_FACING_TEXT_TOOL_NAMES:
         return user_facing_checks.decide_user_facing_text_tool(payload, tool_name, tool_input)
-    send_warnings: list[str] = []
     if is_send_to_user_tool(tool_name):
         message = tool_input.get("message")
         kind = tool_input.get("kind")
-        reason = _send_understanding_block(message, retry)
+        reason = None
         edit_body = True
-        if reason is None and send_to_user.is_completion(message, kind):
+        if send_to_user.is_completion(message, kind):
             reason = _completion_prerequisite(payload, session_id)
             edit_body = reason is None
-        bugfix_block = None
-        if reason is None:
-            bugfix_block = bugfix_gate.send_block(payload, message, kind=kind, warnings=send_warnings)
-            reason = bugfix_block or norm_excuse_gate.text_block(payload, message, "ユーザーへの送達", retry=retry)
-        notice_block = hook_notice_response_gate.send_block(payload, session_id, tool_name, tool_input, claims=claims)
-        if notice_block is not None or reason is not None:
-            combined = "\n\n".join(item for item in (reason, notice_block) if item)
-            if notice_block is not None or bugfix_block is not None:
-                combined += "\n\n" + delivered_repost_gate.send_fix()
-            return _retry_send(
-                payload, tool_name, tool_input, session_id, combined, edit_body=edit_body or notice_block is not None
-            )
+        if reason is not None:
+            return _retry_send(payload, tool_name, tool_input, session_id, reason, edit_body=edit_body)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (
@@ -467,7 +331,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             if is_send_to_user_tool(tool_name) and isinstance(message, str)
             else None
         )
-        return Decision(allow=True, context=timing, notices=tuple(send_warnings), updated_input=hydrated)
+        return Decision(allow=True, context=timing, updated_input=hydrated)
     if tool_name == "Skill":
         return Decision()
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
@@ -500,9 +364,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return Decision(block=_check_task_stop(session_id, tool_input))
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-    notices = tuple(send_warnings)
-    if record_warning := session_record_reference_warning(tool_name, tool_input, cwd):
-        notices += (record_warning,)
+    notices: tuple[str, ...] = ()
     file_path = tool_input.get("file_path")
     if (
         tool_name == "Read"
@@ -518,7 +380,6 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
 
 def _completion_prerequisite(payload: dict, session_id: str) -> str | None:
     from agent_toolkit._hooks.agents_server_session_advisor import outstanding_before_completion  # pylint: disable=import-outside-toplevel
-    from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
 
     if not session_id:
         return _block_notice("完了報告の会話を特定できない。", fix="この会話の送達ツールを読み直す。")
@@ -526,11 +387,6 @@ def _completion_prerequisite(payload: dict, session_id: str) -> str | None:
         return _block_notice(
             f"完了報告の前に委譲先の結果と続行を確認してください。{pending}",
             fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返してください。",
-        )
-    if playbook := missing_completion_before_report(payload, session_id, "", "completion"):
-        return _block_notice(
-            "完了報告の手順書を読んだ証拠がない。",
-            fix=f"`Read`か`Bash`で`{playbook}`を全文読んでください。`file(...).text()`は証拠にならない。",
         )
     return None
 
@@ -709,20 +565,6 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     ):
         if message := check(command):
             warnings.append(message)
-    record_warning = session_record_reference_warning("Bash", tool_input, cwd)
-    if record_warning is not None:
-        if record_warning:
-            warnings.append(record_warning)
-    elif read_warning := check_large_bash_read(command, cwd):
-        warnings.append(read_warning)
-    if bundled_warning := check_bundled_read(
-        command,
-        cwd,
-        codex=is_codex,
-        environment=dict(os.environ),
-        max_output_tokens=tool_input.get("max_output_tokens"),
-    ):
-        warnings.append(bundled_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:
         warnings.append(drive_letter_path_warning)

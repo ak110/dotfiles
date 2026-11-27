@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import pathlib
 lazy from typing import Any
@@ -15,16 +14,7 @@ lazy from agent_toolkit._hooks.stop_session import append_stop_log
 STATE_KEY = "termination_evidence"
 
 
-COMPLETION_REPORT = "report-completion"
-
-
-"""起動証拠を確かめる完了報告の作業の名前。入口`atk-mode`の作業の名前と手順書の名前を兼ね、状態の保存値でもある。"""
-
-
-COMPLETION_PLAYBOOK = f"playbooks/{COMPLETION_REPORT}.md"
-
-
-"""完了報告の手順書の、入口`atk-mode`のディレクトリからの相対パス。"""
+COMPLETION_PLAYBOOK = "playbooks/report-completion.md"
 
 
 TARGET_ENTRY_WORKS = ("add-awi-by-user", "implement", "process-user-comments", "process-wi")
@@ -43,17 +33,6 @@ def completion_playbook_path() -> pathlib.Path:
 
 def termination_evidence_reference() -> str:
     return f"`{plugin_resources.skill_document_path(skill_modes.ENTRY_SKILL, 'references/termination-evidence.md')}`"
-
-
-def unresolved_repository_fix() -> str:
-    return (
-        f"この作業では省略を記録できない。完了報告の手順書`{completion_playbook_path()}`を全文読んで終了工程を進めてください。"
-        f"規範がその読取を禁じる場合は、{termination_evidence_reference()}「終了方法の分岐」に従い、その旨をユーザーへ報告してください。"
-    )
-
-
-class _UnresolvedRepositoryError(ValueError):
-    pass
 
 
 class _FailureEvidenceError(ValueError):
@@ -111,7 +90,7 @@ def _data(state: dict[str, Any], session_id: str) -> dict[str, Any]:
 def _compact(data: dict[str, Any]) -> None:
     referenced: set[str] = {data.get("last_input", ""), data.get("last_human_input", "")}
     for work in data["works"].values():
-        if work.get("publish_scope") or work.get("completion_report"):
+        if work.get("publish_scope"):
             work.pop("edits", None)
         referenced.add(work.get("publish_scope", {}).get("input_id", ""))
         decisions = work.get("decisions", [])
@@ -127,7 +106,7 @@ def _compact(data: dict[str, Any]) -> None:
             records = data["calls"].get(call_id, [])
 
             unresolved = any(record.get("kind") == "deliverable" and record.get("repository") is None for record in records)
-            if unresolved and not work.get("completion_report"):
+            if unresolved:
                 continue
             if call_id not in retained and all(record.get("observed") for record in records):
                 data["calls"].pop(call_id, None)
@@ -161,41 +140,6 @@ def _current_work(data: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
 def _last_decision(work: dict[str, Any]) -> str:
     decisions = work.get("decisions", [])
     return decisions[-1]["action"] if decisions else ""
-
-
-def _finished(data: dict[str, Any], work: dict[str, Any]) -> bool:
-    return bool(work.get("completion_report") or work.get("omit_completion")) and data.get(
-        "last_human_input", data.get("last_input")
-    ) != work.get("input_at_last_call")
-
-
-CONTEXT_KEY = "completion_context"
-"""メインが最後の会話圧縮の後に読み込んだ完了報告の手順書の版（SHA-256）を保持する、状態のキー。"""
-
-
-def playbook_digest() -> str | None:
-    try:
-        return hashlib.sha256(completion_playbook_path().read_bytes()).hexdigest()
-    except OSError:
-        return None
-
-
-def completion_in_context(session_id: str) -> bool:
-    data = session_state.read_state(session_id).get(STATE_KEY)
-    recorded = data.get(CONTEXT_KEY) if isinstance(data, dict) else None
-    return recorded is not None and recorded == playbook_digest()
-
-
-def forget_completion_context(session_id: str) -> None:
-
-    def forget(state: dict[str, Any]) -> dict[str, Any] | None:
-        data = state.get(STATE_KEY)
-        if not isinstance(data, dict) or CONTEXT_KEY not in data:
-            return None
-        data.pop(CONTEXT_KEY)
-        return state
-
-    session_state.update_state(session_id, forget)
 
 
 def _position(payload: dict[str, Any]) -> int:
@@ -272,16 +216,6 @@ def _sync_queued_inputs(data: dict[str, Any], transcript_path: object) -> None:
         reference = f"queued-{uuid}" if isinstance(uuid, str) and uuid else f"queued-{offset}"
         _store_input(data, reference, prompt, human=human, offset=offset)
     data["queued_offset"] = position
-
-
-def evidence_available(payload: dict[str, Any]) -> bool:
-    data = session_state.read_state(payload["session_id"]).get(STATE_KEY)
-    if data is None:
-        return True
-    if isinstance(data, dict) and data.get("session_id") == payload["session_id"] and data.get("version") == 1:
-        return True
-    append_stop_log(payload["session_id"], "termination_evidence_unavailable", {"reason": "状態の版または形式が異なる"})
-    return False
 
 
 def _session_works(state: dict[str, Any], session_id: str) -> dict[str, Any]:

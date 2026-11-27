@@ -35,9 +35,8 @@ lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import agents_server_session_advisor, repository_protection, session_title, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.message_format import xml_message
-lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.review_receipt import forget_reads as forget_review_receipt_reads
-lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path, forget_completion_context
+lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
@@ -434,10 +433,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
             if source in {"clear", "compact"}:
-                operation_skills.forget_subject(session_id, subject)
                 forget_review_receipt_reads(session_id, subject, retain_requirements=source == "compact")
-                if subject == MAIN_AGENT_ID:
-                    forget_completion_context(session_id)
             if source == "compact" and subject == MAIN_AGENT_ID:
                 work_contract.reset_notice(session_id)
             if session_temp is not None:

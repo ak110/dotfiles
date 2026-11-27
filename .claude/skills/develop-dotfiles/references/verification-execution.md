@@ -47,7 +47,7 @@ exit "$rc"
    `uv run --frozen pyfltr run --no-fix --commands=comment-check <代表ファイルの絶対パス>`。
    対象の限定に失敗しても全体へ広げず、未実行と診断なしを区別する。
    通常の静的チェックをpytestより先に通す。
-   `uv run --frozen pyfltr run --disable pytest <対象ファイルの絶対パス>`を失敗が無くなるまで直し、修正後の再実行は失敗したチェックへ限定する。
+   `uv run --frozen pyfltr run --disable pytest <対象ファイルの絶対パス>`を失敗が無くなるまで直し、再実行は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
    pyfltrは1回の実行の間ずっと枠を持つため、静的チェックで失敗する実行にpytestを含めると枠を数分ずつ無駄に占める（2026年11月12日の同時数12では、失敗した`pyfltr run`18件のうち12件が静的チェックだけの失敗で、その12件でもpytestが流れていた）。
 4. commitする内容を確定してから、pytestを含む実行を1回行う。
    上記の条件でMCPの`run`へパスを渡すかCLIで起動し、`--commands`は指定しない。
@@ -77,13 +77,14 @@ exit "$rc"
    統合先のブランチでも、同じ内容でpytestが成功した`pyfltr run`があればpytestを外す（判定の条件は`scripts/pyfltr_precommit.py`の冒頭）。
    統合先のブランチで、pytestを含む実行の後にファイルを変えた場合と、commitしない差分を作業ツリーに残した場合は、hookがpytestを再び実行するため、含めない差分は先に別のcommitへ分けるか作業ツリーから外す。
 7. 統合の準備は手順4までの成功で足り、全量の成功を得るためだけの再実行は不要である（準備の受理は統合の許可であり、最終の検証の成功と分ける）。
+   複数レーンの候補は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合キュー」でまとめる。
    統合する担当は、許可の後に統合先の最新内容へ追随して最終の統合入力を確定し、専用worktreeで`make sync`を実行してから、最終の内容で1回の実行を成功させる。
    定義元の`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」は、条件の一致する成功の集合を合わせることを認める。
    dotfilesの統合前の最終確認はこれより厳しい追加の条件とし、最終の内容での単一の実行に限る。
    - 形は`uv run --frozen pyfltr run --no-fix --no-always-targets --commands=<手順2で選んだ全コマンド> <対象ファイルの絶対パス>`とする。
      このrunに`DOTFILES_FILE_LINES_ALL=1`を渡し、`file-lines`だけは全追跡ファイルを調べる。
      別のrunは立てない。
-     変更箇所・直接の利用側・競合解消に関わるテストと、develop CIが実行しないチェックを含める。
+     検証対象は`agent-basics:check-execution/references/verification-scope.md`「直接影響範囲の類型」「ローカルとCIの分担」に従い、競合解消に関わるテストとdevelop CIが実行しないチェックを含める。
    - 起動の前に`uv run --frozen python scripts/pyfltr_precommit.py --check-argv '<予定argvのJSON配列>' --consumer-review <判定JSONの絶対パス>`で引数と必須の範囲を確かめる。
      argvは`["run", "--no-fix", "--no-always-targets", "--commands=...", "<対象パス>"]`の形とし、曖昧な候補が無ければ`--consumer-review`を省く。
    - 合成版の検証では、最新の統合先をmergeした後、同じ統合先の完全OIDを候補列挙、`--check-argv`、`--verify-run`の`--against`へ渡す。
@@ -149,7 +150,8 @@ exit "$rc"
 8. CIが無いか公開先でCIが実行されず、ローカルの全体pytestが必要な場合は`--maxfail=10`を付け、計画からmanifestまで同じ値を保つ。
    直接pytestでは`--maxfail=10`、pyfltr経由では`--pytest-args='--maxfail=10'`とし、他のpytestの追加引数は同じ値へ併記する。
    少数の独立した失敗を1回で集めつつ、共通の準備の不具合で全テストが失敗した時の出力を有限に抑えるためである（失敗が10件に達すると打ち切られ、未実行のテストが残ることがある。xdistの実行中のテストにより最終の失敗数は10件を超えうる）。
-   CIが全体を担う通常のレーン内・統合時・公開前は関連範囲だけを実行し、`addopts`の値5、限定の検証と失敗箇所の再確認、`make test`の通常の起動、CIの`--maxfail=0`、時間の上限はそのまま使う。
+   対象の選定は`agent-basics:check-execution/references/verification-scope.md`「ローカルとCIの分担」に従う。
+   `addopts`の値5、限定の検証と失敗箇所の再確認、`make test`の通常の起動、CIの`--maxfail=0`、時間の上限はそのまま使う。
 
 ## テストとCIの所要基準
 

@@ -123,7 +123,7 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 終了の結果では、担当モデル、起動候補、物理記録から観測した`engine`、`model`、`effort`を分けて報告する。
 不一致は各値とその由来を引き継ぎ記録へ残し、観測できなかった値は未確認とする。
 
-工程の区切りでは、本書の役割固有の行と、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行、一行返却を使う。
+工程の区切りでは、本書の役割固有の行と、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」を使う。
 <!-- return-contract:exec:end -->
 
 ## 条件と行動

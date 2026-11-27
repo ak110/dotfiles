@@ -48,7 +48,7 @@ def test_process_loop_instruction_commands_complete_storage_cycle(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     for argv, expected in (
-        (["instruct", "次の起動で確認する"], "成功: 次のセッションへ渡す追加指示を保持した。"),
+        (["instruct", "次の起動で確認する"], "成功: 巡回会話へ渡す追加指示を保持した。"),
         (["status"], "保持中の追加指示: 1件"),
         (["instruct-cancel"], "成功: 保持中の追加指示を1件破棄した"),
         (["status"], "保持中の追加指示: 0件"),

@@ -8,11 +8,12 @@
 次の目標値と計測範囲は、`github.com/ak110/dotfiles`を処理の対象に含む`agent-toolkit:atk-mode`の作業`process-wi`のセッションへ適用する。
 本リポジトリで同スキルを起動したセッションと、`atk wi process-loop`が別のディレクトリで起動する統括のセッションのうち本リポジトリを対象に含むものが該当し、それ以外の作業は目標値の適用から除く。
 
-- 1セッションの所要時間は、セッションの最初の記録からそのセッションが終了する時点までとする。
-  振り返り、公開工程とセッション終了工程、`agent-toolkit:atk-mode/playbooks/report-completion.md`および`atk agents-exit-session`に要する時間も含める。
-- 処理したAWIの件数によらず、セッション振り返りの完了を含めて3時間以内を目標とする。
+- 所要時間はWIごとに選定（取り込み）から、そのWIを含む公開の反映検収までを数える。
+  公開・CI・本人再開の待ちも含め、対象WIの取り込み前と反映検収後の待機や振り返りは含めない。
+  内訳の分析は`agent-toolkit:atk-mode/references/review-session-cost.md`「所要時間の分析と改善」に従う。
+- 処理したAWIの件数によらず、WIの取り込みから反映検収まで3時間以内を目標とする。
 
-起動方法と目標超過の有無によらず、毎セッションの内訳から品質を保った高速化を検討する。
+起動方法と目標超過の有無によらず、WIごとの内訳から品質を保った高速化を検討する。
 
 - 目標内なら記録の照会結果で提案の要否を判断する。
 - 超過時は律速区間へ作用する再発防止策の採否と必要な処置を確定する。
@@ -21,7 +22,7 @@
 - 適切に並列化されていれば全体の処理件数が所要時間へ与える影響は小さいという前提で、並列化の成立条件と律速区間を調べ、件数の増加自体を超過の原因や許容の理由にしない。
   過去の対策との比較は`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「原因と対策」に従う。
 
-巡回の終了条件は、dotfilesリポジトリの`AGENTS.md`と`.claude/skills/develop-dotfiles/references/process-wi-duration.md`「所要時間と終了条件」に従う。
+選定の完了条件は、`.claude/skills/develop-dotfiles/references/process-wi-duration.md`「所要時間と完了条件」に従う。
 
 ## 再発の集計
 

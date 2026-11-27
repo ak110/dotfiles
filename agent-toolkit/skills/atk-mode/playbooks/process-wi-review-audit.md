@@ -58,7 +58,7 @@
 
 ### 受領
 
-1. 結果は引数なしの`atk agents wait`で受け取り、本書「監査担当の返却契約」の固定形式を満たすことを確かめる。
+1. `agent-toolkit:atk-mode/playbooks/delegation-waiting.md`で結果を受け取り、本書「監査担当の返却契約」の固定形式を確かめる。
 2. Dependabotの判定対象があれば、通常取得・代替取得とも`default_branch`と確認SHAを受け取り、取得・比較・markが同じSHAに基づくことを確かめる。
    - 判定対象が0件なら版の情報は不要であり、判定欄の「なし」と取得状態を受領する。
      機能無効・権限不足の場合は、その状態と理由を受領する。
@@ -90,7 +90,7 @@ Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。
 <!-- return-contract:copilot-review-audit:end -->
 

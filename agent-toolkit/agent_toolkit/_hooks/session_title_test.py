@@ -7,12 +7,6 @@ import pytest
 
 from agent_toolkit._common import session_state, skill_modes
 from agent_toolkit._hooks import posttooluse, rules_context, user_prompt_submit
-from agent_toolkit._hooks.pretooluse import operation_skills
-
-
-@pytest.fixture(autouse=True)
-def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 @pytest.mark.parametrize("codex", [False, True])

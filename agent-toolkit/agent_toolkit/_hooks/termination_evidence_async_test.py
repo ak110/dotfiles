@@ -14,7 +14,7 @@ from agent_toolkit._agents_server import shared_layout
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
-from agent_toolkit._hooks import agents_server_observations, posttooluse, termination_evidence, termination_order_advisor
+from agent_toolkit._hooks import agents_server_observations, posttooluse, termination_evidence
 from agent_toolkit._testing.termination_evidence_support import isolated_session as isolated_session
 from agent_toolkit._testing.termination_evidence_support import public_decision, stop_payload, supply_commit
 
@@ -83,8 +83,8 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
             assert not termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "待機中")))
         finally:
             release_lock(stream)
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った。"))
-    assert decision == "notify" and "report-completion" in reason
+    pending = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "結果を受け取った。")))
+    assert [work_id for work_id, _ in pending] == ["work-1"]
 
 
 @pytest.mark.parametrize("kind", ["unrelated", "other-owner", "finished"])

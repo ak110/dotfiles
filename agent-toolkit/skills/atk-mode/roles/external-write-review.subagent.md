@@ -1,6 +1,9 @@
 ---
 mode: explore
 model_type: review_fast
+result_heads:
+- '再レビュー: 要'
+- '再レビュー: 不要'
 required_inputs:
 - 文面ファイル
 - 投稿先と目的
@@ -44,7 +47,7 @@ writes_worktree: false
 2. 文面における事実主張（変更内容、件数、結果、原因など）が、提示された根拠と一致していること。
    根拠にない主張や、根拠の範囲を超えて断定している記述があれば指摘する。
 3. ローカルの作業管理でのみ使用する内部識別子（WIファイル名、セッションID、ローカルパス、計画ファイル名など）、個人のメールアドレスが含まれていないこと。
-   `agent-basics:writing-standards/references/quality-principles-constraints.md`「秘匿値」に該当する値（公開範囲を広げる転載では実害を判定）が含まれていないこと。
+   `agent-basics:writing-standards/references/quality-principles-constraints.md`「秘匿値」に従うこと。
    ホストが付与する帰属表示の行（Claude Codeの`attribution`設定によるものなど）は許容する。
    具体的には、PR説明末尾の`🤖 Generated with [Claude Code](https://claude.com/claude-code)`や、それに続くセッションURL（`https://claude.ai/code/session_...`）が該当する。
    これらはユーザーの設定に基づく出力であるため指摘対象外とする。
@@ -61,6 +64,14 @@ writes_worktree: false
 <指摘ごとの該当行、観点の番号、問題点、修正案。0件なら3観点それぞれの「指摘なし」>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
-要否の照会への返却は、`再レビュー: 要|不要`と、対象となる主張・根拠・理由を示す。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+要否の照会への返却は、次の4行で示す。
+
+```text
+再レビュー: 要|不要
+対象: <対象となる主張>
+根拠: <照合した文面と根拠の所在>
+理由: <前回の評価前提が保たれるかと、その理由>
+```
+
 指摘0件を要否の代わりにしない。

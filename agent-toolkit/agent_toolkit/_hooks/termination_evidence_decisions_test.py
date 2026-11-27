@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 
 from agent_toolkit._hooks import termination_evidence
-from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.termination_evidence_support import human_input, public_decision, supply_commit
 from agent_toolkit._testing.termination_evidence_support import isolated_session as isolated_session
 
@@ -81,46 +80,3 @@ def test_decision_cli_reads_evidence_from_identifiers(
                 assert work["publish_scope"]["policy_text"] == text
         else:
             assert work["decisions"][-1]["action"] == action
-
-
-def test_omission_cli_resolves_policy_and_current_input(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    text = "完了報告は指示まで省く。\n"
-    repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": text})
-    policy = repository / "CLAUDE.md"
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
-    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    human_input(tmp_path, "request", "成果を作成する")
-    supply_commit(repository)
-    document = {
-        "session_id": "evidence-test",
-        "action": "omit-completion",
-        "work_id": "work-1",
-        "reason": "適用規範に従う",
-        "policy_file": str(policy),
-        "target_repo": str(repository),
-    }
-    status, reason = public_decision(tmp_path, document)
-    assert status == 0, reason
-    work = termination_evidence.session_works({"session_id": "evidence-test"})[0][1]
-    assert work["omit_completion"]["policy_text"] == text
-    assert work["omit_completion"]["input_id"] == "request"
-    assert not termination_evidence.missing_completion(work)
-    policy.write_text("完了報告を行う。\n", encoding="utf-8")
-    assert termination_evidence.missing_completion(work) == ["commit"]
-
-
-def test_omission_policy_rejects_policy_in_nested_worktree(tmp_path: pathlib.Path) -> None:
-    repository = git_repository.init_repository(
-        tmp_path / "repo", files={"CLAUDE.md": "完了報告を省く。\n"}, commit_message="規範を保存"
-    )
-    nested = repository / ".claude/worktrees/nested"
-    git_repository.run_git(repository, "worktree", "add", "-b", "nested", str(nested))
-    document = {
-        "policy_file": str(nested / "CLAUDE.md"),
-        "target_repo": str(repository),
-    }
-    work = {"deliverables": ["commit"], "repositories": [str(repository)]}
-    with pytest.raises(ValueError, match="policy_fileは対象リポジトリ内"):
-        termination_evidence._omission_policy(document, work)  # pylint: disable=protected-access
-    document["policy_file"] = str(repository / "CLAUDE.md")
-    assert termination_evidence._omission_policy(document, work) == "完了報告を省く。\n"  # pylint: disable=protected-access

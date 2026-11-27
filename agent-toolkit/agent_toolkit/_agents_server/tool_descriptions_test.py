@@ -16,7 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult
 
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import mcp_tools, model_override, state
+from agent_toolkit._agents_server import mcp_tools, state
 from agent_toolkit._testing.agents_server_support import (
     _manager_with_fake,
     _observed_input_params,
@@ -32,7 +32,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_start_description_selects_mode_and_lists_minimal_calls(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     tool = _start_tool()
     description = tool.description + tool.parameters["properties"]["mode"]["description"]
     examples = dict(re.findall(r"^- ([^:]+): `(\{[^`]+\})`", description, re.MULTILINE))
@@ -44,6 +43,9 @@ async def test_start_description_selects_mode_and_lists_minimal_calls(
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         for name, example in examples.items():
             arguments = json.loads(example.replace("{...}", "{}"))
+            if name == "write":
+                assert "model_override" not in arguments
+                assert "model_override_evidence" not in arguments
             arguments["cwd"] = str(tmp_path)
             if "whole_contract_path" in arguments:
                 arguments["whole_contract_path"] = str(contract)

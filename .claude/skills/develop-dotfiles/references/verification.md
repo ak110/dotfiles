@@ -3,8 +3,19 @@
 dotfilesの変更を、テストの配置から公開前の検証まで確かめる手順書である。
 検証の一般の規則（対象の選び方、成功の再利用、再実行、結果と所要時間の判定）は`agent-basics:check-execution`と`agent-toolkit:atk-mode/playbooks/verification.md`にある。
 本書はdotfilesに固有の値（起動の形、実行枠の数、CIのジョブ、対象のテスト、所要時間の基準値）を持つ。
-本リポジトリでは全体のテストと静的チェックをCIが担うため、ローカルでは変更ファイルと特定した利用側のテスト・lint、CIが実行しないチェックを実行する。
-合否は終了コードに加えて個別のテストの結果で判定する（`agent-basics:check-execution/references/diagnostics.md`「合否の判定」）。
+`agent-basics:check-execution/references/verification-scope.md`「ローカルとCIの分担」に従う。
+合否は`agent-basics:check-execution/references/diagnostics.md`「合否の判定」に従う。
+
+## 統合と公開の値
+
+統合の流れは`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合キュー」、ローカルとCIの分担は冒頭の参照先に従う。
+
+| プロジェクト差分 | dotfilesの値 |
+| --- | --- |
+| 検証コマンド | [検証コマンドの実行](verification-execution.md#検証コマンドの実行)の変更パスと直接の利用側を指定したpyfltr |
+| CIの所要時間 | [テストとCIの所要基準](verification-execution.md#テストとciの所要基準)の10分の改善判断値 |
+| リリース方式 | 通常のdevelopへのpushと全体CI、`release-dotfiles`によるCI成功済みPRのmasterへのマージ |
+| まとめる上限 | 共通の既定値を使う |
 
 ## テスト配置
 
@@ -116,7 +127,7 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 
 ## push前のチェックとCIだけが実行するチェック
 
-push前には、変更箇所と関連のテスト・lint、CIが実行しないチェックを確かめる（一般の規則は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」）。
+push前の検証は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」に従う。
 
 1. `make sync`で仮想環境を`uv.lock`と`.python-version`へ合わせる。
 2. 生成型を前提とする`function-hooks-types`を単独で先に実行する（`uv run --frozen pyfltr run --commands=function-hooks-types`）。

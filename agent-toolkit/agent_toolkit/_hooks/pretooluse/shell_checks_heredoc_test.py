@@ -73,10 +73,7 @@ class TestBashUnquotedHeredocSubstitution:
     @pytest.mark.parametrize(("body", "substitution"), _HEREDOC_BODIES)
     @pytest.mark.cpu_limit(
         1.75,
-        reason=(
-            "heredoc展開の拒否と非展開側の正規writing資料案内を、同じ公開Pre入口で検証する（Linux限定再確認のC"
-            "PU合計最大0.707秒）。"
-        ),
+        reason=("heredoc展開の拒否と非展開側の通過を、同じ公開Pre入口で検証する（Linux限定再確認のCPU合計最大0.707秒）。"),
     )
     def test_unquoted_heredoc_substitution_is_blocked(
         self,
@@ -97,7 +94,7 @@ class TestBashUnquotedHeredocSubstitution:
             assert substitution in _denial_reason(result)
         else:
             assert result.returncode == 0
-            assert "`agent-basics:writing-standards`" in _additional_context(result)
+            assert not _additional_context(result)
             assert result.stderr == ""
 
     @pytest.mark.parametrize(

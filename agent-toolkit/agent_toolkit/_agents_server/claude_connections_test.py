@@ -441,7 +441,7 @@ async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
     )
     payg_path = root / "claude-payg.env"
     payg_path.write_text("PAYG_ONLY=payg-endpoint\n", encoding="utf-8")
-    connection = claude_connection.Connection("subscription", isolation_env_files=(str(path), str(payg_path)))
+    connection = claude_connection.Connection("subscription", isolation_env_files=claude_connection.isolation_env_files())
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((connection,)))
     keys = ("CUSTOM_CONNECTION", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL", "PAYG_ONLY")
     for key in keys:

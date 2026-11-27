@@ -5,7 +5,6 @@ import re
 from collections.abc import Callable
 
 from agent_toolkit._plan import bundle_kinds, locations, structure
-from agent_toolkit._plan.structure import formal_verification
 from check_plan_file_common import _ClassifiedWarning
 from check_plan_file_migration import (
     _legacy_acceptance_warnings,
@@ -250,8 +249,6 @@ def _check_request_format(
     )
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(text.splitlines()))
-    if (message := formal_verification.missing_judgment_message(text)) is not None:
-        warnings.append(("migration", message))
     return errors, warnings
 
 

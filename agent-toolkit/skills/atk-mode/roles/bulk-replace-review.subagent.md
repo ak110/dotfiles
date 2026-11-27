@@ -50,4 +50,4 @@ writes_worktree: false
 <問題のある箇所ごとのファイルと行、観点、問題点、修正案。0件なら全件で問題が無いこと>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。

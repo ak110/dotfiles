@@ -30,6 +30,8 @@ writes_worktree: true
 
 ## 処理
 
+複数レーンの集約は`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合キュー」に従い、代表の一括取り込みと各レーンの最終化に共通の検証証拠を使う。
+
 1. `統合区分`が`マージあり`なら`agent-toolkit:atk-mode/references/lane-integration-format.md`「マージありの統合」、`マージなし`なら同書「マージなしの統合」で統合する。
    `マージあり`の統合を始める時は`agent-toolkit:atk-mode/references/review-record-acceptance.md`で統合時の完成条件を判定する。
    manifestの`verification`へ渡す検証の範囲は`agent-basics:check-execution/references/verification-scope.md`で決め、検証の実行後は`agent-basics:check-execution/references/diagnostics.md`で診断を読む。
@@ -58,4 +60,4 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 変更したエージェント向け文書: <["リポジトリ相対パス"]形式のJSON配列。無い場合は[]>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。

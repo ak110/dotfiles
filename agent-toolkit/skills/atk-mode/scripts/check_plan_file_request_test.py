@@ -1,7 +1,6 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
 
 import pathlib
-from collections.abc import Callable
 
 import append_progress_log
 import check_plan_file
@@ -184,93 +183,3 @@ def test_progress_and_verification_commands_read_request_plan(tmp_path: pathlib.
 
 
 __all__ = ["fixture_repo"]
-
-
-_TRIGGER_SUMMARY = "並行する更新のロック区間を変える。\n\n"
-_JUDGMENT = "形式検証の判定: 当てない（ロック区間の名前を変えるだけで順序を変えない）\n\n"
-
-
-def _plan(summary: str, record: str = "") -> Callable[[str], str]:
-    def apply(content: str) -> str:
-        return content.replace(_SUMMARY, summary, 1).replace("## 進捗ログ\n\n", record + "## 進捗ログ\n\n", 1)
-
-    return apply
-
-
-@pytest.mark.parametrize(
-    ("edit", "message"),
-    [
-        (_plan(_TRIGGER_SUMMARY), "並行、ロック"),
-        (_plan(_TRIGGER_SUMMARY, "形式検証の判定:\n\n"), "並行、ロック"),
-        (_plan(_TRIGGER_SUMMARY, _JUDGMENT), None),
-        (_plan(_TRIGGER_SUMMARY, "形式検証の判定：当てる (反例を全順序で探す)\n\n"), None),
-        (_plan(_TRIGGER_SUMMARY, "- 形式検証の判定: 当てる（`invariant_test.py`で全順序を列挙する）\n\n"), None),
-        (_plan(_TRIGGER_SUMMARY, "説明用の例:\n\n```text\n" + _JUDGMENT + "```\n\n"), "並行、ロック"),
-        (_plan(_TRIGGER_SUMMARY, "別件の例として" + _JUDGMENT), "並行、ロック"),
-        (_plan(_TRIGGER_SUMMARY, "> " + _JUDGMENT), "並行、ロック"),
-        (lambda c: _plan(_TRIGGER_SUMMARY)(c).replace(_REQUEST, _REQUEST + _JUDGMENT, 1), "並行、ロック"),
-        (_plan(_TRIGGER_SUMMARY, "`形式検証の判定: <当てる|当てない>（理由）`を記録する予定。\n\n"), "並行、ロック"),
-        (_plan(_TRIGGER_SUMMARY, "形式検証の判定: 当てない\n\n"), "並行、ロック"),
-        (_plan(_TRIGGER_SUMMARY, "形式検証の判定: 当てない（）\n\n"), "並行、ロック"),
-        (_plan("状態遷移の表を変える。\n\n", "形式検証の判定: 未定（後で決める）\n\n"), "状態遷移"),
-        (_plan("既存の結果を保ったまま検索を性能改善する。\n\n"), "性能改善"),
-        (_plan("ロックファイルの依存パッケージの版を上げる。\n\n"), None),
-        (lambda c: c.replace(_QUOTATION, _QUOTATION.replace("\n\n", "\n\n並行して進めてほしい。\n\n", 1), 1), None),
-        (
-            lambda c: _plan(_TRIGGER_SUMMARY)(c.replace(_QUOTATION, _QUOTATION.replace("\n\n", "\n\n" + _JUDGMENT, 1), 1)),
-            "並行、ロック",
-        ),
-    ],
-    ids=[
-        "missing",
-        "empty-judgment",
-        "recorded",
-        "recorded-fullwidth-colon",
-        "recorded-list-item-with-code-reason",
-        "fenced-example-only",
-        "prose-example-only",
-        "blockquote-only",
-        "judgment-outside-verification-section",
-        "format-example-only",
-        "conclusion-only",
-        "empty-reason",
-        "unknown-conclusion",
-        "performance",
-        "dependency-lockfile",
-        "quotation-only",
-        "judgment-only-in-quotation",
-    ],
-)
-def test_formal_verification_judgment(repo: tuple[pathlib.Path, str], edit, message: str | None) -> None:
-    work_dir, _base = repo
-    content = edit(_plan_fixture.request_plan(repo=work_dir.resolve()))
-    errors, warnings = _check(work_dir, content)
-    assert not warnings
-    if message is None:
-        assert not errors
-    else:
-        assert len(errors) == 1
-        assert f"（{message}）" in errors[0]
-        assert "形式検証の判定: <当てる|当てない>（理由）" in errors[0]
-
-
-def test_formal_verification_judgment_recorded_in_progress_log(repo: tuple[pathlib.Path, str]) -> None:
-    work_dir, _base = repo
-    path = work_dir / "plan.md"
-    path.write_text(_plan(_TRIGGER_SUMMARY)(_plan_fixture.request_plan(repo=work_dir.resolve())), encoding="utf-8")
-    assert any("形式検証の判定" in warning for warning in check_plan_file.check(path, work_dir)[1])
-    result = "形式検証の判定: 当てない（ロック区間の名前を変えるだけで順序を変えない）"
-    assert append_progress_log.main([str(path), "--completed-step", "判定", "--result", result]) == 0
-    assert not [warning for warning in check_plan_file.check(path, work_dir)[1] if "形式検証の判定" in warning]
-
-
-def test_formal_verification_judgment_is_warning_when_reading_saved_plan(repo: tuple[pathlib.Path, str]) -> None:
-    work_dir, _base = repo
-    path = work_dir / "plan.md"
-    path.write_text(
-        _plan_fixture.request_plan(repo=work_dir.resolve()).replace(_SUMMARY, _TRIGGER_SUMMARY, 1), encoding="utf-8"
-    )
-    errors, warnings = check_plan_file.check(path, work_dir)
-    assert not errors
-    assert len(warnings) == 1
-    assert "形式検証の判定" in warnings[0]

@@ -10,7 +10,7 @@
 
 ## 運用条件
 
-- 指摘を受けたら、採否と修正の前に`agent-basics:bugfix`を起動する。
+- 指摘の採否と修正の前に、`agent-basics:bugfix/SKILL.md`「バグ対応」に従う。
 - 害が大きく、類似見直しの走査（`agent-basics:bugfix/references/similar-review.md`「害が大きい時」）を独立した担当へ渡す時は、`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動する。
   結果の採否は委譲元が確定する。
 
@@ -35,7 +35,7 @@
 
 ## 受領
 
-1. 引数なしの`atk agents wait`で結果を受け取る。
+1. 結果は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`で受け取る。
 2. 全範囲を読んだことを確かめるため、返却の`読んだ変更箇所数`を、起動時に保存した差分ファイルの変更箇所数（`grep -c -F -e '[-' -e '{+' <差分ファイル>`の値）と比べる。
    - 少ない場合は完了とせず、問題が報告された箇所の結果を保つ。
      返却のファイルと行から未読の範囲を特定し、その範囲だけを差分ファイルへ保存して新しい起動へ渡す。
@@ -58,5 +58,5 @@
 <問題のある箇所ごとのファイルと行、観点、問題点、修正案。0件なら全件で問題が無いこと>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:bulk-replace-review:end -->

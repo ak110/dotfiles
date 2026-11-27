@@ -5,7 +5,7 @@
 <!-- markdownlint-disable MD029 -->
 
 エージェントへの指示文を、前提知識を持たない独立したプロンプト評価担当に読ませて指摘を集め、採否を決めて反映する手順書である。
-作る者と確かめる者を分ける原則（`agent-basics:writing-standards/references/quality-principles-verification.md`）の適用であり、評価の偏りを防ぐため、評価担当へ渡す手掛かりは本書「起動」が定める入力だけにする。
+評価の偏りを防ぐため、評価担当へ渡す手掛かりは本書「起動」が定める入力だけにする。
 
 ## 評価する場合
 
@@ -114,7 +114,7 @@
 - 種別: 不明瞭 / 冗長 / 不足 / 誤り / 過剰な指定 / その他
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 入力不足の場合は、対象プロンプトの不足情報と取得不能の根拠を記す。
 
 `点検資料`がある場合は、各指摘へ次の4行を加え、末尾に点検済み・未点検範囲と未試行の比較を記載する。
@@ -133,7 +133,7 @@
 6. 重複する指摘と関連する指摘をまとめ、`agent-basics:review-standards`を起動して、レビューイーとして採否を決める。
    定義元の内容の転記を求める指摘は`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」で評価し、採用する指摘の改善案をdiffで作る。
    評価担当の出力はユーザーへ直接表示されないため、指摘を示す時は原表現をできる限り保つ。
-7. 技術的な指摘の採否は自分で決めて反映し、目的や期待される結果の変更と、ユーザーの選好や認可が必要な事項だけをユーザーへ確認する（`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」）。
+7. 指摘の採否を決めて反映し、確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決める。
 8. 反映した後は、対象の編集手順を定めるスキルと`agent-basics:check-execution`に従い、ユーザーの確認を待たずに元の依頼の残工程へ進む。
    評価の受領だけで全体を終えず、成果と検証結果を元の依頼の作業完了報告（`agent-toolkit:atk-mode/playbooks/report-completion.md`）へまとめる。
    振り返り（`/atk-mode review-session`）はこの手順書の外の独立した依頼として扱う。

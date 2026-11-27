@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from agent_toolkit._atk import config_migration, config_settings
-from agent_toolkit._common import runtime_environment
+from agent_toolkit._common import env_values, runtime_environment
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.usage_settings import temporary_settings
 lazy from agent_toolkit._atk import reset_reservations
@@ -20,6 +20,8 @@ def connections_configured(engine: str) -> bool:
     使用順には初期値があるため、実効値ではなく明示の有無で判定する。
     """
     keys = [key for key in config_settings.CONNECTION_DEFAULTS if key.startswith(f"{engine}_")]
+    if engine == "claude":
+        keys += ["claude_credits_env", "claude_payg_env"]
     if not keys:
         raise KeyError(engine)
     config_migration.check_legacy_environment()
@@ -90,6 +92,7 @@ def resolve_mutable_setting(
             if env_value
             else f"`atk config set {key} <VALUE>`で受理可能書式の値へ直して再実行する"
         )
-        raise ActionableError(f"{source}の値が不正です（値: {value}）。{error}", next_action=next_action) from error
+        displayed = "[REDACTED]" if key in env_values.SETTING_FILES else value
+        raise ActionableError(f"{source}の値が不正です（値: {displayed}）。{error}", next_action=next_action) from error
     value = config_settings.normalize_setting(key, value)
     return reset_reservations.public_permissions(value) if key == reset_reservations.PERMISSIONS else value

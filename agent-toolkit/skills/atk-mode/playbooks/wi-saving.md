@@ -1,7 +1,6 @@
 # WIの保存と取得
 
 目的: 起草した担当がWIを検証して保存し、保存結果を確かめて、後続の担当が本文だけで着手できる項目をキューへ失わずに残す。
-起草を終えたWIの原稿を検証し、キューへ保存し、保存結果を検収する手順書である。
 保存済みのWIと回答済みUWIの取得も扱う。
 起草は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`で終えてから本書へ進み、上から実行する。
 報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」に従う。
@@ -17,8 +16,7 @@
    既存の根拠資料は保存し直さず、その所在を渡す。
    既存項目の更新では、`atk wi show --pull <ファイル名>`で現行本文と保留の状態を確かめる。
 2. 回答済みUWIとの整合を確かめる。
-   対象リポジトリの回答済みUWIを`atk wi list --target-repo=<対象リポジトリの絶対パス> --type=uwi --answered=yes --skip-pull --summary-only`で取得する。
-   同じ実装領域に関わる項目は`atk wi show --pull`で回答を読み、新しい要求と両立するかを確かめる。
+   重複判定の検索で一致した回答済みUWIを`atk wi show --skip-pull <ファイル名>`で読み、新しい要求と両立するかを確かめる。
    両立しない部分があれば保存を控え、元の要求と回答を優先して本文を直す。
    ユーザーだけが決められる値が残る場合に限り、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従って確認する。
 3. 保存せずに検証する。
@@ -43,7 +41,7 @@
    複雑な引用の取り込みには`atk run-script wi-quote-check`を使ってよい。
 4. 本書「投入前の読み直し」で各原稿を読み直し、不備を直して手順3からやり直す。
 5. 調べ残しを片付ける。
-   類似見直しの探索を限定した場合は、`agent-basics:bugfix/references/similar-review.md`に従い、探した範囲と探していない範囲を原稿と証拠に書く。
+   類似見直しの探索を限定した場合は、`agent-basics:bugfix/references/similar-review.md`「害が大きい時」に従う。
    是正の範囲は`agent-basics:bugfix/references/prevention.md`「害と費用の比べ方」で決める。
    未確認の範囲は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「未確定事項と確認」に従う。
    未確認の範囲には、投入前に確定すべき事項、範囲語や開放列挙のうち未判定の対象、検索に掛からず読んでいない対象、権限と到達可能性の未確認を含む。
@@ -99,7 +97,7 @@
 
 - 必要性: 完成条件は、起草者が足した条件も含め、元の目的に対する必要性と由来を`agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」で判定する。
   ユーザーの明示要求や必要な品質を変える場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」へ渡す。
-- 原文との対応: 逐語引用と反映内容を原文と読み比べ、要求の脱落・追加・意味の変化と、ユーザーの回答とエージェントの説明の混同が無い。
+- 原文との対応: `agent-basics:writing-standards/references/writing.md`「原文の保持」に従う。
   回答済みの注記は、送達した質問だけに付ける。
   分割した場合は、要求と割当先が対応する。
   要件と技術判断の分類が`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定した要件と委譲元の判断」に従い、原文と実際の回答の出所で保存の直前まで裏付けられる。
@@ -122,22 +120,23 @@
 - 原因分析: `agent-basics:bugfix`を起動して起草し原因を確定した通常AWIでは、`## 原因分析`のバグ単位ごとに`agent-basics:review-standards`「文章成果物の実害」の不具合対応の条件を満たす。
   推測だけの原因は確定とせず、調査を続けるか「続行できない理由」として報告する。
   `類似見直し:`は、ユーザーが指定した対象集合を覆う。
-  再発防止を全て見送る記録は、原因となった入力や条文を除く・改める案を比べている（`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）。
-  重い案だけを挙げて見送った記録は、この条件を満たさない。
+  再発防止を全て見送る記録は、`agent-basics:bugfix/references/prevention.md`「案を比べる」「再発防止を採用しない場合」を満たす。
   記録の形と記録先は`agent-toolkit:atk-mode/references/analysis-records.md`に従う。
 - 完成条件: `agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」に従い、権限・起動条件・待機の手順を調べて同じセッションで確実に観測できる方法を選ぶ。
   人手・後日・配布後の確認を置く場合は、同節の例外に当たる根拠が本文にあるかを確かめる。
 - 具体化の記録: 対象、適用範囲、外部から観測できる結果、除外を新たに具体化した本文は、判定軸と結果を記録の形式で書いている。
   判定軸は`agent-toolkit:atk-mode/playbooks/confirmation.md`「原文からの具体化を要する軸」、記録の形式は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」に従う。
-- 複数リポジトリ: 代表AWIを参照する原稿は、`agent-toolkit:atk-mode/references/cross-repository-submission.md`「独立したAWIへの分割と依存」で参照先を取得し、共通本文と固有本文を合わせて読む。
-  冒頭が単独で読め、自分のリポジトリだけで完成を判定できる。
-  依存待ちは必要なものに限り、他のリポジトリに固有の要求はそのリポジトリのAWIへ置く。
+- 複数リポジトリ: `agent-toolkit:atk-mode/references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従う。
 - UWIの情報: 各情報が`agent-toolkit:atk-mode/references/uwi-format.md`「載せる情報」の基準で必要十分であり、重複しない。
+
+## 追記
+
+元AWIへの追記は`atk wi edit <元AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`で行う。
 
 ## 投入と取得
 
 作成主体と検収の構成は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「直接起草と独立した検収の選択」で決める。
-別の分析や実装の途中で通常AWIを投入・更新する主体は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の付随型で独立した担当へ調査と起草を委譲し、親が意味を検収した後に同じ担当が保存する。
+別の分析や実装の途中で通常AWIを投入・更新する主体は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`「起動方法」の付随型に従う。
 ユーザー固有の値は、ユーザーへ確認できるメインへ戻す。
 
 ### 投入
@@ -170,7 +169,7 @@
      系統を登録したリポジトリは、`atk config repos list`で`branches`を持つ登録である。
      処理中の投入では、処理中の系統を内容から決まる系統とする。
      両方の系統に必要な修正は、取り込み元の系統（`merge_from`の値の側。保守ブランチなど）を宛先にした1件のAWIとし、取り込む側の系統へはリリース前のマージで反映する。
-     内容から系統が決まらない場合、手動の投入（`/atk-mode add-awi-by-user`）ではユーザーへ確認し、振り返りなどの自動の投入では`default_branch`の系統とする。
+     内容から系統が決まらない場合は、投入経路によらず`default_branch`の系統とし、判断を報告に書く。
    - WIの追跡先と本文形式を同じ工程で指定しているリポジトリでは、その規範が定める形式と時機で書き、登録の後に完了を確かめる。
    - 変更対象が現在の作業と重なる場合は、別のworktreeで並行して着手できる利点と着手の遅れを比べて投入の時機を選ぶ（努力目標）。
 3. 警告かエラーが出たら、同じ手順で原因を除いて再投入する。
@@ -186,8 +185,6 @@
    未プッシュの通知がある場合だけ`atk wi commit`で反映する。
 2. 既存項目の更新で保留（`hold`）にした項目を解除（`unhold`）する。
    専念型では作成主体が保存本文の一致を確かめた後に、付随型では委譲元が保存結果を検収した後に解除する。
-   ユーザーの回答待ちと、起草か保存の失敗が続く間は保留を保つ。
-   既存項目を変えずに再利用する場合と取り下げる場合も、必要な更新と採否を確定し、未解決の懸念が残る間は保留を保つ。
    誤って投入した項目の削除と保留からの終了は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」「終了」に従う。
 3. 作業中の要求を保存したら、検収した契約の所有者（付随型では委譲元）が`agent-toolkit:atk-mode/references/work-contract.md`「更新する時点」で作業契約を更新する。
 

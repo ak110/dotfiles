@@ -39,7 +39,7 @@
 成果物の品質基準は`agent-basics/skills/`へ置き、toolkitの側からは品質のスキルと自身の運用の契約を参照する。
 常駐のhook、MCP、ホームディレクトリ向けの運用の規範は、toolkitの側に置く。
 basicsの元のマニフェストは`agent-basics/.claude-plugin/plugin.json`で、掲載の原本は同じmarketplaceのagent-basicsのエントリである。
-独立した版数と`description`の2か所をそろえ（版数の更新では`--plugin agent-basics`を指定する）、ルートのマニフェストとCodexのマニフェストは既存の生成スクリプトで再生成する。
+独立した版数と`description`の同期は`references/distribution.md`「バージョン更新」に従い、agent-basicsでは`--plugin agent-basics`を指定する。
 toolkitのClaudeの依存の配列を、Agent Pluginsのルートのマニフェストへ複製しない。
 
 `agent-basics/`の文書を編集した時は、agent-basicsだけを導入したエージェントを読者として、単体で使えることを確かめる。

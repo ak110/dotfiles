@@ -39,18 +39,6 @@ def _assert_plain_pass(result, host: str) -> None:
         assert "additionalContext" not in specific
 
 
-def _original_record(tmp_path: pathlib.Path, root_kind: str, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    claude = tmp_path / "claude-config"
-    codex = tmp_path / "codex-home"
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
-    monkeypatch.setenv("CODEX_HOME", str(codex))
-    root = claude / "projects/project" if root_kind == "claude" else codex / "sessions/2026/10/10"
-    root.mkdir(parents=True)
-    path = root / ("session.jsonl" if root_kind == "claude" else "rollout-session.jsonl")
-    path.write_text('{"type":"assistant","message":{"content":[]}}\n', encoding="utf-8")
-    return path
-
-
 def _claude_assistant_line(model: str, effort: str | None = "medium") -> dict[str, object]:
     """Claude Codeの記録のassistant行を返す。
 

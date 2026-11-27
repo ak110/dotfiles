@@ -35,7 +35,6 @@ lazy from agent_toolkit._common import message_format as _common_message_format
 lazy from agent_toolkit._common import session_launchers as _session_launchers
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import notice as _notice
-lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks import timing
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -337,11 +336,6 @@ def _invoke_module(
                 _notice.record_delivery(_notice.output_text(response))
     if argv[0] in {"stop", "subagent_stop_advisor"}:
         _record_activity(payload, output=raw, returncode=result)
-    if argv[0] in {"posttooluse", "user_prompt_submit"}:
-        # 最終出力へ採用されなかった進捗点検の予約を外し、期日を消費せずに次の呼出しで再通知できるようにする。
-        # Antigravityは保留した通知を後の注入で配送するため、予約を残して失効時間と配送記録に任せる。
-        with contextlib.suppress(Exception):
-            _progress_self_check.release_reservations()
     timing.record(
         payload, argv[0], started, "error" if error is not None else "ok" if result == 0 else "nonzero", stage="handler"
     )

@@ -80,7 +80,9 @@ def test_candidates_skip_unconfigured_kinds(
     assert not choices.warnings
     paths = {item.kind: item.api_env_file for item in choices.connections}
     for kind in {"credits", "payg"} & available:
-        assert paths[kind] == str(config_settings.config_dir() / f"claude-{kind}.env")
+        path = paths[kind]
+        assert path is not None
+        assert settings.read_api_env_file(path)["ANTHROPIC_API_KEY"] == "test-key"
 
 
 @pytest.mark.parametrize("role", ["orchestrator", "delegate"])
@@ -169,19 +171,25 @@ def test_invalid_env_file_disables_api_candidate(
     elif invalid == "comments-only":
         path.write_text("# APIキーは未記入\n\n", encoding="utf-8")
     elif invalid == "unreadable":
+        path.write_text("ANTHROPIC_API_KEY=fixture", encoding="utf-8")
 
         def denied(_path: str) -> dict[str, str]:
             raise PermissionError("権限なし")
 
         monkeypatch.setattr(settings, "read_api_env_file", denied)
     _configure(monkeypatch, worker_order="credits,subscription")
+    if invalid in {"directory", "malformed"}:
+        with pytest.raises(ValueError, match="共有設定へ取り込めない"):
+            connection.candidates("delegate")
+        assert path.exists()
+        return
     choices = connection.candidates("delegate")
     assert [item.kind for item in choices.connections] == ["subscription"]
-    if invalid == "missing":
+    if invalid in {"missing", "empty-file", "comments-only"}:
         assert not choices.warnings
     else:
-        assert str(path) in choices.warnings[0]
-        assert "権限・記述を確認" in choices.warnings[0]
+        assert "claude_credits_env" in choices.warnings[0]
+        assert "atk config set" in choices.warnings[0]
 
 
 @pytest.mark.parametrize(
@@ -213,7 +221,8 @@ def test_legacy_api_connection_resumes_with_fixed_env_file(monkeypatch: pytest.M
     saved = _write_env(root / f"claude-{kind}.env")
     _configure(monkeypatch, worker_order="subscription,credits,payg")
     resolved = connection.apply_current_settings(connection.Connection("api", saved), role="delegate")
-    assert (resolved.kind, resolved.api_env_file) == (kind, saved)
+    assert resolved.kind == kind
+    assert connection.connection_overrides(resolved)["ANTHROPIC_API_KEY"] == "test-key"
 
 
 @pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])

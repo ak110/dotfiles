@@ -28,7 +28,6 @@ def _add_wi_add_parser(sub: Any) -> None:
             "引用符・改行を含む長文をシェルのエスケープを介さずに渡す場合に使う。"
         ),
     )
-    add.add_argument("--source-contract", metavar="PATH", help="原本のURLを記した作業契約の絶対パス。")
     add.add_argument("--origin-review", metavar="PATH", action="append", help="原要求の独立検収結果JSONの絶対パス。")
     placement = add.add_mutually_exclusive_group()
     placement.add_argument(
@@ -291,7 +290,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     reject.add_argument(
         "--skip-push",
         action="store_true",
-        help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
+        help="管理リポジトリへのpushを省略する（担当の確認が不要な連続操作の中間だけ）。共有先がある担当付きの項目をエージェントが終了する場合は指定できない。",
     )
     reject.add_argument(
         "--if-inbox",

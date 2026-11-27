@@ -6,6 +6,12 @@
 一時ファイルの置き場所の一般則は`agent-toolkit:atk-mode/playbooks/managed-temp.md`にある。
 終了条件は、全てのレーンの資源を回収するか、保持した資源ごとに保護の理由と再開条件を記録した時点である。
 
+## 書き込み所有権とレーンの境界
+
+レーンは専用worktreeの単一の書き込み担当（単一writer）と実行レビューの体制を保つ。
+レーン内の分担は`agent-toolkit:atk-mode/playbooks/implementation.md`「レーン内の分担」に従い、書き込み先と一体の生成物を担当ごとに分ける。
+主作業ツリーへの書き込みは、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」の条件と`atk lane integrate`の排他で直列化する。
+
 ## レーン資源の作成・再利用・回収
 
 1. 開始時に`atk lane delete --list --repo <対象リポジトリ>`で、前回の残存登録、回収結果、回復処理で残ったbranchとHEADを確かめる。
@@ -64,7 +70,7 @@
 ## レーンworktreeの扱い
 
 1. 統合・最終化の検収と消費の工程を終えたレーンは、巡回全体の終了を待たずに、メインが`atk lane delete`で回収する。
-   公開担当の稼働中は回収を止める（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」）。
+   公開中の公開単位に含まれるレーンだけは、その単位の検収まで回収を止める（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」）。
    同じthreadへの追加は、保存したcommit・計画・引き継ぎを使い、`atk lane create`で環境を作り直してから再開する。
 2. 回収の順は、`--commands-file`に渡したdeleteコマンド、worktree、branch、以前の構成の個別managed-tempとする。
    回収時は主作業リポジトリから実体のパス、Git登録、branchの有無を照会し、全てが無いと確定した登録だけを、警告と最後に記録したHEADを残して回収する。
@@ -76,7 +82,7 @@
    作業ツリーのパスが無ければdeleteの手順は実行せずに、Git登録だけが残っていれば登録を強制解除し、branchが残っていれば統合済みかの判定を続ける。
    通常の終了時は`atk agents-exit-session`が回収し、巡回では統括がセッションを終える前に回収する。
    `lane delete --repo <統合先worktree>` は登録外資源も調べる。
-   名前や配置からエージェント作成と判定し、取込み済みでcleanかつ未使用の資源だけを回収する。
+   `orphans`の安全判定は`agent-toolkit:atk-mode/references/operations.md`「プロセス終了の安全規定」に従う。
    `orphans`の回収結果と保持理由を確かめ、`user_confirmation`の資源はユーザーの確認なしに削除しない。
 3. 容量を空ける目的で回収した場合は、回収の前後の`df -h /`と空いた容量を報告に含める。
 4. CLIが未統合・dirty・稼働中・状態不明・一部失敗の資源を保持したら、メインが本書「レーン資源の作成・再利用・回収」手順2の共通判断で理由を調べる。
@@ -88,15 +94,13 @@
 
 1. メインは、後段レーンのworktreeを作る前に、先行成果を要しない読み取り専用の調査を既存の委譲手段で始めてよい。
    対象は、要求・規範の確認、実装・テスト・参照先の所在、先行成果に依存しない設計材料、正式化の前の計画の下書きとする。
-   同じレーンの後続も`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」で準備を早め、委譲は総費用で選ぶ。
+   同じレーンの後続も`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」で準備を早める。
 2. 書き込み競合だけで後段になる場合と、調査や判断自体が先行成果を要する場合を区別し、後者の未確定の部分は成果の到着まで保留する。
    後者のworktree作成と正式な計画・編集は、必要な成果の統合後に行う。
 3. 共有実行枠（`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」）での検証と直列統合の処理能力を踏まえ、独立した準備の先行と準備・検証の集約を比べ、先行させた後に前提と所要時間の見込みを更新する。
    実行枠が埋まった時と即時対応の検証が起動できる時は、巡回の統括が既存の作業記録で検証の起動順を管理する。
-   通常の検証は実行枠の空きが見込めるまで待ち、起動できる即時対応の検証を先に渡す。
+   起動の順は、即時対応の検証、統合の検証、各レーンの途中の検証とする。
    稼働中の検証は止めない。
-   既に実行枠へ渡した検証と巡回外の要求は順番を変えられない。
-   空きの観測と取得の間に別の要求が入った場合も同じである。
    即時対応の検証が終了、失敗、取消になったら結果を回収し、成功と区別して次の起動へ進む。
    先行調査の担当も巡回全体の同時数Cへ数え、資源・費用の比較と巨大WIの判定は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`「内部担当の同時数と巨大WIの判定」に従う。
 4. 調査担当など統合先へ書き込まない補助の担当は、作業ディレクトリを統合先とレーンのworktreeの外（起動者か担当自身のmanaged-tempなど）にして起動し、読み取り対象は絶対パスで渡す。

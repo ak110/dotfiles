@@ -17,12 +17,10 @@ writes_worktree: false
 ## 入力
 
 - `対象の不良`: 発生事象、期待される契約、実際の結果、症状を観測した箇所を含む発生条件、ログと参考資料の絶対パス、対象コミット、再現手順。
-- `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと、新規作成か継続かの区分。
-  記録の内容は`agent-toolkit:atk-mode/playbooks/subagent.md`「多段工程の引き継ぎ記録」に従う。
 
 ## 調査
 
-1. `agent-basics:bugfix`を起動し、7つの問いへ順に答える。
+1. `agent-basics:bugfix/SKILL.md`「7つの問い」に従う。
    確認観点の資料は、同スキルの`SKILL.md`が示す条件が成立した時に読む。
 2. 対象リポジトリとキューは読み取り専用とし、一時ファイルは`agent-toolkit:atk-mode/playbooks/managed-temp.md`に従って置く。
 3. 問い5（類似見直し）の検索と個別の判定は、`agent-toolkit:atk-mode/roles/similar-review.parent.md`に従って類似見直し担当から受け取る。
@@ -53,4 +51,4 @@ writes_worktree: false
 各欄に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」と、条件が成立した確認観点の資料に従う。
 `再発`の欄は、条件が成立しない場合は行ごと省く。
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。

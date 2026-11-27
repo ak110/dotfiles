@@ -16,7 +16,13 @@ from agent_toolkit._testing.delegation_contract_support import (
     _selection_format,
     _selection_procedure,
 )
-from agent_toolkit._testing.normative_contract import line_references, read_contract, read_contract_section, section_text
+from agent_toolkit._testing.normative_contract import (
+    line_references,
+    named_document,
+    read_contract,
+    read_contract_section,
+    section_text,
+)
 
 
 def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> None:
@@ -108,7 +114,8 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     prefix = wi_constants.OBSERVATION_ONLY_RESUME_LINE.removeprefix("- 再開区分: ")
     assert f"`再開区分`が`{prefix}`である場合に限り" in _h2_section(selection_text, "処理対象の決定")
     termination = _h2_section(lanes, "採否の確定と終了区分")
-    assert "`再開区分: 再実装へ戻す`" in termination
+    assert "process-wi-observation.md" in termination and "延期adoptと反映後の観測" in termination
+    assert "`再開区分: 再実装へ戻す`" in _h2_section(finish, "反映後の観測の再開記録")
     assert "atk wi record-observation" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
 
     template = _selection_format(plugin_root).split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
@@ -122,9 +129,15 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     )
     lane_resume = _lane_planning_contract(plugin_root)
     assert f"`{heading}`" in lane_resume and f"`{prefix}`" in lane_resume
-    assert all(field in lane_resume for field in ("実装commit", "残る完成条件", "観測手段"))
+    resume_reference = "`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「反映後の観測の再開記録」"
+    assert resume_reference in lane_resume
+    observation_document = named_document(playbooks / "process-wi-execution.md", plugin_root, "process-wi-observation.md")
+    resume_format = _h2_section(observation_document, wi_constants.OBSERVATION_RESUME_HEADING)
+    assert all(field in resume_format for field in ("実装commit", "残る完成条件", "観測手段"))
     assert "`計画なし`" in lane_resume and "マージなし" in lane_resume
-    assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
+    lane_restart = _h2_section(lanes, "中断レーンの再開")
+    assert "`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「再開」" in lane_restart
+    assert "再開記録" in lane_resume
 
     receipt = _h2_section(parent, "保存後の意味検収")
     assert f"再開位置が設定されており、その値が`計画なし`でも`{prefix}`で始まる値でもない項目については" in receipt
@@ -312,8 +325,11 @@ def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
     assert "push前の工程" in receipt
     assert "CI以外の続行不能は、失敗した工程の既存手順で回復" not in receipt
     restart = _h2_section(finish, "公開状態の検収と再起動")
-    unfinished = next(line for line in restart.splitlines() if "新しいcommitが無く、公開後の操作だけが未完了の場合" in line)
-    assert "未完了の公開後の操作だけを再開する" in unfinished
+    unfinished_condition = "新しいcommitが無く、CIが未判定か公開後の操作が未完了の場合"
+    unfinished = next(line for line in restart.splitlines() if unfinished_condition in line)
+    assert "本書「公開工程の続行不能の回復と再開」に従う" in unfinished
+    publication_restart = _h2_section(finish, "公開工程の続行不能の回復と再開")
+    assert "`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能からの再開」" in publication_restart
     completed = next(line for line in restart.splitlines() if "報告へ進む" in line and "繰り返さず" in line)
     assert "CIの検収と公開後の操作が全て済んだ場合" in completed
     assert "既に検収した反映・再起動を繰り返さず" in completed

@@ -118,9 +118,6 @@ class TestRemovedRecordsAreAbsent:
             result = _run(payload, state_dir=tmp_path)
 
             assert result.returncode == 0
-            if payload.get("tool_input", {}).get("command") == "git commit --amend --no-edit":
-                assert "playbooks/report-completion.md" in result.stdout
-            else:
-                assert result.stdout == ""
+            assert result.stdout == ""
         state = _read_state(tmp_path, sid)
         assert not [key for key in self._REMOVED_KEYS if key in state]

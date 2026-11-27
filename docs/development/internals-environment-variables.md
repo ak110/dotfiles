@@ -7,6 +7,10 @@
 委譲先を示す印と委譲元の識別子は`agent_toolkit/_common/delegated_session.py`が管理し、その他の処理はこれらが提供する定数や関数を利用する。
 
 - `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`が管理するリポジトリのルートパス（未指定時は`~/private-notes/`）。
+- `AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV`・`AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV`: Claudeの共有接続envを上書きする複数行の`KEY=VALUE`。
+  設定の確認時は秘密値だけを伏せ、起動時は`_common/env_values.py`で読み取る。
+- `AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ENV`: Xの共有接続envを上書きする複数行の`KEY=VALUE`。
+  設定の確認時は秘密値だけを伏せ、起動時は`_common/env_values.py`で読み取る。
 - `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力用フラグ。
 - `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信したpayloadのダンプ出力先。
 - `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行において、次に起動するセッションの指定情報を起動側処理へ渡すための一時ファイルパス。
@@ -15,7 +19,7 @@
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得または作成した計画バンドルの所有元として記録する、委譲元セッションの識別子。
   `agents_server`が起動した子セッションのみが保持するため、Codex backendの委譲先を含めてメイン向けの入口の起動の案内の追加を省略する判定にも使用する。
 - `AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`: `agents_server`がClaude backendおよびCodex backendの委譲先へ渡す起動区分（`delegate`、`explore`、`shell`、`write`）。
-  軽量起動の判定（`is_lightweight_delegated`）がこれを参照し、操作の直前のスキルの案内（`pretooluse/operation_skills.py`）を軽量の委譲先へ出さない判定に用いる。
+  軽量起動の判定（`is_lightweight_delegated`）がこれを参照し、組み込みの汎用Agent定義の起動を軽量の委譲先では遮断しない判定に用いる。
   Function hooks moduleは参照しない。
 - `AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT`: Codex backendが開始・再開時に選んだagent-toolkitの資料rootの絶対パス。
   App Serverの子環境と内側MCPへ渡し、hookの通知が示す資料のパス、終了工程の手順書の解決、CLI案内が同じ実体を使う。
@@ -44,6 +48,7 @@
 - `AGENT_TOOLKIT_LAUNCH_RESTORE`: 起動処理によって変更された環境変数の変更前後の値を保持する内部JSON。
   `plugin_environment`が記録し、`inherited_venv`が現在値と記録値の一致する項目のみを復元した上で記録を除去する。
   起動後に外部から変更された値は維持する。
+  固定Git hookの起動では仮想環境の除去前の値を記録し、既存hookへの転送時だけ呼び出し元の探索環境を復元する。
 
 ホストが規定する以下の環境変数は、`agent_toolkit/_common/host_homes.py`の関数のみが参照する。
 

@@ -7,10 +7,11 @@ from __future__ import annotations
 import pathlib
 from types import SimpleNamespace
 from typing import Any, Literal, TypedDict
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult
 
 from agent_toolkit._agents_server import launch_requests, mcp_tools, model_override, tool_descriptions
 from agent_toolkit._atk import config as _atk_config
@@ -422,19 +423,15 @@ async def test_direct_override_refused_before_backend_start(
 
 
 @pytest.mark.parametrize("route", ["delegate", "write", "task"])
-@pytest.mark.parametrize(
-    ("reason", "evidence"),
-    [(None, None), ("user_instruction", "  "), ("observation", "観測"), ("fallback_failure", "切替失敗")],
-)
 @pytest.mark.asyncio
-async def test_write_model_requires_user_instruction_before_candidate_resolution(
+async def test_start_uses_configured_write_without_model_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     route: str,
-    reason: Literal["user_instruction", "observation", "fallback_failure"] | None,
-    evidence: str | None,
 ) -> None:
-    requested = _recording_candidates(monkeypatch)
+    require = Mock(side_effect=AssertionError("設定済みの工程を本人発話と照合した"))
+    monkeypatch.setattr(model_override, "require", require)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:drafting/medium")
     contract = tmp_path / "work-contract.md"
     contract.write_text("目的: 文案を起草する。", encoding="utf-8")
     manifest = tmp_path / ".claude-plugin" / "plugin.json"
@@ -448,35 +445,25 @@ async def test_write_model_requires_user_instruction_before_candidate_resolution
         encoding="utf-8",
     )
     inputs = {
-        "delegate": {"prompt": "実装", "model_type": "write", "whole_contract_path": str(contract)},
+        "delegate": {"prompt": "見出しの文案を作る", "model_type": "write", "whole_contract_path": str(contract)},
         "write": {"prompt": "起草"},
         "task": {"subagent_md_path": str(task)},
     }
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        with pytest.raises(ToolError) as raised:
-            await mcp_tools.mcp.call_tool(
-                "start",
-                {
-                    "cwd": str(tmp_path),
-                    "mode": route,
-                    **inputs[route],
-                    "model_override": reason,
-                    "model_override_evidence": evidence,
-                },
-            )
-        assert "user_instruction" in str(raised.value)
-        assert "model_override_evidence" in str(raised.value)
-        assert "実装・修正" in str(raised.value)
-        assert not requested
-        assert not backend.start_calls
+        result = await mcp_tools.mcp.call_tool("start", {"cwd": str(tmp_path), "mode": route, **inputs[route]})
+        assert isinstance(result, CallToolResult)
+        assert result.structured_content is not None
+        assert manager.sessions[result.structured_content["session_id"]].model_type == "write"
+        assert "warnings" not in result.structured_content
+        assert backend.start_calls == [("drafting", "medium", "delegate" if route == "delegate" else "write")]
+        require.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_freeform_execute_and_exec_use_execute_model_not_write_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:implementation/high")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:drafting/medium")
     contract = tmp_path / "work-contract.md"
@@ -493,13 +480,7 @@ async def test_freeform_execute_and_exec_use_execute_model_not_write_model(
         role = await mcp_tools.start(
             str(tmp_path), subagent_md_path="exec", extra_params=_observed_input_params("exec.subagent.md", tmp_path)
         )
-        write = await mcp_tools.start(
-            str(tmp_path),
-            mode="write",
-            prompt="見出しの文案を作る",
-            model_override="user_instruction",
-            model_override_evidence="ユーザーが見出しの文案に write_model を指定",
-        )
+        write = await mcp_tools.start(str(tmp_path), mode="write", prompt="見出しの文案を作る")
         assert [manager.sessions[item["session_id"]].model_type for item in (delegated, role, write)] == [
             "execute",
             "execute",

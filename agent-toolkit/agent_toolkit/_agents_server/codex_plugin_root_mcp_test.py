@@ -75,7 +75,7 @@ def test_wait_mcp_processes_fails_for_living_process(
 
 def _copy_plugin_distribution(plugin: pathlib.Path, destination: pathlib.Path) -> None:
     listed = subprocess.run(
-        ["git", "-C", str(plugin), "ls-files", "-z", "--cached"],
+        ["git", "-C", str(plugin), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         capture_output=True,
         check=True,
     ).stdout

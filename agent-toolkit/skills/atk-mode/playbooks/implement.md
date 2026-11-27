@@ -52,7 +52,7 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - CI非対象とCLIが確定した場合は、同じ完全OIDの同等検証と独立文脈レビューを終えてから保存する。
      証拠の書式は `atk wi verify-merge --help` に従う。
    - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
-   - 保存した本文の一致を確かめてから、`atk wi unhold <ファイル名>`を実行する。
+   - `agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」に従う。
    - 必要な証拠を確保した後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。
 8. 完了を報告する。
    - `agent-toolkit:atk-mode/playbooks/report-completion.md`に従い、マージ用AWIのファイル名、pushしたブランチ名とcommit OID、検証と実行レビューの結果、回収した一時資源を報告する。
@@ -84,7 +84,7 @@ AWIは保存・保留した項目だけを戻す。
    - 競合または全体検証の失敗が起きた場合は、メイン自身が解消・再検証・実行レビューを進める（解消の規模が大きい場合は通常レーンへ切り替えてよい）。
 5. 終了と公開後の後始末をする。
    - `atk wi adopt <WIファイル名> --commit <統合後の対象OID> --target-repo=<主作業ツリー>`でAWIを終了し、取り込んだcommitを他の処理対象WIと同じ通常の公開工程（版数更新、push、CIの検収、リリース）へ合流させる。
-   - AWIに書いた更新種別と根拠は、公開工程で未公開の統合差分に適用する最上位の `bump種別` を決める担当へ渡す（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`）。
+   - AWIに書いた更新種別と根拠は、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の公開担当へ渡す。
    - リモート作業ブランチの削除は、公開工程でベースブランチへの`git push`成功を確認した後に公開担当が実行する。
      削除前に`merge_branch`が共有ブランチでないことと、リモート先端が`merge_commit`のまま変わっていないことを再確認し、`git push origin --delete <merge_branch>`を実行する（同名のローカルブランチがあれば`git branch -D`で削除する）。
 

@@ -4,7 +4,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config, config_settings
-from agent_toolkit._common import mcp_environment, proxy_environment
+from agent_toolkit._common import env_values, mcp_environment, proxy_environment
 
 
 @pytest.mark.parametrize("group", ["retired-connection", "retired-research", "other-settings"])
@@ -56,9 +56,15 @@ def test_mcp_setting_names_follow_public_config_keys(
             shown = capsys.readouterr()
             affected = keys.intersection(config_settings.RETIRED_CONNECTION_KEYS[key])
             assert exited.value.code == 2
-            assert "旧接続設定" in shown.err and name in shown.err
+            assert ("移行できない" if key == "claude_api_env_file" else "旧接続設定") in shown.err
+            assert name in shown.err
             if key == "claude_api_env_file":
-                assert shown.out.splitlines() == baseline
+                preview = dict(line.split(" ", 1) for line in shown.out.splitlines())
+                original = dict(line.split(" ", 1) for line in baseline)
+                assert preview == {key: value for key, value in original.items() if key not in env_values.SETTING_FILES} | {
+                    "claude_orchestrator_connections": "payg",
+                    "claude_worker_connections": "subscription,payg",
+                }
             else:
                 assert affected
                 assert {line.partition(" ")[0] for line in shown.out.splitlines()} - paths == keys - affected

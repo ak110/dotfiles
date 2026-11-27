@@ -59,14 +59,9 @@ CHECK_MODULE_NAMES = (
     "response_language_advisor",
     "busy_loop_guard",
     "run_skill_report_gate",
-    "plan_save_advisor",
     "agents_server_session_advisor",
     "user_response_advisor",
     "permission_denial_notice",
-    "hook_notice_response_gate",
-    "bugfix_gate",
-    "norm_excuse_gate",
-    "termination_order_advisor",
     "process_loop_exit_gate",
     "queued_notification_advisor",
     "improvement_status_advisor",
@@ -75,7 +70,6 @@ CHECK_MODULE_NAMES = (
 CODEX_CHECK_MODULE_NAMES = (
     "response_language_advisor",
     "run_skill_report_gate",
-    "norm_excuse_gate",
     "process_loop_exit_gate",
 )
 
@@ -217,11 +211,11 @@ def _runtime_reserved(entries: list[dict]) -> bool:
     return False
 
 
-def _intermission(payload: dict, session_id: str, delivery: tuple[list[dict], bool | None]) -> tuple[bool, bool]:
-    """報告なしで区切る根拠と、予約済み反映で同じ作業が再開する根拠を返す。 pyfltr: allow-comment"""
+def _intermission(payload: dict, session_id: str, delivery: tuple[list[dict], bool | None]) -> bool:
+    """報告なしで区切り、待機や予約済み反映の後に再開する根拠を返す。 pyfltr: allow-comment"""
     last = payload.get("last_assistant_message")
     if isinstance(last, str) and last.strip() not in ("", "…"):
-        return False, False
+        return False
     entries, _ = delivery
     turn_start = 0
     prompt = ""
@@ -237,27 +231,27 @@ def _intermission(payload: dict, session_id: str, delivery: tuple[list[dict], bo
     if completion_exit.reports(turn) or any(
         is_completion(text, None) for _, _, text in delivered_repost_gate.delivered_messages(turn)
     ):
-        return False, False
+        return False
     if _runtime_reserved(entries):
-        return bool(prompt) and delivery[1] is None, True
+        return bool(prompt) and delivery[1] is None
     if delivery[1] is not None:
-        return False, False
+        return False
     if queued_task_notification_contents(entries) and prompt:
-        return True, False
+        return True
     if not prompt.startswith((PERIODIC_RECHECK_MARKER, LEGACY_PERIODIC_RECHECK_MARKER, "<task-notification>")):
-        return False, False
+        return False
     source = payload.get("transcript_path")
     if not isinstance(source, str):
-        return False, False
+        return False
     state = read_state(session_id)
     if (
         pending_async_status(source, session_id, background_tasks=payload.get("background_tasks"), session_state=state)
         == "pending-background"
     ):
-        return True, False
+        return True
     pending = agents_server_observations.pending_session_ids(state, "main")
     retained = agents_server_observations.retained_running_session_ids(state, "main")
-    return bool(agents_server_observations.own_waited_session_ids([*pending, *retained])), False
+    return bool(agents_server_observations.own_waited_session_ids([*pending, *retained]))
 
 
 def evaluate(payload_text: str) -> dict[str, object]:
@@ -273,21 +267,19 @@ def evaluate(payload_text: str) -> dict[str, object]:
 
     source = payload.get("transcript_path")
     delivery = None
-    quiet_intermission = runtime_reserved = False
+    quiet_intermission = False
     if isinstance(source, str) and source and not (is_codex_payload(payload) or is_antigravity_payload(payload)):
         try:
             with stages.measure("current_turn_delivery"):
                 delivery = delivered_repost_gate.current_turn_delivery(source)
             with stages.measure("intermission"):
-                quiet_intermission, runtime_reserved = _intermission(payload, session_id, delivery)
+                quiet_intermission = _intermission(payload, session_id, delivery)
         except Exception as exc:  # noqa: BLE001 -- 共通証拠の取得失敗で個別の終了判定を失わない
             append_stop_log(session_id, "check_error", {"check": "intermission", "error": f"{type(exc).__name__}: {exc}"})
     entries = delivery[0] if delivery is not None else []
     options: dict[str, dict[str, Any]] = {
         "delivered_repost_gate": {"quiet_intermission": quiet_intermission, "delivery": delivery},
-        "bugfix_gate": {"quiet_intermission": quiet_intermission},
         "agents_server_session_advisor": {"entries": entries},
-        "termination_order_advisor": {"runtime_reserved": runtime_reserved},
     }
 
     block_reasons: list[str] = []
@@ -398,19 +390,8 @@ def evaluate(payload_text: str) -> dict[str, object]:
                 return _finalize({})
             update_state(session_id, lambda item: _set_consecutive_block_count(item, block_count + 1))
         reports = dict(zip(blocking_checks, block_reasons, strict=True))
-        ordered = [
-            reports.pop(name)
-            for name in ("bugfix_gate", "hook_notice_response_gate", "delivered_repost_gate")
-            if name in reports
-        ]
-        send_steps = (
-            [delivered_repost_gate.send_fix()]
-            if "delivered_repost_gate" not in blocking_checks
-            and any(name in blocking_checks for name in ("bugfix_gate", "hook_notice_response_gate"))
-            and delivered_repost_gate.send_required(entries)
-            else []
-        )
-        reason = "\n\n".join([*ordered, *reports.values(), *notifications, *send_steps, *_continuation_notice()])
+        ordered = [reports.pop("delivered_repost_gate")] if "delivered_repost_gate" in reports else []
+        reason = "\n\n".join([*ordered, *reports.values(), *notifications, *_continuation_notice()])
         return _finalize({"decision": "block", "reason": reason})
     if session_id:
         update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))

@@ -17,7 +17,6 @@ from agent_toolkit._atk.wi.add_validation import require_cause_analysis_format
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import structure
-from agent_toolkit._plan.structure.formal_verification import missing_judgment_message
 from agent_toolkit._plan.structure.parsing import is_awi_plan, is_wi_list_plan
 from check_plan_file_common import _ClassifiedWarning
 from check_plan_file_formats import (
@@ -174,10 +173,7 @@ def check(
         classified_warnings = [("advisory", warning) for warning in target_warnings]
     elif plan_format == FORMAT_AWI:
         format_errors = check_awi_plan(text, work_dir)
-        judgment = missing_judgment_message(text)
         classified_warnings = [("migration", AWI_FORMAT_MIGRATION_WARNING)]
-        if judgment is not None:
-            classified_warnings.append(("migration", judgment))
     elif plan_format == FORMAT_TWO_FILE:
         format_errors, classified_warnings = _check_new_format(_detail_path_for(plan_path), text, work_dir, private_notes, home)
         if not any(kind == "migration" for kind, _message in classified_warnings):

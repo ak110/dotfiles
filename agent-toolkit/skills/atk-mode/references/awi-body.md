@@ -79,9 +79,7 @@ H1直下と反映内容で、プロジェクトの目的に対する依頼の役
 - 使い方が変わると分かっている場合は、既存ガイドがあればその更新を、ガイドの有無によらず公開後の専用UWIによる案内を反映内容へ含める。
   公開後の実施と引き継ぎは`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」に従う
 - この書式で起草する通常AWIには、影響範囲や改修規模の見込みを1〜2行で任意に書ける
-- 複数のリポジトリへ投入して本文を共有する場合は、`agent-toolkit:atk-mode/references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従う。
-  原因分析や逐語引用も、代表AWIの明示参照で満たせる。
-  各AWIの冒頭は、それだけで目的と変更が分かるように書く
+- 複数のリポジトリへ投入して本文を共有する場合は、`agent-toolkit:atk-mode/references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従う
 
 ## 反映内容と反映先
 
@@ -180,7 +178,7 @@ Codexの`.agents/skills`がシンボリックリンクである場合は、リ�
 原因が未確定の場合は`## 原因分析`を置かず、`## 調査結果と判断根拠`に観測事実、原因の候補、残る問いを分けて書く。
 処理側は原因を確定した後に、計画を作る時の詳細化（`agent-toolkit:atk-mode/playbooks/write-plan.md`「詳細化」）でWIの`## 原因分析`へ記録する。
 記録の形と記録先は`agent-toolkit:atk-mode/references/analysis-records.md`が定め、内容は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入前の読み直し」の原因分析の条件で検収する。
-代表AWIの参照で満たす場合は、参照先の記録と確認結果を検収する。
+代表AWIの検収は`agent-toolkit:atk-mode/references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従う。
 
 ### 原因仮説を含む独立別件
 

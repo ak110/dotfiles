@@ -110,9 +110,14 @@ def main() -> int:
             from agent_toolkit._common import commit_hook_environment
 
             caller_environment = commit_hook_environment.atk_environment(options.arguments, caller_environment)
+        interpreter = Path(sys.executable).resolve().parent
         path = caller_environment.get("PATH", "").split(os.pathsep)
-        if path and Path(path[0]).resolve() == Path(sys.executable).resolve().parent:
-            caller_environment["PATH"] = os.pathsep.join(path[1:])
+        for injected in ([interpreter / "Scripts", interpreter], [interpreter]) if os.name == "nt" else ([interpreter],):
+            if len(path) > len(injected) and all(
+                entry and Path(entry).resolve() == expected for entry, expected in zip(path, injected, strict=False)
+            ):
+                caller_environment["PATH"] = os.pathsep.join(path[len(injected) :])
+                break
         selected = plugin_environment.project_environment(root, caller_environment)
         python = plugin_environment.prepared_environment_python(selected)
     except OSError as exc:
@@ -172,6 +177,8 @@ def main() -> int:
                 raise FileNotFoundError("共有依存環境が回収されたため、update-dotfilesで再準備してください")
             arguments = [str(python), str(target), *options.arguments]
             environment = plugin_environment.direct_environment(root, caller_environment, selected=selected)
+            if target == root / "agent_toolkit/_hooks/git_commit_msg.py":
+                inherited_venv.record_launch_changes(environment, caller_environment)
             if target == root / "agent_toolkit/hook.py":
                 # 親の強制終了時も、POSIXの子が依存環境を使う間は回収を防ぐ。
                 pass_fds = () if os.name == "nt" else (usage_lock.fileno(),)

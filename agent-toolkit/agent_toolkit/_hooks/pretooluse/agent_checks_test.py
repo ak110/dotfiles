@@ -22,11 +22,11 @@ from agent_toolkit._testing.pretooluse_support import (
     _plan_file_state_env,
     _process_loop_log_env,
     _read_session_state,
+    _run,
     _run_posttooluse,
     _stage_model_env,
     _write_session_state,
 )
-from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 
 @pytest.fixture(autouse=True)

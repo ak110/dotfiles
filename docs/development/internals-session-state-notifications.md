@@ -4,13 +4,6 @@
 
 ## hookの診断計測
 
-- `command_timing`: `_hooks/command_timing.py`がシェルコマンドのPreToolUse時刻をsession・呼出主体・tool_use_idで対応付ける。
-  PostToolUse/FailureとClaude背景完了のUserPromptSubmitが、1秒以上の全体の実行時間または観測経過時間を一度だけ通知する。
-  保持対象は、実行中の開始時刻と背景task-id、完了後の重複判定用tool_use_idとdoneに限定する。
-  見直し用履歴は主体ごとの同じ計測種別の直近3件だけとし、10秒未満・未計測・種別変更でリセットする。
-  識別子はsession状態と同じ寿命で保持し、再開・継承で重複を防ぎ、clear・期限切れ回収で除く。
-  hook自身の診断計測とは独立する。
-
 hookの診断計測はセッションのmanaged-tempにある`hook-timings.jsonl`へ保存する。
 `timing.py`がイベント・処理・区間・単調時計の所要・成否だけを記録し、同領域の`hook-timings.lock`で並行更新を直列化する。
 上限64KiBに達すると直近の完全な行だけを残す。
@@ -21,7 +14,7 @@ hookの診断計測はセッションのmanaged-tempにある`hook-timings.jsonl
 ## 通知反復系
 
 Codex PreToolUseの長い追加通知は、既存のsession managed-tempへ全文を保存し、短い保存先参照を提示する。
-参照の提示は、元の通知が持つ配送記録（通知反復抑止と、操作の直前のスキルなどの案内済みの記録）を参照の配送へ引き継ぐ（`pretooluse/warning_context.py`）。
+参照の提示は、元の通知が持つ配送記録（通知反復抑止などの案内済みの記録）を参照の配送へ引き継ぐ（`pretooluse/warning_context.py`）。
 
 - `persistent_warning_fingerprints`: `_atk/outcome.py`が、共通起動の持続状態ならびにhookの引数不整合に関する警告本文のフィンガープリント（指紋情報）を記録する。
   同じ会話で初めて報告する内容だけを出力する。

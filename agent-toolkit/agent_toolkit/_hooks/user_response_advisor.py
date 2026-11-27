@@ -26,6 +26,7 @@ agent_idと委譲先の環境印でサブエージェントと委譲先を除く
 """
 
 import json
+import pathlib
 import re
 import unicodedata
 from collections.abc import Iterable, Iterator
@@ -36,9 +37,10 @@ from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
 lazy from agent_toolkit._hooks.background_tasks_entries import describe_pending_background_entries
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.termination_order_advisor import _resident_bash_ids
 
 _notice = notice.formatter("user_response_advisor", default_tag=_WARN_TAG)
 
@@ -307,3 +309,61 @@ def _human_prompt(entry: dict, text: str) -> str | None:
         if command is not None:
             return command[1].strip()
     return text if human else None
+
+
+def _resident_bash_ids(transcript_path: str) -> set[str]:
+    identifiers: set[str] = set()
+    for line in transcript.read_transcript_lines(transcript_path) or []:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict) or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") in ATK_SHELL_TOOLS:
+                tool_input = block.get("input")
+                command = tool_input.get("command") if isinstance(tool_input, dict) else None
+                identifier = block.get("id")
+                if isinstance(identifier, str) and isinstance(command, str) and _is_resident_command(command):
+                    identifiers.add(identifier)
+            elif block.get("type") == "tool_result" and block.get("tool_use_id") in identifiers:
+                response = entry.get("toolUseResult")
+                task_id = response.get("backgroundTaskId") if isinstance(response, dict) else None
+                if isinstance(task_id, str):
+                    identifiers.add(task_id)
+    return identifiers
+
+
+def _is_resident_command(command: str) -> bool:
+    for segment in extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        tokens = segment.tokens
+        name = pathlib.PurePath(tokens[0]).name
+        if pathlib.PurePath(segment.raw_tokens[0]).name == "timeout":
+            continue
+        if name in {"uv", "uvx"} and "run" in tokens:
+            tokens = tokens[tokens.index("run") + 1 :]
+            if not tokens:
+                continue
+            name = pathlib.PurePath(tokens[0]).name
+        if any(arg in {"--help", "--version"} for arg in tokens[1:]):
+            continue
+        script = tokens[2:3] if tokens[1:2] == ("run",) else tokens[1:2]
+        if (
+            name in {"uvicorn", "gunicorn", "watch", "nodemon", "http.server", "vite"}
+            or is_atk_command(tokens)
+            and tokens[1:2] == ("serve",)
+            or name in {"npm", "pnpm", "yarn", "bun"}
+            and bool(script)
+            and script[0] in {"watch", "dev", "start"}
+            or name in {"node", "tsc", "webpack", "esbuild", "cargo", "dotnet", "deno"}
+            and "--watch" in tokens[1:]
+        ):
+            return True
+    return False

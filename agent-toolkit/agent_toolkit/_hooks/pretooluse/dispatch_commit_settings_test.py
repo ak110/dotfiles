@@ -8,7 +8,6 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
-from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.dispatch_support import (
     _claude_commit_hook_payload,
     _claude_commit_payload,
@@ -18,11 +17,6 @@ from agent_toolkit._testing.dispatch_support import (
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
 
 _LOW_TRAILER = "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>"
-
-
-@pytest.fixture(autouse=True)
-def _without_unrelated_document_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 @pytest.mark.parametrize(

@@ -4,57 +4,28 @@
 
 ## 確認・操作スキル系
 
-- `verification_bugfix`: 検証・CIの失敗を観測した主体ごとに、最後の失敗のtool_use_idとbugfix未起動の印だけを保持する。
-  PostToolUseが失敗を記録し、同じ主体の`Skill`によるbugfixの起動成功で印を解除する。
-  PreToolUseは修正・commit・検証の再実行で未起動を警告し、遮断しない。
-  同じ失敗の再配送では印を戻さず、新しい失敗では改めて起動を求める。
-  圧縮で未対処の印を消さず、clearと期限切れ回収はセッション状態の共通寿命に従う。
-- `operation_skills_notified`: `pretooluse/operation_skills.py`が、主体ごとに、操作の直前に起動を案内したスキルの完全名を保持する。
-  対象は表`OPERATION_SKILLS`の4件（search、bugfix、writing-standards、check-execution）である。
-  案内は最終出力へ採用した時に記録し、記録済みのスキルはその主体へ再び案内しない。
-  `operation_skills_observed` はSkillの起動成功または入口の全文読取を記録し、起動済みのスキルを案内の対象から外す。
-  案内は遮断しない（全文読取の観測はホストのhook入力に依存し、Antigravityの入力は結果本文を含まないため、遮断すると回復の手段が無くなる）。
-  会話圧縮・clearのSessionStartで`forget_subject`がその主体の記録を消し、次の該当する操作で再び案内する。
-  軽量の委譲先には案内せず、一時領域（managed-tempとClaude Codeの一時領域）だけへの書き込みはwriting-standardsの案内の対象から外す。
-- `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程に必要な証拠を作業単位で管理・保持する。
-  保持する内容には、作業ごとの成果作業の種別、report-completionの起動証拠、ツールの呼び出し履歴、判断の記録、遅れて返ってくる応答を元の作業に対応付けるための未完了の呼び出し、ならびに判断の根拠となった人間の入力が含まれる。
-  PreToolUse、PostToolUse、UserPromptSubmitがツール呼び出しと人間の入力を逐次更新し、Stopの`termination_order_advisor`が成果作業と起動証拠の対応関係を読み取る。
-  報告本文、完了の自己申告、起動済みを示す独自フラグなどは保持しない。
-  解決済みの呼び出しや入力は更新のたびに除外し、バージョンや形式が合致しない値は破棄してStop判定ログに診断情報を残す。
-  生存期間と継承の扱いはセッション状態ファイルと同一とし、別の会話から継承した値は`session_id`の一致を確認してから使用する。
-  - 成果作業と起動証拠: 成功した対象スキルの起動、リポジトリに対する自身の編集作業、計画ファイルの保存、WIの保存、commitやpushなどを`deliverables`へ記録する。
-    完了報告の手順書`skills/atk-mode/playbooks/report-completion.md`の起動証拠は、`completion_report`へ記録する。
-    Claude Codeは`atk-mode`の引数`report-completion`での起動か、応答の`file.content`が現在の全文と一致した`Read`を記録する。
-    Codex・Antigravityは、出力をリダイレクトしない本文表示か1行目から始まる`sed -n`で、結果が現在の全文を含むコマンドの読み取りを記録する。
-    メインの起動証拠を記録した時は、手順書の現在の版（SHA-256）を`completion_context`へ保つ。
-    Stopはこの版が現在の版と一致する時だけ、メインの文脈に手順書があるとみなす。
-    会話圧縮・clearのSessionStartが`completion_context`を消す。
-    起動証拠を取得済みの作業に対して、新しい人間の入力があった後にさらに成果作業が発生した場合は、別の新しい作業として管理を開始する
-  - 待機の許可: 成果作業が待機している非同期処理の実行中に、Stop hookが待機を許可する条件は`docs/development/design-hooks-termination-evidence.md`「終了工程の証拠」に定める。
-    本キーは作業の開始位置（UserPromptSubmitが記録したtranscriptのサイズ）を保持し、Stopがその判定時に参照する
-  - 成果作業の対象: 観測されたリポジトリのルートパスを`repositories`に保持する。
-    直接実行されたGit操作については`-C`などの引数を含めて対象リポジトリを取得し、シェルのディレクトリ移動や環境変数の前置代入によって対象を取得できない操作については`null`を保持する。
-    対象が単一のリポジトリであると確定できる作業に限り、プロジェクト規範に基づく終了工程の省略指定を受理する
-  - 委譲先に対するwait判定: `async_targets`とその所有者を確認し、観測義務とは独立して有効なCLI待機所有権や対象登録の有無を共通の読み取り処理で確認する。
-    `pending_observation`が偽であっても待機が有効であれば状態を保持し、両方の処理が完了した段階で証拠不足の判定へ戻す
-  - 自身の編集作業: 成功したEdit、Write、`apply_patch`、および既存の静的解析で確定したBashによる書き込み先を、作業ごとの`edits`にリポジトリおよび相対パスとして記録する。
-    Claude Codeの協調モードにおけるメインエージェントでは、Stop hookがこの編集集合と終了時のGit状態を比較し、公開範囲が確定していない編集が含まれている場合は遮断通知に添えて提示し、他主体による差分を誤って取り込まないようにする
-  - 公開範囲: メインエージェントが元の指示入力または適用済みの認可に基づいて判断した公開範囲を`publish_scope`に記録する。
-    記録手順は`agent-toolkit:atk-mode/playbooks/confirmation.md`に従う
-  - プロジェクト規範による省略: メインエージェントが`omit-completion`で指定したエージェント向け文書の絶対パス、記録処理がそのパスから読み取った全文、対象リポジトリ、および人間の入力識別子を、作業ごとの`omit_completion`に保持する。
-    `input_id`が省略されている場合は、現在の会話における直近の人間の入力に対応付ける。
-    記録時には、観測された成果作業が単一のリポジトリに対するものであること、規範ファイルの所在、現在のメインエージェント・会話・入力の対応関係を確認し、明示された引用文（`quote`）が規範の全文と一致しているかも確認する。
-    Stop hookにおいても規範ファイルの実体と入力の対応を確認する。
-    有効な省略情報を持つ作業に限り、起動不足の判定を免除する。
-    この免除は次回の判断時に解除され、新しい人間の入力後に発生した成果作業は新規作業として扱われるため、省略設定は引き継がれない。
-    エージェント向け文書の変更や消失が確認された場合は、免除を無効化する。
-    具体的な手順は`agent-toolkit:atk-mode/references/termination-evidence.md`に従う
-  - 元の入力と再突入: `last_human_input`には直近の人間の入力を保持し、自動通知による再開後であっても元の依頼への帰属関係を維持する。
-    同じターンIDを持つ通知は別の入力として保存し、人間の入力の本文と由来を上書きしない。
-    ターン途中に届いた入力（Claude Codeのセッション記録の`attachment.type=queued_command`）は`transcript_path`に保持した記録ファイルを`queued_offset`の読み取り位置から読んで取り込む。
-    取り込んだ入力のうち`origin.kind=human`のものだけを人間の入力として扱う。
-    記録ファイルが変わったら読取位置を先頭へ戻す。
-    `--context`は人間の入力の有無にかかわらず現在の会話の`session_id`と作業の`work_id`を返し、その入力を観測できた場合のみ`input_id`と`quote`を添え、観測できていなければ両者を`null`とする。
-    証拠が存在しない場合、別会話や旧バージョンの値である場合、現在のメインエージェントとして特定できない場合、あるいは作業も人間の入力も存在しない場合は取得を拒否する。
-    取得しても判断に必要な証拠条件は緩まず、人間の元の入力、実際の失敗、所有する委譲先の待機状態の検証は、各actionごとの記録処理において厳格に行われる。
-    生存期間と継承の扱いは本キー全体と同一であり、公開範囲、起動証拠、および現在のGit状態から不要な判定を除外する
+`pretooluse/operation_skills.py`の`written_paths`は、終了工程の成果作業とWI受付の編集境界の観測で共有する。
+`is_verification_operation`は検証・CIの実際の失敗を観測する対象を選ぶ。
+`full_reads.py`の全文取得の判定は退避出力の回収とレビュー返却の受領で共有し、スキル起動の台帳は持たない。
+
+- `verification_bugfix`: 検証・CIの実失敗を観測した主体ごとに、最後の失敗のtool_use_idと案内待ちの印を保持する。
+  PostToolUseが失敗を記録し、次のPreToolUseで案内待ちを排他消費して一度だけ原因分析を促す。
+  起動成功、分類、報告書式、読取方式は追跡せず、送達やStopを遮断しない。
+- `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、作業の対象と判断の根拠を作業単位で保持する。
+  PreToolUse、PostToolUse、UserPromptSubmitが、成果作業、未完了の呼び出し、人間の原入力を更新する。
+  完了手順書の全文取得・digest・圧縮後の読込資格・省略資格は保持しない。
+  解決済みの呼び出しや入力は更新のたびに除外し、版や形式が合わない値は診断を残す。
+  別の会話から継承した値は`session_id`の一致を確認してから使う。
+  - 成果作業: 成功した対象スキルの開始、自身のリポジトリ編集、計画・WIの保存、commit・pushを`deliverables`へ記録する。
+  - 作業の対象: 観測したリポジトリのルートを`repositories`へ、成功した編集の相対パスを`edits`へ記録する。
+    Gitの`-C`、シェルの移動先と静的に確定した書込先を使い、所属不明は`null`で保持する。
+  - 待機: `async_targets`と所有者を確かめ、有効なCLI待機と観測義務を区別する。
+    待機が解消したら`pending_work`は残る作業へ戻す。
+  - 判断: 中止・置換・開始・再開は人間の原入力、技術的不成立は同じ作業の実失敗、待機は所有する委譲先か未回答UWIを根拠にする。
+    `publish_scope`は元の指示入力または適用済み認可から確定した公開範囲を保持する。
+    記録手順は`agent-toolkit:atk-mode/references/termination-evidence.md`と`agent-toolkit:atk-mode/playbooks/confirmation.md`に従う。
+  - 元の入力: `last_human_input`は機械通知後も人間の原入力を保持する。
+    同じターンIDを持つ別の通知で本文と由来を上書きしない。
+    ターン途中の`queued_command`は`transcript_path`の`queued_offset`から取り込み、`origin.kind=human`だけを人間入力にする。
+    `--context`は現在の`session_id`と`work_id`を返し、人間入力を観測した場合だけ`input_id`と`quote`へ値を入れる。
+    状態が無い、別会話や旧版である、現在のメインでない、作業も原入力も無い場合は取得を拒否する。

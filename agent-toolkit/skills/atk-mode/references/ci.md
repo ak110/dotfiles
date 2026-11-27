@@ -4,7 +4,7 @@
 
 公開先のCI定義の有無の判定、`wait_ci.py`（`atk run-script wait-ci`）による待機、CIの失敗の証拠の取得と修正の公開を定める。
 `agent-toolkit:atk-mode/playbooks/publish.md`の「push前」「pushと監視」の段から使う。
-CIの失敗を認識したら`agent-basics:bugfix`を起動し、失敗の分類と対処は同スキルの`references/ci-failures.md`に従う。
+CIの失敗は`agent-basics:bugfix`と同スキル`references/ci-failures.md`に従う。
 修正commitが必要なCI失敗の担当と修正系列は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`に従う。
 
 ## 公開先に対応するCI定義の判定
@@ -22,6 +22,7 @@ GitLabの設定は[Projects API](https://docs.gitlab.com/api/projects/)と[独�
 応答に権限不足による項目の欠落が無いことと、継承した[Auto DevOps](https://docs.gitlab.com/topics/autodevops/)が有効でないことを確かめる。
 
 判定の結果は次のどれかとし、記録には公開先、対象commit、取得したツリーか有効な設定と参照先、実行したコマンド、終了コード、診断を残す。
+CIの実行は「正常」「失敗」「未終了」、登録と照会は「run未登録」「CI定義なし」「CI実行対象外」「照会不能」を区別する（以下の「未判定」は照会不能を含む）。
 
 - CI定義なし: 不在を確定した。
   baselineと監視を省き、「CI定義不在」の証拠とローカル全体検証の成功を組にして最終状態とする。
@@ -168,7 +169,6 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
 
 1. 原因を取り違えないため、本書「失敗ログとartifactの取得」で証拠を取得する。
    非決定的な失敗の兆候による対象ジョブの再実行と、取れる証拠の暫定の保存は、plan modeの開始の前に行う。
-   修正や再投入の前に、`agent-basics:bugfix`を起動済みであることを確かめる。
 2. 失敗したジョブの全体を確かめて修正の範囲を確定する。
    分類の結果（VRTでは差分の分類を含む）は既存のCIの記録か進捗へ記し、計画を作る場合は計画の調査の工程へ記す。
    `agent-toolkit:atk-mode`の作業`process-wi`の公開工程では、公開工程が管理する原因分析の結果へ記す。

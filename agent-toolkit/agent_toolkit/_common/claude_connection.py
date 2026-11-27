@@ -7,7 +7,6 @@ import dataclasses
 import json
 import os
 import pathlib
-import re
 import shlex
 import subprocess
 import sys
@@ -15,7 +14,7 @@ import tempfile
 import uuid
 from collections.abc import Iterable, Mapping
 
-from agent_toolkit._common import claude_settings_sources, host_homes, runtime_environment
+from agent_toolkit._common import claude_settings_sources, env_values, host_homes, runtime_environment
 from agent_toolkit._common.state_paths import state_dir
 
 AUTH_ENV = frozenset(
@@ -74,23 +73,7 @@ class SettingsFile(str):
 
 
 def read_api_env_file(path: str) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        line = line.removeprefix("export ")
-        key, separator, value = line.partition("=")
-        key = key.strip()
-        if not separator or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) is None:
-            raise ValueError("API envファイルは1行1つのKEY=VALUEで指定する")
-        value = value.strip()
-        if value.startswith(("'", '"')) and (len(value) < 2 or value[-1] != value[0]):
-            raise ValueError("API envファイルの値を囲む引用符を閉じる")
-        if len(value) >= 2 and value[0] in {"'", '"'} and value[-1] == value[0]:
-            value = value[1:-1]
-        values[key] = value
-    return values
+    return env_values.read(path)
 
 
 def merge_settings(

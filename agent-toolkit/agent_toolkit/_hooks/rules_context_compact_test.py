@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import pathlib
 from types import SimpleNamespace
 
 import pytest
@@ -15,11 +14,9 @@ from agent_toolkit._hooks import (
     agents_server_observations,
     agents_server_session_advisor,
     rules_context,
-    termination_evidence_state,
 )
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
 from agent_toolkit._testing.rules_context_support import _output
 
@@ -49,62 +46,6 @@ def test_compact_public_notice_uses_current_stage(tmp_path, monkeypatch, capsys,
     assert "次に行う操作・判断の条件" in output
     assert "作業契約と会話の要約だけ" not in output
     assert "compaction-recovery.md" not in output
-
-
-@pytest.mark.parametrize("codex", [False, True])
-@pytest.mark.parametrize("boundary", ["clear", "compact"])
-def test_context_boundary_restores_skill_notice(
-    boundary: str, codex: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
-    session_id = f"skill-boundary-{boundary}-{codex}"
-    search = {
-        "session_id": session_id,
-        "cwd": str(tmp_path),
-        "tool_name": "Bash",
-        "tool_input": {"command": "rg needle ."},
-        **({"turn_id": "turn"} if codex else {}),
-    }
-    assert "agent-basics:search" in _run_hook_in_process("pretooluse", search).stdout
-    again = _run_hook_in_process("pretooluse", search)
-    assert "agent-basics:search" not in again.stdout and 'permissionDecision": "deny' not in again.stdout
-    launched = {
-        "hook_event_name": "PostToolUse",
-        "session_id": session_id,
-        "tool_name": "Skill",
-        "tool_input": {"skill": "agent-basics:search"},
-    }
-    assert _run_hook_in_process("posttooluse", launched).returncode == 0
-    assert "agent-basics:search" not in _run_hook_in_process("pretooluse", search).stdout
-    start = {"hook_event_name": "SessionStart", "source": boundary, "session_id": session_id}
-    assert _run_hook_in_process("rules_context", start).returncode == 0
-    assert "agent-basics:search" in _run_hook_in_process("pretooluse", search).stdout
-
-
-@pytest.mark.parametrize("agent_id", [None, "child-1"])
-@pytest.mark.parametrize("boundary", ["clear", "compact"])
-def test_context_boundary_forgets_completion_playbook_only_for_main(
-    boundary: str, agent_id: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
-    session_id = f"completion-boundary-{boundary}-{agent_id}"
-    digest = termination_evidence_state.playbook_digest()
-    update_state(
-        session_id,
-        lambda _state: {
-            termination_evidence_state.STATE_KEY: {"session_id": session_id, termination_evidence_state.CONTEXT_KEY: digest}
-        },
-    )
-    assert termination_evidence_state.completion_in_context(session_id)
-    start = {"hook_event_name": "SessionStart", "source": boundary, "session_id": session_id}
-    if agent_id is not None:
-        start["agent_id"] = agent_id
-    assert _run_hook_in_process("rules_context", start).returncode == 0
-    assert termination_evidence_state.completion_in_context(session_id) is (agent_id is not None)
 
 
 @pytest.mark.parametrize("own_wait", [False, True])

@@ -29,7 +29,7 @@ continuations:
 
 全文章成果物を想定読者の視点で読み、読者と役割分担への適合を判定し、要修正箇所を報告する。
 成果物の修正と指摘の採否は、委譲元のレビュー担当が担う。
-作成者とは独立した文脈で読むことがこの担当の価値である（原則6、`agent-basics:writing-standards/references/quality-principles-verification.md`）。
+`agent-basics:writing-standards/references/quality-principles-verification.md`「理由」に従う。
 最初に「入力」で対象集合を確定する。
 
 ## 入力
@@ -113,7 +113,7 @@ UWIの内容の定義元は`agent-toolkit:atk-mode/references/uwi-format.md`「�
 
 ## 出力
 
-状態行・続行不能の区分と理由・標識行・一行返却は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 以下の形式のみを返す。
 「未解決の指摘数」には本文に列挙した指摘の項目数と同じ値を書く（再レビュー時の分類付き指摘と初回の確認不足も1項目ずつ数える）。
 同じ指摘が複数の成果物に当たる場合は、1項目にまとめて該当する全ファイルと箇所を項目内に示し、1件と数える。

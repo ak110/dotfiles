@@ -4,22 +4,18 @@
 要約で埋めず、発話・資料・コードと実行結果から決まることを投入前に本文で確定し、ユーザーだけが決めることを確認する（原則1・3）。
 
 本書は、通常AWIと報告用を除くUWIを起草する者（`/atk-mode add-awi-by-user`や独立したWI投入のセッションのメイン、WI投入担当、他の作業中にUWIを書く者）が上から実行する。
-報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」に従い、`--question-type=report`で保存する。
+報告用UWIは`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIの確認と保存」に従う。
 
 ## 手順
 
-1. 「対象の調査基点」を確定してから、投入条件と起票目的に応じた調査結果を「投入条件の判定」「起票目的別の調査出口」に従って決める。
-2. 原文と現物から前提と観測を確かめる（本書「前提と観測の確認」）。
+1. 「対象の調査基点」を確定してから、投入条件は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「投入条件の判定」、起票目的に応じた調査結果は本書「起票目的別の調査出口」に従って決める。
+2. 原文と現物から前提と観測を確かめる（`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「前提と観測の確認」）。
 3. 全状態の既存WIを検索し、重複と、未処理のWIへの統合を比べる（本書「重複判定」「AWIの粒度と統合」）。
-4. 要件、委譲元の判断、未確定事項を分け、残るユーザー判断を確認へ回す（本書「確定した要件と委譲元の判断」「未確定事項と確認」）。
+4. 要件、委譲元の判断、未確定事項を分け、残るユーザー判断を確認へ回す（`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定した要件と委譲元の判断」「未確定事項と確認」）。
 5. 原因と変更する定義の所有者、対象集合の採否、実現方式を決め、1つの案にする（`agent-toolkit:atk-mode/references/drafting-decisions.md`）。
-6. 本文を起草する（本書「本文の起草」）。
-7. 確定を判定し、検収の構成を選ぶ（本書「確定の判定」「直接起草と独立した検収の選択」）。
+6. 本文を起草する（`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「本文の起草」）。
+7. 確定を判定し、検収の構成を選ぶ（`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定の判定」「直接起草と独立した検収の選択」）。
 8. `agent-toolkit:atk-mode/playbooks/wi-saving.md`の手順で保存する。
-
-## 投入条件の判定
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「投入条件の判定」に従う。
 
 ## 起票目的別の調査出口
 
@@ -29,7 +25,7 @@
 | --- | --- | --- |
 | 全ての起点に共通 | 要求か観測事実、期待との差、対象と期待結果、対応が必要な根拠を確かめ、既存の実装・文書・WIとの被覆を比べる（本書「重複判定」）。規範・手順の被覆は`agent-basics:writing-standards/references/agent-documents-basics.md`「既存規範による被覆の判定」で判定する | 確かめた結論と再取得できる根拠 |
 | ユーザーが手動作成で具体化を求めた要求 | 対象ごとの採否、外部から観測できる仕様、必要なユーザー判断を投入元で確定し、投入前レビューを経る | 確定した変更の内部設計、実装単位、実装後の検証 |
-| 作業の途中で見つけた、現在の要求から独立した別件 | 共通の条件を満たし、確定した事実、原因の仮説、未確定事項を分ける | 原因の解明と解法の選定の残り、次に確定する問いと期待結果 |
+| 作業の途中で見つけた、現在の要求から独立した別件 | 共通の条件と`agent-basics:writing-standards/references/quality-principles-facts.md`「結果の返却」に従う | 原因の解明と解法の選定の残り、次に確定する問いと期待結果 |
 | 完了の工程の後に見つけた独立した問題（軽い引き継ぎ） | 本節の軽い引き継ぎの条件を満たす | 原因分析、類似の見直し、対策の選定、実装と検証 |
 
 全ての起点で、投入先の決定前に原因の所有と回復費用を確かめる。
@@ -47,10 +43,6 @@
 工程が進んだことを理由に、既知の未完了事項を新しく見つけた独立の問題へ分類し直さない。
 後続の`process-wi`は原因分析から実装と検証までを担い、調査の未完了だけを起票の不備とはせず、確定済みの事実・処置・ユーザー判断を再利用し、引き継ぎの保存、元作業の完了、問題自体の解消を分けて報告する。
 
-## 前提と観測の確認
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「前提と観測の確認」に従う。
-
 ### 対象の調査基点
 
 現物を根拠にする新規AWIは、採否を左右する最初の読み取りより前に宛先を選ぶ。
@@ -60,10 +52,6 @@
 各操作の直前に短縮OIDを解決し、隔離worktree、dry-runと保存の `--draft-base BRANCH OID` に完全OIDを使う。
 `BRANCH`は宛先の`refs/heads/<ブランチ>`か、宛先に実在し、`/`を含まないブランチ名で指定する。
 取得に使う`origin/<系統>`は渡さない。
-
-### 出所と観測の取得
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「出所と観測の取得」に従う。
 
 ## 重複判定
 
@@ -111,34 +99,6 @@ AWIの粒度は要求の同一性で決め、同じユーザー目的・成果�
 統合する場合は、その比較に沿って既存WIの本文を変更する対象（ファイル、手順書）と目的で組み直し、同じファイルへの変更を1か所にまとめ、節の機械的な連結は避ける。
 独立して採否と完成判定が成り立つ要求を1件に混ぜて巨大にすることは避け、統合しない場合はその理由を方針の提示と報告に書く。
 既存WIを更新する順序（調査の前に保留にする、`processing`の項目は本文を置き換えずに追記し、変更の要求は新しいAWIにする）は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」に従う。
-
-## 確定した要件と委譲元の判断
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定した要件と委譲元の判断」に従う。
-
-## 未確定事項と確認
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「未確定事項と確認」に従う。
-
-## 本文の起草
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「本文の起草」に従う。
-
-### ユーザーが読む部分の合格基準
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「ユーザーが読む部分の合格基準」に従う。
-
-### エージェント向け文書の構成
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「エージェント向け文書の構成」に従う。
-
-## 確定の判定
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「確定の判定」に従う。
-
-## 直接起草と独立した検収の選択
-
-`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「直接起草と独立した検収の選択」に従う。
 
 ## 返す報告に含める項目
 

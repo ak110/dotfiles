@@ -112,7 +112,8 @@ def test_repository_read_preserves_unrelated_legacy_migration(tmp_path: pathlib.
     assert _main(tmp_path, "config", "get", "repositories") == 0
     stored = _saved(tmp_path)
     assert "claude_api_env_file" not in stored
-    assert (tmp_path / "config" / "claude-payg.env").is_file()
+    assert (tmp_path / "config" / "claude-payg.env.imported").is_file()
+    assert config.resolve_mutable_setting("claude_payg_env") == "ANTHROPIC_API_KEY=fixture"
     assert "claude_payg_env_file" not in stored
     assert stored["other_setting"] == "keep"
 

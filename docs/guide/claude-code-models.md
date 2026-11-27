@@ -150,8 +150,9 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 
 自由本文で割り当て済みの実装・修正を委譲する場合は、`start(mode=delegate, model_type=execute)` が `execute_model` を使う。
 レーンの実装は所定の `exec` の役割で起動する。
-`write_model` はユーザーが指定した場合だけ使い、起動時には `model_override=user_instruction` と `model_override_evidence` に[本人指定による上書き](../../agent-toolkit/skills/atk-mode/references/model-settings.md#本人指定による上書き)で定める原文・回答の所在を渡す。
-後任を起動する場合も同じ指定が必要になる。
+`write_model` はユーザーが指定した場合だけ使う。
+執筆モデルを使ってほしいと通常の言葉で伝えればよく、後任も含め、設定済みの執筆モデルを使うために専用の指定行や原文の所在を渡す必要はない。
+設定した候補を使う場合と、[候補を直接指定する場合の本人確認](../../agent-toolkit/skills/atk-mode/references/model-settings.md#本人指定による上書き)は別の手順である。
 
 `atk config apply-preset <名前>`は`write_model`を除く6工程を一括で設定する。
 引数を省くか`show`を指定すると、各プリセットの内容を保存せずに表示する。

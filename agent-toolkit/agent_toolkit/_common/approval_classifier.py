@@ -13,7 +13,6 @@ import pydantic
 from agent_toolkit._common import process_tree
 from agent_toolkit._common.operation_approvals import fingerprint
 
-OBSERVED_CLAUDE_VERSION = "2.1.325"
 _LABELS = re.compile(r"\[[^\[\]\r\n]+\](?:[ \t]*,?[ \t]*\[[^\[\]\r\n]+\])*")
 _VERSION = re.compile(r"(\d+\.\d+\.\d+) \(Claude Code\)")
 
@@ -53,8 +52,6 @@ def _rule_labels(rules: list[str]) -> list[str] | None:
 
 
 def classify(reason: str, config: object, *, version: str) -> Classification:
-    if version != OBSERVED_CLAUDE_VERSION:
-        return Classification(False, "拒否書式を観測したClaude Codeの版と一致しない", version=version)
     if _LABELS.fullmatch(reason) is None:
         return Classification(False, "拒否理由が観測済みのラベル列の書式ではない", version=version)
     labels = tuple(re.findall(r"\[([^\[\]\r\n]+)\]", reason))
@@ -122,8 +119,6 @@ def inspect(reason: str, *, cwd: str) -> Classification:
         if matched is None:
             return Classification(False, "Claude Codeの版を確認できない")
         version = matched.group(1)
-        if version != OBSERVED_CLAUDE_VERSION:
-            return Classification(False, "拒否書式を観測したClaude Codeの版と一致しない", version=version)
         result = process_tree.run_with_timeout(
             [executable, "auto-mode", "config"],
             cwd=cwd,

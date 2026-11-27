@@ -8,7 +8,7 @@ frontmatterのキーと値（`model_type`を含む）、入力名、返却形式
 ## `<役割名>.parent.md`と`<役割名>.subagent.md`の構成
 
 - `<役割名>.parent.md`の起動の節には、`agents_server`の`start`の引数（`cwd`、`subagent_md_path`、`extra_params`、`mode`、`model_type`）へ渡す役割固有の値を書き、`subagent_md_path`には役割名を指定する。
-  全ての役割に共通の起動の処理と省略時の値（`mode`を指定しない運用、`model_type`を省くとサーバーが工程別の設定を適用する仕様）は、共通の定義元が持つ。
+  共通の起動と省略値は次の定義元に従う。
   定義元は`agent-toolkit:atk-mode/playbooks/delegation.md`「`<役割名>.parent.md`を持つ委譲の起動」である。
 - 委譲先の恒常の手順がClaude Codeの`agents/`に定義済みの時は、`<役割名>.parent.md`だけを置き、`起動対象:`の行にその定義のスコープ付きの識別子を書く。
   入力名は、Claude Code用のfrontmatterとは別に、定義本文の`## 入力`のtextコードブロックで`必須入力名: 対象, 観点`のようにASCIIカンマ区切りで宣言する。
@@ -59,7 +59,6 @@ continuations:
 
 - 必須の入力と任意の入力の名前は宣言の全体で重ねず、空白文字、バッククォート、読点、全角のカンマ、先頭と末尾のコロンを含めない。
 - サーバーは、必須の入力の不足か未宣言の入力があれば、起動の前に拒否する。
-- モデルの上書きと候補列の直接の指定にも、`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」の自律の選択の制限と、ユーザーの明示の指定の境界を当てる。
 - 入力の項目を足す・削る・改名する時は、宣言、本文、呼び出し元の契約を同じ変更でそろえる。
   新しい定型のチェックは、役割文書の宣言と本文、呼び出し元の入力・検収の契約を足すだけで起動できる。
 - 共通の読み取りの処理は`agent_toolkit/_common/task_documents.py`に集め、サーバー、hook、プロンプトの生成、レーンの書き込みの判定が同じ宣言の定義を共有する。

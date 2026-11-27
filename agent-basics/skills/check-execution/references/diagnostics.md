@@ -4,7 +4,7 @@
 検証の結果を読み、合否、警告の帰属、所要時間の妥当性を判定して、検証の依頼元へ返す基準である。
 成功の主張を観測の範囲に限る点は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）の適用である。
 所要時間の比較は原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）の適用である。
-欠陥を示す診断への対処は原則5（`agent-basics:writing-standards/references/quality-principles-deviation.md`）の適用であり、`agent-basics:bugfix`を起動して始める。
+欠陥を示す診断への対処は原則5（`agent-basics:writing-standards/references/quality-principles-deviation.md`）の適用であり、本書「合否の判定」で修正の範囲と`agent-basics:bugfix`の起動要否を決める。
 
 ## 基準版と変更行への帰属
 
@@ -62,8 +62,9 @@ pyfltrの`commands_summary.needs_action.warning`は、コマンドの実行結�
   どちらの判定も、記憶や申告でなく、実行記録と保存した出力を証拠にする。
 - 処理の未到達・未適用・未完了を示す出力は、既存か新規かによらず、検証を妨げる要因として扱う。
   基準版と比べられない状態と、警告の意味・影響・帰属が未確定の状態も同様に扱い、「残す理由」を形だけ書いて合格にせず、理由と足りない条件を報告先へ返す。
-- lint、型検査、自動テスト、CIが欠陥を示す診断を出したら、既存の不具合も含め、`agent-basics:bugfix`を起動して原因を直す。
-  今回の変更と無関係な既存の不具合の修正は別のcommitに分ける。
+- lint、型検査、自動テスト、CIが示す変更行と直接の影響範囲の欠陥は直す。
+  それ以外の既存の不具合は、今回の検証を妨げるものだけ別のcommitで直し、残りは所在と件数を報告する。
+  診断への対処での起動要否は`agent-basics:bugfix`冒頭の診断例外に従う。
 - 正常に完了し、欠陥を示さず、意味、影響、帰属、比べた版、残す理由を全て特定できた警告は、それらと診断の本文を検証結果と作業記録へ残して続ける。
 - ブランチの統合では、実装時に警告を残した理由が、統合後の入力と実行条件でも成り立つかを確かめる。
   成り立たなくなった警告と統合で生じた欠陥は、実装時と同じ基準で判定する。

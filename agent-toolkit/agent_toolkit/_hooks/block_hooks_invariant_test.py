@@ -12,11 +12,8 @@ import re
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 ALLOWED_BLOCK_HOOKS = {
-    "bugfix_gate": "送達は同じ本文の再発行で通る（重なる品質遮断と記録を共有）。Stopはstop_hook_activeと連続遮断の上限で終わる",
     "permission_denial_notice": "拒否1件につき質問・報告・終了のいずれかを1回止め、既存の拒否確認手順を示す",
-    "hook_notice_response_gate": "`hook通知への対応:`の行を1行書けば通る。同じ警告の組では1回だけ止め、再発行で通る",
     "delivered_repost_gate": "本文から再掲を除けば通る。Stopは連続遮断の上限で終わる",
-    "norm_excuse_gate": "同じ本文の再発行で通る（重なる品質遮断と記録を共有）",
     "process_loop_exit_gate": "Stopだけで、stop_hook_activeと連続遮断の上限で終わる",
     "repository-protection": "認可の境界。登録の編集可否を変えるのはユーザーの判断",
     "response-language": "本文を日本語で書き直せば通る。誤検出は同じ本文の再出力で停止できる",

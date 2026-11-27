@@ -4,7 +4,7 @@
 
 ## agent-toolkit/skills/atk-mode/playbooks/host-codex.md：Codex固有の入出力：2026年10月30日
 
-取得予算と省略時の回復の現行契約を指す。
+省略時の回復の現行契約と、撤去した取得量の推定の経緯を指す。
 以下の9月29日の測定は、撤去済みの容量警告の判断根拠として残すものであり、48KiBを現行の読み取り可否の基準にはしない。
 
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。
@@ -19,9 +19,9 @@
 ### 補完読取と出力予算の契約更新（2026年10月30日）
 
 前述の48KiBは当時の大量読取を案内する閾値であり、個々の出力が省略されない保証値ではない。
-文章主体の内側`max_output_tokens`はUTF-8バイト数÷3の切上げ以上、外側セルは内側予算の合計以上とする。
-nativeの`original token count`が設定予算を超えた場合は、その値以上で1回再取得し、文脈容量を超える本文は分割する。
-この値は取得予算の最低値であり、前述の測定を新たな全資料・全モデルへ一般化した実測値ではない。
+当時は文章主体の内側`max_output_tokens`をUTF-8バイト数÷3の切上げ以上、外側セルを内側予算の合計以上としていた。
+nativeの`original token count`が設定予算を超えた場合は、その値以上で1回再取得し、文脈容量を超える本文は分割していた。
+この見積りは全資料・全モデルへ一般化した実測値ではなく、現行の取得量や読取方式の判定には使わない。
 
 2026年10月30日から31日まで、PostToolUseが省略された読取を元turnのsandbox読み取り権限の範囲で再取得し、本文を追加コンテキストへ配送していた（`codex_read_delivery.py`）。
 この補完読み取りと、それに合わせてPreの容量案内を省く判定は、2026年10月31日に本文配送とともに撤去した。
@@ -30,5 +30,5 @@ nativeの`original token count`が設定予算を超えた場合は、その値�
 現在のPostToolUseは、`agent-toolkit/agent_toolkit/_hooks/codex_truncation.py`で省略の包絡（`Warning: truncated output (original token count: <数>)`）を識別する。
 省略を識別した結果へは、元の量と回収の操作を示す通知を返す。
 再検証では省略の包絡を含む結果へ通知が付き、本文を返さないことを公開PostToolUseで確かめる。
-出力の上限を超える取得だけに容量警告が出ることは`pretooluse/large_reads_test.py`で確かめる。
+取得量の予測による容量警告は撤去し、実際の省略を`codex_truncation_test.py`で確かめる。
 本節は確定契約と実装の参照先を記録するものであり、文書更新担当によるテストの再実行結果ではない。

@@ -148,9 +148,6 @@ def test_weekly_comparison_targets_exclude_versions_without_content():
     result = _by_source(research_sources.collect(_SLOT, fetch=fetch, now=_NOW))
     items = result["changelog:codex"]["items"]
     assert [item["comparison_required"] for item in items] == [False, False, True]
-    urls = research_sources.collected_source_urls(_SLOT)
-    assert urls is not None
-    assert urls.intersection(item["url"] for item in items) == {items[2]["url"]}
 
 
 def test_reads_only_after_previous_position_and_commits_after_save(x_settings, monkeypatch):

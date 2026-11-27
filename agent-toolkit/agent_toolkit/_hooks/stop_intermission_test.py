@@ -1,4 +1,4 @@
-"""Stopと送達前が同じ待機・是正の入力列を処理する契約。 pyfltr: allow-comment"""
+"""Stopと送達前が同じ待機・送達の入力列を処理する契約。 pyfltr: allow-comment"""
 
 import json
 import pathlib
@@ -10,9 +10,7 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
-from agent_toolkit._hooks import stop
-from agent_toolkit._hooks.bugfix_gate_test import _BUGFIX, _TYPED_REPORT, _classified, _human, _payload
-from agent_toolkit._hooks.termination_order_advisor_test import _start_skill
+from agent_toolkit._hooks import delivered_repost_gate, stop, termination_evidence
 from agent_toolkit._testing.helpers import repl_send_to_user_entries
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -48,6 +46,23 @@ def _interactive(monkeypatch: pytest.MonkeyPatch) -> None:
         "AGENT_TOOLKIT_RUN_SKILL_ID",
     ):
         monkeypatch.delenv(name, raising=False)
+
+
+_REPORT = "設定の解釈が原因だった。対象を修正し、変更範囲の検証で正常な結果を確かめた。"
+
+
+def _human(text: str) -> dict:
+    return {"type": "user", "origin": {"kind": "human"}, "message": {"content": text}}
+
+
+def _payload(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> dict:
+    path = tmp_path / "transcript.jsonl"
+    path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")
+    return {"session_id": "intermission", "transcript_path": str(path), "cwd": str(tmp_path), **extra}
+
+
+def _understood() -> list[dict]:
+    return repl_send_to_user_entries("repl_understanding", {"message": "発話の理解: ご依頼の対象を修正する。"}, ok=True)
 
 
 def _automatic(text: str) -> dict:
@@ -90,44 +105,13 @@ def _machine_input(source: str) -> list[dict]:
     return []
 
 
-@pytest.mark.parametrize("machine", ["none", "periodic", "task"])
-@pytest.mark.parametrize("same_work", [False, True])
-@pytest.mark.parametrize("fresh_correction", [False, True])
-def test_wait_only_defers_the_correction_owning_it(
-    tmp_path: pathlib.Path, machine: str, same_work: bool, fresh_correction: bool
-) -> None:
-    entries = [_human("前の不具合を直して。"), _CAPABILITY, *_classified(), *_BUGFIX]
-    if fresh_correction:
-        entries.extend(repl_send_to_user_entries("repl_prior", {"message": _TYPED_REPORT}, ok=True))
-    if same_work and not fresh_correction:
-        entries.extend(_bash_wait())
-    if fresh_correction:
-        entries.extend([_human("別の不具合を直して。"), *_classified(call_id="new")])
-        if same_work:
-            entries.extend(_bash_wait())
-    entries.extend(_machine_input(machine))
-    payload = _payload(
-        entries,
-        tmp_path,
-        last_assistant_message="…",
-        background_tasks=[{"id": "wait-task" if same_work else "unrelated", "type": "Bash", "status": "running"}],
-    )
-    result = stop.evaluate(json.dumps(payload))
-    if machine != "none" and same_work and not fresh_correction:
-        assert result == {}
-    else:
-        assert result["decision"] == "block"
-        assert ("起動していない" in str(result["reason"])) is fresh_correction
-
-
 @pytest.mark.parametrize("answer", ["", "…", "新しい確認結果がある。"])
 def test_unchanged_periodic_wait_does_not_repost_previous_correction(tmp_path: pathlib.Path, answer: str) -> None:
     entries = [
         _human("前の不具合を直して。"),
         _CAPABILITY,
-        *_classified(),
-        *_BUGFIX,
-        *repl_send_to_user_entries("repl_prior", {"message": _TYPED_REPORT}, ok=True),
+        *_understood(),
+        *repl_send_to_user_entries("repl_prior", {"message": _REPORT}, ok=True),
         *_machine_input("periodic"),
     ]
     payload = _payload(
@@ -161,27 +145,10 @@ def _send(entries: list[dict], tmp_path: pathlib.Path, message: str, *, repl: bo
 @pytest.mark.parametrize("repl", [False, True])
 @pytest.mark.parametrize("warned", [False, True])
 def test_correction_recovery_sends_once(tmp_path: pathlib.Path, repl: bool, warned: bool) -> None:
-    entries = [_human("ここが壊れている。"), _CAPABILITY, *_classified()]
+    entries = [_human("ここが壊れている。"), _CAPABILITY, *_understood()]
     if warned:
         entries.append(_WARNING)
-    output = _send(entries, tmp_path, "## 是正報告", repl=repl)
-    reason = output["permissionDecisionReason"]
-    for label in ("対策:", "回帰防止:", "類似見直し:", "再発防止:"):
-        assert label in reason
-    assert ("hook通知への対応:" in reason) is warned
-    assert reason.index("起動していない") < reason.index("対策:") < reason.index("1回送達")
-    assert "再送・再掲せず `…` だけ" in reason
-    assert "新しい入力や成果" in reason
-
-    blocked_stop = stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))
-    stop_reason = str(blocked_stop["reason"])
-    assert stop_reason.index("対策:") < stop_reason.index("1回送達")
-    assert "再送・再掲せず `…` だけ" in stop_reason
-
-    entries.extend(_BUGFIX)
-    report = "## 是正報告\n" + _TYPED_REPORT
-    if warned:
-        report += "\nhook通知への対応: 警告の原因を解消した。"
+    report = "## 是正報告\n" + _REPORT
     assert _send(entries, tmp_path, report, repl=repl).get("permissionDecision") != "deny"
     call = "repl_delivered" if repl else "toolu_delivered"
     if repl:
@@ -198,7 +165,10 @@ def test_correction_recovery_sends_once(tmp_path: pathlib.Path, repl: bool, warn
     entries.append({"type": "attachment", "attachment": {"commandMode": "task-notification", "prompt": _TASK}})
     assert stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…"))) == {}
     entries.append(_human("別の不具合を直して。"))
-    assert stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))["decision"] == "block"
+    assert (
+        stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="新しい成果を報告する。")))["decision"]
+        == "block"
+    )
 
 
 def _ui_result(call: str, receipt: dict | bool) -> dict:
@@ -243,8 +213,17 @@ def runtime_review_stop(tmp_path: pathlib.Path, receipt: dict, machine: str, *, 
         *_machine_input(machine),
     ]
     payload = _payload(entries, tmp_path, last_assistant_message="## 作業完了報告\n作業を完了した。" if final else "…")
-    _start_skill(
-        payload["session_id"], pathlib.Path(payload["transcript_path"]), "agent-toolkit:atk-mode", arguments="process-wi"
+    termination_evidence.observe_tool(
+        json.dumps(
+            {
+                **payload,
+                "tool_use_id": "toolu_work",
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:atk-mode", "args": "process-wi"},
+                "tool_response": "起動",
+            }
+        ),
+        after=True,
     )
     return stop.evaluate(json.dumps(payload))
 
@@ -254,10 +233,10 @@ def runtime_review_stop(tmp_path: pathlib.Path, receipt: dict, machine: str, *, 
 @pytest.mark.parametrize("final", [False, True])
 def test_runtime_receipt_allows_pause_but_not_completion(tmp_path: pathlib.Path, machine: str, ok: bool, final: bool) -> None:
     result = runtime_review_stop(tmp_path, {"id": "c" * 32, "ok": ok}, machine, final=final)
-    if ok and not final and machine != "result":
-        assert result == {}
+    if final:
+        assert "delivered_repost_gate" in str(result)
     else:
-        assert "termination_order_advisor" in str(result)
+        assert result == {}
 
 
 @pytest.mark.cpu_limit(1.0, reason="実Stopに続けてClaude CodeのFunction hooks試験用コピーを構成する")
@@ -290,8 +269,9 @@ def test_runtime_stop_then_function_hook(tmp_path: pathlib.Path, host_environ: C
     injected = native_test.replace(original, f"JSON.parse({fixture}) as RuntimeStopEvidence | null")
     (plugin / "hooks" / name).write_text(injected, encoding="utf-8")
     result = subprocess.run(
-        [claude, "plugin", "test", str(plugin)],
+        [claude, "plugin", "test", "--file", str(plugin / "hooks" / name), str(plugin)],
         cwd=tmp_path,
+        env=host_environ(),
         check=False,
         capture_output=True,
         text=True,
@@ -300,22 +280,28 @@ def test_runtime_stop_then_function_hook(tmp_path: pathlib.Path, host_environ: C
     )
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
-    assert "(pass) 反映予約はターン後に公開コマンドを一度実行し結果を通知する" in output
+    reports = [
+        line.removeprefix("claude-plugin-test-report ")
+        for line in result.stdout.splitlines()
+        if line.startswith("claude-plugin-test-report ")
+    ]
+    assert len(reports) == 1, output
+    report = json.loads(reports[0])
+    assert report["file"] == str(plugin / "hooks" / name)
+    assert not report.get("error"), output
+    assert report["results"] and all(test["failure"] is None for test in report["results"]), output
+    assert any(test["title"] == "反映予約はターン後に公開コマンドを一度実行し結果を通知する" for test in report["results"])
 
 
 @pytest.mark.parametrize("failed_receipt", [False, True])
-@pytest.mark.parametrize("started_before_send", [False, True])
-def test_only_successful_report_after_bugfix_is_reusable(
-    tmp_path: pathlib.Path, failed_receipt: bool, started_before_send: bool
-) -> None:
-    entries = [_human("不具合を直して。"), _CAPABILITY, *_classified()]
-    report = repl_send_to_user_entries("repl_report", {"message": _TYPED_REPORT}, ok=not failed_receipt)
-    entries.extend([*_BUGFIX, *report] if started_before_send else [*report, *_BUGFIX])
-    result = stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message="…")))
-    assert (result.get("decision") != "block") is (started_before_send and not failed_receipt)
-    if failed_receipt:
-        assert "診断を解消し" in str(result["reason"])
-        assert "再送・再掲せず `…` だけ" in str(result["reason"])
+def test_only_successful_report_is_delivered(tmp_path: pathlib.Path, failed_receipt: bool) -> None:
+    entries = [_human("不具合を直して。"), _CAPABILITY]
+    entries.extend(repl_send_to_user_entries("repl_report", {"message": _REPORT}, ok=not failed_receipt))
+    assert bool(list(delivered_repost_gate.delivered_messages(entries))) is not failed_receipt
+    # 表示失敗時は未送達の本文を通常応答で伝え、成功時は再掲せずに終えられる。 pyfltr: allow-comment
+    closing = _REPORT if failed_receipt else "…"
+    result = stop.evaluate(json.dumps(_payload(entries, tmp_path, last_assistant_message=closing)))
+    assert result.get("decision") != "block"
 
 
 @pytest.mark.parametrize("recheck", [False, True])
@@ -340,7 +326,7 @@ def test_only_successful_report_after_bugfix_is_reusable(
 def test_wait_reuses_notification_before_starting_another_wait(
     tmp_path: pathlib.Path, notification: str, recheck: bool
 ) -> None:
-    entries = [_human("委譲先の結果を待って。"), _CAPABILITY, *_classified("非是正"), *_bash_wait()]
+    entries = [_human("委譲先の結果を待って。"), _CAPABILITY, *_understood(), *_bash_wait()]
     path = str(tmp_path / "saved-wait")
     saved = str(tmp_path / "persisted-wait")
     task = _TASK.replace("</task-notification>", f"<output-file>{path}</output-file></task-notification>")

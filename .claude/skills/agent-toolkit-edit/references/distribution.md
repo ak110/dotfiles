@@ -18,7 +18,7 @@ dotfilesの配布プラグインは、リリースworkflowの有無にかかわ�
 
 プラグインのディレクトリ配下に差分がある変更では、`*_test.py`だけの差分を除き、公開前に版数を上げる。
 `implement` のマージ用ブランチでは版数を上げず、更新種別と根拠をAWIに書く。
-公開担当が統合後の未公開差分を基準に `bump種別` を決め、版数を上げる。
+統括は`agent-toolkit:atk-mode/playbooks/publish.md`「版数と生成物」に従い、公開直前に版数と生成物の更新を1つのcommitとして検証・統合する。
 コメント、docstring、文書、誤字、入出力を変えない内部整理の差分も対象とする。
 `.chezmoi-source/`のchezmoi配布物、`bin/`のCLIラッパー、`scripts/`の補助スクリプトだけの変更は対象外とし、版数を据え置く。
 この条件は`scripts/check_plugin_version.py`がCIの`plugin-version` jobとpyfltrの`plugin-version`で検査し、据え置いた差分を失敗にする。
@@ -42,7 +42,7 @@ dotfilesの配布プラグインは、リリースworkflowの有無にかかわ�
    既存の未pushの更新で条件を満たし、`scripts/agent_toolkit_bump.py`がファイルを変えずに終了コード0で終わった場合も完了とする。
 4. 新しいCLI、コマンド、ラッパースクリプトを公開する計画では、本書「新規CLI公開時の疎通確認」の導入手順を書く。
 5. `agent-toolkit:atk-mode`の作業`process-wi`では、公開担当へ渡す`bump種別`をプラグインごとの区分にする（例: agent-toolkitはminor、agent-basicsはpatch）。
-   公開担当は全レーンのマージの後に、変更のあるプラグインごとに本書「バージョン更新」を1回ずつ行う。
+   公開単位に含むレーンの統合後、通常のレーンで変更のあるプラグインごとに本書「バージョン更新」を1回ずつ行い、統合済みの変更の検証証拠を公開担当へ渡す。
 
 ## 新規CLI公開時の疎通確認
 
@@ -72,7 +72,7 @@ hookが新たに操作を止めた時と、修正の後も同じ事象が出る�
 変更のあるプラグインごとに、pushの前に次の順で進める。
 
 1. 本書「判定基準」で種別を決める。
-   `agent-toolkit:atk-mode`の作業`process-wi`の公開担当は、委譲元が確定した種別を使う。
+   `agent-toolkit:atk-mode`の作業`process-wi`では、採番するレーン担当が統括の確定した種別を使う。
 2. 検証の前に`scripts/agent_toolkit_bump.py --plugin <プラグイン名> {patch|minor|major}`を実行する。
    `--plugin`を省くとagent-toolkitが対象になる。
 3. 定義元の2ファイルの`version`と`description`をそろえる（`description`は手で同期する）。
@@ -102,7 +102,7 @@ rebaseやmergeの後は、競合の有無によらず次の順で確かめる。
 2. `version`が競合したら、`(major, minor, patch)`の数の組で大きい方を定義元の2ファイルへ反映する。
    `scripts/sync_codex_plugin_manifests.py`で派生マニフェストを同期し、`--check`の終了コードで整合を判定する。
 3. 公開済みの統合先と定義元の`version`を比べる。
-   未公開のcommitが本書「判定基準」の対象を含み、版数が同じなら、統合後の版数を基準に更新し直す。
+   未公開のcommitが本書「判定基準」の対象を含み、版数が同じ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「版数と生成物」に従って更新し直す。
    別の作業が先に同じ版数へ上げ、競合せずに統合された場合もこれに当たる。
 
 ## marketplace管理
@@ -115,6 +115,7 @@ rebaseやmergeの後は、競合の有無によらず次の順で確かめる。
    - `setup_codex_links`で、Codex向けのdotfiles固有のスキルと`docs`へのシンボリックリンクを作る。
    - Codexのmarketplaceを登録し、プラグインの導入と更新を終える。
 2. Claude Codeを再起動するか、`/reload-plugins`を実行する。
+   巡回の統括は再起動せず、`agent-toolkit:atk-mode/playbooks/process-loop.md`「巡回する」の手順5の反映を使う。
    対話のメインは、`mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes`の`targets`へ`plugins`、`agents_server`、`pyfltr`から必要な対象を指定して反映を予約できる。
    予約した後は今のターンを終え、プラグインの再読み込みとMCPの再接続の結果を確かめる。
    再起動と反映の受付を完了と扱わず、確かめていない操作を自動で繰り返さない。

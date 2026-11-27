@@ -394,14 +394,16 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     assert target.read_bytes() == after_addition
     # 旧抽出アンカーだった通常の文面を変えても、外部契約全体の同期が成立する。
     changed_output = changed_preparation.replace("読者別探索は", "読者別探索の申告形式は")
-    changed_output = changed_output.replace("返却の状態行、", "返却する状態行、")
+    common_reference = "`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。"
+    assert common_reference in changed_preparation
+    changed_output = changed_output.replace(common_reference, f"共通の返却形式は{common_reference}", 1)
     changed_output = changed_output.replace("延期用の記録によって許容された", "延期用の記録で認めた")
     source.write_text(changed_output, encoding="utf-8")
     subject.sync_return_contracts(tmp_path)
     updated = target.read_text(encoding="utf-8")
     assert "追加固有欄: 節先頭の返却値" in updated
     assert "読者別探索の申告形式は" in updated
-    assert "返却する状態行、" in updated
+    assert "共通の返却形式は" in updated
     assert "内部準備の改訂文" not in updated
     assert "追加した内部手順" not in updated
     after_wording_change = target.read_bytes()

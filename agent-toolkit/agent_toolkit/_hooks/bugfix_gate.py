@@ -1,106 +1,27 @@
-"""ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。  pyfltr: allow-comment
+"""実際の検証・CIの失敗を観測し、同じ主体へ一度だけ診断を案内する。  pyfltr: allow-comment
 
-送達前とStopで、最新の実ユーザー発話に届いた最初の分類を使う。
-未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動を求める。
-送達前の対象は、報告の見出しや再発防止の行を含む送信とkind: completionの送信に限る。
-対策・回帰防止・類似見直し・種類付きの再発防止を求める。
-類似見直しは未完了の状態値だけの行と、予定の欄だけを書いた行を拒否する。
-自然文の結果や理由の妥当性は報告の検収で確かめる。
-Stopでは報告の形によらず、同じ発話に対する4項目の記録を最終応答か送達済みの報告に求める。
-同じ発話に対する4項目の報告を送達済みなら、報告の構造を含まない最終応答に再掲を求めない。
-起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
-
-通知を遮断にする根拠: 警告だけでは、欠陥指摘の後にbugfixを起動せず原因の推測をユーザーへ報告した事例があった
-（2026年11月12日の統括セッション）。起動の有無は機械的に確定でき、起動で回復できるため、
-`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`の遮断の条件に当たる。
-
-委譲先での実行可否: ユーザー発話に対する遮断は、`send_to_user`を持つClaude Codeのメインだけを対象とする。
-検証失敗後の起動案内は、失敗を観測したメインと委譲先へ、修正・commit・再検証の前に警告する。
-こちらは構造化した失敗と同じ主体の起動成功を使い、自然文の中継だけから失敗を断定しない。
+発話の分類、スキルの取得方法、報告の書式は、送達と終了の条件にしない。
 """
 
 import json
 import re
 lazy import os
-lazy import pathlib
 
-from agent_toolkit._common.send_to_user import COMPLETION_KIND
-from agent_toolkit._hooks import notice
-lazy from agent_toolkit._atk.session_record_format import parsed_records
-lazy from agent_toolkit._atk.session_records import codex_shell_command, codex_shell_output
-lazy from agent_toolkit._common import plugin_roots, transcript
+lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.json_lines import split_lines
-lazy from agent_toolkit._common.prevention_kinds import PREVENTION_KINDS, starts_with_kind
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
-lazy from agent_toolkit._hooks import agent_id, plugin_resources
-lazy from agent_toolkit._hooks import stop_session as _stop_session
+lazy from agent_toolkit._hooks import notice
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
-lazy from agent_toolkit._hooks.background_tasks import pending_async_task_ids
-lazy from agent_toolkit._hooks.background_tasks_launches import collect_background_task_id_tool_use_ids
-lazy from agent_toolkit._hooks.delivered_repost_gate import delivered_messages
 lazy from agent_toolkit._hooks.host import is_codex_payload
-lazy from agent_toolkit._hooks.pretooluse import operation_skills
-lazy from agent_toolkit._hooks.pretooluse.shell_checks import git_subcommand_tokens
-lazy from agent_toolkit._hooks.transcript_scan import iter_assistant_blocks
-lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context
+lazy from agent_toolkit._hooks.pretooluse.operation_skills import is_verification_operation
 
 # フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
-# posttooluseがbugfix_gateを取り込む向きに保つため、共有する定義はこちらへ置く。
 QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
-# 見出しが`再発防止`（`再発防止策`）で終わる行。`**ご指摘への再発防止**:`のような飾りと前置きを含む。  pyfltr: allow-comment
-_PREVENTION_LINE_RE = re.compile(
-    r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<head>[^:：\n。、]{0,20}?再発防止策?)[ \t]*[:：](?P<text>[^\n]*)$",
-    re.MULTILINE,
-)
 
-_RECORD_LABELS = ("対策", "回帰防止", "類似見直し")
-_RECORD_LINE_RE = re.compile(
-    r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<label>対策|回帰防止|類似見直し)[ \t]*[:：](?P<body>[^\n]*)$",
-    re.MULTILINE,
-)
-_PENDING_SIMILAR_STATUS = frozenset({"未確認", "予定", "検索予定", "確認予定"})
-
-_REPORT_STRUCTURE_RE = re.compile(r"^[ \t]*#{1,6}[ \t]+[^\n]*報告[ \t:：#]*$|AWI化ステータス[ \t]*[:：]", re.MULTILINE)
-
-BUGFIX_SKILL = "agent-basics:bugfix"
-_BUGFIX_SKILLS = frozenset({BUGFIX_SKILL, "bugfix"})
-_UNDERSTANDING = re.compile(r"^(?:#{1,6}\s+)?[*_]*発話の理解(?:[*_]*[:：]|[*_]*$)")
-_CLASSIFICATION = re.compile(r"\s*(?:[-*+]\s+)?分類[:：]\s*(是正|非是正)\s*")
-_GOAL_STATE = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?目標の状態[:：][ \t]*\S", re.MULTILINE)
-
-
-def is_classification_line(text: str) -> bool:
-    return _CLASSIFICATION.fullmatch(text) is not None
-
-
-def _understanding_kind(text: object) -> str | None:
-    if not isinstance(text, str):
-        return None
-    lines = QUOTED_MATERIAL_RE.sub("", text).strip().splitlines()
-    if not lines or not _UNDERSTANDING.match(lines[0]):
-        return None
-    match = _CLASSIFICATION.fullmatch(lines[1]) if len(lines) > 1 else None
-    return match[1] if match else ""
-
-
-def _turn_classification(entries: list[dict]) -> str | None:
-    return next((kind for _, _, text in delivered_messages(entries) if (kind := _understanding_kind(text))), None)
-
-
-_block_notice = notice.block_formatter("bugfix_gate")
-_regression_warning = notice.warning_formatter("bugfix_gate")
 _failure_notice = notice.formatter("verification-bugfix")
 FAILURE_STATE_KEY = "verification_bugfix"
-_REPL_SKILL_TURN_KEY = "bugfix_repl_human_turn"
-_REPL_SKILL_CALL_KEY = "bugfix_repl_skill_call"
-_CODEX_BUGFIX_CAT = re.compile(r"""cat[ \t]+--[ \t]+(?:"([^"$`\\\r\n]+)"|'([^'\r\n]+)'|([^\s"'`$\\<>|;&()*?\[\]{}]+))""")
-_CODEX_BUGFIX_PS_PREFIX = (
-    "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); [Console]::Write((Get-Content -LiteralPath '"
-)
-_CODEX_BUGFIX_PS_SUFFIX = "' -Raw -Encoding utf8 -ErrorAction Stop))"
-_CODEX_BUGFIX_PS = re.compile(re.escape(_CODEX_BUGFIX_PS_PREFIX) + r"((?:[^'\r\n]|'')+)" + re.escape(_CODEX_BUGFIX_PS_SUFFIX))
 
 
 def _ci_exit_code(payload: dict) -> int | None:
@@ -151,25 +72,8 @@ def _wait_ci_operation(tool_name: str, tool_input: dict) -> bool:
     )
 
 
-def mark_started(session_id: str, actor: str, *, failure: str | None = None) -> None:
-    """失敗の後に同じ主体が成功させた起動だけで未対処の印を解除する。"""
-
-    def clear(state: dict) -> dict | None:
-        current = state.get(FAILURE_STATE_KEY, {}).get(actor)
-        if (
-            not isinstance(current, dict)
-            or not current.get("pending")
-            or (failure is not None and current.get("failure") != failure)
-        ):
-            return None
-        current["pending"] = False
-        return state
-
-    update_state(session_id, clear)
-
-
 def observe_verification(payload: dict) -> None:
-    """現在のツール結果の失敗とSkillの起動成功を、既存セッション状態へ対応付ける。"""
+    """現在の検証結果の失敗を、既存セッション状態へ対応付ける。  pyfltr: allow-comment"""
     session_id = payload.get("session_id")
     tool_input = payload.get("tool_input")
     if not isinstance(session_id, str) or not session_id or not isinstance(tool_input, dict):
@@ -183,15 +87,10 @@ def observe_verification(payload: dict) -> None:
         failed = failed or bool(
             response.get("isError") or response.get("is_error") or response.get("interrupted") or response.get("error")
         )
-    if tool_name == "Skill" and tool_input.get("skill") in _BUGFIX_SKILLS:
-        if response and not failed and code in (None, 0):
-            mark_started(session_id, actor)
-            _observe_repl_skill_success(payload, session_id)
-        return
     if _wait_ci_operation(tool_name, tool_input):
         # wait-ciの1はCI失敗、6は途中の新規失敗。待機timeoutやrun未登録は別の状態である。
         failed = _ci_exit_code(payload) in (1, 6)
-    elif operation_skills.is_verification_operation(tool_name, tool_input):
+    elif is_verification_operation(tool_name, tool_input):
         failed = failed or isinstance(code, int) and not isinstance(code, bool) and code != 0
     else:
         return
@@ -209,428 +108,28 @@ def observe_verification(payload: dict) -> None:
     update_state(session_id, remember)
 
 
-def _codex_skill_body(path: pathlib.Path, output: str | None, cwd: str) -> bool:
-    if not output or not path.is_absolute() or path.parts[-3:] != ("skills", "bugfix", "SKILL.md"):
-        return False
-    root = plugin_roots.resolve_plugin_root("agent-basics", plugin_resources.plugin_root(), "codex", cwd)
-    skill = root / "skills" / "bugfix" / "SKILL.md"
-    return path.samefile(skill) and output.replace("\r\n", "\n") == skill.read_text(encoding="utf-8")
-
-
-def _codex_bugfix_path(item: dict) -> pathlib.Path | None:
-    command = codex_shell_command(item)
-    if command is not None:
-        if match := _CODEX_BUGFIX_CAT.fullmatch(command.strip()):
-            return pathlib.Path(next(group for group in match.groups() if group is not None))
-        if match := _CODEX_BUGFIX_PS.fullmatch(command.strip()):
-            return pathlib.Path(match[1].replace("''", "'"))
-    return None
-
-
-def _codex_read_after_failure(payload: dict, failure: str) -> bool:
-    path = payload.get("transcript_path")
-    if not isinstance(path, str) or not path or resolve_hook_agent_id(payload) != agent_id.MAIN_AGENT_ID:
-        return False
-    session_id = payload["session_id"]
-    after_failure = False
-    turn_id = None
-    reads: dict[str, pathlib.Path] = {}
-    try:
-        for entry in parsed_records(pathlib.Path(path)):
-            item = entry.get("payload")
-            if not isinstance(item, dict):
-                continue
-            kind = item.get("type")
-            if entry.get("type") == "event_msg":
-                if kind in {"task_started", "task_complete", "turn_aborted"}:
-                    reads.clear()
-                    turn_id = item.get("turn_id") if kind == "task_started" else None
-                if kind == "item_completed" and item.get("thread_id") == session_id:
-                    command = item.get("item")
-                    if isinstance(command, dict) and command.get("type") == "CommandExecution" and command.get("id") == failure:
-                        after_failure = True
-                        reads.clear()
-                continue
-            if not after_failure or not turn_id or entry.get("type") != "response_item":
-                continue
-            call = item.get("call_id")
-            if not isinstance(call, str) or not call:
-                continue
-            if kind == "custom_tool_call":
-                if skill := _codex_bugfix_path(item):
-                    reads[call] = skill
-            elif (
-                kind == "custom_tool_call_output"
-                and (skill := reads.pop(call, None)) is not None
-                and _codex_skill_body(skill, codex_shell_output(item), str(payload.get("cwd", "")))
-            ):
-                return True
-    except OSError, ValueError, plugin_roots.PluginRootError:
-        return False
-    return False
-
-
-def verification_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str:
+def verification_notice(payload: dict, _tool_name: str, _tool_input: dict, session_id: str) -> str:
     actor = resolve_hook_agent_id(payload)
-    current = read_state(session_id).get(FAILURE_STATE_KEY, {}).get(actor, {})
+    current = read_state(session_id).get(FAILURE_STATE_KEY, {}).get(actor)
     if not isinstance(current, dict) or not current.get("pending"):
         return ""
-    command = tool_input.get("command")
-    commit = (
-        tool_name == "Bash"
-        and isinstance(command, str)
-        and any(
-            (parsed := git_subcommand_tokens(segment)) is not None
-            and parsed[0] == "commit"
-            and not {"--dry-run", "--help", "-h"}.intersection(parsed[1])
-            for segment in extract_execution_segments(command)
-        )
-    )
-    if not (
-        commit
-        or _wait_ci_operation(tool_name, tool_input)
-        or operation_skills.is_verification_operation(tool_name, tool_input)
-        or operation_skills.is_body_writing(tool_name, tool_input, str(payload.get("cwd", "")))
-    ):
+    failure = ""
+
+    def consume(state: dict) -> dict | None:
+        nonlocal failure
+        current = state.get(FAILURE_STATE_KEY, {}).get(actor)
+        if not isinstance(current, dict) or not current.get("pending"):
+            return None
+        failure = current["failure"]
+        current["pending"] = False
+        return state
+
+    if not update_state(session_id, consume) or not failure:
         return ""
-    fix = "`agent-basics:bugfix`を起動してください。"
-    if is_codex_payload(payload):
-        if _codex_read_after_failure(payload, current["failure"]):
-            mark_started(session_id, actor, failure=current["failure"])
-            return ""
-        fix = (
-            'Codexでは `text(await tools.exec_command({cmd: "cat -- <SKILL.mdの絶対パス>"}))` '
-            "の単独呼出しで `agent-basics:bugfix` の入口の全文を取得してください。"
-            "PowerShellでは同じ単独呼出しのcmdに、`host-codex.md`「資料の読取」のUTF-8出力設定と全文読取を指定してください。"
-        )
     return _failure_notice(
-        "検証・CIの失敗を観測した後、この主体のbugfix起動成功を確認できない。",
+        "検証・CIの失敗を観測した。",
         tag="warn",
         removable_cause=True,
-        subject=current["failure"],
-        fix=fix + "反復する失敗は同スキルの「書き出す場面」と`references/recurrence.md`に従ってください。",
+        subject=failure,
+        fix="失敗の診断を確かめ、`agent-basics:bugfix`の適用条件に従って対処してください。",
     )
-
-
-def _bugfix_calls(entries: list[dict]) -> tuple[int | None, bool]:
-    failed = False
-    calls: dict[str, int | None] = {}
-    for index, entry in enumerate(entries):
-        message = entry.get("message")
-        blocks = message.get("content") if isinstance(message, dict) else None
-        receipt = entry.get("toolUseResult")
-        for block in blocks if isinstance(blocks, list) else ():
-            if not isinstance(block, dict):
-                continue
-            if entry.get("type") == "assistant" and block.get("type") == "tool_use" and block.get("name") == "Skill":
-                args, identifier = block.get("input"), block.get("id")
-                skill = args.get("skill") if isinstance(args, dict) else None
-                if isinstance(identifier, str) and identifier and isinstance(skill, str) and skill in _BUGFIX_SKILLS:
-                    calls[identifier] = None
-            elif entry.get("type") == "user" and block.get("type") == "tool_result":
-                identifier = block.get("tool_use_id")
-                if not isinstance(identifier, str) or identifier not in calls:
-                    continue
-                success = receipt.get("success") if isinstance(receipt, dict) else None
-                name = receipt.get("commandName") if isinstance(receipt, dict) else None
-                if block.get("is_error") is True or success is False:
-                    calls[identifier] = None
-                    failed = True
-                elif entry.get("isVirtual") is not True or (
-                    block.get("is_error") is False and success is True and isinstance(name, str) and name in _BUGFIX_SKILLS
-                ):
-                    calls[identifier] = index
-    return min((index for index in calls.values() if index is not None), default=None), failed
-
-
-def _read_human_lines(payload: dict) -> list[str] | None:
-    if is_codex_payload(payload) or not agent_id.is_main_agent_context(payload):
-        return None
-    path = payload.get("transcript_path")
-    return transcript.read_transcript_lines(path) if isinstance(path, str) and path else None
-
-
-def observe_repl_skill_start(payload: dict, session_id: str) -> None:
-    tool_id, tool_input = payload.get("tool_use_id"), payload.get("tool_input")
-    if (
-        not isinstance(tool_id, str)
-        or not tool_id.startswith("repl_")
-        or not isinstance(tool_input, dict)
-        or not isinstance(skill := tool_input.get("skill"), str)
-        or skill not in _BUGFIX_SKILLS
-    ):
-        return
-    if (lines := _read_human_lines(payload)) is None or (turn := latest_human_turn_context(lines)) is None:
-        return
-    _, _, human_id = turn
-    if human_id is None:
-        return
-
-    def remember(state: dict) -> dict:
-        state[_REPL_SKILL_CALL_KEY] = {"id": tool_id, "human": human_id}
-        return state
-
-    update_state(session_id, remember)
-
-
-def _observe_repl_skill_success(payload: dict, session_id: str) -> None:
-    tool_id, response = payload.get("tool_use_id"), payload.get("tool_response")
-    if (
-        payload.get("hook_event_name") != "PostToolUse"
-        or not isinstance(tool_id, str)
-        or not tool_id.startswith("repl_")
-        or not isinstance(response, dict)
-        or response.get("success") is not True
-        or not isinstance(command := response.get("commandName"), str)
-        or command not in _BUGFIX_SKILLS
-    ):
-        return
-
-    def remember(state: dict) -> dict | None:
-        call = state.get(_REPL_SKILL_CALL_KEY)
-        if not isinstance(call, dict) or call.get("id") != tool_id:
-            return None
-        state.pop(_REPL_SKILL_CALL_KEY)
-        state[_REPL_SKILL_TURN_KEY] = call["human"]
-        return state
-
-    update_state(session_id, remember)
-
-
-def prevention_lines(text: str) -> list[tuple[str, str]]:
-    unquoted = QUOTED_MATERIAL_RE.sub(
-        lambda match: match[0] if match[0].startswith("`") and starts_with_kind(match[0]) else "", text
-    )
-    return [(match[0].strip(), match["text"].strip()) for match in _PREVENTION_LINE_RE.finditer(unquoted.replace("**", ""))]
-
-
-def _has_typed_prevention(text: object) -> bool:
-    if not isinstance(text, str):
-        return False
-    bodies = [body for _, body in prevention_lines(text) if body]
-    return bool(bodies) and all(starts_with_kind(body) and not _names_regression_test(body) for body in bodies)
-
-
-_PREVENTION_ITEM = re.compile(r"(?:^|[。；;])\s*(?:" + "|".join(map(re.escape, PREVENTION_KINDS)) + r")\s*[:：]\s*")
-_REGRESSION_AS_MEASURE = re.compile(
-    r"\s*(?:今回は[、，]?\s*)?(?:[A-Za-z0-9一-龯々ァ-ヶーのな]+[をの]\s*)?"
-    r"回帰テスト(?:（[^（）]*）|\([^()]*\))?"
-    r"(?:を(?:[A-Za-z0-9一-龯々ァ-ヶーの]+に(?:含め|入れ|加え)|追加|導入|作成|新設|増や|足|加え|書)|に(?:追加|入れ|加え))"
-    r"(?:し?て(?:[一-龯々ァ-ヶー]+を)?(?:固定|保存|記録|確認|検証)(?:する|した|します|しました)|"
-    r"(?:する|した|る|た|す|し|く|いた|きます|きました|します|しました|したい|し?て(?:いる|います|おる|おります))?)"
-    r"(?=[。．、，;；]|$)"
-)
-
-
-def _names_regression_test(body: str) -> bool:
-    for item in _PREVENTION_ITEM.split(body)[1:]:
-        unquoted = re.sub(r"「[^」]*」|『[^』]*』|`[^`]*`", "", item)
-        if _REGRESSION_AS_MEASURE.match(unquoted):
-            return True
-    return False
-
-
-def _mentions_regression_prevention(text: object) -> bool:
-    return isinstance(text, str) and any(_names_regression_test(body) for _, body in prevention_lines(text))
-
-
-def _warn_about_regression_mention(message: object, session_id: object, warnings: list[str] | None) -> None:
-    if (
-        warnings is None
-        or not isinstance(message, str)
-        or not any("回帰テスト" in body for _, body in prevention_lines(message) if starts_with_kind(body))
-    ):
-        return
-    if warning := _regression_warning(
-        "種類付きの再発防止の行に回帰テストへの言及があります。策として加えたと確定できないため、操作は止めません。",
-        fix="今の事象を確認するために加えたテストなら「回帰防止:」へ移す。説明や履歴への言及ならそのまま続ける。",
-        cause="regression_mention",
-        session_id=session_id if isinstance(session_id, str) else "",
-        removable_cause=True,
-    ):
-        warnings.append(warning)
-
-
-def _record_matches(message: object) -> list[re.Match[str]]:
-    if not isinstance(message, str):
-        return []
-    unquoted = QUOTED_MATERIAL_RE.sub("", message).replace("**", "").replace("__", "")
-    return list(_RECORD_LINE_RE.finditer(unquoted))
-
-
-def _missing_record_labels(message: object) -> list[str]:
-    present = {
-        label
-        for match in _record_matches(message)
-        if (body := match["body"].strip())
-        and not (
-            (label := match["label"]) == "類似見直し"
-            and (body.rstrip("。．.") in _PENDING_SIMILAR_STATUS or body.startswith(("予定:", "予定：")))
-        )
-    }
-    return [label for label in _RECORD_LABELS if label not in present]
-
-
-def _has_report_structure(message: object, kind: object = None, *, include_partial_record: bool = False) -> bool:
-    if kind == COMPLETION_KIND:
-        return True
-    if not isinstance(message, str):
-        return False
-    unquoted = QUOTED_MATERIAL_RE.sub("", message).replace("**", "").replace("__", "")
-    return (
-        bool(prevention_lines(message))
-        or _REPORT_STRUCTURE_RE.search(unquoted) is not None
-        or (include_partial_record and bool(_record_matches(message)))
-    )
-
-
-def _record_fix(message: object) -> str:
-    labels = [f"`{label}:`" for label in _missing_record_labels(message)]
-    if not _has_typed_prevention(message):
-        labels.append("種類付きの `再発防止:`")
-    return (
-        "、".join(labels) + " に実施結果か行わない理由を書いてください。"
-        "完了報告の前に、原因に対する処置と確認を既存の変更・検証記録と照合してください。"
-        "類似見直しは予定や未確認だけで終えないでください。"
-    )
-
-
-def _wait_started_during_correction(payload: dict, session_id: str, entries: list[dict]) -> bool:
-    path = payload.get("transcript_path")
-    if not isinstance(path, str) or not path:
-        return False
-    live = pending_async_task_ids(path, session_id, background_tasks=payload.get("background_tasks"))
-    if not live:
-        return False
-    calls = {
-        call
-        for block in iter_assistant_blocks(entries)
-        if block.get("type") == "tool_use" and isinstance(call := block.get("id"), str)
-    }
-    return bool(calls & live) or any(
-        task in live and calls & linked for task, linked in collect_background_task_id_tool_use_ids(entries).items()
-    )
-
-
-def _turn_block(
-    payload: dict,
-    turn: tuple[str, list[dict], str | None],
-    message: object,
-    delivery: str,
-    *,
-    can_classify: bool,
-    send_kind: object = None,
-    quiet_intermission: bool = False,
-    warnings: list[str] | None = None,
-) -> str | None:
-    _, entries, human_id = turn
-    if (
-        can_classify
-        and isinstance(message, str)
-        and _understanding_kind(message) == "是正"
-        and not _GOAL_STATE.search(QUOTED_MATERIAL_RE.sub("", message))
-    ):
-        return _block_notice(
-            f"是正の発話の理解に目標の状態がないため、{delivery}を止めた。",
-            fix="本文に `目標の状態:` の行を加え、変更後に必要な成果物か振る舞いを書いて送り直してください。",
-        )
-    kind = _turn_classification(entries)
-    if kind is None:
-        if can_classify and _understanding_kind(message):
-            return None
-        return _block_notice(
-            f"最新の発話の理解に分類がないため、{delivery}を止めた。",
-            fix="`send_to_user`で発話の理解を送り、見出しの直後に `分類: 是正` または `分類: 非是正` を書いてください。"
-            "是正なら `agent-basics:bugfix` を起動してください。",
-        )
-    if kind != "是正":
-        return None
-
-    session_id = payload.get("session_id")
-    repl_human_id = read_state(session_id).get(_REPL_SKILL_TURN_KEY) if isinstance(session_id, str) and session_id else None
-    started, failed = _bugfix_calls(entries)
-    repl_started = human_id is not None and human_id == repl_human_id
-    if started is None and not repl_started:
-        if failed:
-            return None
-        return _block_notice(
-            f"是正を受けた後に`agent-basics:bugfix`を起動していないため、{delivery}を止めた。",
-            fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。本文には " + _record_fix(None),
-        )
-    if (
-        quiet_intermission
-        and started is not None
-        and isinstance(session_id, str)
-        and _wait_started_during_correction(payload, session_id, entries[started + 1 :])
-    ):
-        return None
-    if can_classify and not _has_report_structure(message, send_kind):
-        return None
-    if _has_typed_prevention(message):
-        if _missing_record_labels(message):
-            return _block_notice(
-                f"バグ対応の記録が不足しているため、{delivery}を止めた。",
-                fix=_record_fix(message),
-            )
-        _warn_about_regression_mention(message, session_id, warnings)
-        return None
-    if (
-        not can_classify
-        and not _has_report_structure(message, include_partial_record=True)
-        and any(
-            (started is None or index > started)
-            and _understanding_kind(text) is None
-            and _has_typed_prevention(text)
-            and not _missing_record_labels(text)
-            for index, _, text in delivered_messages(entries)
-        )
-    ):
-        return None
-    if _mentions_regression_prevention(message):
-        return _block_notice(
-            f"`再発防止:`の行に回帰テストがあるため、{delivery}を止めた。"
-            "回帰テストは今回の事象だけを検出する処置であり、再発防止ではない。",
-            fix="回帰テストは`回帰防止:`の行へ移し、`再発防止:`の行には原因が違っても同じ害を防ぐ策か、"
-            "採らない区分名と理由を書いてください。" + _record_fix(message),
-        )
-    return _block_notice(
-        f"種類付きの再発防止の行がないため、{delivery}を止めた。",
-        fix=_record_fix(message),
-    )
-
-
-def send_block(payload: dict, message: object = None, *, kind: object = None, warnings: list[str] | None = None) -> str | None:
-    lines = _read_human_lines(payload)
-    if lines is None or (turn := latest_human_turn_context(lines)) is None:
-        return None
-    return _turn_block(payload, turn, message, "ユーザーへの送達", can_classify=True, send_kind=kind, warnings=warnings)
-
-
-def evaluate(payload_text: str, *, quiet_intermission: bool = False) -> tuple[str, str]:
-    resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
-    if resolved is None:
-        return "approve", ""
-    session_id, payload = resolved
-    lines = _read_human_lines(payload)
-    if lines is None or (turn := latest_human_turn_context(lines)) is None:
-        return "approve", ""
-    warnings: list[str] = []
-    body = _turn_block(
-        payload,
-        turn,
-        payload.get("last_assistant_message"),
-        "ターンの終了",
-        can_classify=False,
-        quiet_intermission=quiet_intermission,
-        warnings=warnings,
-    )
-    if body is None:
-        return ("notify", warnings[0]) if warnings else ("approve", "")
-    _stop_session.append_stop_log(session_id, "block_bugfix_not_invoked", {})
-    return "block", body
-
-
-def main(payload_text: str) -> int:
-    decision, body = evaluate(payload_text)
-    print(json.dumps({"decision": decision, "reason": body} if decision == "block" else {}, ensure_ascii=False))
-    return 0

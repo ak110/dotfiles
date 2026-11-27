@@ -9,17 +9,16 @@ import textwrap
 import pytest
 
 from agent_toolkit import hook
-from agent_toolkit._common import send_misdetection
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
+    _run,
     _stderr_warn_offenders,
     _write_session_state,
 )
-from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 
 @pytest.mark.parametrize("pending", [False, True])
@@ -114,7 +113,6 @@ def test_second_removable_warning_is_suppressed(tmp_path: pathlib.Path) -> None:
     assert second.stderr == ""
 
 
-@pytest.mark.usefixtures("without_skill_notices")
 def test_irremovable_warning_does_not_advance_removable_repeat_count(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -155,22 +153,6 @@ def test_irremovable_warning_does_not_advance_removable_repeat_count(
     assert "この通知は同一セッションで2件目である" not in captured.out
     assert captured.out.count("controlled warning") == 1
     assert captured.err == ""
-
-
-def test_send_misdetection_leaves_unclaimed_checks_active(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    tool = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
-    message = "発話の理解: 対象を確認した。"
-    args = {
-        "message": message,
-        "misdetection": [{"check": "prevention-kind", "reason": "記録ではない。"}],
-    }
-    send_misdetection.remember_rejection("misdetection", "prevention-kind", message, "call-example")
-    payload = {"session_id": "misdetection", "tool_input": args}
-    decision = pretooluse._decide(payload, tool, args, "misdetection", is_codex=False)
-    assert decision.block is not None
-    assert "understanding-alternative" in decision.block
 
 
 def test_masked_clock_warning_is_left_to_successful_display():

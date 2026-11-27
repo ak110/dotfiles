@@ -68,6 +68,7 @@ dotfilesでは、master宛ての全PRで`GitHub Dependency Review`を実行す�
 ヘッダーが無いか値が空なら、警告のチェックは成功とする。
 
 依存グラフが認識する `uv.lock`、`rust/claude-statusline/Cargo.lock`、workflowのaction、miseのロック配下の `package.json` は各定義の変更が比較結果に現れることを検証用PRで確かめる。
+検証用PRを作るのは新規導入時とワークフローや比較対象の依存定義を変えたときだけとし、通常の依存更新では作らない。
 SBOMに載るだけではPRで比較される証拠にしない。
 比較に現れない定義はチェック対象から外し、理由と別の監査の有無をここに記録する。
 

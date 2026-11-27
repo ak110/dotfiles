@@ -141,13 +141,13 @@ Wの起動1回の内側にある再試行は、製品コードの上限を使う
 
 反例の各行は、主体と、その主体が実行したGitのコマンドである。
 各行を実際のコードの分岐で起こりうるかを確かめ、起こらない行があれば検査の枠組み（`_git_op`の分類、`_atk_update`の流れ、前提）の誤りとして直す。
-全て起こりうれば欠陥として`agent-basics:bugfix`を起動する。
+全て起こりうる場合は、`agent-basics:bugfix/SKILL.md`「バグ対応」に従う。
 性質の判定は`_judge`と`_follow_up`にあり、性質を変えるのは意図した契約の変更の根拠（テストまたはcommitの説明）がある場合だけにする。
 
 ## 追従
 
-- 版の記録はfrontmatterの`verifies`と`verified-digest`で持ち、pyfltrの`ci`とcommit時の`fast`が対象と記録の一致を確かめる。
-  対象を変えたら、`verified-digest`を最後に書いたcommitからの対象の差分を読み、検査を再実行して現在のコードを記述すると確かめる。
+- 版の記録と対象変更後の追従は、`agent-basics:formal-verification/SKILL.md`「生成するスキル」「追従の手順」に従う。
+  本リポジトリではpyfltrの`ci`とcommit時の`fast`で記録を検査する。
   確かめた後にだけ、`uv run --frozen pyfltr verification-sync --update .claude/skills/git-sync-interleavings/SKILL.md`で記録を進める。
 - Gitの起動、ロックの区間、remoteへの操作の追加と順序の変更は、`_launch`と`_RepoLock`を差し替える枠組みが自動で拾う。
   WIの状態遷移の流れ（`push_pending`の有無、commitの単位）を変えた時は`_atk_update`を合わせる。

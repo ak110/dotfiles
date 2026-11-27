@@ -350,21 +350,3 @@ def test_session_start_claims_process_loop_before_state_update_failures(
 
     assert process_loop_session.is_identified_process_loop_session("agy-coordinator", environ)
     assert not process_loop_session.is_identified_process_loop_session("agy-nested", environ)
-
-
-def test_post_tool_use_without_result_does_not_record_skill_read(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    skill = tmp_path / "agent-basics/skills/search/SKILL.md"
-    skill.parent.mkdir(parents=True)
-    skill.write_text("---\nname: search\n---\n本文\n", encoding="utf-8")
-    raw = _payload(
-        tmp_path,
-        hookEventName="PostToolUse",
-        stepIdx=5,
-        error="",
-        toolCall={"args": {"Path": str(skill)}, "id": "call_1", "name": "read_file"},
-    )
-    assert "result" not in raw["toolCall"]
-    assert _run(raw, "PostToolUse", capsys) == {}
-    assert not session_state.read_state(raw["conversationId"]).get("operation_skills_observed")

@@ -11,15 +11,10 @@ import re
 import pytest
 
 from agent_toolkit._hooks import notice
-from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
+from agent_toolkit._hooks.pretooluse import dispatch
 from agent_toolkit._hooks.pretooluse.decision import Decision
 
 _RESULT = "この呼び出しは全体を実行していない（同じ呼び出しに含まれる他のコマンドや処理を含む）。"
-
-
-@pytest.fixture(autouse=True)
-def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 @pytest.mark.parametrize("codex", [False, True])

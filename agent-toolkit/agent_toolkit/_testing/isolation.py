@@ -94,6 +94,7 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM",
+    "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ONCE",
     # Claude Codeの設定ディレクトリとCodexのホームの指定。継承されると、隔離したホーム配下を前提にするテストの
     # 解決先が実行環境で変わる。指定した場合の解決を検証するテストは自身で設定する。
     "CLAUDE_CONFIG_DIR",

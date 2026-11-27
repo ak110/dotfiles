@@ -83,10 +83,6 @@ def full_reads(
     return list(shell_full_reads(command, cwd, response_text(response), wanted))
 
 
-def is_skill_entry_name(path: pathlib.Path) -> bool:
-    return path.name in {"SKILL.md", "antigravity-full-instructions.md"}
-
-
 def skill_entry(path: pathlib.Path) -> tuple[str, str] | None:
     """ファイルがスキルの入口なら、所有pluginとスキルの名前を返す。
 

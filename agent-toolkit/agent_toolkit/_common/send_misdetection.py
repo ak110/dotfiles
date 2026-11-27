@@ -21,20 +21,12 @@ class Claim(TypedDict):
 
 RETRY = frozenset(
     {
-        "understanding-original",
-        "understanding-alternative",
-        "norm-excuse",
-        "prevention-kind",
         "response-language",
-        "missing-prevention",
     }
 )
 DISPLAYED = frozenset(
     {
         "clock-claim",
-        "missing-disposition",
-        "missing-prevention",
-        "prevention-artifact",
         "status-unnecessary-kind",
         "status-planned-kind",
         "uninvestigated-reason",

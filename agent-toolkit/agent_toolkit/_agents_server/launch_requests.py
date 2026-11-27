@@ -408,8 +408,12 @@ async def reject_stale_role_reply(session: SessionState | SessionResumeState) ->
             next_action=(
                 f"工程と候補を確認し、`start`の`handoff_from`へ`{session.session_id}`を、"
                 + phase_input
-                + "。今回だけの本人指定は後任起動で根拠を照合し、後任へ未配送の指示を渡す"
-                + ("。`write`は後任への実際のユーザー指示の根拠がある場合だけ指定する" if current == "write" else "")
+                + (
+                    "。`write`は今回の執筆をユーザーが指示した場合だけ選ぶ"
+                    if current == "write"
+                    else "。今回だけの工程または候補列の上書きは後任起動で根拠を照合する"
+                )
+                + "。後任へ未配送の指示を渡す"
             ),
         )
 

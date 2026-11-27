@@ -114,7 +114,7 @@ async def test_missing_gemini_opt_in_or_key_prevents_agent_spawn(tmp_path, monke
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", unexpected)
     async with antigravity.AntigravityManager() as backend:
-        with pytest.raises(session_errors.DelegateBackendError, match="Gemini|GEMINI"):
+        with pytest.raises(session_errors.ActionableRuntimeError, match="Gemini|GEMINI"):
             await backend.start("試験", str(tmp_path))
 
 
@@ -184,8 +184,7 @@ def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkey
     assert session.agent_message.endswith("原稿を推敲して")
 
 
-def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLIが未導入の起動失敗を委譲先CLIの失敗として送出し、導入と認証の確認へ分類されるようにする。"""
+def test_start_reports_missing_cli_with_installation_action(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake_agy(tmp_path, monkeypatch)
     monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
 
@@ -193,8 +192,9 @@ def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkey
         async with antigravity.AntigravityManager() as manager:
             await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
 
-    with pytest.raises(session_errors.DelegateBackendError, match="agyが見つかりません"):
+    with pytest.raises(session_errors.ActionableRuntimeError, match="agyが見つかりません") as raised:
         asyncio.run(scenario())
+    assert "導入" in raised.value.next_action and "PATH" in raised.value.next_action
 
 
 def test_delegate_prompt_carries_language_condition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

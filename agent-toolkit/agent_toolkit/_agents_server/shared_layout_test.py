@@ -13,7 +13,7 @@ from agent_toolkit._agents_server import (
 
 def test_root_session_listing_excludes_management_directories(tmp_path: pathlib.Path) -> None:
     base = tmp_path / "agents-server"
-    for name in ("aliases", "compaction", "sessions", "root-session"):
+    for name in ("aliases", "compaction", "sessions", "codex-auto-reset", "root-session"):
         (base / name).mkdir(parents=True)
     (base / "aliases" / "current.json").write_text('{"version": 1, "root_session_id": "root-session"}', encoding="utf-8")
 

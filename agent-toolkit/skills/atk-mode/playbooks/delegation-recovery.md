@@ -119,7 +119,9 @@ Codexで元担当（同じ作業のために起動済みの委譲先）を扱う
    前任のモデル上書きの根拠が後任にも適用される場合に限り、上書きの区分と根拠も指定する。
    実行レビューでは`agent-toolkit:atk-mode/references/exec-review-launch-handover.md`の入力（`レビュー種別: 引き継ぎ再レビュー`、`前回確認版`、`round`、作り直した`review_contract`）を渡す。
    他のレビューの役割では、その役割の`<役割名>.parent.md`が定める引き継ぎ再レビューの入力を渡す。
-   レビュー指摘管理表とレビュー対象のHEADは担当が自分で解決するので渡さない（役割文書が宣言していない入力は`start`が拒否する）。
+   レビュー指摘管理表は担当が自分で解決するので渡さない。
+   実行レビューの`対象HEAD`には、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「起動」で固定した完全OIDを渡す。
+   他の役割には、その起動契約が宣言する入力だけを渡す。
    ラウンド番号は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「ラウンド番号の保持先」に従い、管理表の最大値から続ける。
    新しい担当は、解消済みの指摘を調べ直さず、未解消の行とそのラウンドの確認範囲だけを扱う。
 
@@ -144,7 +146,7 @@ Codexで元担当（同じ作業のために起動済みの委譲先）を扱う
 5. 構成を変えず、同じ工程の利用可能な候補から代替を選ぶ。
    `Agent`ツールでは、候補を設定の順で確かめ、呼べないengineは利用不能として扱う。
    設定内に候補が残らず、手順1の例外も成立しない場合は、利用できない理由を返す。
-6. `Agent`ツールの後任には、前任の起動時の本文と、`引き継ぎ記録先`があればそれを`（継続）`として渡す。
+6. `Agent`ツールの後任の入力は、`agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」に従い、前任の起動時の本文とともに渡す。
    `atk run-script session-review-prepare`が生成した`conversation.md`を読み、引き継ぎ記録と合わせて確定事項と残る工程を戻し、追加の入力と各ターンの最終応答は全文を渡す。
    詳細は`atk run-script session-review-evidence -- --codex-thread-id <id>`か`--claude-session-id <id>`に`--detail <記録位置>`を付けて照会する。
    コマンドを実行できない後任へは記録ファイルの絶対パスを渡し、Antigravityの前任は`atk agents logs <session_id> --format markdown`の出力を渡す。

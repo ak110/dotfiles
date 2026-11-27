@@ -20,9 +20,10 @@ def _config(*, soft: list[str] | None = None, hard: list[str] | None = None) -> 
     }
 
 
-def test_rule_condition_annotation_is_not_a_denial_label() -> None:
+@pytest.mark.parametrize("version", ["2.1.325", "2.1.326", "2.1.332", "3.0.0"])
+def test_rule_condition_annotation_is_not_a_denial_label(version: str) -> None:
     config = _config(soft=["Local Cleanup [named+specifics]: requires explicit consent"])
-    assert approval_classifier.classify("[Local Cleanup]", config, version="2.1.325").eligible
+    assert approval_classifier.classify("[Local Cleanup]", config, version=version).eligible
 
 
 @pytest.mark.parametrize(
@@ -34,12 +35,15 @@ def test_rule_condition_annotation_is_not_a_denial_label() -> None:
         ("[Local Cleanup]", _config(hard=["Always block this action without a label"]), "2.1.325"),
         ("[Local Cleanup]", _config(hard=["$defaults"]), "2.1.325"),
         ("[Unknown]", _config(), "2.1.325"),
+        ("[Local Cleanup][Local Cleanup]", _config(), "2.1.332"),
+        ("[Data Exfiltration]", _config(), "2.1.332"),
+        ("[Local Cleanup]", _config(soft=["Local Cleanup: first", "Local Cleanup: second"]), "2.1.332"),
+        ("[Local Cleanup] trailing explanation", _config(), "2.1.332"),
         ("[Local Cleanup][Data Exfiltration]", _config(), "2.1.325"),
         ("Auto mode could not evaluate this action and is blocking it for safety", _config(), "2.1.325"),
         ("Classifier unavailable", _config(), "2.1.325"),
         ("Don't retry this action: [Local Cleanup]", _config(), "2.1.325"),
         ("", _config(), "2.1.325"),
-        ("[Local Cleanup]", _config(), "2.1.326"),
         ("[Local Cleanup]", {"soft_deny": ["Local Cleanup: requires consent"]}, "2.1.325"),
         ("[Local Cleanup]", {**_config(), "new_decision_field": True}, "2.1.325"),
     ],
@@ -48,13 +52,14 @@ def test_unclassified_or_hard_verdict_is_not_eligible(reason: str, config: objec
     assert not approval_classifier.classify(reason, config, version=version).eligible
 
 
-def test_cli_defaults_do_not_hide_explicit_rules(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("version", ["2.1.325", "2.1.332", "3.0.0"])
+def test_cli_defaults_do_not_hide_explicit_rules(version: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     executable = tmp_path / "claude-fixture"
     executable.touch()
     monkeypatch.setattr(approval_classifier.shutil, "which", lambda _name, **_kwargs: str(executable))
     results = iter(
         [
-            subprocess.CompletedProcess([], 0, "2.1.325 (Claude Code)\n", ""),
+            subprocess.CompletedProcess([], 0, f"{version} (Claude Code)\n", ""),
             subprocess.CompletedProcess([], 0, json.dumps(_config(soft=["Local Cleanup: modified condition"])), ""),
             subprocess.CompletedProcess([], 0, json.dumps(_config()), ""),
         ]

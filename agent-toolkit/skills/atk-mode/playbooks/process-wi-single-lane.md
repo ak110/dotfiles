@@ -13,6 +13,10 @@
 all-reposから受け取った候補を処理する場合は、`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「取得済み候補の受領」の確認結果を引き継ぎ、受け取った候補・readiness・対象別の選定の対応を保つ。
 候補が1件でも同節の着手可否と選定を適用する。
 
+常駐では上限が1でも専用レーンを使い、随時取り込みで上限が増えた時も同じ統合の手順を保つ。
+本書の主作業ツリーでの直接実装と単回の処理対象WI、公開・報告は手動の単回実行へ適用する。
+リポジトリ担当は統合済みの完全OIDとAWIの状態を統括へ返し、公開の直接実行は省く。
+
 複数レーン向けの規定は本処理の間も適用するが、レーン担当・公開担当・専用worktreeを前提とする契約は直接適用せず、同等の工程をメイン自身が担う。
 直接適用しない文書は、レーン担当と公開担当向けの資料（本書が明示的に参照する共通資料は適用する）と、次の役割の文書である。
 
@@ -45,7 +49,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 
 ## 見つけた既存不良の扱い
 
-追加の操作を選ぶ前に、発話と発生条件を`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」の分類に当てはめ、ユーザーの是正要求、今回混入した不良、同じ実行への明示の追加を区別して手順を選ぶ。
+`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」に従う。
 直接修正の担当・基点・時機は同書「レーンの変更範囲へ加える修正の認可」に従い、統合後の独立した修正は統合先の担当が現行のHEADで行う。
 
 1. 実行レビューから返された差分外の既存不良は、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」の受領の契約で専任のWI投入担当へ渡す。
@@ -66,7 +70,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 1. 取得と対応表:
    - 処理可能なWI（processable）の一覧と各WIの本文を取得する。
      初回の一覧に`--snapshot-output <開始時集合JSONの絶対パス>`を付け、all-reposから受け取った場合は既存の`snapshot_file`を使う。
-     30分ごとの点検と公開前の新着の確認は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従い、同じ開始時の集合を保つ。
+     選定側の随時の確認と30分ごとの点検は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従い、同じ開始時の集合を保つ。
    - `atk wi show --pull --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto`で回答済みのUWIの本文も取得する。
      `source: run-skill`のUWIも対象にし、扱いは`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」に従う。
      回答済みのUWIは実装前に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従って終えるか処理対象へ加える。
@@ -124,6 +128,8 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    初回・直接処置・追加・延期の全対象について、現在のキューと保存済みの採否・再開条件の一致を確かめ、未達は未達として報告する。
    一時的に作ったレビュー指摘管理表は、正式な保存か回収の契約に従って処理する。
    - 明示的に委譲されたリポジトリ担当は、役割の契約に従って成果・検証・公開・反映の結果と残工程を委譲元へ返し、報告用UWI・送達・祖先ホストの終了は担当しない。
-   - 自分が報告を所有するメインは、成果・検証・公開の結果を`agent-toolkit:atk-mode/playbooks/report-completion.md`の作業完了報告へ1回にまとめて送り、公開結果の受領だけで終えずに同書の終了処理まで行う。
+   - 自分が報告を所有するメインは、成果・検証・公開の結果を`agent-toolkit:atk-mode/playbooks/report-completion.md`の報告へまとめる。
+     常駐では[巡回する](process-loop.md#巡回する)の契機で報告して同じ会話で随時取り込みへ戻り、完了報告と終了は同書「中断と再開」の条件に限る。
+     手動の単回実行では1回にまとめて送り、report-completionの終了処理まで行う。
 
 返す報告に含める項目: 対応表（`詳細化要否`と省略理由を含む）、計画と実行レビューの結果、採否と公開・CIの結果、反映の結果、残工程と再開条件、保存状態の確認結果。

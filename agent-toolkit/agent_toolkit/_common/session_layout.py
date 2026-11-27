@@ -9,7 +9,8 @@ from agent_toolkit._common import state_paths as _state_paths
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 
 
-RESERVED_DIRECTORY_NAMES = frozenset({"aliases", "sessions", "compaction", "admission"})
+CODEX_AUTO_RESET_DIRECTORY_NAME = "codex-auto-reset"
+RESERVED_DIRECTORY_NAMES = frozenset({"aliases", "sessions", "compaction", "admission", CODEX_AUTO_RESET_DIRECTORY_NAME})
 """状態ディレクトリ直下でrootに属さない管理用ディレクトリの名前（索引・session登録簿・計測記録・起動待ち）。"""
 
 

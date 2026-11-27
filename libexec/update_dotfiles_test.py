@@ -31,6 +31,42 @@ from update_dotfiles_test_helpers import _separate_git_recovery as _separate_git
 from update_dotfiles_test_helpers import _skip_agent_toolkit_prepare as _skip_agent_toolkit_prepare  # noqa: E402  # pylint: disable=wrong-import-position
 
 
+@pytest.mark.parametrize("extension", [".md", ".md.tmpl"])
+@pytest.mark.parametrize("plugin", ["agent-toolkit", "agent-basics"])
+def test_update_warns_only_for_missing_skills_among_mcp_references(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    extension: str,
+    plugin: str,
+) -> None:
+    defined = tmp_path / plugin / "skills" / "known" / "SKILL.md"
+    defined.parent.mkdir(parents=True)
+    defined.touch()
+    document = tmp_path / "plugins" / "local" / ".chezmoi-source" / f"references{extension}"
+    document.parent.mkdir(parents=True)
+    document.write_text(
+        f"`/mcp reconnect plugin:{plugin}:agents_server`、`{plugin}:missing`、`{plugin}:known`\n"
+        f"サーバー別名 `plugin:{plugin}:other_server`\n"
+        f"ツール `mcp__plugin_{plugin}_agents_server__start`\n"
+        f"ツール `mcp__plugin:{plugin}:other_server__start`\n"
+        f"文脈:{plugin}:another_missing\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "update.lock")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+
+    assert update_dotfiles.main([]) == 0
+    diagnostics = capsys.readouterr().err.splitlines()
+    assert diagnostics == [
+        f"{str(document)!r}:{line}: スキル {plugin}:{skill} は配布元に無い。ローカルプラグインの文書の参照を確かめてください。"
+        for line, skill in ((1, "missing"), (5, "another_missing"))
+    ]
+
+
 def test_plugin_pulls_precede_chezmoi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     for name in ("20-last", "10-first", "plain"):
         plugin = tmp_path / "plugins" / name

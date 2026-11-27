@@ -9,8 +9,6 @@ from agent_toolkit._common import session_state
 from agent_toolkit._hooks import plugin_resources, posttooluse, pretooluse
 from agent_toolkit._testing.termination_evidence_support import claude_read_response
 
-pytestmark = pytest.mark.usefixtures("without_skill_notices")
-
 
 @pytest.mark.parametrize("operation", ["send_message", "kill"])
 @pytest.mark.parametrize("legacy", [False, True])
