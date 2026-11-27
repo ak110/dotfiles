@@ -6,6 +6,17 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 `agent-basics:check-execution/references/verification-scope.md`「ローカルとCIの分担」に従う。
 合否は`agent-basics:check-execution/references/diagnostics.md`「合否の判定」に従う。
 
+## 統合と公開の値
+
+統合の流れは`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合キュー」、ローカルとCIの分担は冒頭の参照先に従う。
+
+| プロジェクト差分 | dotfilesの値 |
+| --- | --- |
+| 検証コマンド | [検証コマンドの実行](verification-execution.md#検証コマンドの実行)の変更パスと直接の利用側を指定したpyfltr |
+| CIの所要時間 | [テストとCIの所要基準](verification-execution.md#テストとciの所要基準)の10分の改善判断値 |
+| リリース方式 | 通常のdevelopへのpushと全体CI、`release-dotfiles`によるCI成功済みPRのmasterへのマージ |
+| まとめる上限 | 共通の既定値を使う |
+
 ## テスト配置
 
 テストの要否は`agent-basics:writing-standards/references/testing.md`、期待値の出所と検証単位は`agent-basics:writing-standards/references/testing-design.md`に従う。
