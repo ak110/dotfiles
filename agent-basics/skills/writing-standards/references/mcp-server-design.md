@@ -7,9 +7,11 @@ MCP（Model Context Protocol）サーバーのツール定義、説明文、応�
 
 ## 典拠
 
-MCP仕様は版`2025-11-25`を対象とし、使うSDKが対応する仕様の版を実装の前に確かめる。
+MCP仕様は現行の版`2026-07-28`を対象とし、使うSDKが対応する仕様の版を実装の前に確かめる。
+各リクエストの`_meta`でプロトコルの版を指定し、サーバーの対応版と機能は`server/discover`で取得できる。
+初期化を伴う版（`2025-11-25`以前）の相手との互換は、[Versioning and Compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)の「Backward Compatibility」に従う。
 
-- 仕様: [Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)、[Schema Reference](https://modelcontextprotocol.io/specification/2025-11-25/schema)、[Resources](https://modelcontextprotocol.io/specification/2025-11-25/server/resources)、[Prompts](https://modelcontextprotocol.io/specification/2025-11-25/server/prompts)、[Transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+- 仕様: [Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)、[Schema Reference](https://modelcontextprotocol.io/specification/2026-07-28/schema)、[Resources](https://modelcontextprotocol.io/specification/2026-07-28/server/resources)、[Prompts](https://modelcontextprotocol.io/specification/2026-07-28/server/prompts)、[Transports](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)
 - 開発元の推奨: [MCP Security Best Practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices)、[Anthropic: Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents)
 - 公式プラグイン`mcp-server-dev`の`build-mcp-server/references/`: [tool-design](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/tool-design.md)（説明・注釈・構造化出力）、[server-capabilities](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/server-capabilities.md)（進捗通知・中断・elicitation・sampling）
 - 同じ配下のリモートHTTPサーバーと配備の資料: [auth](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/auth.md)、[remote-http-scaffold](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/remote-http-scaffold.md)、[deploy-cloudflare-workers](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/deploy-cloudflare-workers.md)
@@ -25,7 +27,8 @@ MCP仕様は版`2025-11-25`を対象とし、使うSDKが対応する仕様の�
 - `inputSchema`は有効なJSON Schemaの`object`型とし（`null`は不可）、引数の無いツールも`{"type": "object", "additionalProperties": false}`を明示する（仕様の推奨）。
 - `outputSchema`を宣言したツールはスキーマに合う構造化データを`structuredContent`に入れて返し、互換のため同じJSONを文字列化したテキストも返す（後者は仕様の推奨）。
 - 未知のツールとリクエスト形式の不備はJSON-RPCのプロトコルエラー、入力検証の失敗・外部APIの失敗・業務ロジックのエラーは`isError: true`のツール実行エラーで返し、モデルが引数を直して再試行できる具体的な情報を含める。
-- `tools/list`はページネーションに対応し、`listChanged`を宣言したサーバーは一覧の更新時に`notifications/tools/list_changed`を送る（後者は仕様の推奨）。
+- `tools/list`はページネーションに対応する。
+  `listChanged`を宣言したサーバーは一覧の更新時に、`subscriptions/listen`で`toolsListChanged: true`を指定したクライアントへ`notifications/tools/list_changed`を送る（仕様の推奨）。
 - サーバー側で全ての入力を厳格に検証し、アクセス制御、呼び出し頻度の制限、出力の無害化を実装する。
 - `ToolAnnotations`はクライアントへのヒントで認可と入力検証の代わりにならないため、読み取り専用や非破壊の性質はサーバーの処理で保証する。
 - stdioトランスポートでは標準出力をMCPメッセージだけに使い、ログは標準エラー出力へ出し、外部コマンドを実行するサーバーは子プロセスの標準出力を取り込むか切り離す。
@@ -84,7 +87,8 @@ server instructionsにはサーバーの機能の全体像とツールを探し�
 Claude Codeを対象に含める時は次を設計条件にし、他のホストの制限は各ホストの一次資料で確かめる。
 
 - Claude Codeは、初期に送る各ツールの説明文と各サーバーのinstructionsをデフォルトで4,096文字に切り詰め、ツール検索で後から読み込む説明文の上限は16,384文字であるため、全ての説明文を4,096文字以内に収める。
-  2026年10月2日時点の公式資料は上限を環境変数`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変えられるとするが、新しい版での変数名と、引数の説明文への同じ制限の適用は未確認である。
+  2.1.280以降は環境変数`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で両方の上限を同じ値へ変えられる（[公式の説明文の上限](https://code.claude.com/docs/en/mcp#change-the-description-length-limits)）。
+  引数の説明文への同じ制限の適用は未確認である。
 - ツール検索が有効な時、セッション開始時に読み込まれるのはツール名とserver instructionsだけであるため、instructionsに扱うタスクの種別、ツールを検索すべき場面、主な機能を書く。
 - `readOnlyHint: true`と`idempotentHint: true`のツールは、接続断などで実行済みの可能性がある失敗の後にも再試行され、`readOnlyHint: true`のツールは並行して呼ばれることもある。
 - MCPツールの出力が10,000トークンを超えると警告が出て、デフォルトでは25,000トークンに制限される（環境変数`MAX_MCP_OUTPUT_TOKENS`で変更できる）。

@@ -10,6 +10,7 @@ ruff、pylint、型検査が導入されている環境では、その診断に�
 ### import・型・docstring
 
 - docstringは原則として省く。
+  パッケージとして配布するライブラリの公開APIは、`implementation-time.md`「コメントの記述粒度」のライブラリユーザー向け説明の例外に従う。
   `__doc__`、`inspect.getdoc()`、引数を省いた `@mcp.tool()` などが参照する場合は、明示の引数へ移すか必要な部分だけを残す。
 - `import`は可能な限り`import xxx`の形で最上部に書き、`as`の別名は定着した略称（`np`など）、名前の衝突の回避、互換APIへの差し替えに限る。
 - `@typing.final`のメソッドはサブクラスの都合で外さず、差は抽象メソッドへの委譲などで吸収する。
@@ -112,7 +113,8 @@ Windowsのvenvの`python.exe`は、Python本体を子プロセスとして起動
 ## 静的解析の誤検出と抑制
 
 - Pythonでは複数の検査が同じ箇所を重ねて指摘しやすいため、`assert`や`del`などの構文で解決できる時は抑制のコメントより構文を選ぶ。
-- `subprocess.run(..., capture_output=True)`の`proc.stdout`は、`text=True`でも型検査で`None`を含む型と推論されるため、使う前に`assert isinstance(proc.stdout, bytes)`などで型を限定する。
+- `subprocess.run(..., capture_output=True, text=True)`の`stdout`・`stderr`は、mypyとpyrightで`str`と推論されるため、型の限定は要らない。
+  `subprocess.Popen`の`stdout`・`stderr`は`None`を含む型になるため、ストリームとして使う前に`assert proc.stdout is not None`などで限定する。
 - `sys.path.insert()`の直後の`import`にpylintが`wrong-import-position`と`import-error`を誤って出す時は、`# pylint: disable=wrong-import-position,import-error`を併記する。
 - 意図して関数の中で`import`する時は、`# noqa: PLC0415  # pylint: disable=import-outside-toplevel`を併記する。
 - tyとmypyが両方有効な環境で型の警告を抑える時は、`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`を同じ行に併記する。

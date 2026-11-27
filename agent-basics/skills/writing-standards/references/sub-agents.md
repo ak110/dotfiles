@@ -16,7 +16,9 @@ Claude Codeの`agents/`のfrontmatterの項目名と値は、公式ドキュメ�
 
 ## Claude Codeのfrontmatter
 
-- サブエージェントの定義はセッションの起動時に一括で読み込まれ、セッションの途中で新設・改訂した定義は、次のセッションから`subagent_type`で解決される。
+- `~/.claude/agents/`と`.claude/agents/`の定義は、編集から数秒で次の委譲に反映される（[公式の定義ファイルの説明](https://code.claude.com/docs/en/sub-agents#write-subagent-files)）。
+  プラグインの`agents/`の変更は`/reload-plugins`で反映する。
+  `--add-dir`か`/add-dir`で追加したディレクトリ内の定義と、`--disable-slash-commands`で起動したセッションでは再起動が要る。
 - 特定の委譲元から明示的に呼ばれる前提の定義は、`description`に呼び出し元（スキル名や起動契約）を特定できる短い文面だけを書き、責務・処理の概要・手順は本文に書く（`description`は自動委譲の判定材料として常時文脈を消費する）。
 - 起動直後から常に要る作成・レビューの規範のスキルは`skills`に列挙し、本文で同じスキルの起動手順を重ねて書くのは避ける（努力目標。トークンの消費を抑えるため）。
   特定の工程だけで要るスキルは`skills`に入れずに、観測できる起動条件と共に本文に起動手順を書く。

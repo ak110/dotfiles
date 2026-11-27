@@ -52,4 +52,4 @@ textlintの`preset-jtf-style`がチェックする項目は同プリセットに
 4. `git diff --word-diff=plain --word-diff-regex=.`で文字単位の差分を出し、変更箇所を全件レビューする。
    誤置換があれば対象の条件を限定して手順3からやり直す。
 5. 候補に合わない文、意味が変わりやすい文、指摘を受けた文は個別に書き直し、`agent-basics:writing-standards/references/textlint-violations.md`「文の書き直しの委譲と検収」の条件で確かめる。
-6. textlintと対象の自動テストを実行し、指摘やエラーを受けたら`agent-basics:bugfix`を起動して対処する。
+6. textlintと対象の自動テストを実行し、診断への対処と`agent-basics:bugfix`の起動要否は`agent-basics:check-execution/references/diagnostics.md`「合否の判定」に従う。
