@@ -1,20 +1,20 @@
 # AGENTS.md: dotfiles
 
-このリポジトリはchezmoiで管理するdotfilesリポジトリであり、`.chezmoi-source/`配下のファイルを`~/.*`へ展開する。
-多数の小さなコマンドラインツールと、Claude Code・Codex向けの共有設定（プラグイン`agent-toolkit`と`agent-basics`）も持つ。
-成果物の品質は`agent-basics`、WI・委譲・認可・完了報告の運用は`agent-toolkit`に従う。
-本リポジトリのコマンド（`update-dotfiles`など）は、ユーザー本人が自分の環境で実行する道具である。
-設計、実装、レビューの脅威モデルに、同じユーザーの悪意あるプロセスとUACを越える攻撃は含めない。
+dotfilesは、chezmoiで `.chezmoi-source/` を `~/.*` に配布し、小さなCLIと、Claude Code・Codexで共有するプラグインを提供する。
+スキルや手順の使い方だけを尋ねられたら、案内して終える。
+作業を求められた場合は次の分担で進める。
 
-Pythonは、標準ライブラリだけで済む簡単な確認には`python3`を、リポジトリの依存やモジュールを使う処理には`uv run --frozen python`を使う。
-規範にある`python -c`は起動の形の例であり、実行ファイル`python`があることは保証しない。
-
-スキルや手順の使い方を尋ねられただけの時は、案内で終え、作業を始めない。
+- 成果物の品質は `agent-basics`、WI・委譲・認可・完了報告の手順は `agent-toolkit` に従う。
+- dotfiles固有の操作は下表から選ぶ。
+  コマンド（`update-dotfiles` など）は本人が自分の環境で使うため、設計・実装・レビューの脅威モデルに同じユーザーの悪意あるプロセスやUACを越える攻撃を含めない。
+- 標準ライブラリだけで済む簡単な確認には `python3`、リポジトリの依存やモジュールを使うなら `uv run --frozen python` で起動する。
+  規範の `python -c` は呼び出し方の例であり、実行ファイル `python` の存在を前提にしない。
 
 ## 本リポジトリのスキル
 
 `.claude/skills/`配下の、本リポジトリ専用の非配布スキルである。
-作業に合うスキルを起動し、スキルの入口の表から資料を選ぶ。
+変更する対象に合うスキルと、実行する操作に合うスキルを起動する。
+個々の手順は各スキルから選ぶ。
 
 | 作業 | スキル |
 | --- | --- |
@@ -27,6 +27,8 @@ Pythonは、標準ライブラリだけで済む簡単な確認には`python3`�
 | ロールとファイル群の対応、配布元と配布先の対応 | `dotfiles-repo-layout` |
 | `pytools/`、`scripts/`、`libexec/`、`bin/`、`rust/`の配置と実装 | `pytools-edit` |
 | LinuxとWindowsのペアファイルの同期 | `sync-platform-pair` |
+| `atk` のCLIを変更し、実際のコマンドで確かめる | `verify` |
+| private-notesのGit同期、WIの操作承認の競合を検証する | Git同期は `git-sync-interleavings`、操作承認は `operation-approval-interleavings` |
 
 ## 記録の所在
 
