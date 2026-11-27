@@ -1,6 +1,6 @@
 # 委譲の起動
 
-委譲の操作の最初の手順書であり、委譲するかの判断から`agents_server`の`start`による起動までを扱う。
+委譲元が、独立した評価や並行作業の利点と委譲の負担を比べ、品質や所要時間を改善する分担を選び、`agents_server`の`start`で起動する。
 `agent-basics:writing-standards/references/design-heuristics.md`「案の採否と実施順の判定」に従う。
 認可、全体の調整、検収、成果の所有、終了の観測は委譲元が担う（原則7、`agent-basics:writing-standards/references/quality-principles-ownership.md`）。
 
