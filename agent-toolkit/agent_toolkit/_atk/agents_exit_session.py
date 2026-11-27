@@ -406,17 +406,19 @@ def main(repo: pathlib.Path | None = None) -> int:
         cleanup["orphan_cleanup_error"] = orphan_error
         _outcome.report_warning(
             f"終了時に登録外資源の回収を確認できない: {orphan_error}",
-            next_action="`atk lane delete --list --repo <統合先worktree>`で残る資源と理由を確認する",
+            next_action="`atk lane delete --list --repo <統合先worktree>`で残る資源と理由を確認してください",
         )
     if cleanup["retained"]:
         _outcome.report_warning(
             "終了時に回収できない登録済みレーン資源を保持した",
-            next_action=f"{cleanup.get('result_path')}の理由を解消し、`atk lane delete --session-id {identifier}`を実行する",
+            next_action=(
+                f"{cleanup.get('result_path')}の理由を解消し、`atk lane delete --session-id {identifier}`を実行してください"
+            ),
         )
     if cleanup.get("orphans", {}).get("retained"):
         _outcome.report_warning(
             "終了時に回収できない登録外資源を保持した",
-            next_action="`atk lane delete --list --repo <統合先worktree>`で保持理由と残る資源を確認する",
+            next_action="`atk lane delete --list --repo <統合先worktree>`で保持理由と残る資源を確認してください",
         )
 
     def _before_signal(target: Target) -> None:
