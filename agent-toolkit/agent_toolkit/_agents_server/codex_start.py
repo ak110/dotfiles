@@ -180,8 +180,9 @@ class CodexStartMixin:
                                 f"Codexの接続を開始していない（provider={selection.primary}）: {skipped}。"
                                 f"使用順`{key}`に他の利用可能な接続先が無い",
                                 next_action=(
-                                    "理由に示した解除予定まで待つ。起動時の候補切替は工程別設定に従う。"
-                                    f"上限中もCodexを使う場合は`atk config set {key} <種別列>`でAPI課金の接続先を使用順へ加える"
+                                    f"解除予定={resets}まで待ち、同じ工程名で再試行する。"
+                                    if resets != "不明"
+                                    else "解除時刻は不明のため利用上限の回復を待ち、同じ工程名で再試行する。"
                                 ),
                             )
                         failures.append(f"{selection.primary}: 試していない。{skipped}")
