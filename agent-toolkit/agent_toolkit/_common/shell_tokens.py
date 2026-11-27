@@ -166,4 +166,14 @@ def is_agents_wait_command(tokens: Sequence[str]) -> bool:
 
 def is_agents_exit_session_command(tokens: Sequence[str]) -> bool:
     arguments = strip_redirections(tokens)
-    return len(arguments) == 2 and is_atk_command(arguments) and arguments[1] == "agents-exit-session"
+    if len(arguments) < 2 or not is_atk_command(arguments) or arguments[1] != "agents-exit-session":
+        return False
+    match arguments[2:]:
+        case ():
+            return True
+        case ("--repo", path):
+            return bool(path) and not path.startswith("-")
+        case (option,):
+            return option.startswith("--repo=") and bool(option.partition("=")[2])
+        case _:
+            return False

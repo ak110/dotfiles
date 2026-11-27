@@ -38,6 +38,7 @@ def _repo_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pa
         {"session_id": "session-1", "model": _ID.model, "effort": _ID.effort}, is_codex=True
     )
     monkeypatch.setenv("CODEX_THREAD_ID", "session-1")
+    monkeypatch.delenv(commit_hook_environment.CLAUDE_ACTOR_ENV, raising=False)
     monkeypatch.setenv(commit_hook_environment.HOOKS_ENV, str(hooks))
     monkeypatch.setenv("PYTHONPATH", str(package))
     monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'color.ui'='never' " + commit_hook_environment.config_parameter(hooks))
@@ -115,6 +116,152 @@ def test_existing_commit_msg_invalid_rewrite_is_rejected(repo: pathlib.Path) -> 
     assert result.returncode != 0
     assert "違反が2件" in result.stderr
     assert _git(repo, "rev-parse", "HEAD").stdout == head
+
+
+def _git_notifies_initial_head(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> bool:
+    probe = tmp_path / "probe"
+    probe.mkdir()
+    hooks = tmp_path / "probe-hooks"
+    hooks.mkdir()
+    hook = hooks / "reference-transaction"
+    hook.write_text('#!/bin/sh\ncat >> "$TEST_REF_PROBE"\n', encoding="utf-8")
+    hook.chmod(0o755)
+    events = probe / "events"
+    monkeypatch.setenv("TEST_REF_PROBE", events.as_posix())
+    result = _git(probe, "-c", f"core.hooksPath={hooks.as_posix()}", "init", "--template=", "--initial-branch=example")
+    assert result.returncode == 0, result.stderr
+    return _contains_head_update(events.read_text(encoding="ascii") if events.exists() else "")
+
+
+def _contains_head_update(updates: str) -> bool:
+    return any(len(fields) == 3 and fields[2] == "HEAD" for fields in (line.split() for line in updates.splitlines()))
+
+
+@pytest.mark.parametrize(
+    ("updates", "notifies"),
+    [
+        pytest.param("", False, id="no-updates"),
+        pytest.param("old ref:refs/heads/example HEAD\n", True, id="head"),
+        pytest.param("old ref:refs/heads/example HEAD\n" * 3, True, id="repeated-head"),
+        pytest.param("old new refs/heads/HEAD\n", False, id="different-ref"),
+        pytest.param("HEAD\n", False, id="not-an-update"),
+    ],
+)
+def test_initial_head_events_detect_notification(updates: str, notifies: bool) -> None:
+    assert _contains_head_update(updates) is notifies
+
+
+def _assert_ref_event(log_dir: pathlib.Path, phase: str, project: pathlib.Path, update_fields: list[str]) -> None:
+    location, update = (log_dir / phase).read_text(encoding="utf-8").splitlines()
+    assert pathlib.Path(location) == project
+    assert update.split()[1:] == update_fields
+
+
+def _check_initialized_ref_updates(
+    project: pathlib.Path, log_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, rejecting: bool
+) -> None:
+    object_result = _git(project, "hash-object", "-w", "--stdin", stdin="参照更新の試験\n")
+    assert object_result.returncode == 0, object_result.stderr
+    oid = object_result.stdout.strip()
+    if not rejecting:
+        updated_ref = "refs/tags/updated"
+        committed = _git(project, "update-ref", updated_ref, oid)
+        assert committed.returncode == 0, committed.stderr
+        for phase in ("prepared", "committed"):
+            _assert_ref_event(log_dir, phase, project, [oid, updated_ref])
+        current = _git(project, "rev-parse", "--verify", updated_ref)
+        assert current.returncode == 0 and current.stdout.strip() == oid
+        log_dir = log_dir / "rejected"
+        log_dir.mkdir()
+        monkeypatch.setenv("TEST_REF_LOG", log_dir.as_posix())
+        monkeypatch.setenv("TEST_REJECT_PREPARED", "1")
+
+    rejected_ref = "refs/tags/rejected"
+    before = _git(project, "rev-parse", "--verify", rejected_ref)
+    assert before.returncode != 0
+    rejected = _git(project, "update-ref", rejected_ref, oid)
+    assert rejected.returncode != 0
+    assert _git(project, "rev-parse", "--verify", rejected_ref).returncode != 0
+    _assert_ref_event(log_dir, "prepared", project, [oid, rejected_ref])
+    assert not (log_dir / "committed").exists()
+
+
+@pytest.mark.usefixtures("repo")
+@pytest.mark.parametrize("configured", ["absent", "template", "relative", "command", "reject", "unresolved"])
+def test_reference_transaction_initialization_keeps_existing_hook(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, configured: str
+) -> None:
+    wrapper_dir = pathlib.Path(os.environ[commit_hook_environment.HOOKS_ENV])
+    original_wrapper = (wrapper_dir / "commit-msg").read_text(encoding="utf-8")
+    wrapper = original_wrapper.replace(' commit-msg "$PWD"', ' reference-transaction "$PWD"')
+    target = wrapper_dir / "reference-transaction"
+    target.write_text(wrapper, encoding="utf-8")
+    target.chmod(0o755)
+    template = tmp_path / "template"
+    template.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    log_dir = project / "recorded"
+    log_dir.mkdir()
+    monkeypatch.setenv("TEST_REF_LOG", log_dir.as_posix())
+    monkeypatch.setenv("TEST_REJECT_PREPARED", "1" if configured == "reject" else "0")
+
+    hook = None
+    if configured not in {"absent", "unresolved"}:
+        hook_dir = template / "hooks" if configured == "template" else project / "previous hooks"
+        hook_dir.mkdir()
+        if configured == "command":
+            previous = commit_hook_environment.config_parameter(hook_dir)
+            monkeypatch.setenv("GIT_CONFIG_PARAMETERS", f"{previous} {os.environ['GIT_CONFIG_PARAMETERS']}")
+            (template / "config").write_text("[core]\n\thooksPath = missing\n", encoding="utf-8")
+        elif configured != "template":
+            (template / "config").write_text('[core]\n\thooksPath = "previous hooks"\n', encoding="utf-8")
+        hook = hook_dir / "reference-transaction"
+        hook.write_text(
+            '#!/bin/sh\n(pwd -W 2>/dev/null || pwd) >> "$TEST_REF_LOG/$1"\ncat >> "$TEST_REF_LOG/$1"\n'
+            '[ "$TEST_REJECT_PREPARED" != 1 ] || [ "$1" != prepared ]\n',
+            encoding="utf-8",
+        )
+        hook.chmod(0o755)
+    if configured == "unresolved":
+        (template / "config").write_text('[includeIf "gitdir:**"]\n\tpath = extra-config\n', encoding="utf-8")
+    notifies = _git_notifies_initial_head(tmp_path, monkeypatch)
+    process = _git(project, "init", "--initial-branch=example", f"--template={template}")
+    head = project / ".git" / "HEAD"
+    if notifies and configured == "unresolved":
+        assert process.returncode != 0
+        assert "既存hookの配置先を確定できない" in process.stderr
+        assert "includeIf" in process.stderr
+        assert "commitだけを再実行" not in process.stderr
+        assert not head.exists()
+        return
+    if notifies and configured == "reject":
+        assert process.returncode != 0
+        assert not head.exists()
+        _assert_ref_event(log_dir, "prepared", project, ["ref:refs/heads/example", "HEAD"])
+        assert not (log_dir / "committed").exists()
+        return
+    assert process.returncode == 0, process.stderr
+    assert head.read_text(encoding="ascii").strip() == "ref: refs/heads/example"
+    if hook is not None:
+        if notifies:
+            for phase in ("prepared", "committed"):
+                _assert_ref_event(log_dir, phase, project, ["ref:refs/heads/example", "HEAD"])
+        else:
+            assert not list(log_dir.iterdir())
+        updates = log_dir / "updates"
+        updates.mkdir()
+        monkeypatch.setenv("TEST_REF_LOG", updates.as_posix())
+        _check_initialized_ref_updates(project, updates, monkeypatch, rejecting=configured == "reject")
+
+
+def test_commit_msg_launch_error_keeps_commit_specific_guidance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["git_commit_msg", str(tmp_path), "commit-msg", str(tmp_path / "missing")])
+
+    assert git_commit_msg.main() == 1
+    assert "commitだけを再実行してください" in capsys.readouterr().err
 
 
 def test_default_comment_cleanup_and_verbatim_limitation(repo: pathlib.Path) -> None:

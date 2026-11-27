@@ -437,3 +437,27 @@ def test_pretooluse_reads_only_recent_records(tmp_path: pathlib.Path, monkeypatc
     assert bool(delivered_repost_gate.pretooluse_notice(payload, "delivery-progress")) is required
     assert delivered_repost_gate.pretooluse_notice(payload, "delivery-progress") is None
     assert len(offsets) == 2 and all(offset > 1000 for offset in offsets)
+
+
+def test_pretooluse_falls_back_when_new_delivery_contract_has_no_line_ending(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(session_state, "state_path", lambda _: tmp_path / "state.json")
+    path = tmp_path / "transcript.jsonl"
+    prefix = [_HUMAN, *_response("m1", _text("途中の応答" * 50), _call("Read", "tool", {}))]
+    path.write_text("".join(json.dumps(entry) + "\n" for entry in prefix), encoding="utf-8")
+    payload = {"transcript_path": str(path), "tool_use_id": "tool"}
+    assert delivered_repost_gate.pretooluse_notice(payload, "delivery-progress") is None
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(_SEND_NOTICE))
+
+    offsets: list[int] = []
+    read = delivered_repost_gate.transcript.read_transcript_bytes
+
+    def record_offset(path: str, *, offset: int = 0) -> bytes | None:
+        offsets.append(offset)
+        return read(path, offset=offset)
+
+    monkeypatch.setattr(delivered_repost_gate.transcript, "read_transcript_bytes", record_offset)
+    assert delivered_repost_gate.pretooluse_notice(payload, "delivery-progress")
+    assert len(offsets) == 2 and offsets[0] > 0 and offsets[1] == 0

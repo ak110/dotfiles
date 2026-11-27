@@ -123,6 +123,16 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         if session.interrupt_requested:
             return
+        session_id = session.session_id
+        if session_id in self._auto_resume_in_flight:
+            return
+        self._auto_resume_in_flight.add(session_id)
+        try:
+            await self._advance_pending_result(session)
+        finally:
+            self._auto_resume_in_flight.remove(session_id)
+
+    async def _advance_pending_result(self, session: SessionState) -> None:
         expiry = session.usage_limit_resume_at
         if (
             session.engine == "codex"
@@ -208,6 +218,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         if session.codex_provider_resume_pending:
             pending = session.pending_result
+            assert pending is not None
             try:
                 await self._send_with_resources(session, wrap_delivery_body(codex_providers.CONTINUE_PROMPT))
             except Exception:

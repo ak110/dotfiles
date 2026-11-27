@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import json
 import os
 import pathlib
@@ -8,14 +9,17 @@ import sys
 import textwrap
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Generator
 from typing import cast
 
 import psutil
 import pytest
+from pyfltr.command import execution_slot
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import sweep
 from agent_toolkit._testing import late_descendant, pytest_plugin, xdist_stop
+from agent_toolkit._testing.git_repository import init_repository, run_git
 from agent_toolkit._testing.pytest_plugin_support import _run_child_pytest
 
 # pylint: disable=protected-access
@@ -475,3 +479,82 @@ def test_reclaim_stale_pytest_fixtures_keeps_running_owner(tmp_path: pathlib.Pat
 
     assert reclaimed == [dead]
     assert live.exists() and unknown.exists() and not dead.exists()
+
+
+def test_parallel_worktrees_keep_and_release_their_pytest_fixtures(tmp_path: pathlib.Path) -> None:
+    source = textwrap.dedent("""\
+        import os
+        import time
+        from pathlib import Path
+
+        def test_fixture(tmp_path):
+            fixture = tmp_path / "data"
+            fixture.write_text("fixture", encoding="utf-8")
+            ready = Path(os.environ["FIXTURE_SIGNAL"])
+            staged = ready.with_suffix(".pending")
+            staged.write_text(str(fixture), encoding="utf-8")
+            staged.replace(ready)
+            deadline = time.monotonic() + 60
+            while not ready.with_suffix(".release").exists():
+                assert time.monotonic() < deadline
+                time.sleep(0.05)
+            assert fixture.read_text(encoding="utf-8") == "fixture"
+        """)
+    checkout = init_repository(tmp_path / "repo", files={"probe_test.py": source}, commit_message="試験")
+    worktrees = (tmp_path / "left", tmp_path / "right")
+    for worktree in worktrees:
+        run_git(checkout, "worktree", "add", "--detach", str(worktree))
+    temp_root = managed_temp.temp_root_path()
+    argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", pytest_plugin.__name__, "probe_test.py"]
+
+    @contextlib.contextmanager
+    def active_fixture(worktree: pathlib.Path) -> Generator[pathlib.Path]:
+        ready = worktree.with_suffix(".ready")
+        release = ready.with_suffix(".release")
+        ready.unlink(missing_ok=True)
+        release.unlink(missing_ok=True)
+        env = dict(
+            os.environ,
+            PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+            PYTHONDONTWRITEBYTECODE="1",
+            PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"),
+            FIXTURE_SIGNAL=str(ready),
+        )
+        env[execution_slot.SLOTS_ENV] = str(execution_slot.DEFAULT_SLOTS)
+        env.pop("PYTEST_ADDOPTS", None)
+        with subprocess.Popen(
+            argv, cwd=worktree, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"
+        ) as child:
+            try:
+                deadline = time.monotonic() + 30
+                while not ready.is_file():
+                    assert child.poll() is None, child.communicate(timeout=5)[0]
+                    assert time.monotonic() < deadline, worktree
+                    time.sleep(0.05)
+                fixture = pathlib.Path(ready.read_text(encoding="utf-8"))
+                area = temp_root / fixture.relative_to(temp_root).parts[0]
+                assert area.name.startswith("pytest-fixtures-")
+                yield fixture
+                release.touch()
+                output, _ = child.communicate(timeout=30)
+                assert child.returncode == 0 and "1 passed" in output, output
+                assert not area.exists()
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=5)
+
+    for worktree in worktrees:
+        with active_fixture(worktree) as fixture:
+            assert fixture.read_text(encoding="utf-8") == "fixture"
+    with active_fixture(worktrees[1]) as right:
+        with active_fixture(worktrees[0]) as left:
+            unused = managed_temp.create_managed_temp("fixture-unused")
+            now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+            result = managed_temp.sweep_managed_temp(now=now, force=True)
+            assert result.deleted == [unused] and not result.failed, result
+            assert left != right
+            assert left.read_text(encoding="utf-8") == right.read_text(encoding="utf-8") == "fixture"
+        assert right.read_text(encoding="utf-8") == "fixture"
+    for worktree in worktrees:
+        run_git(checkout, "worktree", "remove", str(worktree))

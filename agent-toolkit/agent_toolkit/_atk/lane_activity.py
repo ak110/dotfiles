@@ -181,7 +181,7 @@ def process_activity(worktree: pathlib.Path) -> str | None:
     return None
 
 
-def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> str | None:
+def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True, read_only: bool = False) -> str | None:
     state_root = state_paths.state_dir()
     directory = session_launchers.registry_directory(state_root)
     deadline: float | None = None
@@ -211,6 +211,11 @@ def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> s
             )
         if resolution.state is session_registry.Resolution.TERMINAL:
             if _exited_and_collected(path.stem, state_root):
+                continue
+            if read_only:
+                owner = resolution.owner_process
+                if (owner is not None and owner.exists()) or any(proc.exists() for proc in resolution.executor_processes):
+                    return f"担当の解放を確認できない: session_id={path.stem}。{instruction}"
                 continue
             if deadline is None:
                 deadline = time.monotonic() + (min(get_wait_timeout("main"), _RELEASE_WAIT_SECONDS) if wait_release else 0)
@@ -250,8 +255,22 @@ def _exited_and_collected(session_id: str, state_root: pathlib.Path) -> bool:
         return False
 
 
-def has_unignored_changes(worktree: pathlib.Path) -> bool:
+def has_unignored_changes(worktree: pathlib.Path, *, read_only: bool = False) -> bool:
+    if not read_only:
+        _prepare_unignored(worktree)
+    return bool(
+        _lane_records.git(
+            worktree,
+            "--no-optional-locks",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        )
+    )
 
+
+def _prepare_unignored(worktree: pathlib.Path) -> None:
     tracked: set[str] = set()
     for name in _lane_records.git(worktree, "ls-files", "--cached", "-z").split("\0"):
         if name:
@@ -278,4 +297,3 @@ def has_unignored_changes(worktree: pathlib.Path) -> bool:
         return result.returncode == 0
 
     temp_permissions.prepare_tree(worktree, skip=ignored)
-    return bool(_lane_records.git(worktree, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"))

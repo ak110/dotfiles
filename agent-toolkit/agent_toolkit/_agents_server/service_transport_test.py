@@ -22,7 +22,9 @@ from mcp.types import CallToolRequestParams, CallToolResult
 from agent_toolkit._agents_server import (
     mcp_tools,
     plugin_root,
+    service,
     service_context,
+    service_distribution,
     service_forward,
     service_io,
     service_rpc,
@@ -33,7 +35,52 @@ from agent_toolkit._agents_server.service_coordinator_test import _coordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
 from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
-from agent_toolkit._common import runtime_environment
+from agent_toolkit._common import delegated_session, runtime_environment
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("isolated", [False, True])
+async def test_start_forwarding_checks_management_scope(tmp_path: pathlib.Path, isolated: bool) -> None:
+    home = tmp_path / "home"
+    env = {"HOME": str(home), "USERPROFILE": str(home), "XDG_STATE_HOME": str(home), "LOCALAPPDATA": str(home)}
+    distribution = tmp_path / "distribution"
+    distribution.mkdir()
+    env[delegated_session.CALLER_PLUGIN_ROOT_ENV] = str(distribution)
+    normal = service_transport.namespace(
+        runtime_environment.CallerContext({**env, service_distribution.UPDATE_ENV: "1"}, tmp_path)
+    )
+    normal.mkdir(parents=True)
+    if not isolated:
+        service_distribution.publish(normal, service_distribution.identity(distribution))
+    caller = runtime_environment.CallerContext(env, tmp_path)
+    peer = SimpleNamespace(call=AsyncMock())
+    start = AsyncMock(return_value=CallToolResult(content=[]))
+    cleanup = SimpleNamespace(call=None, transfer=None, events=None, acknowledge=None, release=None, discard=None)
+    await service._rpc(
+        cast(Any, peer),
+        {
+            "operation": "public_call",
+            "arguments": {
+                "caller": {"environment": dict(caller.environment), "cwd": str(caller.cwd), "connection_id": "nested"},
+                "params": {"name": "start", "arguments": {"cwd": str(tmp_path)}},
+            },
+        },
+        cast(Any, cleanup),
+        cast(Any, None),
+        cast(Any, None),
+        cast(Any, SimpleNamespace(directory=normal, call_tool=start)),
+    )
+
+    response = peer.call.await_args.args[1]
+    if isolated:
+        start.assert_not_awaited()
+        assert "異なる管理領域への転送はできません" in response["error"]
+        assert str(service_transport.namespace(caller)) in response["error"]
+        assert str(normal) in response["error"]
+        assert "次の操作:" in response["error"]
+    else:
+        start.assert_awaited_once()
+        assert "error" not in response
 
 
 def test_windows_owner_token_selects_distinct_registry_and_pipe(monkeypatch, tmp_path):

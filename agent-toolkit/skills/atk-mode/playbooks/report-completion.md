@@ -65,7 +65,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 2. 自分が作った作業用領域を、`agent-toolkit:atk-mode/playbooks/managed-temp.md`の寿命の区分に従って回収する。
    `agent-toolkit:atk-mode/references/operations.md`「プロセス終了の安全規定」に従う。
    process-wiの登録済みレーンの資源は、追加作業や公開後の工程に備えてこの時点では保持する。
-   通常終了では`atk agents-exit-session`が回収する。
+   通常終了では`atk agents-exit-session`が回収し、統括は登録外資源の統合先worktreeが1つに確定していれば`--repo <統合先worktree>`を渡す。
    巡回の回収は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」に従う。
    未回収の対象は保持の理由を調べ、認可の範囲で解消できるものは同じ回収操作で再判定する。
    別セッションが現に使う資源は保護し、使用主体、保持理由、次回の再判定を報告する。

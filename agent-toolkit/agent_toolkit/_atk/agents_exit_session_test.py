@@ -12,7 +12,7 @@ import typing
 import psutil
 import pytest
 
-from agent_toolkit._atk import agents_exit_session
+from agent_toolkit._atk import agents_exit_session, lane
 from agent_toolkit._common import completion_exit
 from agent_toolkit._testing.helpers import repl_send_to_user_entries
 
@@ -110,6 +110,38 @@ def test_unsupported_host_reports_invocation_without_stopping(
     assert "/exit" in captured.err
 
 
+@pytest.mark.parametrize("registered, orphan", [(True, False), (False, True), (True, True)])
+def test_exit_cleanup_warns_with_the_retry_command_for_each_resource(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: pathlib.Path,
+    *,
+    registered: bool,
+    orphan: bool,
+) -> None:
+    monkeypatch.setattr(lane, "current_session_id", lambda: "session-test")
+    monkeypatch.setattr(
+        lane,
+        "cleanup_session",
+        lambda *_args, **_kwargs: {"retained": ["lane-01"] if registered else [], "result_path": "/saved-result"},
+    )
+    monkeypatch.setattr(agents_exit_session, "is_delegated", lambda _environ: False)
+
+    monkeypatch.setattr(agents_exit_session.lane_cleanup, "exit_orphan_target", lambda *_args: (tmp_path, "refs/heads/main"))
+
+    def cleanup_orphans(_identifier, _target, _cwd, cleanup):
+        cleanup["orphans"] = {"retained": ["orphan"] if orphan else []}
+
+    monkeypatch.setattr(agents_exit_session.lane_cleanup, "cleanup_exit_orphans", cleanup_orphans)
+    monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
+
+    assert agents_exit_session.main() == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["status"] == "unsupported"
+    assert ("--session-id session-test" in captured.err) is registered
+    assert ("--list --repo <統合先worktree>" in captured.err) is orphan
+
+
 def test_changed_target_names_rerun_and_exit_command(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
@@ -161,6 +193,7 @@ def test_exit_requested_with_current_marker(
 ) -> None:
     """Function hooksの読込目印が現在のセッションにあるClaude Codeでは、停止シグナルを送らずターン後の終了を要求する。"""
     target = _claude_target(tmp_path)
+    monkeypatch.chdir(tmp_path)
     directory = tmp_path / "agent-toolkit-function-hooks"
     directory.mkdir()
     (directory / "marker-session-1.txt").write_text("ready", encoding="utf-8")
@@ -188,6 +221,7 @@ def test_missing_marker_or_session_id_keeps_signal_path(
 ) -> None:
     """目印かIDを欠くClaude Codeには従来のSIGTERMを送る。"""
     target = _claude_target(tmp_path)
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
     if session_id is None:
         monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
@@ -206,6 +240,7 @@ def test_missing_marker_or_session_id_keeps_signal_path(
 
 def test_old_marker_from_resume_keeps_signal_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     target = _claude_target(tmp_path)
+    monkeypatch.chdir(tmp_path)
     directory = tmp_path / "agent-toolkit-function-hooks"
     directory.mkdir()
     marker = directory / "marker-session-3.txt"

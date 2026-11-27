@@ -14,8 +14,10 @@ from collections.abc import Mapping
 
 import pytest
 
+from agent_toolkit._atk import lane_cleanup
 from agent_toolkit._atk.wi.formatters import NewWorkItem
 from agent_toolkit._common import session_state
+from agent_toolkit._common.delegated_session import OWNER_SESSION_ENV
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_MARKER
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import progress_self_check
@@ -59,6 +61,46 @@ def test_periodic_recheck_absorbs_one_minute_of_clock_jitter() -> None:
     early = 1000.0 + _INTERVAL - 1
     assert progress_self_check.claim_notice(payload, now=early) is None
     assert progress_self_check.claim_notice(payload, now=early, periodic_recheck=True) is not None
+
+
+@pytest.mark.parametrize("mode", ["mixed", "empty", "failure", "delegated"])
+def test_orphan_candidates_are_read_only_when_main_notice_is_due(
+    mode: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(OWNER_SESSION_ENV, raising=False)
+    if mode == "delegated":
+        monkeypatch.setenv(OWNER_SESSION_ENV, "test-owner")
+    monkeypatch.setattr(lane_cleanup, "repository_at", lambda _path: tmp_path)
+    scanned = []
+
+    def scan(_repo, _registered, **_kwargs):
+        scanned.append(mode)
+        if mode == "failure":
+            raise ValueError("Gitの一覧エラー")
+        if mode == "mixed":
+            return [
+                {"worktree": "統合済み", "removable": True, "reason": None, "age_seconds": 30},
+                {"worktree": "古い変更", "removable": False, "reason": "未追跡あり", "age_seconds": 86401},
+                {"worktree": "最近の変更", "removable": False, "reason": "未追跡あり", "age_seconds": 86400},
+            ]
+        return []
+
+    monkeypatch.setattr(lane_cleanup, "classify_orphans", scan)
+    payload = {"session_id": _session_id(), "cwd": str(tmp_path)}
+    assert progress_self_check.claim_notice(payload, now=1000.0) is None
+    assert not scanned
+    notice = progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL)
+    assert notice and "完成条件の根拠と残工程" in notice
+    assert scanned == ([] if mode == "delegated" else [mode])
+    if mode == "mixed":
+        assert "回収可能な登録外worktree 1件: 統合済み" in notice
+        assert "保持候補 1件: 古い変更（未追跡あり）" in notice
+        assert "最近の変更" not in notice
+    elif mode == "failure":
+        assert "登録外worktreeの一覧を取得できない" in notice and "Gitの一覧エラー" in notice
+        assert "atk lane delete --list --repo <統合先worktree>" in notice
+    else:
+        assert "登録外worktree" not in notice
 
 
 def test_notice_waits_for_interval_and_fires_once() -> None:

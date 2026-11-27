@@ -8,7 +8,7 @@ import time
 
 lazy import psutil
 
-from agent_toolkit._atk import help_text, lane_retirement, managed_temp, outcome, run_command
+from agent_toolkit._atk import help_text, managed_temp, outcome, run_command
 from agent_toolkit._atk import lane_cleanup as _lane_cleanup
 from agent_toolkit._atk import lane_create as _lane_create
 from agent_toolkit._atk import lane_integration as _lane_integration
@@ -127,7 +127,9 @@ def dispatch(args: argparse.Namespace) -> int:
                 if records["errors"]:
                     paths = "、".join(str(item["record_path"]) for item in records["errors"])
                     raise ValueError(f"所有登録を確認できないため登録外候補を分類しない: {paths}")
-                listed["orphan_candidates"] = lane_retirement.orphan_candidates(args.repo.resolve(), records["records"])
+                listed["orphan_candidates"] = _lane_cleanup.classify_orphans(
+                    args.repo.resolve(), records["records"], caller=pathlib.Path.cwd()
+                )
             print(json.dumps(listed, ensure_ascii=False))
             return 1 if listed["errors"] else 0
         except (OSError, ValueError) as error:
@@ -165,7 +167,7 @@ def dispatch(args: argparse.Namespace) -> int:
                 base = base or _lane_records.git(repo, "symbolic-ref", "--short", "HEAD")
             result = _lane_cleanup.cleanup_session(session_id, retire_integrated=retire or finished_session)
             if repo is not None and base is not None:
-                result["orphans"] = _lane_cleanup.cleanup_orphans(repo, base, caller)
+                result["orphans"] = _lane_cleanup.cleanup_orphans(repo, f"refs/heads/{base}", caller)
                 if result.get("result_path"):
                     _lane_records.save(pathlib.Path(result["result_path"]), result)
         shown = result

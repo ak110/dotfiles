@@ -109,6 +109,52 @@ def test_edit_dry_run_opening_and_unchanged_input(
         assert source.read_bytes() == body.encode()
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.parametrize("already_detailed", [False, True])
+def test_dry_run_detail_can_validate_without_being_processing_owner(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    already_detailed: bool,
+) -> None:
+    notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv("CODEX_THREAD_ID", "reviewer")
+    filename = "20261007-010614-901.md"
+    folder = notes / "2026" / "10"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / filename
+    detail = "detailed: true\n" if already_detailed else ""
+    path.write_text(
+        "---\nstate: processing\ntarget_repo: github.com/example/foo\ntype: awi\nsource: session-review\n"
+        f"{detail}processing_owner:\n  host: owner-host\n  session: design-session\n---\n\n{AGENT_AWI_BODY}",
+        encoding="utf-8",
+    )
+    _git_output(notes, "add", ".")
+    _git_output(notes, "-c", "user.name=atk-test", "-c", "user.email=atk-test@example.invalid", "commit", "-m", "awi")
+    _git_output(notes, "push", "origin", "main")
+    origin = tmp_path / "origin.git"
+
+    def state() -> tuple[str, str, bytes]:
+        return _git_output(notes, "rev-parse", "HEAD"), _git_output(origin, "rev-parse", "main"), path.read_bytes()
+
+    before = state()
+    argv = [*_edit_body_args(tmp_path, filename, AGENT_AWI_BODY + "\n補足の段落。"), "--target-repo=github.com/example/foo"]
+    opening = tmp_path / "opening.md"
+    code, error, output = _run_edit(tmp_path, [*argv, "--dry-run", "--detail", "--opening-output", str(opening)], capsys)
+    if already_detailed:
+        assert code == 2 and "詳細化済み" in error
+        assert not opening.exists()
+    else:
+        assert code == 0, error
+        assert opening.read_text(encoding="utf-8").strip() == "本文"
+        assert any("owner-host/design-session" in line and "保存は処理中の担当の会話だけ" in line for line in output)
+    assert _run_edit(tmp_path, [*argv, "--detail"], capsys)[0] == 2
+    assert _run_edit(tmp_path, [*argv, "--dry-run"], capsys)[0] == 2
+    assert state() == before
+
+
 @pytest.mark.parametrize(
     ("prepare", "expected_code"),
     [

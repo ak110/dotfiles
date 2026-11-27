@@ -487,7 +487,7 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
                 f"{_row_position(row_id)}は担当の記録でありレビュー担当の指摘ではない",
                 next_action="再確認はレビュー担当の指摘行だけへ記録する",
             )
-        column = 5 if row[5].strip() else 6 if row[6].strip() else None
+        column = _response_column(row)
         if column is None:
             raise _ActionableError(
                 f"{_row_position(row_id)}は未応答である",
@@ -541,7 +541,11 @@ def _carried_row_id(rows: list[list[str]], origin_row_id: int, round_value: int,
     )
 
 
-def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple[int, list[int], dict[str, int]] | None:
+def _response_column(row: list[str]) -> int | None:
+    return 5 if row[5].strip() else 6 if row[6].strip() else None
+
+
+def _latest_recheck_candidates(rows: list[list[str]], round_value: int, track: str) -> tuple[int, list[int]] | None:
     candidates = [
         (row_id, row)
         for row_id, row in enumerate(rows, start=1)
@@ -550,11 +554,32 @@ def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple
     if not candidates:
         return None
     latest = max(int(_normalized(row[0])) for _, row in candidates)
+    return latest, [row_id for row_id, row in candidates if int(_normalized(row[0])) == latest]
+
+
+def require_recheck_responses(path: Path, round_value: int) -> None:
+    rows = _read(path)
+    _validate_rows(rows, require_responses=False)
+    selection = _latest_recheck_candidates(rows, round_value, "exec-review")
+    if selection is None:
+        return
+    latest, row_ids = selection
+    missing = [_row_position(row_id) for row_id in row_ids if _response_column(rows[row_id - 1]) is None]
+    if missing:
+        raise _ActionableError(
+            f"再レビューは未配送: {path} のラウンド{latest}に未応答の指摘がある: {'、'.join(missing)}",
+            next_action="`atk review-table respond`で対象行へ応答を記録してから、同じ再レビューを送り直す",
+        )
+
+
+def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple[int, list[int], dict[str, int]] | None:
+    selection = _latest_recheck_candidates(rows, round_value, track)
+    if selection is None:
+        return None
+    latest, row_ids = selection
     pending: list[int] = []
     counts: dict[str, int] = dict.fromkeys(RECHECK_VERDICTS, 0)
-    for row_id, row in candidates:
-        if int(_normalized(row[0])) != latest:
-            continue
+    for row_id in row_ids:
         valid = [entry for entry in _valid_verdicts(rows, row_id) if entry[0] <= round_value]
         if not valid:
             pending.append(row_id)

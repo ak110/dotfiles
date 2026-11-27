@@ -88,6 +88,7 @@ class ManagerBase:
         self._wait_timeouts: dict[str, float] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._auto_resume_task: asyncio.Task[None] | None = None
+        self._auto_resume_in_flight: set[str] = set()
         self._retention_timers: dict[str, asyncio.TimerHandle] = {}
         self._resource_release_tasks: dict[str, asyncio.Task[None]] = {}
         self._active_sends: dict[str, set[asyncio.Task[Any]]] = {}
