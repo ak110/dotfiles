@@ -110,9 +110,14 @@ def main() -> int:
             from agent_toolkit._common import commit_hook_environment
 
             caller_environment = commit_hook_environment.atk_environment(options.arguments, caller_environment)
+        interpreter = Path(sys.executable).resolve().parent
+        injected = {interpreter, interpreter / "Scripts"}
         path = caller_environment.get("PATH", "").split(os.pathsep)
-        if path and Path(path[0]).resolve() == Path(sys.executable).resolve().parent:
-            caller_environment["PATH"] = os.pathsep.join(path[1:])
+        start = 0
+        while start < len(path) and path[start] and Path(path[start]).resolve() in injected:
+            start += 1
+        if start:
+            caller_environment["PATH"] = os.pathsep.join(path[start:])
         selected = plugin_environment.project_environment(root, caller_environment)
         python = plugin_environment.prepared_environment_python(selected)
     except OSError as exc:
