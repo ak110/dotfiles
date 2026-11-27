@@ -64,7 +64,7 @@
 ## レーンworktreeの扱い
 
 1. 統合・最終化の検収と消費の工程を終えたレーンは、巡回全体の終了を待たずに、メインが`atk lane delete`で回収する。
-   公開担当の稼働中は回収を止める（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」）。
+   公開中の公開単位に含まれるレーンだけは、その単位の検収まで回収を止める（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」）。
    同じthreadへの追加は、保存したcommit・計画・引き継ぎを使い、`atk lane create`で環境を作り直してから再開する。
 2. 回収の順は、`--commands-file`に渡したdeleteコマンド、worktree、branch、以前の構成の個別managed-tempとする。
    回収時は主作業リポジトリから実体のパス、Git登録、branchの有無を照会し、全てが無いと確定した登録だけを、警告と最後に記録したHEADを残して回収する。

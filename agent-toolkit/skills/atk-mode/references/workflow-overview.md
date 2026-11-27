@@ -47,7 +47,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
    再レビューは前回の指摘、修正差分、直接影響範囲を確かめる。
 4. 統合: レーン担当が検収済みの成果を統合する。
    複数レーンではメインが依存条件を満たしたレーンへ統合を許可し、`atk lane integrate`は統合先HEADを1レーンずつ更新する。
-5. 公開と後始末: メインが`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の公開・CI・保存状態を検収し、常駐では周の報告から巡回へ戻り、単回実行では報告と終了へ進む。
+5. 公開と後始末: メインが`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の公開・CI・保存状態を検収し、常駐では成果の報告と並行して随時取り込みを続け、単回実行では報告と終了へ進む。
    準備・統合・回収の公開操作は`atk lane create`、`atk lane integrate`、`atk lane delete`で、実行前に`agent-toolkit:atk-mode/playbooks/process-wi.md`の該当節を確かめる。
    保持資源の回復は同書と`atk lane delete --help`、`atk lane recover --help`の条件と診断に従う。
 
@@ -85,7 +85,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 統括の素材から移した記録は、そのレーンの分析で未処理の範囲だけを扱う。
 
 作業の完了後は、報告を所有するメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`で結果を報告する。
-常駐では[周の区切りと振り返り](../playbooks/process-loop.md#巡回する)から同じ会話で巡回へ戻り、終了は同書「中断と再開」の条件に限る。
+常駐では[随時取り込みと振り返り](../playbooks/process-loop.md#巡回する)から同じ会話で巡回へ戻り、終了は同書「中断と再開」の条件に限る。
 Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`/atk-mode review-session batch`が非同期でまとめて分析する。
 batchが投入したAWIは、ユーザーの内容確認を待たずに採否の検討と処理の対象になり、要求・完成条件の項目ごとの出所と採否は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」で判断する。
 全量を指定せずに手動で起動した`/atk-mode review-session`は、確定済みの範囲より後を対象とする。

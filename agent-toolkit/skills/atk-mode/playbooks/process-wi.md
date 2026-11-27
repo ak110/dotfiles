@@ -66,7 +66,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
   巡回では、統括が対象リポジトリと系統ごとに準備した作業ツリーを指し、統括自身の起動cwdとは区別する。
   この作業ツリーはマージ先のbranchの代わりに、それを追跡する専用branch（`worktree-`で始まる名前）をcheckoutしている。
   `agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」のうちbranch名の項目は、`# branch.upstream`がマージ先のbranchの追跡refであることで確かめる。
-  公開用に別のbranch名が必要な場合もHEADを切り替えずに`git push <remote> HEAD:refs/heads/<公開用branch>`で送り、中間commitの検証などで切り替えた場合は工程の終わりに専用branchへ戻す。
+  公開用に別のbranch名が必要な場合もHEADを切り替えずに`git push <remote> <公開OID>:refs/heads/<公開用branch>`で送り、中間commitの検証などで切り替えた場合は工程の終わりに専用branchへ戻す。
 - **公開担当**: 公開工程（push、CI、検証の失敗の修正、プロジェクト固有の公開後の操作、延期adoptなど）を担う委譲先で、委譲の範囲は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」にある。
 - **即時対応**: 現在の影響と先送り条件に基づいて、直接修正と正式対応の時機を判定して実施すること（`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」）。
 
@@ -79,10 +79,13 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
 - 専用worktreeへの書き込みはレーン担当が持ち（メインが`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「同一主題の追加指示」で引き取った場合を除く）、主作業ツリーへの書き込みは統合の時に限る。
   担当の範囲の一部を委譲する場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従い、計画、検収、commitの対応の記録、統合、メインへの返却はレーン担当が責任を持つ。
 - ユーザー由来の要求の全部か一部を不採用にする場合は、先にユーザーの確認かUWIの回答を得てから採否を確定する。
-- 選定で確定した処理対象WIを最後まで処理し、同じ周の中ではready一覧を途中で取り直さない。
+- 選定で確定した処理対象WIを最後まで処理する。
+  常駐では起動直後、レーンの統合や完了で枠が空いた時、新着WIの通知、30分点検で候補を随時取り込み、CLIが未終了WIから算定する上限でレーン数を増減する。
+  手動の単回実行では初回のready一覧と従来の次回判定を保つ。
   追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の対象に限り、元の選定結果へ追記してレーンへ渡す。
 - 対象リポジトリへpushするのは公開担当だけとする。
-  前回の公開の後に同じセッションで新しい成果をベースブランチへ統合した場合は、追加の差分で公開担当を起動し直して最新HEADのpushとCIの通過を検収する（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開状態の検収と再起動」）。
+  前回の公開の後に新しい成果を統合した場合は、追加差分で公開担当を起動し直す。
+  公開開始時に固定した完全OIDのpushとCIの通過を検収する（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開状態の検収と再起動」）。
 - 計画ファイルとレビュー指摘管理表は、参照する全ての工程を終えてから片付ける。
   レーンの専用branchと専用worktreeは、`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」の時点で、所有登録とGit状態を確かめ直してから回収する。
 - メインの作業ディレクトリが実行環境の隔離worktree（Claude Codeの`EnterWorktree`など）の中にある場合は、専用worktreeの作成と回収が対象リポジトリのGit共通ディレクトリを変えるため、隔離を解いてから次へ進む。
@@ -106,8 +109,9 @@ all-reposの統括からリポジトリ担当として候補を受け取った�
 5. `統合準備完了`を返したレーンには、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従い、選定結果の`先行レーン`が全て統合済みなら`統合許可`を出す。
    各レーンは`atk lane integrate`で統合から計画の最終化、AWIの終了、選定結果への統合済みの記録までを終え、メインは返された`統合完了`を同書「統合の指示と受領」の受領条件で検収する。
 6. 処理中に加えた処理対象WIも、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理中に確定した必須是正レーン」で既存のレーンへ割り当て、同じレーン担当のスレッドで収束させて統合する。
-7. 全てのレーンが終わり、起動した監査の処置も確定したら、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に従って公開と報告を完遂する。
-   常駐では[周の区切り](process-loop.md#巡回する)から同じ会話で巡回へ戻り、終了は同書「中断と再開」の条件に限る。
+7. リポジトリ担当は統合の受領ごとに完全OIDとAWIの状態を統括へ通知し、担当範囲の統合を終えたら返却する。
+   常駐の統括は統合済みの公開単位から、手動の単回実行は全てのレーンと監査の処置の確定後に、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に従って公開と報告を完遂する。
+   常駐では[巡回する](process-loop.md#巡回する)の随時取り込みと公開を同じ会話で続け、終了は同書「中断と再開」の条件に限る。
 
 ## 検証環境
 
@@ -121,7 +125,7 @@ OSの指定が無い登録はLinuxとWindowsの両方を対象とし、必要な
 `atk config repos list`で`branches`を持つリポジトリは、継続して作業が入るoriginのブランチ（系統）ごとに処理する。
 処理中の系統は、all-reposの統括から受け取った対象では対象要素の`target_branch`、手動起動では起動した作業ツリーが追跡するブランチである。
 規範の「ベースブランチ」は処理中の系統のブランチを指し、候補の取得、レーンの作成と統合、push、CIの確認、公開状態の検収はそのブランチを対象にする。
-系統ごとの作業ツリーではローカルのブランチ名がリモートのブランチ名と異なるため、pushは`git push --dry-run --porcelain origin HEAD:refs/heads/<系統>`で到達先を確定し、同じrefspecで実行する。
+系統ごとの作業ツリーではローカルのブランチ名がリモートのブランチ名と異なるため、pushは`git push --dry-run --porcelain origin <公開OID>:refs/heads/<系統>`で到達先を確定し、同じrefspecで実行する。
 公開状態の4項目のうちブランチ名の項目は、`# branch.upstream`が`origin/<系統>`であることで確かめる。
 処理中に投入するUWIとAWIは`atk wi add --target-branch <系統>`で処理中の系統を宛先にし、両方の系統に必要な修正のAWIは`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に従って取り込み元の系統を宛先にする。
 GitHub CopilotのレビューとDependabotアラートの監査はリポジトリ単位の作業のため、`default_branch`の系統（系統を省略したWIの宛先）の処理だけが行う。
@@ -155,10 +159,10 @@ GitHub CopilotのレビューとDependabotアラートの監査はリポジト�
 工程の区切りは確認の理由から外し、ユーザーの判断が本当に必要な事項だけを確認待ちにして、その判断を待たずに進められる工程は続ける。
 回答がすぐに得られない確認事項は`agent-toolkit:atk-mode/playbooks/confirmation.md`「未確定判断の保留と暫定判断」に従ってUWIへ移し、`processing`の元項目も同じ手順でそのUWIへの依存を保存して`inbox`へ戻す。
 作業完了の報告を所有するメインは、この作業で作ったcommitを公開してから`agent-toolkit:atk-mode/playbooks/report-completion.md`に従って報告する。
-常駐では周ごとの報告とし、[巡回の手順](process-loop.md#巡回する)へ戻る。
+常駐では前回報告以降に届いた成果を、dotfilesはリリースごと、リリース周期の無いリポジトリは公開ごとに報告し、[巡回の手順](process-loop.md#巡回する)へ戻る。
 process-loopの完了報告とホストの終了は同書「中断と再開」の条件に限る。
 明示的に委譲されたリポジトリ担当は役割の契約に従って委譲元へ返し、担当から外れるために同書やtermination-evidenceを取得することと、`omit-completion`の記録は避ける。
-反映が必要な担当は`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」を使い、反映と稼働確認の結果を返す。
+反映は統括の公開の流れで担当し、反映が必要な公開担当は`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」を使い、反映と稼働確認の結果を返す。
 公開工程の承認スコープは、選定工程で判別した結果を`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「公開工程の承認スコープ」に従って使う。
 
 返す報告に含める項目: 処理対象WIごとの採否と公開のcommit、確かめた範囲、未達と見送りの理由と再開条件、ユーザーの判断が必要な事項、適用した手順書。
