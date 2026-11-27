@@ -350,7 +350,7 @@ def test_stop_evaluations_scan_transcript_once(
             "background_tasks": [],
         }
     )
-    original = _transcript.read_transcript_entries  # pylint: disable=protected-access
+    original = _transcript.read_transcript_bytes  # pylint: disable=protected-access
     calls = 0
     waits = 0
 
@@ -359,19 +359,23 @@ def test_stop_evaluations_scan_transcript_once(
         waits += 1
         _write_transcript(tmp_path, [{"type": "assistant", "message": {"stop_reason": "end_turn", "content": []}}])
 
-    def count_reads(path: str) -> list[dict]:
+    def count_reads(path: str, *, offset: int = 0) -> bytes | None:
         nonlocal calls
-        calls += 1
-        return original(path)
+        if path == str(transcript) and offset == 0:
+            calls += 1
+        return original(path, offset=offset)
 
     monkeypatch.setattr(_transcript_scan, "wait_for_end_turn", finish_transcript)
-    monkeypatch.setattr(_transcript, "read_transcript_entries", count_reads)
+    monkeypatch.setattr(_transcript, "read_transcript_bytes", count_reads)
     _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
     _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
 
     assert "decision" not in stop.evaluate(payload)
     assert waits == 1
     assert calls == 1
+    assert "decision" not in stop.evaluate(payload)
+    assert waits == 2
+    assert calls == 2
 
 
 @pytest.mark.parametrize(

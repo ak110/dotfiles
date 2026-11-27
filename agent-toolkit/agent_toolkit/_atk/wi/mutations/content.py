@@ -503,7 +503,9 @@ def _apply_cooldown_edit(content: str, value: str, filename: str) -> str:
     return _frontmatter.serialize_frontmatter(data, body)
 
 
-def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False, message: str | None = None) -> None:
+def _reject_agent_processing_edit(
+    path: pathlib.Path, *, detail: bool = False, dry_run: bool = False, message: str | None = None
+) -> None:
     if not is_agent_environment():
         return
     state = _wi_entries.entry_state_of(path)
@@ -527,6 +529,9 @@ def _reject_agent_processing_edit(path: pathlib.Path, *, detail: bool = False, m
             sys.exit(2)
         owner = _processing_owner.from_text(text)
         if owner is not None and owner == _processing_owner.current():
+            return
+        if owner is not None and dry_run:
+            print(f"情報: {path.name}の検証は続ける。詳細化の保存は処理中の担当の会話だけができる（担当: {owner}）")
             return
         _outcome.report_failure(
             f"processingの項目の詳細化は処理中の担当の会話からだけ保存できる: {path.name}（担当: {owner or '記録なし'}）",
@@ -656,7 +661,9 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         original = _frontmatter.decode_entry_text(snapshot)
         editing_body = message is not None or args.cooldown_until is None
         if editing_body:
-            _reject_agent_processing_edit(path, detail=bool(getattr(args, "detail", False)), message=message)
+            _reject_agent_processing_edit(
+                path, detail=bool(getattr(args, "detail", False)), dry_run=args.dry_run, message=message
+            )
         normalized_target_repo = resolve_repo_id(args.target_repo) if args.target_repo is not None else None
         verify_target_repo_content(path, original, normalized_target_repo)
     original = _frontmatter.decode_entry_text(snapshot)

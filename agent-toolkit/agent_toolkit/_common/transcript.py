@@ -73,16 +73,13 @@ def iter_latest_assistant_text_messages(transcript_path: str) -> collections.abc
     テキストを持たないターンを除いて遡り、最初に見つけたmessage IDと同じエントリを
     最大3件返す。APIエラーは、それ以前の本文を判定対象にしない終端境界とする。
     """
-    lines = read_transcript_lines(transcript_path)
-    if lines is None:
-        return
+    return latest_assistant_text_messages(read_transcript_entries(transcript_path))
+
+
+def latest_assistant_text_messages(entries: collections.abc.Sequence[dict]) -> collections.abc.Iterator[dict]:
     target_msg_id: str | None = None
     yielded_count = 0
-    for line in reversed(lines):
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError, ValueError:
-            continue
+    for entry in reversed(entries):
         if entry.get("isApiErrorMessage"):
             return
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
@@ -146,7 +143,12 @@ def read_transcript_bytes(transcript_path: str, *, offset: int = 0) -> bytes | N
         return None
 
 
-def read_transcript_lines(transcript_path: str) -> list[str] | None:
+class TranscriptSnapshot(typing.NamedTuple):
+    lines: list[str]
+    entries_by_line: dict[int, dict]
+
+
+def read_transcript_snapshot(transcript_path: str) -> TranscriptSnapshot | None:
     """記録を物理行の位置を保った行リストとして読み込み、読み取りに失敗した場合はNoneを返す。
 
     途切れた断片と完全な記録が改行なしで連結された行は、断片を除いた後半の記録を同じ位置に置く。
@@ -177,22 +179,21 @@ def read_transcript_lines(transcript_path: str) -> list[str] | None:
         if isinstance(entry, dict):
             positions.append(position)
             entries.append(entry)
-    for position, entry, normalized in zip(positions, entries, normalize_entries(entries, hook_view=True), strict=True):
+    normalized_entries = normalize_entries(entries, hook_view=True)
+    for position, entry, normalized in zip(positions, entries, normalized_entries, strict=True):
         if normalized is not entry:
             lines[position] = json.dumps(normalized, ensure_ascii=False)
-    return lines
+    return TranscriptSnapshot(lines, dict(zip(positions, normalized_entries, strict=True)))
+
+
+def read_transcript_lines(transcript_path: str) -> list[str] | None:
+    snapshot = read_transcript_snapshot(transcript_path)
+    return None if snapshot is None else snapshot.lines
 
 
 def read_transcript_entries(transcript_path: str) -> list[dict]:
-    entries: list[dict] = []
-    for line in read_transcript_lines(transcript_path) or []:
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError, ValueError:
-            continue
-        if isinstance(entry, dict):
-            entries.append(entry)
-    return entries
+    snapshot = read_transcript_snapshot(transcript_path)
+    return [] if snapshot is None else list(snapshot.entries_by_line.values())
 
 
 def visible_text_blocks(content: typing.Any) -> list[str]:

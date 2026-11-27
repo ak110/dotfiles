@@ -404,7 +404,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         action="store_true",
         help=(
             "計画を作る時点で詳細化したAWIの本文を保存し、詳細化済みの印（frontmatterのdetailed: true）を付ける。"
-            "processingの項目では、エージェント環境でも、処理中の担当（processing_owner）と同じ会話からの置換だけを受け付ける。"
+            "processingの項目への保存は、エージェント環境でも、処理中の担当（processing_owner）と同じ会話からだけ受け付ける。"
             "--body-fileとの併用が必須で、--append・--cooldown-untilとは併用できない。UWIには指定できない。"
         ),
     )
@@ -413,6 +413,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         action="store_true",
         help=(
             "FILENAMEと--body-fileによる本文置換を保存と同じ検証にかけ、保存せずに結果を返す。"
+            "processingの初回の詳細化（--detail）は担当でない会話からも検証できる。担当の制限は保存時に適用する。"
             "private-notesとremoteを変えない。--append・--cooldown-untilとは併用できない。"
         ),
     )

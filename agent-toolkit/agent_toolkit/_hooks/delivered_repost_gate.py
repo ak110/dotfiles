@@ -23,6 +23,7 @@ lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.background_tasks_notifications import _delivered_user_body
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.transcript_scan import read_stop_entries
 lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
 
 _SEND_CONTRACT = '<atk-auto source="send-to-user-contract" kind="notice">'
@@ -220,8 +221,7 @@ def _conversation_entries(lines: list[str]) -> list[dict]:
 
 
 def current_turn_delivery(entries_path: str) -> tuple[list[dict], bool | None]:
-    lines = transcript.read_transcript_lines(entries_path)
-    entries = _conversation_entries(lines) if lines is not None else []
+    entries = [entry for entry in read_stop_entries(entries_path) if not entry.get("isSidechain")]
     return entries, _latest_delivery_error(_current_turn(entries))
 
 

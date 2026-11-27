@@ -29,7 +29,6 @@ import json
 import pathlib
 import re
 import unicodedata
-from collections.abc import Iterable, Iterator
 
 from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks import stop_session as _stop_session
@@ -41,6 +40,7 @@ lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
 lazy from agent_toolkit._hooks.background_tasks_entries import describe_pending_background_entries
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.transcript_scan import read_stop_entries, read_stop_transcript
 
 _notice = notice.formatter("user_response_advisor", default_tag=_WARN_TAG)
 
@@ -87,10 +87,14 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     path = payload.get("transcript_path")
     if not isinstance(path, str) or not path:
         return "approve", ""
-    lines = transcript.read_transcript_lines(path)
-    if lines is None:
+    snapshot = read_stop_transcript(path)
+    if snapshot is None:
         return "approve", ""
-    entries = list(_conversation_entries(lines))
+    entries = [
+        (index, snapshot.lines[index], entry)
+        for index, entry in snapshot.entries_by_line.items()
+        if not entry.get("isSidechain")
+    ]
     failed_tool_ids = {
         block["tool_use_id"]
         for _, _, entry in entries
@@ -178,16 +182,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         subject=input_subject,
     )
     return ("notify", body) if body else ("approve", "")
-
-
-def _conversation_entries(lines: Iterable[str]) -> Iterator[tuple[int, str, dict]]:
-    for index, line in enumerate(lines):
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(entry, dict) and not entry.get("isSidechain"):
-            yield index, line, entry
 
 
 def _content_blocks(message: object) -> list[dict]:
@@ -313,12 +307,8 @@ def _human_prompt(entry: dict, text: str) -> str | None:
 
 def _resident_bash_ids(transcript_path: str) -> set[str]:
     identifiers: set[str] = set()
-    for line in transcript.read_transcript_lines(transcript_path) or []:
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(entry, dict) or entry.get("isSidechain"):
+    for entry in read_stop_entries(transcript_path):
+        if entry.get("isSidechain"):
             continue
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None

@@ -25,6 +25,7 @@ lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work_from_payload
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session
+lazy from agent_toolkit._hooks.transcript_scan import read_stop_entries
 
 _block = block_formatter("process_loop_exit_gate")
 
@@ -184,7 +185,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if not isinstance(path, str):
         return "approve", ""
     codex = is_codex_payload(payload)
-    records = transcript.read_transcript_entries(path)
+    records = read_stop_entries(path)
     state = session_state.read_state(session_id)
     if codex:
         turn_id = payload.get("turn_id")
@@ -201,7 +202,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         latest = payload.get("last_assistant_message")
         if isinstance(latest, str) and any(line.startswith("待機中:") for line in latest.splitlines()):
             return "approve", ""
-        for message in transcript.iter_latest_assistant_text_messages(path):
+        for message in transcript.latest_assistant_text_messages(records):
             if any(line.startswith("待機中:") for line in transcript.visible_assistant_text(message).splitlines()):
                 return "approve", ""
     if is_pending_async_work_from_payload(payload, session_id, session_state=state):
