@@ -494,6 +494,7 @@ async def test_long_session_can_search_jump_and_link_without_initially_rendering
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(0.75, reason="セッションとエージェントの両画面から同じWI詳細を開く。CI実測は0.568秒。")
 async def test_sessions_and_agents_share_wi_reference_dialog(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
     filename = "question.md"

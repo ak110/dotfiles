@@ -567,6 +567,7 @@ async def test_plan_wi_links_open_here_and_support_middle_click(screen_harness: 
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(0.75, reason="計画とWI詳細の両画面で先頭・末尾へのスクロールを実ブラウザーで検証する。CI実測は0.673秒。")
 async def test_plan_and_wi_detail_share_scroll_edge_controls(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
     screen_harness.plan_path.write_text("# 先頭\n\n" + "長い記録の段落です。\n\n" * 100 + "最後の段落\n", encoding="utf-8")

@@ -107,6 +107,7 @@ async def test_session_tree_expands_one_branch_and_retains_keyboard_focus(screen
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(0.75, reason="各起動経路の記録と親子の表示を実サーバーで照合する。CI実測は0.533秒。")
 async def test_session_tree_places_children_of_every_launch_source_under_parents(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -305,6 +305,7 @@ async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harnes
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(0.75, reason="WIの表示を実ブラウザーで計測し、本文のみの更新前後を照合する。CI実測は0.530秒。")
 async def test_wi_rows_are_readable_and_keep_geometry_on_text_only_update(browser_harness: _BrowserHarness) -> None:
     harness = browser_harness
     page = harness.page
