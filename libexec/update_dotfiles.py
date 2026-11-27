@@ -94,7 +94,7 @@ from update_dotfiles_runtime import child_env  # noqa: E402  # pylint: disable=w
 
 from pytools._internal import sync_report, update_log  # noqa: E402  # pylint: disable=wrong-import-position
 
-_LOCAL_SKILL_REFERENCE = re.compile(r"(?<![\w-])(agent-toolkit|agent-basics):([A-Za-z0-9_-]+)")
+_LOCAL_SKILL_REFERENCE = re.compile(r"(?<![\w-])(?<!plugin:)(agent-toolkit|agent-basics):([A-Za-z0-9_-]+)")
 
 
 def _warn_missing_local_skill_references(root: pathlib.Path) -> None:
