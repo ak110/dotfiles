@@ -12,13 +12,6 @@ from agent_toolkit._common import mcp_environment, private_directory, process_lo
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import wait_schedule as _wait_schedule
 
-# ランチャーが作成する再起動要求の受け渡しファイルのパスを保持する環境変数。
-# 実体プロセスが自身を`uv`へ置き換えると、置き換え前の`uv`が子の終了を待って残り、
-# 再起動のたびにプロセス階層が1段深くなる。実体は次の起動対象を受け渡しファイルへ出力して終了し、
-# ランチャーが同一プロセスで次の実体を起動することで階層を一定に保つ。
-RESTART_SPEC_ENV = _orchestrator.RESTART_SPEC_ENV
-
-
 # process-loopが起動した会話を環境印と会話IDで識別する。
 PROCESS_LOOP_SESSION_ENV = _orchestrator.PROCESS_LOOP_SESSION_ENV
 
@@ -51,17 +44,7 @@ def dialog_timeout_settings() -> str:
 
 
 def child_env() -> dict[str, str]:
-    """起動元ツールの仮想環境を除いた子プロセス用の環境変数を返す。
-
-    対象は`atk`から起動する外部コマンド（claudeセッション・`update-dotfiles`）とする。
-    `update-dotfiles`は`chezmoi apply`を経て対象リポジトリのuvベースのパッケージ操作へ至るため、
-    claudeセッションと同じく起動元ツールの環境を引き継がせない。
-    自己再起動を行う`_pl_update.restart_process_loop`は本関数の対象外とする。
-    再起動先は`atk`自身であり、起動元と同じ実行環境で継続する必要があるためである。
-    ランチャーとの再起動要求の受け渡しファイルは自プロセス専用のため、子孫プロセスへは引き継がない。
-    引き継ぐと、子孫が同じファイルへ再起動対象を書き込みうる。
-    """
-    return _orchestrator.child_env(drop=(RESTART_SPEC_ENV,))
+    return _orchestrator.child_env(drop=(_orchestrator.RESTART_SPEC_ENV,))
 
 
 session_env = _orchestrator.session_env
@@ -75,6 +58,7 @@ def compaction_env(env: dict[str, str]) -> dict[str, str]:
         PROCESS_LOOP_INSTRUCTION_ENV,
         mcp_environment.SESSION_START_INPUT_ENV,
         process_loop_session.CLAIM_ENV,
+        process_loop_session.ONCE_ENV,
     ):
         result.pop(key, None)
     return result

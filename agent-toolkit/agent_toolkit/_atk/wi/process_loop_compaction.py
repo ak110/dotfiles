@@ -21,6 +21,14 @@ from agent_toolkit._common import (
 TIMEOUT = 60
 
 
+class ResumeBlocked(next_action.ActionableError):
+    pass
+
+
+class CompactionFailed(next_action.ActionableError):
+    pass
+
+
 def _new_boundary_mode(path: pathlib.Path, offset: int) -> str:
     mode = ""
     seen_message = False
@@ -56,6 +64,7 @@ def compact_before_resume(
         f"`atk wi process-loop resume {session_id}` で予約し、停止中なら `atk wi process-loop` を起動する"
     )
     config_dir = host_homes.claude_config_dir(env)
+    failure: type[next_action.ActionableError] = ResumeBlocked
     try:
         resolution = session_registry.resolve(session_id)
         if resolution.state is session_registry.Resolution.UNREADABLE:
@@ -66,6 +75,7 @@ def compact_before_resume(
             blocker := session_activity.claude_native_resume_blocker(session_id, config_dir)
         ):
             raise ValueError(blocker)
+        failure = CompactionFailed
         offsets = {
             path: path.stat().st_size for path in session_record_paths.find_claude_records(session_id, claude_home=config_dir)
         }
@@ -94,7 +104,6 @@ def compact_before_resume(
         process_loop_log.append(
             "session_compaction_failed", session_id=session_id, diagnostic=diagnostic, detail=detail, retry=retry
         )
-        raise next_action.ActionableError(
-            f"会話 {session_id} の起動前圧縮に失敗したため再開を中止: {detail}", next_action=retry
-        ) from error
+        action = "再開を中止" if failure is ResumeBlocked else "圧縮なしで再開可能"
+        raise failure(f"会話 {session_id} の起動前圧縮に失敗（{action}）: {detail}", next_action=retry) from error
     process_loop_log.append("session_compacted", session_id=session_id, mode=modes[0])

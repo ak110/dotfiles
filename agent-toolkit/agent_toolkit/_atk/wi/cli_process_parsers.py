@@ -46,7 +46,11 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])
     _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
     instruct = _atk_help.add_command(loop_sub, "instruct", **_atk_help.HELP["atk wi process-loop instruct"])
-    instruct.add_argument("body", metavar="BODY", help="次に起動する1セッションへ渡す追加指示の本文。")
+    instruct.add_argument(
+        "body",
+        metavar="BODY",
+        help="稼働中の巡回会話へ次のツール実行後に届け、無ければ次に起動する1会話へ渡す追加指示の本文。",
+    )
     _atk_help.add_command(loop_sub, "instruct-cancel", **_atk_help.HELP["atk wi process-loop instruct-cancel"])
 
 

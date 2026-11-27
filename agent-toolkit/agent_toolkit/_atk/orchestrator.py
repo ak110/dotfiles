@@ -43,11 +43,6 @@ PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 """process-loopが起動した会話の会話ID。"""
 
 RESTART_SPEC_ENV = "AGENT_TOOLKIT_RESTART_SPEC"
-"""process-loopのランチャーが作成する再起動要求の受け渡しファイルのパスを保持する環境変数。
-
-受け渡しファイルはprocess-loopの実体プロセス専用であり、起動するセッションへ引き継ぐと、
-その子孫が同じファイルへ再起動対象を書き込みうる。
-"""
 
 # Claude Codeの`/exit`による終了は0、Function hooksが無い場合のSIGTERMによる終了は残りの値で正常終了とする。
 _CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})

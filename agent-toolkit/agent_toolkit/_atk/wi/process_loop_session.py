@@ -163,6 +163,7 @@ def _build_session_argv(
     claude_connection: _connection.Connection | None = None,
 ) -> tuple[list[str], pathlib.Path | None, Callable[[_registry.PublicationState], None] | None]:
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
+    env[_coordinator_identity.ONCE_ENV] = "1" if getattr(args, "once", False) else "0"
 
     env[_coordinator_identity.CLAIM_ENV] = uuid.uuid4().hex
     if orchestrator == "claude":
@@ -744,7 +745,14 @@ def _run_cli_session(
         try:
             with _control.resume_launch(resume_request_id):
                 if prepare_resume is not None:
-                    prepare_resume()
+                    try:
+                        prepare_resume()
+                    except _compaction.CompactionFailed as error:
+                        _process_loop_log.append(
+                            "session_resume_without_compaction",
+                            session_id=env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV],
+                            detail=str(error),
+                        )
                     _clear_rate_limit_request(env, env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV])
                 with _process_loop_log.launch_instructions() as instructions:
                     if instructions:

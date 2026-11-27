@@ -7,20 +7,25 @@ import os
 import pathlib
 import subprocess
 import time
+import uuid
 
 lazy import filelock
 
 from agent_toolkit._common import process_loop_session, session_state
 lazy from agent_toolkit._atk import config
-lazy from agent_toolkit._atk.wi import background_sync, listing, sections, snapshot, sync, uwi_scan, wait
+lazy from agent_toolkit._atk.wi import background_sync, listing, process_loop_log, sections, snapshot, sync, uwi_scan, wait
 lazy from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 lazy from agent_toolkit._common import session_activity, uwi_watch
+lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.next_action import ActionableError
 lazy from agent_toolkit._hooks import uwi_completion
+lazy from agent_toolkit._hooks.notice import formatter
 
 _STATE_KEY = "process_wi_change_notifications"
 _PULL_INTERVAL_SECONDS = 60.0
+_ABORT_NOTICE_KEY = "process_loop_abort_notice"
+_control_notice = formatter("process-loop-control")
 
 
 def clear(state: dict) -> None:
@@ -108,6 +113,43 @@ def _route_answers(answers: dict[str, tuple[str, str]], result: dict[str, str], 
                 continue
         result[key] = line
     return pending
+
+
+def build_control_notice(session_id: str) -> str | None:
+    if (
+        not process_loop_session.is_identified_process_loop_session(session_id, os.environ)
+        or is_delegated(os.environ)
+        or os.environ.get(process_loop_session.ONCE_ENV) == "1"
+    ):
+        return None
+    notices = []
+    try:
+        try:
+            request = process_loop_log.abort_path().read_text(encoding="utf-8") or "legacy"
+        except FileNotFoundError:
+            request = None
+
+        def remember(state: dict) -> dict | None:
+            if state.get(_ABORT_NOTICE_KEY) == request:
+                return None
+            return {**state, _ABORT_NOTICE_KEY: request}
+
+        if session_state.update_state(session_id, remember) and request is not None:
+            notices.append(
+                "process-loopへの中断要求がある。新たな選定を止め、書き込み担当と公開の結果を回収し、"
+                "完了報告（completion_report: true）を保存してから `atk agents-exit-session` で終了してください。"
+            )
+    except OSError, UnicodeError:
+        pass
+    try:
+        if process_loop_log.instruction_path().exists():
+            with process_loop_log.launch_instructions(timeout=0) as instructions:
+                pass
+            if instructions:
+                notices.append("process-loopへの追加指示:\n" + instructions)
+    except OSError, UnicodeError, filelock.Timeout:
+        pass
+    return _control_notice("\n\n".join(notices), tag="notice", subject=uuid.uuid4().hex) if notices else None
 
 
 def build_notice(session_id: str) -> str | None:

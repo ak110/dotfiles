@@ -462,6 +462,8 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         # pyfltr: allow-comment -- 送達した報告への警告は、送信結果の外の添付として届ける（`_common/sent_warnings.py`）。
         notices.extend(sent_warnings.take(session_id, tool_use_id))
     if is_main_agent_context(payload):
+        if control_notice := process_wi_notifications.build_control_notice(session_id):
+            notices.append(control_notice)
         uwi_notice = _uwi_completion.build_notice(session_id)
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))

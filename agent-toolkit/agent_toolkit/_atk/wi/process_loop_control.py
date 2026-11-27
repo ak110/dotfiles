@@ -13,6 +13,7 @@ from filelock import FileLock
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
+from agent_toolkit._common.atomic_file import atomic_write
 
 
 @dataclasses.dataclass(frozen=True)
@@ -113,7 +114,8 @@ def cmd_process_loop_abort() -> None:
     with _resume_lock():
         path = _process_loop_abort_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.touch()
+        if not path.exists():
+            atomic_write(path, uuid.uuid4().hex)
     _outcome.report_success("process-loopへ中断を要求した")
 
 
@@ -165,7 +167,7 @@ def cmd_process_loop_instruct(body: str) -> None:
             raise SystemExit(1)
         _outcome.report_success(f"{summary}ため、追加指示の変更は無い")
         return
-    _outcome.report_success(f"次のセッションへ渡す追加指示を保持した。{summary}")
+    _outcome.report_success(f"巡回会話へ渡す追加指示を保持した。{summary}")
 
 
 def cmd_process_loop_instruct_cancel() -> None:

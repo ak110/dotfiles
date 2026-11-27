@@ -92,11 +92,10 @@ def discard_instructions() -> int:
 
 
 @contextlib.contextmanager
-def launch_instructions() -> Generator[str]:
-    """次の実起動だけへ指示を渡し、起動に失敗した場合は保持する。"""
+def launch_instructions(*, timeout: float = 10) -> Generator[str]:
     path = instruction_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with FileLock(path.with_suffix(".lock"), timeout=10):
+    with FileLock(path.with_suffix(".lock"), timeout=timeout):
         instructions = read_instructions()
         yield INSTRUCTION_SEPARATOR.join(instructions)
         if instructions:

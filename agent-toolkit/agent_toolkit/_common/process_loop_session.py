@@ -8,6 +8,7 @@ lazy from agent_toolkit._common.session_state import read_state, update_state
 _SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 CLAIM_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM"
+ONCE_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ONCE"
 _CLAIM_STATE_PREFIX = "process-loop-claim-"
 _CLAIMED_KEY = "claimed_session_id"
 REPORT_SAVED_AT_KEY = "process_loop_report_saved_at"
