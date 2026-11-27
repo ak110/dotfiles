@@ -30,6 +30,7 @@ import time
 from agent_toolkit._common import process_loop_session
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._common.json_lines import split_lines
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
@@ -177,6 +178,8 @@ def _new_wi_text(session_id: str, recipient: str) -> tuple[str, str | None]:
 
     try:
         rows = progress_new_wis(session_id, track_merges=True)
+    except ActionableError as error:
+        return f"新着WIは未確認。{error.message}", None
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
         return (
             f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で確かめてください。",

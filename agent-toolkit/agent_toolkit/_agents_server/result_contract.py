@@ -40,7 +40,6 @@ _USABILITY_EVIDENCE = (
     "modern-web-guidanceのガイドと適用結果",
 )
 _USABILITY_VERDICTS = {"合格", "不合格", "未確定"}
-_UNCONFIRMED_USABILITY = ("未確認", "未検証", "未実施", "未調査", "比較なし", "該当なし")
 _VALID_CLASSIFICATIONS = frozenset(
     {
         "user_decision",
@@ -140,6 +139,16 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
         and (not has_reason or any(line.startswith("判定:") for line in lines))
     ):
         return _usability_result_reason(lines)
+    if (
+        document is not None
+        and document.name == "external-write-review.subagent.md"
+        and any(line.startswith("再レビュー:") for line in lines)
+    ):
+        for label in ("再レビュー", "対象", "根拠", "理由"):
+            values = [line.removeprefix(f"{label}:").strip() for line in lines if line.startswith(f"{label}:")]
+            if len(values) != 1 or not values[0] or (label == "再レビュー" and values[0] not in {"要", "不要"}):
+                return f"投稿前レビューの要否回答に有効な{label}の行が1行必要です"
+        return None
     if document is not None and not has_reason:
         return _role_head_reason(document, message)
     return None
@@ -152,18 +161,16 @@ def _usability_result_reason(lines: list[str]) -> str | None:
     if verdicts[0] != "合格":
         return None
     missing: list[str] = []
+    observations: dict[str, str] = {}
     for label in _USABILITY_EVIDENCE:
         prefix = f"{label}:"
         values = [line.removeprefix(prefix).strip() for line in lines if line.startswith(prefix)]
-        if (
-            len(values) != 1
-            or not values[0].strip("・—ー-")
-            or values[0] in {"なし", "対象外", "N/A"}
-            or any(word in values[0] for word in _UNCONFIRMED_USABILITY)
-        ):
+        status, separator, observation = values[0].partition(" | ") if len(values) == 1 else ("", "", "")
+        if status != "確認済み" or not separator or observation.strip(" ・—ー-") in {"", "なし", "対象外", "N/A"}:
             missing.append(label)
+        observations[label] = observation
     if "類例の比較" not in missing:
-        comparison = next(line.removeprefix("類例の比較:").strip() for line in lines if line.startswith("類例の比較:"))
+        comparison = observations["類例の比較"]
         compared, _, appearance = comparison.partition(" | 外見:")
         absent = {"", "なし", "対象外", "N/A"}
         if compared.strip(" ・—ー-") in absent or appearance.strip(" ・—ー-") in absent:

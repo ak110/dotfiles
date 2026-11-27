@@ -745,28 +745,93 @@ def test_invalid_freeform_fails_after_one_recovery(kind: state.LaunchKind, tmp_p
 @pytest.mark.parametrize(
     ("comparison", "accessibility", "valid"),
     [
-        ("同じ製品の一覧と設定画面を比較した | 外見: 共通部品と配色が一致した", True, True),
-        ("同じ製品の一覧と設定画面を比較した | 外見: 共通部品と配色が一致した", False, False),
-        ("同じ製品の一覧と設定画面を比較した", True, False),
-        ("同じ製品の一覧と設定画面を比較した | 外見: なし", True, False),
+        ("確認済み | 同じ製品の一覧と設定画面を比較した | 外見: 共通部品と配色が一致した", True, True),
+        ("確認済み | 同じ製品の一覧と設定画面を比較した | 外見: 共通部品と配色が一致した", False, False),
+        ("確認済み | 同じ製品の一覧と設定画面を比較した", True, False),
+        ("確認済み | 同じ製品の一覧と設定画面を比較した | 外見: なし", True, False),
         ("", True, False),
         ("外部類例との比較は未確認", True, False),
     ],
 )
 def test_usability_pass_requires_each_whole_screen_observation(comparison: str, accessibility: bool, valid: bool) -> None:
     session = _role_session("usability-review.subagent.md")
-    message = (
-        "判定: 合格\n"
-        f"類例の比較: {comparison}\n"
-        "情報設計: 既定のホストを上部に置き、左の分類から設定を切り替える\n"
-        "行の揃い: 広幅・狭幅で状態の位置を比較した\n"
-        "冗長表示: 一覧の値がない行に固定文言が出ない\n"
-        "入力負担: 期限を日時欄から選べる\n"
-        "modern-web-guidanceのガイドと適用結果: フォームのラベルとエラー通知を実画面で確認した"
-    )
-    if accessibility:
-        message += "\n可読性・アクセシビリティ: 最小14px、主要文字は7:1、TabとEnterで保存、ボタンは44px角"
+    message = _usability_message(comparison, accessibility=accessibility)
     reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message})
     assert (reason is None) is valid
     if reason:
         assert ("類例の比較" if accessibility else "可読性・アクセシビリティ") in reason
+
+
+def _usability_message(comparison: str, *, accessibility: bool = True) -> str:
+    message = (
+        "判定: 合格\n"
+        f"類例の比較: {comparison}\n"
+        "情報設計: 確認済み | 既定のホストを上部に置き、左の分類から設定を切り替える\n"
+        "行の揃い: 確認済み | 広幅・狭幅で状態の位置を比較した\n"
+        "冗長表示: 確認済み | 一覧の値がない行に固定文言が出ない\n"
+        "入力負担: 確認済み | 期限を日時欄から選べる\n"
+        "modern-web-guidanceのガイドと適用結果: 確認済み | フォームのラベルとエラー通知を実画面で確認した"
+    )
+    if accessibility:
+        message += "\n可読性・アクセシビリティ: 確認済み | 最小14px、主要文字は7:1、TabとEnterで保存、ボタンは44px角"
+    return message
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "類例の比較",
+        "情報設計",
+        "行の揃い",
+        "冗長表示",
+        "入力負担",
+        "可読性・アクセシビリティ",
+        "modern-web-guidanceのガイドと適用結果",
+    ],
+)
+@pytest.mark.parametrize("case", ["annotation", "unconfirmed", "empty", "duplicate", "split"])
+def test_usability_evidence_separates_confirmation_from_explanation(label: str, case: str) -> None:
+    message = _usability_message("確認済み | 一覧と設定を比較した | 外見: 共通スタイルが一致した")
+    lines = message.splitlines()
+    index = next(index for index, line in enumerate(lines) if line.startswith(f"{label}:"))
+    if case == "annotation":
+        lines[index] += "。別項目は未確認・未検証・未実施・未調査で、比較なし・該当なしの項目も除外した"
+    elif case == "unconfirmed":
+        lines[index] = f"{label}: 未実施 | 次の確認で操作する"
+    elif case == "empty":
+        lines[index] = f"{label}: 確認済み | "
+    elif case == "duplicate":
+        lines.append(lines[index])
+    else:
+        lines[index] = lines[index].replace("確認済み | ", "確認済み |\n  ")
+    session = _role_session("usability-review.subagent.md")
+    reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": "\n".join(lines)})
+    assert (reason is None) is (case == "annotation")
+
+
+@pytest.mark.parametrize("status", ["未確認", "未検証", "未実施", "未調査", "比較なし", "該当なし"])
+def test_unconfirmed_usability_status_alone_is_not_evidence(status: str) -> None:
+    session = _role_session("usability-review.subagent.md")
+    message = _usability_message(status)
+    reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message})
+    assert reason is not None and "類例の比較" in reason
+
+
+@pytest.mark.parametrize("decision", ["要", "不要", "未定", "", "不要だと思う"])
+@pytest.mark.parametrize("missing", [None, "対象", "根拠", "理由"])
+def test_external_review_inquiry_is_a_result_not_a_posting_verdict(decision: str, missing: str | None) -> None:
+    session = _role_session("external-write-review.subagent.md")
+    lines = [
+        f"再レビュー: {decision}",
+        "対象: 機能変更の説明",
+        "根拠: 差し替え後の文面と検証ログ",
+        "理由: 事実の主張が変わった",
+    ]
+    message = "\n".join(line for line in lines if missing is None or not line.startswith(f"{missing}:"))
+    result = {"status": "completed", "agent_message": message}
+    session.result_contract_recovery_consumed = True
+    assert not result_contract.hold_invalid_result(session, result)
+    valid = decision in {"要", "不要"} and missing is None
+    assert result["status"] == ("completed" if valid else "failed")
+    assert result["agent_message"] == message
+    assert "未解決の指摘数: 0" not in result["agent_message"]

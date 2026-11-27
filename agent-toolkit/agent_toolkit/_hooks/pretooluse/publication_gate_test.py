@@ -586,3 +586,92 @@ def test_publication_keeps_gate_but_does_not_repeat_delivered_progress_wis(tmp_p
     assert "計2件" in reason and new in reason and old not in reason
     assert_output_policy("wi_publication_delta", reason)
     assert publication_gate.check(payload, sid, "Bash", command) is None
+
+
+@pytest.mark.parametrize("destination", ["develop", "maintenance", "feature/work"])
+def test_new_wis_survive_branch_registration_during_the_same_conversation(tmp_path, monkeypatch, destination):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    configured = (config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git"),)
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: configured)
+    old = _write_awi_file(notes, "20261124-085010-001.md")
+    session = "register-while-resident"
+    _register_circuit(tmp_path, monkeypatch, session)
+    saved = snapshot.progress_sources(session)
+    originals = {row["path"]: pathlib.Path(row["path"]).read_bytes() for row in saved.values()}
+    configured = tuple(
+        config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git", branch=branch, default_branch="develop")
+        for branch in ("develop", "maintenance")
+    )
+    settings = config_repositories.BranchSettings(("develop", "maintenance"), "develop", {})
+    monkeypatch.setattr(config, "repository_branch_settings", lambda: {repo: settings})
+    names = {"develop": "20261124-085011-001.md", "maintenance": "20261124-085011-002.md"}
+    for branch, name in names.items():
+        item = _write_awi_file(notes, name)
+        item.write_text(
+            item.read_text(encoding="utf-8").replace("state: inbox", f"state: inbox\ntarget_branch: {branch}"),
+            encoding="utf-8",
+        )
+    outside = _write_awi_file(notes, "20261124-085011-003.md", target_repo="github.com/example/outside")
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+    assert progress_self_check.claim_notice(payload, now=1.0) is None
+    try:
+        notice = progress_self_check.claim_notice(payload, now=1801.0)
+        assert notice is not None and all(notice.count(name) == 1 for name in names.values())
+        assert old.name not in notice and outside.name not in notice
+    finally:
+        progress_self_check.release_reservations()
+    denied = publication_gate.check(payload, session, "Bash", {"command": f"git push origin HEAD:{destination}"})
+    assert denied is not None
+    expected = {names[destination]} if destination in names else set(names.values())
+    assert {name for name in names.values() if name in denied[0]} == expected
+    assert old.name not in denied[0] and outside.name not in denied[0]
+    assert snapshot.progress_sources(session) == saved
+    assert {path: pathlib.Path(path).read_bytes() for path in originals} == originals
+
+
+def test_removed_branch_is_unobservable_and_cannot_be_acknowledged_as_no_new_wis(tmp_path, monkeypatch):
+    _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    configured = (config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git", branch="develop"),)
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: configured)
+    settings = config_repositories.BranchSettings(("develop",), "develop", {})
+    monkeypatch.setattr(config, "repository_branch_settings", lambda: {repo: settings})
+    session = "removed-baseline-branch"
+    _register_circuit(tmp_path, monkeypatch, session)
+    configured = (config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git", branch="maintenance"),)
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+    assert progress_self_check.claim_notice(payload, now=1.0) is None
+    try:
+        notice = progress_self_check.claim_notice(payload, now=1801.0)
+        assert notice is not None and "新着WIは未確認" in notice
+        assert all(value in notice for value in (repo, "develop", "maintenance", "atk config repos list", "手動照合"))
+    finally:
+        progress_self_check.release_reservations()
+    for _ in range(2):
+        denied = publication_gate.check(payload, session, "Bash", {"command": "git push origin develop"})
+        assert denied is not None and "新着WIを取得できない" in denied[0]
+        assert all(value in "\n".join(denied) for value in (repo, "develop", "maintenance", "手動照合"))
+        assert "再発行すると実行" not in denied[1]
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["git -C /repo push origin develop", "timeout 30 git push origin develop", "cd /repo && git push origin develop"],
+)
+def test_unsupported_publication_form_explains_how_to_resolve_the_working_repository(tmp_path, monkeypatch, command):
+    _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    configured = (config.ConfiguredRepository("github.com/example/foo", tmp_path, tmp_path / ".git"),)
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: configured)
+    session = "unsupported-push-form"
+    _register_circuit(tmp_path, monkeypatch, session)
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+    for _ in range(2):
+        denied = publication_gate.check(payload, session, "Bash", {"command": command})
+        assert denied is not None and "公開対象を確定できない" in denied[0]
+        assert all(value in denied[1] for value in ("workdir", "cwd", "単独のgit push", "引き継がれません"))
+        assert "再発行すると実行" not in denied[1]
+    assert publication_gate.check(payload, session, "Bash", {"command": "git push origin develop"}) is None

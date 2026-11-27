@@ -23,6 +23,7 @@ from agent_toolkit._atk import config, reset_reservations
 from agent_toolkit._common import codex_weekly
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.session_layout import CODEX_AUTO_RESET_DIRECTORY_NAME
 from agent_toolkit._common.usage_settings import deadline, validate_permissions
 
 _LOG = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ def has_permission(
     if not isinstance(email, str) or not email.strip():
         return False
     identity = hashlib.sha256(email.encode("utf-8")).hexdigest()
-    path = state_dir / "agents-server" / "codex-auto-reset" / f"{identity}.json"
+    path = state_dir / "agents-server" / CODEX_AUTO_RESET_DIRECTORY_NAME / f"{identity}.json"
     previous = _read_attempt(path)
     if shared_notes is not None and (previous is None or previous.status != "pending"):
         permissions = [permission for permission in permissions if reset_reservations.is_issued(shared_notes, permission)]
@@ -223,7 +224,7 @@ async def check_auto_reset(
     if not 0 < rpc_timeout < float("inf"):
         raise ValueError("rpc_timeoutには有限の正数が必要")
     validate_permissions(json.dumps(permissions))
-    root = state_dir / "agents-server" / "codex-auto-reset"
+    root = state_dir / "agents-server" / CODEX_AUTO_RESET_DIRECTORY_NAME
     async with _transaction_lock(root) as locked:
         if not locked:
             return AutoResetResult(diagnostic="別serverが自動resetを確認中")

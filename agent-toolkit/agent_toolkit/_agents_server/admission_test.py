@@ -100,6 +100,21 @@ def test_tickets_of_dead_processes_release_slots(tmp_path: pathlib.Path) -> None
     assert not dead.exists()
 
 
+def test_reset_records_are_not_sessions_but_invalid_real_sessions_remain_diagnostic(tmp_path: pathlib.Path) -> None:
+    _write_status(tmp_path, "real-root", "root", None, {"worker": "running"})
+    reset = tmp_path / "agents-server" / "codex-auto-reset" / "account.json"
+    reset.parent.mkdir(parents=True)
+    reset.write_text('{"used": 1}', encoding="utf-8")
+    observed = admission.observe(tmp_path)
+    assert observed.working_sessions == ("worker",)
+    assert not observed.failures
+    broken = _write_status(tmp_path, "real-root", "broken", None, {})
+    broken.write_text('{"sessions": "invalid"}', encoding="utf-8")
+    observed = admission.observe(tmp_path)
+    assert observed.working_sessions == ("worker",)
+    assert len(observed.failures) == 1 and f"real-root/{broken.name}" in observed.failures[0]
+
+
 async def _until(condition, *, timeout: float = 10.0) -> None:
     """状態の成立を条件で待ち、上限までに成立しなければ失敗させる。"""
     deadline = asyncio.get_running_loop().time() + timeout

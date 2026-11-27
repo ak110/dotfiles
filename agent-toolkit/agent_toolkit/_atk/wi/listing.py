@@ -558,15 +558,35 @@ def progress_new_wis(
             selected.update(matched)
         scopes = selected
     notes = {row["notes"] for row in scopes.values()}
-    if len(notes) != 1 or any(scope not in by_key for scope in scopes):
+    if len(notes) != 1:
         raise ValueError("開始時の対象と現在の登録が一致しない")
+    comparisons = {}
+    for scope, row in scopes.items():
+        current = {key for key in by_key if key[0] == scope[0] and (scope[1] is None or key[1] == scope[1])}
+        if not current:
+            registered = sorted(f"{repo} / {branch or '系統なし'}" for repo, branch in by_key if repo == scope[0])
+            raise ActionableError(
+                f"開始時の対象に対応する現在の登録がない: {scope[0]} / {scope[1] or '系統なし'}。"
+                f"現在の登録: {', '.join(registered) or 'なし'}。",
+                next_action=(
+                    "atk config repos listで登録を確認するか、元の開始時集合を使って"
+                    "同じリポジトリ・系統のWIを手動照合してください。"
+                    "開始時集合を現在の集合で置き換えないでください。"
+                ),
+            )
+        for key in current:
+            if targets is None or any(
+                repo == key[0] and (branch is None or branch == key[1] or (scope[1] is None and (repo, branch) not in by_key))
+                for repo, branch in targets
+            ):
+                comparisons[key] = row
     private_notes = pathlib.Path(notes.pop())
     if not private_notes.is_dir():
         raise ValueError("private-notesを読めない")
     baselines = {
         scope: _wi_snapshot.read(pathlib.Path(row["path"]), expected_digest=row["digest"])
         - {tuple(identifier) for identifier in row.get("unanswered", ())}
-        for scope, row in scopes.items()
+        for scope, row in comparisons.items()
     }
     rows: dict[str, NewWorkItem] = {}
     with _wi_sync.repo_lock(private_notes, timeout=0):
@@ -578,7 +598,7 @@ def progress_new_wis(
                 _wi_sync.run_git(["merge", "--ff-only", "@{u}"], private_notes, forward_error_output=False)
             elif _git_command.run(["remote"], cwd=private_notes, capture_output=True, check=True).stdout.strip():
                 raise ValueError("private-notesの同期先が設定されていない")
-        snapshots = configured_repo_snapshot(private_notes, tuple(by_key[scope] for scope in scopes))
+        snapshots = configured_repo_snapshot(private_notes, tuple(by_key[scope] for scope in comparisons))
         started = _wi_snapshot.processing_started(session_id, private_notes)
         for snapshot in snapshots:
             repo = snapshot.repository
