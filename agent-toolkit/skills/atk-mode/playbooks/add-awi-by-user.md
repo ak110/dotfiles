@@ -6,7 +6,7 @@
 協調モードで動き、成果物はWIの登録と更新に限る（本書「セッション境界」）。
 対象リポジトリの実装、実装用worktreeの作成、AWIの`processing`への変更、実装担当の起動は、後続の`agent-toolkit:atk-mode`の作業`process-wi`が担う。
 
-登録前に分かる本人固有の判断はこの場で確認し、技術判断は原則1に従って自ら確定する。
+登録前の確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決める。
 起動を登録の認可として扱う。
 投入前レビューの合格後に保存する。
 この場で求められた回答や判断はここで終え、後続の変更とWIとの同期が必要な作業を登録する。
@@ -25,7 +25,7 @@
 1. 着手時に、managed-temp直下に現行の作業契約が無ければ、`agent-toolkit:atk-mode/references/work-contract.md`「作成と所有」で作る。
    系統は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入」の系統を登録したリポジトリ宛ての段に従って選び、内容から決まらなければ`default_branch`の系統とし、判断を報告に書く。
    不具合・指摘・エラーは先に`agent-basics:bugfix`を起動する。
-   既存AWIの更新・懸念は質問や調査の前に扱い、`inbox`・`hold`は保留し、`processing`への変更は別AWIに切り出す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」）。
+   既存AWIの更新・懸念は、質問や調査の前に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」で扱う。
 2. `agent-toolkit:atk-mode/playbooks/request-intake.md`の手順で要求を受け付け、方針を確定する。
    宛先を決めたら、採否や方針を決めるための最初の現物調査より前に、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「対象の調査基点」で完全OIDを固定し、保存まで保持する。
    目的の衝突、指定範囲との不一致、認可不足、読みの違いは`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順7で扱う。

@@ -95,7 +95,7 @@ scopeに入れるのはモード語までとし、それ以外の自由記述は
 
 「消せるだけ消して」「できる範囲で」のように程度や裁量を含む要求は、対象にする範囲の境界、待機時間や再試行回数、代替手段へ切り替える基準をエージェントが決める（`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」）。
 走査した対象を測った値、観測根拠、QCDで決まる境界は確定し、根拠と除外した対象を完了報告に書く。
-ユーザーへ確認するのは、調査を尽くしても境界の位置で要件や意図が曖昧に残る時と、許容できるコストや手放してよい保護などユーザー固有の判断が残る時である。
+境界の位置、許容できるコスト、手放してよい保護の確認は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決める。
 確認する時は、境界の位置ごとに外部から観測される結果と推奨案を示し、回答をその対象と範囲に適用する。
 範囲語や開放列挙の集合のうち未走査の部分は確認に回さず、走査が技術的に可能な限り最後まで走査する（原則7、`agent-basics:writing-standards/references/quality-principles-ownership.md`）。
 回答が得られない時の保留と終了は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「承認型UWIと元項目」と「終了」に従う。

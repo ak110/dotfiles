@@ -6,6 +6,12 @@
 一時ファイルの置き場所の一般則は`agent-toolkit:atk-mode/playbooks/managed-temp.md`にある。
 終了条件は、全てのレーンの資源を回収するか、保持した資源ごとに保護の理由と再開条件を記録した時点である。
 
+## 書き込み所有権とレーンの境界
+
+レーンは専用worktreeの単一の書き込み担当（単一writer）と実行レビューの体制を保つ。
+レーン内の分担は`agent-toolkit:atk-mode/playbooks/implementation.md`「レーン内の分担」に従い、書き込み先と一体の生成物を担当ごとに分ける。
+主作業ツリーへの書き込みは、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」の条件と`atk lane integrate`の排他で直列化する。
+
 ## レーン資源の作成・再利用・回収
 
 1. 開始時に`atk lane delete --list --repo <対象リポジトリ>`で、前回の残存登録、回収結果、回復処理で残ったbranchとHEADを確かめる。

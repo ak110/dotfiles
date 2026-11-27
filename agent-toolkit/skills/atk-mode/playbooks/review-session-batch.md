@@ -81,7 +81,7 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
    起票時の`source`には`session-review`を指定する。
    処理担当は同書「工程5」に従い、要求・完成条件の各項目の出所と採否の根拠を確かめる。
    所要時間の目標、計測の起点と終点、超過の分析は`agent-toolkit:atk-mode/references/review-session-cost.md`「所要時間の分析と改善」のbatchの定義に従う。
-4. 終了の前にAWIの保存を検収し、対象一覧、登録したAWI、見送り、費用確認を対象IDと対応付けて報告の本文を確定する。
+4. 終了の前に`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存結果の検収」を行い、対象一覧、登録したAWI、見送り、費用確認を対象IDと対応付けて報告の本文を確定する。
    部分分析の対象は、その限界と、欠測の記録ID・物理行・件数も同じ本文に書く。
 5. batchのメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`を読み、その工程で結果を報告用UWI 1件へ保存する。
    本文は`agent-toolkit:atk-mode/references/report-formats-retrospective.md`の振り返り結果報告の書式で書く。

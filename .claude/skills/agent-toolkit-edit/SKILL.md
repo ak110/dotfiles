@@ -13,9 +13,7 @@ description: >
 作業から読む資料を下の表で選び、条件が成立した時にその資料を全文読む。
 エージェント向け文書の改訂に共通する手順（既存の方針との照合、規範を削除・縮小する時の消失確認など）は`.claude/skills/edit-dotfiles-norms/SKILL.md`が扱う。
 
-配布物の差分は、`*_test.py`だけの差分を除き、公開前に版数を上げる（`claude plugin update`は版数が上がった時だけ更新を配信する）。
-`implement` のマージ用ブランチでは版数を上げず、更新種別と根拠をAWIに書いて公開工程へ渡す。
-判定と手順は`references/distribution.md`にある。
+配布物の採番の要否、マージ用ブランチの例外、公開への引き渡しは`references/distribution.md`に従う。
 
 ## 作業と資料
 

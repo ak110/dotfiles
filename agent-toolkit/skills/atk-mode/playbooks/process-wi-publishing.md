@@ -119,7 +119,7 @@ dotfilesは未公開の統合済み変更があり進行中の公開が無けれ
    CIの監視で失敗したjobを見たら、全pipelineの終了を待たずに入力SHA・job・診断・残る監視の識別子をCI修正担当へ渡す。
    CI修正担当は専用worktreeで診断と是正を始め、新しいcommitを通常の直列統合で次の公開単位へ入れる（`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`「検証またはCIの失敗」）。
    継続中のjobの監視と最終SHAの全体のCIの成功の確認は保ち、終了時の一括通知しかない監視では既存の公開状態の照会を並行して使って途中の失敗を得る。
-8. 主作業ツリーへの書き込みは`atk lane integrate`の排他で直列化する。
+8. 主作業ツリーの書き込み所有権は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「書き込み所有権とレーンの境界」に従う。
    公開担当はベースブランチをpushするだけで、主作業ツリーとベースブランチへの書き込みを所有しない。
 9. 常駐では統括が対象ごとに公開担当を起動し、repository-processから公開・CI・リリース・延期adoptを分離する。
    手動の単回実行の直接実行と委譲の選択・入力・検収は`agent-toolkit:atk-mode/roles/session-termination.parent.md`に従う。

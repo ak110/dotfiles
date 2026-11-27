@@ -40,7 +40,7 @@
 利用上限の猶予通知と、ホストによるバックグラウンドコマンドの停止は、技術的不成立に含めない。
 猶予通知を受けた場合は、`agent-toolkit:atk-mode/references/usage-limit.md`に従って同じ工程を続ける。
 ホストが再開を禁じた処理は、再開してよいかをユーザーへ確かめる。
-確認の手段は、協調モードでは`AskUserQuestion`、自律モードではUWIの投入とし、UWIは`wait`の`uwi_file`で記録する。
+確認の手段は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」で選び、UWIは`wait`の`uwi_file`で記録する。
 ホストの通知による停止は、終了理由の記録の対象外である。
 
 ## 終了方法の分岐

@@ -120,7 +120,7 @@ continuations:
    品質水準は`agent-basics:review-standards`の作業項目の基準に従い、意味を変えない表現の推敲は指摘の対象から外す。
    再判定でも読者別探索の要否と実施状況を確かめて返す。
 
-同じ版の共通資料は1回取得して要求ごとに再利用し、新しい資料、変わった資料、会話の圧縮の後に必要な資料は取得し直す。
+共通資料の取得と再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
 担当への到達ができない時は、`agent-toolkit:atk-mode/references/work-contract.md`「引き継ぎ記録」を使う。
 
 ## 出力

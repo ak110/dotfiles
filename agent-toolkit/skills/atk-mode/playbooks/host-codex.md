@@ -84,7 +84,8 @@ SessionStartで起動だけを通知されたCodexは`atk-mode`の`SKILL.md`とC
    `Script error`の`SyntaxError`で実行されなかった時は、入力の先頭の非コードを除いて発行し直す。
 2. `exec_command`の戻り値はオブジェクト全体を`text(r)`へ渡し、本文、診断、`exit_code`、`session_id`を保つ。
 3. 外側の`cell_id`は`functions.wait`で、内側の`session_id`は`write_stdin`で、同じターンのうちに終了まで回収する。
-   `exit_code`が無く`session_id`がある結果は実行中であり、同じコマンドを発行し直さずに回収を続ける。
+   `exit_code`が無く`session_id`がある結果は実行中とする。
+   実行の回収は`agent-toolkit:atk-mode/references/operations.md`「待機とバックグラウンド実行」に従う。
 4. `exec_command`の初回の`yield_time_ms`は公開の上限30000ms以内とし、コマンド自身にも有限の期限を持たせる。
    長い終了待ちの所有者と回収時間は、本書「agents_serverの二層待機」で選ぶ。
 5. `apply_patch`で既存のファイルを全面的に置き換える時も、同じパスへのUpdateを使う（1つのpatchで同じパスをDeleteとAddに分けると適用に失敗する）。

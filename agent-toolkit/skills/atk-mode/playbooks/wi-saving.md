@@ -121,8 +121,7 @@
 - 原因分析: `agent-basics:bugfix`を起動して起草し原因を確定した通常AWIでは、`## 原因分析`のバグ単位ごとに`agent-basics:review-standards`「文章成果物の実害」の不具合対応の条件を満たす。
   推測だけの原因は確定とせず、調査を続けるか「続行できない理由」として報告する。
   `類似見直し:`は、ユーザーが指定した対象集合を覆う。
-  再発防止を全て見送る記録は、原因となった入力や条文を除く・改める案を比べている（`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）。
-  重い案だけを挙げて見送った記録は、この条件を満たさない。
+  再発防止を全て見送る記録は、`agent-basics:bugfix/references/prevention.md`「案を比べる」「再発防止を採用しない場合」を満たす。
   記録の形と記録先は`agent-toolkit:atk-mode/references/analysis-records.md`に従う。
 - 完成条件: `agent-toolkit:atk-mode/references/awi-body-completion.md`「完成条件」に従い、権限・起動条件・待機の手順を調べて同じセッションで確実に観測できる方法を選ぶ。
   人手・後日・配布後の確認を置く場合は、同節の例外に当たる根拠が本文にあるかを確かめる。
@@ -185,8 +184,6 @@
    未プッシュの通知がある場合だけ`atk wi commit`で反映する。
 2. 既存項目の更新で保留（`hold`）にした項目を解除（`unhold`）する。
    専念型では作成主体が保存本文の一致を確かめた後に、付随型では委譲元が保存結果を検収した後に解除する。
-   ユーザーの回答待ちと、起草か保存の失敗が続く間は保留を保つ。
-   既存項目を変えずに再利用する場合と取り下げる場合も、必要な更新と採否を確定し、未解決の懸念が残る間は保留を保つ。
    誤って投入した項目の削除と保留からの終了は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」「終了」に従う。
 3. 作業中の要求を保存したら、検収した契約の所有者（付随型では委譲元）が`agent-toolkit:atk-mode/references/work-contract.md`「更新する時点」で作業契約を更新する。
 

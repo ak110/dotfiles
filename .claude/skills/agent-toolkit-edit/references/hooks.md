@@ -26,7 +26,7 @@ dotfiles固有の運用（配布先の構成、個人の命名規則など）を
 
 - `pytools/claude_hook/pretooluse.py`（個人のhook）は、chezmoiで自分のアカウントの`~/.claude/settings.json`にだけマージされる。
   新しいツール名を対象にする時は、`share/claude_settings_json_managed.posix.json`と`share/claude_settings_json_managed.win32.json`の`matcher`を確かめる。
-- `agent-toolkit/`（プラグイン）は`.claude-plugin/marketplace.json`で他のエンドユーザーにも配るため、変えたら版数を上げる。
+- `agent-toolkit/`（プラグイン）の採番は`distribution.md`「判定基準」に従う。
 - `hooks.json`と`share/claude_settings_json_managed.*.json`が指すスクリプトの改名・移動・削除は、起動パスの互換性維持に従う。
   定義は`agent-basics:writing-standards/references/claude-hooks.md`「hookスクリプトの基本プロトコル」にある。
   配布先で導入エラーになる配置は新しい配布物に残さず、旧版の実体の保持か更新時の移行処理で、旧方式の呼び出しを保つ。
