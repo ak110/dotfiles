@@ -78,12 +78,6 @@ def keep_remote_initial_file(notes: pathlib.Path, filename: str, migration_messa
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
 """履歴が分岐し、無関係な差分もある場合に、commitの完了とpushの保留を伝える文言。"""
 
-PUSH_DEFERRED_NEXT_ACTION = (
-    "`git -C {private_notes} status`で無関係な差分を確認し、commitするか取り除いてcleanにしてから"
-    "`atk wi commit`を実行する。分岐の自動解消とpushを行う"
-)
-"""`PUSH_DEFERRED_MESSAGE`に続けて案内する次の操作。"""
-
 _DivergenceRecovery = Callable[[pathlib.Path], bool]
 """ローカル側のcommitが冗長であることを呼び出し元の基準で判定する関数。"""
 
@@ -421,7 +415,7 @@ def _push_pending_commits_impl(
         _outcome.report_warning(
             f"{PUSH_DEFERRED_MESSAGE}。未push commit: {count_text}\n"
             + _diagnostics.divergence_details(private_notes, result_runner=result_runner),
-            next_action=PUSH_DEFERRED_NEXT_ACTION.format(private_notes=private_notes),
+            next_action=_diagnostics.push_deferred_next_action(private_notes),
         )
         _SYNC_ATTEMPT.push_deferred.add(private_notes.resolve())
         return 0

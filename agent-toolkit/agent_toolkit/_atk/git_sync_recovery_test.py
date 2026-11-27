@@ -81,7 +81,7 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """履歴分岐と無関係なdirty差分が同時にある場合、rebaseせずpushを保留する。"""
-    repo = tmp_path / "repo"
+    repo = tmp_path / "repo with spaces"
     repo.mkdir()
     calls: list[list[str]] = []
 
@@ -120,7 +120,9 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     assert "未push commit: 1件" in stderr
     assert "失敗: " not in stderr
     assert lines[-1].startswith("次の操作: ")
-    assert "atk wi commit" in lines[-1]
+    commands = [shlex.split(text) for text in re.findall(r"`(git -C [^`]+)`", lines[-1])]
+    assert commands == [["git", "-C", str(repo), "status"]]
+    assert "`atk wi commit`を実行してください。" in lines[-1]
     assert "元の`atk`操作" not in lines[-1]
 
 

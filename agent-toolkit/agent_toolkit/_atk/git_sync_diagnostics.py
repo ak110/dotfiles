@@ -99,6 +99,13 @@ def _recovery_command(private_notes: pathlib.Path, *args: str) -> str:
     return f"`{shlex.join(['git', '-C', str(private_notes), *args])}`"
 
 
+def push_deferred_next_action(private_notes: pathlib.Path) -> str:
+    return (
+        f"{_recovery_command(private_notes, 'status')}で無関係な差分を確認してください。"
+        "差分に対応して作業ツリーをcleanにしてから、分岐を解消してpushするために`atk wi commit`を実行してください。"
+    )
+
+
 def report_divergence(
     private_notes: pathlib.Path,
     *,

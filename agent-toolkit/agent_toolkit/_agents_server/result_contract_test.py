@@ -835,6 +835,11 @@ def test_usability_evidence_accepts_only_observations_in_the_same_field(observat
     if reason is not None:
         assert label.removesuffix(":") in reason
         assert "続く箇条書き" in reason
+        inline = reason.split("「", 1)[1].split("」", 1)[0]
+        multiline = reason.split("複数行なら「", 1)[1].split("」", 1)[0] + "\n- 観測"
+        for example in (inline, multiline):
+            submission = before + example.replace("欄名", label[:-1]).replace("観測", "最小14px")
+            assert result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": submission}) is None
 
 
 @pytest.mark.parametrize(
@@ -855,6 +860,15 @@ def test_usability_comparison_accepts_appearance_on_a_separate_line(comparison: 
     assert (reason is None) is accepted
     if reason is not None:
         assert "類例の比較の外見" in reason
+        inline = reason.split("比較の後に「", 1)[1].split("」", 1)[0].replace("観測", "余白を照合")
+        multiline = reason.split("同じ欄の次の行に「", 1)[1].split("」", 1)[0].replace("観測", "余白を照合")
+        for examples in (f"確認済み | 一覧と設定の比較{inline}", f"確認済み\n- 一覧と設定の比較\n{multiline}"):
+            assert (
+                result_contract.invalid_result_reason(
+                    session, {"status": "completed", "agent_message": _usability_message(examples)}
+                )
+                is None
+            )
 
 
 @pytest.mark.parametrize("status", ["未確認", "未検証", "未実施", "未調査", "比較なし", "該当なし"])
