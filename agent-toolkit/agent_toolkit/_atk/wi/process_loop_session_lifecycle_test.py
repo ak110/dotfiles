@@ -206,11 +206,21 @@ def test_claude_resume_launch_preserves_reservation_on_failure(
             claude_connection=claude_connection.Connection("inherit"),
         )
 
-    if case == "success":
+    resumed = case in {"success", "nonzero", "timeout", "no-boundary"}
+    if resumed:
         assert launch()
         assert process_loop_control.read_resume_request() is None
         assert process_loop_log.read_instructions() == []
-        assert "mode=original-record" in process_loop_log.log_path().read_text(encoding="utf-8")
+        log = process_loop_log.log_path().read_text(encoding="utf-8")
+        if case == "success":
+            assert "mode=original-record" in log
+        else:
+            assert "event=session_compaction_failed" in log
+            assert "event=session_resume_without_compaction" in log
+            if case == "nonzero":
+                assert "/compact の終了コード: 14" in log
+            if case == "timeout":
+                assert "TimeoutExpired（上限 3 秒）" in log
     else:
         if case == "cancelled":
             with pytest.raises(process_loop_control.ResumeChanged):
@@ -220,13 +230,9 @@ def test_claude_resume_launch_preserves_reservation_on_failure(
             with pytest.raises(next_action.ActionableError) as caught:
                 launch()
             assert identifier in str(caught.value)
-            if case == "nonzero":
-                assert "/compact の終了コード: 14" in str(caught.value)
-            if case == "timeout":
-                assert "TimeoutExpired（上限 3 秒）" in str(caught.value)
             assert process_loop_control.read_resume_request() == request
         assert process_loop_log.read_instructions() == ["保持する指示"]
-    assert (tmp_path / "interactive-called").exists() == (case == "success")
+    assert (tmp_path / "interactive-called").exists() == resumed
     assert (tmp_path / "compaction-called").exists() == (case in {"success", "nonzero", "timeout", "no-boundary"})
 
 

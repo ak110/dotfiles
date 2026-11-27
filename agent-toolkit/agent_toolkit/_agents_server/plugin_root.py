@@ -139,7 +139,7 @@ def _resolve_shared_root(root: Path, *, fresh_input: bool = False) -> Path:
 
 
 def main(arguments: list[str]) -> int:
-    if len(arguments) != 2 or arguments[0] not in {"--wi-submit-worker", "--process-loop-worker"}:
+    if len(arguments) != 2 or arguments[0] != "--wi-submit-worker":
         return 2
     root = resolve_stable_plugin_root(independent=True)
     try:
@@ -149,11 +149,7 @@ def main(arguments: list[str]) -> int:
         environment = plugin_environment.cli_environment(root, os.environ)
         environment["PYTHONPATH"] = str(root)
         inherited_venv.record_launch_value(environment, "PYTHONPATH", os.environ.get("PYTHONPATH"))
-        command = (
-            [str(executable), str(root / "agent_toolkit" / "atk.py"), "wi", "process-loop", "--internal-target", arguments[1]]
-            if arguments[0] == "--process-loop-worker"
-            else [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
-        )
+        command = [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
         if os.name == "nt":
             return subprocess.run(command, env=environment, check=False).returncode
         os.execvpe(str(executable), command, environment)

@@ -14,6 +14,7 @@ from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_log
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import inherited_venv as _inherited_venv
+from agent_toolkit._common import process_loop_session
 from agent_toolkit._testing.process_loop_session_support import _isolate_process_loop_commands as _isolate_process_loop_commands
 
 
@@ -306,12 +307,13 @@ class TestConsoleTitleReset:
 
 @pytest.mark.parametrize("orchestrator", ["claude", "codex", "agy"])
 @pytest.mark.parametrize("resume", [None, "saved-session"])
+@pytest.mark.parametrize("once", [False, True])
 def test_session_env_lets_coordinator_be_identified_by_id(
-    tmp_path: pathlib.Path, orchestrator: str, resume: str | None
+    tmp_path: pathlib.Path, orchestrator: str, resume: str | None, once: bool
 ) -> None:
     env = {**os.environ, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "previous-launch"}
     _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
-        argparse.Namespace(resume=resume),
+        argparse.Namespace(resume=resume, once=once),
         _pl_session.build_process_loop_prompt(),
         env,
         orchestrator=orchestrator,
@@ -321,6 +323,7 @@ def test_session_env_lets_coordinator_be_identified_by_id(
         cwd=tmp_path,
     )
     assert env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM"] not in {"", "previous-launch"}
+    assert (env[process_loop_session.ONCE_ENV] == "1") is once
     if resume is not None:
         assert env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] == resume
     elif orchestrator == "claude":
