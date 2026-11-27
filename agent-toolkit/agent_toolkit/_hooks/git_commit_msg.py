@@ -10,7 +10,7 @@ import subprocess
 
 import psutil
 
-from agent_toolkit._common import commit_hook_environment, next_action
+from agent_toolkit._common import commit_hook_environment, inherited_venv, next_action
 from agent_toolkit._common.shell_segments import ExecutionSegment
 from agent_toolkit._git import command as git_command
 from agent_toolkit._hooks.pretooluse import commit_identity, shell_checks_git
@@ -80,6 +80,7 @@ def _validate_message(path: pathlib.Path, original: dict[str, str], *, forwarded
 
 def run_hook(name: str, arguments: list[str], directory: pathlib.Path) -> int:
     original = commit_hook_environment.original_environment(directory, os.environ)
+    inherited_venv.restore_launch_environment(original)
     forwarded, status = _forward_existing(name, arguments, directory, original)
     if status or name != "commit-msg" or len(arguments) != 1:
         return status

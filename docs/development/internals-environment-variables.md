@@ -44,6 +44,7 @@
 - `AGENT_TOOLKIT_LAUNCH_RESTORE`: 起動処理によって変更された環境変数の変更前後の値を保持する内部JSON。
   `plugin_environment`が記録し、`inherited_venv`が現在値と記録値の一致する項目のみを復元した上で記録を除去する。
   起動後に外部から変更された値は維持する。
+  固定Git hookの起動では仮想環境の除去前の値を記録し、既存hookへの転送時だけ呼び出し元の探索環境を復元する。
 
 ホストが規定する以下の環境変数は、`agent_toolkit/_common/host_homes.py`の関数のみが参照する。
 
