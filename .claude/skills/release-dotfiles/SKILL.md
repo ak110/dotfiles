@@ -24,7 +24,7 @@ description: >
 
 1. `develop`へpushする前に、`rust/claude-statusline/`配下の差分（テストとテスト入力だけ、`Cargo.lock`だけの変更を含む）があれば、`rust/claude-statusline/Cargo.toml`の`version`を上げる。
    `release-statusline.yaml`は差分のあるマージごとに`statusline-v<version>`タグを作るため、据え置くと既存のタグと衝突する。
-   レーン担当は更新の根拠を計画か引き継ぎ記録へ残し、公開担当はその根拠が統合差分にも当てはまることと、版数と`Cargo.lock`の整合を確かめる。
+   レーン担当は更新の根拠を計画か引き継ぎ記録へ残し、公開担当はその根拠が統合差分にも当てはまることと、バージョンと`Cargo.lock`の整合を確かめる。
    最終の検証は`.claude/skills/develop-dotfiles/references/verification.md`「公開前の検証」のとおりpyfltrへ`--enable=statusline-version`を渡し、レーンの途中のcommitでは無効のまま保つ。
 2. リリース対象と起点を判定する。
    `git fetch origin develop master`の成功後、`agent-toolkit:atk-mode/references/git-identifier.md`に従って`origin/develop`と`origin/master`の完全OIDを解決する。
@@ -54,9 +54,9 @@ description: >
    0件なら、`agent-basics:writing-standards/references/writing-genres.md`「判断と行動を求める記述」の変更説明の基準でタイトルと本文を書き、一時領域へ保存する。
    - 本文は1分で読める要約にし、詳しい証拠は記録（計画、WI、CIのrun）の所在で示す。
    - エンドユーザーに影響する変更を先頭の章に置き、変更の種類ごとに章を分け、変更を1件ずつ項目にして、エンドユーザーが読んで分かる粒度で書く。
-   - 版数は末尾の章にまとめる。
+   - バージョンは末尾の章にまとめる。
      章の名前と数はその回の変更に合わせ、変更が1件だけのPRは章を設けずに書く。
-   - 手本は#209である（エンドユーザーに影響する変更、エージェントの作業手順の変更、不具合の修正と試験、版数の4章。タイトルは「リポジトリごとの編集制約と推論量の途中変更、一括処理の所要短縮」）。
+   - 手本は#209である（エンドユーザーに影響する変更、エージェントの作業手順の変更、不具合の修正と試験、バージョンの4章。タイトルは「リポジトリごとの編集制約と推論量の途中変更、一括処理の所要短縮」）。
 
    作成の直前に`agent-toolkit:atk-mode/playbooks/review-external-writes.md`を読み（タイトルも文面ファイルへ含める）、PRを作る。
 5. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチの同期、CIの確認、必要なリリースの検収まで終える。
@@ -65,11 +65,11 @@ description: >
    先に手動でfast-forwardしない。
    常駐の公開担当は主作業ツリーの同期を統括の直列統合へ引き継ぎ、PR操作とCI検収だけを行う。
    共通CIを再利用した場合も、マージした完全OIDのCI結果を`merge-pr`の手順で確かめる。
-6. developのみの公開も含め、CIと必要なリリースを確認した公開単位ごとに `update-dotfiles` から稼働版の確認まで続ける。
-   ホストごとの追跡系統に対応する公開OID・配布版を `docs/development/operations-services.md`「公開単位ごとの反映と稼働版の確認」の手順へ渡す。
-   巡回では統括にプラグイン・MCPの反映と本人再開を引き継ぎ、その結果と導入済みの両サービスの版の一致が揃うまで公開完了を返さない。
+6. developのみの公開も含め、CIと必要なリリースを確認した公開単位ごとに `update-dotfiles` から稼働中のバージョンの確認まで続ける。
+   ホストごとの追跡系統に対応する公開OID・配布物のバージョンを `docs/development/operations-services.md`「公開単位ごとの反映と稼働中のバージョンの確認」の手順へ渡す。
+   巡回では統括にプラグイン・MCPの反映と本人再開を引き継ぎ、その結果と導入済みの両サービスのバージョンの一致が揃うまで公開完了を返さない。
    反映に失敗したら、`agent-toolkit:atk-mode/playbooks/publish.md`「公開工程の続行不能からの再開」に従う。
-7. 今回`master`へ反映した使い方の変更を採用記録から拾い、公開版のガイドを確かめる。
+7. 今回`master`へ反映した使い方の変更を採用記録から拾い、公開されたバージョンのガイドを確かめる。
    `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」に従って設定の要否を環境ごとに確かめ、専用の案内UWIを登録する。
    `develop`へのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。
 8. PRの作成かマージに失敗した時点で、失敗したリリース工程だけを止め、自動の再試行とロールバックはしない。

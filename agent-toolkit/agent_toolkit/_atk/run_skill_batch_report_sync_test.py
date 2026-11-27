@@ -273,7 +273,7 @@ def test_report_lock_contention_keeps_analysis_and_resumes_without_child(tmp_pat
     ("install_path", "version", "expected"),
     [
         ("root", "9.9.9", ("c" * 40, "導入先が一致")),
-        ("other", "9.9.9", ("c" * 40, "版数が一致")),
+        ("other", "9.9.9", ("c" * 40, "バージョンが一致")),
         ("other", "0.0.1", (None, "特定できない")),
     ],
 )

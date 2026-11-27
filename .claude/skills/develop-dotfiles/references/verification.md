@@ -87,18 +87,18 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
   公開レスポンスの変更では、同じレスポンスを読むMCP層・CLIの待機処理・自動再開の後処理の各テストを配置によらず追跡する。
 - パッケージ外の呼び出し元: 既存の配置は`agent-toolkit/skills/*/scripts/`、`agent-toolkit/`直下のスクリプトとテスト、`pytools/`、`scripts/`、`libexec/`、リポジトリ直下の結合テストであり、将来の別の配置の利用側も同じ基準で含める。
   共有のGit処理では`libexec/update_dotfiles.py`・`update_dotfiles_stash.py`とそのテストも追跡する。
-- 配布パッケージの版の指定を変えたら`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。
-  対象は`agent-toolkit/.mcp.json`（生成される`mcp.json`と`.mcp.codex.json`を含む）、依存の宣言、`.chezmoi-source/`の導入・更新処理が渡す版の指定である。
+- 配布パッケージのバージョンの指定を変えたら`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。
+  対象は`agent-toolkit/.mcp.json`（生成される`mcp.json`と`.mcp.codex.json`を含む）、依存の宣言、`.chezmoi-source/`の導入・更新処理が渡すバージョンの指定である。
   依存の宣言は、リポジトリ直下の`pyproject.toml`と`agent-toolkit/scripts/launch.py`のインラインメタデータの`dependencies`を指す。
-  このテストは隔離したHOMEで実際のuvを動かし、post-applyの`uv tool install`とpyfltr MCPのウォームアップを確かめる（`warmup_pyfltr_mcp_test.py`は`uvx`をモックにするため版の解決まで届かない）。
+  このテストは隔離したHOMEで実際のuvを動かし、post-applyの`uv tool install`とpyfltr MCPのウォームアップを確かめる（`warmup_pyfltr_mcp_test.py`は`uvx`をモックにするためバージョンの解決まで届かない）。
 - Function hooksモジュール（`agent-toolkit/hooks/`の`*.ts`・`*.tsx`）: 変更パスを渡した`pyfltr`とコミットフックが`function-hooks-types`を起動し、CIが用意しない生成型を使う。
   Claude Codeの`plugin-authoring`で生成した`claude-code.d.ts`を環境変数`FUNCTION_HOOKS_TYPES`へ絶対パスで渡し、一時設定と生成型はcommitしない。
   モジュールのテストは、同じPATH上の`claude`で`claude plugin test <worktree>/agent-toolkit`を実行する（引数はプラグインのルートで、`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからずエラーになる）。
 - CIのコンテナージョブで`uv sync`が読む入力を変えたら`make ci-deps-check`を実行する。
-  入力は`.python-version`、`ci.yaml`のmatrixのPythonの版と「ネイティブ依存インストール」ステップ、リポジトリ直下の`uv.lock`と`pyproject.toml`の依存の宣言・`[tool.uv]`である。
+  入力は`.python-version`、`ci.yaml`のmatrixのPythonのバージョンと「ネイティブ依存インストール」ステップ、リポジトリ直下の`uv.lock`と`pyproject.toml`の依存の宣言・`[tool.uv]`である。
   lockだけの更新と、`agent-toolkit/scripts/launch.py`の依存の変更に伴う直下のlockの更新も含む。
-  CIと同じイメージ内でmatrixの各版の依存導入と`uv sync`を再現し、手元では作れてもCIで失敗するsdistの問題などをpush前に検知する。
-  Dockerが必要で、1版あたり約1分かかる。
+  CIと同じイメージ内でmatrixの各バージョンの依存導入と`uv sync`を再現し、手元では作れてもCIで失敗するsdistの問題などをpush前に検知する。
+  Dockerが必要で、1バージョンあたり約1分かかる。
   再検証の記録は`docs/development/audit-records-project-verification.md`にある。
   該当節は「.claude/skills/develop-dotfiles/references/verification.md：変更範囲の検証の値：2026年10月18日」である。
 - Windowsの実装・fixtureを変え、Linuxで同じ境界を観測できない場合は、本書「push前のチェックとCIだけが実行するチェック」の手順4へ進む。
@@ -109,7 +109,7 @@ dotfilesの変更を、テストの配置から公開前の検証まで確かめ
 
 ## 公開前の検証
 
-`make setup` は版数検査のGit pre-pushフックを導入する。
+`make setup` はバージョン検査のGit pre-pushフックを導入する。
 既存の公開用checkoutでは、反映後の最初のpushより先に `make install-plugin-version-hook` で導入する。
 フックは作業ツリーではなく、送信先が `refs/heads/develop` の非削除行の新旧OIDを検査する。
 既存の別のpre-pushフックは上書きしない。
@@ -152,10 +152,10 @@ Python 3.15のpytestは`pytest (3.15)`（直下）と、toolkitを`--test-shard`
   Windows固有のテストは`windows` markerで選ばれるため、Windows実機で確かめるテストはCI定義でなくテスト側へmarkerを付ける。
 - `test-windows (install)`: Windows実機での`install.ps1`による初回導入、既存設定のバックアップ、主要ファイルの確認。
   必須checkの`test-windows`がこの2つのjobの成功を集約する。
-- `update-dotfiles-upgrade (windows)`: Windowsでの旧版からのupdate-dotfilesによる更新の検証。
+- `update-dotfiles-upgrade (windows)`: Windowsでの以前のバージョンからのupdate-dotfilesによる更新の検証。
 - `test-linux`: `install.sh`とchezmoiの実際の適用の確認。
 - `rust-lint`: `rust/claude-statusline/`のcargoによる検証。
-- `plugin-version`: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分と版数を比べる。
+- `plugin-version`: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分とバージョンを比べる。
 - `browser-e2e`: 実際のブラウザーによるE2Eテスト（ローカルでは`make test-browser`）。
 
 通常branchのpushは`develop`、PRはbaseとの共通祖先からの変更領域で、`common-ci-owner`が選ぶ。
@@ -166,7 +166,7 @@ Pythonのpytest・lint、完全導入と更新の検証には領域の選択を�
 
 ## Windowsの更新を最後まで試す
 
-一時複製の修正版で `update-dotfiles` を最後まで試す場合は、修正のcommitを認可済みの候補branchへ反映し、そのcommitのCI `update-dotfiles-upgrade (windows)` を使う。
+修正を含む一時複製で `update-dotfiles` を最後まで試す場合は、修正のcommitを認可済みの候補branchへ反映し、そのcommitのCI `update-dotfiles-upgrade (windows)` を使う。
 使い捨てのGitHub-hosted Windows runnerで対象checkoutのHEADへ更新し、ジョブが省略されず成功したことを確認する。
 特定の起動条件が必要なら、同種の使い捨てrunnerで更新を起動する前にその条件の成立を確認する。
 使い捨てrunnerか必要な起動条件を確認できない場合は、起動を見送る。

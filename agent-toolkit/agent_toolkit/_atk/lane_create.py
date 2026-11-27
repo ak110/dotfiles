@@ -78,7 +78,7 @@ def prepare(record: dict[str, typing.Any], path: pathlib.Path) -> None:
             _lane_records.procedure(record, "create")
         elif branch in refs:
             if _lane_records.git(repo, "rev-parse", f"refs/heads/{branch}") != record["initial_head"]:
-                raise ValueError("作成途中のbranchが開始版から変わっている。成果を確認して回復する")
+                raise ValueError("作成途中のbranchが開始HEADから変わっている。成果を確認して回復する")
             _lane_records.git(repo, "worktree", "add", str(worktree), branch)
         else:
             _lane_records.git(repo, "worktree", "add", "-b", branch, str(worktree), record["initial_head"])

@@ -252,7 +252,9 @@ def pretooluse(payload: dict[str, Any]) -> Authorization | None:
                 )
                 is not True
             ):
-                return Authorization(context="対話画面・対象版・実効autoModeの一致を確認できない。通常の権限確認へ戻す。")
+                return Authorization(
+                    context="対話画面・対象のバージョン・実効autoModeの一致を確認できない。通常の権限確認へ戻す。"
+                )
             consumed = False
 
             def consume(state_now: dict) -> dict | None:
@@ -348,7 +350,9 @@ def _consume_uwi(
                 )
                 is not True
             ):
-                return Authorization(context="対話画面・対象版・実効autoModeの一致を確認できない。通常の権限確認へ戻す。")
+                return Authorization(
+                    context="対話画面・対象のバージョン・実効autoModeの一致を確認できない。通常の権限確認へ戻す。"
+                )
             with sync.DEFAULT_STORAGE.mutation(root) as mutation:
                 latest = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
                 if (

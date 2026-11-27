@@ -19,7 +19,7 @@ atk run-script pick-wi-check -- <選定YAML> --handoff-observation <WI名> --lan
 
 本節は、要件そのものが実環境での観測を求める未終了の項目を扱う。
 実装と統合を終え、反映後の完成条件の観測だけが残る項目は延期`adopt`とする。
-固有の指示が公開工程の後の`adopt`を求める項目と、版数の更新を完成条件に持つ項目も延期の対象とする。
+固有の指示が公開工程の後の`adopt`を求める項目と、バージョンの更新を完成条件に持つ項目も延期の対象とする。
 
 1. 未達条件の延期を選ぶ前に、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」を適用する。
    - 後日の対策効果が完成条件の場合も、適用条件・観測の機会と、待てば解決する見込みの根拠を特定して再開記録へ残す。

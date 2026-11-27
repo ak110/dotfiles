@@ -6,7 +6,7 @@
 調査の結論と回避策の採否は、ドキュメントとIssueの内容と合わせて`agent-basics:bugfix/references/causes.md`「場面ごとの確かめ方」に沿って判断する。
 
 - バイナリの実体のパスは`B=$(readlink -f "$(command -v claude)")`や`C=$(readlink -f "$(command -v codex)")`で解決する。
-  特定のClaude Codeの版を対象にする場合は`~/.local/share/claude/versions/<バージョン>`を指定する。
+  特定のClaude Codeのバージョンを対象にする場合は`~/.local/share/claude/versions/<バージョン>`を指定する。
 - 件数は`timeout 60 rg -a -c -F -- '<検索文字列>' "$B"`、前後の文脈は`timeout 60 rg -a -o -- '.{0,200}<検索文字列>.{0,200}' "$B"`で取得する。
   文脈検索の検索文字列は正規表現としてエスケープし、出力はmanaged-tempへ保存してから読む。
   タイムアウトなどの上限到達による中断と、該当なしの結果を分けて判断する。

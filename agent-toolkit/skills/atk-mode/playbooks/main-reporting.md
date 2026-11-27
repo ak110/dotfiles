@@ -186,7 +186,7 @@ Claude Codeのメインの定期再確認では、発火の揺れを吸収する
 #### process-wiの公開と更新
 
 process-wiの担当だけが行う。
-`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の公開・リリース・版の取り込みを別々に点検する。
+`agent-toolkit:atk-mode/references/orchestrator-runtime.md`「継続中の公開と更新」の公開・リリース・バージョンの取り込みを別々に点検する。
 次の公開単位が無くても、同節から対象プロジェクトのリリース判定へ進む。
 
 #### 委譲先の期限前の返却

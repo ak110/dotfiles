@@ -313,7 +313,7 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
             assert pathlib.Path(args[-2]).is_file()
             assert (plugin_root / args[-1]).is_file()
             assert (plugin_root / "skills" / "sample" / "SKILL.md").is_file()
-            assert "別hostのcache版数から別のplugin rootを組み立てない" in instructions
+            assert "別hostのキャッシュのバージョンから別のplugin rootを組み立てない" in instructions
         assert start_params["developerInstructions"] == resume_params["developerInstructions"]
 
 

@@ -7,7 +7,7 @@
 - 内容: 既存Markdownを1文ごとに改行し、複数文を1行に書いた箇所を検査する
 - 理由: 文単位で差分を読み、行数から文書の大きさを把握できるようにする
 - 当てはまる条件: 日本語のMarkdown文書を持つ
-- 適用方法: 適用方法は公開版では未整備であり、現在はdotfilesの`scripts/check_markdown_structure.py`と`pyproject.toml`のカスタムコマンド登録を参照し、既存文書の内容を保って改行する
+- 適用方法: 適用方法は公開されたバージョンでは未整備であり、現在はdotfilesの`scripts/check_markdown_structure.py`と`pyproject.toml`のカスタムコマンド登録を参照し、既存文書の内容を保って改行する
 - 参照先: `github.com/ak110/dotfiles`の`scripts/check_markdown_structure.py`と`pyproject.toml`
 - 適用済みの見分け方: 地の文と箇条書きが1文1行で、表・コード・逐語引用を除く複数文の行をCIの検査が拒否する
 
@@ -18,7 +18,7 @@
 - 内容: 全角丸括弧の入れ子を直し、行をまたぐ入れ子も検査する
 - 理由: 補足の範囲を読み取りやすくし、同じ表記の崩れを防ぐ
 - 当てはまる条件: 日本語のMarkdown文書を持つ
-- 適用方法: 適用方法は公開版では未整備であり、現在はdotfilesの`scripts/check_markdown_structure.py`と`pyproject.toml`のカスタムコマンド登録を参照し、名称を保って外側の括弧を読点や別文へ直す
+- 適用方法: 適用方法は公開されたバージョンでは未整備であり、現在はdotfilesの`scripts/check_markdown_structure.py`と`pyproject.toml`のカスタムコマンド登録を参照し、名称を保って外側の括弧を読点や別文へ直す
 - 参照先: `github.com/ak110/dotfiles`の`scripts/check_markdown_structure.py`と`pyproject.toml`
 - 適用済みの見分け方: コードや引用の外に全角丸括弧の入れ子が無く、表・見出し・行をまたぐ入れ子を検査が報告する
 

@@ -681,7 +681,7 @@ function applyHostSnapshot(data, previous, drafts) {
   recordUpdateSuccess("settings", "refresh");
   showAutomaticErrors(data);
   const legacy = data.legacy || data.automatic_unsupported?.includes(host);
-  status.textContent = legacy ? "旧版のatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
+  status.textContent = legacy ? "旧バージョンのatkです。実効値を表示しています。一部の値の編集にはSSH先のatkの更新が必要です。" : "";
 }
 
 async function loadHost(background = false, retry = false) {
@@ -761,7 +761,7 @@ async function loadHost(background = false, retry = false) {
     hostProgress.hidden = true;
     updateWriteControls();
     const snapshotStatus = loading ? "前回取得した設定を表示中。保存するには再取得してください。" : "";
-    const hostStatus = selectedLegacy ? "SSH先のatkが旧版です。設定を確認するにはSSH先のatkを更新してください。" : "";
+    const hostStatus = selectedLegacy ? "SSH先のatkが旧バージョンです。設定を確認するにはSSH先のatkを更新してください。" : "";
     const messageStatus = [hostStatus, snapshotStatus].filter(Boolean).join(" ");
     if (status.textContent !== messageStatus) status.textContent = messageStatus;
     const message = host ? [`${host}の設定を取得できません。`, error.message].filter(Boolean).join(" ") : error.message;

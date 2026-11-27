@@ -5,7 +5,7 @@ description: >
   作者個人のプロジェクト群の運用を扱う。姉妹プロジェクト間のツールチェイン（Makefile、mise、prek、
   GitHub Actionsなど）・ドキュメント構成の同期、gv・lcなど姉妹プロジェクト自体の編集、推奨ガイド・
   共有ファイルへの追従、個人プロジェクトのAWI処理で選定メインが横断同期・依存更新の要否を判定するとき、個人プロジェクトの性質・作業手順を変える
-  要求のWI作成、版数の提案・確認、リリース、lint設定・足回りファイルの変更時に使う。
+  要求のWI作成、バージョンの提案・確認、リリース、lint設定・足回りファイルの変更時に使う。
   「他プロジェクトへの反映」「プロジェクト間の同期」などを受けたエージェントが起動する。
   判定済みの依存更新だけを受託するレーンはAWI着手の契機では起動せず、独立した足回り変更など他の契機は適用する。
   個人プロジェクトで、他のプロジェクトでも個別の作業が必要なコード整理やテスト・検証・CIの改善を確定したときにも使う。
@@ -22,7 +22,7 @@ description: >
 | 足回り（ツールチェイン、lint設定、CI、文書構成）の変更や推奨ガイドの改訂を姉妹プロジェクトへ広げる。波及先の判定、追従提案の投入 | `references/project-synchronization.md` |
 | 足回りファイルを編集する。追従提案のAWIの実施、lint違反と設定の緩和 | `references/cross-project-followup.md` |
 | 依存を更新する。AWI処理での要否の判定、明示の更新要求 | `references/dependency-update.md` |
-| 個人プロジェクトやdotfiles配布プラグインの版数を提案・確認する。リリースworkflowの有無を問わない | `references/release-operations.md`「実施」2 |
+| 個人プロジェクトやdotfiles配布プラグインのバージョンを提案・確認する。リリースworkflowの有無を問わない | `references/release-operations.md`「実施」2 |
 | 公開とリリース。公開範囲、リリースの要否と実施、GLATasksの配備 | `references/release-operations.md` |
 | `README.md`、`AGENTS.md`、`docs/development/`の章構成を変える、そろえる | `references/doc-structure.md` |
 | gv・lcをLinuxで編集・検証する。prek、pyfltr、文書lintの呼び出しやCI workflowを変える | `references/ci-and-tooling.md` |

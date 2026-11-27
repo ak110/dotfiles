@@ -48,7 +48,7 @@ class RuntimeCode:
             )
             action = error.next_action if isinstance(error, ActionableError) else "元の文書診断を直して同じstartを再実行する"
             if self.version is not None and version is not None and self.version != version:
-                context += "稼働実装と役割資源の版相違を確認した。"
+                context += "版相違: 稼働実装と役割資源のバージョンが一致しない。"
                 if all(re.fullmatch(r"\d+\.\d+\.\d+", value) for value in (self.version, version)) and tuple(
                     map(int, self.version.split("."))
                 ) < tuple(map(int, version.split("."))):
@@ -60,6 +60,6 @@ class RuntimeCode:
                     "原要求・入力・全体作業契約・担当識別子と結果の受領責任を維持する。"
                     "再接続の前に、起動済みの担当の識別子・稼働状態・未回収の結果・再開の入力を引き継ぎ記録へ保存し、"
                     "稼働中の担当を一括で停止しない。再接続の後は同じ担当を照会して継続と結果の回収を引き継ぐ。"
-                    "新しい同版の組でも失敗する場合は元診断の入力・文書を直す"
+                    "同じバージョンの新しい組でも失敗する場合は元診断の入力・文書を直す"
                 )
             raise ActionableError(f"{context}元診断: {error}", next_action=action) from error

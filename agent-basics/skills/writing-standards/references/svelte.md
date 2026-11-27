@@ -1,8 +1,8 @@
 # Svelte／SvelteKit記述スタイル
 
 Svelteで実装する担当が状態の保有範囲と描画の境界を定め、ユーザーが初回表示から一貫した画面を使い、自分のデータを保てるようにする。
-対象の版: Svelte 5系、SvelteKit 2〜3系。
-本書は、runesモードで書くSvelteとSvelteKitのコードで、公式ドキュメント（<https://svelte.dev/docs>）のうち誤りやすい版に固有の事項を示す。
+対象のバージョン: Svelte 5系、SvelteKit 2〜3系。
+本書は、runesモードで書くSvelteとSvelteKitのコードで、公式ドキュメント（<https://svelte.dev/docs>）のうち誤りやすいバージョンに固有の事項を示す。
 サーバーの状態、CSRF、秘匿値の規定は`agent-basics:writing-standards/references/quality-principles-constraints.md`の適用である。
 
 ## runesの使い分け

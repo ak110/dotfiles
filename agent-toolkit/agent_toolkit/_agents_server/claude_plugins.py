@@ -629,7 +629,7 @@ class ClaudePluginReloader:
         try:
             result = _ReloadResponse.model_validate(response)
         except ValidationError as error:
-            raise PluginReloadError("reload_pluginsの応答形式が不正。CLIとSDKの対応版を確認する") from error
+            raise PluginReloadError("reload_pluginsの応答形式が不正。対応するCLIとSDKのバージョンを確認する") from error
         if result.error_count:
             raise PluginReloadError(
                 f"reload_pluginsが{result.error_count}件のエラーを返した。プラグインとCLIの診断ログを確認する"
@@ -646,7 +646,7 @@ class ClaudePluginReloader:
                 raise PluginReloadError("reload_pluginsの利用対象が不正。CLIの診断ログを確認する") from error
             if expected[path] != (item.name, item.version):
                 raise PluginReloadError(
-                    f"reload_pluginsのプラグイン名・版・pathが入力と一致しない: {item.name}。導入状態を確認する"
+                    f"reload_pluginsのプラグイン名・バージョン・pathが入力と一致しない: {item.name}。導入状態を確認する"
                 )
             loaded.add(path)
         if missing := expected.keys() - loaded:

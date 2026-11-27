@@ -28,7 +28,7 @@
      事例ごとの出力先の名前、合成素材の事例の計画の名前とcommit件名は、欠陥の事例と正常対照で同じ形の中立の名前になる。
      事例IDと種類は出力の`case`と`kind`だけにあるため、担当へは`start`だけを渡す。
 2. 変更前は稼働中のplugin rootの役割名（`exec-review`）を、変更後は作業ツリーの`agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。
-   agent-basicsのスキルなど役割文書の外の改訂は、稼働版へ反映した後の実行と、反映の前に保存した結果を比べる。
+   agent-basicsのスキルなど役割文書の外の改訂は、稼働中のバージョンへ反映した後の実行と、反映の前に保存した結果を比べる。
 3. 各担当の終了後、`uv run --frozen python scripts/review_eval.py score --result <事例ID>=<出力のtableのパス>`で、事例別の検出、見逃し、誤指摘、未分類と合計を出す。
    未分類の行は本文を読み、正しい指摘か誤指摘かを手で分類する。
    採点と分類は、担当の返却にある自己申告（読んだ資料、確かめた範囲、解決済みとした判断）に頼らず、担当のセッション記録で実際に読んだ記録と、出力した管理表の行で行う。
@@ -92,7 +92,7 @@
 `prepare`は`origin.cases`が指す事例が評価セットに無い定義を拒否する。
 
 - 素材は`scripts/review_eval_materials/<素材名>/`に置く。
-  `base.diff`が変更前の版、事例定義の`material.change`の差分が変更、`material.plan`が渡す計画、同じ場所の`<WI名>.md`が評価用WI原本である。
+  `base.diff`が変更前のバージョン、事例定義の`material.change`の差分が変更、`material.plan`が渡す計画、同じ場所の`<WI名>.md`が評価用WI原本である。
 - 欠陥の事例ごとに、同じ素材で不足を解消した正常対照を用意し、正常対照の`expect.absent`へ欠陥の事例と同じ照合語句を書く。
 - 素材には元のAWI・計画の本文を転記せず、判断に必要な関係を一般化して書く。
   無関係なWIや文章は削ってよいが、欠陥の判断に必要な文脈は残す。

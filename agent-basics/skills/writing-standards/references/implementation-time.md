@@ -181,7 +181,7 @@ lintの指摘への対応は原則2（`agent-basics:writing-standards/references
 
 ### 緩和判断のフレーム
 
-- 緩和する警告が現在の版で再現するかを、ルールの個別の実行（`textlint --rule <name>`、`markdownlint --rules <name>`など）で確かめる。
+- 緩和する警告が現在のバージョンで再現するかを、ルールの個別の実行（`textlint --rule <name>`、`markdownlint --rules <name>`など）で確かめる。
   再現しない警告を緩和すると、不要な除外だけが残る。
 - ルールが何を防ぐかを公式の説明で確かめ、根本目的を支えるルールなら、設定の緩和や行単位の無視コメントに頼らず文章を直す。
 - ルールが文を硬くする方向（平易な和語を漢語に置き換える、中黒で名詞をつなぐ、条件を1文に詰めるなど）へ誘導する時は、閾値の変更か対象の除外を検討する。
@@ -207,5 +207,5 @@ lintの指摘への対応は原則2（`agent-basics:writing-standards/references
 | PowerShell | 該当なし | PSScriptAnalyzer |
 
 - 宣言した互換範囲（Pythonの`requires-python`、Rustの`rust-version`とedition、C#の`LangVersion`と`TargetFramework`など）で使える新しい言語機能は積極的に使う。
-  使えるかは公式のリリースノートと比べ、サポート対象の全ての版で動くかで判断する。
+  使えるかは公式のリリースノートと比べ、サポート対象の全てのバージョンで動くかで判断する。
 - 同等の品質を実現できるなら、外部パッケージを足すより標準ライブラリを使う。

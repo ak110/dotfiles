@@ -369,11 +369,11 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
     await expect(fast).to_contain_text("（ローカル）: 記録なし")
     await picker.select_option("old-host")
     await expect(
-        page.get_by_text("SSH先のatkが旧版です。設定を確認するにはSSH先のatkを更新してください。", exact=False)
+        page.get_by_text("SSH先のatkが旧バージョンです。設定を確認するにはSSH先のatkを更新してください。", exact=False)
     ).to_be_visible()
-    await expect(page.get_by_text("old-host: 旧版のため自動取得なし", exact=False)).to_have_count(1)
+    await expect(page.get_by_text("old-host: 旧バージョンのため自動取得なし", exact=False)).to_have_count(1)
     old = await page.request.get(screen_harness.base_url + "/api/settings?host=old-host")
-    assert old.status == 400 and (await old.json())["error"] == "SSH先のatkが旧版です"
+    assert old.status == 400 and (await old.json())["error"] == "SSH先のatkが旧バージョンです"
     assert ("old-host", "atk config show") not in operations
     response = await page.request.post(
         screen_harness.base_url + "/api/settings?host=old-host",
@@ -678,7 +678,7 @@ async def test_selected_legacy_host_explanation_survives_an_unrelated_connection
     await page.clock.fast_forward(30_000)
     await expect(update).to_contain_text("offline")
     await picker.select_option("legacy")
-    await expect(status).to_contain_text("SSH先のatkが旧版です。設定を確認するにはSSH先のatkを更新してください。")
+    await expect(status).to_contain_text("SSH先のatkが旧バージョンです。設定を確認するにはSSH先のatkを更新してください。")
     await expect(update).to_be_visible()
     await picker.select_option("")
     await expect(status).to_be_empty()
@@ -713,4 +713,4 @@ async def test_shared_comparison_names_only_differing_settings(screen_harness: _
     await expect(summary).to_contain_text("review_model")
     await expect(summary).not_to_contain_text("chores_model")
     await expect(summary).to_contain_text("beta: 共有先の一致は未確認")
-    await expect(summary).to_contain_text("gamma: 旧版のため自動取得なし")
+    await expect(summary).to_contain_text("gamma: 旧バージョンのため自動取得なし")

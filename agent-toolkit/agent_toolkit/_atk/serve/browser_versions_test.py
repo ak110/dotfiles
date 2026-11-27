@@ -19,8 +19,8 @@ async def test_runtime_warning_displays_versions_and_can_recheck(
 ) -> None:
     app = _browser_app(tmp_path, tmp_path)
     serve_app.register_version_routes(app, tmp_path, "a" * 40)
-    mismatch = {"service": "atk serve", "status": "mismatch", "detail": "稼働版: " + "a" * 40}
-    pending = {"service": "agents_server", "status": "mismatch", "detail": "公開版: 2.310.2（世代 f9785bcc94d3）"}
+    mismatch = {"service": "atk serve", "status": "mismatch", "detail": "稼働バージョン: " + "a" * 40}
+    pending = {"service": "agents_server", "status": "mismatch", "detail": "公開バージョン: 2.310.2（世代 f9785bcc94d3）"}
     warnings = [mismatch, pending]
 
     async with _serve(app, browser) as (_context, page, port):
@@ -42,11 +42,11 @@ async def test_runtime_warning_displays_versions_and_can_recheck(
         await expect(details.get_by_text(mismatch["detail"])).to_be_visible()
         await expect(details.get_by_text(pending["detail"])).to_be_visible()
 
-        warnings[:] = [{"service": "atk serve", "status": "unavailable", "detail": "公開版: 取得不能"}]
-        await notice.get_by_role("button", name="版を再確認").click()
-        await expect(status).to_have_text("公開版との一致を確認できません")
+        warnings[:] = [{"service": "atk serve", "status": "unavailable", "detail": "公開バージョン: 取得不能"}]
+        await notice.get_by_role("button", name="バージョンを再確認").click()
+        await expect(status).to_have_text("公開されたバージョンとの一致を確認できません")
 
         warnings.clear()
-        await notice.get_by_role("button", name="版を再確認").click()
+        await notice.get_by_role("button", name="バージョンを再確認").click()
         await expect(notice).to_be_hidden()
         await expect(page.locator("#screen-wi h1")).to_be_focused()

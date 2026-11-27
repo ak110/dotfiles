@@ -117,7 +117,7 @@ def inspect(reason: str, *, cwd: str) -> Classification:
         )
         matched = _VERSION.fullmatch(version_result.stdout.strip()) if version_result.returncode == 0 else None
         if matched is None:
-            return Classification(False, "Claude Codeの版を確認できない")
+            return Classification(False, "Claude Codeのバージョンを確認できない")
         version = matched.group(1)
         result = process_tree.run_with_timeout(
             [executable, "auto-mode", "config"],
@@ -150,4 +150,4 @@ def inspect(reason: str, *, cwd: str) -> Classification:
         fields = tuple(field for field in ("soft_deny", "hard_deny") if config[field] == getattr(baseline, field))
         return dataclasses.replace(classified, default_fields=fields)
     except OSError, UnicodeError, subprocess.TimeoutExpired, ValueError, process_tree.ReclaimError:
-        return Classification(False, "公開CLIの実効設定または版の取得に失敗した")
+        return Classification(False, "公開CLIの実効設定またはバージョンの取得に失敗した")

@@ -120,7 +120,7 @@ def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
             and task_documents.is_agent_toolkit_plugin_root(task_document.parent.parent)
         ):
             current = task_documents.find_role_document(plugin_root.SERVER_PLUGIN_ROOT, task_document.name)
-            reason = f"subagent_md_pathがagent-toolkit旧版のshare/を参照しています: {task_document}"
+            reason = f"subagent_md_pathが古いバージョンのagent-toolkitのshare/を参照しています: {task_document}"
             if current is not None:
                 reason += f"。現在の役割文書: {current}"
             raise ActionableError(reason, next_action="プラグイン更新後は会話を再起動し、新しいスキル本文を読み直す")
