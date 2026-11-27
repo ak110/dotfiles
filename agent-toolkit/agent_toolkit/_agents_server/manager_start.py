@@ -64,19 +64,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 START_RESOURCE_GUARD: contextvars.ContextVar[Callable[[SessionState | None], Awaitable[None]] | None] = contextvars.ContextVar(
     "START_RESOURCE_GUARD", default=None
 )
-WRITE_MODEL_AUTHORIZED: contextvars.ContextVar[bool] = contextvars.ContextVar("WRITE_MODEL_AUTHORIZED", default=False)
-
-
-def _require_write_model_evidence(model_type: str | None, authorized: bool) -> None:
-    if model_type == "write" and not authorized:
-        raise ActionableError(
-            "`write_model`を使う工程`write`にはユーザーの指示が必要です。委譲先は起動していない。",
-            next_action=(
-                "ユーザーが今回の起動を指定した場合だけ`model_override=user_instruction`と"
-                "`model_override_evidence`に実際の指示の根拠を渡す。"
-                "実装・修正は`mode=delegate, model_type=execute`か、所定の`exec`の役割で起動する"
-            ),
-        )
 
 
 def _weekly_limit_active(session: SessionState, *, wall_now: float, loop_now: float) -> bool:
@@ -118,9 +105,10 @@ async def check_model_override(
     launch_kind: LaunchKind = "delegate",
     fallback_phase: str | None = None,
 ) -> list[dict[str, str]]:
-    _require_write_model_evidence(model_type, reason == "user_instruction" and bool((evidence or "").strip()) and not inherited)
-    if model_type is None or (
-        model_type != "write" and model_type in _atk_config.MODEL_TYPES and (default_type is None or model_type == default_type)
+    if (
+        model_type is None
+        or model_type == "write"
+        or (model_type in _atk_config.MODEL_TYPES and (default_type is None or model_type == default_type))
     ):
         return []
     next_action = (
@@ -128,11 +116,7 @@ async def check_model_override(
         if inherited
         else "該当する工程名で起動し直す。taskではmodel_typeを省略できる。"
     )
-    if (
-        (inherited and model_type != "write")
-        or reason not in ("user_instruction", "fallback_failure")
-        or not (evidence or "").strip()
-    ):
+    if inherited or reason not in ("user_instruction", "fallback_failure") or not (evidence or "").strip():
         raise ActionableError(
             "候補外の起動には本人指定または全候補の週間上限を根拠とするmodel_overrideが必要です。委譲先は起動していない。",
             next_action=next_action + "本人指定にはmodel_override=user_instructionと根拠を渡す。",
@@ -146,7 +130,7 @@ async def check_model_override(
             _model_override.require,
             evidence,
             model_type,
-            default_type or ("write" if model_type == "write" else launch["mode"]),
+            default_type or launch["mode"],
             launch=launch,
             launcher=launcher,
             state_root=state_root,
@@ -299,7 +283,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         startup_inputs: Mapping[str, str] | None = None,
         explicit_role_model: bool = False,
     ) -> dict[str, Any]:
-        _require_write_model_evidence(model_type, WRITE_MODEL_AUTHORIZED.get())
         validate_prompt(prompt)
         validate_cwd(cwd)
         ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
@@ -624,7 +607,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         with (
             startup_features.selection(predecessor.startup_profile),
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
-            WRITE_MODEL_AUTHORIZED.set(successor_type == "write" and bool(warnings)),
         ):
             response = await self._start_with_admission(
                 successor_type,

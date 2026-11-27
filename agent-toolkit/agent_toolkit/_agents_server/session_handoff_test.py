@@ -6,9 +6,11 @@ import json
 import pathlib
 import subprocess
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult
 
 from agent_toolkit._agents_server import (
     handoff_next_action,
@@ -508,32 +510,48 @@ async def test_handoff_guidance_after_direct_model_availability_failure(
 
 
 @pytest.mark.asyncio
-async def test_handoff_requires_user_instruction_for_write_again(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path
+@pytest.mark.parametrize("explicit", [True, False])
+@pytest.mark.parametrize("role", [True, False])
+async def test_handoff_uses_current_write_without_model_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path, explicit: bool, role: bool
 ) -> None:
-    monkeypatch.setattr(model_override, "require", lambda *_args, **_kwargs: None)
     del record_extractor
+    require = Mock(side_effect=AssertionError("設定済みの工程を本人発話と照合した"))
+    monkeypatch.setattr(model_override, "require", require)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:drafting/medium")
+    document = tmp_path / "skills" / "atk-mode" / "roles" / "draft.subagent.md"
+    if role:
+        manifest = tmp_path / ".claude-plugin" / "plugin.json"
+        manifest.parent.mkdir()
+        manifest.write_text('{"name": "agent-toolkit"}', encoding="utf-8")
+        document.parent.mkdir(parents=True)
+        document.write_text(
+            "---\nmode: write\nmodel_type: write\nusage: chores\n"
+            "required_inputs: []\nwrites_worktree: false\n---\n\n# 文案を起草する\n",
+            encoding="utf-8",
+        )
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        original = await mcp_tools.start(
-            str(tmp_path),
-            mode="write",
-            prompt="見出しの文案を作る",
-            model_override="user_instruction",
-            model_override_evidence="ユーザーが前任と後任に write_model を指定",
+        original = (
+            await mcp_tools.start(str(tmp_path), mode="task", subagent_md_path=str(document))
+            if role
+            else await mcp_tools.start(str(tmp_path), mode="write", prompt="見出しの文案を作る")
         )
         session_id = original["session_id"]
         _complete(manager.sessions[session_id], message="文案の進捗")
-        for override in ({}, {"model_override": "fallback_failure", "model_override_evidence": "切替失敗"}):
-            with pytest.raises(ToolError, match="user_instruction"):
-                await mcp_tools.mcp.call_tool("start", {"handoff_from": session_id, **override})
-            assert backend.start_calls == [("drafting", "medium", "write")]
-        response = await mcp_tools.start(
-            handoff_from=session_id,
-            model_type="write",
-            model_override="user_instruction",
-            model_override_evidence="ユーザーが前任と後任に write_model を指定",
-        )
-        assert response["model_type"] == "write"
-        assert backend.start_calls == [("drafting", "medium", "write")] * 2
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:revised-drafting/high")
+        if role:
+            with pytest.raises(ToolError, match="追送は配送していない") as rejected:
+                await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "prompt": "残りを起草する"})
+            diagnostic = str(rejected.value)
+            assert "handoff_from" in diagnostic and "ユーザー" in diagnostic
+            assert "根拠" not in diagnostic and "model_override" not in diagnostic
+            assert backend.send_calls == 0
+        inputs = {"handoff_from": session_id, **({"model_type": "write"} if explicit else {})}
+        response = await mcp_tools.mcp.call_tool("start", inputs)
+        assert isinstance(response, CallToolResult)
+        assert response.structured_content is not None
+        assert response.structured_content["model_type"] == "write"
+        assert "warnings" not in response.structured_content
+        assert backend.start_calls == [("drafting", "medium", "write"), ("revised-drafting", "high", "write")]
+        require.assert_not_called()

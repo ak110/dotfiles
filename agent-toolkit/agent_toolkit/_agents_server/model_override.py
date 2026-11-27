@@ -254,8 +254,7 @@ def require(
         and isinstance(raw_prompt, str)
         and re.fullmatch(r"[^「」\r\n]+", raw_prompt)
     ):
-        specified = "write_model" if model_type == "write" else model_type
-        direct = (f"{launch['cwd']}で{launch['mode']}の「{raw_prompt}」は{specified}で。",)
+        direct = (f"{launch['cwd']}で{launch['mode']}の「{raw_prompt}」は{model_type}で。",)
     ancestry = _ancestry(launcher.get("launcher_session_id"), state_root)
     try:
         repository_codex = _repository_codex_selection(model_type, phase, launch)
