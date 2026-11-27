@@ -10,7 +10,6 @@
 `make test-browser`は`-p agent_toolkit._testing.pytest_plugin`を指定するため枠を使う。
 枠はホスト全体で2つ（pyfltr 3.30.0以降）で、pytestと統合の検証は開始からworker・子孫の回収まで枠を持ち、入れ子の実行は祖先の所有を継ぎ、収集だけのpytest（`--collect-only`）は枠を取らない。
 シェルからの起動は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の形式と3分類に従う。
-統合と緊急修正の優先度と各入口の起動形は、同手順書の優先制御に従う。
 Codexでは、共有枠を取る構成のpyfltr検証を、検査の所要にかかわらず初回からCLIで起動する。
 呼出元のmanaged-tempに実行専用のprefixを決め、標準出力・標準エラー・終了コードを別々に残す。
 次は同じ実行の起動応答を失っても結果を読み直せるBashの例である。

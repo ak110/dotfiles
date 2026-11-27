@@ -52,13 +52,7 @@
 - 検証ログの全量を別の担当へ渡す場合は、セッションのmanaged-temp内へ標準出力と標準エラーを分けて保存し、終了コードと取得時点の`git rev-parse HEAD`を`検証結果`へ記録する。
 - 共有の実行枠に参加する検証（pyfltrを起動する全ての手段と、実行枠へ参加するよう設定されたpytest）は、空き枠が無ければ先行する検証の完了を待つ。
   枠の数は検証を起動するpyfltrとプロジェクトの設定が決める（数はプロジェクト固有の値として各プロジェクトの規範にある。仕様はpyfltrの`docs/guide/usage.md`「同時に起動した検証の待機」）。
-  - 統合の検証はレーン途中の検証より優先し、即時対応の修正は統合より優先する。
-    統合最終検証は`atk lane integrate`が既存の枠へ優先して渡す。
-    巡回内のMCP・シェルのpyfltr、枠に参加する直接のpytest、commit（Windowsの経路を含む）は、次のCLI経路で起動する。
-    `atk run-script verification-priority -- --priority <normal|integration|urgent> -- <コマンドと引数>`。
-    MCPの検証も巡回内ではこのCLI経路へそろえ、収集だけなど枠を取らない処理と巡回外の検証には適用しない。
-    実行中の検証は中断せず、優先要求の終了・取消・起動失敗後は通常要求を再開する。
-  - 巡回内の検証の起動順は、`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`の資源管理で決める。
+  - 巡回内のMCP・シェルのpyfltr、枠に参加する直接のpytest、統合の最終検証、commitの起動順は、`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`の資源管理で決める。
     順番が決まる前に対象のツールを起動せず、実行枠の待ち行列を増やさない。
     枠に参加しない収集などには適用しない。
   - シェルから起動する時は、ツール自体のタイムアウト（実行枠の待ち時間を除いた処理時間だけに掛かる）を使い、コマンドの先頭に`timeout <秒>`を付けない。

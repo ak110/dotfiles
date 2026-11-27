@@ -11,7 +11,6 @@ from agent_toolkit._common.next_action import recover_from_failure
 
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
-    "verification-priority": pathlib.Path("agent_toolkit/_common/verification_slot.py"),
     "wait-ci": pathlib.Path("agent_toolkit/wait_ci.py"),
     "cost-metrics": pathlib.Path("skills/atk-mode/scripts/cost_metrics.py"),
     "improvement-intake": pathlib.Path("skills/atk-mode/scripts/improvement_intake.py"),

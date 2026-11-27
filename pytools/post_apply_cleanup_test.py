@@ -24,7 +24,6 @@ def test_removed_paths_bases_are_distribution_targets() -> None:
             Path(".ipython"),
             Path("bin"),
             Path(".local") / "bin",
-            Path(".local") / "state" / "agent-toolkit",
             startup,
         )
     }
@@ -64,11 +63,6 @@ def test_removes_flag_files_of_retired_steps_but_keeps_current_config() -> None:
 @pytest.mark.parametrize(
     ("base", "removed", "kept"),
     [
-        (
-            Path(".local") / "state" / "agent-toolkit",
-            ("process-loop-ownership/rounds/old.json",),
-            ("process-wi.log", "sessions/main.json"),
-        ),
         (
             Path(".local") / "bin",
             ("atk", "atk.cmd"),
