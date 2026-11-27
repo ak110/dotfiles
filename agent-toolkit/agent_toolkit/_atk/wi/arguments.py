@@ -159,7 +159,7 @@ def add_adopt_parser(sub: Any) -> None:
     adopt.add_argument(
         "--skip-push",
         action="store_true",
-        help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
+        help="管理リポジトリへのpushを省略する（担当の確認が不要な連続操作の中間だけ）。共有先がある担当付きの項目をエージェントが終了する場合は指定できない。",
     )
     adopt.add_argument("--effect-check", choices=("pending", "not_required"), help="後日の効果確認を明示するときだけ指定する。")
     adopt.add_argument("--effect-check-reason", help="確認要否の理由（not_requiredでは必須、1行）。")
