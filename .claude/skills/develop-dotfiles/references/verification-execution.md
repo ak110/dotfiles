@@ -38,8 +38,8 @@ exit "$rc"
    自動修正は`make format`（`uv run --frozen pyfltr fast`）、調査と計測は`--no-fix`を使う。
    統合の準備と最終の検証の前に、通常の実行で整形と生成物の更新を済ませて内容を確定し、以後の読み取りの実行は`--no-fix`に加えて、通常の段でも書き換えるフォーマッターを`--commands`の対象から外す。
    現在の書き換えの段は`ruff-format`、`uv-sort`、`shfmt`、`prek`、`sync-generated-files`である。
-   対象の版の実行のheaderにある有効な全コマンドと`pyfltr command-info <コマンド名> --output-format=json`の実効情報を確かめ、書き換えの段を除いた必要な全チェックを`--commands=<カンマ区切りのコマンド名>`へ指定する。
-   設定や版が変わったら一覧を取り直し、選んだ一覧と除外の理由を統合する担当へ渡す。
+   対象のバージョンでの実行のheaderにある有効な全コマンドと`pyfltr command-info <コマンド名> --output-format=json`の実効情報を確かめ、書き換えの段を除いた必要な全チェックを`--commands=<カンマ区切りのコマンド名>`へ指定する。
+   設定やバージョンが変わったら一覧を取り直し、選んだ一覧と除外の理由を統合する担当へ渡す。
    分岐の効果を確かめる差分は`git diff --no-ext-diff --src-prefix=a/ --dst-prefix=b/`で保存し、`git apply`・`git apply -R`で適用・復元する。
    `diff.noprefix=true`では通常の`git apply`が接頭辞なしのパスを解決できないため、この形を使う。
 3. ソースの初回編集でコメント検査を有効にしている場合は、代表ファイル1件だけに既存の `comment-check` を実行する。
@@ -55,9 +55,12 @@ exit "$rc"
    `develop`・`master`・`main`以外のブランチ（レーンと内部群の作業ブランチ）では`--no-always-targets`を付け、変更ファイルと、変更した契約を使うテストを実行する（pyfltr 3.31.0以降）。
    全量は統合後のdevelop CIで実行する。
    `uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で、文書を読む横断試験やhookの入口を経由する試験を含む、根拠付きの候補のJSONを取得する。
-   `required=true`の直接importのテストを引数へ加え、残る候補は実際の利用関係から採否を決める。
-   参照を含むファイル（`.json`・`.md`・`.py`）か参照検査の定義を変えた時は、参照検査`agent_toolkit_reference_invariant_test.py`が`reference_contracts`として必須集合に入り、曖昧候補の判定の対象から外れる。
-   役割文書の入力・出力の同期元を変えた時は、`cross_contracts`が選んだ`agent-toolkit/task_documents_invariant_test.py`も実行する。
+   `required=true`の直接importのテストと、`reference_contracts`、`cross_contracts`のテストを引数へ加える。
+   残る候補は実際の利用関係から採否を決める。
+   `cross_contracts`は走査範囲、登録済みスクリプトと静的に解決した利用関係、役割文書の入出力などから必要なテストを選ぶ。
+   走査とスクリプト利用の選定は、個別検証ではHEADからの差分と明示した未追跡ファイル、`--against`を渡した時はその基点からの差分を使う。
+   commit済みの変更を確かめるには、比較元のOIDを`--against`へ渡す。
+   削除・改名の旧パスも含め、検証の引数へ足しただけの試験は変更として扱わない。
    元のJSONを保持し、曖昧な候補ごとに`source`・`test`・`include`（真偽値）・`reason`（空でない文字列）を持つ`decisions`配列を足して検証の証拠へ保存する（手順7の`--consumer-review`へ渡す判定JSON）。
    候補に出ない不変条件試験、動的な呼び出し、設定の移行、通知の旧期待値、CLI全体の一覧は、[verification.md](verification.md#変更範囲の検証の値)「変更範囲の検証の値」の探索で補う。
 5. 失敗の確かめ直しには次の形を使う。
@@ -99,7 +102,7 @@ exit "$rc"
      同じ組を成功したrun ID、`--verify-run`の結果、公開記録に対応付ける。
    - indexと作業ツリーを最終の統合入力のHEADへ一致させる。
      fast-forwardの直前に`uv run --frozen python scripts/pyfltr_precommit.py --verify-run <run_id> --consumer-review <判定JSON>`の終了0を確かめる。
-     `--check-argv`の終了0は実際の実行の成功、版、cwd、HEADとindex、実行後の不変を確かめないため、verify-runは省かない。
+     `--check-argv`の終了0は実際の実行の成功、実行環境のバージョン、cwd、HEADとindex、実行後の不変を確かめないため、verify-runは省かない。
    - 統合後・公開前に足した是正（統合時の検証失敗、CI失敗、案内文や構成の追随など）では、変えた文言・ジョブ名・設定キーの旧値を固定文字列で探し、それを期待するテスト（`ci_workflow*_test.py`、`<hook名>_test.py`など）を是正後のHEADで実行してから公開する。
    - 最終の検証が失敗したらfast-forwardせず、是正、必要な再レビュー、統合の再開へ戻る。
    - 検証がプロジェクトのmiseツールを使う場合は、追随後のレーンworktreeで `uv run --frozen python scripts/prepare_verification_tools.py --tool <miseの設定名> <実行名> -- pyfltr run ...` を実行する。

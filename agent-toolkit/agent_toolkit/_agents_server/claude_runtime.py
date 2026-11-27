@@ -10,16 +10,56 @@ import weakref
 from collections.abc import Callable
 from typing import Any
 
+from anyio.abc import AnyByteSendStream, ByteSendStream
 lazy import psutil
 
 from agent_toolkit._agents_server import lifetime, session_errors, session_identity
-from agent_toolkit._agents_server.claude_channels import _CommandChannel
+from agent_toolkit._agents_server.claude_channels import ChildWriteResult, _CommandChannel, child_delivery_error
 from agent_toolkit._agents_server.claude_plugins import ClaudePluginReloader
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import process_tree
 
 _DISCONNECT_TIMEOUT = 5.0
+
+
+class _ObservedStdin(ByteSendStream):
+    def __init__(self, stream: AnyByteSendStream) -> None:
+        self.stream = stream
+        self.writer = asyncio.current_task()
+        self.started = False
+
+    async def send(self, item: bytes) -> None:
+        if asyncio.current_task() is self.writer:
+            self.started = True
+        await self.stream.send(item)
+
+    async def aclose(self) -> None:
+        await self.stream.aclose()
+
+
+async def query_child_completion(client: Any, prompt: str) -> ChildWriteResult:
+    from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+
+    transport = getattr(client, "_transport", None)
+    subprocess = transport if isinstance(transport, SubprocessCLITransport) else None
+    stdin = subprocess._stdin_stream if subprocess is not None else None  # pylint: disable=protected-access
+    observed = _ObservedStdin(stdin.transport_stream) if stdin is not None else None
+    if stdin is not None and observed is not None:
+        stdin.transport_stream = observed
+    try:
+        await client.query(prompt)
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        cause = child_delivery_error(error)
+        if observed is not None and not observed.started:
+            return "not_sent", cause
+        if subprocess is not None and stdin is None and subprocess._stdin_stream is None:  # pylint: disable=protected-access
+            return "not_sent", cause
+        return "unconfirmed", cause
+    finally:
+        if stdin is not None and observed is not None and stdin.transport_stream is observed:
+            stdin.transport_stream = observed.stream
+    return "sent", None
 
 
 class ClaudeRuntime:

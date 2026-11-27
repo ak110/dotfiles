@@ -212,44 +212,57 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 )
                 state["completed"].append("wi-review-archive")
                 _lane_records.save(path, record)
-            _lane_integration_input.integration_input(args, record)
             processed = _lane_integration_input.processed_wis(manifest)
             selected = pathlib.Path(record["selection_file"])
-            if not selected.exists() and "selection-mark" not in state["completed"]:
-                state["completed"].append("selection-mark")
-                state.setdefault("results", {})["selection-mark"] = {"skipped": "選定原本が失効したため所有登録へ記録した"}
-            # 選定YAMLは同じ所有sessionの全レーンが共有するため、更新だけを所有session単位の排他で直列にする。
+            # 選定原本への記録が必要かは、他レーンの選定更新と同じ排他の中で判断する。  pyfltr: allow-comment
             with _lane_records.locked(session_id):
-                _lane_integration_input.integration_command(
-                    record,
-                    state,
-                    "selection-mark",
-                    _lane_integration_input.atk_script(
-                        "run-script",
-                        "pick-wi-check",
-                        "--",
-                        str(selected),
-                        "--mark-integrated",
-                        record["lane"],
-                        *(
-                            ("--mark-integrated-wis", json.dumps(processed, ensure_ascii=False))
-                            if "processed_wis" in manifest
-                            else ()
-                        ),
-                        "--output",
-                        str(selected),
-                        "--work-dir",
-                        str(target),
-                    ),
-                    target,
-                    timeout=record["procedure_timeout"],
+                _lane_integration_input.integration_input(args, record)
+                selection = _lane_records.read_selection(record)
+                owner_only = (
+                    selection is not None
+                    and selection.get("unlisted")
+                    and not manifest["plans"]
+                    and not manifest["wis"]
+                    and not args.no_merge
                 )
-            selection = _lane_records.read_selection(record)
+                if selection is None or owner_only:
+                    if "selection-mark" not in state["completed"]:
+                        state["completed"].append("selection-mark")
+                        reason = "選定原本が失効した" if selection is None else "選定に当レーンの割当がない"
+                        state.setdefault("results", {})["selection-mark"] = {"skipped": f"{reason}ため所有登録へ記録した"}
+                else:
+                    _lane_integration_input.integration_command(
+                        record,
+                        state,
+                        "selection-mark",
+                        _lane_integration_input.atk_script(
+                            "run-script",
+                            "pick-wi-check",
+                            "--",
+                            str(selected),
+                            "--mark-integrated",
+                            record["lane"],
+                            *(
+                                ("--mark-integrated-wis", json.dumps(processed, ensure_ascii=False))
+                                if "processed_wis" in manifest
+                                else ()
+                            ),
+                            "--output",
+                            str(selected),
+                            "--work-dir",
+                            str(target),
+                        ),
+                        target,
+                        timeout=record["procedure_timeout"],
+                    )
+                    selection = _lane_records.read_selection(record)
             if selection is None:
                 selection = _lane_records.selection_state(record)
                 known = set(selection.get("processed_wis", [])) | set(processed)
                 selection["processed_wis"] = sorted(known)
                 selection["integrated"] = selection["integrated"] or set(selection["lane_wis"]) <= known
+            elif owner_only:
+                selection["integrated"] = True
             record["selection"] = selection
             state["selection_integrated"] = selection["integrated"]
             state["phase"] = "finalized"

@@ -312,8 +312,8 @@ def record_source(root: Path, target: Path) -> None:
         _record_source(root, target)
     except (OSError, ValueError, TypeError) as error:
         logging.getLogger(__name__).warning(
-            "共有環境の版対応を保存できませんでした: %s。%s と %s の内容・読み書き権限を確認してください。"
-            "壊れた版対応JSONは退避して削除し、配布manifestの破損はプラグインの再インストールで復元してください。"
+            "共有環境とバージョンの対応を保存できませんでした: %s。%s と %s の内容・読み書き権限を確認してください。"
+            "壊れたバージョン対応のJSONは退避して削除し、配布manifestの破損はプラグインの再インストールで復元してください。"
             "原因を解消してから元のプラグイン準備操作を再実行してください。起動可能な環境は保持しています",
             error,
             target / ".agent-toolkit-sources.json",
@@ -328,7 +328,7 @@ def _record_source(root: Path, target: Path) -> None:
     except FileNotFoundError:
         sources = {}
     if not isinstance(sources, dict):
-        raise ValueError(f"版対応がobjectではありません: {path}")
+        raise ValueError(f"バージョン対応がobjectではありません: {path}")
     try:
         manifest = json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -403,5 +403,5 @@ def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
     shell = "Windows PowerShell 5.1で" if is_windows else ""
     return (
         f"起動部分: {command}\n{shell}この起動部分へサブコマンドと引数を続けよ。"
-        f"CLIはこの配布物と、その版の依存環境を使う。{argument_note}"
+        f"CLIはこの配布物と、そのバージョンの依存環境を使う。{argument_note}"
     )

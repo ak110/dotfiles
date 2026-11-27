@@ -2,7 +2,7 @@
 name: check-execution
 user-invocable: false
 description: >
-  変更に着手する直前（検証の基準版を記録する時点）、formatter、linter、testerまたはプロジェクト固有の
+  変更に着手する直前（検証のベースコミットを記録する時点）、formatter、linter、testerまたはプロジェクト固有の
   チェックツールを起動する直前と、変更範囲の検証の対象を選ぶ時点（計画の検証コマンドを書くとき、
   既存の検証コマンドを再利用して実行する直前を含む）に起動する。
   検証のために成果物を構築・起動・単発実行するコマンドを選ぶ前と、速度や資源使用量を測る前にも起動する。
@@ -29,7 +29,7 @@ description: >
 | --- | --- |
 | 起動時 | `agent-basics:writing-standards/references/quality-principles.md` |
 | 検証で実行するチェックとテストを選ぶ前（計画の検証コマンドを書く時、計画・前回の実行・CIの記録にある検証コマンドを再利用する時、実行レビューで直接影響範囲を求める時を含む）と、保存済みの成功を再利用するか再実行するかを決める前 | `references/verification-scope.md` |
-| 実装に着手する直前（基準版を記録する時点）と、テスト・検証・CIの結果を成功時も含めて判定する前（警告の帰属、個別と全体の所要時間の比較を含む） | `references/diagnostics.md` |
+| 実装に着手する直前（ベースコミットを記録する時点）と、テスト・検証・CIの結果を成功時も含めて判定する前（警告の帰属、個別と全体の所要時間の比較を含む） | `references/diagnostics.md` |
 | 受入シナリオ検証の前（エージェント向け文書の試行、操作・故障注入・自動終了の失敗が使う資源の所有者と共有範囲の判定、本番の起動単位からの公開前の観測を含む） | `references/acceptance-scenarios.md` |
 | 速度や資源使用量を測る前と、測った数値で採否を決める・報告する前 | `references/performance.md` |
 | 要求の結果を観測する手段と環境を選ぶ前 | `agent-basics:writing-standards/references/testing-design.md` |
@@ -39,7 +39,7 @@ description: >
 ## 実行条件と結果
 
 1. 要求の結果を直接観測できる手段と環境を、`agent-basics:writing-standards/references/testing-design.md`「検証単位の選定」で選ぶ。
-   `agent-basics:check-execution/references/diagnostics.md`「基準版と変更行への帰属」に従う。
+   `agent-basics:check-execution/references/diagnostics.md`「ベースコミットと変更行への帰属」に従う。
 2. 実行するチェックとテストを、実際の差分が変えた契約から`agent-basics:check-execution/references/verification-scope.md`で選ぶ。
 3. 正規の検証コマンドを選ぶ。
    構築・起動・単発実行の個別ツールを直接呼ぶ前に、作業ディレクトリからリポジトリルートまでのタスクランナー定義と、README・プロジェクト規範の案内を確かめる。
@@ -56,7 +56,7 @@ description: >
    記録を生成する前に実行基盤が失敗した時は、既存の実行ログを使い、検証手段の改善に必要な情報を保つ。
 8. 修正の後は、結果が変わりうる範囲だけを`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従って再実行する。
 
-返す報告に含める項目: 実行したコマンドと検証した版、要求ごとの状態、判定に使った出力の所在、再利用した成功と再実行の範囲、所要時間の比較結果。
+返す報告に含める項目: 実行したコマンドと検証したcommit、要求ごとの状態、判定に使った出力の所在、再利用した成功と再実行の範囲、所要時間の比較結果。
 
 ## 長いコマンドの起動と回収
 

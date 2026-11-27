@@ -7,16 +7,17 @@
 
 import pathlib
 import re
-import subprocess
 
 import pytest
+
+from scripts.verification_scan_rules import BASICS_SEARCH_SKILLS, scan_files
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _BASICS = _REPO_ROOT / "agent-basics"
 _SKILLS = _BASICS / "skills"
 
 # 人間向けの導入案内はagent-toolkitとの併用手順を説明するため対象外とする（README.md）。
-_DISTRIBUTED_DOCUMENTS = sorted(_SKILLS.rglob("*.md"))
+_DISTRIBUTED_DOCUMENTS = scan_files(__file__, "distributed")
 
 
 _TOOLKIT_DEPENDENCIES = {
@@ -124,7 +125,7 @@ def test_technical_materials_keep_read_only_decision_triggers(reference: str, co
     assert all(condition in description for condition in conditions)
 
 
-@pytest.mark.parametrize("skill", ["search", "secret-files"])
+@pytest.mark.parametrize("skill", BASICS_SEARCH_SKILLS)
 def test_search_skills_are_only_published_from_basics(skill: str) -> None:
     assert (_SKILLS / skill / "SKILL.md").is_file()
     assert not (_REPO_ROOT / "agent-toolkit/skills" / skill / "SKILL.md").exists()
@@ -137,25 +138,13 @@ def test_search_skills_are_only_published_from_basics(skill: str) -> None:
     ),
 )
 def test_reading_tables_are_not_split_into_other_files() -> None:
-    roots = ["agent-basics", "agent-toolkit", ".claude/skills"]
-
-    listed = [
-        name
-        for name in subprocess.run(
-            ["git", "-C", str(_REPO_ROOT), "ls-files", "--cached", "--others", "--exclude-standard", "--", *roots],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.splitlines()
-        if (_REPO_ROOT / name).is_file()
-    ]
+    listed = scan_files(__file__)
     assert listed
-    split_files = [name for name in listed if re.search(r"-delivery-\d+\.md$", name)]
+    split_files = [path.relative_to(_REPO_ROOT).as_posix() for path in scan_files(__file__, "names")]
     markers = [
-        f"{name}:{number}"
-        for name in listed
-        if name.endswith(".md")
-        for number, line in enumerate((_REPO_ROOT / name).read_text(encoding="utf-8").splitlines(), 1)
+        f"{path.relative_to(_REPO_ROOT)}:{number}"
+        for path in listed
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
         if "read-table-source" in line
     ]
     assert not split_files, "\n".join(split_files)

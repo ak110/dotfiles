@@ -79,7 +79,7 @@ async def test_start_launches_role_from_role_directory(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("form", "expected"),
-    [("role-name", "役割名に対応する文書が無い"), ("absolute-path", "旧版のshare/")],
+    [("role-name", "役割名に対応する文書が無い"), ("absolute-path", "古いバージョンのagent-toolkitのshare/")],
 )
 async def test_start_rejects_role_left_in_share(
     form: str, expected: str, plugin: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -116,7 +116,7 @@ async def test_start_guides_old_plugin_cache_users_to_restart(
             whole_contract_path=str(_contract(tmp_path)),
         )
 
-    assert "旧版" in rejected.value.reason and str(old) in rejected.value.reason
+    assert "古いバージョン" in rejected.value.reason and str(old) in rejected.value.reason
     assert "会話を再起動" in rejected.value.next_action
     assert str(current) in rejected.value.message
     assert not prompts

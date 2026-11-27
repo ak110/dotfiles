@@ -77,16 +77,16 @@ async def test_two_publications_require_runtime_activation(publication, tmp_path
         assert versions.latest_published(checkout) == published
         assert versions.published_plugin(checkout, published) is None
         unavailable = await (await client.get("/api/runtime-versions")).get_json()
-        assert "agents_server: 版を取得できません" in unavailable[1]
+        assert "agents_server: バージョンを取得できません" in unavailable[1]
         git(checkout, "pull", "--ff-only")
 
         assert await (await client.get("/api/runtime-identity")).get_json() == {"revision": previous}
         warnings = await (await client.get("/api/runtime-versions")).get_json()
         assert warnings == [
-            f"atk serve: 公開版と不一致（未反映）（稼働版: {previous}、公開版: {published}）",
+            f"atk serve: 公開バージョンと不一致（未反映）（稼働バージョン: {previous}、公開バージョン: {published}）",
             versions.VersionCheck("agents_server", running_agents, versions.published_plugin(checkout, published)).message(),
         ]
-        assert warnings[1].startswith("agents_server: 公開版と不一致")
+        assert warnings[1].startswith("agents_server: 公開バージョンと不一致")
         assert version in warnings[1]
 
         client = start()
@@ -102,7 +102,7 @@ async def test_two_publications_require_runtime_activation(publication, tmp_path
     git(checkout, "remote", "set-url", "origin", str(tmp_path / "missing"))
     warnings = await (await client.get("/api/runtime-versions")).get_json()
     assert len(warnings) == 2
-    assert all("版を取得できません" in warning for warning in warnings)
+    assert all("バージョンを取得できません" in warning for warning in warnings)
 
 
 def test_agents_digest_matches_published_modules_and_detects_local_changes(publication):

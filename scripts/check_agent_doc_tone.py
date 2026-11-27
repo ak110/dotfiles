@@ -47,6 +47,10 @@ _DENIED_PATTERNS = {
 _METAPHORICAL = "metaphorical"
 _ABSTRACT = "abstract"
 _CONTRAST = "contrast"
+_VERSION = "version"
+_VERSION_SUBJECT = r"(?:ソフトウェア|プラグイン|パッケージ|配布物|実行ファイル|CLI|SDK|API|ファイルの内容)"
+_VERSION_NOUN = r"(?:同じ版|(?:対象|基準|確認|現行|公開|取得|修正)版)"
+_VERSION_OPERATION = r"(?:起動|実行|動か|更新|導入|インストール|ビルド|デプロイ)"
 _CAUTION_PATTERNS = {
     "受け口": (r"受け口", _METAPHORICAL),
     "トークンを出す口": (r"トークンを出す口", _METAPHORICAL),
@@ -66,8 +70,19 @@ _CAUTION_PATTERNS = {
     "ゲート": (r"ゲート", _METAPHORICAL),
     "単なる": (r"単なる", _CONTRAST),
     "というより": (r"というより", _CONTRAST),
+    "版の定型": (
+        r"版数と生成物|導入版(?!の)|(?:公開|現行)版と同じバージョン"
+        rf"|{_VERSION_SUBJECT}の(?:版数|{_VERSION_NOUN})(?!の)"
+        rf"|{_VERSION_SUBJECT}を{_VERSION_OPERATION}"
+        r"(?:し(?:て|た(?:後(?:に|は)|ら))?|す(?:る)?(?:前に|と))[、,]? *"
+        r"(?:版数|対象版)を(?:確認|記録)(?:し|す|で)"
+        rf"|{_VERSION_NOUN}を(?:インストール|ビルド|起動|実行|デプロイ)"
+        rf"|{_VERSION_NOUN}と{_VERSION_NOUN}が(?:同じ)?引数を(?:受け取|受け付け)",
+        _VERSION,
+    ),
 }
 _CAUTION_MESSAGES = {
+    _VERSION: "ソフトウェア・配布物・ファイルのバージョンを指す場合は「バージョン」と書く。文書の改訂を指す用法は残す",
     _CONTRAST: (
         "強調のために否定する側を並べる対比は、読み手に不要な解釈を求める。"
         "伝える内容を直接書き、誤解されやすい実在の選択肢を除く場合だけ「AではなくB」の形で示す"

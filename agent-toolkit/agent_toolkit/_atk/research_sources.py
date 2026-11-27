@@ -81,7 +81,7 @@ RESULT_UWI = {
     ),
     "common": (
         "読了の記録は `atk run-script research-sources -- --mark-read <source>...` で行う。"
-        "どちらにも固定の変更履歴の版ごとの採否・理由、読めなかった情報源と理由を書く。"
+        "どちらにも固定の変更履歴のバージョンごとの採否・理由、読めなかった情報源と理由を書く。"
         "X由来の内容はURL・投稿ID・日時・短い抜粋と改善案だけを書き、本文の全文を書かない。"
     ),
     "answer_handling": (
@@ -274,9 +274,9 @@ def read_claude_code(fetch: Fetch, position: str | None, *, now: datetime.dateti
         # 前回の版が無い初回と、前回の版が変更履歴から消えた回は、7日前の時点の先頭の版より後を読む。  # pyfltr: allow-comment
         stop = _claude_code_baseline(fetch, now)
         if position is not None:
-            reason = f"前回の版 {position} が変更履歴に無いため、7日前の時点の版より後を読んだ"
+            reason = f"前回のバージョン {position} が変更履歴にないため、7日前のバージョンより新しい項目を読んだ"
         if stop is not None and stop not in versions:
-            raise SourceError(f"前回の版も7日前の時点の版 {stop} も変更履歴に見つからない")
+            raise SourceError(f"前回のバージョンも7日前のバージョン {stop} も変更履歴に見つからない")
     items = []
     for version, text in sections:
         if version == stop:

@@ -13,13 +13,13 @@ description: >
 # dotfilesの規範の改訂
 
 本リポジトリのエージェント向け文書を変える担当が、過去の決定との照合、変更した規範の自セッションへの適用、削除と縮小、仕組みの追加と撤去で守ることを定める。
-`agent-toolkit/`配下の配置、版数、配布の手順は`.claude/skills/agent-toolkit-edit/SKILL.md`の表から選ぶ。
+`agent-toolkit/`配下の配置、バージョン、配布の手順は`.claude/skills/agent-toolkit-edit/SKILL.md`の表から選ぶ。
 
 | 作業・条件 | 読む資料 |
 | --- | --- |
 | 規範を追記・新設・移動する置き場所を選ぶ、置き場所を実行レビューで判定する | `references/norm-layer-map.md`と`agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所の選定」 |
 | 不具合の原因が過去の対策と同じかを分類する、同じ原因と判定して記録する | `references/recurrence-record.md` |
-| 規範を編集する作業を始める（モデルIDとホストの版の点検） | `references/model-host-audit.md` |
+| 規範を編集する作業を始める（モデルIDとホストのバージョンの点検） | `references/model-host-audit.md` |
 | `agent-toolkit:atk-mode`の作業`process-wi`の選定工程でAWIごとの`プロジェクト規範の指定`を書く | `references/project-norm-designation.md` |
 | 確認するかを決める | `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」 |
 
@@ -50,20 +50,20 @@ description: >
 ## 変更した規範の自セッション適用
 
 対象となる規範は、`AGENTS.md`、`agent-toolkit/skills/`、`agent-basics/skills/`配下、および`.claude/skills/`配下の各ファイルである。
-稼働中の仕組みは最後にプラグインを読み込んだ時点（セッション開始、`apply_runtime_changes`の反映、本人再開）の版で動き、作業ツリーで改訂した条文とは版が違う。
-どの版をいつから適用するかを取り違えないことが要点である。
+稼働中の仕組みは最後にプラグインを読み込んだ時点（セッション開始、`apply_runtime_changes`の反映、本人再開）のバージョンで動き、作業ツリーで改訂した条文はまだ読まない。
+稼働中のバージョンと、現在従う規範の本文を取り違えないことが要点である。
 
 1. 着手前に、依頼やAWIが引用する条文を作業ツリーの現行本文から固定文字列で探し、反映先を特定する。
    一致しなければ同じ目的の現行条文を選ぶ。
    編集するのは作業ツリーの原本であり、配布先の`~/.claude/`と`~/.codex/`は対象外とする。
 2. 変更が確定した時点から、作業ツリーの最新内容を自分の判断に適用する。
-   `Skill`ツールと`${CLAUDE_PLUGIN_ROOT}`配下の文書は最後にプラグインを読み込んだ時点（セッション開始、`apply_runtime_changes`の反映、本人再開）の版を返す（未反映の変更は古い内容を返し、新設したスキルは`Unknown skill`になる）ため、適用する文書は作業ツリー版を絶対パスで読む。
+   `Skill`ツールと`${CLAUDE_PLUGIN_ROOT}`配下の文書は最後にプラグインを読み込んだ時点（セッション開始、`apply_runtime_changes`の反映、本人再開）のプラグインから本文を返す（未反映の変更は古い内容を返し、新設したスキルは`Unknown skill`になる）ため、適用する文書は作業ツリー版を絶対パスで読む。
    会話圧縮後の取得は`agent-basics:writing-standards/references/read-method.md`「読込表の読み方」に従う。
 3. 影響を受ける委譲先へ、原本の絶対パス、適用する節、版（commit。未commitならその旨と確定時刻）を伝え、委譲先自身が判断の前に読む。
    未配布の採用版がメインや配下の判断を変える場合は、`agent-toolkit:atk-mode/references/work-contract.md`「記録する内容」に従って全体の作業契約へ残す。
    委譲先は全体の記録を編集せず、同じ情報を委譲元へ渡して自分の引き継ぎ記録に保つ。
 4. 呼び出し元の起動・受領契約と、その`起動対象:`に指定した`<役割名>.subagent.md`は、同じplugin rootから対で適用する。
-   入力宣言と起動設定が呼び出し元の値の確定・検収と整合する版だけを使い、確かめられなければ最後にプラグインを読み込んだ時点（セッション開始、`apply_runtime_changes`の反映、本人再開）の版を使い続ける（入力名や起動設定の違う版の混在を防ぐため）。
+   入力宣言と起動設定が呼び出し元の値の確定・検収と整合する版だけを使い、確かめられなければ最後にプラグインを読み込んだ時点（セッション開始、`apply_runtime_changes`の反映、本人再開）のプラグインを使い続ける（入力名や起動設定の違うバージョンの混在を防ぐため）。
 5. hook、会話イベントを処理するFunction hooks module、プラグインMCPの変更は、配布の後にメインが`mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes`で反映を予約する。
    `targets`へ`plugins`、`agents_server`、`pyfltr`から必要なものを指定し、ターン終了後の反映結果を確かめてから新しい動作を使う。
    agents_serverの再接続は実行中の委譲先のturnを中断し、既存の復旧で同じ会話を再開する。

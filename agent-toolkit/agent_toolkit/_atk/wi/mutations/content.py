@@ -9,6 +9,7 @@ import sys
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import add as _add
+from agent_toolkit._atk.wi import add_drafts as _add_drafts
 from agent_toolkit._atk.wi import add_validation as _add_validation
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import constants as _constants
@@ -79,6 +80,7 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
     "processing_owner": "frontmatterからprocessing_ownerを除き、担当はatk wi take-overで変更する",
     "detailed": "frontmatterからdetailedを除き、詳細化した本文の保存では--detailを指定する",
     "proposal_fingerprint": "frontmatterからproposal_fingerprintを除いて再実行する（原稿の指紋はatkが記録する）",
+    _add_drafts.RETRY_FINGERPRINT: "frontmatterのdraft_retry_fingerprintは編集前の値を保つ（再投入の照合値はatkが記録する）",
     "submitter_session": "frontmatterからsubmitter_sessionを除いて再実行する（submitter_sessionはatkが記録する）",
     "run_skill_run_id": "frontmatterからrun_skill_run_idを除いて再実行する（実行識別子はatkが記録する）",
 }
@@ -262,6 +264,15 @@ def _require_origin_review(previous: str, updated: str, *, draft: str | None, re
         )
 
 
+def _require_unchanged_draft_retry_fingerprint(previous: str, updated: str) -> None:
+    key = _add_drafts.RETRY_FINGERPRINT
+    absent = object()
+    before = (_frontmatter.parse_frontmatter(previous) or ({}, previous))[0]
+    after = (_frontmatter.parse_frontmatter(updated) or ({}, updated))[0]
+    if before.get(key, absent) != after.get(key, absent):
+        raise WebInputError(f"{key}は予約キーのため変更できない", next_action=_RESERVED_EDIT_KEY_NEXT_ACTIONS[key])
+
+
 def edit_entry_content(
     private_notes: pathlib.Path,
     *,
@@ -285,6 +296,7 @@ def edit_entry_content(
         raise WebInputError("編集可能状態はinbox、processingまたはholdです", next_action=_EDITABLE_STATE_NEXT_ACTION)
 
     def validate(previous: str, updated: str) -> None:
+        _require_unchanged_draft_retry_fingerprint(previous, updated)
         _require_origin_review(previous, updated, draft=draft, reviews=origin_reviews)
 
     directory = private_notes / state
@@ -708,13 +720,11 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     is_uwi = _wi_entries.entry_type_of(path, original) == WI_TYPE_UWI
     from agent_toolkit._atk.wi import merge_verification  # pylint: disable=import-outside-toplevel
 
-    if (
-        not args.dry_run
-        and (merge := merge_verification.merge_input(edited)) is not None
-        and merge != merge_verification.merge_input(original)
-    ):
+    merge_target = None
+    if (merge := merge_verification.merge_input(edited)) is not None and merge != merge_verification.merge_input(original):
         try:
-            merge_verification.check(edited)
+            repository, branch, sha, _local, workflow = merge_verification.validate_input(merge)
+            merge_target = (repository, branch, sha, workflow)
         except ActionableError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
@@ -747,6 +757,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     reviews = tuple(getattr(args, "origin_review", None) or ())
     try:
         _require_origin_review(original, edited, draft=message, reviews=reviews)
+        if tmp_path is not None:
+            _require_unchanged_draft_retry_fingerprint(original, edited)
         _require_agent_edit_source(original, edited)
         invalidate_repo_bound_metadata(original, edited)
         if message is not None or tmp_path is not None:
@@ -839,6 +851,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if tmp_path is not None:
         tmp_path.unlink(missing_ok=True)
     _outcome.report_success(f"編集を反映した: {path.name}")
+    if merge_target is not None:
+        _outcome.report_info(merge_verification.describe_ci(*merge_target))
     details = _add.read_saved_entry_details(
         path,
         expected_body=finalized_content["content"],

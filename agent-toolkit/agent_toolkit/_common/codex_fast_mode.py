@@ -205,7 +205,7 @@ def apply_legacy_outgoing_metadata(params: dict[str, Any], metadata: dict[str, A
             **metadata,
             "tier": "default",
             "source": "unavailable",
-            "explanation": "旧版のApp Server仲介では送信直前の高速判定を確認できない",
+            "explanation": "旧バージョンのApp Server仲介では送信直前の高速判定を確認できない",
         }
     with apply_outgoing_metadata(params, metadata):
         yield

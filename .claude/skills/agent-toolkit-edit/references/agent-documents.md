@@ -28,7 +28,7 @@
 - `.chezmoi-source/dot_codex/AGENTS.md`は、個人用の規範`.chezmoi-source/dot_claude/rules/myprojects-common.md`を`scripts/sync_codex_agents.py`で埋め込んで生成する。
   agent-toolkitの規範は埋め込まない（Codexのメインへは入口`agent-toolkit:atk-mode`がSessionStartのhookの案内で届く）。
   `uv run python scripts/sync_generated_files.py`で同期し、計画では生成物として扱う。
-- 入口`agent-toolkit/skills/atk-mode/SKILL.md`と`playbooks/subagent.md`の編集は生成物を変えないが、版数の更新は必要である。
+- 入口`agent-toolkit/skills/atk-mode/SKILL.md`と`playbooks/subagent.md`の編集は生成物を変えないが、バージョンの更新は必要である。
   各起動の区分へ届く文書は`agent-toolkit:atk-mode/references/agent-documents.md`「配送範囲表」で確かめる。
   `playbooks/subagent.md`は、`agents_server`が全modeの委譲先の起動の本文へ組み立てる原本であり、`Agent`ツールの委譲先はSubagentStartの通知の案内で読む。
 - 読込表は各文書の本文の表に置く。
@@ -39,7 +39,7 @@
 成果物の品質基準は`agent-basics/skills/`へ置き、toolkitの側からは品質のスキルと自身の運用の契約を参照する。
 常駐のhook、MCP、ホームディレクトリ向けの運用の規範は、toolkitの側に置く。
 basicsの元のマニフェストは`agent-basics/.claude-plugin/plugin.json`で、掲載の原本は同じmarketplaceのagent-basicsのエントリである。
-独立した版数と`description`の同期は`references/distribution.md`「バージョン更新」に従い、agent-basicsでは`--plugin agent-basics`を指定する。
+独立したバージョンと`description`の同期は`references/distribution.md`「バージョン更新」に従い、agent-basicsでは`--plugin agent-basics`を指定する。
 toolkitのClaudeの依存の配列を、Agent Pluginsのルートのマニフェストへ複製しない。
 
 `agent-basics/`の文書を編集した時は、agent-basicsだけを導入したエージェントを読者として、単体で使えることを確かめる。
@@ -59,8 +59,8 @@ toolkitのClaudeの依存の配列を、Agent Pluginsのルートのマニフェ
 観測に基づく技術的条文の新設と改訂は、`agent-basics:writing-standards/references/investigation.md`「エージェント向け文書の技術的条文」に従い、このリポジトリでは次のとおり記録する。
 
 1. 観測の記録は`docs/development/audit-records.md`の索引から選ぶ記録ファイルへ置き、見出しを`<ファイルパス>：<節名>：<日付>`とする。
-   記録には観測日、観測時の版、再検証の手段の3項目だけを書く。
-2. 条文の本文には、観測の環境とモデルの版を書かない（対象の版は除く）。
+   記録には観測日、観測時のバージョン、再検証の手段の3項目だけを書く。
+2. 条文の本文には、観測の環境とモデルのバージョンを書かない（対象のバージョンは除く）。
 3. 記録の所在の示し方は、文書の配布の範囲で分ける。
    - `agent-basics`の配布物（`agent-basics/skills/`配下）は条文に記録の所在の文を置かない。
      `agent-basics`だけを導入したエンドユーザーにも届き、`docs/development/`を指しても参照先へ届かないためである。

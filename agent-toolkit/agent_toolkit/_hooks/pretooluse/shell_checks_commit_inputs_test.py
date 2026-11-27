@@ -115,7 +115,7 @@ def test_commit_message_file_with_absolute_path_is_read_when_location_is_unknown
     assert list(shell_checks._git_commit_messages(f"git -C $R commit -F {message}")) == ["件名\n"]
 
 
-def test_commit_block_lists_all_violations_and_states_whole_command_was_not_run() -> None:
+def test_commit_block_lists_all_violations_and_keeps_commit_retry_guidance() -> None:
     identity = shell_checks.RuntimeIdentity("claude", "claude-fable-5-2", "medium", "observed")
     command = 'R=/repo; git -C $R add -- a.md && git -C $R commit -q -m "fix: 直す\n\n20261109-105107-001.md"'
 
@@ -125,12 +125,12 @@ def test_commit_block_lists_all_violations_and_states_whole_command_was_not_run(
     assert "違反が2件ある" in block
     assert "20261109-105107-001.md" in block
     assert shell_checks.co_author_trailer(identity) in block
-    assert "全体が実行されていない" in block
+    assert "全体が実行されていない" not in block
     assert "`git add`" in block
     assert "同じコマンド全体へ修正を加えて再実行してください" in block
 
 
-def test_commit_block_with_single_violation_states_whole_command_was_not_run() -> None:
+def test_commit_block_with_single_violation_keeps_commit_retry_guidance() -> None:
     block = shell_checks._git_commit_block(
         shell_checks._git_commit_messages("git add a.md && git commit -m '件名\n本文'"), None
     )
@@ -138,4 +138,6 @@ def test_commit_block_with_single_violation_states_whole_command_was_not_run() -
     assert block is not None
     assert "違反が" not in block
     assert "空行" in block
-    assert "全体が実行されていない" in block
+    assert "全体が実行されていない" not in block
+    assert "`git add`" in block
+    assert "同じコマンド全体へ修正を加えて再実行してください" in block

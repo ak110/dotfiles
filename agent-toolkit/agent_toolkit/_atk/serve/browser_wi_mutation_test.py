@@ -1,4 +1,6 @@
 import asyncio
+import shlex
+import sys
 from typing import Any
 
 import playwright.async_api
@@ -394,7 +396,7 @@ async def test_answer_rebase_in_progress_shows_recovery(
 
     def answer_unless_rebasing(*args: Any, **kwargs: Any) -> bool:
         if rebasing[0]:
-            raise git_sync.RebaseInProgressError("rebase中のため新しい更新を開始できない")
+            raise git_sync.RebaseInProgressError("rebase中のため新しい更新を開始できない", harness.root)
         return answer_uwi(*args, **kwargs)
 
     monkeypatch.setattr(harness.operations, "answer_uwi", answer_unless_rebasing)
@@ -409,8 +411,10 @@ async def test_answer_rebase_in_progress_shows_recovery(
     alert = detail.get_by_role("alert").filter(has_text="rebase中")
     await alert.wait_for(state="visible")
     alert_text = await alert.inner_text()
-    assert "git -c submodule.recurse=false rebase --continue" in alert_text
-    assert "git -c submodule.recurse=false rebase --abort" in alert_text
+    notes_path = str(harness.root)
+    quoted_notes = f"'{notes_path.replace("'", "''")}'" if sys.platform == "win32" else shlex.quote(notes_path)
+    for operation in ("--continue", "--abort"):
+        assert f"`git -C {quoted_notes} -c submodule.recurse=false rebase {operation}`" in alert_text
     assert "開き直して" not in alert_text
     assert await field.input_value() == "解消後に保存する回答"
 

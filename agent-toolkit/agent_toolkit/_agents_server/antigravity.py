@@ -76,11 +76,11 @@ def _gemini_delegation_binary(environment: dict[str, str]) -> str:
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError) as error:
         raise ActionableRuntimeError(
-            "agyの版を確認できません", next_action="起動元で`agy --version`の診断を確認し、CLIの導入状態を直す"
+            "agyのバージョンを確認できません", next_action="起動元で`agy --version`の診断を確認し、CLIの導入状態を直す"
         ) from error
     if not re.fullmatch(r"\d+\.\d+\.\d+", version) or tuple(map(int, version.split("."))) < _MINIMUM_GEMINI_VERSION:
         raise ActionableRuntimeError(
-            "agyをGemini APIキー方式を固定できる版へ更新してください",
+            "agyをGemini APIキー方式を固定できるバージョンへ更新してください",
             next_action="agyを1.5.13以降へ更新し、起動元で`agy --version`を確認する",
         )
     return executable

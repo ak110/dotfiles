@@ -195,12 +195,15 @@ def finalize_pending_result(
     unobserved = set(session.live_child_session_ids) | set(session.codex_live_subagent_thread_ids) | set(unobserved_sessions)
     if final_response:
         unobserved.update(session.terminal_child_session_ids)
-        session.terminal_child_session_ids.clear()
+        session.discard_child_completions(session.terminal_child_session_ids)
     session.clear_hold()
     if not keep_resume_chain:
         clear_overload_resume(session)
         clear_usage_limit_wait(session)
     session.live_child_session_ids.clear()
+    if session.engine == "claude":
+        for child in session.claude_child_completion_tokens.keys() - session.terminal_child_session_ids:
+            del session.claude_child_completion_tokens[child]
     session.codex_live_subagent_thread_ids.clear()
     session.status = result["status"]
     session.agent_message = result["agent_message"]

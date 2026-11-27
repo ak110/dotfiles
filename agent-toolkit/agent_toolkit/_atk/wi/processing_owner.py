@@ -47,6 +47,8 @@ def _stop_status(session: str) -> str:
     status = session_activity.root_activity(session)["status"]
     if isinstance(status, str) and status != "不明":
         return status
+    if (identity := session_activity.recorded_root_process(session)) is not None and identity.exists():
+        return "稼働中か不明"
     try:
         evidence = session_state.read_state(session).get(_PROCESS_EVIDENCE)
         if not isinstance(evidence, dict) or evidence.get("session") != session:
@@ -109,12 +111,14 @@ def takeover_note(path: pathlib.Path, previous: Owner, actor: Owner, reason: str
         raise WebInputError(f"{path.name}は既に現在の会話が担当しています", next_action="引き継がずに作業を続ける")
     if previous.host == actor.host:
         status = _stop_status(previous.session)
-        if status != "終了":
+        if status not in {"終了", "不明"}:
             raise WebInputError(
                 f"{path.name}の担当 {previous} の終了を確認できません（{status}）",
-                next_action="前の担当が処理を続けるか、終了の記録を確認できてから引き継ぐ",
+                next_action="前の担当の終了を待つか、前の担当を止めてから同じ引き継ぎ操作を再実行する",
             )
-        evidence = "記録されたホストプロセスの終了を確認"
+        evidence = "記録されたホストプロセスの終了を確認" if status == "終了" else "稼働中のホストプロセスを確認できなかった"
+        if reason and reason.strip():
+            evidence += "。指定された理由: " + json.dumps(reason.strip(), ensure_ascii=False)
     elif reason and reason.strip():
         evidence = json.dumps(reason.strip(), ensure_ascii=False)
     else:

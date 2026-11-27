@@ -6,11 +6,11 @@ Dockerfileを書く時とレビューする時の、BuildKitとAPTのキャッ�
 
 ## 基本
 
-- 先頭の`# syntax`ディレクティブで、BuildKitの安定版のフロントエンドを指定する。
+- 先頭の`# syntax`ディレクティブで、BuildKitの安定したバージョンのフロントエンドを指定する。
 - ベースイメージのタグを明示し（hadolintの`DL3006`）、`latest`は使わない（`DL3007`）。
-  最新の安定版への追従には、更新ツールか、安定版を指す`lts`などのタグを使う。
-  `image:tag@sha256:...`の形でdigestを固定する時は依存更新ツールを使い、digestとtagの両方をメジャー版まで更新する。
-  更新ツールが無ければ`agent-basics:writing-standards/references/dependency-management.md`「最新版への追従」の浮動参照に従う。
+  最新の安定したバージョンへの追従には、更新ツールか、安定したバージョンを指す`lts`などのタグを使う。
+  `image:tag@sha256:...`の形でdigestを固定する時は依存更新ツールを使い、digestとtagの両方をメジャーバージョンまで更新する。
+  更新ツールが無ければ`agent-basics:writing-standards/references/dependency-management.md`「最新バージョンへの追従」の浮動参照に従う。
 - コンテナーは非rootユーザーで実行する（hadolintの`DL3002`）。
 
 ## レイヤー設計とキャッシュ

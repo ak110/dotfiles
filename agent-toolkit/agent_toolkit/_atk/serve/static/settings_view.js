@@ -360,7 +360,7 @@ export function createSettingsView({
       if (!available) return true;
     }
     if (!available) {
-      target.append(element("p", "この端末のatkは旧版です。設定の競合を解決するにはatkを更新してください。"));
+      target.append(element("p", "この端末のatkは旧バージョンです。設定の競合を解決するにはatkを更新してください。"));
       return true;
     }
     if (data.shared_identity && state.localData?.shared_identity && data.shared_identity !== state.localData.shared_identity) {
@@ -561,7 +561,7 @@ export function createSettingsView({
       if (!failed && !Object.keys(peer.settings ?? {}).length && ["pending", "error"].includes(peer.state)) continue;
       const different = common.filter(key => data.settings[key].saved !== peer.settings[key].saved);
       const summary = failed ? "取得失敗" :
-        peer.state === "legacy" ? "旧版のため自動取得なし" :
+        peer.state === "legacy" ? "旧バージョンのため自動取得なし" :
         peer.state !== "ready" || common.length === 0 ? "共有先の一致は未確認" :
         different.length ? `共有値に差あり（${different.map(settingName).join("、")}）` :
         "共有値は一致";
@@ -619,7 +619,7 @@ export function createSettingsView({
     for (const [name, info] of hosts) {
       const header = element("th", name || "ローカル");
       header.scope = "col";
-      if (info.state === "legacy") header.append(element("p", "旧版のため自動取得なし"));
+      if (info.state === "legacy") header.append(element("p", "旧バージョンのため自動取得なし"));
       headers.append(header);
     }
     const body = table.createTBody();

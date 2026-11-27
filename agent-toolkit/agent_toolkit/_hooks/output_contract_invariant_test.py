@@ -7,6 +7,7 @@ import pytest
 
 from agent_toolkit._hooks import output_contract_test as cases
 from agent_toolkit._testing.hook_output_contract import HOOK_OUTPUT_SCHEMAS
+from scripts.verification_scan_rules import scan_files
 
 
 def test_fixture_table_covers_every_registered_hook() -> None:
@@ -60,14 +61,9 @@ def _output_offenders(source: str, path: pathlib.Path) -> list[int]:
     reason="hookの全製品ソースをAST走査し、診断の直書きと標識のない配送を検出する母集団を維持する（Linux CI CPU0.528秒）。",
 )
 def test_production_output_has_no_direct_diagnostics_or_unmarked_literals() -> None:
-    root = pathlib.Path(__file__).parent
-    paths = [*root.rglob("*.py"), root.parent / "hook.py"]
-    failures = {
-        str(path): lines
-        for path in paths
-        if not path.name.endswith("_test.py")
-        if (lines := _output_offenders(path.read_text(encoding="utf-8"), path))
-    }
+    (entry,) = scan_files(__file__, "entry")
+    paths = [*scan_files(__file__), entry]
+    failures = {str(path): lines for path in paths if (lines := _output_offenders(path.read_text(encoding="utf-8"), path))}
     assert not failures
 
 

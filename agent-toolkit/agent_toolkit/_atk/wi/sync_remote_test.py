@@ -82,9 +82,9 @@ class TestCommitAndPushRetry:
         assert "<<<<<<<" in (local / "queue.md").read_text(encoding="utf-8")
         error = capsys.readouterr().err
         assert "rebase状態を保持" in error
-        assert "git add <競合解消済みパス>" in error
+        assert "add --" in error and "<競合解消済みパス>" in error
         assert "自動abortは行っていない" in error
-        assert "git -c submodule.recurse=false rebase --abort" in error
+        assert str(local) in error and "rebase --abort" in error
 
 
 class TestExplicitUpstreamIntegration:

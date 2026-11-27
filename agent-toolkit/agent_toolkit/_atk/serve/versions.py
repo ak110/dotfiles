@@ -38,8 +38,10 @@ class VersionCheck:
         return "match" if self.running == self.published else "mismatch"
 
     def message(self) -> str:
-        status = {"match": "一致", "mismatch": "公開版と不一致（未反映）", "unavailable": "版を取得できません"}[self.status]
-        return f"{self.service}: {status}（稼働版: {_label(self.running)}、公開版: {_label(self.published)}）"
+        status = {"match": "一致", "mismatch": "公開バージョンと不一致（未反映）", "unavailable": "バージョンを取得できません"}[
+            self.status
+        ]
+        return f"{self.service}: {status}（稼働バージョン: {_label(self.running)}、公開バージョン: {_label(self.published)}）"
 
 
 def _label(identity: str | None) -> str:
@@ -113,7 +115,7 @@ def _published_plugin(repo: pathlib.Path, revision: str) -> str:
     manifest = json.loads(_git(repo, "show", f"{revision}:{_MANIFEST}"))
     version = _release_version(manifest.get("version")) if isinstance(manifest, dict) else None
     if version is None:
-        raise ValueError("agent-toolkitの配布版が不正")
+        raise ValueError("agent-toolkitの配布バージョンが不正")
     archive = git_command.run(
         ["archive", revision, _MODULES], repo, capture_output=True, check=True, timeout=5, recover_stale_lock=False
     ).stdout

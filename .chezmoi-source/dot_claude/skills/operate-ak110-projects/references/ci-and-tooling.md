@@ -20,7 +20,7 @@ Windows用プロジェクト（gv・lc）をLinuxから扱う注意と、prek・
 ## prek / pyfltr / ビルド関連
 
 - Gitフックはmise管理のprekで導入する。
-  `mise.toml`の`[tools]`にprekの版を指定し、`mise install`の後に`mise exec -- prek install -c .pre-commit-config.yaml`を実行する。
+  `mise.toml`の`[tools]`にprekのバージョンを指定し、`mise install`の後に`mise exec -- prek install -c .pre-commit-config.yaml`を実行する。
   既存の導入タスクも同じ実行ファイルを使う。
   フックに記録されるprekのパスをuvの取得キャッシュに依存させないためである。
 
@@ -45,7 +45,7 @@ CI workflowを編集する時は、次を確かめる。
 - container化したジョブでは、uv・pnpm・Node.js・miseのセットアップのstepを省く。
 - `defaults.run.shell: bash`を指定する。
   GitHub Actionsは、`container:`のジョブで`shell`の指定が無い`run`を`sh`で実行するためである。
-- Pythonの版の行列は`env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
+- Pythonのバージョンの行列は`env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
 - Actionsのピン留めの検査は、`pyproject.toml`の`[tool.pyfltr]`の`preset = "latest"`で有効になる`pinact`へ集約する。
   対象は`ci.yaml`の`pyfltr ci`と、push前の`pyfltr run`・`pyfltr fast`（prekのpre-commitを含む）とし、独立したstepは対象外とする。
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う。
@@ -75,8 +75,8 @@ SBOMに載るだけではPRで比較される証拠にしない。
 - 定期監査の `audit.yaml` は残す。
   PRのチェックとは別に、後から判明した `uv.lock` と `rust/claude-statusline/Cargo.lock` の脆弱性も検出する。
 - `agent-toolkit/scripts/launch.py.lock` は依存グラフの直接の対象外。
-  配布先の実行依存は `agent_toolkit_dependencies_invariant_test.py::test_locked_versions_match_root_lock` がルートの `uv.lock` との版の一致をチェックし、ルートのチェックと監査で間接的に覆う。
-- `mise.lock` と `.chezmoi-source/dot_config/mise/mise.lock` が固定するツールの版は、PRのチェックと既存の定期監査のどちらにも含まれない。
+  配布先の実行依存は `agent_toolkit_dependencies_invariant_test.py::test_locked_versions_match_root_lock` がルートの `uv.lock` とのバージョンの一致をチェックし、ルートのチェックと監査で間接的に覆う。
+- `mise.lock` と `.chezmoi-source/dot_config/mise/mise.lock` が固定するツールのバージョンは、PRのチェックと既存の定期監査のどちらにも含まれない。
 
 通常のPRで結果が返ることを確かめてから、dotfilesの `master-release-pr` ルールセットに `Dependency Review` を必須チェックとして加える。
 他のリポジトリへは検知のみを導入し、ルールセットを新設しない。

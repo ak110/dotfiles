@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import pathlib
 import runpy
-import subprocess
 
 from _pytest.fixtures import FixtureFunctionDefinition
+
+from scripts.verification_scan_rules import scan_files
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _ALLOWED = {"conftest.py", "agent-toolkit/conftest.py"}
@@ -21,19 +22,14 @@ def _fixture_names(path: pathlib.Path) -> set[str]:
 
 
 def test_conftest_registration_is_independent_of_collection_order() -> None:
-    result = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*conftest.py"],
-        cwd=_ROOT,
-        check=True,
-        capture_output=True,
-        encoding="utf-8",
-    )
-    paths = {name for name in result.stdout.split("\0") if name and (_ROOT / name).is_file()}
+    paths = {path.relative_to(_ROOT).as_posix() for path in scan_files(__file__, "names")}
     unexpected = paths - _ALLOWED
     assert not unexpected, (
         f"下位conftest.pyを起動時登録へ移す: {sorted(unexpected)}。fixtureはagent_toolkit._testing.pytest_pluginへ置く"
     )
-    missing = _fixture_names(_ROOT / "agent-toolkit/conftest.py") - _fixture_names(_ROOT / "conftest.py")
+    registered = {path.relative_to(_ROOT).as_posix(): path for path in scan_files(__file__)}
+    assert registered.keys() == _ALLOWED
+    missing = _fixture_names(registered["agent-toolkit/conftest.py"]) - _fixture_names(registered["conftest.py"])
     assert not missing, (
         f"subprojectのfixtureが直下に無い: {sorted(missing)}。"
         "共通隔離は両conftestへ同名登録し、その他はagent_toolkit._testing.pytest_pluginへ置く"

@@ -429,7 +429,7 @@ def test_failure_blocks_auto_but_manual_can_retry_without_duplicate_report(tmp_p
     assert len(calls) == 2 and len(list(layout.iter_entry_paths(notes))) == 1
     assert session_review.pending()
     body = _failure_awis(notes)[0].read_text(encoding="utf-8")
-    assert "adopted・rejectedで終了" in body and "版が変わった場合に再試行" in body
+    assert "adopted・rejectedで終了" in body and "バージョンが変わった場合に再試行" in body
     assert "atk run-skill agent-toolkit:review-session --args batch" in body
     assert "`session_review_auto_start=true`で開始条件を満たす場合に限り" in body
     assert "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する" in body

@@ -261,13 +261,16 @@ def add_entries_locked(
     initial_state: str = WI_STATE_INBOX,
     insertions: list[_add_drafts.Insertion] | None = None,
     detailed: bool = False,
+    draft_namespace: str | None = None,
+    dry_run: bool = False,
 ) -> list[tuple[str, str]]:
-    """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
+    """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。  pyfltr: allow-comment
 
     `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`だけを採用する
     （呼び出し元の`add_entries`が全件の存在と解決可否を検証済みとする）。
     `item_branches`は呼び出し元が検証済みの各メッセージの宛先の系統で、`target_commit`はその系統が
     `target_commit_branch`と一致する項目にだけ記録する。
+    `dry_run`では保存用データで再投入を照合し、ファイルを書かない。
     """
     effective_branches: list[str | None] = [None for _ in parsed_messages] if item_branches is None else item_branches
     effective_repair_targets: list[str | None] = [None for _ in parsed_messages] if repair_targets is None else repair_targets
@@ -284,6 +287,13 @@ def add_entries_locked(
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     counter = _wi_filenames.max_existing_seq(private_notes, timestamp) + 1 if insertions is None else 0
     generated: list[tuple[str, str]] = []
+    registered_retries = (
+        _add_drafts.registered_retries(private_notes)
+        if draft_namespace is not None
+        and entry_type == WI_TYPE_AWI
+        and any(_add_drafts.PROPOSAL_ID_KEY not in metadata for metadata, _ in parsed_messages)
+        else {}
+    )
     for index, ((frontmatter, body), repair_target, repair_kind, item_branch) in enumerate(
         zip(
             parsed_messages,
@@ -353,6 +363,15 @@ def add_entries_locked(
                 frontmatter_data["cooldown_until"] = cooldown_until
             if detailed:
                 frontmatter_data[DETAILED_KEY] = True
+            if draft_namespace is not None and _add_drafts.PROPOSAL_ID_KEY not in frontmatter_data:
+                fingerprint = _add_drafts.retry_fingerprint(draft_namespace, frontmatter_data, logical_body)
+                if (registered := registered_retries.get(fingerprint)) is not None:
+                    _add_drafts.warn_already_registered(registered)
+                    continue
+                registered_retries[fingerprint] = filename
+                frontmatter_data[_add_drafts.RETRY_FINGERPRINT] = fingerprint
+        if dry_run:
+            continue
         content = _frontmatter.normalize_newlines(_frontmatter.serialize_frontmatter(frontmatter_data, logical_body))
         path = _wi_entries.entry_path(private_notes, filename)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -470,8 +489,11 @@ def add_entries(
             initial_state=initial_state,
             insertions=insertions,
             detailed=detailed,
+            draft_namespace=draft_namespace if resolve_draft_links else None,
         )
         generated = [filename for filename, _content in written]
+        if not generated:
+            return []
         count = len(generated)
         mutation.commit(
             f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",

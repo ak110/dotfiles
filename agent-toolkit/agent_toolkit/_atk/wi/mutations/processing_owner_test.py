@@ -3,11 +3,12 @@ import socket
 import subprocess
 import sys
 
+import psutil
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import frontmatter, layout, processing_owner, sync
-from agent_toolkit._common import process_identity, session_activity
+from agent_toolkit._common import process_identity, session_activity, session_state
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_mutations_support import _init_notes_with_origin
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes, _write_awi_file
@@ -60,7 +61,10 @@ def test_only_processing_conversation_can_exit(
     assert "processing_owner" not in _metadata(notes, name)
 
 
-def test_same_host_handoff_requires_confirmed_stop(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("reason", [None, 'ユーザーの確認: "終了済み"'])
+def test_same_host_handoff_without_process_records(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reason: str | None
+) -> None:
     notes = _setup_notes(tmp_path)
     git_repository.init_repository(notes)
     name = "takeover.md"
@@ -68,15 +72,15 @@ def test_same_host_handoff_requires_confirmed_stop(tmp_path: pathlib.Path, monke
     _actor(monkeypatch, notes, "earlier")
     assert _run(tmp_path, "start-processing", name) == 0
     _actor(monkeypatch, notes, "later")
-    states = iter(("稼働中", "不明", "終了"))
-    monkeypatch.setattr(session_activity, "root_activity", lambda _session: {"status": next(states)})
-    assert _run(tmp_path, "take-over", name) == 1
-    assert _run(tmp_path, "take-over", name, "--reason=判断不能") == 1
-    assert _run(tmp_path, "take-over", name) == 0
+    options = () if reason is None else (f"--reason={reason}",)
+    assert _run(tmp_path, "take-over", name, *options) == 0
     assert _metadata(notes, name)["processing_owner"] == {"host": socket.gethostname(), "session": "later"}
     assert _run(tmp_path, "adopt", name) == 0
     result = layout.entry_path(notes, name).read_text(encoding="utf-8")
     assert "担当の引き継ぎ:" in result and result.count("## 処理結果") == 1
+    assert "稼働中のホストプロセスを確認できなかった" in result
+    assert "ホストプロセスの終了を確認" not in result
+    assert ('ユーザーの確認: \\"終了済み\\"' in result) is (reason is not None)
 
 
 @pytest.mark.parametrize("human", [False, True])
@@ -102,7 +106,9 @@ def test_old_processing_item_and_human_exit(tmp_path: pathlib.Path, monkeypatch:
     assert _metadata(notes, name)["state"] == "adopted"
 
 
-def test_same_host_handoff_after_activity_cleanup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_same_host_handoff_after_activity_cleanup(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     notes = _setup_notes(tmp_path)
     git_repository.init_repository(notes)
     name = "ending.md"
@@ -116,13 +122,53 @@ def test_same_host_handoff_after_activity_cleanup(tmp_path: pathlib.Path, monkey
             process=session_activity.HostProcess("codex", identity),
         )
         assert _run(tmp_path, "start-processing", name) == 0
-        session_activity.record_activity({"session_id": "ending-owner", "hook_event_name": "SessionEnd"})
-        assert session_activity.root_activity("ending-owner")["status"] == "不明"
         _actor(monkeypatch, notes, "following-owner")
         assert _run(tmp_path, "take-over", name) == 1
+        assert "（稼働中）" in capsys.readouterr().err
+        session_activity.record_activity({"session_id": "ending-owner", "hook_event_name": "SessionEnd"})
+        assert session_activity.root_activity("ending-owner")["status"] == "不明"
+        assert _run(tmp_path, "take-over", name, "--reason=終了済み") == 1
+        error = capsys.readouterr().err
+        assert "（稼働中か不明）" in error
+        assert "前の担当の終了を待つか" in error
+        assert _metadata(notes, name)["processing_owner"] == {"host": socket.gethostname(), "session": "ending-owner"}
         process.communicate(timeout=5)
-    assert _run(tmp_path, "take-over", name) == 0
+    assert _run(tmp_path, "take-over", name, "--reason=終了済み") == 0
     assert _metadata(notes, name)["processing_owner"] == {"host": socket.gethostname(), "session": "following-owner"}
+    result = layout.entry_path(notes, name).read_text(encoding="utf-8")
+    assert '記録されたホストプロセスの終了を確認。指定された理由: "終了済み"' in result
+
+
+def test_same_host_handoff_refuses_when_recorded_process_status_is_unreadable(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    notes = _setup_notes(tmp_path)
+    git_repository.init_repository(notes)
+    name = "active.md"
+    _write_awi_file(notes, name)
+    _actor(monkeypatch, notes, "active-owner")
+    assert _run(tmp_path, "start-processing", name) == 0
+    assert not session_state.state_path("active-owner").exists()
+    with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as process:
+        identity = process_identity.ProcessIdentity.of(process.pid)
+        assert identity is not None
+        session_activity.record_activity(
+            {"session_id": "active-owner", "hook_event_name": "SessionStart"},
+            process=session_activity.HostProcess("codex", identity),
+        )
+        read_status = psutil.Process.status
+
+        def status(candidate: psutil.Process) -> str:
+            if candidate.pid == process.pid:
+                raise psutil.AccessDenied(pid=process.pid)
+            return read_status(candidate)
+
+        monkeypatch.setattr(psutil.Process, "status", status)
+        _actor(monkeypatch, notes, "following-owner")
+        assert _run(tmp_path, "take-over", name) == 1
+        assert "（稼働中か不明）" in capsys.readouterr().err
+        assert _metadata(notes, name)["processing_owner"] == {"host": socket.gethostname(), "session": "active-owner"}
+        process.communicate(timeout=5)
 
 
 @pytest.mark.usefixtures("leaf_git_commands")

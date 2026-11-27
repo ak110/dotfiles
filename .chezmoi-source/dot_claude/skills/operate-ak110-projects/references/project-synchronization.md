@@ -69,8 +69,8 @@
   姉妹プロジェクトのsession単位の設定は、各プロジェクトの要件として保つ。
   ブラウザーなどsessionの寿命を明示したfixtureは、宣言した寿命を使う。
 - `textlint-rule-prh`（dotfilesのみ）: Claude Codeのコンテキスト汚染を防ぐため、textlint系を特に厳しくする方針である。
-- Pythonの対応版とCIの版の集合（dotfilesと同梱のagent-toolkit）: ユーザーが過去のPythonの版をサポートしないと決めたため、対応する版を1つ（現在は3.15）に限り、CIも同じ版で実行する。
-  他のプロジェクトのPythonの版の行列へそろえず、版の宣言は将来の版を許す下限で表す。
+- Pythonの対応バージョンとCIで使うバージョンの集合（dotfilesと同梱のagent-toolkit）: ユーザーが過去のPythonのバージョンをサポートしないと決めたため、対応するバージョンを1つ（現在は3.15）に限り、CIも同じバージョンで実行する。
+  他のプロジェクトのPythonのバージョンの行列へそろえず、バージョンの宣言は将来のバージョンを許す下限で表す。
 - pytilpackの`docs.yaml`に`paths:`なし（pytilpackのみ）: mkdocstringsがPythonのソースから文書を生成するため、ソースの変更でもdocs workflowを起動する。
 - Dependabot alertsの有効・無効（dotfiles・GLATasksは有効、pytilpackは無効）: pytilpackはライブラリであり、ロックファイルが開発専用のため、エンドユーザーの実行環境への脆弱性の影響が限られる。
 - dotfilesの`AGENTS.md`に「開発手順」「注意点」の章なし（dotfilesのみ）: dotfilesの`AGENTS.md`は概要と参照先の案内だけにし、開発手順と注意点を`.claude/skills/`配下のスキルへ置く。

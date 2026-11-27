@@ -60,8 +60,10 @@ def test_development_state_isolated_by_default(tmp_path: pathlib.Path) -> None:
     isolation.assert_development_state_isolated(tmp_path)
 
 
-def test_import_time_home_omits_delegated_plugin_root_and_restores_it(tmp_path, monkeypatch):
-    name = "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT"
+@pytest.mark.parametrize(
+    "name", ("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", "AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR", "AGENT_TOOLKIT_RUN_SKILL_ID")
+)
+def test_import_time_home_omits_parent_session_environment_and_restores_it(tmp_path, monkeypatch, name):
     value = str(tmp_path / "parent-plugin")
     monkeypatch.setenv(name, value)
     with isolation.import_time_home(tmp_path / "collection"):
@@ -381,6 +383,12 @@ def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib
                              "UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT",
                              "AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT", "AGENT_TOOLKIT_LAUNCH_RESTORE"):
                     assert name not in os.environ, name
+                session_names = (
+                    "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDE_ENV_FILE",
+                    "AGENT_TOOLKIT_COMMIT_HOOKS", "AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR", "AGENT_TOOLKIT_RUN_SKILL_ID",
+                )
+                leaked = [name for name in session_names if name in os.environ]
+                assert not leaked, leaked
                 assert str(pathlib.Path(os.environ["PARENT_VENV_BIN"])) not in os.environ["PATH"].split(os.pathsep)
         """),
         encoding="utf-8",
@@ -399,6 +407,13 @@ def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib
         "AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT": "parent-caller-venv",
         "AGENT_TOOLKIT_LAUNCH_RESTORE": "parent-restore",
         "AGENT_TOOLKIT_SESSION_START_INPUT": "parent-startup-input",
+        "CLAUDE_CODE_SESSION_ID": "parent-claude",
+        "CODEX_THREAD_ID": "parent-thread",
+        "CODEX_SESSION_ID": "parent-codex",
+        "CLAUDE_ENV_FILE": str(tmp_path / "parent-env.sh"),
+        "AGENT_TOOLKIT_COMMIT_HOOKS": str(tmp_path / "parent-hooks"),
+        "AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR": "parent-actor",
+        "AGENT_TOOLKIT_RUN_SKILL_ID": "parent-run",
         "PARENT_VENV_BIN": str(tmp_path / "parent-venv" / "bin"),
     }
     environment["PATH"] = os.pathsep.join((environment["PARENT_VENV_BIN"], environment["PATH"]))

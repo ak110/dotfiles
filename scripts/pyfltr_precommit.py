@@ -221,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         except (ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
             print(f"候補列挙を確認できない: {exc}", file=sys.stderr)
             print(
-                "次の操作: 入力パスがリポジトリ内の実在ファイルか確認せよ。"
+                "次の操作: 入力パスが実在するか、比較基点から削除されたリポジトリ内のファイルか確認せよ。"
                 "取得や読取に失敗した場合は、診断に示したGit状態とファイルの読取権限を確認せよ。"
                 "問題を直し、同じ引数で--consumer-testsを再実行せよ。",
                 file=sys.stderr,

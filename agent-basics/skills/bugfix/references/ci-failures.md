@@ -80,7 +80,7 @@ GitLab CIでは、ジョブと同じイメージdigestとRunnerのバージョ�
 | 画面マスクの追加 | テストコードの欠陥で、差分が動的な値によるデータ差分 | 初期データの固定を先に検討する |
 | 失敗ジョブの再実行 | 再現性が「非決定性の疑い」。同じ原因につき1回 | 診断として行う。広域の障害では待機を優先する |
 | 失敗したテストや処理の撤去・縮小 | `agent-basics:writing-standards`の`references/design-heuristics.md`「存在意義の点検」で不要と判定した | 失敗を通すことだけが目的なら使わない。エンドユーザーが観測する機能の撤去と、CIの検査・lint規則の無効化は、撤去の前にユーザーへ確かめる |
-| 旧バージョンへの一時的な固定 | 環境起因で、新しいバージョンとの差が原因と確かめ、同じ作業で追随を終えられない | `agent-basics:writing-standards/references/dependency-management.md`「最新版への追従」に従い、理由と解除条件を残す |
+| 旧バージョンへの一時的な固定 | 環境起因で、新しいバージョンとの差が原因と確かめ、同じ作業で追随を終えられない | `agent-basics:writing-standards/references/dependency-management.md`「最新バージョンへの追従」に従い、理由と解除条件を残す |
 
 - ジョブの除外（`rules:changes`など）、テストの`.skip`・`xfail`、`allow_failure`、差分のない空commitの再pushは使わない。
 - CIの設定で失敗を抑える操作は、失敗が今回の変更と無関係であると分かり、根拠を示してユーザーの明示的な合意を得た場合に限る。

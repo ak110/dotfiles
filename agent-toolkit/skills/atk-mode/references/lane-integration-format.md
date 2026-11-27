@@ -34,7 +34,7 @@
 `計画ファイル名一覧`と`完成条件証拠`は全ての計画の分を一度に受け取る配列であり、レビュー単位ごとの成果物の受け渡しは`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`に従う。
 書き込み先は指定された統合先worktreeとする。
 延期の対象（判定の基準は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」）は統合時に採否を確定せず、`adoptを延期したAWIとcommit`として公開担当へ渡す。
-版数の更新による延期は、`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」に従う。
+バージョンの更新による延期は、`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」に従う。
 
 ## 公開統合操作
 
@@ -74,7 +74,7 @@ manifestは次の欄を持つJSONオブジェクトである。
   この欄を省略した場合は、従来どおり`wis`の全件を処置済みとする。
   選定には今回の処置済み項目だけを追記し、レーンが担当する全項目が統合済みになった時だけレーンにも統合済みを記録する。
 - `verification`: 統合前とmerge後の検証のargvの順序付き配列。
-  マージありでは、統合先と合成候補のコミット版の`pyproject.toml`にある`[tool.agent-toolkit.lane-integration]`の`verification`も必須となる。
+  マージありでは、統合先と合成候補のcommitの`pyproject.toml`にある`[tool.agent-toolkit.lane-integration]`の`verification`も必須となる。
   この設定値はコマンド1個のargv配列であり、CLIが末尾へ統合先の完全OIDを渡し、合成候補のworktreeで実行する。
   同じ設定は1回だけ実行し、設定が変わる統合では統合前後の両方を検証する。
   manifestの検証が成功しても、リポジトリ側の検証が失敗すればfast-forwardしない。
@@ -83,7 +83,7 @@ manifestは次の欄を持つJSONオブジェクトである。
   - プロジェクト固有の最終の受理操作まで含めて準備し、検証と受理の両方の成功を完了の条件にする（検証から実行IDの取得・受理までを失敗を伝える1つのスクリプトにまとめたargvも渡せる）。
     最終runの前に、成功runの受理ガードの公開ヘルプと事前確認で予定の引数・必要な対象・実行条件の適合を確かめ、事前の適合を実runの成功の証拠にしない。
   - 静的検査とテストを含む一括のコマンドはチェック単位へ分け、既存の公開オプションで被覆済みのチェックを除く起動形を選べるか確かめる。
-  - dirtyな結果は実行時の本文の保存物に、cleanな結果は取得HEADに対応付けて、実効の対象、直接影響範囲、ツールと環境の版、設定・lock・外部入力、オプション、終了状態と診断を確かめる。
+  - dirtyな結果は実行時の本文の保存物に、cleanな結果は取得HEADに対応付けて、実効の対象、直接影響範囲、ツールと環境のバージョン、設定・lock・外部入力、オプション、終了状態と診断を確かめる。
     本文や条件を特定できない範囲、失敗・未実行・対象不足、後続の修正やmergeで結果が変わる範囲は追加の実行へ戻す。
     統合先が基点のままであることだけで、環境と被覆まで同じとは判定しない。
   - merge後は新しいHEADの変更箇所と関連する利用側を検証し、ローカルの範囲（依存のバージョン指定とlockの更新を含む）は`agent-basics:check-execution/references/verification-scope.md`の上限に従う。
@@ -134,7 +134,7 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 
 ### 検証結果の警告の判定
 
-検証結果は`agent-basics:check-execution/references/diagnostics.md`「読む出力」「基準版と変更行への帰属」に従って判定する。
+検証結果は`agent-basics:check-execution/references/diagnostics.md`「読む出力」「ベースコミットと変更行への帰属」に従って判定する。
 
 - 比べるためにコマンドを再実行する場合は、統合先worktreeで該当のコマンドだけを読み取り専用で実行し、統合先で追跡するファイルやbranchを変えない。
 - 新しい警告は、統合やAWIの採否の確定を止める理由かどうかを意味で判定する。

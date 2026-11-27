@@ -18,29 +18,36 @@ pullとpushの失敗も呼び出し元の実行主体が次の操作を決めら
 
 from __future__ import annotations
 
-import contextlib
-import contextvars
-import datetime
-import hashlib
-import json
 import pathlib
 import subprocess
 import sys
 import threading
-import time
-import weakref
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
-import filelock
-import psutil
-
+from agent_toolkit._atk import git_sync_diagnostics as _diagnostics
+from agent_toolkit._atk import git_sync_lock as _lock
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import state_paths as _state_paths
-from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
+
+GIT_TIMEOUT_NEXT_ACTION = _diagnostics.GIT_TIMEOUT_NEXT_ACTION
+GitSyncError = _diagnostics.GitSyncError
+RebaseInProgressError = _diagnostics.RebaseInProgressError
+git_timeout_reason = _diagnostics.git_timeout_reason
+is_reported = _diagnostics.is_reported
+mark_reported = _diagnostics.mark_reported
+LOCK_HOLD_TIMEOUT_SECONDS = _lock.LOCK_HOLD_TIMEOUT_SECONDS
+LOCK_OBSERVER = _lock.LOCK_OBSERVER
+LOCK_WAIT_TIMEOUT_SECONDS = _lock.LOCK_WAIT_TIMEOUT_SECONDS
+RepoLockTimeoutError = _lock.RepoLockTimeoutError
+assert_repo_lock_held = _lock.assert_repo_lock_held
+git_common_dir = _lock.git_common_dir
+repo_lock = _lock.repo_lock
+repo_lock_path = _lock.repo_lock_path
+_GitResultRunner = _diagnostics.GitResultRunner
+_report_sync_failure = _diagnostics.report_sync_failure
 
 
 def keep_remote_initial_file(notes: pathlib.Path, filename: str, migration_message: str) -> bool:
@@ -71,95 +78,12 @@ def keep_remote_initial_file(notes: pathlib.Path, filename: str, migration_messa
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
 """履歴が分岐し、無関係な差分もある場合に、commitの完了とpushの保留を伝える文言。"""
 
-PUSH_DEFERRED_NEXT_ACTION = (
-    "`git -C {private_notes} status`で無関係な差分を確認し、commitするか取り除いてcleanにしてから"
-    "`atk wi commit`を実行する。分岐の自動解消とpushを行う"
-)
-"""`PUSH_DEFERRED_MESSAGE`に続けて案内する次の操作。"""
-
-_REPORTED_ATTRIBUTE = "_atk_sync_failure_reported"
-"""失敗の原因と次の操作を本モジュールが出力済みであることを例外へ記録する属性名。"""
-
-LOCK_HOLD_TIMEOUT_SECONDS = 120.0
-"""`repo_lock`を保持している区間のgit操作全体の時間上限。
-
-1つの保持区間ではfetch・merge・commit・pushと、push拒否時の再試行まで続くため、操作ごとの上限だけでは
-保持が数分に及ぶ。区間全体を有限にすると、待つ側の上限を「正常な保持者が解放するまで」の値に決められる。
-"""
-
-LOCK_WAIT_TIMEOUT_SECONDS = 150.0
-"""`repo_lock`の待機上限を省略した場合の値。保持区間の上限より長くし、正常に動いている保持者の解放まで待てるようにする。"""
-
-GIT_TIMEOUT_NEXT_ACTION = "リモートへの接続（ネットワーク、VPN、認証）を確かめてから、失敗した操作を再実行する"
-"""gitの時間切れの失敗行に続けて案内する次の操作。"""
-
 _DivergenceRecovery = Callable[[pathlib.Path], bool]
 """ローカル側のcommitが冗長であることを呼び出し元の基準で判定する関数。"""
 
 
 class _GitRunner(Protocol):
     def __call__(self, args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None: ...
-
-
-class _GitResultRunner(Protocol):
-    def __call__(self, args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]: ...
-
-
-class RebaseInProgressError(RuntimeError):
-    next_action = (
-        "現在の競合を解消して`git add <path>`、`git -c submodule.recurse=false rebase --continue`、`git push`を実行するか、"
-        "不要であれば`git -c submodule.recurse=false rebase --abort`を実行してから、元の`atk`操作を再実行する"
-    )
-
-
-class GitSyncError(RuntimeError):
-    """Git同期の前提を満たせない。`str()`は理由だけを返し、`next_action`に次の操作を持つ。"""
-
-    def __init__(self, reason: str, *, next_action: str) -> None:
-        _next_action.next_action_line(next_action)
-        super().__init__(reason)
-        self.reason = reason
-        self.next_action = next_action
-
-
-class RepoLockTimeoutError(filelock.Timeout):
-    """`repo_lock`を待機上限まで取得できなかった。`reason`に待った対象と保持者、`next_action`に次の操作を持つ。"""
-
-    next_action = (
-        "保持者のプロセスが動いているか確かめ、終了を待つか、応答しない場合は停止してから再実行する。"
-        "保持者が存在しない場合はそのまま再実行する"
-    )
-
-    def __init__(self, lock_file: str, *, waited: float, holder: str) -> None:
-        super().__init__(lock_file)
-        self.waited = waited
-        self.holder = holder
-
-    @property
-    def reason(self) -> str:
-        """失敗行へ載せる理由を返す。"""
-        return f"共有ロックを{self.waited:.0f}秒待ったが取得できなかった: {self.lock_file}。保持者: {self.holder}"
-
-
-def git_timeout_reason(error: subprocess.TimeoutExpired) -> str:
-    command = " ".join(error.cmd) if isinstance(error.cmd, list | tuple) else str(error.cmd)
-    return (
-        f"gitが時間上限の{error.timeout:.0f}秒に達したため、子プロセスまで止めて打ち切った: `{command}`"
-        f"（作業ディレクトリ: {_git_command.timeout_cwd(error)}）"
-    )
-
-
-def mark_reported(error: subprocess.SubprocessError) -> None:
-    """失敗の原因と次の操作を出力済みであることを例外へ記録する。"""
-    setattr(error, _REPORTED_ATTRIBUTE, True)
-
-
-def is_reported(error: subprocess.SubprocessError) -> bool:
-    """本モジュールが失敗の原因と次の操作を出力済みの例外か返す。
-
-    呼び出し元のCLIは出力済みの失敗へ汎用の失敗行を重ねず、原因別の失敗行を1本に保つ。
-    """
-    return bool(getattr(error, _REPORTED_ATTRIBUTE, False))
 
 
 def _run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
@@ -177,197 +101,13 @@ def _run_git_result(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedP
     return _git_command.run(args, cwd, check=False, capture_output=True, text=True)
 
 
-class _ThreadLocalHeldPaths(threading.local):
+class _SyncAttempt(threading.local):
     def __init__(self) -> None:
-        self.paths: weakref.WeakValueDictionary[pathlib.Path, _RepoLock] = weakref.WeakValueDictionary()
         self.push_deferred: set[pathlib.Path] = set()
         self.sync_attempted = False
 
 
-_LOCK_HELD_PATHS = _ThreadLocalHeldPaths()
-
-
-def git_common_dir(repo_path: pathlib.Path) -> pathlib.Path:
-    """作業コピーが共有するGit common directoryを返す。
-
-    `git rev-parse`を実行できないテスト用パスや初期化前のパスでは、対象パス自身を
-    fallbackとして用いる。通常の作業コピーでは、複数worktreeが同じロックを共有する。
-    """
-    repo_path = repo_path.resolve()
-    if not (repo_path / ".git").exists():
-        return repo_path
-    try:
-        result = _run_git_result(["rev-parse", "--git-common-dir"], repo_path)
-    except OSError, subprocess.SubprocessError:
-        return repo_path
-    if result.returncode != 0 or not result.stdout.strip():
-        return repo_path
-    common = pathlib.Path(result.stdout.strip())
-    if not common.is_absolute():
-        common = repo_path / common
-    try:
-        return common.resolve()
-    except OSError:
-        return common.absolute()
-
-
-def _lock_key(repo_path: pathlib.Path) -> pathlib.Path:
-    """ロック記録用のcommon directoryを返す。"""
-    return git_common_dir(repo_path)
-
-
-def repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
-    """Git common directoryへ対応するロックファイルの絶対パスを返す。"""
-    common = str(_lock_key(repo_path))
-    digest = hashlib.sha1(common.encode("utf-8"), usedforsecurity=False).hexdigest()
-    lock_dir = _state_paths.lock_dir()
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    return lock_dir / f"{digest}.lock"
-
-
-class LockObserver(Protocol):
-    """`repo_lock`の待機と保持の秒数を受け取る観測先。"""
-
-    def add_lock_wait(self, seconds: float) -> None: ...
-
-    def add_lock_hold(self, seconds: float) -> None: ...
-
-
-LOCK_OBSERVER: contextvars.ContextVar[LockObserver | None] = contextvars.ContextVar("atk_repo_lock_observer", default=None)
-"""`repo_lock`の待機・保持を記録する観測先。`atk serve`が要求ごとに設定し、設定の無い呼出しでは計測しない。"""
-
-
-def _holder_path(lock_file: str) -> pathlib.Path:
-    """ロックの保持者を記録するファイルのパスを返す。
-
-    ロックファイル自体へは書かない。保持中のファイルを他のプロセスが読めるかはOSで異なるためである。
-    """
-    return pathlib.Path(lock_file + ".holder")
-
-
-def _write_holder(lock_file: str) -> None:
-    """待つ側が原因を示せるよう、ロックを取得したプロセスのPID・起動時刻・コマンドラインを記録する。"""
-    try:
-        process = psutil.Process()
-        record = {
-            "pid": process.pid,
-            "started_at": datetime.datetime.fromtimestamp(process.create_time()).astimezone().isoformat(timespec="seconds"),
-            "command": " ".join(process.cmdline()),
-        }
-        _holder_path(lock_file).write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
-    except OSError, psutil.Error:
-        # 記録は診断の補助であり、書けないことでロックの取得を失敗させない。
-        pass
-
-
-def _describe_holder(lock_file: str) -> str:
-    """保持者の記録から、失敗行へ載せる保持者の説明を返す。"""
-    try:
-        record = json.loads(_holder_path(lock_file).read_text(encoding="utf-8"))
-        pid = int(record["pid"])
-        description = f"PID {pid}、起動 {record['started_at']}、コマンド `{record['command']}`"
-    except OSError, ValueError, KeyError, TypeError:
-        return "記録が無いため特定できない"
-    if not psutil.pid_exists(pid):
-        return f"{description}（このPIDのプロセスは存在しない）"
-    return description
-
-
-class _RepoLock(filelock.FileLock):  # pylint: disable=too-many-ancestors  # filelockの継承階層によるため。
-    def __init__(self, repo_path: pathlib.Path, *, timeout: float) -> None:
-        self._repo_path = repo_path
-        self._target = _lock_key(repo_path)
-        self._observer: LockObserver | None = None
-        self._acquired_at: float | None = None
-        self._hold_scope: contextlib.ExitStack | None = None
-        super().__init__(str(repo_lock_path(repo_path)), timeout=timeout)
-
-    def acquire(
-        self,
-        timeout: float | None = None,
-        poll_interval: float | None = None,
-        *,
-        poll_intervall: float | None = None,
-        blocking: bool | None = None,
-        cancel_check: Callable[[], bool] | None = None,
-    ) -> filelock.AcquireReturnProxy:
-        result: filelock.AcquireReturnProxy | None = None
-        observer = LOCK_OBSERVER.get()
-        wait_started = time.perf_counter()
-        if blocking is not False and is_human_terminal():
-            # 他の主体が保持していて待つ場合だけ、待機中であることを人の端末へ届ける。
-            try:
-                result = super().acquire(
-                    0, poll_interval, poll_intervall=poll_intervall, blocking=False, cancel_check=cancel_check
-                )
-            except filelock.Timeout:
-                print(f"共有ロックの取得を待機中: {self._repo_path}", file=sys.stderr, flush=True)
-        if result is None:
-            try:
-                result = super().acquire(
-                    timeout,
-                    poll_interval,
-                    poll_intervall=poll_intervall,
-                    blocking=blocking,
-                    cancel_check=cancel_check,
-                )
-            except filelock.Timeout:
-                # 取得できずに終わった待ちも、要求の所要のうちロック待ちが占めた区間として記録する。
-                waited = time.perf_counter() - wait_started
-                if observer is not None and self._acquired_at is None:
-                    observer.add_lock_wait(waited)
-                raise RepoLockTimeoutError(self.lock_file, waited=waited, holder=_describe_holder(self.lock_file)) from None
-        _LOCK_HELD_PATHS.paths[self._target] = self
-        if self.lock_counter == 1:
-            _write_holder(self.lock_file)
-
-            self._hold_scope = contextlib.ExitStack()
-            self._hold_scope.enter_context(_git_command.timeout_scope(LOCK_HOLD_TIMEOUT_SECONDS))
-        if observer is not None and self._acquired_at is None:
-            acquired_at = time.perf_counter()
-            observer.add_lock_wait(acquired_at - wait_started)
-            self._observer = observer
-            self._acquired_at = acquired_at
-        return result
-
-    def release(self, force: bool = False) -> None:
-        if self.is_locked and (force or self.lock_counter == 1):
-            # 保持者の記録は、次の取得者の記録を消さないようロックの解放より前に消す。
-            with contextlib.suppress(OSError):
-                _holder_path(self.lock_file).unlink(missing_ok=True)
-            if self._hold_scope is not None:
-                # 取得と別の文脈で解放された場合、期限の復元は行えないが、その文脈の終了とともに期限も消える。
-                with contextlib.suppress(ValueError):
-                    self._hold_scope.close()
-                self._hold_scope = None
-        super().release(force)
-        if not self.is_locked and _LOCK_HELD_PATHS.paths.get(self._target) is self:
-            del _LOCK_HELD_PATHS.paths[self._target]
-            if self._observer is not None and self._acquired_at is not None:
-                self._observer.add_lock_hold(time.perf_counter() - self._acquired_at)
-            self._observer = None
-            self._acquired_at = None
-
-
-def repo_lock(repo_path: pathlib.Path, *, timeout: float | None = None) -> filelock.FileLock:
-    """指定作業コピーへ対応するGit共通ロックを返す。
-
-    `timeout`を省略すると`LOCK_WAIT_TIMEOUT_SECONDS`まで待つ。
-    待機上限に達すると、保持者を示す`RepoLockTimeoutError`（`filelock.Timeout`の派生）を送出する。
-    保持している間のgit操作は、合計で`LOCK_HOLD_TIMEOUT_SECONDS`を上限とする。
-    """
-
-    return _RepoLock(repo_path, timeout=LOCK_WAIT_TIMEOUT_SECONDS if timeout is None else timeout)
-
-
-def assert_repo_lock_held(repo_path: pathlib.Path) -> None:
-    """現在のスレッドが対象common directoryのロックを保持していることを検証する。"""
-    lock = _LOCK_HELD_PATHS.paths.get(_lock_key(repo_path))
-    if lock is None or not lock.is_locked:
-        raise RuntimeError(
-            "不変条件違反: private_notesへのgit操作・ファイル変更は_repo_lock保持下でのみ実行できる。"
-            "呼び出し元でwith _repo_lock(private_notes):を用いること。"
-        )
+_SYNC_ATTEMPT = _SyncAttempt()
 
 
 def has_remote(private_notes: pathlib.Path) -> bool:
@@ -389,15 +129,15 @@ def _report_missing_upstream(private_notes: pathlib.Path) -> None:
 
 
 def push_was_deferred(private_notes: pathlib.Path) -> bool:
-    return private_notes.resolve() in _LOCK_HELD_PATHS.push_deferred
+    return private_notes.resolve() in _SYNC_ATTEMPT.push_deferred
 
 
 def reset_sync_attempt() -> None:
-    _LOCK_HELD_PATHS.sync_attempted = False
+    _SYNC_ATTEMPT.sync_attempted = False
 
 
 def sync_attempted() -> bool:
-    return _LOCK_HELD_PATHS.sync_attempted
+    return _SYNC_ATTEMPT.sync_attempted
 
 
 def _git_path(private_notes: pathlib.Path, name: str, *, result_runner: _GitResultRunner) -> pathlib.Path | None:
@@ -429,7 +169,7 @@ def is_rebase_in_progress(
 
 def ensure_not_rebasing(private_notes: pathlib.Path) -> None:
     if is_rebase_in_progress(private_notes):
-        raise RebaseInProgressError("rebase中のため新しい更新を開始できない")
+        raise RebaseInProgressError("rebase中のため新しい更新を開始できない", private_notes)
 
 
 def pull(
@@ -453,7 +193,7 @@ def pull(
             mark_reported(error)
         raise
     except subprocess.TimeoutExpired as error:
-        _report_sync_timeout(private_notes, "pull", error)
+        _diagnostics.report_sync_timeout(private_notes, "pull", error)
         raise
 
 
@@ -501,14 +241,14 @@ def _pull_impl(
         return
     if is_worktree_dirty(private_notes, result_runner=result_runner):
         _forward_error_output(merge_error)
-        _report_divergence(private_notes, result_runner=result_runner, dirty=True)
+        _diagnostics.report_divergence(private_notes, result_runner=result_runner, dirty=True)
         mark_reported(merge_error)
         raise merge_error
     try:
         run_git(["-c", "submodule.recurse=false", "rebase", "@{u}"], private_notes)
     except subprocess.CalledProcessError:
         _forward_error_output(merge_error)
-        _report_rebase_failure(private_notes, result_runner=result_runner)
+        _diagnostics.report_rebase_failure(private_notes, result_runner=result_runner)
         mark_reported(merge_error)
         raise merge_error from None
 
@@ -595,167 +335,6 @@ def _recover_matching_tree_divergence(
     return True
 
 
-def _divergence_details(
-    private_notes: pathlib.Path,
-    *,
-    result_runner: _GitResultRunner,
-) -> str:
-    count_text = "取得できなかった"
-    try:
-        counts = result_runner(["rev-list", "--left-right", "--count", "HEAD...@{u}"], private_notes)
-        if counts.returncode == 0:
-            fields = counts.stdout.split()
-            if len(fields) == 2:
-                count_text = f"ローカルのみ{fields[0]}件、upstreamのみ{fields[1]}件"
-    except OSError, subprocess.SubprocessError:
-        pass
-    reason_lines = [
-        f"Git履歴が分岐している（{count_text}）: {private_notes}。"
-        "ローカルの未push commitを残した間に、別のcloneからupstreamが更新された状態である",
-    ]
-    try:
-        differences = result_runner(["diff", "--name-status", "HEAD", "@{u}"], private_notes)
-        if differences.returncode == 0 and differences.stdout.strip():
-            reason_lines.append("内容差のあるファイル:")
-            reason_lines.append(differences.stdout.rstrip())
-    except OSError, subprocess.SubprocessError:
-        pass
-    return "\n".join(reason_lines)
-
-
-def _report_divergence(
-    private_notes: pathlib.Path,
-    *,
-    result_runner: _GitResultRunner,
-    dirty: bool = False,
-) -> None:
-    """分岐による失敗を、未コミット差分の解消順に合わせて案内する。"""
-    preparation = (
-        f"`git -C {private_notes} status`で無関係な差分を確認してcleanにし、元の操作を再実行する。"
-        "cleanにしても自動解消できない場合は、"
-        if dirty
-        else ""
-    )
-    _outcome.report_failure(
-        _divergence_details(private_notes, result_runner=result_runner),
-        next_action=preparation
-        + (
-            "`git log --left-right --oneline HEAD...@{u}`で分岐を確認し、"
-            "`git -c submodule.recurse=false rebase @{u}`を実行する。"
-            "競合したら解消して`git add <path>`、`git -c submodule.recurse=false rebase --continue`、"
-            "`git push`の順に実行する。\n"
-            "WIの回答・コメントが競合したら、現行の本文と状態・処理結果を一緒に確認し、適用できない旧結果は採らない。\n"
-            "同じ変更がupstreamに存在する重複commitなら、内容を確認して"
-            "`git -c submodule.recurse=false rebase --skip`を実行できる。"
-            "中止する場合は`git -c submodule.recurse=false rebase --abort`を実行する"
-        ),
-    )
-
-
-def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitResultRunner) -> None:
-    """rebase失敗時に状態保持と復旧手順を表示する。"""
-    try:
-        conflicts = result_runner(
-            ["diff", "--name-only", "--diff-filter=U", "-z"],
-            private_notes,
-        )
-        names = [name for name in conflicts.stdout.split("\0") if name]
-    except OSError, subprocess.SubprocessError:
-        names = []
-    _outcome.report_failure(
-        "rebaseに失敗したため、rebase状態を保持した。自動abortは行っていない\n"
-        "競合ファイル: " + ("、".join(names) if names else "取得できなかった"),
-        next_action=(
-            "競合を解消した後、`git add <競合解消済みパス>`、"
-            "`git -c submodule.recurse=false rebase --continue`、`git push`の順に実行する。\n"
-            "WIの回答・コメントが競合したら、現行の本文と状態・処理結果を一緒に確認し、適用できない旧結果は採らない。\n"
-            "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して"
-            "`git -c submodule.recurse=false rebase --skip`を実行できる。"
-            "中止する場合は`git -c submodule.recurse=false rebase --abort`を実行する"
-        ),
-    )
-
-
-_AUTH_FAILURE_MARKERS = (
-    "Authentication failed",
-    "Permission denied",
-    "could not read Username",
-    "could not read Password",
-    "The requested URL returned error: 401",
-    "The requested URL returned error: 403",
-)
-"""gitの出力のうち認証の失敗を示す語句。"""
-
-_NETWORK_FAILURE_MARKERS = (
-    "Could not resolve host",
-    "Could not resolve hostname",
-    "Connection timed out",
-    "Connection refused",
-    "Network is unreachable",
-    "Operation timed out",
-    "unable to access",
-)
-"""gitの出力のうちネットワーク接続の失敗を示す語句。"""
-
-_NON_FAST_FORWARD_MARKERS = ("non-fast-forward", "[rejected]", "fetch first", "Not possible to fast-forward")
-"""gitの出力のうちupstreamがローカルより進んでいることを示す語句。"""
-
-
-def _sync_failure_next_action(resolved: pathlib.Path, error: subprocess.CalledProcessError) -> tuple[str, str]:
-    """gitの出力から失敗の原因を分類し、原因の説明と次の操作を返す。"""
-    outputs = [output for output in (error.output, error.stderr) if isinstance(output, str)]
-    text = "\n".join(outputs)
-    retry = "解消後、失敗した`atk`操作を再実行すると同期を完了できる"
-    if any(marker in text for marker in _AUTH_FAILURE_MARKERS):
-        return (
-            "remoteの認証に失敗した",
-            f"`git -C {resolved} remote -v`で接続先を確認し、認証情報（SSH鍵または資格情報）を設定する。{retry}。"
-            "認証情報を設定できない場合はユーザーへ報告する",
-        )
-    if any(marker in text for marker in _NETWORK_FAILURE_MARKERS):
-        return (
-            "remoteへ接続できなかった",
-            recover_from_failure(
-                component="Gitの接続",
-                evidence="remoteの診断と設定",
-                first_step=f"ネットワーク接続と `git -C {resolved} remote -v` の接続先を確認し、誤設定なら認可内で直す",
-                retry="接続を回復し、先行操作の未適用を確認した場合だけ再実行する",
-            ),
-        )
-    if any(marker in text for marker in _NON_FAST_FORWARD_MARKERS):
-        return (
-            "upstreamにローカルへ無いcommitがある",
-            f"`git -C {resolved} status`と`git -C {resolved} log --left-right --oneline HEAD...@{{u}}`で差分を確認し、"
-            f"`atk wi commit`でロック下の取込と送信を行ってから失敗した`atk`操作を再実行する",
-        )
-    return (
-        "直前のgitの出力が失敗理由である。認証、ネットワーク接続、remoteの状態のいずれかを解消する",
-        f"確認: `git -C {resolved} status`\n{retry}",
-    )
-
-
-def _report_sync_failure(
-    private_notes: pathlib.Path,
-    operation: str,
-    error: subprocess.CalledProcessError,
-) -> None:
-    """pullまたはpush失敗後に原因別の確認と再実行の手順を表示する。"""
-    resolved = private_notes.resolve()
-    cause, next_action = _sync_failure_next_action(resolved, error)
-    _outcome.report_failure(f"private-notesの{operation}に失敗した: {resolved}。{cause}", next_action=next_action)
-
-
-def _report_sync_timeout(private_notes: pathlib.Path, operation: str, error: subprocess.TimeoutExpired) -> None:
-    """pullまたはpushのgitが時間切れになった場合に、同期の失敗として1本の失敗行を出力する。"""
-    if is_reported(error):
-        return
-    _outcome.report_failure(
-        f"private-notesの{operation}に失敗した: {private_notes.resolve()}。{git_timeout_reason(error)}",
-        next_action=GIT_TIMEOUT_NEXT_ACTION,
-    )
-    mark_reported(error)
-
-
 def push_pending_commits(
     private_notes: pathlib.Path,
     *,
@@ -763,7 +342,7 @@ def push_pending_commits(
     result_runner: _GitResultRunner = _run_git_result,
     redundant_divergence: _DivergenceRecovery | None = None,
 ) -> int | None:
-    _LOCK_HELD_PATHS.push_deferred.discard(private_notes.resolve())
+    _SYNC_ATTEMPT.push_deferred.discard(private_notes.resolve())
     try:
         return _push_pending_commits_impl(
             private_notes,
@@ -777,7 +356,7 @@ def push_pending_commits(
             mark_reported(error)
         raise
     except subprocess.TimeoutExpired as error:
-        _report_sync_timeout(private_notes, "push", error)
+        _diagnostics.report_sync_timeout(private_notes, "push", error)
         raise
 
 
@@ -797,7 +376,7 @@ def _push_pending_commits_impl(
         print(f"remoteへ送信して同期中: {private_notes}", file=sys.stderr, flush=True)
     original_error: subprocess.CalledProcessError
     count = pending_commit_count(private_notes, result_runner=result_runner)
-    _LOCK_HELD_PATHS.sync_attempted = True
+    _SYNC_ATTEMPT.sync_attempted = True
     try:
         run_git(["push"], private_notes, forward_error_output=False)
         return count
@@ -835,10 +414,10 @@ def _push_pending_commits_impl(
         count_text = "取得できない" if count is None else f"{count}件"
         _outcome.report_warning(
             f"{PUSH_DEFERRED_MESSAGE}。未push commit: {count_text}\n"
-            + _divergence_details(private_notes, result_runner=result_runner),
-            next_action=PUSH_DEFERRED_NEXT_ACTION.format(private_notes=private_notes),
+            + _diagnostics.divergence_details(private_notes, result_runner=result_runner),
+            next_action=_diagnostics.push_deferred_next_action(private_notes),
         )
-        _LOCK_HELD_PATHS.push_deferred.add(private_notes.resolve())
+        _SYNC_ATTEMPT.push_deferred.add(private_notes.resolve())
         return 0
 
     if _recover_redundant_divergence(
@@ -852,7 +431,7 @@ def _push_pending_commits_impl(
     try:
         run_git(["-c", "submodule.recurse=false", "rebase", "@{u}"], private_notes)
     except subprocess.CalledProcessError as error:
-        _report_rebase_failure(private_notes, result_runner=result_runner)
+        _diagnostics.report_rebase_failure(private_notes, result_runner=result_runner)
         mark_reported(error)
         raise
     count = pending_commit_count(private_notes, result_runner=result_runner)
@@ -947,7 +526,7 @@ def commit_and_push(
             return push_fn(private_notes)
         return 0
     run_git(["commit", "-m", message, "--", *stage_paths], private_notes)
-    _LOCK_HELD_PATHS.sync_attempted = True
+    _SYNC_ATTEMPT.sync_attempted = True
     if skip_push:
         return 0
     return push_fn(private_notes)
