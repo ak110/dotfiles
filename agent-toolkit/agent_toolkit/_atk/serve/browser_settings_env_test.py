@@ -17,6 +17,9 @@ pytestmark = [pytest.mark.browser]
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(
+    1.0, reason="共有envの伏せ字表示・保持・上書き・削除を実サーバーとブラウザーで確かめる（CIのCPU実測0.58秒）。"
+)
 async def test_shared_env_editor_masks_preserves_overwrites_and_deletes(screen_harness: _ScreenHarness, tmp_path, monkeypatch):
     monkeypatch.setattr(usage_refresh, "refresh", lambda **_kwargs: [])
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "shared"))

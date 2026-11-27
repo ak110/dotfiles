@@ -62,8 +62,9 @@ def test_passes_or_rejects_same_git_body_in_every_input(repo: pathlib.Path, kind
             file.write_text(message, encoding="utf-8")
             return _git(repo, "commit", "--allow-empty", "-F", str(file))
         return subprocess.run(
-            ["sh", "-c", 'assemble() { message=$1; git commit --allow-empty -m "$message"; }; assemble "$1"', "sh", message],
+            ["sh", "-c", 'assemble() { message=$1; git commit --allow-empty -m "$message"; }; assemble "$TEST_COMMIT_MESSAGE"'],
             cwd=repo,
+            env={**os.environ, "TEST_COMMIT_MESSAGE": message},
             capture_output=True,
             text=True,
             check=False,

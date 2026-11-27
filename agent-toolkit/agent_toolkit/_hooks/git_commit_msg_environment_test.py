@@ -24,6 +24,18 @@ pytestmark = [
 _SEARCH_KEYS = ("PYTHONPATH", "UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "PATH")
 
 
+def _without_msys_path_notation(values: dict[str, str | None]) -> dict[str, str | None]:
+    if os.name != "nt" or not values.get("PATH"):
+        return values
+    entries = []
+    for entry in str(values["PATH"]).split(os.pathsep):
+        normalized = os.path.normcase(os.path.normpath(entry)) if entry else ""
+        entries.append(
+            normalized.removesuffix("\\git\\bin") + "\\git\\usr\\bin" if normalized.endswith("\\git\\bin") else normalized
+        )
+    return {**values, "PATH": os.pathsep.join(entries)}
+
+
 @dataclasses.dataclass
 class HookEnvironment:
     repository: pathlib.Path
@@ -146,7 +158,8 @@ def test_fixed_hook_typechecks_working_source_and_preserves_caller_environment(
     result = run_git(case.repository, "commit", "--allow-empty", "-m", "検証", env=case.environment, check=False)
     assert result.returncode == 0, result.stderr
     assert git_output(case.repository, "show", "-s", "--format=%s") == "検証"
-    observed = json.loads((case.repository / "observed.json").read_text(encoding="utf-8"))
+    observed = _without_msys_path_notation(json.loads((case.repository / "observed.json").read_text(encoding="utf-8")))
+    case.expected = _without_msys_path_notation(case.expected)
     assert observed == case.expected, {
         key: (observed[key], value) for key, value in case.expected.items() if observed[key] != value
     }
