@@ -4,6 +4,8 @@ import asyncio
 import types
 from typing import Any
 
+from agent_toolkit._agents_server.claude_channels import ChildWriteResult
+from agent_toolkit._agents_server.claude_runtime import query_child_completion
 from agent_toolkit._agents_server.service_io import Resource, Runtime
 from agent_toolkit._agents_server.service_resources import sdk_event_codec
 from agent_toolkit._agents_server.session_errors import DelegateBackendError
@@ -92,7 +94,10 @@ class SdkResource:
                             continue
                         # SDKの既存control request接続を、同じ所有taskで使う。
                         target = raw._query if name == "_send_control_request" else raw  # pylint: disable=protected-access
-                        value = await getattr(target, name)(**arguments)
+                        if name == "query_child_completion":
+                            value = list(await query_child_completion(raw, arguments["prompt"]))
+                        else:
+                            value = await getattr(target, name)(**arguments)
                         if name == "connect":
                             reader = asyncio.create_task(read())
                             process = getattr(getattr(raw, "_transport", None), "_process", None)
@@ -113,6 +118,7 @@ class SdkResource:
             if name not in {
                 "connect",
                 "query",
+                "query_child_completion",
                 "interrupt",
                 "get_context_usage",
                 "reconnect_mcp_server",
@@ -150,6 +156,10 @@ class SdkResource:
 
     async def query(self, prompt: Any, session_id: str = "default") -> None:
         await self._call("query", prompt=prompt, session_id=session_id)
+
+    async def query_child_completion(self, prompt: str) -> ChildWriteResult:
+        outcome, cause = await self._call("query_child_completion", prompt=prompt)
+        return outcome, cause
 
     async def interrupt(self) -> None:
         await self._call("interrupt")

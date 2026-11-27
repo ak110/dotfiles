@@ -23,13 +23,19 @@ from agent_toolkit._agents_server import (
     wait_output_tracking,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
-from agent_toolkit._agents_server.claude_channels import _Command, _CommandChannel
+from agent_toolkit._agents_server.claude_channels import (
+    ChildCompletionDelivery,
+    _Command,
+    _CommandChannel,
+    child_delivery_error,
+)
 from agent_toolkit._agents_server.claude_diagnostics import _InitializationDiagnostic
 from agent_toolkit._agents_server.claude_messages import is_model_less_task_notification
 from agent_toolkit._agents_server.claude_plugins import ClaudePluginReloader
-from agent_toolkit._agents_server.claude_runtime import ClaudeRuntime
+from agent_toolkit._agents_server.claude_runtime import ClaudeRuntime, query_child_completion
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_prompts import plugin_resource_instructions
+from agent_toolkit._agents_server.service_claude_io import SdkResource
 from agent_toolkit._agents_server.state import SessionState, begin_reply
 from agent_toolkit._common.next_action import ActionableError
 
@@ -45,7 +51,14 @@ class ClaudeTurns(ClaudeRuntime):
             await channel.send("plugin_reload", "")
 
     @staticmethod
-    async def _query_with_resources(client: Any, options: Any, reloader: ClaudePluginReloader, cwd: str, body: str) -> None:
+    async def _query_with_resources(
+        client: Any,
+        options: Any,
+        reloader: ClaudePluginReloader,
+        cwd: str,
+        body: str,
+        child_delivery: ChildCompletionDelivery | None = None,
+    ) -> None:
         # serverの保持版とreloadする子の入力版は寿命が異なるため、最新の参照先を次の入力へ添える。
         root = reloader.resource_root or pathlib.Path(options.plugins[0]["path"])
         if root != plugin_roots.SERVER_PLUGIN_ROOT or reloader.updated:
@@ -60,7 +73,21 @@ class ClaudeTurns(ClaudeRuntime):
             )
             if not replaced:
                 body += "\n\n" + resources
-        await client.query(body)
+        if child_delivery is None:
+            await client.query(body)
+        else:
+            await ClaudeTurns._query_child_completion(client, body, child_delivery)
+
+    @staticmethod
+    async def _query_child_completion(client: Any, body: str, delivery: ChildCompletionDelivery) -> None:
+        delivery.outcome = "unconfirmed"
+        delivery.outcome, delivery.cause = (
+            await client.query_child_completion(body)
+            if isinstance(client, SdkResource)
+            else await query_child_completion(client, body)
+        )
+        if delivery.outcome != "sent":
+            raise RuntimeError("Claudeの子完了通知の書込みは確認されていません")
 
     @staticmethod
     async def _recover_mcp_connections(client: Any, initialization: dict[str, Any], session: SessionState) -> None:
@@ -73,8 +100,10 @@ class ClaudeTurns(ClaudeRuntime):
 
     async def _consume_result_message(self, session: SessionState, message: Any) -> None:
         if is_model_less_task_notification(message):
-            if resume_waits.is_background_completion_wait(session) and not resume_waits.has_pending_auto_resume_targets(
-                session
+            if (
+                resume_waits.is_background_completion_wait(session)
+                and not session.terminal_child_session_ids
+                and not resume_waits.has_pending_auto_resume_targets(session)
             ):
                 await self._finalize_pending_result(session)
             return
@@ -131,10 +160,10 @@ class ClaudeTurns(ClaudeRuntime):
         command: _Command,
         iterator: Any,
         *,
-        query: Callable[[str], Awaitable[None]] | None = None,
+        query: Callable[..., Awaitable[None]] | None = None,
         reloader: ClaudePluginReloader | None = None,
     ) -> Any:
-        command_kind, prompt, future = command
+        command_kind, prompt, future, child_delivery = command
         if command_kind == "plugin_reload":
             if not future.done():
                 future.set_result(("plugins_pending", None))
@@ -182,6 +211,10 @@ class ClaudeTurns(ClaudeRuntime):
                 if not future.done():
                     future.set_result(("effort_applied", None))
             return iterator
+        if child_delivery is not None and not child_delivery.accept(session):
+            if not future.done():
+                future.set_result(("reply_failed", None))
+            return iterator
         if reloader is not None:
             await reloader.reload_if_idle(client, session)
         held = resume_waits.HeldTurn.capture(session)
@@ -204,21 +237,41 @@ class ClaudeTurns(ClaudeRuntime):
                 else contextlib.nullcontext()
             )
             async with admission:
+                if child_delivery is not None and not child_delivery.available(session):
+                    if not future.done():
+                        future.set_result(("reply_failed", None))
+                    return iterator
                 if session.awaiting_auto_resume and not resume_waits.is_observation_preserving_reply(session):
                     await self._finalize_pending_result(session)
                     previous_result = session.previous_result()
                 if kind == "reply":
                     begin_reply(session, preserve_waits=held is not None)
-                await (query or client.query)(prompt)
-                session.record_turn_sent()
+                    if child_delivery is not None:
+                        child_delivery.reply_key = (session.turn_seq, session.started_at)
+                if child_delivery is None:
+                    await (query or client.query)(prompt)
+                elif query is None:
+                    await self._query_child_completion(client, prompt, child_delivery)
+                else:
+                    await query(prompt, child_delivery=child_delivery)
+                if child_delivery is None or child_delivery.consume(session):
+                    session.record_turn_sent()
         except service_turns.MoveRequired as error:
             if not future.done():
                 future.set_exception(error)
             return iterator
         except Exception as exc:
-            if held is not None:
-                held.restore(session)
-                if iterator is None:
+            if child_delivery is not None and child_delivery.outcome == "unconfirmed":
+                child_delivery.cause = child_delivery.cause or child_delivery_error(exc)
+                child_delivery.fail(session)
+                if not future.done():
+                    future.set_result(("reply_ambiguous", None))
+            elif held is not None:
+                if child_delivery is None or child_delivery.owns_reply(session):
+                    held.restore(session)
+                if child_delivery is not None and child_delivery.available(session):
+                    child_delivery.retry_or_fail(session)
+                if iterator is None and not session.terminal:
                     iterator = aiter(client.receive_messages())
                 if not future.done():
                     future.set_result(("reply_failed", None))

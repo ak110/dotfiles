@@ -13,6 +13,7 @@ from agent_toolkit._common import runtime_inserted, session_registry
 from agent_toolkit._common.output_policy import has_read_review_guidance, rules, was_review_guidance_presented
 
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終了を観測してから`send_message`を再送する"
+CLAUDE_CHILD_COMPLETION_DELIVERY_ERROR = "claude_child_completion_delivery"
 """turnが中断中または未終了のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
 
 
@@ -70,6 +71,8 @@ def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[
 
 
 def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
+    if action := child_completion_next_action(result):
+        return {**result, "next_action": action}
     if is_finalized_wait_statement(result):
         result = _without_review_receipt(result)
     guidance = result_guidance(result, label)
@@ -79,6 +82,17 @@ def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[s
     if documents:
         result["read_requirements"] = documents
     return result
+
+
+def child_completion_next_action(result: Mapping[str, Any]) -> str | None:
+    error = result.get("error")
+    if (
+        isinstance(error, dict)
+        and error.get("type") == CLAUDE_CHILD_COMPLETION_DELIVERY_ERROR
+        and isinstance(action := error.get("nextAction"), str)
+    ):
+        return action
+    return None
 
 
 def concise_review_receipt(result: dict[str, Any], recipient: str | None) -> dict[str, Any]:
@@ -278,7 +292,7 @@ def public_result(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
     if nonempty_error(payload.get("error")):
         result["error"] = refresh_error_diagnostics(payload["error"])
-    if is_finalized_wait_statement(result):
+    if is_finalized_wait_statement(result) or child_completion_next_action(result):
         return with_result_next_action(result, result.get("label"))
     return result
 

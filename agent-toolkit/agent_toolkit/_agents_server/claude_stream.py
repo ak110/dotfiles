@@ -24,7 +24,13 @@ from agent_toolkit._agents_server import (
     wait_output_tracking,
 )
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._agents_server.claude_channels import _Command, _CommandChannel, _ContextUsageObserver, _DeliveryResult
+from agent_toolkit._agents_server.claude_channels import (
+    ChildCompletionPrompt,
+    _Command,
+    _CommandChannel,
+    _ContextUsageObserver,
+    _DeliveryResult,
+)
 from agent_toolkit._agents_server.claude_diagnostics import _InitializationDiagnostic, _message_name, _owned_runtime_processes
 from agent_toolkit._agents_server.claude_messages import consume_assistant_message, recover_api_retry
 from agent_toolkit._agents_server.claude_plugins import ClaudePluginReloader
@@ -113,11 +119,22 @@ class ClaudeStream(ClaudeTurns):
         if isinstance(client, SdkResource) and client.transferred:
             return True
         if session is not None and resume_waits.is_background_completion_wait(session):
+            if session.terminal_child_session_ids:
+                return True
             await self._finalize_pending_result(session)
             await self._notify_waiters()
         elif session is None or not (session.awaiting_auto_resume or session.result_available):
             raise session_errors.DelegateBackendError("Claude Agent SDK message stream ended before ResultMessage") from None
         return False
+
+    async def _receive_idle(self, session: SessionState) -> None:
+        if (
+            resume_waits.is_background_completion_wait(session)
+            and not session.terminal_child_session_ids
+            and not resume_waits.has_pending_auto_resume_targets(session)
+        ):
+            await self._finalize_pending_result(session)
+            await self._notify_waiters()
 
     async def _run(
         self,
@@ -199,6 +216,8 @@ class ClaudeStream(ClaudeTurns):
             session.status = "starting" if expected_session_id is None else "running"
             if early_api_retry is not None:
                 await _apply_api_retry(session, early_api_retry, runtime_started_at)
+            if isinstance(prompt, ChildCompletionPrompt):
+                prompt.child_delivery.consume(session)
             session.touch()
             self._channels[session_id] = channel
             self._sdk_clients[session_id] = client
@@ -244,6 +263,8 @@ class ClaudeStream(ClaudeTurns):
                 assert current_task is not None
                 self._task_sessions[current_task] = session.session_id
                 initialized.set_result(session)
+            elif isinstance(prompt, ChildCompletionPrompt):
+                await prompt.deliver(functools.partial(query_with_resources, child_delivery=prompt.child_delivery))
             elif isinstance(prompt, ResumePrompt):
                 await prompt.deliver(query_with_resources)
             else:
@@ -392,14 +413,8 @@ class ClaudeStream(ClaudeTurns):
                                 ):
                                     session.set_background_deadline(None)
                                     await self._notify_waiters()
-                                if (
-                                    session is not None
-                                    and reported == "idle"
-                                    and resume_waits.is_background_completion_wait(session)
-                                    and not resume_waits.has_pending_auto_resume_targets(session)
-                                ):
-                                    (await self._finalize_pending_result(session))
-                                    await self._notify_waiters()
+                                if session is not None and reported == "idle":
+                                    await self._receive_idle(session)
                             elif name == "SystemMessage" and getattr(message, "subtype", None) == "api_retry":
                                 data = getattr(message, "data", {})
                                 if isinstance(data, dict):

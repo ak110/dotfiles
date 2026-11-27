@@ -2,15 +2,70 @@
 # pylint: disable=protected-access
 
 import asyncio
+from typing import Any
 
 import anyio
 import pytest
-from claude_agent_sdk import SystemMessage
+from anyio.abc import ByteSendStream
+from anyio.streams.text import TextSendStream
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, SystemMessage
+from claude_agent_sdk._internal.query import Query
+from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 
 from agent_toolkit._agents_server import service_rpc
 from agent_toolkit._agents_server.service_claude_io import SdkResource
 from agent_toolkit._agents_server.service_io import Runtime
 from agent_toolkit._agents_server.service_resources import ResourceBroker, sdk_event_codec
+
+
+@pytest.mark.asyncio
+async def test_child_completion_write_outcome_stays_with_shared_sdk_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    broker = ResourceBroker("G1")
+    writes: list[str] = []
+    owner: asyncio.Task[Any] | None = None
+    options = ClaudeAgentOptions(cli_path="synthetic-cli")
+    transport = SubprocessCLITransport(prompt="synthetic", options=options)
+
+    class Stdin(ByteSendStream):
+        async def send(self, item: bytes) -> None:
+            assert asyncio.current_task() is owner
+            data = item.decode()
+            writes.append(data)
+            if "ambiguous" in data:
+                raise OSError("合成の書込み異常")
+
+        async def aclose(self) -> None:
+            pass
+
+    class Raw(ClaudeSDKClient):
+        async def connect(self, prompt=None) -> None:
+            nonlocal owner
+            owner = asyncio.current_task()
+            self._transport = transport
+            self._query = Query(transport, is_streaming_mode=True)
+            transport._stdin_stream = TextSendStream(Stdin())
+
+    async def request(_origin, name, params):
+        return await getattr(broker, name)(**params)
+
+    monkeypatch.setattr(service_rpc, "request", request)
+    first = SdkResource.create(Runtime("G1", {"generation": "G1"}, broker), Raw, options)
+    await first.connect()
+    descriptor = await first.detach()
+    assert await first.resource.operation("transfer", expected_owner="G1", new_owner="G2")
+    client = SdkResource.attach(Runtime("G2", {"generation": "G2"}, ResourceBroker("G2")), descriptor)
+    try:
+        outcome, cause = await client.query_child_completion("not sent")
+        assert outcome == "not_sent" and cause and "CLIConnectionError" in cause
+        assert not writes
+        transport._ready = True
+        assert await client.query_child_completion("success") == ("sent", None)
+        outcome, cause = await client.query_child_completion("ambiguous")
+        assert outcome == "unconfirmed" and cause and "CLIConnectionError" in cause
+        assert len(writes) == 2
+        assert "success" in writes[0] and "ambiguous" in writes[1]
+    finally:
+        await client.disconnect()
 
 
 @pytest.mark.asyncio
