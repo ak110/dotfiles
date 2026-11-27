@@ -42,6 +42,7 @@ from agent_toolkit._common import (
 )
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt
+from agent_toolkit._common.next_action import with_next_action
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.service")
 _MESSAGE = TypeAdapter(JSONRPCMessage)
@@ -284,8 +285,20 @@ async def _rpc(
             result = coordinator.owns(arguments["parent"], arguments["session_id"])
         elif operation in {"public_call", "owned_call"} and isinstance(arguments, dict):
             caller = _caller(arguments["caller"], allow_detached=operation == "public_call")
-            if service_transport.namespace(caller).resolve() != coordinator.directory.resolve():
-                raise PermissionError("異なる管理領域への転送はできません")
+            caller_directory = service_transport.namespace(caller).resolve()
+            target_directory = coordinator.directory.resolve()
+            if caller_directory != target_directory:
+                raise PermissionError(
+                    with_next_action(
+                        "異なる管理領域への転送はできません。要求は未配送です。"
+                        f" 呼出元の管理領域: {caller_directory}。受信側の管理領域: {target_directory}。",
+                        next_action=(
+                            "統括と呼出元のMCPが使う配布版・状態ディレクトリ・隔離の設定を比べる。"
+                            "通常の運用では、統括が正式に反映した配布版と同じ管理領域へ再接続してから起動する。"
+                            "隔離実行の場合は、その領域で起動と転送を完結させる"
+                        ),
+                    )
+                )
             params = CallToolRequestParams.model_validate(arguments["params"])
             with runtime_environment.bind(caller):
                 if operation == "owned_call":

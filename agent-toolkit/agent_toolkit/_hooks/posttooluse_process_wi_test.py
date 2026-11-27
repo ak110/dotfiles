@@ -91,11 +91,16 @@ class TestExitSessionResetsProcessAwisFlag:
         [
             ("atk agents-exit-session 2>&1", True),
             ("atk agents-exit-session 2>/dev/null", True),
+            ("atk agents-exit-session --repo '/known worktree' 2>&1", True),
+            ("atk agents-exit-session --repo=/known-worktree", True),
+            ("atk agents-exit-session --repo", False),
+            ("atk agents-exit-session --repo=/known-worktree --after-completion", False),
             ("atk agents-exit-session --x", False),
         ],
     )
-    def test_redirection_does_not_count_as_argument(self, tmp_path: pathlib.Path, command: str, recorded: bool) -> None:
-        """リダイレクトだけを伴う起動は単独の起動として記録し、引数を伴う起動は記録しない。"""
+    def test_exit_recording_accepts_redirection_and_optional_repo(
+        self, tmp_path: pathlib.Path, command: str, recorded: bool
+    ) -> None:
         sid = "exit-redirect"
         _state_path(sid).write_text(json.dumps({"process_wi_skill_invoked": True}), encoding="utf-8")
         self._invoke(sid, tmp_path, command)

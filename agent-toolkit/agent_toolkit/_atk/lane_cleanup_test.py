@@ -21,14 +21,137 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import agents_exit_session, lane, lane_activity, managed_temp
+from agent_toolkit._common.delegated_session import OWNER_SESSION_ENV
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.lane_integration_support import _finalize_lane_for_cleanup, _legacy
 from agent_toolkit._testing.lane_support import _create, _create_in, _invoke, _selection
 
 
+def _published_main(repo: pathlib.Path) -> None:
+    git_repository.run_git(repo, "remote", "add", "origin", str(repo.parent / "remote.git"))
+    git_repository.run_git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git_repository.run_git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+
 @pytest.fixture(name="idle_lane")
 def _idle_lane(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(lane_activity, "process_activity", lambda _worktree: None)
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(4.0, reason="実Gitの候補の一覧から終了時の回収と保持までを確かめる。")
+def test_exit_removes_only_disposable_orphan_worktrees(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, _selected, _registered = _create(tmp_path, monkeypatch, capsys)
+    _published_main(repo)
+    (repo / "integrated-only.txt").write_text("記録された統合先だけへの取込み", encoding="utf-8")
+    git_repository.commit_all(repo, "対象系統へ取込み")
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv(OWNER_SESSION_ENV, raising=False)
+    deletable = repo.parent / "integrated"
+    retained = repo.parent / "with-local-work"
+    locked = repo.parent / "locked"
+    git_repository.run_git(repo, "worktree", "add", "-b", "orch/integrated", str(deletable))
+    git_repository.run_git(repo, "worktree", "add", "-b", "orch/dirty", str(retained))
+    git_repository.run_git(repo, "worktree", "add", "--lock", "-b", "orch/locked", str(locked))
+    (retained / "notes.txt").write_text("保存する未追跡ファイル", encoding="utf-8")
+    monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
+
+    code, listed, stderr = _invoke(capsys, "delete", "--list", "--repo", str(repo))
+    assert code == 0, stderr
+    paths = {item["worktree"]: item for item in listed["orphan_candidates"]}
+    assert paths[str(deletable.resolve())]["removable"]
+    assert paths[str(deletable.resolve())]["age_seconds"] >= 0
+    assert not paths[str(retained.resolve())]["removable"]
+    assert "未追跡" in paths[str(retained.resolve())]["reason"]
+    assert paths[str(retained.resolve())]["age_seconds"] >= 0
+    assert deletable.is_dir() and retained.is_dir()
+
+    with pytest.raises(SystemExit) as ended:
+        atk.main(["agents-exit-session"])
+    assert ended.value.code == 0
+    result = json.loads(capsys.readouterr().out)["lane_cleanup"]
+    assert not deletable.exists()
+    assert (retained / "notes.txt").is_file()
+    code, listed, stderr = _invoke(capsys, "delete", "--list", "--repo", str(repo))
+    assert code == 0, stderr
+    after = next(item["record"] for item in listed["results"] if item["record"]["result_path"] == result["result_path"])
+    kept = {item["worktree"]: item["reason"] for item in after["orphans"]["retained"]}
+    assert "未追跡" in kept[str(retained.resolve())]
+    assert "ロック" in kept[str(locked.resolve())] and locked.is_dir()
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(4.0, reason="実Gitのworktreeロックを公開CLIの一覧から確認する。")
+def test_list_orphans_retains_locked_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, _selected, _registered = _create(tmp_path, monkeypatch, capsys)
+    retained = repo.parent / "locked"
+    git_repository.run_git(repo, "worktree", "add", "--lock", "-b", "orch/locked", str(retained))
+
+    code, listed, stderr = _invoke(capsys, "delete", "--list", "--repo", str(repo))
+
+    assert code == 0, stderr
+    [item] = [item for item in listed["orphan_candidates"] if item["worktree"] == str(retained.resolve())]
+    assert not item["removable"]
+    assert "ロック" in item["reason"]
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(4.0, reason="実Gitと公開CLIで未取込みの差分を終了時に保持するか確かめる。")
+@pytest.mark.parametrize("case", ["registered", "detached-caller", "explicit", "explicit-wins", "conflicting", "unregistered"])
+def test_exit_uses_only_the_explicit_or_recorded_integration_target(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    repo, selected, _registered = _create(tmp_path, monkeypatch, capsys)
+    _published_main(repo)
+    feature = repo.parent / "feature"
+    retained = repo.parent / "not-integrated"
+    git_repository.run_git(repo, "worktree", "add", "-b", "feature", str(feature))
+    (feature / "feature.txt").write_text("未取込み", encoding="utf-8")
+    git_repository.commit_all(feature, "作業中の差分")
+    git_repository.run_git(repo, "worktree", "add", "-b", "orch/unmerged", str(retained), "feature")
+    git_repository.run_git(repo, "update-ref", "refs/remotes/origin/main", "refs/heads/feature")
+    if case == "detached-caller":
+        git_repository.run_git(feature, "checkout", "--detach")
+    elif case in {"conflicting", "explicit-wins"}:
+        code, _record, stderr = _invoke(
+            capsys,
+            "create",
+            "--repo",
+            str(repo),
+            "--base-branch",
+            "feature",
+            "--lane",
+            "lane-02",
+            "--selection-file",
+            str(selected),
+        )
+        assert code == 0, stderr
+    elif case in {"unregistered", "explicit"}:
+        monkeypatch.setenv(lane.SESSION_ENV, "session-without-lane-register")
+    monkeypatch.chdir(feature)
+    monkeypatch.delenv(OWNER_SESSION_ENV, raising=False)
+    monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
+
+    args = ["--repo", str(repo)] if case in {"explicit", "explicit-wins"} else []
+    with pytest.raises(SystemExit) as ended:
+        atk.main(["agents-exit-session", *args])
+
+    assert ended.value.code == 0
+    cleanup = json.loads(capsys.readouterr().out)["lane_cleanup"]
+    assert (retained / "feature.txt").read_text(encoding="utf-8") == "未取込み"
+    assert git_repository.git_output(repo, "rev-parse", "orch/unmerged") == git_repository.git_output(
+        repo, "rev-parse", "feature"
+    )
+    if case in {"registered", "detached-caller", "explicit", "explicit-wins"}:
+        assert "統合先へ含まれない" in cleanup["orphans"]["retained"][0]["reason"]
+    elif case == "conflicting":
+        assert "統合先が複数" in cleanup["orphan_cleanup_error"]
+    else:
+        assert "orphans" not in cleanup
 
 
 @pytest.mark.cpu_limit(

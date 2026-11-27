@@ -6,6 +6,7 @@ from __future__ import annotations
 # pylint: disable=protected-access
 import asyncio
 import dataclasses
+import json
 import pathlib
 
 import pytest
@@ -13,8 +14,10 @@ import pytest
 from agent_toolkit._agents_server import launch_requests, plugin_root, result_projection, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import review_table
 from agent_toolkit._common import codex_models, session_registry, state_paths, task_documents
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._testing import review_bodies
 from agent_toolkit._testing.agents_server_support import (
     BlockingContinuationClaudeClient,
     FailedResumeBackend,
@@ -476,3 +479,74 @@ async def test_send_message_includes_stopped_previous_result_regardless_of_deadl
         response = await manager.send_message(session.session_id, "再開")
 
         assert response["previous_result"]["agent_message"] == "直前結果"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("case", "rejected"),
+    [
+        ("plan", True),
+        ("plans", True),
+        ("ci", True),
+        ("old-round", False),
+        ("own-record", False),
+        ("other-track", False),
+        ("answered", False),
+        ("missing", False),
+        ("direct", False),
+    ],
+)
+async def test_rereview_delivery_waits_for_previous_findings(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str, rejected: bool
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    plan = tmp_path / "first plan.md"
+    second = tmp_path / "second plan.md"
+    role = launch_requests.resolve_task_document_path("exec-review")
+    plan.write_text("# 計画\n", encoding="utf-8")
+    second.write_text("# 計画\n", encoding="utf-8")
+    inputs = f"レビュー基準: 計画\n計画: {plan}"
+    table = plan.with_suffix(".exec-review.tsv")
+    if case == "plans":
+        inputs = f"レビュー基準: 計画\n計画: {json.dumps([str(plan), str(second)])}"
+    elif case in {"ci", "direct"}:
+        plans = tmp_path / ".claude" / "plans"
+        plans.mkdir(parents=True, exist_ok=True)
+        if case == "ci":
+            inputs = "レビュー基準: CI記録\nCI記録: 修正結果\n修正系列の開始時のHEAD: abc1234"
+            table = plans / "ci-abc1234.exec-review.tsv"
+        else:
+            inputs = "レビュー基準: WI\nWI記録: 20261127-120000-001.md\n開始時のHEAD: abc1234"
+            table = plans / "wi-abc1234-20261127-120000-001.exec-review.tsv"
+    if case != "missing":
+        review_table.init(table)
+        issue_round = "1" if case == "old-round" else "2"
+        track = "independent" if case == "other-track" else "exec-review"
+        location = "担当の記録: 受入結果" if case == "own-record" else "module.py:10"
+        review_table.add(table, issue_round, track, location, "指摘", "詳細" if case == "own-record" else "")
+        if case in {"answered", "old-round"}:
+            if case == "old-round":
+                review_table.add(table, "2", "exec-review", "module.py:11", "指摘")
+            review_table.respond(
+                table,
+                "2",
+                "exec-review",
+                "module.py:11" if case == "old-round" else location,
+                "指摘",
+                "",
+                review_bodies.reason_body("契約と一致する"),
+            )
+    prompt = f"`{role}`の手順を実行せよ\n入力:\n{inputs}\n"
+    async with _manager_with_fake("codex") as (manager, backend):
+        session = await backend.start(prompt, str(tmp_path), "direct", "high")
+        session.prompt = prompt
+        if rejected:
+            with pytest.raises(ActionableError, match="未応答") as error:
+                await manager.send_message(session.session_id, instruction="再レビューせよ", extra_params={"round": "3"})
+            assert "row-id 1" in error.value.message
+            assert "atk review-table" in error.value.message
+            assert backend.send_calls == 0
+        else:
+            await manager.send_message(session.session_id, instruction="再レビューせよ", extra_params={"round": "3"})
+            assert backend.send_calls == 1

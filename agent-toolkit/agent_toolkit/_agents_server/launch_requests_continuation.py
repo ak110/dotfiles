@@ -3,11 +3,13 @@ from __future__ import annotations
 import contextlib
 import json
 import pathlib
+import re
 from collections.abc import Mapping
 
 from agent_toolkit._agents_server.launch_requests_inputs import _PLUGIN_ROOT_VARIABLE, named_input_lines
-from agent_toolkit._common import task_documents
+from agent_toolkit._common import runtime_environment, task_documents
 from agent_toolkit._common.next_action import ActionableError
+lazy from agent_toolkit._atk import review_table
 
 _SUPPLEMENT_BOUNDARY = "\n\n## 補足\n\n"
 
@@ -159,5 +161,37 @@ def continuation_prompt(
                 f"パス入力{name}を受理できません: {value}",
                 next_action=f"{name}へ実在するファイルの絶対パスだけを渡す。空白を含むファイル名はそのまま指定する",
             )
+    if contract.instruction == "再レビューせよ" and documents[0].name == "exec-review.subagent.md":
+        _check_review_responses(launch_prompt, params["round"])
     body = "\n".join([contract.instruction, *named_input_lines(params)])
     return body if supplement is None else f"{body}{_SUPPLEMENT_BOUNDARY}{supplement}"
+
+
+def _check_review_responses(launch_prompt: str, round_input: str) -> None:
+    inputs = task_documents.task_prompt_inputs(launch_prompt)
+    if plan := inputs.get("計画"):
+        first = pathlib.Path(json.loads(plan)[0] if plan.lstrip().startswith("[") else plan)
+        if not first.is_absolute():
+            return
+        table = first.with_suffix(".exec-review.tsv")
+    elif inputs.get("CI記録"):
+        oid = inputs.get("修正系列の開始時のHEAD", "")
+        if not re.fullmatch("[0-9a-f]{7,64}", oid):
+            return
+        table = runtime_environment.home() / ".claude" / "plans" / f"ci-{oid}.exec-review.tsv"
+    else:
+        return
+    try:
+        table.stat()
+    except FileNotFoundError:
+        return
+    try:
+        round_value = int(round_input)
+        if round_value < 1:
+            raise ValueError
+    except ValueError as error:
+        raise ActionableError(
+            "roundは1以上の整数で指定する。再レビューは未配送",
+            next_action="今回のラウンド番号をroundに指定して再レビューを送り直す",
+        ) from error
+    review_table.require_recheck_responses(table, round_value)

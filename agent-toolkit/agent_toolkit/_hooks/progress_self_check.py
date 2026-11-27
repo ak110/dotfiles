@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import pathlib
 import time
 
 from agent_toolkit._common import process_loop_session
@@ -12,10 +13,12 @@ from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
 from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
+lazy from agent_toolkit._atk import lane_cleanup, lane_records
 
 SELF_CHECK_INTERVAL_SECONDS = 30 * 60
 STATE_KEY = "progress_self_check"
 SOURCE = "progress-self-check"
+_ORPHAN_KEEP_NOTICE_SECONDS = 24 * 60 * 60
 
 _llm_notice = _notice_formatter(SOURCE)
 
@@ -65,6 +68,46 @@ def _new_wi_text(session_id: str, recipient: str) -> tuple[str, str | None]:
     return text, snapshot
 
 
+def _orphan_worktree_notice(cwd: object, now: float) -> str:
+    if not isinstance(cwd, str) or not pathlib.Path(cwd).is_absolute():
+        return ""
+    try:
+        repo = lane_cleanup.repository_at(pathlib.Path(cwd))
+        if repo is None:
+            return ""
+        resources = lane_records.list_resources()
+        if resources["errors"]:
+            raise ValueError(resources["errors"][0]["reason"])
+        rows = lane_cleanup.classify_orphans(repo, resources["records"], caller=pathlib.Path(cwd), now=now)
+    except lane_records.record_errors() as error:
+        detail = " ".join(str(error).split())[:180]
+        return (
+            f"\n登録外worktreeの一覧を取得できない（{type(error).__name__}: {detail}）。"
+            "`atk lane delete --list --repo <統合先worktree>`で診断を確認する。"
+        )
+    removable = [row["worktree"] for row in rows if row["worktree"] and row["removable"]]
+    retained = [
+        f"{row['worktree']}（{' '.join(row['reason'].split())}）"
+        for row in rows
+        if row["worktree"]
+        and row["reason"]
+        and row["age_seconds"] is not None
+        and row["age_seconds"] > _ORPHAN_KEEP_NOTICE_SECONDS
+    ]
+    lines = []
+    if removable:
+        lines.append(
+            f"回収可能な登録外worktree {len(removable)}件: {'、'.join(removable)}。"
+            "`atk lane delete --repo <統合先worktree>`で回収する。"
+        )
+    if retained:
+        lines.append(
+            f"24時間を過ぎた保持候補 {len(retained)}件: {'、'.join(retained)}。"
+            "`process-wi-lane-resources.md`「レーンworktreeの扱い」手順2で理由と内容を調べ、回収か保持かを決める。"
+        )
+    return "".join(f"\n{line}" for line in lines)
+
+
 def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
@@ -104,14 +147,16 @@ def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: b
         else "初回観測の保存時刻が通知生成時刻より後にあるため、経過時間は不明。"
     )
     main_agent = is_main_agent_context(payload)
-    instruction = _SELF_CHECK_NOTICE_BODY if main_agent and not is_delegated(os.environ) else _DELEGATED_NOTICE_BODY
+    parent_notice = main_agent and not is_delegated(os.environ)
+    instruction = _SELF_CHECK_NOTICE_BODY if parent_notice else _DELEGATED_NOTICE_BODY
     previous_text = f"前回の通知から{_format_elapsed(since_notice)}たった。" if since_notice is not None else ""
     new_wis, wi_snapshot = (
         _new_wi_text(session_id, agent_id)
         if main_agent and process_loop_session.is_identified_process_loop_session(session_id, os.environ)
         else ("", None)
     )
-    text = _llm_notice(elapsed_text + previous_text + new_wis + instruction, tag="notice")
+    orphans = _orphan_worktree_notice(payload.get("cwd"), current_time) if parent_notice else ""
+    text = _llm_notice(elapsed_text + previous_text + new_wis + instruction + orphans, tag="notice")
     if text and wi_snapshot is not None:
         _notice.stage_new_wi_preview(text, session_id, agent_id, wi_snapshot)
     return text or None

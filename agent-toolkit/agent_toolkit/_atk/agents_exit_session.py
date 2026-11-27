@@ -16,7 +16,9 @@ lazy import psutil
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import process_identity
+from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._atk import lane as _lane
+lazy from agent_toolkit._atk import lane_cleanup, lane_records
 lazy from agent_toolkit._common import completion_exit, transcript
 
 _NO_VALUE = frozenset(
@@ -385,13 +387,36 @@ def request_termination(
     return "terminating", target
 
 
-def main() -> int:
+def main(repo: pathlib.Path | None = None) -> int:
     identifier = _lane.current_session_id()
+    orphan_target = None
+    orphan_error = None
+    if identifier is not None and not is_delegated(os.environ):
+        try:
+            orphan_target = lane_cleanup.exit_orphan_target(identifier, repo)
+        except lane_records.record_errors() as error:
+            orphan_error = str(error)
     cleanup = _lane.cleanup_session(identifier, wait_release=False)
+    if identifier is not None and orphan_target is not None:
+        try:
+            lane_cleanup.cleanup_exit_orphans(identifier, orphan_target, pathlib.Path.cwd(), cleanup)
+        except lane_records.record_errors() as error:
+            orphan_error = str(error)
+    if orphan_error is not None:
+        cleanup["orphan_cleanup_error"] = orphan_error
+        _outcome.report_warning(
+            f"終了時に登録外資源の回収を確認できない: {orphan_error}",
+            next_action="`atk lane delete --list --repo <統合先worktree>`で残る資源と理由を確認する",
+        )
     if cleanup["retained"]:
         _outcome.report_warning(
-            "終了時に回収できないレーン資源を保持した",
-            next_action=f"{cleanup.get('result_path')}の理由を解消し、同じ所有sessionでatk lane deleteを実行してください",
+            "終了時に回収できない登録済みレーン資源を保持した",
+            next_action=f"{cleanup.get('result_path')}の理由を解消し、`atk lane delete --session-id {identifier}`を実行する",
+        )
+    if cleanup.get("orphans", {}).get("retained"):
+        _outcome.report_warning(
+            "終了時に回収できない登録外資源を保持した",
+            next_action="`atk lane delete --list --repo <統合先worktree>`で保持理由と残る資源を確認する",
         )
 
     def _before_signal(target: Target) -> None:
@@ -494,8 +519,10 @@ def request_completion_exit() -> int:
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--after-completion", action="store_true", help="送達済みの完了報告と結び付けて自動終了を求める")
+    options = parser.add_mutually_exclusive_group()
+    options.add_argument("--after-completion", action="store_true", help="送達済みの完了報告と結び付けて自動終了を求める")
+    options.add_argument("--repo", type=pathlib.Path, help="登録外資源の回収基準となる、確認済みの統合先worktree")
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    return request_completion_exit() if args.after_completion else main()
+    return request_completion_exit() if args.after_completion else main(args.repo)

@@ -26,10 +26,10 @@ dotfiles固有の項目が生じた時点の配置先は`.claude/skills/develop-
 
 ## 担当間の知識境界
 
-all-reposのオーケストレーターは登録集合の取得、対象別所有、全体統括に加え、今回進められる負荷が最大の対象を直接担当する。
-重い残対象は個別に委譲し、直接担当の処理中も他対象の確認と結果を受領する。
-対象cwdの担当は取得済み候補を受領し、そのリポジトリのメインとして規範・選定・レーン・監査・公開を完遂する。
-レーン上限と選定YAML、候補・所有・writer・公開結果を対象別に保ち、直接担当も各対象の準備済みworktreeとプロジェクト規範を使用する。
+all-reposの統括は登録集合の取得、対象別の配分、選定結果・公開・CIの検収を担う。
+対象が1件なら直接処理し、複数なら対象ごとの処理をリポジトリ担当に委譲する。
+対象cwdの担当は取得済み候補を受領し、そのリポジトリのメインとして規範を適用し、選定・レーン・レビュー・統合を進めて統括へ返す。
+レーン上限と選定YAML、候補・所有・writer・公開結果を対象別に保ち、各担当は対象の準備済みworktreeとプロジェクト規範を使用する。
 まとめ担当は共通読込を再利用し、対象固有の規範と成果は合流させない。
 取得と開始条件の共有は[design-process-loop-ownership.md](design-process-loop-ownership.md)、実行契約は[`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`](../../agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos.md)に置く。
 

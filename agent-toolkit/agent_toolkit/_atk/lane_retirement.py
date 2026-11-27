@@ -6,6 +6,7 @@ from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._atk.managed_temp import paths as temp_paths
 from agent_toolkit._common import state_paths
 from agent_toolkit._git import command as git_command
+from agent_toolkit._git import worktrees as git_worktrees
 
 
 def prove(record: dict[str, typing.Any], repo: pathlib.Path) -> dict[str, str]:
@@ -115,8 +116,12 @@ def orphan_candidates(
     records = [item["record"] for item in registered if item["record"].get("common_dir") == common]
     owned_paths = {str(pathlib.Path(item["worktree"]).resolve()) for item in records}
     owned_branches = {item["branch"] for item in records}
-    trees = _lane_records.worktrees(repo)
-    main = _lane_records.main_worktree(repo)
+    entries = git_worktrees.list_worktrees(repo, timeout=_lane_records.TIMEOUT)
+    if entries[0].bare:
+        raise ValueError("repoが主作業ツリーを持たない")
+    trees = {str(entry.path.resolve()): entry.branch or "" for entry in entries}
+    locked = {str(entry.path.resolve()) for entry in entries if entry.locked}
+    main = entries[0].path.resolve()
     protected = integration_worktrees(common) | {str(main), str(repo.resolve())}
     if caller is not None:
         protected.update(path for path in trees if caller.resolve().is_relative_to(path))
@@ -136,6 +141,8 @@ def orphan_candidates(
         reason = None
         if path in protected or branch == "worktree-process-loop":
             reason = "主・呼出元・統合先のworktreeまたはbranchを回収しない"
+        elif path in locked:
+            reason = "Gitでロックされたworktreeは回収しない"
         elif path is not None and pathlib.Path(path) in nested_paths:
             reason = "別のworktreeを内包するため回収しない"
         elif f"refs/heads/{branch}" in symbolic:

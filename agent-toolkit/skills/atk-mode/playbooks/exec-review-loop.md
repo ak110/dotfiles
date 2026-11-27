@@ -108,6 +108,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    全指摘について本書「応答済みの判定」で未応答0件と、採用した修正の検証を確かめる。
    返却の種類、指摘数、修正commitの有無で再レビューの要否を決めない。
 5. レビュー担当が「要」とした範囲だけ、同じthreadへ`send_message`の`instruction: 再レビューせよ`、`round: <ラウンド番号>`、送信直前に固定した`対象HEAD: <完全OID>`を送る。
+   - 計画・CI記録の既存の表は、配送時にも直前の対象行に未応答がないことを確認する。
    - 方式の見直しで守る挙動と許容する挙動を決めた時は、起動側が管理表の応答を要求と認可に照らして確かめ、`review_contract`へ反映する。
    - 開始時からの累積差分に別の計画の認可commitがあれば、判定対象外commitを最新のOIDへ更新する。
    - 契約を更新する時は`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」に従い、初回の条項を保つ。
