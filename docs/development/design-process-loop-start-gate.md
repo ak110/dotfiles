@@ -1,5 +1,8 @@
 # 開始前の活動猶予とUWI回答待ちの設計記録
 
+commit `dfe757772`（2026年11月22日）で撤去した設計の経緯である。
+現行の開始判断は`agent-toolkit/skills/atk-mode/playbooks/process-loop.md`が定める。
+
 [設計記録の索引](design.md)
 
 ## 開始前の活動猶予とUWI回答待ち

@@ -115,6 +115,7 @@ rebaseやmergeの後は、競合の有無によらず次の順で確かめる。
    - `setup_codex_links`で、Codex向けのdotfiles固有のスキルと`docs`へのシンボリックリンクを作る。
    - Codexのmarketplaceを登録し、プラグインの導入と更新を終える。
 2. Claude Codeを再起動するか、`/reload-plugins`を実行する。
+   巡回の統括は再起動せず、`agent-toolkit:atk-mode/playbooks/process-loop.md`「巡回する」の手順5の反映を使う。
    対話のメインは、`mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes`の`targets`へ`plugins`、`agents_server`、`pyfltr`から必要な対象を指定して反映を予約できる。
    予約した後は今のターンを終え、プラグインの再読み込みとMCPの再接続の結果を確かめる。
    再起動と反映の受付を完了と扱わず、確かめていない操作を自動で繰り返さない。
