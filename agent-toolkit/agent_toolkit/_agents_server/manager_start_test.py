@@ -183,7 +183,7 @@ async def test_start_rejects_unusable_model_type_with_accepted_format(
 
 
 @pytest.mark.asyncio
-async def test_start_reports_retry_in_same_phase_when_every_candidate_fails(
+async def test_start_reports_diagnostics_when_every_candidate_failure_is_unknown(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
@@ -200,8 +200,10 @@ async def test_start_reports_retry_in_same_phase_when_every_candidate_fails(
             await manager.start("plan", "調査", str(tmp_path))
 
         next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
-        assert "同じ工程名で再試行" in next_action
+        assert "起動診断を確認" in next_action
         assert "`excluded`" in next_action
+        assert all(f"agy:{model}/high" in next_action for model in ("first", "second"))
+        assert "待" not in next_action
 
 
 @pytest.mark.asyncio

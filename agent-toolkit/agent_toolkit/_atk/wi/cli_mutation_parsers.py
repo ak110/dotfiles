@@ -291,7 +291,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     reject.add_argument(
         "--skip-push",
         action="store_true",
-        help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
+        help="管理リポジトリへのpushを省略する（担当の確認が不要な連続操作の中間だけ）。共有先がある担当付きの項目をエージェントが終了する場合は指定できない。",
     )
     reject.add_argument(
         "--if-inbox",

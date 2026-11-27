@@ -370,6 +370,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
         excluded_session_ids: dict[ModelCandidate, str] = {}
+        candidate_actions: dict[ModelCandidate, str] = {}
         display_label = label if label is not None else launch_kind
         parent_model = await run_file_operation(self.launcher_model) if launch_kind == "delegate" else None
         for candidate_index, candidate in enumerate(candidates):
@@ -423,8 +424,12 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             except backends.StartCandidateUnavailable as exc:
                 if exc.scope == "launch_engine":
                     excluded.update({item: exc.reason for item in candidates if item[0] == engine})
+                    if exc.next_action:
+                        candidate_actions.update({item: exc.next_action for item in candidates if item[0] == engine})
                 else:
                     excluded[candidate] = exc.reason
+                    if exc.next_action:
+                        candidate_actions[candidate] = exc.next_action
                     await run_file_operation(
                         unavailable_candidates.record_unavailable_candidate,
                         model_type,
@@ -448,6 +453,8 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                     raise
                 reason = str(exc) or type(exc).__name__
                 excluded[candidate] = reason
+                if isinstance(exc, ActionableError):
+                    candidate_actions[candidate] = exc.next_action
                 unavailable_response = None
                 unavailable_session = None
                 _LOG.warning("cli_start_failed engine=%s model_type=%s model=%s reason=%s", engine, model_type, model, reason)
@@ -549,9 +556,13 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         raise ActionableRuntimeError(
             "no available model candidates: "
             f"{model_type}; excluded={excluded_candidate_payload(excluded, excluded_session_ids)}",
-            next_action=(
-                "時間をおき、同じ工程名で再試行する。"
-                "除外した候補は`excluded`の理由（CLIの導入・認証・利用上限など）を解消すると再び使える"
+            next_action="\n".join(
+                f"{engine}:{model}/{effort}: "
+                + candidate_actions.get(
+                    (engine, model, effort),
+                    "`excluded`の除外理由と候補の起動診断を確認し、原因を解消して同じ工程名で起動し直す",
+                )
+                for engine, model, effort in sorted(excluded)
             ),
         )
 

@@ -22,7 +22,7 @@ from agent_toolkit._agents_server.launch_prompts import (
     launch_prompt,
     python_runtime_instructions,
 )
-from agent_toolkit._agents_server.session_errors import DelegateBackendError, SessionOwnerGoneError
+from agent_toolkit._agents_server.session_errors import ActionableRuntimeError, SessionOwnerGoneError
 from agent_toolkit._agents_server.state import LaunchKind, SessionState
 from agent_toolkit._common import antigravity_cli, host_homes, process_tree
 from agent_toolkit._common.antigravity_cli import build_command
@@ -35,18 +35,33 @@ _MINIMUM_GEMINI_VERSION = (1, 5, 13)
 def _gemini_delegation_binary(environment: dict[str, str]) -> str:
     home = pathlib.Path(environment.get("USERPROFILE" if os.name == "nt" else "HOME", ""))
     if not home.is_absolute():
-        raise DelegateBackendError("agy委譲に使うホームディレクトリを確認できません")
+        raise ActionableRuntimeError(
+            "agy委譲に使うホームディレクトリを確認できません",
+            next_action="起動元のHOME（WindowsではUSERPROFILE）を実在するホームの絶対パスに直す",
+        )
     try:
         settings = json.loads((home / ".gemini" / "antigravity-cli" / "settings.json").read_text(encoding="utf-8"))
     except OSError, ValueError:
         settings = None
     if not isinstance(settings, dict) or settings.get("modelProvider") != "gemini":
-        raise DelegateBackendError("agy委譲にはGemini APIキー方式の明示選択が必要です")
+        raise ActionableRuntimeError(
+            "agy委譲にはGemini APIキー方式の明示選択が必要です",
+            next_action=(
+                "ユーザーがGemini APIキー方式を選ぶ場合は、"
+                '`~/.gemini/antigravity-cli/settings.json`で`"modelProvider": "gemini"`を明示選択する。'
+                "認証方式を自動で変更せず、個人ログインで代替しない"
+            ),
+        )
     if not environment.get("GEMINI_API_KEY", "").strip():
-        raise DelegateBackendError("agy委譲にGEMINI_API_KEYが設定されていません")
+        raise ActionableRuntimeError(
+            "agy委譲にGEMINI_API_KEYが設定されていません",
+            next_action="ユーザーが起動元へGEMINI_API_KEYを設定する。キーの値を引数やログへ出さない",
+        )
     executable = shutil.which("agy", path=environment.get("PATH", ""))
     if executable is None:
-        raise DelegateBackendError("agyが見つかりません")
+        raise ActionableRuntimeError(
+            "agyが見つかりません", next_action="Gemini APIキー方式に対応するagyを導入し、起動元のPATHへ加える"
+        )
     # 認証やモデル呼び出しを行わない版数照会に、APIキーを渡さない。
     probe_env = {key: value for key, value in environment.items() if key != "GEMINI_API_KEY"}
     try:
@@ -60,9 +75,14 @@ def _gemini_delegation_binary(environment: dict[str, str]) -> str:
             check=True,
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError) as error:
-        raise DelegateBackendError("agyの版を確認できません") from error
+        raise ActionableRuntimeError(
+            "agyの版を確認できません", next_action="起動元で`agy --version`の診断を確認し、CLIの導入状態を直す"
+        ) from error
     if not re.fullmatch(r"\d+\.\d+\.\d+", version) or tuple(map(int, version.split("."))) < _MINIMUM_GEMINI_VERSION:
-        raise DelegateBackendError("agyをGemini APIキー方式を固定できる版へ更新してください")
+        raise ActionableRuntimeError(
+            "agyをGemini APIキー方式を固定できる版へ更新してください",
+            next_action="agyを1.5.13以降へ更新し、起動元で`agy --version`を確認する",
+        )
     return executable
 
 
