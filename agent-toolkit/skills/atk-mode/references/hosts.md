@@ -19,7 +19,7 @@ agent-toolkitを配布する4つのホストで、手順書が分岐に使う差
 | 構造化質問 | `AskUserQuestion`（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`） | `request_user_input`（Plan mode）、`request_user_input_async`（`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」） | `agent-toolkit:atk-mode/references/choice-construction.md`「質問の形式」の固定形式 | 同左 |
 | バックグラウンド実行と待機 | `Bash`のバックグラウンド実行と完了通知、`atk agents wait`（`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「待機中の定期再確認と背景転換」） | `functions.exec`と`functions.wait`・`write_stdin`の二層（`agent-toolkit:atk-mode/playbooks/host-codex.md`「agents_serverの二層待機」） | `atk agents wait`のフォアグラウンド回収 | 同左 |
 | MCPツールの呼び方 | ツールとして直接呼ぶ | `functions.exec`の中から`tools.mcp__<サーバー名>__<ツール名>(...)`で呼ぶ（`agent-toolkit:atk-mode/playbooks/host-codex.md`「Codex固有の入出力」） | ツールとして直接呼ぶ（`agents_server`と`pyfltr`だけを登録） | 登録しない |
-| hook | 有り | 有り（定義の変更後は`/hooks`で信頼し直すまで動かない） | 有り（6イベント） | 無し |
+| hook | 有り | 有り。正規配布で信頼登録済みなら手動操作は不要。未信頼・変更済みが残る場合だけ、配布処理の診断に従い`/hooks`で確認する | 有り（6イベント） | 無し |
 | 自身の会話の記録 | SessionStartが通知するtranscriptの絶対パス（`agent-toolkit:atk-mode/references/session-records.md`） | `CODEX_THREAD_ID`（同） | `agents_server`が起動した会話だけ`atk agents logs <session_id>`（同） | `ses_`で始まるセッションID（同） |
 
 ## 確かめていない範囲

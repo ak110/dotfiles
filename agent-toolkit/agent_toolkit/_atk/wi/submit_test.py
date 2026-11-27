@@ -428,7 +428,14 @@ def test_spawn_failure_is_durable_and_report_sync_recovers_without_model(notes, 
     assert len(list(layout.iter_entry_paths(notes))) == 1
     assert submit.worker(target) == 0
     assert submit.show("request-1")["run"]["report_synced"]
-    assert len(list(layout.iter_entry_paths(notes))) == 1
+    recoveries = [p for p in layout.iter_entry_paths(notes) if "type: awi" in p.read_text(encoding="utf-8")]
+    assert len(recoveries) == 1
+    assert layout.entry_state_of(recoveries[0]) == "inbox"
+    body = recoveries[0].read_text(encoding="utf-8")
+    assert "atk wi submit --show request-1" in body
+    assert "atk wi submit --resume request-1" in body
+    assert original_run in body
+    assert len(list(layout.iter_entry_paths(notes))) == 2
 
 
 @pytest.mark.cpu_limit(
@@ -455,7 +462,7 @@ def test_report_git_timeout_is_unreported_and_resumes_same_report(notes, monkeyp
     after = submit.show("request-1")["run"]
     assert after["run_id"] == run_id
     assert after["report_synced"]
-    assert len(list(layout.iter_entry_paths(notes))) == 1
+    assert len(list(layout.iter_entry_paths(notes))) == 2
 
 
 @pytest.mark.parametrize(
@@ -704,7 +711,7 @@ def test_disappeared_supervisor_is_reobserved_without_resubmission(notes, monkey
     assert observed["run"]["status"] == "failed"
     assert "監督消失" in observed["run"]["failure"]
     assert observed["run"]["report_synced"]
-    assert len(list(layout.iter_entry_paths(notes))) == 1
+    assert sorted(layout.entry_state_of(entry) for entry in layout.iter_entry_paths(notes)) == ["adopted", "inbox"]
 
 
 @pytest.mark.usefixtures("notes")

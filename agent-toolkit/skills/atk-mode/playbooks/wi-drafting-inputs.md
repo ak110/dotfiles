@@ -7,7 +7,7 @@ WIの起草で、投入条件、原要求と観測、原稿の内容を確かめ
 
 AWIは後続の`process-wi`の担当への作業依頼、UWIはユーザーへの判断・資料・操作・報告内容の確認の依頼である（UWIの承認型は`agent-toolkit:atk-mode/references/uwi-format.md`「承認型ごとの内容」）。
 別項目の完了待ちと時間経過待ちはUWIにせず、依存と冷却時間で表す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」）。
-投入した要求は次回以降の`process-wi`が処理し、投入元のセッションの処理対象とは分ける。
+投入した要求は巡回の選定（常駐では次の選定か30分点検）が処理し、投入元のセッションの処理対象とは分ける。
 例外は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」の作業である。
 `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で今回の追加とした正式改善AWIも例外とする。
 現在の依頼と承認の範囲で必要な是正（今回の作業が入れた欠陥と、完成に必要な追随修正を含む）はそのセッションで終え、後続の独立した作業要求だけをWIにする。

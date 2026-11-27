@@ -119,7 +119,9 @@ Codexで元担当（同じ作業のために起動済みの委譲先）を扱う
    前任のモデル上書きの根拠が後任にも適用される場合に限り、上書きの区分と根拠も指定する。
    実行レビューでは`agent-toolkit:atk-mode/references/exec-review-launch-handover.md`の入力（`レビュー種別: 引き継ぎ再レビュー`、`前回確認版`、`round`、作り直した`review_contract`）を渡す。
    他のレビューの役割では、その役割の`<役割名>.parent.md`が定める引き継ぎ再レビューの入力を渡す。
-   レビュー指摘管理表とレビュー対象のHEADは担当が自分で解決するので渡さない（役割文書が宣言していない入力は`start`が拒否する）。
+   レビュー指摘管理表は担当が自分で解決するので渡さない。
+   実行レビューの`対象HEAD`には、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「起動」で固定した完全OIDを渡す。
+   他の役割には、その起動契約が宣言する入力だけを渡す。
    ラウンド番号は`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「ラウンド番号の保持先」に従い、管理表の最大値から続ける。
    新しい担当は、解消済みの指摘を調べ直さず、未解消の行とそのラウンドの確認範囲だけを扱う。
 

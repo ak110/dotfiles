@@ -183,7 +183,7 @@ SessionStartで起動だけを通知されたCodexは`atk-mode`の`SKILL.md`とC
 | `Skill` | descriptionか明示の起動指定で選び、`SKILL.md`を全文読む。出力を隔離する時は`agents_server`を使う |
 | `Read`・`Write`・`Edit`、`Bash`・`Grep`・`Glob`、`WebFetch`・`WebSearch` | Codexのネイティブの編集機能（`apply_patch`など）、`exec_command`のシェル、CodexのWeb機能 |
 | `EnterPlanMode`・`ExitPlanMode` | `agent-toolkit:atk-mode/playbooks/write-plan.md`の手順 |
-| `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 公開機能が無ければ、手動の運用かユーザーへの依頼へ切り替える |
+| `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 公開機能が無ければ、同じターンでの回収で待つ |
 
 組み込みの委譲は、起動に`spawn_agent`、稼働中への入力の追加に`send_message`、待機中か終了後の継続に`followup_task`、終了待ちに`wait_agent`、自分が起動したエージェントの中断に`interrupt_agent`を使う。
 forkは`fork_turns`を省略するか`"all"`にし、全履歴を渡す起動は親のモデルとreasoning effortを継ぐ（上書きの指定は受け付けられない）。
