@@ -35,7 +35,6 @@ from agent_toolkit._hooks import timing
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._common import completion_exit, function_hook_requests
 lazy from agent_toolkit._common import delegated_session as _delegated_session
-lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.function_hook_requests import cleanup, enqueue
 lazy from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, opening_tag
 lazy from agent_toolkit._common.periodic_recheck import (
@@ -52,6 +51,7 @@ lazy from agent_toolkit._hooks.background_tasks_notifications import queued_task
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+lazy from agent_toolkit._hooks.transcript_scan import read_stop_entries, read_stop_transcript, stop_transcript_scope
 lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt
 
 CHECK_MODULE_NAMES = (
@@ -113,12 +113,14 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
         transcript = payload.get("transcript_path")
         if not may_collect or not isinstance(transcript, str) or not transcript:
             return
-        lines = _transcript.read_transcript_lines(transcript)
-        if not lines or not any(line.strip() for line in lines):
+        snapshot = read_stop_transcript(transcript)
+        if snapshot is None:
             return
-        for line in lines:
-            if line.strip() and not isinstance(json.loads(line), dict):
+        for position, line in enumerate(snapshot.lines):
+            if position not in snapshot.entries_by_line and line.strip() and not isinstance(json.loads(line), dict):
                 return
+        if not snapshot.entries_by_line:
+            return
         status = pending_async_status(
             transcript,
             session_id,
@@ -148,7 +150,7 @@ def _completion_verdict(session_id: str, payload: dict, *, allowed: bool) -> Non
             allowed
             and state.get("status") == "requested"
             and isinstance(source, str)
-            and state.get("call") in completion_exit.current_reports(_transcript.read_transcript_entries(source))
+            and state.get("call") in completion_exit.current_reports(read_stop_entries(source))
             and pending_async_status(
                 source, session_id, background_tasks=payload.get("background_tasks"), session_state=read_state(session_id)
             )
@@ -262,6 +264,11 @@ def evaluate(payload_text: str) -> dict[str, object]:
     payload: dict = {}
     if resolved is not None:
         session_id, payload = resolved
+    with stop_transcript_scope(payload.get("transcript_path")):
+        return _evaluate(payload_text, session_id, payload, stages)
+
+
+def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.Stages) -> dict[str, object]:
     with stages.measure("recheck_reset"):
         _write_recheck_verdict(session_id, payload, may_collect=False)
 

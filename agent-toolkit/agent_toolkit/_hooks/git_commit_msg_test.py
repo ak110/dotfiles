@@ -117,6 +117,85 @@ def test_existing_commit_msg_invalid_rewrite_is_rejected(repo: pathlib.Path) -> 
     assert _git(repo, "rev-parse", "HEAD").stdout == head
 
 
+@pytest.mark.usefixtures("repo")
+@pytest.mark.parametrize("configured", ["absent", "template", "relative", "command", "reject", "unresolved"])
+def test_reference_transaction_initialization_keeps_existing_hook(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, configured: str
+) -> None:
+    wrapper_dir = pathlib.Path(os.environ[commit_hook_environment.HOOKS_ENV])
+    original_wrapper = (wrapper_dir / "commit-msg").read_text(encoding="utf-8")
+    wrapper = original_wrapper.replace(' commit-msg "$PWD"', ' reference-transaction "$PWD"')
+    target = wrapper_dir / "reference-transaction"
+    target.write_text(wrapper, encoding="utf-8")
+    target.chmod(0o755)
+    template = tmp_path / "template"
+    template.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    log_dir = project / "recorded"
+    log_dir.mkdir()
+    monkeypatch.setenv("TEST_REF_LOG", log_dir.as_posix())
+
+    hook = None
+    if configured not in {"absent", "unresolved"}:
+        hook_dir = template / "hooks" if configured == "template" else project / "previous hooks"
+        hook_dir.mkdir()
+        if configured == "command":
+            previous = commit_hook_environment.config_parameter(hook_dir)
+            monkeypatch.setenv("GIT_CONFIG_PARAMETERS", f"{previous} {os.environ['GIT_CONFIG_PARAMETERS']}")
+            (template / "config").write_text("[core]\n\thooksPath = missing\n", encoding="utf-8")
+        elif configured != "template":
+            (template / "config").write_text('[core]\n\thooksPath = "previous hooks"\n', encoding="utf-8")
+        hook = hook_dir / "reference-transaction"
+        hook.write_text(
+            '#!/bin/sh\n(pwd -W 2>/dev/null || pwd) >> "$TEST_REF_LOG/$1"\ncat >> "$TEST_REF_LOG/$1"\n'
+            + ('[ "$1" != prepared ]\n' if configured == "reject" else ""),
+            encoding="utf-8",
+        )
+        hook.chmod(0o755)
+    if configured == "unresolved":
+        (template / "config").write_text('[includeIf "gitdir:**"]\n\tpath = extra-config\n', encoding="utf-8")
+    process = _git(project, "init", "--initial-branch=example", f"--template={template}")
+    head = project / ".git" / "HEAD"
+    if configured == "unresolved":
+        assert process.returncode != 0
+        assert "既存hookの配置先を確定できない" in process.stderr
+        assert "includeIf" in process.stderr
+        assert "commitだけを再実行" not in process.stderr
+        assert not head.exists()
+        return
+    if configured == "reject":
+        assert process.returncode != 0
+        assert not head.exists()
+        assert (log_dir / "prepared").exists()
+        assert not (log_dir / "committed").exists()
+        return
+    assert process.returncode == 0, process.stderr
+    assert head.read_text(encoding="ascii").strip() == "ref: refs/heads/example"
+    if hook is not None:
+        for phase in ("prepared", "committed"):
+            location, update = (log_dir / phase).read_text(encoding="utf-8").splitlines()
+            assert pathlib.Path(location) == project
+            assert update.split()[-2:] == ["ref:refs/heads/example", "HEAD"]
+        committed = _git(project, "symbolic-ref", "HEAD", "refs/heads/updated")
+        assert committed.returncode == 0, committed.stderr
+        assert head.read_text(encoding="ascii").strip() == "ref: refs/heads/updated"
+        active_hook = project / ".git" / "hooks" / hook.name if configured == "template" else hook
+        active_hook.write_text('#!/bin/sh\n[ "$1" != prepared ]\n', encoding="utf-8")
+        rejected = _git(project, "symbolic-ref", "HEAD", "refs/heads/rejected")
+        assert rejected.returncode != 0
+        assert head.read_text(encoding="ascii").strip() == "ref: refs/heads/updated"
+
+
+def test_commit_msg_launch_error_keeps_commit_specific_guidance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["git_commit_msg", str(tmp_path), "commit-msg", str(tmp_path / "missing")])
+
+    assert git_commit_msg.main() == 1
+    assert "commitだけを再実行してください" in capsys.readouterr().err
+
+
 def test_default_comment_cleanup_and_verbatim_limitation(repo: pathlib.Path) -> None:
     assert _git(repo, "config", "core.commentChar", ";").returncode == 0
     body = f"{_GOOD}\n; 20261126-123456-001.md"

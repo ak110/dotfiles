@@ -1,6 +1,7 @@
 import contextlib
 import ctypes
 import ctypes.wintypes
+import errno
 import os
 import sys
 from collections.abc import Generator
@@ -16,8 +17,17 @@ def lock(environment: Path, *, exclusive: bool = False) -> Generator[BinaryIO]:
     POSIXのexecではハンドルを継承して、Pythonの置換後も使用中保護を保つ。
     """
     path = environment.with_name(environment.name + ".usage-lock")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+b") as handle:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a+b")
+    except OSError as error:
+        if exclusive or error.errno not in {errno.EACCES, errno.EPERM, errno.EROFS}:
+            raise
+        try:
+            handle = path.open("rb")
+        except FileNotFoundError:
+            raise error from None
+    with handle:
         if os.name == "nt":
             _windows_lock(handle, exclusive=exclusive)
         else:

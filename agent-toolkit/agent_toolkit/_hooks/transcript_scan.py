@@ -4,6 +4,10 @@
 Stop時の書き込み完了の待機、走査範囲（sidechainの扱い）とtool_use・tool_resultの取り出しを担う。
 """
 
+import contextlib
+import contextvars
+import dataclasses
+import functools
 import json
 lazy import collections.abc
 lazy import os
@@ -20,6 +24,40 @@ _TRANSCRIPT_ENTRIES_CACHE: dict[str, list[dict]] = {}
 _TAIL_BYTES = 65536
 
 
+@dataclasses.dataclass
+class _StopTranscript:
+    path: str
+
+    @functools.cached_property
+    def snapshot(self) -> _transcript.TranscriptSnapshot | None:
+        wait_for_end_turn(self.path)
+        return _transcript.read_transcript_snapshot(self.path)
+
+
+_STOP_TRANSCRIPT: contextvars.ContextVar[_StopTranscript | None] = contextvars.ContextVar("stop_transcript", default=None)
+
+
+@contextlib.contextmanager
+def stop_transcript_scope(path: object) -> collections.abc.Generator[None]:
+    token = _STOP_TRANSCRIPT.set(_StopTranscript(path) if isinstance(path, str) and path else None)
+    try:
+        yield
+    finally:
+        _STOP_TRANSCRIPT.reset(token)
+
+
+def read_stop_transcript(path: str) -> _transcript.TranscriptSnapshot | None:
+    scope = _STOP_TRANSCRIPT.get()
+    if scope is not None and scope.path == path:
+        return scope.snapshot
+    return _transcript.read_transcript_snapshot(path)
+
+
+def read_stop_entries(path: str) -> list[dict]:
+    snapshot = read_stop_transcript(path)
+    return [] if snapshot is None else list(snapshot.entries_by_line.values())
+
+
 def read_transcript_entries_cached(transcript_path: str) -> list[dict]:
     """transcriptのフラッシュ待機と解析を同一プロセス内で1回に集約して返す。  pyfltr: allow-comment
 
@@ -29,6 +67,9 @@ def read_transcript_entries_cached(transcript_path: str) -> list[dict]:
     同一`transcript_path`への2回目以降の呼び出しは、直前の解析結果をそのまま返す。
     `transcript_path`が変わった場合はキャッシュを入れ替える。
     """
+    scope = _STOP_TRANSCRIPT.get()
+    if scope is not None and scope.path == transcript_path:
+        return read_stop_entries(transcript_path)
     if transcript_path in _TRANSCRIPT_ENTRIES_CACHE:
         return _TRANSCRIPT_ENTRIES_CACHE[transcript_path]
     wait_for_end_turn(transcript_path)
