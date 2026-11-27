@@ -111,13 +111,13 @@ def main() -> int:
 
             caller_environment = commit_hook_environment.atk_environment(options.arguments, caller_environment)
         interpreter = Path(sys.executable).resolve().parent
-        injected = {interpreter, interpreter / "Scripts"}
         path = caller_environment.get("PATH", "").split(os.pathsep)
-        start = 0
-        while start < len(path) and path[start] and Path(path[start]).resolve() in injected:
-            start += 1
-        if start:
-            caller_environment["PATH"] = os.pathsep.join(path[start:])
+        for injected in ([interpreter / "Scripts", interpreter], [interpreter]) if os.name == "nt" else ([interpreter],):
+            if len(path) > len(injected) and all(
+                entry and Path(entry).resolve() == expected for entry, expected in zip(path, injected, strict=False)
+            ):
+                caller_environment["PATH"] = os.pathsep.join(path[len(injected) :])
+                break
         selected = plugin_environment.project_environment(root, caller_environment)
         python = plugin_environment.prepared_environment_python(selected)
     except OSError as exc:
