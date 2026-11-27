@@ -134,7 +134,8 @@ def test_json_lines_readers_use_lf() -> None:
     violations: list[str] = []
     for path in paths:
         if (
-            path.name.endswith("_test.py")
+            not (_ROOT / path).is_file()
+            or path.name.endswith("_test.py")
             or path.name.startswith("test_")
             or path.name == "conftest.py"
             or {"_testing", "tests"} & set(path.parts)

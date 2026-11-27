@@ -42,7 +42,7 @@ def test_denied_repl_provides_approval_guidance_before_next_user_facing_call(tmp
     assert _SOURCE not in str(_hook("stop", tmp_path, hook_event_name="Stop"))
 
 
-def test_denial_warning_then_missing_response_blocks_question_once(tmp_path: pathlib.Path) -> None:
+def test_denial_warning_does_not_require_response_label(tmp_path: pathlib.Path) -> None:
     _denial(tmp_path)
     bash = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "pwd"}}
     warning = _hook("pretooluse", tmp_path, **bash)["hookSpecificOutput"]
@@ -71,21 +71,8 @@ def test_denial_warning_then_missing_response_blocks_question_once(tmp_path: pat
         "tool_input": {},
         "transcript_path": str(transcript),
     }
-    blocked = _hook("pretooluse", tmp_path, **question)["hookSpecificOutput"]
-    assert blocked["permissionDecision"] == "deny"
-    assert "hook_notice_response_gate" in blocked["permissionDecisionReason"]
-    with transcript.open("a", encoding="utf-8") as stream:
-        stream.write(
-            "\n"
-            + json.dumps(
-                {
-                    "type": "assistant",
-                    "message": {"content": [{"type": "text", "text": "hook通知への対応: 委譲元へ報告する。"}]},
-                },
-                ensure_ascii=False,
-            )
-        )
-    assert "hook_notice_response_gate" not in str(_hook("pretooluse", tmp_path, **question))
+    output = _hook("pretooluse", tmp_path, **question).get("hookSpecificOutput", {})
+    assert output.get("permissionDecision") != "deny"
 
 
 @pytest.mark.parametrize("delegated", [False, True])

@@ -168,7 +168,7 @@ def test_correction_recovery_sends_once(tmp_path: pathlib.Path, repl: bool, warn
     reason = output["permissionDecisionReason"]
     for label in ("対策:", "回帰防止:", "類似見直し:", "再発防止:"):
         assert label in reason
-    assert ("hook通知への対応:" in reason) is warned
+    assert "hook通知への対応:" not in reason
     assert reason.index("起動していない") < reason.index("対策:") < reason.index("1回送達")
     assert "再送・再掲せず `…` だけ" in reason
     assert "新しい入力や成果" in reason

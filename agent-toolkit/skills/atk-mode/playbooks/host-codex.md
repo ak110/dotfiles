@@ -147,7 +147,8 @@ SessionStartで起動だけを通知されたCodexは`atk-mode`の`SKILL.md`とC
 
 1. 確認するかは`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決め、目的と認可の内側で手段だけが残る事項は自分で確定して報告する。
 2. 質問には公開スキーマ、モードの制限、用途の制限、ホストの命令に合う構造化質問を使う。
-   - Codex CLIの`request_user_input`で推奨案を含む問いは送信直前に「確認要否の判定」による一度の見直しを求められ、方針の承認の質問は`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7の決まった形でないと止められる。
+   - 推奨案を含む問いも「確認要否の判定」で必要性を確かめ、方針の承認は実回答と適用対象を対応付ける。
+     特定の見出し・ラベルや修飾の長さだけで送信を拒否しない。
    - Plan modeで同期型の`request_user_input`を使える時は、回答まで待つ。
    - `request_user_input_async`への後続の回答は元の質問へ対応付け、方針承認の`title`・`options`と修正回答の後の改訂版の届け方は`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7に従う。
    - 発行の成功と選択肢の初期選択は、回答と承認から外す。

@@ -9,7 +9,6 @@ from agent_toolkit._atk.wi.constants import DETAILED_SOURCES, WI_TYPE_AWI, is_de
 from agent_toolkit._plan import locations as _plan_locations
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import structure
-from agent_toolkit._plan.structure.formal_verification import missing_judgment_message_for_wis
 
 # 選定結果のdecisionが既存計画での再開を示すキーと、行を省略した場合に使う値
 # （`process-wi-selection-format.md`「選定結果の書式」）。
@@ -134,8 +133,7 @@ def wi_list_target_checks(
         for relative in agent_rule_paths
         if relative not in joined
     )
-    judgment = missing_judgment_message_for_wis(tuple(bodies), handoff_texts)
-    return errors, [judgment] if judgment is not None else []
+    return errors, []
 
 
 def _check_wi_selection(

@@ -494,20 +494,18 @@ def test_public_plan_create_owner_reaches_listing_and_save_advisor(
 
 
 @pytest.mark.parametrize(
-    ("judgment", "accepted"),
+    "judgment",
     [
-        ("形式検証の判定: 当てない（受け付ける値の表示だけを変える）", True),
-        ("例は形式検証の判定: 当てない（理由）を含む。", False),
-        ("```text\n形式検証の判定: 当てない（理由）\n```", False),
+        "形式検証の判定: 当てない（受け付ける値の表示だけを変える）",
+        "例は形式検証の判定: 当てない（理由）を含む。",
+        "```text\n形式検証の判定: 当てない（理由）\n```",
     ],
 )
-def test_awi_plan_counts_only_judgment_lines_in_evidence(
-    repo: pathlib.Path, tmp_path: pathlib.Path, judgment: str, accepted: bool
-) -> None:
+def test_formal_verification_words_do_not_gate_awi_plan(repo: pathlib.Path, tmp_path: pathlib.Path, judgment: str) -> None:
     source = tmp_path / "awi.md"
     content = _plan_fixture.awi_plan(repo=repo.resolve())
     content = content.replace("既存の判定処理を読み、更新が必要な箇所を確かめた。", f"構文解析を変更する。\n\n{judgment}")
     source.write_text(content, encoding="utf-8")
     errors, warnings = check_plan_file.check(source, repo)
     assert not errors, errors
-    assert any("形式検証の判定" in warning for warning in warnings) is not accepted, warnings
+    assert not any("形式検証の判定" in warning for warning in warnings), warnings

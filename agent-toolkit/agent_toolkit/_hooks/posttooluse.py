@@ -66,7 +66,6 @@ lazy from agent_toolkit._hooks import (
     process_wi_notifications,
     review_receipt,
     session_title,
-    source_review_receipt,
     termination_evidence,
     work_contract,
 )
@@ -593,8 +592,6 @@ def main(payload_text: str) -> int:
                         + "、".join(review_reads)
                     )
                 )
-            if not is_codex_payload(payload):
-                source_review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
         elif event_name == "PostToolUse" and review_receipt.is_mcp_delivery(tool_name):
             review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
         if event_name == "PostToolUse" and tool_name != "Skill":

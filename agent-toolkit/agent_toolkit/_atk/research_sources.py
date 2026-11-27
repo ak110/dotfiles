@@ -147,14 +147,6 @@ def _read(path: pathlib.Path) -> dict[str, Any]:
         return {}
 
 
-def collected_source_urls(slot: str) -> set[str] | None:
-    pending = _read(pending_path())
-    if pending.get("slot") != slot:
-        return None
-    urls = pending.get("source_urls")
-    return {url for url in urls if isinstance(url, str)} if isinstance(urls, list) else None
-
-
 def load_state() -> dict[str, Any]:
     state = _read(positions_path())
     return {
@@ -793,14 +785,6 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         "gaps": {result.source: result.gap for result in read if result.source.startswith("x:")},
         "user_ids": user_ids,
         "model_sources": list(model_sources),
-        "source_urls": sorted(
-            {
-                url
-                for result in read
-                for item in result.items
-                if item.get("comparison_required") is not False and isinstance(url := item.get("url"), str) and url
-            }
-        ),
     }
     _directory().mkdir(parents=True, exist_ok=True)
     session_review.write(pending_path(), pending)

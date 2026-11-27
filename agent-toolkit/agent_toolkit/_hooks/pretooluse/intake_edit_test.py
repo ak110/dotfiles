@@ -6,7 +6,7 @@ import shlex
 import pytest
 
 from agent_toolkit._git import command as git_command
-from agent_toolkit._hooks import hook_notice_response_gate, termination_evidence, user_prompt_submit
+from agent_toolkit._hooks import termination_evidence, user_prompt_submit
 from agent_toolkit._hooks.pretooluse import dispatch
 
 
@@ -82,8 +82,6 @@ def test_intake_repo_edit_notice_once_per_human_input(tmp_path, monkeypatch, cap
     trace.write_text(
         json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": context}]}}) + "\n", encoding="utf-8"
     )
-    for next_tool in ("mcp__plugin_agent-toolkit_agents_server__send_to_user", "AskUserQuestion"):
-        assert hook_notice_response_gate.send_block(base, "intake-test", next_tool, {}) is None
     prompt("別の要求を登録して")
     assert "セッション境界" in edit()
     for work in ("implement", "process-wi"):
