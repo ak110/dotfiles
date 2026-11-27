@@ -66,7 +66,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
   巡回では、統括が対象リポジトリと系統ごとに準備した作業ツリーを指し、統括自身の起動cwdとは区別する。
   この作業ツリーはマージ先のbranchの代わりに、それを追跡する専用branch（`worktree-`で始まる名前）をcheckoutしている。
   `agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」のうちbranch名の項目は、`# branch.upstream`がマージ先のbranchの追跡refであることで確かめる。
-  公開用に別のbranch名が必要な場合もHEADを切り替えずに`git push <remote> <公開OID>:refs/heads/<公開用branch>`で送り、中間commitの検証などで切り替えた場合は工程の終わりに専用branchへ戻す。
+  公開用に別のbranch名が必要な場合もHEADを切り替えずに`git push <remote> <ベースブランチ>:refs/heads/<公開用branch>`で送り、中間commitの検証などで切り替えた場合は工程の終わりに専用branchへ戻す。
 - **公開担当**: 公開工程（push、CI、検証の失敗の修正、プロジェクト固有の公開後の操作、延期adoptなど）を担う委譲先で、委譲の範囲は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」にある。
 - **即時対応**: 現在の影響と先送り条件に基づいて、直接修正と正式対応の時機を判定して実施すること（`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」）。
 
@@ -85,7 +85,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
   追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の対象に限り、元の選定結果へ追記してレーンへ渡す。
 - 対象リポジトリへpushするのは公開担当だけとする。
   前回の公開の後に新しい成果を統合した場合は、追加差分で公開担当を起動し直す。
-  公開開始時に固定した完全OIDのpushとCIの通過を検収する（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開状態の検収と再起動」）。
+  その時点のベースブランチを通常どおりpushし、pushしたcommitのCIの通過を検収する（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開状態の検収と再起動」）。
 - 計画ファイルとレビュー指摘管理表は、参照する全ての工程を終えてから片付ける。
   レーンの専用branchと専用worktreeは、`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」の時点で、所有登録とGit状態を確かめ直してから回収する。
 - メインの作業ディレクトリが実行環境の隔離worktree（Claude Codeの`EnterWorktree`など）の中にある場合は、専用worktreeの作成と回収が対象リポジトリのGit共通ディレクトリを変えるため、隔離を解いてから次へ進む。
@@ -125,7 +125,7 @@ OSの指定が無い登録はLinuxとWindowsの両方を対象とし、必要な
 `atk config repos list`で`branches`を持つリポジトリは、継続して作業が入るoriginのブランチ（系統）ごとに処理する。
 処理中の系統は、all-reposの統括から受け取った対象では対象要素の`target_branch`、手動起動では起動した作業ツリーが追跡するブランチである。
 規範の「ベースブランチ」は処理中の系統のブランチを指し、候補の取得、レーンの作成と統合、push、CIの確認、公開状態の検収はそのブランチを対象にする。
-系統ごとの作業ツリーではローカルのブランチ名がリモートのブランチ名と異なるため、pushは`git push --dry-run --porcelain origin <公開OID>:refs/heads/<系統>`で到達先を確定し、同じrefspecで実行する。
+系統ごとの作業ツリーではローカルのブランチ名がリモートのブランチ名と異なるため、pushは`git push --dry-run --porcelain origin <ベースブランチ>:refs/heads/<系統>`で到達先を確定し、同じrefspecで実行する。
 公開状態の4項目のうちブランチ名の項目は、`# branch.upstream`が`origin/<系統>`であることで確かめる。
 処理中に投入するUWIとAWIは`atk wi add --target-branch <系統>`で処理中の系統を宛先にし、両方の系統に必要な修正のAWIは`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に従って取り込み元の系統を宛先にする。
 GitHub CopilotのレビューとDependabotアラートの監査はリポジトリ単位の作業のため、`default_branch`の系統（系統を省略したWIの宛先）の処理だけが行う。

@@ -87,7 +87,6 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
         ]
     if task_name == "session-termination.subagent.md":
         return [
-            "公開OID: 0123456789abcdef0123456789abcdef01234567",
             "bump種別: bump不要",
             handoff,
         ]

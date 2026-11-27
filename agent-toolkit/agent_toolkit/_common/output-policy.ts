@@ -70,18 +70,6 @@ export default {
       "excludes": [
         "source:"
       ]
-    },
-    "wi_publication_delta": {
-      "max_chars": 150,
-      "includes": [
-        "公開前",
-        "計2件",
-        "今回:"
-      ],
-      "excludes": [
-        "061940-004.md",
-        "merge_branch: なし"
-      ]
     }
   }
 };
