@@ -122,6 +122,21 @@ def _register_circuit(tmp_path, monkeypatch, owner):
     assert result.value.code == 0
 
 
+@pytest.mark.parametrize("oid", ["a" * 40, "b" * 64])
+@pytest.mark.parametrize(
+    "new_items", [None, [NewWorkItem("20261124-085011-004.md", "implement", True, merge_pending="processing")]]
+)
+def test_pinned_publication_does_not_wait_for_new_selection(tmp_path, monkeypatch, oid, new_items):
+    owner = "pipelined-publication"
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", owner)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(publication_gate, "progress_new_wis", lambda *_args, **_kwargs: new_items)
+    payload = {"session_id": owner, "cwd": str(tmp_path)}
+    assert publication_gate.check(payload, owner, "Bash", {"command": f"git push origin {oid}:refs/heads/develop"}) is None
+    assert publication_gate.check(payload, owner, "Bash", {"command": "git push origin HEAD:refs/heads/develop"})
+
+
 def test_publication_uses_registered_baseline_after_session_temp_changes(tmp_path, monkeypatch):
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

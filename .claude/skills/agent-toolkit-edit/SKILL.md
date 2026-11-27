@@ -25,7 +25,7 @@ description: >
 | 配布物を変えてから公開担当へ渡すまで（計画への記録、版数の判定と更新、生成物の同期、競合時の再採番、marketplaceへの反映、Codexのrootの再確認） | `references/distribution.md` |
 | 作業ツリーで改訂した配布物の挙動を確かめる、hookが新たに操作を止めた | `references/distribution.md`「worktreeでの編集時の注意」 |
 | 新しいCLI、コマンド、ラッパースクリプトを公開する計画を起草する | `references/distribution.md`「新規CLI公開時の疎通確認」 |
-| `agent-toolkit:atk-mode`の作業`process-wi`で全レーンの完了後に版数を上げる | `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`、続けて`references/distribution.md`「バージョン更新」 |
+| `agent-toolkit:atk-mode`の作業`process-wi`で公開単位の統合後、公開OIDの確定前に版数を上げる | `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`、続けて`references/distribution.md`「バージョン更新」 |
 | hookの実装、登録、判定、通知、出力と、`atk`のサブコマンドと出力を新設・変更する | `references/hooks.md` |
 | 既存のhookの実装、登録、判定を変える計画の採否を決める（実装だけの改修を含む） | 変更するhookの名前と働きを表す語で`git log -i -E --grep=<語>`を検索して同じ原因条件の障害を記したcommit本文を読み、`docs/development/design.md`の索引から選ぶhookの設計記録の該当節を読む。読んだ障害から守る条件を採否と検証へ対応付ける |
 | hook、自動チェック、永続状態、配送経路など新しい仕組みを足す計画を起草する、その変更を実行レビューする | `.claude/skills/edit-dotfiles-norms/SKILL.md` |

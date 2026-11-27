@@ -51,7 +51,7 @@ def _is_publication(tool_name: str, tool_input: dict) -> bool:
 
 
 def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
-    """開始時集合と比較し、新着を確認できた場合だけ同じ操作の再発行を受け付ける。  pyfltr: allow-comment"""
+    """動的な公開入力は新着WIと比較し、固定OIDのpushは次の選定を待たせない。  pyfltr: allow-comment"""
     if not _applies(payload, session_id, tool_name, tool_input):
         return None
     actor = agent_id.resolve_hook_agent_id(payload)
@@ -290,6 +290,10 @@ def _check(
                 "公開先のリポジトリとブランチを確認し、コマンドで明示して再試行してください。",
                 None,
             )
+        command = tool_input.get("command")
+        push = _DIRECT_PUSH.fullmatch(command) if isinstance(command, str) else None
+        if push and push[3] and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64}):refs/heads/[A-Za-z0-9_./-]+", push[3]):
+            return None
         rows = progress_new_wis(owner, targets=targets, track_merges=True)
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
         return (
