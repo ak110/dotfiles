@@ -9,7 +9,7 @@ description: >
   commit typeを判定するとき、コミットメッセージ方針や`.gitmessage`を編集するとき、
   Claude Code本体やCodex本体のバイナリを検索してホスト機能の挙動を確かめるとき、
   `/atk-mode review-session`の参照文書の位置を確認するとき、
-  本リポジトリを対象に含むprocess-wiの巡回（all-repos統括を含む）の所要時間目標と終了条件を適用するときに起動する。
+  本リポジトリを対象に含むprocess-wiの巡回（all-repos統括を含む）の所要時間目標と完了条件を適用するときに起動する。
 ---
 
 # dotfilesの開発手順
@@ -34,7 +34,7 @@ description: >
 | Claude Code・Codex本体のバイナリを検索する | `references/host-binaries.md` |
 | コミットメッセージ方針や`.gitmessage`を編集する | `references/commit-message.md` |
 | commitのtypeを判定する | `docs/development/commit-types.md`（判定例） |
-| 本リポジトリを対象に含む`agent-toolkit:atk-mode`の作業`process-wi`の巡回（all-repos統括を含む）の所要時間目標と終了条件を適用する、巡回の終了を判定する | `references/process-wi-duration.md` |
+| 本リポジトリを対象に含む`agent-toolkit:atk-mode`の作業`process-wi`の巡回（all-repos統括を含む）の所要時間目標と完了条件を適用する、選定の完了を判定する | `references/process-wi-duration.md` |
 | `/atk-mode review-session`で本リポジトリ固有の振り返りの参照文書（所要時間の目標と振り返りの観点）を読む | Claude Codeでは`~/.claude/docs/session-review-dotfiles.md`、Codexでは`~/.codex/docs/session-review-dotfiles.md`（原本は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`） |
 
 ## 読込表
