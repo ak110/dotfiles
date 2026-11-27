@@ -68,7 +68,7 @@ statuslineのCargo versionとbase・head versionおよびtagの確認は、共�
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。
 比較基点はpull request起点では`github.event.pull_request.base.sha`、push起点では`git fetch --no-tags origin master`の後の`git merge-base`が返す`master`との共通祖先とする。
 push起点を加えるのは、版数更新の抜けをrelease pull requestの必須check一式が実行される前に検出するためである。
-レーン担当は版数更新の根拠を渡し、公開OIDの確定前に通常のレーンで版数を更新・検証・統合する。
+レーン担当は版数更新の根拠を渡し、公開直前に版数と生成物の更新を1つのcommitとして検証・統合する。
 pyfltr側は`pyproject.toml`で無効にしておき、公開担当が公開前のローカル検証で明示的に有効化する。
 比較先は作業ツリーとしてcommit前の変更も判定し、push前に版数の更新忘れを見つける。
 pre-commitの`pyfltr fast`で版数更新前の途中commitを遮断しないよう非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。

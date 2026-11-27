@@ -81,6 +81,8 @@
    未終了と実行未登録は、失敗を示す証拠を得てから既存不具合かを判断する。
    認証、ネットワーク、CLIの不備、対象解決の失敗は技術的に回復できるものを回復し、資格情報の準備などユーザーだけが対応できる事項は`agent-toolkit:atk-mode/playbooks/confirmation.md`で確認し、待たずに進められる作業を続ける。
 2. 通常起動では、次のコマンドで初回の一覧を取得し、全状態・全種別の識別子集合（開始時集合JSON）を新着確認と再開へ引き継ぐ。
+   新着不良・マージ用AWIは`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」で今回の対象と進捗へ対応付け、担当済みの成果を回収する。
+   常駐では随時点検し、新着の存在だけで公開を止めない。
    all-reposのリポジトリ担当は、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う（`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「取得済み候補の受領」）。
 
    ```text

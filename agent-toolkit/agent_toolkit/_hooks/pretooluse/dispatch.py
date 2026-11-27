@@ -105,7 +105,7 @@ lazy from agent_toolkit._hooks.agents_server_observations import start_observati
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
-lazy from agent_toolkit._hooks.pretooluse import commit_identity, intake_edit, publication_gate, user_facing_checks
+lazy from agent_toolkit._hooks.pretooluse import commit_identity, intake_edit, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
@@ -430,8 +430,6 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return Decision(block=notice_block)
     if reapproval_block := user_facing_checks.policy_reapproval_block(payload, tool_name, tool_input, session_id):
         return Decision(block=reapproval_block)
-    if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
-        return Decision(block=_block_notice(publication_block[0], fix=publication_block[1]))
     if tool_name == "ExitPlanMode":
         from agent_toolkit._hooks.plan_presentation import check_before_presentation  # pylint: disable=import-outside-toplevel
 
