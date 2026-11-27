@@ -445,7 +445,12 @@ async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
     await harness.page.keyboard.press("End")
     await expect(headers.nth(0)).to_be_in_viewport()
     await expect(headers.nth(1)).to_be_in_viewport()
-    await harness.page.wait_for_function("document.querySelector('.review-scroll').scrollTop > 0")
+    await harness.page.wait_for_function(
+        """() => {
+            const region = document.querySelector(".review-scroll");
+            return region.scrollTop > 0 && region.scrollHeight - region.clientHeight - region.scrollTop <= 1;
+        }"""
+    )
     await harness.page.get_by_role("button", name="先頭へ").click()
     await harness.page.wait_for_function("document.querySelector('.review-scroll').scrollTop === 0")
 
