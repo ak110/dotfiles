@@ -111,33 +111,30 @@ async def test_user_override_refuses_nonmatching_evidence(
         assert not backend.start_calls
 
 
-@pytest.mark.parametrize("kind", ["session", "codex", "wi", "answer", "write", "plain"])
+@pytest.mark.parametrize("kind", ["session", "codex", "wi", "answer", "plain"])
 @pytest.mark.asyncio
 async def test_public_start_accepts_scoped_human_selection(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, kind: str
 ) -> None:
     record = tmp_path / "session.jsonl"
-    model = "write" if kind == "write" else _MODEL
     inputs: dict[str, Any] = {
         "cwd": str(tmp_path),
-        "mode": "write" if kind == "write" else "explore",
+        "mode": "explore",
         "prompt": "指定した対象を処理する",
         "label": pathlib.Path(_WI).stem,
-        "model_type": model,
+        "model_type": _MODEL,
         "model_override": "user_instruction",
         "model_override_evidence": _PROOF,
     }
     if kind == "wi":
         inputs.pop("prompt")
         inputs.update(mode="task", subagent_md_path="exec", extra_params=_lane_inputs(tmp_path, _WI))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", "codex:draft/medium")
     async with _manager_with_fake("codex") as (manager, backend):
         _record(monkeypatch, manager, record, engine="codex" if kind == "codex" else "claude")
         approved = await _instruction(inputs)
-        if kind in {"session", "write", "plain"}:
-            if kind in {"write", "plain"}:
-                specified = "write_model" if kind == "write" else _MODEL
-                approved = f"{tmp_path}で{inputs['mode']}の「{inputs['prompt']}」は{specified}で。"
+        if kind in {"session", "plain"}:
+            if kind == "plain":
+                approved = f"{tmp_path}で{inputs['mode']}の「{inputs['prompt']}」は{_MODEL}で。"
             _save(record, _human(approved))
         elif kind == "codex":
             _save(record, {"type": "event_msg", "payload": {"type": "user_message", "message": approved}})
@@ -157,8 +154,7 @@ async def test_public_start_accepts_scoped_human_selection(
             entry.write_text(f"---\nstate: processing\ntarget_repo: {_REPO}\n{content}---\n\n{body}", encoding="utf-8")
         await mcp_tools.mcp.call_tool("start", inputs)
         launch_kind = "delegate" if kind == "wi" else "explore"
-        expected = ("draft", "medium", "write") if kind == "write" else ("explicit", "high", launch_kind)
-        assert backend.start_calls == [expected]
+        assert backend.start_calls == [("explicit", "high", launch_kind)]
 
 
 @pytest.mark.asyncio

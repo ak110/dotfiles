@@ -34,7 +34,7 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
-from agent_toolkit._agents_server.manager_start import WRITE_MODEL_AUTHORIZED, check_model_override
+from agent_toolkit._agents_server.manager_start import check_model_override
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
 from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response
 from agent_toolkit._agents_server.service_start_requests import register_start_request_tools
@@ -416,7 +416,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     with (
         startup_features.selection(startup_profile),
         state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
-        WRITE_MODEL_AUTHORIZED.set(effective_type == "write" and bool(warnings)),
         session_launchers.START_OBSERVATION.set(session_launchers.valid_start_observation(start_observation)),
     ):
         if mode == "task":
@@ -441,7 +440,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 launch={**launch, "subagent_md_path": str(document)},
                 launch_kind=launch_kind,
             )
-            WRITE_MODEL_AUTHORIZED.set(resolved_type == "write" and bool(warnings))
             context = await run_file_operation(_manager().launcher_record_context)
             task_prompt = launch_requests.with_launcher_record(task_prompt, context)
             state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None)
