@@ -3,7 +3,9 @@
 import asyncio
 import contextlib
 import pathlib
+import shlex
 import subprocess
+import sys
 import threading
 import typing
 
@@ -106,8 +108,10 @@ async def test_mutations_reject_rebase_in_progress_with_409(
     body = await response.get_json()
     assert body["code"] == "rebase_in_progress"
     assert "rebase中" in body["error"]
-    assert "git -c submodule.recurse=false rebase --continue" in body["error"]
-    assert "git -c submodule.recurse=false rebase --abort" in body["error"]
+    notes_path = str(notes)
+    quoted_notes = f"'{notes_path.replace("'", "''")}'" if sys.platform == "win32" else shlex.quote(notes_path)
+    for operation in ("--continue", "--abort"):
+        assert f"`git -C {quoted_notes} -c submodule.recurse=false rebase {operation}`" in body["error"]
     assert _notes_snapshot(notes) == before
 
 
