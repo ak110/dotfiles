@@ -90,9 +90,13 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    確定できない対象は、不足する判断・認可・入力か具体的な競合と、再開の条件を作業記録に残し、報告の未達へ書く。
    会話圧縮や担当交代の後も同じ作業記録から復元し、`済`の対象へAWIを重ねて投入しない。
    改善点の調査と是正は`agent-toolkit:atk-mode/playbooks/main-reporting.md`「作業中の改善点の報告」が定める。
-6. 自律モードでは、作業結果を回答を求めない報告用UWI（`--question-type=report`）としてセッションにつき1件保存する。
+6. 自律モードでは、作業結果を回答を求めない報告用UWI（`--question-type=report`）として保存する。
+   常駐のprocess-loopでは処理した項目がある周につき1件とし、空の周では保存しない。
+   それ以外はセッションにつき1件とする。
    報告用UWIは保存した時点で`adopted`となり、質問・回答欄を持たず、未回答の一覧と選定の対象に入らない。
-   巡回の完了報告にだけ、本文のfrontmatterへ`completion_report: true`を置く（巡回の終了判定が使う。公開後の案内など途中で保存する報告には置かない）。
+   `completion_report: true`は、process-loopの`--once`、`abort`、ユーザーの中断、会話を替える交代で終了する完了報告にだけ置く。
+   周の報告や公開後の案内には付けず、周の報告の保存・送達後は[巡回する](process-loop.md#巡回する)の手順2へ戻る。
+   更新のための本人再開では完了報告を作らず、予約後に終了する。
    本人にしか決められない事項や本人にしかできない操作が残る場合だけ、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってその事項だけを個別のUWIにし、報告の未達・持ち越しにファイル名を書く。
    エージェントが再試行・対処できる未達と、自ら確定した技術判断は、回答を求める理由にしない。
    本文と保存は`agent-toolkit:atk-mode/references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」に従う。
@@ -115,6 +119,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
      Claude Codeの終え方は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
    - Codexの送達順は`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」に従う。
    - ホスト本体を停止する場合は、報告の保存検収と送達を終え、停止操作を最後のツール呼び出しにする。
+   - process-loopの`atk agents-exit-session`による終了は、[中断と再開](process-loop.md#中断と再開)の条件に限る。
 
    最終報告の末尾にだけ、次の固定文を置く。
 
@@ -128,7 +133,8 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    自律モードでは報告用UWIを更新し、協調モードではユーザーの判断や次の操作を変える訂正だけを届ける。
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 
-`agent-toolkit:atk-mode/playbooks/review-session.md`の単発の振り返りは、必要時か巡回の指定の区切りで行い、本書の工程と送達の条件とは分ける。
+`agent-toolkit:atk-mode/playbooks/review-session.md`の単発の振り返りは必要時に行い、process-loopでは[前区間の振り返り](process-loop.md#前区間の振り返り)に従う。
+振り返りは本書の工程と送達の条件とは分ける。
 非同期の`review-session batch`はその場の`bugfix`と単発の振り返りで未解決の問題を後から扱う。
 
 ## 常時稼働サーバーへの反映

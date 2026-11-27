@@ -79,7 +79,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
 - 専用worktreeへの書き込みはレーン担当が持ち（メインが`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「同一主題の追加指示」で引き取った場合を除く）、主作業ツリーへの書き込みは統合の時に限る。
   担当の範囲の一部を委譲する場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従い、計画、検収、commitの対応の記録、統合、メインへの返却はレーン担当が責任を持つ。
 - ユーザー由来の要求の全部か一部を不採用にする場合は、先にユーザーの確認かUWIの回答を得てから採否を確定する。
-- 選定で確定した処理対象WIを最後まで処理し、ready一覧は途中で取り直さない。
+- 選定で確定した処理対象WIを最後まで処理し、同じ周の中ではready一覧を途中で取り直さない。
   追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の対象に限り、元の選定結果へ追記してレーンへ渡す。
 - 対象リポジトリへpushするのは公開担当だけとする。
   前回の公開の後に同じセッションで新しい成果をベースブランチへ統合した場合は、追加の差分で公開担当を起動し直して最新HEADのpushとCIの通過を検収する（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開状態の検収と再起動」）。
@@ -106,7 +106,8 @@ all-reposの統括からリポジトリ担当として候補を受け取った�
 5. `統合準備完了`を返したレーンには、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従い、選定結果の`先行レーン`が全て統合済みなら`統合許可`を出す。
    各レーンは`atk lane integrate`で統合から計画の最終化、AWIの終了、選定結果への統合済みの記録までを終え、メインは返された`統合完了`を同書「統合の指示と受領」の受領条件で検収する。
 6. 処理中に加えた処理対象WIも、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理中に確定した必須是正レーン」で既存のレーンへ割り当て、同じレーン担当のスレッドで収束させて統合する。
-7. 全てのレーンが終わり、起動した監査の処置も確定したら、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に従って公開とセッションの終了を完遂する。
+7. 全てのレーンが終わり、起動した監査の処置も確定したら、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に従って公開と報告を完遂する。
+   常駐では[周の区切り](process-loop.md#巡回する)から同じ会話で巡回へ戻り、終了は同書「中断と再開」の条件に限る。
 
 ## 検証環境
 
@@ -154,6 +155,8 @@ GitHub CopilotのレビューとDependabotアラートの監査はリポジト�
 工程の区切りは確認の理由から外し、ユーザーの判断が本当に必要な事項だけを確認待ちにして、その判断を待たずに進められる工程は続ける。
 回答がすぐに得られない確認事項は`agent-toolkit:atk-mode/playbooks/confirmation.md`「未確定判断の保留と暫定判断」に従ってUWIへ移し、`processing`の元項目も同じ手順でそのUWIへの依存を保存して`inbox`へ戻す。
 作業完了の報告を所有するメインは、この作業で作ったcommitを公開してから`agent-toolkit:atk-mode/playbooks/report-completion.md`に従って報告する。
+常駐では周ごとの報告とし、[巡回の手順](process-loop.md#巡回する)へ戻る。
+process-loopの完了報告とホストの終了は同書「中断と再開」の条件に限る。
 明示的に委譲されたリポジトリ担当は役割の契約に従って委譲元へ返し、担当から外れるために同書やtermination-evidenceを取得することと、`omit-completion`の記録は避ける。
 反映が必要な担当は`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」を使い、反映と稼働確認の結果を返す。
 公開工程の承認スコープは、選定工程で判別した結果を`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「公開工程の承認スコープ」に従って使う。

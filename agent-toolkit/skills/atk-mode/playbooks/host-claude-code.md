@@ -22,9 +22,7 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 ## ツールの入出力
 
 - プラグインの再読み込みと`agents_server`・`pyfltr`のMCP再接続は、メインが`apply_runtime_changes`で予約し、ターンを終えて反映の結果を確認する。
-  常駐のprocess-loop統括では、巡回の途中で予約しない。
-  途中のStopは巡回を終えていないターンの終了を止めるため、予約だけが残る。
-  現在の環境のまま進めるか、必要な版を反映して残工程を早めるかは、[更新のための本人再開](process-wi-all-repos.md#更新のための本人再開)で決める。
+  巡回の統括の反映は、[巡回する](process-loop.md#巡回する)の手順5に従う。
   ユーザーに操作を頼まず、再接続の予約が失敗した時か接続を失った後に限り`/mcp`での復旧を依頼する。
 - Windows版のBashツールは引用符付きのheredocや単一引用符の中でも`\\`を`\`へ縮めるため、エスケープを含むコードはWriteでmanaged-tempへ保存して実行する。
 - `mcp__plugin_agent-toolkit_agents_server__send_to_user`を使える時は、`agent-toolkit:atk-mode/references/delivery.md`「Claude Codeの本文送信と再送」に従う（地の文はAPIで要約されうる）。

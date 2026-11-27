@@ -13,12 +13,14 @@ WI処理の工程や運用に関わる問題の原因分析と対策、運用工
 | 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を処理する。計画の要否は`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決める |
 | 即時実装型 | ユーザーが`/atk-mode implement`を起動する | 対話セッションで隔離worktreeを作って実装・検証・実行レビューを完了し、一時リモートブランチをpushしてマージ用AWIを登録する。統合と公開は`process-wi`がレーンを作らず直接処理する |
 | コメント整理型 | ユーザーが`/atk-mode process-user-comments`を起動する | ユーザーコメント付きの未処理AWIを保留し、対話で質問を済ませて本文へ整理し直し、コメントを本文の逐語引用へ移して保留を解く。込み入ったコメントを自律型へそのまま渡すとUWIの往復が増える時に使う |
-| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と統括会話の起動を管理する。統括が`agent-toolkit:atk-mode`の作業`process-wi all-repos`で登録全体の対象を処理し、報告まで担当する |
+| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopは統括CLIの起動・再開と終了の監督だけを担う。常駐する統括セッションが対象確認・待機・処理・公開・反映・報告を担う |
 | まとめ処理型 | ユーザーが`agent-toolkit:atk-mode`の作業`process-wi single-lane`を手動で起動する | 蓄積されたWIを1回の実行でまとめて処理する |
 | 定期実行型 | ユーザーがcronなどに`atk run-skill`を登録する | WIキューを経由せずにスキル1件を自律モードで実行し、結果は報告用UWIで、判断を要する対応は事前承認型UWIで届ける |
 
 process-loopの起動・待機・制御を扱う前に`atk wi process-loop --help`で条件を確かめる。
-公開されている主な操作は、中断を要求する`abort`、次の1セッションへの指示を与える`instruct`、状態を確かめる`status`である。
+公開されている主な操作は、中断を要求する`abort`、追加指示を与える`instruct`、状態を確かめる`status`である。
+`abort`と未消費の`instruct`は、稼働中の巡回会話へ次のツール実行後の通知として届き、即時停止ではない。
+`instruct`は本文を届けた時点で消費し、未配送なら次の実起動へ渡す。
 常駐、単回実行、再開の予約、制御操作の違いは`agent-toolkit:atk-mode/references/orchestrator-runtime.md`にある。
 process-loopはホームディレクトリなどから実行し、`process_loop`が有効な対象は`atk wi list --configured-repos`で確かめる。
 
@@ -45,14 +47,15 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
    再レビューは前回の指摘、修正差分、直接影響範囲を確かめる。
 4. 統合: レーン担当が検収済みの成果を統合する。
    複数レーンではメインが依存条件を満たしたレーンへ統合を許可し、`atk lane integrate`は統合先HEADを1レーンずつ更新する。
-5. 公開と後始末: メインが`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の公開・CI・保存状態を検収し、報告と終了へ進む。
+5. 公開と後始末: メインが`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の公開・CI・保存状態を検収し、常駐では周の報告から巡回へ戻り、単回実行では報告と終了へ進む。
    準備・統合・回収の公開操作は`atk lane create`、`atk lane integrate`、`atk lane delete`で、実行前に`agent-toolkit:atk-mode/playbooks/process-wi.md`の該当節を確かめる。
    保持資源の回復は同書と`atk lane delete --help`、`atk lane recover --help`の条件と診断に従う。
 
 必要なユーザー確認は特定の工程の末まで延ばさず、回答の後は次節の担当と契機で再開する。
 
 `run-skill`に由来するUWIの`source`と`scope`は[由来と承認](origin-and-approval.md)で定め、報告用UWIだけに付ける属性は[完了報告](../playbooks/report-completion.md)で定める。
-回答済みのUWIは、報告用かどうかや由来によらず、既存の着手条件でprocess-wiの選定対象とprocess-loopの起動件数の計算に含める。
+回答済みの確認UWIは、由来によらず、既存の着手条件でprocess-wiの選定対象に含める。
+報告用UWIは保存時に`adopted`となり、回答欄を持たず、選定対象に入らない。
 
 ## 要求の登録と判断待ちからの再開
 
@@ -69,7 +72,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 会話中に回答を得た事項はUWIとして重ねて登録せず、回答を得ないまま終わった確認事項はUWIへ引き継ぐ。
 保存の条件、自律モードでの確認の手段、UWIへの切り替えは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
 ユーザーは`atk wi answer`か`atk serve`から回答する。
-回答済みのUWIは、報告用も含めて次回のprocess-wiでメインが取り込む。
+回答済みの確認UWIは、常駐では今回追加の可否を判定し、手動の単回実行では次回のprocess-wiでメインが取り込む（`agent-toolkit:atk-mode/references/answer-transitions.md`「回答後の状態遷移」）。
 先に同じ対象リポジトリ・同じ起動単位の`atk run-skill`が起動した時も、処理中・終了済みの項目には着手しない。
 `source`が`run-skill`の場合は`scope`のスキルを解決して承認後の手順を使い、解決できなければ入力と診断を保持し、登録・配置を確かめる。
 不具合は `agent-basics:bugfix` で認可内の是正後に再照会し、未解決の影響・試行・再開条件を返す。
@@ -81,7 +84,8 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 再開待ちと中間の返却では登録しない。
 統括の素材から移した記録は、そのレーンの分析で未処理の範囲だけを扱う。
 
-作業の完了後は、報告を所有するメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`で結果を報告して終わる。
+作業の完了後は、報告を所有するメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`で結果を報告する。
+常駐では[周の区切りと振り返り](../playbooks/process-loop.md#巡回する)から同じ会話で巡回へ戻り、終了は同書「中断と再開」の条件に限る。
 Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`/atk-mode review-session batch`が非同期でまとめて分析する。
 batchが投入したAWIは、ユーザーの内容確認を待たずに採否の検討と処理の対象になり、要求・完成条件の項目ごとの出所と採否は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」で判断する。
 全量を指定せずに手動で起動した`/atk-mode review-session`は、確定済みの範囲より後を対象とする。
