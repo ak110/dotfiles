@@ -24,6 +24,8 @@ atk run-script pick-wi-check -- <選定YAML> --handoff-observation <WI名> --lan
 1. 未達条件の延期を選ぶ前に、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」を適用する。
    - 後日の対策効果が完成条件の場合も、適用条件・観測の機会と、待てば解決する見込みの根拠を特定して再開記録へ残す。
      cooldownを使える境界は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」にある。
+   - 延期の理由は、実際に未達だった条件、別の観測では満たせない根拠、解除条件を既存の再開記録に対応付ける。
+     今の環境で終えられる観測は延期しない。
    - 見送り、追加の認可、見込みの立たない外部変更待ちの判断は、`agent-toolkit:atk-mode/references/delivery.md`「個別UWI」に従う。
    - 実装・検証の成功と後日の効果を区別し、適用の機会が無い項目は効果未確認として保つ。
    - 通常の効率改善へ長期の観測を一律に足すことと、環境の制約だけを理由に人手の実機確認を完成条件へ足すことや個別のUWIを登録することは、対象外とする。
