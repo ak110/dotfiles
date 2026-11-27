@@ -82,9 +82,9 @@
   版の固定と取得物の検証には、boot文書の`packageManagerDependencies`と`integrity`、レジストリの署名を使う（`packageManager`の`+sha512.<hash>`はpnpm自身の検証の対象外である）。
   CIでは`pnpm install --frozen-lockfile`で不整合を失敗として検出する。
 - 公開待機の`minimumReleaseAge`（pnpm 11以降は指定が無ければ1440分）は`self-update`にも適用される。
-  `self-update`の待機を変える時は、プロジェクトの待機設定の代わりにグローバル設定、環境変数、CLIの指定を使う。
+  `self-update`の待機を変える時は、プロジェクトの待機設定の代わりにグローバル設定、環境変数（`PNPM_CONFIG_MINIMUM_RELEASE_AGE`など）、CLIの指定を使う。
   npmやstandaloneでの初回の導入では、導入する版の公開後の経過時間を別に確かめる。
 - pnpm 10以前は、Corepackを導入し、`packageManager`にSHAハッシュ値を保って`corepack use pnpm@<version>`で更新する。
   Node.js 25以降はCorepackを同梱しないため、要る環境では別に導入する。
-- pnpmの特定の版では`NPM_CONFIG_*`環境変数の読取が不安定で、`pnpm config get`が環境変数の値を無視する事象を観測しているため、反映は`npm config get`で確かめる。
-- `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*`環境変数による指定より優先される。
+- pnpm 12.22.0では設定の環境変数として`PNPM_CONFIG_<KEY>`を読み、`NPM_CONFIG_*`を読まないため、反映は`pnpm config get <key>`で確かめる。
+- 同版では`PNPM_CONFIG_*`環境変数による指定が`pnpm-workspace.yaml`の設定より優先される。

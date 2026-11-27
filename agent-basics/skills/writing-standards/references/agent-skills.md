@@ -65,5 +65,7 @@
   自分のスキルに同梱したファイルはこの変数で、プラグイン全体や他のスキルのファイルは`${CLAUDE_PLUGIN_ROOT}`を起点に参照する。
 - frontmatterに`context: fork`を指定すると、スキルを独立したサブエージェントの文脈で実行でき、`agent`で種別（`Explore`、`Plan`、`claude`など）を指定する。
   `agent: Explore`と`agent: Plan`によるfork配下では親の`CLAUDE.md`とルールが引き継がれないため、必要な規範は実行時に明示的に読む。
-- fork配下では`AskUserQuestion`を使えず、入れ子は5階層までで、親へは最終報告のテキストだけが返る。
+- fork配下は会話履歴を持たず、終了時に結果の要約を親へ返す。
+  forkは既定でバックグラウンド実行となり、バックグラウンドのサブエージェント向けの狭いツール集合で動くため、手順がその集合の外のツールに依存する時は`background: false`を付ける（[公式のfork実行の説明](https://code.claude.com/docs/en/skills#run-skills-in-a-subagent)）。
+  入れ子はメインの会話の下で既定で3階層までで、`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`で変えられる（[公式の入れ子の説明](https://code.claude.com/docs/en/sub-agents#let-subagents-spawn-their-own-subagents)）。
   `agent:`に`agents/`配下の定義を指定すると、その定義のツール制限とモデルの指定が適用される。

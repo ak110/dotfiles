@@ -15,7 +15,7 @@ Rustのコードとテストを書く時とレビューする時の、採用す�
     `libloading`経由の呼び出し、手で実装した`Send`・`Sync`、COMオブジェクトの非自明な所有権の移動も同じである。
 - 非同期ランタイムは`tokio`を使い、`block_on`は`main`などの実行の境界だけで使う。
 - 信頼できない外部入力は`serde`で明示した構造体へ変換してから後続へ渡す（`serde_json::Value`のまま渡すことを避ける）。
-- セキュリティ用途の乱数は`rand::rngs::OsRng`で作る。
+- セキュリティ用途の乱数はOSの乱数源から作る（rand 0.10以降は[`rand::rngs::SysRng`](https://docs.rs/rand/0.10.4/rand/rngs/struct.SysRng.html)、0.9は`rand::rngs::OsRng`）。
 - MSRVは`Cargo.toml`の`rust-version`に書く。
 
 ## テストコード
