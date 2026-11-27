@@ -7,7 +7,6 @@ import sys
 import pytest
 
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
-lazy from agent_toolkit._hooks.pretooluse import operation_skills
 
 _SCRIPT = (pathlib.Path(__file__).resolve().parents[1] / "hook_test.py").parent / "hook.py"
 
@@ -101,8 +100,3 @@ def _call_hook_in_process(
     result = _run_hook_in_process(subcommand, payload)
     assert result.returncode == expected_code
     return result.stderr if expected_code == 2 else result.stdout
-
-
-@pytest.fixture(name="without_skill_notices")
-def _without_skill_notices(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])

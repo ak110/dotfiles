@@ -9,14 +9,13 @@ import json
 import pathlib
 import subprocess
 import types
-from collections.abc import Callable
 
 import pytest
 
 from agent_toolkit._atk import managed_temp, run_skill_batch, weekly_schedule
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
-from agent_toolkit._hooks import posttooluse, pretooluse, rules_context
+from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
 from agent_toolkit._testing.rules_context_support import _output
@@ -106,73 +105,6 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
     (paths[1] / "msg1.txt").write_text("担当B", encoding="utf-8")
     assert (paths[0] / "msg1.txt").read_text(encoding="utf-8") == "担当A"
     assert managed_temp.find_session_temp("parent") == parent
-
-
-@pytest.mark.parametrize(
-    ("source", "delegated", "main_warns"),
-    [("clear", False, True), ("compact", False, True), ("compact", True, True), ("resume", False, False)],
-)
-@pytest.mark.cpu_limit(
-    2.25,
-    reason=(
-        "main/subのスキル起動、SessionStart、両主体の再操作の5公開hookで案内の分離を検証する（Linux限定"
-        "再確認のCPU合計最大0.903秒）。"
-    ),
-)
-def test_session_start_resets_operation_skill_notice_for_main(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-    source: str,
-    delegated: bool,
-    main_warns: bool,
-) -> None:
-    acquired = "agent-basics:search"
-    operation = {"tool_name": "Bash", "tool_input": {"command": "rg x"}}
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    if delegated:
-        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    else:
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
-
-    def _no_session_temp(*_args: object, **_kwargs: object) -> pathlib.Path:
-        raise OSError("テストではセッションのmanaged-tempを作成しない")
-
-    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", _no_session_temp)
-    contract = tmp_path / "work-contract.md"
-    contract.write_text("資料配送の試験\n", encoding="utf-8")
-    monkeypatch.setattr(rules_context.work_contract, "record_path", lambda _session: contract)
-
-    def _hook_context(handler: Callable[[str], int], payload: dict) -> str:
-        code = handler(json.dumps(payload))
-        captured = capsys.readouterr()
-        if code == 2:
-            return captured.err
-        return json.loads(captured.out)["hookSpecificOutput"]["additionalContext"] if captured.out else ""
-
-    def _operation_context(agent_id: str | None) -> str:
-        payload = {**operation, "session_id": "reset-skill"}
-        if agent_id is not None:
-            payload["agent_id"] = agent_id
-        return _hook_context(pretooluse.main, payload)
-
-    for agent_id in (None, "sub-1"):
-        acquisition_payload = {
-            "hook_event_name": "PostToolUse",
-            "session_id": "reset-skill",
-            "tool_name": "Skill",
-            "tool_input": {"skill": acquired},
-            "tool_response": "起動成功",
-        }
-        if agent_id is not None:
-            acquisition_payload["agent_id"] = agent_id
-        _hook_context(posttooluse.main, acquisition_payload)
-
-    _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
-
-    assert (acquired in _operation_context(None)) is main_warns
-    assert acquired not in _operation_context("sub-1")
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

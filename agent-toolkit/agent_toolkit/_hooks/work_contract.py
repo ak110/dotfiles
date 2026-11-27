@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
-import json
 import os
 import pathlib
 import re
-from collections.abc import Iterator
 
-from agent_toolkit._common import automated_prompt, delegated_session, runtime_inserted
+from agent_toolkit._common import delegated_session
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
@@ -40,158 +38,6 @@ RETURN_CRITERION = (
 
 SHORT_NOTICE = "作業の目的と現行の要求を見失わないよう、作業契約の原本を読んでください: "
 """通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
-
-
-def _original_user_text(raw: str, *, include_answers: bool = False) -> str | None:
-    try:
-        entry = json.loads(raw)
-    except ValueError:
-        return None
-    if not isinstance(entry, dict):
-        return None
-    if entry.get("type") == "event_msg" and isinstance(payload := entry.get("payload"), dict):
-        text = payload.get("message")
-        return text if payload.get("type") == "user_message" and isinstance(text, str) else None
-    if (
-        entry.get("type") != "user"
-        or runtime_inserted.is_runtime_generated(entry)
-        or not isinstance(message := entry.get("message"), dict)
-    ):
-        return None
-    if isinstance(result := entry.get("toolUseResult"), dict) and isinstance(result.get("answers"), dict):
-        # 質問への回答も原本だが、選択肢以外の私的な自由記述を再配送しない。  # pyfltr: allow-comment
-        return "\n".join(value for value in result["answers"].values() if isinstance(value, str)) if include_answers else ""
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "\n".join(
-            item["text"]
-            for item in content
-            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
-        )
-    return None
-
-
-def progress_update_warning(session_id: str) -> str | None:
-    path = record_path(session_id)
-    if path is None:
-        return None
-    key = "work_contract_progress_checked"
-    try:
-        stat = path.stat()
-        stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
-        if read_state(session_id).get(key) == stamp:
-            return None
-        found = _progress_record_lines(path.read_text(encoding="utf-8"))
-    except OSError, UnicodeError:
-        return None
-    update_state(session_id, lambda state: {**state, key: stamp})
-    if not found:
-        return None
-    numbers = "、".join(str(number) for number in found)
-    return (
-        f"`{path}`の{numbers}行目に進捗・検収の記録がある。"
-        "担当の引き継ぎ記録、対応する計画かWI、または公開担当の引き継ぎ記録へ移し、"
-        "全体作業契約には原本の所在だけを残してください。"
-    )
-
-
-def _progress_record_lines(body: str) -> list[int]:
-    found = []
-    conditions = False
-    for number, line in _visible_contract_lines(body):
-        heading = re.match(r"^ {0,3}#{1,6} +(.+)$", line)
-        if heading:
-            conditions = heading[1].rstrip(" #") in {"完成条件", "検収条件", "受入条件"}
-        item = re.sub(r"^ {0,3}(?:#{1,6} +|[-*] +)", "", line)
-        reference_only = re.fullmatch(r"[^:：]+[:：]\s*(?:`(?:/|[A-Za-z]:[/\\])[^`]+`|(?:/|[A-Za-z]:[/\\])\S+)\s*", item)
-        if item.lstrip().startswith(">") or reference_only:
-            continue
-        timestamp = re.match(r"^\d{4}-\d{2}-\d{2}(?:T[\d:+Z-]+)? +", item)
-        text = item[timestamp.end() :] if timestamp else item
-        if re.match(
-            r"(?:現在の進捗|進捗(?:状況|ログ)?|現在の担当状況|担当の現在状態|"
-            r"検収結果|実装結果|検証結果|経緯|新着WIの判定)(?:[:： ]|$)",
-            text,
-        ):
-            found.append(number)
-            continue
-        if conditions or re.match(r"(?:完成条件|検収条件|受入条件|期限|制約) *[:：]", text):
-            continue
-        if _has_progress_assertion(text, timed=timestamp is not None):
-            found.append(number)
-    return found
-
-
-def _has_progress_assertion(text: str, *, timed: bool) -> bool:
-    # 達成すべき条件にも「検証を完了」と書くため、時刻のない体言止めでは判定しない。  pyfltr: allow-comment
-    text = re.sub(r'「[^」]*」|『[^』]*』|“[^”]*”|"[^"]*"|`[^`]*`', " ", text)
-    phase = r"(?:検収|実装|検証|統合|レビュー|公開)(?:が|を|は)?"
-    for sentence in re.split(r"[。！!]", text):
-        if re.search(phase + r"(?:開始した|終了した|完了した|済み|終えた)\s*$", sentence):
-            return True
-        if timed and re.search(phase + r"完了\s*$", sentence):
-            return True
-    return False
-
-
-def _visible_contract_lines(body: str) -> Iterator[tuple[int, str]]:
-    fence = ""
-    for number, line in enumerate(body.splitlines(), 1):
-        if delimiters := re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line):
-            if not fence:
-                fence = delimiters[1]
-            elif delimiters[1].startswith(fence) and not delimiters[2].strip():
-                fence = ""
-        elif not fence:
-            yield number, line
-
-
-def _additional_requirement_quotes(body: str) -> dict[int, str]:
-    quotes: dict[int, str] = {}
-    active = False
-    for number, line in _visible_contract_lines(body):
-        if line.startswith(("## ", "# ")):
-            active = re.match(r"^## 追加要求(?:[ （(]|$)", line) is not None
-        if active and (match := re.match(r"^[ \t]*(?:- )?原文[:：][ \t]*(.*)$", line)):
-            value = match[1].strip()
-            quotes[number] = value[1:-1] if value.startswith("「") and value.endswith("」") else value
-    return quotes
-
-
-def quote_update_warning(session_id: str, raw_transcript: object) -> str | None:
-    if not isinstance(raw_transcript, str) or not raw_transcript:
-        return None
-    path = record_path(session_id)
-    if path is None:
-        return None
-    key = "work_contract_quotes_checked"
-    try:
-        stat = path.stat()
-        stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
-        if read_state(session_id).get(key) == stamp:
-            return None
-        quotes = _additional_requirement_quotes(path.read_text(encoding="utf-8"))
-        if quotes:
-            with pathlib.Path(raw_transcript).open(encoding="utf-8") as stream:
-                for row in stream:
-                    source = _original_user_text(row, include_answers=True)
-                    if (
-                        source
-                        and not automated_prompt.contains(source)
-                        and not runtime_inserted.is_runtime_inserted_text(source)
-                    ):
-                        quotes = {number: quote for number, quote in quotes.items() if not quote or quote not in source}
-                    if not quotes:
-                        break
-    except OSError, UnicodeError:
-        return None
-    update_state(session_id, lambda state: {**state, key: stamp})
-    if not quotes:
-        return None
-    lines = "、".join(f"{number}行目" for number in quotes)
-    return f"`{path}`の{lines}の「原文:」が実ユーザー発話と一致しない。会話から逐語で引用し直し、要約は原文欄から移す。"
 
 
 def short_notice(path: pathlib.Path) -> str:
@@ -266,11 +112,7 @@ def observe_input(session_id: str) -> str | None:
 def reset_notice(session_id: str) -> None:
     update_state(
         session_id,
-        lambda state: {
-            key: value
-            for key, value in state.items()
-            if key not in {"work_contract_notified_sequence", DELEGATED_NOTICE_KEY, "whole_contract_read"}
-        },
+        lambda state: {key: value for key, value in state.items() if key != DELEGATED_NOTICE_KEY},
     )
     resolve_notice(session_id, "pretooluse", "main", subject="main")
 

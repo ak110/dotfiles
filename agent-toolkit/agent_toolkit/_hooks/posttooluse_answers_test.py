@@ -6,7 +6,6 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._testing.helpers import _read_state
 from agent_toolkit._testing.posttooluse_support import _ask_user_question_payload, _run
 
 _FREE_TEXT = "process-loopが動いてるからそっちでマージされるはず"
@@ -19,116 +18,6 @@ _MULTI_QUESTION = "どの対応を進めますか？"
 
 
 _LABELS = ("待つ (Recommended)", "今すぐマージする")
-
-
-@pytest.mark.parametrize("codex", [False, True])
-@pytest.mark.parametrize(
-    "command",
-    [
-        "git commit -m message",
-        "git commit --amend --no-edit",
-        "git -C /repo push",
-        "git commit -m message && git push",
-        "git commit -n -m message",
-        "git commit -m --help",
-        "for item in one; do git commit -m message; done",
-        "if test -f marker; then git commit -m message; elif test -d marker; then git push; fi",
-        "case value in one) git commit -m message;; esac",
-        "time for item in one; do git commit -m message; done",
-        "! if test -f marker; then git push; fi",
-        "time -p { git commit -m message; }",
-    ],
-)
-def test_git_completion_notice_distinguishes_retries_commits_and_targets(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str, codex: bool
-) -> None:
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    payload = {
-        "session_id": "completion-notice",
-        "hook_event_name": "PostToolUse",
-        "tool_name": "Bash",
-        "tool_input": {"command": command},
-        "tool_response": {"exit_code": 0},
-    }
-    if codex:
-        payload["turn_id"] = "codex-turn"
-    for index in range(2):
-        result = _run(payload, state_dir=tmp_path)
-        assert result.returncode == 0
-        if index:
-            assert not result.stdout
-            continue
-        body = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert body.count("報告を書く前に") == 1
-        assert "完了報告の手順書`" in body and "playbooks/report-completion.md`を全文読んでください" in body
-        assert "SKILL.md" not in body
-    payload["tool_response"] = {"exit_code": 0, "stdout": "[main 1234567] 次のcommit"}
-    changed_commit = _run(payload, state_dir=tmp_path)
-    assert changed_commit.returncode == 0
-    assert "report-completion" in json.loads(changed_commit.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert not _run(payload, state_dir=tmp_path).stdout
-    payload["cwd"] = str(tmp_path / "other-repository")
-    changed_target = _run(payload, state_dir=tmp_path)
-    assert changed_target.returncode == 0
-    assert "report-completion" in json.loads(changed_target.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert not any("completion" in key for key in _read_state(tmp_path, "completion-notice"))
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        "failure",
-        "nonzero",
-        "background",
-        "moved-background",
-        "shell-background",
-        "coproc",
-        "named-coproc",
-        "agent",
-        "delegate",
-        "dry-run",
-        "help",
-        "global-help",
-        "text",
-    ],
-)
-def test_git_completion_notice_excludes_non_completion_operations(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
-) -> None:
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    commands = {
-        "shell-background": "git push &",
-        "coproc": "coproc git push",
-        "named-coproc": "coproc WORKER if test -f marker; then git push; fi",
-        "dry-run": "git push --dry-run",
-        "help": "git commit --help",
-        "global-help": "git --help push",
-        "text": "echo 'git push'",
-    }
-    payload: dict = {
-        "session_id": "excluded-notice",
-        "hook_event_name": "PostToolUse",
-        "tool_name": "Bash",
-        "tool_input": {"command": commands.get(case, "git push")},
-        "tool_response": {"exit_code": 0},
-    }
-    if case == "failure":
-        payload["hook_event_name"] = "PostToolUseFailure"
-    elif case == "nonzero":
-        payload["tool_response"] = {"exit_code": 1}
-    elif case == "background":
-        payload["tool_input"] = {"command": "git push", "run_in_background": True}
-    elif case == "moved-background":
-        payload["tool_response"] = {"backgroundTaskId": "task-1"}
-    elif case == "agent":
-        payload["agent_id"] = "child-1"
-    elif case == "delegate":
-        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    result = _run(payload, state_dir=tmp_path)
-    assert result.returncode == 0
-    assert "report-completion" not in result.stdout
 
 
 @pytest.mark.parametrize(

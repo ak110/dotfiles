@@ -15,8 +15,8 @@ from agent_toolkit._testing.pretooluse_support import (
     _ROLES_DIR,
     _additional_context,
     _plan_file_state_env,
+    _run,
 )
-from agent_toolkit._testing.pretooluse_support import run_without_skill_notices as _run
 
 _EXEC_DOCUMENT = _ROLES_DIR / "exec.subagent.md"
 _READER_FIT_DOCUMENT = _ROLES_DIR / "reader-fit-review.subagent.md"

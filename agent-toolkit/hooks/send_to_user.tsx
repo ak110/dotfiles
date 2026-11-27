@@ -51,44 +51,6 @@ const STATUS_MARKER = /AWI化ステータス:\s*(不要|予定)[ \t]*/g;
 const DEFERRAL_FIELDS = ["作り込み側の候補", "見逃し側の候補", "比較結論"] as const;
 const DEFERRAL_FIELD = /(作り込み側の候補|見逃し側の候補|比較結論)\s*[:：]\s*([^;；\n]*)/g;
 
-// 判定語の直後が否定（「誤りは無い」「失敗しない」「漏れなく」「0件」など）の場合を除く先読みと、報告の形の手掛かりごとの判定語。
-// 語の一致で案内の候補を選ぶだけで、意味は推定しない。
-// `deviation`は逸脱を示す報告で、逸脱を表す名詞に発見・是正・発生の述語が続く形、過去の逸脱を述べる動詞の形、
-// 誤りを自分や判断に帰属させる形に一致させる。名詞だけの一致（「失敗」「指摘」「漏れ」など）と、
-// 仮定の形（「忘れた場合」「忘れたまま」）と問いの形（「誤っているか」）は外す。
-// `prevention`は再発防止を検討する条件（ユーザーの指摘、同じ害の繰り返し、大きな害）で、`agent-basics:bugfix`の入口の条件に対応する。
-const CUE_NEGATION = "(?!(?:は|が|も|では)?(?:無|な)(?:い|く|し|かっ)|(?:は|が|も)?見つから|(?:し|て|して)?い?(?:な(?:い|く|かっ)|ませ)|せず|(?:は|が)?[0０]件)";
-const REPORT_CUES = {
-  deviation: "(?:(?:バグ|不具合|(?<!非)欠陥|不備|不整合|誤り|間違い|ミス|漏れ|見落とし|取り違え|逸脱|退行)(?:を(?:見つけ|発見し|直し|修正し|是正し|訂正し|入れ|作り込|起こし|犯し)|が(?:あっ|あり(?!得|え|う)|見つか|分か|判明|残っ|起き|発生し)|だった|でした|であった|である)|間違(?:えた|えてい|ってい)|見落とし(?:た|てい)|取り違え(?:た|てい)|失念し|忘れてい(?:た|ました)|抜けてい(?:た|ました)|抜け落ち|漏れてい(?:た|ました)|漏らし(?:た|てい)|壊し(?:た|てい)|壊れてい(?:た|ました)|退行(?:させ|し(?:た|てい))|逸脱し(?:た|てい)|再発し(?:た|てい)|誤って(?!いるか)|を誤(?:り|った)|(?:私|自分|統括|判断|作業|前回|根本)の?(?:誤り|ミス)|(?:誤り|ミス)(?:です|でした|。|[:：])|同じ(?:誤り|失敗|ミス)を繰り返|(?:不備|退行|不具合|(?<!非)欠陥)を(?:検出|確認)し|忘れ(?:た(?!まま|場合|とき|時|ら|り)|ました)|失敗してい(?:た|ました))",
-  prevention: "(?:ユーザー(?:から|に|が)?の?再?指摘|再指摘|再発(?!防止)|同じ(?:誤り|失敗|ミス|不具合|症状|問題|害|指摘)|(?:2|２|二)(?:回|度)目の(?:修正|失敗|指摘)|破損|消失|漏洩|漏えい|依頼の未達)",
-} as const;
-type Cue = keyof typeof REPORT_CUES;
-const CUE_PATTERNS = (Object.keys(REPORT_CUES) as Cue[]).map((cue) => [cue, new RegExp(REPORT_CUES[cue] + CUE_NEGATION)] as const);
-// 送達後に、手掛かりの組に対して求める記録の行頭語（`agent-basics:bugfix`の「記録」）。bugfixの起動の有無は条件にしない。
-// 警告はツール結果で返り、ターンの継続を強制しない。直接応答のStopでは同じ検査をしない（Stopの通知は継続を強制するため）。
-const RECORD_LINE_CHECKS: readonly { cues: readonly Cue[]; head: string; warning: string }[] = [
-  {
-    cues: ["deviation"],
-    head: "対策",
-    warning: automatedMessage(
-      "send-to-user",
-      "warn",
-      "本文は表示済みである。逸脱を示す語を含む報告に`対策:`の行が無い。" +
-        "以後の報告では、今回の是正と残る影響を`対策:`の行に書いてください。bugfixの起動の記録は、今回の事象へ7つの問いを適用したことを示さない。",
-    ),
-  },
-  {
-    cues: ["deviation", "prevention"],
-    head: "再発防止",
-    warning: automatedMessage(
-      "send-to-user",
-      "warn",
-      "本文は表示済みである。再発防止を検討する条件（ユーザーの指摘、同じ害の繰り返し、大きな害）を示す語を含む逸脱の報告に`再発防止:`の行が無い。" +
-        "以後の報告では、再発防止の採否を`再発防止:`の行に書いてください。採らない場合は区分名と理由を書いてください。",
-    ),
-  },
-];
-
 // 自動挿入の要素とフェンス内を除いた行。Pythonの`runtime_inserted.report_lines`と同じ境界にし、フェンスの境界はnullで返す。
 function unfencedLines(message: string): (string | null)[] {
   const lines: (string | null)[] = [];
@@ -140,49 +102,6 @@ function reportedLines(message: string): string[] {
   return lines;
 }
 
-// 区分名で始まらない値、未調査を理由にした`不要`、逸脱の報告に欠けた記録の行の警告を、重複を除いて返す。
-// `再発防止:`の行は、変える成果物（ファイル・commit）か、採用しない区分名（`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）を示す。
-// 担当の心がけだけを書いた行は、規範を思い出して従うことに依存する対策であり、同書が再発防止として認めない。
-// 未解決の不具合を調査へ引き継ぐ行も通す。成果物の参照と変更の区別は自然文の解釈を要するため判定しない。
-const PREVENTION_CATEGORY = /^(?:非欠陥|処置済み|被覆|見送り)|引き?継|依頼/;
-const CHANGED_ARTIFACT = /[\w.-]+\/[\w./-]+|[\w-]\.[A-Za-z]{1,5}\b|(?<!\w)\.[A-Za-z][\w.-]*|\b[0-9a-f]{7,40}\b|\b[A-Z][a-z]*file\b/;
-const PREVENTION_WITHOUT_CHANGE_WARNING = automatedMessage(
-  "send-to-user",
-  "warn",
-  "本文は表示済みである。`再発防止:`の行が、変える成果物（ファイル・commit）も採用しない区分名も示していない。" +
-    "担当の心がけは再発防止にならない（`agent-basics:bugfix/references/prevention.md`）。採る場合は文言・出し方と仕組みを比べ、原因に作用する変更を加えるファイルを、" +
-    "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書いてください。",
-);
-
-const BUGFIX_RECORD_HEADS = ["期待", "原因", "対策"] as const;
-export const missingPreventionRejection = automatedMessage(
-  "send-to-user",
-  "block",
-  "報告は未送信である。bugfixの記録（`期待:`・`原因:`・`対策:`）に`再発防止:`の行が無い。" +
-    "採用する策と変える成果物、採らない区分名と理由、または未解決で調査へ引き継ぐ場合の観測した事象・次に確かめる問い・引継先（`agent-basics:bugfix/references/prevention.md`「`再発防止:`の行」）を`再発防止:`の行に書き、同じ報告をsend_to_userで送り直せ。" +
-    '判定名は `missing-prevention`。',
-);
-
-export function missingPreventionLine(message: string): boolean {
-  const records: Map<string, boolean>[] = [];
-  for (const raw of reportBodyLines(message)) {
-    const line = raw.replaceAll("：", ":").replace(/^\s*(?:[-*+]\s+)?/, "").replaceAll("**", "");
-    if (/^(?:#|【)/.test(line)) {
-      records.push(new Map());
-      continue;
-    }
-    const separator = line.indexOf(":");
-    if (separator < 0) continue;
-    const head = line.slice(0, separator).trim();
-    const filled = Boolean(line.slice(separator + 1).trim());
-    if (head === "期待") records.push(new Map());
-    const record = records.at(-1);
-    if (!record) continue;
-    record.set(head, (record.get(head) ?? false) || filled);
-  }
-  return records.some((record) => BUGFIX_RECORD_HEADS.every((head) => record.get(head)) && !record.get("再発防止"));
-}
-
 export function reportWarnings(message: string, deliveryId?: string, skipped: readonly string[] = []): string[] {
   const warnings = new Set<string>();
   function warn(check: string, warning: string): void {
@@ -223,18 +142,6 @@ export function reportWarnings(message: string, deliveryId?: string, skipped: re
         ));
       }
     }
-  }
-  const body = reportBodyLines(message);
-  const text = body.map((line) => line.replace(/`[^`\n]+`/g, "")).join("\n");
-  const cues = new Set(CUE_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([cue]) => cue));
-  const heads = new Set(body.map((line) => line.replaceAll("：", ":")).filter((line) => line.includes(":")).map((line) => line.split(":", 1)[0]));
-  for (const check of RECORD_LINE_CHECKS) {
-    if (check.cues.every((cue) => cues.has(cue)) && !heads.has(check.head)) warn(check.head === "対策" ? "missing-disposition" : "missing-prevention", check.warning);
-  }
-  for (const line of body.map((item) => item.replaceAll("：", ":"))) {
-    if (!line.startsWith("再発防止:")) continue;
-    const content = line.slice("再発防止:".length).trim();
-    if (!PREVENTION_CATEGORY.test(content) && !CHANGED_ARTIFACT.test(content)) warn("prevention-artifact", PREVENTION_WITHOUT_CHANGE_WARNING);
   }
   return [...warnings];
 }

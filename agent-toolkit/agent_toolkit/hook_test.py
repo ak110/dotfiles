@@ -60,8 +60,7 @@ def test_every_hook_command_converts_launch_failure_to_non_blocking() -> None:
 
 @pytest.mark.skipif(os.name == "nt", reason="登録コマンドをPOSIXシェルで検証する")
 @pytest.mark.parametrize("definition", _HOOK_DEFINITIONS, ids=lambda path: path.name)
-@pytest.mark.parametrize("case", ["pattern-kill", "unread-rewrite"])
-def test_registered_pretooluse_command_preserves_denial_and_read_guidance(definition, tmp_path, case) -> None:
+def test_registered_pretooluse_command_preserves_denial(definition, tmp_path) -> None:
     shell = shutil.which("sh")
     assert shell is not None
     command = json.loads(definition.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
@@ -84,20 +83,6 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
         "tool_input": {"command": "pkill -f worker"},
     }
     expected = "pkill"
-    if case == "unread-rewrite":
-        payload.update(tool_name="Write", tool_input={"file_path": str(tmp_path / "note.md"), "content": "本文"})
-        first = subprocess.run(
-            [shell, "-c", command],
-            input=json.dumps(payload),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-            env=environment,
-            cwd=tmp_path,
-        )
-        assert first.returncode == 0 and not first.stderr
-        assert "additionalContext" in json.loads(first.stdout)["hookSpecificOutput"]
     result = subprocess.run(
         [shell, "-c", command],
         input=json.dumps(payload),
@@ -110,10 +95,6 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
     )
     assert result.returncode == 0
     assert not result.stderr
-    if case == "unread-rewrite":
-        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
-        assert specific.get("permissionDecision") != "deny"
-        return
     specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "deny"
     assert expected in specific["permissionDecisionReason"]
@@ -193,12 +174,12 @@ def test_invalid_session_id_warning_keeps_event_output_contract(subcommand: str,
 
 def test_discarded_codex_stop_notice_is_not_recorded(monkeypatch) -> None:
     module = importlib.import_module("agent_toolkit._hooks.stop")
-    advisor = importlib.import_module("agent_toolkit._hooks.termination_order_advisor")
+    advisor = importlib.import_module("agent_toolkit._hooks.permission_denial_notice")
 
     def evaluate(_payload, **_kwargs):
         return "notify", notice.formatter("discarded")("通知本文")
 
-    monkeypatch.setattr(module, "CODEX_CHECK_MODULE_NAMES", ("termination_order_advisor",))
+    monkeypatch.setattr(module, "CODEX_CHECK_MODULE_NAMES", ("permission_denial_notice",))
     monkeypatch.setattr(advisor, "evaluate", evaluate)
     result = _run_hook_in_process("stop", {"session_id": "discarded-stop", "turn_id": "turn"})
     assert result.returncode == 0

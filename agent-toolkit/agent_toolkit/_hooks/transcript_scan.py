@@ -21,9 +21,9 @@ _TAIL_BYTES = 65536
 
 
 def read_transcript_entries_cached(transcript_path: str) -> list[dict]:
-    """transcriptのフラッシュ待機と解析を同一プロセス内で1回に集約して返す。
+    """transcriptのフラッシュ待機と解析を同一プロセス内で1回に集約して返す。  pyfltr: allow-comment
 
-    `is_pending_async_work`と他の判定モジュール（`termination_order_advisor`等）が
+    `is_pending_async_work`と他の判定モジュール（`user_response_advisor`等）が
     同じStop入力のtranscriptを走査する際、`wait_for_end_turn`によるポーリングと
     `_transcript.read_transcript_entries`によるJSONL解析の重複実行を避ける。
     同一`transcript_path`への2回目以降の呼び出しは、直前の解析結果をそのまま返す。

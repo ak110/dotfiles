@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit._hooks import command_timing, message_format, notice
+from agent_toolkit._hooks import message_format, notice
 from agent_toolkit._testing import hook_output_contract
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -146,25 +146,3 @@ def test_copy_failure_keeps_agent_notice(monkeypatch):
     built, delivered = _deliver(monkeypatch, "pretooluse", lambda: _response(_warning()))
     assert delivered["hookSpecificOutput"] == built["hookSpecificOutput"]
     assert "systemMessage" not in delivered
-
-
-def test_command_timing_review_copies_individual_times_to_user(monkeypatch):
-    def build():
-        messages = []
-        for index in range(3):
-            payload = {
-                "session_id": "user-copy-clock-review",
-                "tool_name": "Bash",
-                "tool_use_id": f"call-{index}",
-                "tool_input": {"command": "printf test"},
-                "duration_ms": 10_000 + index * 1000,
-            }
-            command_timing.start(payload)
-            messages.extend(command_timing.observe(payload))
-        return _response(*messages, event="PostToolUse")
-
-    _, delivered = _deliver(monkeypatch, "posttooluse", build)
-    for text in (delivered["systemMessage"], delivered["hookSpecificOutput"]["additionalContext"]):
-        assert "10.0秒、11.0秒、12.0秒" in text
-        assert "合計" not in text
-        assert "次の操作" in text or "必要な全体検証" in text

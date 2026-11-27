@@ -1,12 +1,4 @@
-"""成果作業と完了報告（入口`atk-mode`の作業`report-completion`）の起動証拠を作業単位で保持する。
-
-各イベントはこの所有モジュールへ観測を渡す。
-成果作業は成功した対象スキルの開始、リポジトリへの自編集、
-計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功した入口の起動と、
-Claude Codeの`Read`が返した手順書の全文、Codex・Antigravityの静的に確定した手順書の読取の成功から取得する。
-受理する証拠は`skills/atk-mode/references/termination-evidence.md`「受理する証拠」が定める。完了の自己申告と報告本文は受理しない。
-意味上の中止・開始はメインが原入力と対象を結び付け、ここでは識別子から実体を読み、由来と対象を確かめる。
-"""
+"""成果作業の対象と、中止・置換・待機・実際の失敗の判断根拠を保持する。  pyfltr: allow-comment"""
 
 from __future__ import annotations
 
@@ -19,21 +11,18 @@ lazy from typing import Any
 lazy from agent_toolkit._atk.wi import uwi_scan
 lazy from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state
 lazy from agent_toolkit._hooks import agent_id
-lazy from agent_toolkit._hooks.termination_evidence_decisions import _omission_policy, missing_completion, record_decision
+lazy from agent_toolkit._hooks.termination_evidence_decisions import record_decision
 lazy from agent_toolkit._hooks.termination_evidence_operations import (
     _hook_tool_input,
     _invocations,
     published_git_operations,
-    unscoped_self_edits,
 )
 lazy from agent_toolkit._hooks.termination_evidence_state import (
-    CONTEXT_KEY,
     STATE_KEY,
     _compact,
     _current_work,
     _data,
     _FailureEvidenceError,
-    _finished,
     _InactiveWaitError,
     _last_decision,
     _new_work,
@@ -41,31 +30,23 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
     _position,
     _store_input,
     _sync_queued_inputs,
-    _UnresolvedRepositoryError,
     completion_playbook_path,
     decision_hint,
-    evidence_available,
     host_stop_fix,
     pending_work,
-    playbook_digest,
     session_works,
     termination_evidence_reference,
-    unresolved_repository_fix,
     waits_on_delegated_session,
 )
 
 __all__ = [
     "_hook_tool_input",
-    "_omission_policy",
     "completion_playbook_path",
     "decision_hint",
-    "evidence_available",
-    "missing_completion",
     "pending_work",
     "published_git_operations",
     "session_works",
     "termination_evidence_reference",
-    "unscoped_self_edits",
     "uwi_scan",
     "waits_on_delegated_session",
 ]
@@ -128,8 +109,6 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
         # 工程外の成功した呼び出しは状態を読み書きせず、全ツール呼び出しの排他更新を避ける。
         return
 
-    main_context = agent_id.is_main_agent_context(payload)
-
     def update(state: dict[str, Any]) -> dict[str, Any]:
         if not invocations and STATE_KEY not in state:
             return state
@@ -149,7 +128,7 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
                 work["failure_call"] = tool_id
                 _compact(data)
                 return state
-            if current is None or _last_decision(current[1]) in {"cancel", "replace"} or _finished(data, current[1]):
+            if current is None or _last_decision(current[1]) in {"cancel", "replace"}:
                 if invocations[0]["kind"] == "async":
                     return state
                 current = _new_work(data, data.get("last_human_input", data.get("last_input", tool_id)))
@@ -166,12 +145,8 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
             if not isinstance(work, dict):
                 continue
             record["observed"] = True
-            if record["kind"] == "completion":
-                work["completion_report"] = True
-                if main_context:
-                    data[CONTEXT_KEY] = playbook_digest()
-            elif record["kind"] == "deliverable":
-                if main_context and (entry_work := record.get("entry_work")):
+            if record["kind"] == "deliverable":
+                if entry_work := record.get("entry_work"):
                     data["entry_work"] = entry_work
                 known_labels = work.setdefault("deliverables", [])
                 known_labels.extend(label for label in record["labels"] if label not in known_labels)
@@ -242,13 +217,7 @@ def main(argv: list[str] | None = None) -> int:
             entry = data.get("inputs", {}).get(input_id) if isinstance(data.get("inputs"), dict) else None
             human = isinstance(entry, dict) and entry.get("human") is True
             current = _current_work(data)
-            work_id = (
-                current[0]
-                if current is not None
-                and not _finished(data, current[1])
-                and _last_decision(current[1]) not in {"cancel", "replace"}
-                else None
-            )
+            work_id = current[0] if current is not None and _last_decision(current[1]) not in {"cancel", "replace"} else None
             if not human and work_id is None:
                 raise ValueError("現在の会話の作業と人間入力をまだ観測していない")
             print(
@@ -269,9 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         work_id = record_decision(document)
     except (OSError, UnicodeError, ValueError) as error:
         recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行してください"
-        if isinstance(error, _UnresolvedRepositoryError):
-            recovery = unresolved_repository_fix()
-        elif isinstance(error, _FailureEvidenceError):
+        if isinstance(error, _FailureEvidenceError):
             recovery = (
                 "失敗応答を返したツール呼び出しの`call_id`で記録してください。受理する証拠は"
                 f"{termination_evidence_reference()}「受理する証拠」に従ってください。" + host_stop_fix()

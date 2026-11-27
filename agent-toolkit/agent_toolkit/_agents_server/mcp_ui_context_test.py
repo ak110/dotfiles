@@ -253,7 +253,7 @@ async def test_send_rejection_preserves_body_only_when_resend_can_recover(
 
     monkeypatch.setattr(managed_temp, "resolve_session_temp", resolve)
     monkeypatch.setattr(managed_temp, "create_session_temp", create)
-    reason = "再発防止の行が無い"
+    reason = "本文の言語を確認できない"
     mod = AsyncMock(side_effect=function_hook_requests.HookRequestRejected(reason, resend=case != "unavailable"))
     monkeypatch.setattr(function_hook_requests, "request", mod)
     body = "The description must be provided in Japanese." if case == "language" else "期待: 期待した結果\r\n末尾。"
@@ -326,7 +326,7 @@ async def test_send_to_user_keeps_warnings_in_result_when_stash_fails(
 @pytest.mark.parametrize("tool_use_id", ["toolu_fixture", "repl_fixture", None])
 async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, tmp_path, tool_use_id):
     identifier = "a" * 32
-    rejected = function_hook_requests.HookRequestRejected("判定名は `missing-prevention`。", resend=True)
+    rejected = function_hook_requests.HookRequestRejected("判定名は `response-language`。", resend=True)
     request = AsyncMock(side_effect=[rejected, {"ok": True, "id": identifier}])
     monkeypatch.setattr(function_hook_requests, "request", request)
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "misdetection-mcp"))
@@ -365,14 +365,14 @@ async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, t
             "send_to_user",
             {
                 "message": message,
-                "misdetection": [{"check": "missing-prevention", "reason": "説明用の引用である。"}],
+                "misdetection": [{"check": "response-language", "reason": "説明用の引用である。"}],
             },
         )
 
         with pytest.raises(ToolError, match="未送達記録を確認できない"):
             await mcp_tools.mcp.call_tool(
                 "send_to_user",
-                {"message": message, "misdetection": [{"check": "missing-prevention", "reason": "説明用の引用である。"}]},
+                {"message": message, "misdetection": [{"check": "response-language", "reason": "説明用の引用である。"}]},
             )
 
     assert isinstance(result, CallToolResult)
@@ -382,9 +382,9 @@ async def test_send_to_user_misdetection_does_not_rewrite_message(monkeypatch, t
         "send_to_user",
         {
             "message": message,
-            "misdetection_checks": ["missing-prevention"],
+            "misdetection_checks": ["response-language"],
         },
     )
     summary = send_misdetection.summary("misdetection-mcp")
-    assert "missing-prevention: 1件" in summary
+    assert "response-language: 1件" in summary
     assert str(tmp_path / "message.md") in summary

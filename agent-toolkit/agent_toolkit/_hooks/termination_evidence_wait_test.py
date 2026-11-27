@@ -10,7 +10,7 @@ import pytest
 from agent_toolkit._atk.wi import entries, uwi_scan
 from agent_toolkit._atk.wi.public_layout_test import _run
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import termination_evidence, termination_order_advisor
+from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.termination_evidence_support import isolated_session as isolated_session
 from agent_toolkit._testing.termination_evidence_support import public_decision, stop_payload, supply_commit
@@ -56,14 +56,16 @@ def test_monthly_waiting_uwi_public_command(tmp_path: pathlib.Path, monkeypatch:
             _run(notes, "start-processing", question.name, f"--target-repo={repo_id}")
         status, reason = public_decision(tmp_path, document)
         assert status == 0, reason
-        assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を待つ。"))[0] == "approve"
+        assert not termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "回答を待つ。")))
         scanned = uwi_scan.scan_active_uwis(notes, repo_id)
         assert scanned.complete
         assert scanned.entries == [uwi_scan.ActiveUwi(question.name, False, "evidence-test")]
     original = question.read_text(encoding="utf-8")
     question.write_text(original + "\n公開してよい。\n", encoding="utf-8")
     assert public_decision(tmp_path, document)[0] != 0
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を受け取った。"))[0] == "notify"
+    assert [
+        work_id for work_id, _ in termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "回答を受け取った。")))
+    ] == ["work-1"]
 
 
 def test_waiting_for_answer_is_scoped_and_returns_to_remaining_work(
@@ -89,9 +91,11 @@ def test_waiting_for_answer_is_scoped_and_returns_to_remaining_work(
             "reason": "選好の回答を待つ",
         }
     )
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を待つ。"))[0] == "approve"
+    assert not termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "回答を待つ。")))
     question.write_text(original + "今日だけの残量を示す。\n", encoding="utf-8")
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を受け取った。"))[0] == "notify"
+    assert [
+        work_id for work_id, _ in termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "回答を受け取った。")))
+    ] == ["work-1"]
 
 
 def test_unrelated_or_invented_wait_target_does_not_clear_remaining_work(tmp_path: pathlib.Path) -> None:
@@ -106,7 +110,9 @@ def test_unrelated_or_invented_wait_target_does_not_clear_remaining_work(tmp_pat
                 "reason": "待機したという申告",
             }
         )
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "待機中"))[0] == "notify"
+    assert [work_id for work_id, _ in termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "待機中")))] == [
+        "work-1"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -156,10 +162,12 @@ def test_waiting_uwi_rejects_invalid_membership_and_metadata(
     if problem == "quote":
         document["quote"] = "本文と異なる引用"
     assert public_decision(tmp_path, document)[0] != 0
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を待つ。"))[0] == "notify"
+    assert [
+        work_id for work_id, _ in termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "回答を待つ。")))
+    ] == ["work-1"]
 
 
-def test_corrupt_or_foreign_state_does_not_block(tmp_path: pathlib.Path) -> None:
+def test_corrupt_or_foreign_state_is_not_used(tmp_path: pathlib.Path) -> None:
     supply_commit(tmp_path)
 
     def corrupt(state: dict) -> dict:
@@ -167,14 +175,7 @@ def test_corrupt_or_foreign_state_does_not_block(tmp_path: pathlib.Path) -> None
         return state
 
     session_state.update_state("evidence-test", corrupt)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
-
-
-def test_unreadable_transcript_does_not_block(tmp_path: pathlib.Path) -> None:
-    """待機対象を確かめるtranscriptを読み取れない場合は遮断しない。"""
-    supply_commit(tmp_path)
-    (tmp_path / "transcript.jsonl").unlink()
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
+    assert not termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "")))
 
 
 def test_async_wait_is_scoped_to_real_child_and_returns_after_end(tmp_path: pathlib.Path) -> None:
@@ -195,7 +196,8 @@ def test_async_wait_is_scoped_to_real_child_and_returns_after_end(tmp_path: path
         return state
 
     session_state.update_state("evidence-test", register)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "待機中"))[0] == "approve"
+    work = termination_evidence.session_works({"session_id": "evidence-test"})[0][1]
+    assert termination_evidence.waits_on_delegated_session({"session_id": "evidence-test"}, work)
     termination_evidence.record_decision(
         {
             "session_id": "evidence-test",
@@ -205,14 +207,16 @@ def test_async_wait_is_scoped_to_real_child_and_returns_after_end(tmp_path: path
             "reason": "調査結果を待つ",
         }
     )
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "待機中"))[0] == "approve"
+    assert not termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "待機中")))
 
     def finish(state: dict) -> dict:
         state["agents_server_sessions"]["child-1"]["pending_observation"] = False
         return state
 
     session_state.update_state("evidence-test", finish)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った"))[0] == "notify"
+    assert [
+        work_id for work_id, _ in termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "結果を受け取った")))
+    ] == ["work-1"]
 
 
 def test_blocked_requires_actual_failure_of_same_work(tmp_path: pathlib.Path) -> None:
@@ -231,7 +235,7 @@ def test_blocked_requires_actual_failure_of_same_work(tmp_path: pathlib.Path) ->
         termination_evidence.record_decision({**base, "call_id": "network", "quote": "成功した"})
     quote = json.dumps(failure["tool_response"], ensure_ascii=False, sort_keys=True)
     termination_evidence.record_decision({**base, "call_id": "network", "quote": quote})
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "取得できない"))[0] == "approve"
+    assert not termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "取得できない")))
 
 
 @pytest.mark.parametrize("action", ["blocked", "wait"])

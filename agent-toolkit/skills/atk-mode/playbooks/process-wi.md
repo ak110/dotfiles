@@ -161,7 +161,7 @@ GitHub CopilotのレビューとDependabotアラートの監査はリポジト�
 作業完了の報告を所有するメインは、この作業で作ったcommitを公開してから`agent-toolkit:atk-mode/playbooks/report-completion.md`に従って報告する。
 常駐では前回報告以降に届いた成果を、dotfilesはリリースごと、リリース周期の無いリポジトリは公開ごとに報告し、[巡回の手順](process-loop.md#巡回する)へ戻る。
 process-loopの完了報告とホストの終了は同書「中断と再開」の条件に限る。
-明示的に委譲されたリポジトリ担当は役割の契約に従って委譲元へ返し、担当から外れるために同書やtermination-evidenceを取得することと、`omit-completion`の記録は避ける。
+明示的に委譲されたリポジトリ担当は役割の契約に従って委譲元へ返し、担当から外れるために同書を取得する必要は無い。
 反映は統括の公開の流れで担当し、反映が必要な公開担当は`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」を使い、反映と稼働確認の結果を返す。
 公開工程の承認スコープは、選定工程で判別した結果を`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「公開工程の承認スコープ」に従って使う。
 

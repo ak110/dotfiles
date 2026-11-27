@@ -70,8 +70,8 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     set_process_wi_invoked,
     update_state,
 )
-lazy from agent_toolkit._hooks import command_timing, session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
+lazy from agent_toolkit._hooks import session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 lazy from agent_toolkit._hooks.pretooluse import intake_edit, user_facing_checks
 
@@ -141,7 +141,6 @@ def _utterance_notice() -> str:
     """発話への初動の案内を、同じ文脈（セッションの開始か会話の圧縮の後）で最初の実ユーザー入力にだけ届ける。
 
     同じ文面を入力ごとに届けると読み飛ばされやすくなり、警告を含む通知全体が軽く扱われた（2026年11月25日の分析）。
-    初動が守られたかは、送達時の「分類」と「別案」の遮断（`bugfix_gate`・`pretooluse/dispatch.py`）が入力ごとに確かめる。
     重複抑止の記録は、文脈を失うSessionStartで`rules_context`が消すため、圧縮の後は再び届く。 pyfltr: allow-comment
     """
     return informational(_llm_notice(UTTERANCE_UNDERSTANDING_NOTICE_BODY))
@@ -229,7 +228,6 @@ def main(payload_text: str) -> int:
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
         harness_notices: list[str] = list(initial_notices)
-        harness_notices.extend(command_timing.observe_notifications(payload))
         if not is_codex_payload(payload):
             harness_notices.append(
                 informational(

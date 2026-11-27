@@ -11,7 +11,6 @@ import pytest
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._hooks import rules_context, user_prompt_submit, work_contract
-from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook
 
 
@@ -114,7 +113,6 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, cap
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
     monkeypatch.setattr(work_contract, "record_path", lambda _session: tmp_path / "work-contract.md")
-    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
     contract = tmp_path / "work-contract.md"
     contract.write_text("目的: 作業を完了する\n", encoding="utf-8")

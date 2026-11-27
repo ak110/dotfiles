@@ -18,8 +18,7 @@ from agent_toolkit._atk.wi.formatters import NewWorkItem
 from agent_toolkit._common import session_state
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_MARKER
 from agent_toolkit._hooks import notice as notice_module
-from agent_toolkit._hooks import posttooluse, progress_self_check
-from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._hooks import progress_self_check
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.output_policy_support import assert_output_policy
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
@@ -27,12 +26,6 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _INTERVAL = progress_self_check.SELF_CHECK_INTERVAL_SECONDS
 _OPENING = f'<atk-auto source="{progress_self_check.SOURCE}" kind="notice">'
-
-
-@pytest.fixture(autouse=True)
-def _without_unrelated_document_observation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """通知の採用・予約・再試行を通し、対象外の本文取得の観測を隔離する。"""
-    monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
 def _entries(session_id: str) -> dict:
@@ -66,7 +59,6 @@ def test_periodic_recheck_absorbs_one_minute_of_clock_jitter() -> None:
     early = 1000.0 + _INTERVAL - 1
     assert progress_self_check.claim_notice(payload, now=early) is None
     assert progress_self_check.claim_notice(payload, now=early, periodic_recheck=True) is not None
-    progress_self_check.release_reservations()
 
 
 def test_notice_waits_for_interval_and_fires_once() -> None:
@@ -85,14 +77,11 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
     assert "`main-reporting.md`「進捗点検」" in notice
     assert "cat --" not in notice and "Get-Content" not in notice
 
-    assert _entries(sid)["main"]["last_notified_at"] == 1000.0
-    notice_module.record_delivery(notice)
-    progress_self_check.release_reservations()
+    assert _entries(sid)["main"]["last_notified_at"] == 1000.0 + _INTERVAL
 
     assert progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL + 60) is None
     assert _entries(sid)["main"]["last_notified_at"] == 1000.0 + _INTERVAL
     assert progress_self_check.claim_notice(payload, now=1000.0 + 2 * _INTERVAL) is not None
-    progress_self_check.release_reservations()
 
 
 _SEND_TOOL = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
@@ -117,7 +106,6 @@ def _report_hook(subcommand: str, payload: dict) -> dict:
 def test_received_check_notice_does_not_block_a_report_without_time_estimate(tool: str) -> None:
     sid = _session_id()
     notice_module.record_delivery(_due_notice(sid))
-    progress_self_check.release_reservations()
     payload = {
         "session_id": sid,
         "tool_name": tool,
@@ -133,21 +121,6 @@ def test_in_process_subagent_notice_does_not_require_user_report() -> None:
     generated = _due_notice(_session_id(), agent="subagent-1")
     assert "既存の引き継ぎ記録" in generated
     assert "完了見込み" not in generated
-    progress_self_check.release_reservations()
-
-
-def test_undelivered_notice_keeps_the_due_time_for_the_next_call() -> None:
-    sid = _session_id()
-    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
-    payload = {"session_id": sid}
-    assert progress_self_check.claim_notice(payload, now=2800.0) is not None
-    progress_self_check.release_reservations()
-    assert _entries(sid)["main"]["last_notified_at"] == 1000.0
-    retry = progress_self_check.claim_notice(payload, now=2801.0)
-    assert retry is not None
-    notice_module.record_delivery(retry)
-    progress_self_check.release_reservations()
-    assert progress_self_check.claim_notice(payload, now=2802.0) is None
 
 
 def test_parallel_claim_of_the_same_subject_is_suppressed() -> None:
@@ -159,34 +132,8 @@ def test_parallel_claim_of_the_same_subject_is_suppressed() -> None:
     assert progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL) + 1) is None
     assert progress_self_check.claim_notice({"session_id": sid, "agent_id": "sub-1"}, now=float(_INTERVAL) + 1) is not None
 
-    later = float(_INTERVAL) + progress_self_check.RESERVATION_SECONDS + 1
+    later = float(2 * _INTERVAL)
     assert progress_self_check.claim_notice({"session_id": sid}, now=later) is not None
-    progress_self_check.release_reservations()
-
-
-def test_older_delivery_receipt_does_not_rewind_the_confirmed_time() -> None:
-    sid = _session_id()
-    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
-    old = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL))
-    progress_self_check.release_reservations()
-    new = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL) + 10)
-    assert old is not None and new is not None
-    notice_module.record_delivery(new)
-    notice_module.restore_delivery_receipts(
-        [
-            {
-                "text": old,
-                "session_id": sid,
-                "field": progress_self_check.DELIVERED_KEY,
-                "key": "main",
-                "value": repr(float(_INTERVAL)),
-            }
-        ]
-    )
-    notice_module.record_delivery(old)
-    progress_self_check.release_reservations()
-    assert progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL) + 20) is None
-    assert _entries(sid)["main"]["last_notified_at"] == float(_INTERVAL) + 10
 
 
 @pytest.mark.parametrize(
@@ -219,7 +166,6 @@ def test_notice_reports_elapsed_time_across_midnight(now: float) -> None:
     notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
     assert notice is not None and "初回観測から30分" in notice
     assert "前回の通知から" not in notice and "+00:00" not in notice
-    progress_self_check.release_reservations()
 
 
 def test_notice_does_not_report_negative_elapsed_after_clock_disagreement() -> None:
@@ -229,7 +175,6 @@ def test_notice_does_not_report_negative_elapsed_after_clock_disagreement() -> N
     assert notice is not None and "経過時間は不明" in notice
     assert "-1620分" not in notice
     assert _entries(sid)["main"]["started_at"] == 100000.0
-    progress_self_check.release_reservations()
 
 
 @pytest.mark.parametrize("payload", [{}, {"session_id": ""}, {"session_id": 1}])
@@ -344,123 +289,7 @@ def test_two_periodic_prompts_notify_just_before_the_normal_due_time(monkeypatch
         assert _OPENING not in _in_process("user_prompt_submit", {"session_id": sid, "prompt": "状況は？"})
         assert _OPENING not in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
         assert _in_process("user_prompt_submit", periodic).count(_OPENING) == 1
-        assert session_state.read_state(sid)[progress_self_check.DELIVERED_KEY]["main"] == [str(clock["now"])]
-
-
-def test_format_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開PostToolUseで通知の整形が失敗しても予約が残らず、直後の正常な呼出しで通知が採用される。"""
-    sid = _session_id()
-    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
-    clock = {"now": 2800.0}
-    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
-
-    def broken(*_args, **_kwargs) -> str:
-        raise ValueError("通知の整形に失敗した")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(progress_self_check, "_llm_notice", broken)
-        failed = _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
-    assert _OPENING not in failed
-    assert "reserved_at" not in _entries(sid)["main"]
-    clock["now"] = 2801.0
-    assert _OPENING in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
-
-
-def test_output_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開PostToolUseで通知の生成後に出力が失敗しても、障害を外した直後の再試行で通知が採用される。"""
-    sid = _session_id()
-    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
-    clock = {"now": 2800.0}
-    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
-
-    def broken(_response: dict) -> None:
-        raise OSError("応答の書き出しに失敗した")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(posttooluse, "emit_response", broken)
-        failed = _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
-    assert _OPENING not in failed
-    assert _entries(sid)["main"]["last_notified_at"] == 1000.0
-    clock["now"] = 2801.0
-    assert _OPENING in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
-    clock["now"] = 2802.0
-    assert _OPENING not in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
-
-
-def test_notice_reports_machine_concurrency_and_recent_hook_durations(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
-    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
-
-    monkeypatch.setattr(admission, "observe", lambda *_a, **_k: admission.Observation(working=13, admitted=0, waiting=2))
-    monkeypatch.setattr(admission, "configured_limit", lambda: admission.Limit(15, "test"))
-    (tmp_path / "hook-timings.jsonl").write_text(
-        "\n".join(json.dumps({"stage": "total", "seconds": value}) for value in (2.0, 4.0, 12.0)) + "\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(managed_temp, "find_session_temp", lambda _sid: tmp_path)
-    sid = f"progress-saturation-{uuid.uuid4()}"
-    assert progress_self_check.claim_notice({"session_id": sid}, now=1000.0) is None
-    notice = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
-    assert notice is not None
-    assert "13" in notice and "上限15" in notice and "起動待ち2" in notice
-    assert "平均6.0秒" in notice and "最大12.0秒" in notice
-
-
-@pytest.mark.parametrize("case", ["partial", "observe-error", "unreadable-hooks", "no-hooks"])
-def test_notice_distinguishes_partial_failed_and_absent_observations(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
-) -> None:
-    """部分観測・取得失敗・記録不在を区別し、取得失敗には次に確認する操作を示す。"""
-    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
-    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
-
-    def observe(*_a: object, **_k: object) -> admission.Observation:
-        if case == "observe-error":
-            raise PermissionError("denied")
-        return admission.Observation(
-            working=3, admitted=0, waiting=0, failures=("root/w.json: ValueError",) if case == "partial" else ()
-        )
-
-    monkeypatch.setattr(admission, "observe", observe)
-    monkeypatch.setattr(admission, "configured_limit", lambda: admission.Limit(15, "test"))
-    if case == "unreadable-hooks":
-        (tmp_path / "hook-timings.jsonl").write_text("{broken\n", encoding="utf-8")
-    monkeypatch.setattr(managed_temp, "find_session_temp", lambda _sid: tmp_path)
-    sid = f"progress-observation-{case}-{uuid.uuid4()}"
-    assert progress_self_check.claim_notice({"session_id": sid}, now=1000.0) is None
-    notice = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
-    assert notice is not None
-    expected = {
-        "partial": "部分観測",
-        "observe-error": "取得できない（PermissionError: denied）",
-        "unreadable-hooks": "hook所要時間の記録を読めない",
-        "no-hooks": "直近のhook所要の記録は無い",
-    }[case]
-    assert expected in notice
-    if case == "partial":
-        assert "root/w.json: ValueError" in notice and "agents-server" in notice
-    if case == "observe-error":
-        assert "denied" in notice and "`atk config get state_dir`" in notice
-
-
-def test_notice_keeps_all_unreadable_records_reachable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
-    from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
-
-    failures = tuple(f"root{index}/w.json: ValueError" for index in range(4))
-    monkeypatch.setattr(
-        admission, "observe", lambda *_a, **_k: admission.Observation(working=1, admitted=0, waiting=0, failures=failures)
-    )
-    monkeypatch.setattr(admission, "configured_limit", lambda: admission.Limit(15, "test"))
-    monkeypatch.setattr(managed_temp, "find_session_temp", lambda _sid: tmp_path)
-    sid = f"progress-many-failures-{uuid.uuid4()}"
-    assert progress_self_check.claim_notice({"session_id": sid}, now=1000.0) is None
-    notice = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
-    assert notice is not None and "他1件" in notice
-    report = tmp_path / "agents-concurrency-failures.txt"
-    assert str(report) in notice
-    assert all(failure in report.read_text(encoding="utf-8") for failure in failures)
+        assert _entries(sid)["main"]["last_notified_at"] == clock["now"]
 
 
 @pytest.mark.parametrize("failed", [None, OSError, SystemExit])
@@ -479,7 +308,6 @@ def test_process_loop_new_wis_reports_unconfirmed(monkeypatch, failed):
     notice = _due_notice(sid)
     assert "新着WIは未確認" in notice
     assert "0件" not in notice
-    progress_self_check.release_reservations()
 
 
 def test_process_loop_point_lists_merge_candidate(monkeypatch):
@@ -496,7 +324,6 @@ def test_process_loop_point_lists_merge_candidate(monkeypatch):
     assert progress_self_check.claim_notice(payload, now=1800.0) is None
     notice = progress_self_check.claim_notice(payload, now=1801.0)
     assert notice and f"{name} (source: implement、merge_branch: あり)" in notice
-    progress_self_check.release_reservations()
 
 
 def test_new_wi_preview_counts_all_but_repeats_only_undelivered_ids() -> None:
@@ -516,35 +343,6 @@ def test_new_wi_preview_counts_all_but_repeats_only_undelivered_ids() -> None:
     text, _ = notice_module.new_wi_preview(sid, "main", after)
     assert old not in text and new in text and "計2件" in text and "merge_branch: あり" in text
     assert old in notice_module.new_wi_preview(sid, "other", after)[0]
-
-
-def test_self_check_lists_skipped_notices_once() -> None:
-    sid = _session_id()
-    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
-    assert not notice_module.consume_resend(sid, "main", "test_resend", "本文", label="資料を取得せずに報告した")
-    assert notice_module.consume_resend(sid, "main", "test_resend", "本文", label="資料を取得せずに報告した")
-
-    def advise(state: dict) -> dict:
-        state[operation_skills.NOTIFIED_KEY] = {"main": ["agent-basics:search"]}
-        return state
-
-    assert session_state.update_state(sid, advise)
-    first = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL)
-    assert first is not None
-    assert "資料を取得せずに報告した" in first and "agent-basics:search" in first
-    progress_self_check.release_reservations()
-    second = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL + 1)
-    assert second is not None
-    assert "資料を取得せずに報告した" in second and "agent-basics:search" in second
-    notice_module.record_delivery(second)
-    third = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + 3 * _INTERVAL)
-    assert third is not None
-    assert "対応を確認できていない通知" not in third
-    assert notice_module.consume_resend(sid, "main", "test_resend", "本文", label="資料を取得せずに報告した")
-    notice_module.record_delivery(third)
-    fourth = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + 5 * _INTERVAL)
-    assert fourth is not None
-    assert "資料を取得せずに報告した" in fourth and "agent-basics:search" not in fourth
 
 
 def test_scoped_notices_merge_at_delivery_even_if_built_before_either_was_sent() -> None:
@@ -570,15 +368,3 @@ def test_scoped_notices_merge_at_delivery_even_if_built_before_either_was_sent()
     notice_module.stage_new_wi_preview(text, sid, "main", snapshot)
     notice_module.record_delivery(text)
     assert left.filename in notice_module.new_wi_preview(sid, "main", [left])[0]
-
-
-@pytest.mark.parametrize("agent", [None, "subagent-1"])
-def test_due_notice_points_to_own_work_contract(agent: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_toolkit._agents_server import subagent_contract  # pylint: disable=import-outside-toplevel
-    from agent_toolkit._hooks import work_contract  # pylint: disable=import-outside-toplevel
-
-    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    sid = _session_id()
-    assert subagent_contract.create(sid, "目的X") is None
-    generated = _due_notice(sid, agent=agent)
-    assert (str(work_contract.record_path(sid)) in generated) == (agent is None)

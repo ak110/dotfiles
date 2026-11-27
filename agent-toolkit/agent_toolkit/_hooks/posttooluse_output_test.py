@@ -153,11 +153,6 @@ def test_unread_material_on_completion_report_warns_without_blocking(tmp_path, c
     output = capsys.readouterr().out
     assert "未取得の退避出力" in output
     assert json.loads(output)["hookSpecificOutput"].get("permissionDecision") != "deny"
-    assert [
-        entry.partition("\n")[0] for entry in session_state.read_state("stacked-resend")["resend_passed_by_actor"]["main"]
-    ] == [
-        "未取得の退避出力を根拠にした報告",
-    ]
 
 
 def test_blocked_completion_report_is_not_recorded_as_unread(tmp_path, capsys, monkeypatch):
@@ -184,7 +179,6 @@ def test_blocked_completion_report_is_not_recorded_as_unread(tmp_path, capsys, m
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
     assert output["permissionDecision"] == "deny"
     assert "未取得の退避出力" not in output.get("additionalContext", "")
-    assert not session_state.read_state("blocked-unread").get("resend_passed_by_actor")
 
 
 @pytest.mark.parametrize("envelope", ["ending-row", "child-body"])

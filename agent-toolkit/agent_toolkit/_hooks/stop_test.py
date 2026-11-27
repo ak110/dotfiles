@@ -45,9 +45,8 @@ def test_blocks_and_notifications_are_aggregated_in_check_order(monkeypatch: pyt
         monkeypatch,
         {
             "run_skill_report_gate": ("block", "報告不足"),
-            "plan_save_advisor": ("approve", ""),
             "agents_server_session_advisor": ("notify", "未観測session"),
-            "termination_order_advisor": ("block", "別の遮断"),
+            "permission_denial_notice": ("block", "別の遮断"),
         },
     )
 
@@ -62,9 +61,8 @@ def test_notifications_are_aggregated_without_block(monkeypatch: pytest.MonkeyPa
         monkeypatch,
         {
             "run_skill_report_gate": ("approve", ""),
-            "plan_save_advisor": ("approve", ""),
             "agents_server_session_advisor": ("notify", "通知1"),
-            "termination_order_advisor": ("notify", "通知2"),
+            "permission_denial_notice": ("notify", "通知2"),
         },
     )
 
@@ -79,7 +77,7 @@ def test_notifications_are_aggregated_without_block(monkeypatch: pytest.MonkeyPa
 def test_yield_keeps_other_notifications(monkeypatch: pytest.MonkeyPatch) -> None:
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
     _replace_checks(
-        monkeypatch, {"termination_order_advisor": ("notify", "自編集のwarn"), "queued_notification_advisor": ("yield", "")}
+        monkeypatch, {"permission_denial_notice": ("notify", "自編集のwarn"), "queued_notification_advisor": ("yield", "")}
     )
     assert stop.evaluate("{}") == {
         "continue": False,
@@ -218,7 +216,10 @@ def test_continuation_tells_delegate_to_rewrite_full_report(
     elif decision != "approve":
         _replace_checks(
             monkeypatch,
-            {"agents_server_session_advisor": (decision, "未観測session"), "bugfix_gate": ("notify", "別の通知")},
+            {
+                "agents_server_session_advisor": (decision, "未観測session"),
+                "improvement_status_advisor": ("notify", "別の通知"),
+            },
         )
 
     result = stop.evaluate(json.dumps(payload))
@@ -238,7 +239,7 @@ def test_continuation_tells_delegate_to_rewrite_full_report(
 
 def test_suppressed_notifications_do_not_emit_empty_context(monkeypatch: pytest.MonkeyPatch) -> None:
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"termination_order_advisor": ("notify", "")})
+    _replace_checks(monkeypatch, {"permission_denial_notice": ("notify", "")})
     assert not stop.evaluate("{}")
 
 
@@ -287,7 +288,7 @@ def test_first_block_starts_count_at_one(
 ) -> None:
     _set_state_directory(monkeypatch, tmp_path)
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"termination_order_advisor": ("block", "別の遮断")})
+    _replace_checks(monkeypatch, {"permission_denial_notice": ("block", "別の遮断")})
     session_id = "first-block"
     _state_path(tmp_path, session_id).write_text(
         json.dumps({"stop_consecutive_block_count": 5}),
@@ -341,9 +342,6 @@ def test_stop_evaluations_scan_transcript_once(
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setenv("TEMP", str(tmp_path))
     monkeypatch.setenv("TMP", str(tmp_path))
-    plan_save_advisor = importlib.import_module("agent_toolkit._hooks.plan_save_advisor")
-    monkeypatch.setattr(plan_save_advisor, "is_process_loop_session", lambda *_args: False)
-    monkeypatch.setattr(plan_save_advisor, "working_plans_root", lambda: tmp_path / "plans")
     transcript = _write_transcript(tmp_path, [])
     payload = json.dumps(
         {
@@ -396,11 +394,9 @@ def test_queued_notifications_yield_without_overriding_block(
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     else:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    plan_save_advisor = importlib.import_module("agent_toolkit._hooks.plan_save_advisor")
-    monkeypatch.setattr(plan_save_advisor, "working_plans_root", lambda: tmp_path / "plans")
     _replace_checks(monkeypatch, {"user_response_advisor": ("notify_user", "ユーザー宛て通知")})
     if block:
-        _replace_checks(monkeypatch, {"termination_order_advisor": ("block", "別の遮断")})
+        _replace_checks(monkeypatch, {"permission_denial_notice": ("block", "別の遮断")})
     _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
     _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
     output_file = str(tmp_path / "tasks" / "b6n4gipz5.output")

@@ -142,7 +142,7 @@ test("呼出しを識別できる報告の警告は送信結果の本文でな�
   expect((responses[0]?.warnings ?? []).join("\n")).toContain("時刻の一部が伏せ字");
 });
 
-test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに差し戻す", async ($, on) => {
+test("報告の記録欄を送達資格にせず一度配置する", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);
   const id = "c".repeat(32);
@@ -158,13 +158,12 @@ test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに�
   await $.turn.start({ text: "操作", turnId: "ui-turn" });
   await clock.advance(100);
   await clock.advance(100);
-  expect(placements).toBe(0);
+  expect(placements).toBe(1);
   const response = JSON.parse(responses.at(-1) ?? "{}");
-  expect(response.ok).toBe(false);
-  expect(response.reason).toContain("未送信");
-  expect(response.reason).toContain("`再発防止:`");
-  expect(response.resend).toBe(true);
-  expect(response.reason).not.toContain("送信済み");
+  expect(response.ok).toBe(true);
+  expect(response.reason).not.toContain("未送信");
+  expect(response.resend).toBeUndefined();
+  expect(response.reason).toContain("送信済み");
 });
 
 test("MCP圧縮要求を表示要求と分けて予約受付する", async ($, on) => {
@@ -378,7 +377,7 @@ for (const [label, stored, text] of [
   });
 }
 
-test("未送達の本文に申告した判定だけを外して一度配置する", async ($, on) => {
+test("申告した判定だけを表示済みの警告から外す", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);
   let id = "1".repeat(32);
@@ -398,16 +397,16 @@ test("未送達の本文に申告した判定だけを外して一度配置す�
   on("ui.place", () => { placements++; return { value: { isPlaced: true, requestId: "placed-row" } }; });
   await $.turn.start({ text: "操作", turnId: "misdetection-turn" });
   await clock.advance(100);
-  expect(responses[0]?.ok).toBe(false);
-  expect(placements).toBe(0);
+  expect(responses[0]?.ok).toBe(true);
+  expect(placements).toBe(1);
+  expect(responses[0]?.warnings?.join("\n")).toContain('check="clock-claim"');
   id = "2".repeat(32);
-  skipped = ["missing-prevention"];
+  skipped = ["clock-claim"];
   await clock.advance(100);
   await clock.advance(100);
   expect(responses[1]?.ok).toBe(true);
-  expect(placements).toBe(1);
-  expect(responses[1]?.warnings?.join("\n")).toContain('check="clock-claim"');
-  expect(responses[1]?.warnings?.join("\n")).not.toContain('check="missing-prevention"');
+  expect(placements).toBe(2);
+  expect(responses[1]?.warnings?.join("\n") ?? "").not.toContain('check="clock-claim"');
   const rendered = JSON.stringify(await $.ui.render({ surface: "terminal", component: "Placed", requestId: "placed-row",
     props: { plugin: "agent-toolkit", id } }));
   expect(rendered).toContain(JSON.stringify(message));

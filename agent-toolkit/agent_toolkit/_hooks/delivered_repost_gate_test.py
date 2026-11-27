@@ -2,7 +2,6 @@
 
 import json
 import pathlib
-from unittest.mock import patch
 
 import pytest
 
@@ -70,9 +69,7 @@ def _main_session(monkeypatch: pytest.MonkeyPatch) -> None:
 def _stop(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> dict:
     path = tmp_path / "transcript.jsonl"
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")
-    checks = tuple(name for name in stop.CHECK_MODULE_NAMES if name != "bugfix_gate")
-    with patch.object(stop, "CHECK_MODULE_NAMES", checks):
-        return stop.evaluate(json.dumps({"session_id": "repost-gate", "transcript_path": str(path), **extra}))
+    return stop.evaluate(json.dumps({"session_id": "repost-gate", "transcript_path": str(path), **extra}))
 
 
 @pytest.mark.parametrize(

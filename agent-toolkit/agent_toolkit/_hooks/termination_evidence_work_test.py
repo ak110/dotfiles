@@ -13,93 +13,18 @@ from agent_toolkit._common import session_state
 from agent_toolkit._hooks import (
     termination_evidence,
     termination_evidence_operations,
-    termination_order_advisor,
     user_prompt_submit,
 )
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.termination_evidence_support import (
-    _missing_completion,
     _tool,
     human_input,
     stop_payload,
     supply_commit,
-    supply_completion,
 )
 from agent_toolkit._testing.termination_evidence_support import isolated_session as isolated_session
 
 pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
-
-
-WORK_COMPLETE = "## 作業完了報告\n\n完了した。\n\n### 成果\n\n- 変更した\n\n### 投入したWI\n\n- なし\n"
-
-
-COMPLETION_PLAYBOOK_TEXT = "# 作業完了報告とセッションの完了処理\n\nこの手順書を全文読むことが終了工程の開始である。\n"
-
-
-def test_new_input_keeps_work_identity_and_reuses_context_completion(tmp_path: pathlib.Path) -> None:
-    supply_commit(tmp_path, "commit-1")
-    supply_completion(tmp_path, "completion-1")
-    human_input(tmp_path, "next", "次の作業を頼む")
-    supply_commit(tmp_path, "commit-2")
-    works = termination_evidence.session_works(json.loads(stop_payload(tmp_path, "")))
-    assert len(works) == 2
-    assert not works[1][1].get("completion_report")
-    assert _missing_completion(tmp_path) == ["commit"]
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE)) == ("approve", "")
-
-
-def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathlib.Path) -> None:
-    human_input(tmp_path, "request", "作業を頼む")
-    supply_completion(tmp_path)
-    supply_commit(tmp_path)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
-    works = termination_evidence.session_works(json.loads(stop_payload(tmp_path, "")))
-    assert all(not termination_evidence.missing_completion(work) for _, work in works)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
-
-
-@pytest.mark.parametrize("invoked,new_input,missing", [(False, False, True), (True, False, False), (True, True, False)])
-def test_batch_report_save_reuses_invocation_in_same_context(tmp_path, invoked, new_input, missing):
-
-    def observe(call_id, tool, inputs, response):
-        payload = {
-            "session_id": "evidence-test",
-            "cwd": str(tmp_path),
-            "tool_use_id": call_id,
-            "tool_name": tool,
-            "tool_input": inputs,
-        }
-        termination_evidence.observe_tool(json.dumps(payload), after=False)
-        termination_evidence.observe_tool(json.dumps({**payload, "tool_response": response}), after=True)
-
-    termination_evidence.observe_user(
-        json.dumps({"session_id": "evidence-test", "turn_id": "batch", "prompt": "batchの報告を保存する"})
-    )
-    playbook = tmp_path / "plugin/skills/atk-mode/playbooks/report-completion.md"
-    playbook.parent.mkdir(parents=True)
-    playbook.write_text(COMPLETION_PLAYBOOK_TEXT, encoding="utf-8")
-    observe(
-        "reference",
-        "Bash",
-        {"command": f"cat -- {playbook}"},
-        {"stdout": COMPLETION_PLAYBOOK_TEXT, "exit_code": 0},
-    )
-    if invoked:
-        observe("completion", "Skill", {"skill": "agent-toolkit:atk-mode", "args": "report-completion"}, "起動")
-    if new_input:
-        termination_evidence.observe_user(
-            json.dumps({"session_id": "evidence-test", "turn_id": "next", "prompt": "別の報告を保存する"})
-        )
-    observe(
-        "report",
-        "Bash",
-        {"command": "atk wi add --type uwi --body-file report.md"},
-        {"stdout": "成功: 1件を保存した", "exit_code": 0},
-    )
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, ""))
-    assert (decision == "notify") is missing
-    if missing:
-        assert "WIの保存" in reason
 
 
 def test_generated_input_cannot_cancel_work(tmp_path: pathlib.Path) -> None:
@@ -151,21 +76,19 @@ def test_cancel_and_new_start_do_not_share_same_path_results(tmp_path: pathlib.P
     supply_commit(tmp_path, "commit-2")
     works = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "")))
     assert [work_id for work_id, _ in works] == [new_id]
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "登録した。"))
-    assert decision == "notify" and new_id in reason and "work-1:" not in reason
+    assert works[0][1]["deliverables"] == ["commit"]
 
 
-def test_cancelling_current_work_keeps_missing_completion_of_other_work(tmp_path: pathlib.Path) -> None:
+def test_cancelling_current_work_keeps_other_work(tmp_path: pathlib.Path) -> None:
     supply_commit(tmp_path)
     prompt = "別の作業を始めたが、それは中止する"
     human_input(tmp_path, "switch", prompt)
     document = {"session_id": "evidence-test", "input_id": "switch", "quote": prompt, "reason": "後の作業の中止"}
     later_id = termination_evidence.record_decision({**document, "action": "start"})
     termination_evidence.record_decision({**document, "action": "cancel", "work_id": later_id})
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "中止した。"))
-    assert decision == "notify"
-    assert "作業 work-1: commit" in reason
-    assert later_id not in reason
+    works = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "中止した。")))
+    assert [work_id for work_id, _ in works] == ["work-1"]
+    assert works[0][1]["deliverables"] == ["commit"]
 
 
 @pytest.mark.parametrize("kind", ["isolated", "linked", "external"])
@@ -184,9 +107,10 @@ def test_managed_temp_exemption_preserves_linked_external_repository(tmp_path, m
             target = linked
     human_input(tmp_path, "request", "作業を頼む")
     _tool(tmp_path, "edit", "Write", {"file_path": str(target / "file.txt")}, {"success": True}, codex=False)
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
+    works = termination_evidence.session_works({"session_id": "evidence-test"})
     if kind == "isolated":
-        assert decision == "approve"
+        assert works == []
     else:
-        assert decision == "notify"
-        assert "リポジトリの編集" in reason
+        assert len(works) == 1
+        assert works[0][1]["repositories"] == [str(target)]
+        assert works[0][1]["edits"] == {str(target): ["file.txt"]}

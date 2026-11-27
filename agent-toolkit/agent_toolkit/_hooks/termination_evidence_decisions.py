@@ -12,9 +12,7 @@ lazy from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import session_state
-lazy from agent_toolkit._git import worktrees as git_worktrees
 lazy from agent_toolkit._hooks import agent_id, agents_server_observations
-lazy from agent_toolkit._hooks.termination_evidence_operations import _git_root
 lazy from agent_toolkit._hooks.termination_evidence_state import (
     _compact,
     _data,
@@ -22,43 +20,7 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
     _InactiveWaitError,
     _new_work,
     _sync_queued_inputs,
-    _UnresolvedRepositoryError,
 )
-
-
-def missing_completion(work: dict[str, Any], *, context_loaded: bool | None = None) -> list[str]:
-    if context_loaded is True or (context_loaded is None and work.get("completion_report")):
-        return []
-    omission = work.get("omit_completion")
-    if isinstance(omission, dict) and omission.get("input_id") == work.get("input_at_last_call"):
-        try:
-            if _omission_policy(omission, work) == omission.get("policy_text"):
-                return []
-        except OSError, UnicodeError, ValueError:
-            pass
-    return list(work.get("deliverables", []))
-
-
-def _omission_policy(document: dict[str, Any], work: dict[str, Any], *, unresolved_labels: list[str] | None = None) -> str:
-    target = document.get("target_repo")
-    policy = document.get("policy_file")
-    if not isinstance(target, str) or not pathlib.Path(target).is_absolute():
-        raise ValueError("省略する作業のtarget_repoを絶対パスで渡す")
-    repository = pathlib.Path(target).resolve(strict=True)
-    observed = set(work.get("repositories", [])) | set(work.get("edits", {}))
-    if None in observed:
-        raise _UnresolvedRepositoryError(
-            "対象リポジトリを特定できなかった成果作業: " + "、".join(unresolved_labels or ["種類の内訳を保持しない旧記録"])
-        )
-    if not work.get("deliverables") or observed != {str(repository)} or _git_root(str(repository)) != repository:
-        raise ValueError("省略は観測済みの成果作業が属する単一リポジトリのrootを指定する")
-    if not isinstance(policy, str) or not pathlib.Path(policy).is_absolute():
-        raise ValueError("プロジェクト規範のpolicy_fileを絶対パスで渡す")
-    path = pathlib.Path(policy).resolve(strict=True)
-    owner = git_worktrees.owning_worktree(path, git_worktrees.list_worktrees(repository, timeout=5))
-    if owner is None or owner.path.resolve() != repository:
-        raise ValueError("policy_fileは対象リポジトリ内の適用するプロジェクト規範を指定する")
-    return path.read_text(encoding="utf-8")
 
 
 def _waiting_uwi(document: dict[str, Any], session_id: str) -> pathlib.Path:
@@ -88,7 +50,7 @@ def record_decision(document: dict[str, Any]) -> str:
     if (
         not isinstance(session_id, str)
         or not session_id
-        or action not in {"start", "cancel", "replace", "resume", "wait", "blocked", "publish-scope", "omit-completion"}
+        or action not in {"start", "cancel", "replace", "resume", "wait", "blocked", "publish-scope"}
     ):
         raise ValueError("session_idと受理する判断のactionを指定する")
     if not agent_id.is_main_agent_context({"agent_id": document.get("agent_id", "main")}):
@@ -96,10 +58,6 @@ def record_decision(document: dict[str, Any]) -> str:
     owner = _delegated_session.owner_session_id(os.environ)
     if owner and owner != session_id:
         raise ValueError("現在の会話のsession_idを指定する")
-    if action == "omit-completion":
-        current_session = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID")
-        if not agent_id.is_main_agent_context({}) or current_session != session_id:
-            raise ValueError("省略の判断は現在の会話のメインが記録する")
     if not isinstance(document.get("reason"), str) or not document["reason"].strip():
         raise ValueError("判断の理由を指定する")
     selected = ""
@@ -109,38 +67,7 @@ def record_decision(document: dict[str, Any]) -> str:
         data = _data(state, session_id)
         _sync_queued_inputs(data, None)
         evidence: dict[str, Any] = {}
-        if action == "omit-completion":
-            work = data["works"].get(document.get("work_id"))
-            input_id = document.get("input_id", data.get("last_human_input"))
-            reference = data["inputs"].get(input_id)
-            if not isinstance(work, dict):
-                raise ValueError("実在するwork_idを指定する")
-            if (
-                not isinstance(reference, dict)
-                or reference.get("human") is not True
-                or input_id != data.get("last_human_input")
-                or input_id != work.get("input_at_last_call")
-            ):
-                raise ValueError("省略する観測済み作業の現在の人間入力のinput_idを渡す")
-            unresolved_labels = list(
-                dict.fromkeys(
-                    label
-                    for call_id in work.get("calls", [])
-                    for record in data["calls"].get(call_id, [])
-                    if record.get("kind") == "deliverable" and record.get("repository") is None
-                    for label in record["labels"]
-                )
-            )
-            text = _omission_policy(document, work, unresolved_labels=unresolved_labels)
-            if "quote" in document and text != document["quote"]:
-                raise ValueError("quoteは適用するプロジェクト規範の全文と一致させるか省略する")
-            evidence = {
-                "input_id": input_id,
-                "policy_file": document["policy_file"],
-                "target_repo": document["target_repo"],
-                "policy_text": text,
-            }
-        elif action == "wait":
+        if action == "wait":
             target = document.get("target_session_id")
             child = agents_server_observations.session_record(state, target)
             work_for_wait = data["works"].get(document.get("work_id"), {})
@@ -228,10 +155,6 @@ def record_decision(document: dict[str, Any]) -> str:
                     "reason": document["reason"],
                 }
             )
-        if action == "omit-completion":
-            work["omit_completion"] = evidence
-        else:
-            work.pop("omit_completion", None)
         if action == "resume":
             data["current_work"] = selected
         _compact(data)

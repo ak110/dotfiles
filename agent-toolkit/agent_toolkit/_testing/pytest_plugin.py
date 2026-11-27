@@ -45,7 +45,6 @@ from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import (
     agents_server_fixtures,
     cpu_accounting,
-    hook_support,
     isolation,
     pytest_cpu_budget,
     resource_diagnostics,
@@ -791,4 +790,3 @@ provider_environment = agents_server_fixtures._configure_provider_environment
 _wait_environment = agents_server_fixtures._wait_environment
 _restore_session_listeners = agents_server_fixtures._restore_session_listeners
 leaf_git_commands = _git_repository.leaf_git_commands
-_without_skill_notices = hook_support._without_skill_notices
