@@ -806,7 +806,55 @@ def test_usability_evidence_separates_confirmation_from_explanation(label: str, 
         lines[index] = lines[index].replace("確認済み | ", "確認済み |\n  ")
     session = _role_session("usability-review.subagent.md")
     reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": "\n".join(lines)})
-    assert (reason is None) is (case == "annotation")
+    assert (reason is None) is (case in {"annotation", "split"})
+
+
+@pytest.mark.parametrize(
+    ("observation", "accepted"),
+    [
+        (" 確認済み\n- 最小14px\n  TabとEnterで保存", True),
+        ("\n- 確認済み | 最小14px\n- TabとEnterで保存", True),
+        (" 確認済み\n\n- 最小14px", False),
+        (" 確認済み\n別の段落\n- 最小14px", False),
+        (" 確認済み\n- なし\n- 対象外", False),
+        (" 確認済み\n- 確認済み", False),
+        (" 確認済み\n  確認済み |", False),
+        ("\n- 最小14px", False),
+        ("\n- 未実施 | 最小14px", False),
+    ],
+)
+def test_usability_evidence_accepts_only_observations_in_the_same_field(observation: str, accepted: bool) -> None:
+    session = _role_session("usability-review.subagent.md")
+    message = _usability_message("確認済み | 一覧と設定を比較した | 外見: 共通スタイルが一致した")
+    label = "可読性・アクセシビリティ:"
+    before, _, _ = message.partition(label)
+    reason = result_contract.invalid_result_reason(
+        session, {"status": "completed", "agent_message": before + label + observation}
+    )
+    assert (reason is None) is accepted
+    if reason is not None:
+        assert label.removesuffix(":") in reason
+        assert "続く箇条書き" in reason
+
+
+@pytest.mark.parametrize(
+    ("comparison", "accepted"),
+    [
+        ("確認済み\n- 一覧と設定の比較\n- 外見: 共通の余白", True),
+        ("確認済み\n- 一覧と設定の比較\n  外見: 共通の余白", True),
+        ("確認済み\n- 一覧と設定の比較\n- 外見: なし", False),
+        ("確認済み\n- 外見: 共通の余白", False),
+        ("確認済み\n- 確認済み\n- 外見: 共通の余白", False),
+        ("確認済み\n- 一覧と設定の比較\n- 外見: 確認済み", False),
+    ],
+)
+def test_usability_comparison_accepts_appearance_on_a_separate_line(comparison: str, accepted: bool) -> None:
+    session = _role_session("usability-review.subagent.md")
+    message = _usability_message(comparison)
+    reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message})
+    assert (reason is None) is accepted
+    if reason is not None:
+        assert "類例の比較の外見" in reason
 
 
 @pytest.mark.parametrize("status", ["未確認", "未検証", "未実施", "未調査", "比較なし", "該当なし"])
