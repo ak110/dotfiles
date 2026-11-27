@@ -312,6 +312,73 @@ async def test_child_collected_early_is_not_redelivered_and_remaining_child_resu
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("first_driver", ["wait", "monitor"])
+async def test_wait_and_monitor_send_child_completion_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, first_driver: str
+) -> None:
+    _publish_recovered_session(monkeypatch, tmp_path, "child-terminal", "completed")
+    async with server_manager.AgentsServerManager(status_writer=None) as manager:
+        backend = FakeBackend(manager.sessions, "claude")
+        _install_backend(manager, "claude", backend)
+        parent = state.SessionState("parent-session", str(tmp_path), engine="claude", turn_seq=2)
+        parent.live_child_session_ids.add("child-terminal")
+        resume_waits.begin_auto_resume_wait(
+            parent, {"status": "completed", "agent_message": "待機中: child-terminal", "error": None}
+        )
+        manager.sessions[parent.session_id] = parent
+
+        sending = asyncio.Event()
+        second_checked = asyncio.Event()
+        release = asyncio.Event()
+        advance = manager._advance_child_session_wait
+        send = manager._send_with_resources
+
+        async def observe_advance(session: state.SessionState) -> None:
+            try:
+                await advance(session)
+            finally:
+                task = asyncio.current_task()
+                if task is not None and task.get_name() == "second-driver":
+                    second_checked.set()
+
+        async def complete_send(session: state.SessionState, prompt: str) -> dict[str, Any]:
+            if not sending.is_set():
+                sending.set()
+                await release.wait()
+            delivery = await send(session, prompt)
+            if backend.send_calls == 1:
+                _complete(session, message="再開後の結果")
+            else:
+                _complete(session, error={"message": "自動再開が重複した"})
+            return delivery
+
+        monkeypatch.setattr(manager, "_advance_child_session_wait", observe_advance)
+        monkeypatch.setattr(manager, "_send_with_resources", complete_send)
+
+        async def monitor() -> bool:
+            return await manager._process_auto_resume(process_controls=False)
+
+        first, second = (manager.wait, monitor) if first_driver == "wait" else (monitor, manager.wait)
+        async with asyncio.timeout(5), asyncio.TaskGroup() as group:
+            first_task = group.create_task(first())
+            await sending.wait()
+            second_task = group.create_task(second(), name="second-driver")
+            await second_checked.wait()
+            release.set()
+
+        result = first_task.result() if first_driver == "wait" else second_task.result()
+        assert backend.send_calls == 1
+        assert parent.turn_seq == 3
+        assert parent.status == "completed"
+        assert isinstance(result, dict)
+        if result["status"] == "running":
+            result = await manager.wait()
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "再開後の結果"
+        assert "終了したsession/thread: child-terminal" in backend.prompts[-1]
+
+
+@pytest.mark.asyncio
 async def test_send_message_resumes_stopped_session(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
