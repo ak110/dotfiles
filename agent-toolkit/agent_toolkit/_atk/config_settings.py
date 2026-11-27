@@ -13,7 +13,7 @@ from typing import Any
 
 lazy import platformdirs
 
-from agent_toolkit._common import codex_models, file_lock, private_notes, runtime_environment, weekly_work
+from agent_toolkit._common import codex_models, env_values, file_lock, private_notes, runtime_environment, weekly_work
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.usage_settings import validate_permissions
@@ -152,6 +152,9 @@ MUTABLE_KEY_DEFAULTS = {
     "codex_fast_mode": "auto",
     "usage_reset_permissions": "[]",
     **CONNECTION_DEFAULTS,
+    "claude_credits_env": "",
+    "claude_payg_env": "",
+    "weekly_research_x_env": "",
     "claude_usage_limit_wait": "five-hour",
     "codex_usage_limit_wait": "five-hour",
     "repositories": "{}",
@@ -189,7 +192,7 @@ SHARED_FILE_KEYS = SHARED_SETTING_KEYS | SPLIT_SETTING_KEYS
 
 # 旧接続設定キーと移行先。保存値は読込時に移行先へ移し、環境変数とget・setでは移行先を示して拒否する。
 RETIRED_CONNECTION_KEYS = {
-    "claude_api_env_file": ("設定ディレクトリのclaude-credits.envまたはclaude-payg.env",),
+    "claude_api_env_file": ("claude_credits_env", "claude_payg_env"),
     "claude_orchestrator_api_only": ("claude_orchestrator_connections",),
     "claude_worker_api_first": ("claude_worker_connections",),
     "claude_api_mode": ("claude_orchestrator_connections", "claude_worker_connections"),
@@ -501,6 +504,8 @@ _SETTING_DESCRIPTIONS = {
 
 
 def setting_format(key: str) -> str:
+    if key in env_values.SETTING_FILES:
+        return "1行1つのKEY=VALUE。秘密値の[REDACTED]は保持、行を削除すると変数を削除"
     if key in WI_ATTACHMENT_LIMIT_DEFAULTS:
         return "正の整数（MiB）"
     if key in SETTING_CHOICES:
@@ -527,11 +532,18 @@ def setting_format(key: str) -> str:
 
 
 def setting_description(key: str) -> str:
+    if key in env_values.SETTING_FILES:
+        return (
+            "全ホストで共有する接続の環境変数。KEY・TOKEN・SECRET・PASSWORDを含む変数名の値は伏せ字で表示する。"
+            f"旧{key}_fileと{env_values.SETTING_FILES[key]}は初回に取り込み、元ファイルを.importedへ退避する。"
+        )
     return _SETTING_DESCRIPTIONS.get(key, key)
 
 
 def validate_mutable_setting(key: str, value: str) -> None:
-    if key in SETTING_CHOICES:
+    if key in env_values.SETTING_FILES:
+        env_values.parse(value)
+    elif key in SETTING_CHOICES:
         if value not in SETTING_CHOICES[key]:
             raise ValueError(f"受理可能値: {setting_format(key)}")
     elif key in WI_ATTACHMENT_LIMIT_DEFAULTS:
@@ -736,6 +748,10 @@ def raw_mutable_setting(
         local = load_config()
     if key in SPLIT_SETTING_KEYS:
         return json.dumps(_merged_repositories(local.get(key, "{}")), ensure_ascii=False)
+    if key in env_values.SETTING_FILES:
+        path = shared_settings_path()
+        shared = shared if shared is not None else load_shared_settings(path) if path is not None else {}
+        return shared.get(key, local.get(key, default))
     if key in local:
         return local[key]
     if key in SHARED_SETTING_KEYS:

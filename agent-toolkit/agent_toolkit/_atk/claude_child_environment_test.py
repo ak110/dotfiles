@@ -8,6 +8,7 @@ import pytest
 
 from agent_toolkit._atk import claude_connection, orchestrator
 from agent_toolkit._atk.wi import process_loop_env, process_loop_session
+from agent_toolkit._testing import git_repository
 
 
 def _run_cli_route(route: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]) -> None:
@@ -42,6 +43,7 @@ def _run_cli_route(route: str, tmp_path: pathlib.Path, monkeypatch: pytest.Monke
 def test_cli_descendants_receive_only_configured_empty_keys(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str, kind: str, source: str
 ) -> None:
+    git_repository.init_repository(tmp_path)
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=key\nAWS_PROFILE=profile\nCUSTOM_CONNECTION=api\n")
     user = tmp_path / "user"
@@ -107,6 +109,10 @@ def test_api_only_has_no_implicit_authentication(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api) if content is not None else "")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "parent-oauth")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
+    if content == "invalid":
+        with pytest.raises(ValueError, match="共有設定へ取り込めない"):
+            claude_connection.candidates(role)
+        return
     choices = claude_connection.candidates(role)
     if content == "ANTHROPIC_API_KEY=key\n":
         assert [value.kind for value in choices.connections] == ["payg"]

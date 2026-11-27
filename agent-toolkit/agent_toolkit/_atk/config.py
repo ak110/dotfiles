@@ -11,8 +11,8 @@ from typing import Any, cast
 
 lazy import platformdirs
 
+from agent_toolkit._atk import config_env, config_repositories_cli, config_shared_migration, config_usage
 from agent_toolkit._atk import config_migration as _config_migration
-from agent_toolkit._atk import config_repositories_cli, config_shared_migration, config_usage
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
@@ -43,7 +43,14 @@ from agent_toolkit._atk.config_settings import RETIRED_CONNECTION_KEYS as _RETIR
 from agent_toolkit._atk.config_settings import config_env_name as _config_env_name
 from agent_toolkit._atk.config_settings import config_file_path as _config_file_path
 from agent_toolkit._atk.environment import is_human_terminal
-from agent_toolkit._common import codex_fast_mode, codex_models, runtime_environment, usage_observation, usage_settings
+from agent_toolkit._common import (
+    codex_fast_mode,
+    codex_models,
+    env_values,
+    runtime_environment,
+    usage_observation,
+    usage_settings,
+)
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
@@ -87,14 +94,17 @@ def save_mutable_settings(updates: dict[str, str]) -> bool:
             raise KeyError(key)
         _config_settings.validate_mutable_setting(key, value)
     updates = {key: _config_settings.normalize_setting(key, value) for key, value in updates.items()}
+    env_updates = {key: value for key, value in updates.items() if key in env_values.SETTING_FILES}
+    env_changed = config_env.save(env_updates) if env_updates else False
+    updates = {key: value for key, value in updates.items() if key not in env_updates}
     shared = {key: value for key, value in updates.items() if key in _config_settings.SHARED_SETTING_KEYS}
     path = config_shared_migration.shared_write_path() if shared else None
-    shared_changed = False
+    shared_changed = env_changed
     if path is not None:
         saved = _config_settings.load_config_strict()
         shared = {key: value for key, value in shared.items() if not _invalid_saved_value(key, saved)}
         if shared:
-            shared_changed = _save_shared_settings(path, shared)
+            shared_changed = _save_shared_settings(path, shared) or shared_changed
         updates = {key: value for key, value in updates.items() if key not in shared}
     if not updates:
         return shared_changed
@@ -191,7 +201,10 @@ def resolved_settings(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         _config_migration.migrate_serve_settings()
     return {
         **_setting_paths(home),
-        **{key: resolve_mutable_setting(key, read_only=True) for key in _config_settings.MUTABLE_KEY_DEFAULTS},
+        **{
+            key: env_values.public(key, resolve_mutable_setting(key, read_only=True))
+            for key in _config_settings.MUTABLE_KEY_DEFAULTS
+        },
     }
 
 
@@ -237,7 +250,9 @@ def _cmd_config_show(home: pathlib.Path) -> int:
     incomplete = False
     for key in _MUTABLE_KEY_DEFAULTS:
         try:
-            settings[key] = resolve_mutable_setting(key, read_only=True, local=local, local_error=errors.get(key))
+            settings[key] = env_values.public(
+                key, resolve_mutable_setting(key, read_only=True, local=local, local_error=errors.get(key))
+            )
         except ValueError as error:
             incomplete = True
             action = (
@@ -308,6 +323,7 @@ def _auto_fast_report() -> str:
 
 def _print_shared_value(key: str, label: str, value: Any) -> None:
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    text = env_values.public(key, text)
     if key in _config_settings.MODEL_DEFAULTS:
         text = text.replace(",", ",\n      ")
     print(f"  {label}: {text}")
@@ -425,24 +441,26 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
     )
     settings = {}
     for key, default in _config_settings.MUTABLE_KEY_DEFAULTS.items():
-        shared_key = shared_sync and key in _config_settings.SHARED_SETTING_KEYS
+        shared_key = key in env_values.SETTING_FILES or shared_sync and key in _config_settings.SHARED_SETTING_KEYS
         failure = None
         try:
             effective = resolve_mutable_setting(
                 key, read_only=True, local=local, local_error=errors.get(key), shared=shared, temporary=temporary
             )
-        except ValueError:
+        except ValueError as error:
             effective = None
-            failure = f"{key}の設定値を読めない"
+            failure = f"{key}の設定値を読めない: {error}"
+            if isinstance(error, _next_action.ActionableError):
+                failure += f"。次の操作: {error.next_action}"
         source = _mutable_source(key, saved, shared, temporary, shared_target=shared_key)
         description = _config_settings.setting_description(key)
         saved_value = shared.get(key, default) if shared_key else saved.get(key, default)
         if key == reset_reservations.PERMISSIONS and isinstance(saved_value, str) and not failure:
             saved_value = reset_reservations.public_permissions(saved_value)
         settings[key] = {
-            "effective": effective,
+            "effective": env_values.public(key, effective) if isinstance(effective, str) else effective,
             **({"error": failure} if failure else {}),
-            "saved": saved_value,
+            "saved": env_values.public(key, saved_value),
             "default": default,
             "source": source,
             "shared": shared_key,
@@ -450,6 +468,15 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
             "migration_pending": key in migration_pending,
             "invalid_local": shared_key and key in migration_pending and _invalid_saved_value(key, stored),
             "description": description,
+            **(
+                {
+                    "environment": True,
+                    "storage": str(config_env.path()),
+                    "import_status": config_env.migration_status(key, local),
+                }
+                if key in env_values.SETTING_FILES
+                else {}
+            ),
             "format": _config_settings.setting_format(key),
             "choices": _config_settings.SETTING_CHOICES.get(key),
             "array": key in _config_settings.ARRAY_KEYS,
@@ -576,6 +603,8 @@ def _legacy_key_guidance(keys: list[str]) -> str:
     for key in keys:
         if key in _config_settings.RETIRED_FIXED_KEYS:
             guidance += f"。旧設定キー{key}は廃止した: {_config_settings.RETIRED_FIXED_KEYS[key]}"
+            if key.removesuffix("_file") in env_values.SETTING_FILES:
+                guidance += f"。移行先は共有設定{key.removesuffix('_file')}"
         if key in _config_settings.RETIRED_RESEARCH_KEYS:
             guidance += f"。旧調査設定キー{key}は廃止した。変更先: {_config_settings.RETIRED_RESEARCH_KEYS[key]}"
         if key in _config_settings.RETIRED_CONNECTION_KEYS:
@@ -617,7 +646,9 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
     _config_migration.migrate_serve_settings()
     value = _config_settings.normalize_setting(args.key, args.value)
-    if not shared_target:
+    if args.key in env_values.SETTING_FILES:
+        save_mutable_settings({args.key: value})
+    elif not shared_target:
         path = _config_settings.config_file_path()
         with _config_settings.local_config_lock(path):
             config = _config_migration.plan_legacy_migration(_config_settings.load_config_strict(), updates={args.key: value})
@@ -625,11 +656,16 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
     else:
         save_mutable_settings({args.key: value})
     _verify_saved_setting(args.key, value)
-    _outcome.report_success(f"設定を更新した: {args.key}={value}")
+    _outcome.report_success(f"設定を更新した: {args.key}={env_values.public(args.key, value)}")
 
 
 def _verify_saved_setting(key: str, value: str) -> None:
     effective = resolve_mutable_setting(key)
+    if key in env_values.SETTING_FILES:
+        saved = _config_settings.load_shared_settings(config_env.path()).get(key, "")
+        expected = env_values.restore(key, value, saved)
+        if env_values.parse(effective) == env_values.parse(expected):
+            return
     if effective == value:
         return
     if key == reset_reservations.PERMISSIONS and (

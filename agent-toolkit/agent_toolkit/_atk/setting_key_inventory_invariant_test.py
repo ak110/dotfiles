@@ -4,6 +4,9 @@ _MODEL_CONSUMER = "config.resolve_model_candidatesとorchestratorの候補解決
 _CONNECTION_CONSUMER = "config_resolution の役割別接続解決"
 
 _SETTING_USES = {
+    "claude_credits_env": ("claude_connectionの共有接続環境", "有限クレジットの認証と接続先を編集する"),
+    "claude_payg_env": ("claude_connectionの共有接続環境", "従量課金APIの認証と接続先を編集する"),
+    "weekly_research_x_env": ("research_sources.x_token", "X APIの共有認証を編集する"),
     "execute_model": (_MODEL_CONSUMER, "実装で使うモデルの品質・料金を変える"),
     "review_model": (_MODEL_CONSUMER, "実行レビューの観点と品質を変える"),
     "review_fast_model": (_MODEL_CONSUMER, "短いレビューの応答時間を短くする"),

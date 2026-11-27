@@ -5,7 +5,7 @@ from unittest import mock
 
 import pytest
 
-from agent_toolkit._atk import config_settings
+from agent_toolkit._atk import config_migration, config_settings
 from agent_toolkit._atk.wi import cli, process_loop, process_loop_session
 from agent_toolkit._common import next_action, session_registry
 from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
@@ -20,7 +20,9 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
     path = config_settings.config_dir() / "claude-payg.env"
     if failure != "identity":
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes({"format": b"invalid line\n", "unicode": b"\xff", "empty": b""}[failure])
+        path.write_bytes({"format": b"invalid line\n", "unicode": b"\xff", "empty": b"AWS_REGION=us-east-1"}[failure])
+    if failure in {"identity", "empty"}:
+        config_migration.migrate_legacy_settings()
     process = mock.MagicMock()
     process.pid = 1234567890
     process.poll.return_value = 0
@@ -49,21 +51,21 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
 
     monkeypatch.setattr(process_loop, "cmd_process_loop", launch)
     args = argparse.Namespace(command="wi", wi_subcommand="process-loop")
-    assert cli.dispatch(args, home=tmp_path, now=datetime.datetime.now(datetime.UTC)) == (1 if failure == "identity" else 0)
+    assert cli.dispatch(args, home=tmp_path, now=datetime.datetime.now(datetime.UTC)) == (0 if failure == "empty" else 1)
     stderr = capsys.readouterr().err
     if failure == "identity":
         assert "統括CLIのPIDと起動時刻を取得できない" in stderr
         assert "起動するCLIの実体を確認する" in stderr
         assert "統括が未起動の場合だけ再試行する" in stderr
+    elif failure == "empty":
+        assert "API認証・接続方式の変数に値が無い" in stderr
+        assert "設定画面またはatk config set claude_payg_env" in stderr
     else:
-        expected = {
-            "format": "KEY=VALUE形式が不正",
-            "unicode": "KEY=VALUE形式が不正",
-            "empty": "空、またはAPI認証・接続方式の変数に値が無い",
-        }
-        assert expected[failure] in stderr
-        assert str(path) in stderr
-        assert "権限・記述を確認" in stderr
+        assert "共有設定へ取り込めない" in stderr
+        assert str(path.parent) in stderr
+        assert "KEY=VALUE形式・読取可能な通常ファイル" in stderr
+        assert path.is_file()
+        assert not popen.called
     assert "次の操作:" in stderr
     assert "Traceback" not in stderr
 

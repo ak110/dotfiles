@@ -29,7 +29,7 @@ from typing import Any
 from agent_toolkit._atk import config, config_migration, config_settings, research_subscriptions, weekly_schedule
 from agent_toolkit._atk.wi import layout, sync
 from agent_toolkit._atk.wi.entry_text import parse_frontmatter
-from agent_toolkit._common import claude_connection, runtime_environment, session_review
+from agent_toolkit._common import env_values, session_review
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._git import command as git
 
@@ -335,18 +335,13 @@ def read_github_releases(
 
 
 def x_token() -> str | None:
-    path = config_settings.config_dir() / config_settings.X_ENV_FILENAME
     try:
-        values = claude_connection.read_api_env_file(str(path))
-    except FileNotFoundError:
-        key = "weekly_research_x_env_file"
-        if config_settings.load_config().get(key) or runtime_environment.environment().get(
-            config_settings.config_env_name(key)
-        ):
-            raise SourceError(f"旧設定の認証ファイルが見つからない。Xの認証ファイルを{path}へ置いて再実行する") from None
-        return None
+        values = env_values.parse(config.resolve_mutable_setting("weekly_research_x_env"))
     except (OSError, UnicodeError, ValueError) as error:
-        raise SourceError(f"キーのファイルを読めない: {path}（{type(error).__name__}）") from error
+        raise SourceError(
+            "共有設定weekly_research_x_envを読めない。設定画面またはatk config set weekly_research_x_envで"
+            "KEY=VALUE形式の認証を設定し、旧envファイルが残る場合は所在と内容を確認して再実行する"
+        ) from error
     return values.get(X_TOKEN_VARIABLE) or None
 
 

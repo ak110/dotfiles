@@ -21,6 +21,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import ResumePrompt
+from agent_toolkit._atk import config, config_env
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
@@ -229,7 +230,7 @@ async def test_usage_limit_api_migration_and_cold_resume(
 ) -> None:
     env_file = tmp_path / "api.env"
     env_file.write_text("# 接続\nexport ANTHROPIC_AUTH_TOKEN='dummy-secret'\nCUSTOM_API_NAME=\"one=two\"\n", encoding="utf-8")
-    fixed_env_file = configure_claude_payg(monkeypatch, str(env_file)).absolute()
+    configure_claude_payg(monkeypatch, str(env_file))
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
     options_seen: list[Any] = []
     settings_seen: list[str] = []
@@ -296,7 +297,7 @@ async def test_usage_limit_api_migration_and_cold_resume(
         assert "API" not in clients[1].queries[0]
         session = manager.sessions["api-session"]
         assert session.api_error is None
-        assert session.claude_api_env_file == str(fixed_env_file)
+        assert session.claude_api_env_file == config_env.reference("claude_payg_env")
         shown = json.dumps((await manager.show_session("api-session", verbose=True)), ensure_ascii=False)
         assert "dummy-secret" not in shown and "claude_api_env_file" not in shown
         public = json.dumps([result, (await manager.list_sessions(include_terminated=True))], ensure_ascii=False)
@@ -309,7 +310,7 @@ async def test_usage_limit_api_migration_and_cold_resume(
         await manager.stop("api-session")
         assert not pathlib.Path(options_seen[1].settings).exists()
         info = session_registry.resolve("api-session").resume_info
-        assert info is not None and info.claude_api_env_file == str(fixed_env_file)
+        assert info is not None and info.claude_api_env_file == config_env.reference("claude_payg_env")
         switches = [
             record.getMessage()
             for record in caplog.records
@@ -319,13 +320,13 @@ async def test_usage_limit_api_migration_and_cold_resume(
         assert "previous=subscription selected=payg reason=usage_limit limit_type=seven_day" in switches[0]
         assert "dummy-secret" not in caplog.text
 
-    fixed_env_file.write_text("ANTHROPIC_AUTH_TOKEN=rotated-secret\n", encoding="utf-8")
+    config.save_mutable_settings({"claude_payg_env": "ANTHROPIC_AUTH_TOKEN=rotated-secret"})
     async with open_manager() as manager:
         await manager.send_message("api-session", "残作業を続ける")
         assert (await terminal(manager, "api-session"))["status"] == "completed"
         assert options_seen[-1].env["ANTHROPIC_AUTH_TOKEN"] == "rotated-secret"
         manager.sessions["api-session"].retention_deadline = asyncio.get_running_loop().time() - 1
-        fixed_env_file.write_text("ANTHROPIC_AUTH_TOKEN=expiry-secret\n", encoding="utf-8")
+        config.save_mutable_settings({"claude_payg_env": "ANTHROPIC_AUTH_TOKEN=expiry-secret"})
         await manager.send_message("api-session", "期限後の継続")
         assert (await terminal(manager, "api-session"))["status"] == "completed"
         assert options_seen[-1].env["ANTHROPIC_AUTH_TOKEN"] == "expiry-secret"

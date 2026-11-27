@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._atk import config_settings, lane
+from agent_toolkit._atk import config_env, config_migration, config_settings, lane
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import session_registry
@@ -69,7 +69,7 @@ def test_unconfigured_process_session_preserves_parent_auth(
     assert "ANTHROPIC_API_KEY" not in observed["settings"]["env"]
 
 
-@pytest.mark.parametrize("content", ["", "# 未記入\n"])
+@pytest.mark.parametrize("content", ["AWS_REGION=us-east-1", "# 認証未記入\nAWS_REGION=us-east-1\n"])
 def test_invalid_env_file_warning_reaches_process_loop_stderr(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str
 ) -> None:
@@ -85,8 +85,8 @@ def test_invalid_env_file_warning_reaches_process_loop_stderr(
 
     _run_claude_session(tmp_path, monkeypatch, launch)
     stderr = capsys.readouterr().err
-    assert str(path) in stderr
-    assert "権限・記述を確認" in stderr
+    assert "claude_payg_env" in stderr
+    assert "設定画面またはatk config set claude_payg_env" in stderr
     assert observed["env"]["CLAUDE_CODE_OAUTH_TOKEN"]
 
 
@@ -95,7 +95,8 @@ def test_payg_orchestrator_uses_api_only(tmp_path: pathlib.Path, monkeypatch: py
     assert "ANTHROPIC_API_KEY" not in observed["env"]
     assert not observed["env"].get("CLAUDE_CODE_OAUTH_TOKEN")
     assert observed["env"]["ANTHROPIC_BASE_URL"] == "https://api.example.test"
-    assert str(config_settings.config_dir() / "claude-payg.env") in settings["apiKeyHelper"]
+    assert "claude_payg_env" in settings["apiKeyHelper"]
+    assert str(config_env.path()) in settings["apiKeyHelper"]
     assert "selected-test-key" not in str(observed["argv"])
 
 
@@ -141,6 +142,7 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
         observed.append(kwargs["env"])
         return subprocess.CompletedProcess(argv, 0, "", "")
 
+    config_migration.migrate_legacy_settings()
     monkeypatch.setattr(subprocess, "run", probe)
     candidate = ("claude", "sonnet", "high")
     selected = _pl_session.select_available_orchestrator(
@@ -150,7 +152,7 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
         resume_session_id="resume-api",
     )
     assert selected[:4] == (*candidate, None)
-    assert selected[4] is not None and selected[4].api_env_file == str(path)
+    assert selected[4] is not None and selected[4].api_env_file == config_env.reference("claude_payg_env")
     assert observed[0]["ANTHROPIC_API_KEY"] == "selected-key"
     assert not observed[0].get("CLAUDE_CODE_OAUTH_TOKEN")
 
@@ -273,9 +275,11 @@ def test_limited_claude_probe_selects_next_connection_for_same_session_launch(
         assert not kwargs["env"].get("CLAUDE_CODE_OAUTH_TOKEN")
         raw = argv[argv.index("--settings") + 1]
         settings = json.loads(pathlib.Path(raw).read_text(encoding="utf-8"))
-        assert str(config_settings.config_dir() / "claude-payg.env") in settings["apiKeyHelper"]
+        assert "claude_payg_env" in settings["apiKeyHelper"]
+        assert str(config_env.path()) in settings["apiKeyHelper"]
         return subprocess.CompletedProcess(argv, 0, "", "")
 
+    config_migration.migrate_legacy_settings()
     monkeypatch.setattr(subprocess, "run", run)
     env = dict(os.environ)
     engine, model, effort, provider, connection = _pl_session.select_available_orchestrator(

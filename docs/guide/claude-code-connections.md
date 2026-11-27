@@ -126,9 +126,10 @@ Claude統括が上限で停止した場合は、旧CLIの終了確認後に同�
 
 ### 認証の用意
 
-ClaudeのAPI接続は、接続用の環境変数を種別ごとのenvファイルへ保存する。
+ClaudeのAPI接続は、接続用の環境変数を共有設定の`claude_credits_env`（クレジット）・`claude_payg_env`（従量課金）へ保存する。
 Anthropicへ直接接続する場合は、[Claude ConsoleのAPI keys](https://platform.claude.com/settings/keys)で発行したキーを`ANTHROPIC_API_KEY`へ記入し、Consoleで課金設定も用意する。
-`atk config get config_dir`が返すディレクトリに、APIクレジットなら`claude-credits.env`、従量課金APIなら`claude-payg.env`を作る。
+`atk serve`の「設定」→「接続」→「全ホスト共通」で、対応するキーの「保存値」へ入力する。
+CLIでは`atk config set claude_payg_env <KEY=VALUEの複数行文字列>`で保存し、`atk config get claude_payg_env`で確認する。
 
 ```dotenv
 ANTHROPIC_API_KEY=YOUR_API_KEY
@@ -136,12 +137,16 @@ ANTHROPIC_API_KEY=YOUR_API_KEY
 
 形式は1行1つの`KEY=VALUE`で、`export`、引用符、`#`のコメント行も使える。
 別の接続先を使う場合は、提供元が指定するURLを`ANTHROPIC_BASE_URL`へ、Bearer認証のトークンを`ANTHROPIC_AUTH_TOKEN`へ記入する。
-`ANTHROPIC_AUTH_TOKEN`は`ANTHROPIC_API_KEY`より優先するため、直接接続用のファイルにはAPIキーだけを書く。
+`ANTHROPIC_AUTH_TOKEN`は`ANTHROPIC_API_KEY`より優先するため、直接接続用の項目にはAPIキーだけを書く。
 変数の意味は[Claude Codeの認証仕様](https://code.claude.com/docs/en/authentication#authentication-precedence)を参照。
 
-ファイルはGit管理外へ置き、Linux・macOSでは`chmod 600 <ファイル>`で自分だけが読み書きできるようにする。
-Windowsではファイルのプロパティのセキュリティ設定で、使用するOSアカウントだけに読み取り権限を与える。
-envファイルは新しい会話の開始・再開時に読む。
+保存先はprivate-notesの`atk-config.json`で、Gitの同期先があれば認証情報も全ホストへ同期する。
+同期先がなくても同じ共有ファイルへ保存し、端末固有の`config.json`には保存しない。
+値は保存先では平文であり、private-notesとそのGit履歴へのアクセスを制限する。
+画面とCLIでは、名前に`KEY`・`TOKEN`・`SECRET`・`PASSWORD`を含む変数の値を`[REDACTED]`に伏せ、URL・リージョン・モデル名はそのまま表示する。
+伏せ字を変えずに保存すると秘密値を保持し、新しい値で上書きできる。
+変数の行を消すとその変数を削除し、空欄で保存するとその項目を空にする。
+接続の環境変数は新しい会話の開始・再開時に適用する。
 ユーザー設定（`~/.claude/settings.json`）などのsettingsの`env`へ接続関連の変数（`ANTHROPIC_API_KEY`、`AWS_PROFILE`など）を書いた場合、委譲先とオーケストレーターが実行するコマンドにはその変数が空の値で渡る。
 
 CodexのAPI接続は、`config.toml`へ接続先とAPIキーの環境変数名をproviderとして定義する。
@@ -151,13 +156,19 @@ CodexのAPI接続は、`config.toml`へ接続先とAPIキーの環境変数名�
 ### 旧設定からの移行
 
 `claude_api_env_file`・`claude_orchestrator_api_only`・`claude_worker_api_first`・`claude_api_mode`・`codex_model_providers`は廃止した。
-保存済みの値は、次に`atk config`を実行するか委譲先を起動した時に新しいキーへ自動で移し、旧キーを削除する。
+保存済みの値は、次に`atk config get`を実行するか、`atk serve`・委譲先を起動した時に新しいキーへ自動で移し、旧キーを削除する。
+`atk config show`と画面の取得だけでは移行せず、移行できない項目と次の操作を表示する。
 
-- 旧`claude_credits_env_file`・`claude_payg_env_file`で指定したファイルは、種別ごとの固定名へ移る。
+- 旧`claude_credits_env_file`・`claude_payg_env_file`で指定したファイルは、種別ごとの固定名を経て共有設定の`claude_credits_env`・`claude_payg_env`へ自動で取り込む。
+  固定名の`claude-credits.env`・`claude-payg.env`だけが残る環境も初回に取り込む。
+  成功後は元の固定ファイルを`.imported`へ退避して残し、以後は共有設定だけを使う。
   環境変数で旧パスを指定していた場合は、移行後にその変数を解除する。
   さらに古い`claude_api_env_file`の保存値は旧`api-credits`ならクレジット、それ以外なら従量課金の固定名へ移り、役割ごとの方針を使用順へ移す。
 - Codexの`openai`は`subscription`、それ以外のprovider IDは`codex_payg_provider`へ移り、元の順序を両役割の使用順へ書く。
   `openai`以外のprovider IDが2つ以上ある場合は自動で移さず、新しいキーの設定を求めるエラーを表示する。
 - Codexの移行はアカウント種別を見ないため、APIキーでログインして`openai`を並べていた環境は、移行後の診断に従って`codex_payg_provider`か`codex_credits_provider`へ`openai`を設定し直す。
 
+移行元が無い場合は旧指定先を復元するか、診断に示された固定名へ残す認証を置く。
+移行先や`.imported`が別内容なら上書きせず、残す値を選んで不要な方を退避してから再実行する。
+形式不正・読取不能・保存失敗でも元の内容を残し、設定画面と`atk config show`に次の操作を表示する。
 `atk config set`・`get`へ旧キーを渡した場合は、移行先を示すエラーで終わる。

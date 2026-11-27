@@ -8,6 +8,8 @@ import dataclasses
 import os
 
 from agent_toolkit._atk import config as _config
+from agent_toolkit._atk import config_migration, outcome
+from agent_toolkit._common.next_action import ActionableError
 
 
 @dataclasses.dataclass(frozen=True)
@@ -33,7 +35,7 @@ class ServeConfig:
 
 
 def _path_or_none(key: str) -> str | None:
-    return _config.resolve_mutable_setting(key) or None
+    return _config.resolve_mutable_setting(key, read_only=True) or None
 
 
 def resolve_config(*, host: str | None = None, port: int | None = None) -> ServeConfig:
@@ -42,9 +44,15 @@ def resolve_config(*, host: str | None = None, port: int | None = None) -> Serve
     `atk config`の実効値は環境変数`AGENT_TOOLKIT_CONFIG_SERVE_*`、保存値、省略時の値の順に決まる。
     """
     _config.migrate_serve_settings()
+    try:
+        config_migration.migrate_legacy_settings()
+    except ActionableError as error:
+        outcome.report_warning(str(error), next_action=error.next_action)
     resolved_host = host
     if resolved_host is None:
-        resolved_host = os.environ.get("AGENT_TOOLKIT_SERVE_HOST") or _config.resolve_mutable_setting("serve_host")
+        resolved_host = os.environ.get("AGENT_TOOLKIT_SERVE_HOST") or _config.resolve_mutable_setting(
+            "serve_host", read_only=True
+        )
     resolved_port = port
     if resolved_port is None:
         raw_port = os.environ.get("AGENT_TOOLKIT_SERVE_PORT")
@@ -54,12 +62,12 @@ def resolve_config(*, host: str | None = None, port: int | None = None) -> Serve
             except ValueError as error:
                 raise ValueError("AGENT_TOOLKIT_SERVE_PORTは整数で指定してください") from error
         else:
-            resolved_port = int(_config.resolve_mutable_setting("serve_port"))
+            resolved_port = int(_config.resolve_mutable_setting("serve_port", read_only=True))
     if not isinstance(resolved_host, str) or not resolved_host.strip():
         raise ValueError("hostは空でない文字列で指定してください")
     if not isinstance(resolved_port, int) or isinstance(resolved_port, bool) or not 1 <= resolved_port <= 65535:
         raise ValueError("portは1から65535までの整数で指定してください")
-    remote_hosts = _config.parse_remote_hosts(_config.resolve_mutable_setting("remote_hosts"))
+    remote_hosts = _config.parse_remote_hosts(_config.resolve_mutable_setting("remote_hosts", read_only=True))
     return ServeConfig(
         resolved_host,
         resolved_port,

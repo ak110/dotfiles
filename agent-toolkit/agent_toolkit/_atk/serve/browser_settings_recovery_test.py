@@ -328,7 +328,7 @@ async def test_settings_common_edit_survives_host_switch_and_saves_locally(
     await expect(page.locator("#settings-shared")).not_to_contain_text("今回確認")
     compare = page.locator("#settings-compare")
     await compare.locator("summary").click()
-    changed_row = compare.get_by_role("row").filter(has_text="レビューのモデル 相違あり")
+    changed_row = compare.get_by_role("row").filter(has_text="review_model 相違あり")
     await expect(changed_row).to_have_attribute("data-different", "")
     await expect(changed_row.locator(".settings-different")).to_contain_text("codex:sol/high")
     await compare.locator("summary").click()

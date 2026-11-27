@@ -22,6 +22,7 @@ from contextlib import redirect_stdout
 import pytest
 
 from agent_toolkit._atk import (
+    config_env,
     config_settings,
     research_sources,
     research_subscriptions,
@@ -208,6 +209,8 @@ def test_manual_research_saves_one_result_without_full_text(flow, capsys, x_key,
     assert _manual(flow.work_dir) == 0
     assert flow.runs == ["research@2026-11-22"]
     assert flow.x_calls == (2 if x_key else 0)
+    if x_key:
+        assert research_sources.x_token() == _TOKEN
     entries = _entries()
     assert len(entries) == 1
     data, body = entries[0]
@@ -235,7 +238,7 @@ def test_manual_research_saves_one_result_without_full_text(flow, capsys, x_key,
         path.read_text(encoding="utf-8")
         for root in (private_notes.default_private_notes(), session_review.directory().parent)
         for path in root.rglob("*")
-        if path.is_file() and ".git" not in path.parts
+        if path.is_file() and ".git" not in path.parts and path != config_env.path()
     )
     assert _FULL_TEXT[:30] not in stored
     assert _TOKEN not in stored
