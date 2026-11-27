@@ -2,12 +2,12 @@
 
 目的: 委譲元が事実の収集と読む量の多い探索を独立した担当へ分け、費用を抑えながら観測に基づいて原因を特定し処置を決める。
 バグ対応、CI失敗の対応、振り返りの事実収集で、事象ごとの観測事実の収集を独立した担当へ委譲する時と、読む量の多い調査や探索を分担する時の手順書である。
-方針: 調査は依頼された担当が似た対象から順に進めて知見を再利用し、分担は起動と読み込みを含む総費用が下がる時だけにする（原則2、`agent-basics:writing-standards/references/quality-principles-qcd.md`）。
-担当の推定と対策案は他者の報告として検証し、原因の特定と処置の決定は委譲元が持つ（原則6、`agent-basics:writing-standards/references/quality-principles-verification.md`）。
+方針: 調査は依頼された担当が似た対象から順に進めて知見を再利用し、分担は`agent-toolkit:atk-mode/playbooks/delegation.md`「要否判定」に従う。
+担当の推定と対策案は`agent-basics:writing-standards/references/quality-principles-facts.md`「結果の返却」に従い、原因の特定と処置の決定は委譲元が持つ。
 
 ## 調査の進め方と委譲時の入力
 
-1. 委譲するかを`agent-toolkit:atk-mode/playbooks/delegation.md`「要否判定」の総費用で決める。
+1. `agent-toolkit:atk-mode/playbooks/delegation.md`「要否判定」に従う。
    担当の分割と似た対象の集約は同書「委譲単位の確定」に従う。
    広い所在の探索は、読み取り専用の`explore`へ分けてよい。
 2. 独立した文脈へ渡す入力は、事象、期待する契約、実際の結果、発生条件、ログや資料の絶対パス、対象のcommit、再現手順の7項目とする。
@@ -64,10 +64,10 @@ AWIとして登録して処理する場合（`process-wi`の即時対応、次�
 2. 返却を、示された`分析記録`の箇所とコードやログの現物に突き合わせる。
    `原因`は`agent-basics:bugfix`「記録」の `原因:` に従っていること。
    `対策`に比較して採った理由があること。
-   `類似見直し`は検索と結果か行わない理由を持ち、`再発`の欄があれば前回に防げなかった理由と今回の対策の作用を示すこと。
+   `類似見直し`と`再発`の検収は、`agent-basics:bugfix/SKILL.md`「記録」に従う。
    欄が埋まっていることや独立走査だけで観測点の外側を保証したことにせず、未確認の前提が採否を変える時は、同じ担当へ支持・反証と観測範囲の補完を求める。
 3. 不足や食い違いは、`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「受領後の扱い」で差し戻す。
-4. `続行できない理由`が、認識の食い違いで要件や期待する結果の変更を伴う未確定事項なら、ユーザーへの確認へ回す。
+4. `続行できない理由`の採否は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 5. 合格した処置に従い、見つけたエージェントが元の文脈で直す。
    修正中に調査の前提と矛盾する観測を得たら、同じ担当へ渡して分析を補わせる。
 
@@ -93,24 +93,24 @@ AWIとして登録して処理する場合（`process-wi`の即時対応、次�
 各欄に書く内容は`agent-basics:bugfix`の`SKILL.md`「記録」と、条件が成立した確認観点の資料に従う。
 `再発`の欄は、条件が成立しない場合は行ごと省く。
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:defect-investigation:end -->
 
 ## 類似見直しの分担
 
-調査の責任者は、破られた条件か誤った判断の規則（`agent-basics:bugfix`の問い5）から判定規則・母集団・判定基準を確定し、`agent-toolkit:atk-mode/roles/similar-review.parent.md`に従って読み取り専用の類似見直し担当へ渡す。
+調査の責任者は、`agent-basics:bugfix/references/similar-review.md`「探す対象を決める」に従い、判定規則・母集団・判定基準を`agent-toolkit:atk-mode/roles/similar-review.parent.md`の担当へ渡す。
 類似見直し担当の工程は`chores`で、原因の判断と結果の採否は責任者が持つ。
 `execute`は原因を調べる担当のモデルの区分であり、調査を開発の実行の時点へ一律に割り当てる指定とは別である。
 登録時に確定した調査は、対象の変化か新しい証拠が再確認を要する時だけ見直す。
 
 ## コンテキスト消費が大きい調査の切り出し
 
-読む量の多い調査を分担する時も「要否判定」の総費用で決め、読み取りだけなら`explore`の起動を優先する（モデルの工程は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
+読む量の多い調査では、読み取りだけなら`explore`の起動を優先する（モデルの工程は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
 
 1. 委譲元は、既存の公開操作、共通の定義、呼び出し元の参照関係などを先に調べて調査対象の全体像を確定し、所在や接続が不明な部分を探索しておく。
 2. 担当の分け方は`agent-toolkit:atk-mode/playbooks/delegation.md`「要否判定」「委譲単位の確定」で決める。
 3. 各担当へ、重ならない対象集合、完了条件、判定基準、原本の参照先、返す観測値を示す。
-   読み取りの分割でも、既存の書き込み所有権とレーンの境界を守る。
+   読み取りの分割でも、`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従う。
 4. 担当は必要な原本を自分で読み、割り当てた範囲を自力で終える。
 5. 委譲元は全体像と統合の責任を持ち、未確認の対象と結論どうしの矛盾を解いてから判断する。
    切り詰めや上限到達が報告された結果は、網羅、件数、不在の根拠に使わない（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。

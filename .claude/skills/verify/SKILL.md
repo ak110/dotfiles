@@ -40,13 +40,7 @@ description: >
 `<sandbox> run <S> <ラベル> <コマンド...>`で1コマンドずつ実行する。
 コマンドはGitの作業ツリーの外の`<S>/work`をcwdとし、`<S>/sandbox.env`の環境変数だけを持つ環境で動く。
 `atk`は検証対象のworktreeの起動部分を、`git`は`<S>/gitconfig`を使う。
-Claude Codeを別途起動する時も、実ホームから直接起動せず、この隔離環境を使う。
-`HOME`、`CLAUDE_CONFIG_DIR`、XDGの各保存先と更新先の実体が隔離領域にある場合だけ起動する。
-認証ファイルは元の場所のまま扱い、`<S>`への複製や参照リンクは作らない。
-認証が要る実機検証は、実データと`<S>`の外への書き込みを隔離できる方法がある時だけ行う。
-隔離できなければ実機を起動せず、下記の隔離テストで確かめる。
-`--plugin-dir`は検証する版から`<S>`へ作ったプラグインの複製を指す。
-終了後は複製を回収し、検証元のHEADとGitの差分・未追跡ファイルが起動前と同じか確かめる。
+Claude Codeを別途起動する時は、この隔離環境で`agent-basics:writing-standards/references/investigation.md`「エージェントCLIを検証で起動する時の隔離」に従う。
 対象リポジトリは`--target-repo github.com/example/verify`のように実在しないURLで指定する。
 原稿は`<S>/work`へ書いて`--body-file`で渡す。
 

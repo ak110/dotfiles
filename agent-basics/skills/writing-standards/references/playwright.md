@@ -23,7 +23,7 @@ Playwrightでテストを書く担当が画面に現れる結果を互いに状�
 
 ## flaky対策
 
-テストが不安定（flaky）になったら、原因の調査と修正方針の決定の前に`agent-basics:bugfix`を起動する。
+テストが不安定（flaky）になったら、`agent-basics:bugfix/SKILL.md`「バグ対応」に従う。
 本節のトレースの採取と再試行は、その調査のデータを集める手段である。
 
 - Playwright Testでは`retries`をCIでだけ有効にし（ローカルは0）、目的をトレースの採取に限る。

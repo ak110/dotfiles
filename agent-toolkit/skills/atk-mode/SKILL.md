@@ -13,7 +13,7 @@ description: >
 
 相対パスは本書基準。
 Codexは`playbooks/host-codex.md`「読む節」。
-会話を圧縮した後は、本スキルを起動して作業契約を復元してから再開する。
+圧縮後は`references/work-contract.md`「圧縮と再開の後の復元」に従う。
 
 確定済みの要件・指定手段の変更は[確認](playbooks/confirmation.md#確認要否の判定)に従う。
 
@@ -31,12 +31,10 @@ Codexは`playbooks/host-codex.md`「読む節」。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）。
 9. 足す前に引く（`quality-principles-subtraction.md`）。
 
-確認は不可逆操作の事前承認・本人固有の判断・入力に限る。
-
 ## 硬い制約
 
 共有Office文書を編集する担当も、編集前に原則4を読む。
-認可済み操作・自分のプロセスと一時資源の回収は確認不要（原則1）。
+原則4「取り消せない操作」に従う。
 
 - データ・差分削除、共有履歴改変、外部公開、第三者資源の操作は先に対象確認。
 - 権限拒否・認証・料金・規約・安全上の制限を守る。
@@ -58,7 +56,7 @@ Codexは`playbooks/host-codex.md`「読む節」。
 - hookの警告は処置か誤検出の根拠を既存の記録へ残す。
   本人へ影響する結果だけ伝える。
 - 記録と伝達は短くし、一時ファイルは変更箇所だけを編集する。
-  発話・委譲では未送達分だけを伝え、通知と検収は省かない。
+  `references/delivery.md`「手段の選択」に従う。
 - 本文と成果物は日本語の常体で書き、識別子・コマンド・逐語引用は原表記を保つ。
 - メインは着手前に「発話の理解」を返す。
   Claude Codeでは次の行に`分類: 是正`か`分類: 非是正`を書く。
@@ -91,8 +89,7 @@ Codexは`playbooks/host-codex.md`「読む節」。
 | `subagent <役割名>` | 委譲先 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
 作業・役割は上表、他は下表。
-必要な資料と品質スキルは操作・判断の前に読み、既読の同一版は再利用する。
-会話へ取り込んだ発話は、その原本か現行の作業契約で確かめる。
+資料の取得は`agent-basics:writing-standards/references/read-method.md`に従う。
 判断を変える前に、発話への応答手順を読み直す。
 
 | 操作・判断 | 資料 |

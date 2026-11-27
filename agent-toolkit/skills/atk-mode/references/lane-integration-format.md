@@ -34,7 +34,7 @@
 `計画ファイル名一覧`と`完成条件証拠`は全ての計画の分を一度に受け取る配列であり、レビュー単位ごとの成果物の受け渡しは`agent-toolkit:atk-mode/references/exec-review-launch-plans.md`に従う。
 書き込み先は指定された統合先worktreeとする。
 延期の対象（判定の基準は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」）は統合時に採否を確定せず、`adoptを延期したAWIとcommit`として公開担当へ渡す。
-版数の更新の完成条件も、全てのレーンの統合後に公開担当が版数、派生manifest、公開結果を検収してから`adopt`する。
+版数の更新による延期は、`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」に従う。
 
 ## 公開統合操作
 
@@ -132,11 +132,11 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 
 ### 検証結果の警告の判定
 
-検証結果の診断と警告、個別と全体の所要時間は、`agent-basics:check-execution/references/diagnostics.md`「読む出力」の共通の基準で判定し、統合時の比較の基準版には統合前のHEADを使う。
+検証結果は`agent-basics:check-execution/references/diagnostics.md`「読む出力」「基準版と変更行への帰属」に従って判定する。
 
 - 比べるためにコマンドを再実行する場合は、統合先worktreeで該当のコマンドだけを読み取り専用で実行し、統合先で追跡するファイルやbranchを変えない。
 - 新しい警告は、統合やAWIの採否の確定を止める理由かどうかを意味で判定する。
-  警告は`agent-basics:check-execution/references/diagnostics.md`「合否の判定」で統合後の入力に照らして判定し、統合を止める場合は理由と足りない条件を「続行できない理由」として伝える。
+  警告は`agent-basics:check-execution/references/diagnostics.md`「合否の判定」に従い、統合を止める場合は「続行できない理由」として伝える。
 
 ## マージなしの統合
 
@@ -158,7 +158,7 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
    テンプレートの本文は`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「予測補正記録」の書式とする。
    `完了時刻=`に`{{completed_at}}`、`総経過秒=`に`{{lane_seconds}}`（レーン開始からGit統合成功後・最終化開始前まで、担当交代でも起点は同じ）を指定し、補正前の値・係数・共有待ちの見込みは選定結果から取る。
    追加WIでは累積の予測を使い、取れない値は不明とする。
-   保存は`atk wi edit <AWIのファイル名> --append --body-file {{expand-file:<テンプレートの絶対パス>}} --target-repo=<統合先worktree>`で行う。
+   保存は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「追記」に従い、`--body-file`へ`{{expand-file:<テンプレートの絶対パス>}}`、`--target-repo`へ統合先worktreeを渡す。
    manifestでは該当のAWIの終了のargvより前に置く（終了済みの項目は`atk wi edit`の対象外になるため）。
    確定値（`finalization_values`）は所有登録と返却JSONを原本とし、引き継ぎ記録からは参照する。
 3. `計画ファイル名一覧`が`[]`なら計画の確認・保存を省き、`保存した計画ファイル`に`[]`を返す（公開の時点で計画なしで進行中のレーンに限る。その実行レビュー指摘管理表と対応記録は、`atk lane integrate`が最終化で保存する）。

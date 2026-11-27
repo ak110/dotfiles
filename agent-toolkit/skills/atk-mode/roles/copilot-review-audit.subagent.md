@@ -22,8 +22,7 @@ startup_documents:
 
 - `pending取得結果`: `atk review-audit pending --repo <OWNER>/<REPO>`の標準出力を保存したJSONファイルの絶対パス。
   `なし`の場合は、`agent-toolkit:atk-mode/playbooks/process-wi-review-audit.md`「取得」の代替取得で監査対象を取得する。
-- `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと、新規か継続かの区分。
-  GitHubへの返信、threadの解決、コメントの投稿、判定済みの記録を終えた対象を書き残し、再開した時に同じ書き込みを重ねないようにする。
+引き継ぎ記録には、GitHubへの返信、threadの解決、コメントの投稿、判定済みの記録を終えた対象を残し、再開時に同じ書き込みを重ねないようにする。
 
 対象リポジトリは起動時の`cwd`が属するGit作業ツリーのルートとし、`<OWNER>/<REPO>`はそのリポジトリのGitHub上の識別子とする。
 
@@ -57,5 +56,5 @@ Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。

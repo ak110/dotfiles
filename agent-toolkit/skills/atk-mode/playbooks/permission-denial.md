@@ -166,7 +166,7 @@ permissionsの明示的なdeny・askも上書きしない。
 1. 委譲先が受けた依頼文と適用中のスキルの規則が矛盾する時、または必要な権限や認証が足りない時は、`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従って委譲元へ差し戻す。
 2. ユーザーの確認を要する事項に当たる時は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってユーザーへ確認する。
 3. ユーザーの目的、要件、必須の制約を保ったまま次の工程を実行できる時は、実行して作業を続ける。
-   手段が複数あればQCDで選び、目的から工程が一意に決まる時は自分で判断して実施し、根拠を報告する。
+   `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
    ユーザーの選好や承認が必要な論点だけは判定順2で確認する。
    規範や手段の方針から、QCDの明らかな悪化を理由に外れる時も、`agent-basics:writing-standards/references/quality-principles-qcd.md`「QCD」と判定順2に従う。
 4. どの手段でも目的、要件、必須の制約を保てない時は、その操作に着手せず、その操作を待たずに進められる工程を続ける。
@@ -190,7 +190,7 @@ permissionsの明示的なdeny・askも上書きしない。
 3. 現在の明示的な要求、判断の記録、優先順位を確かめてから、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」を当てる。
    由来が分からないことは、修正してよいかをユーザーへ尋ねる理由から除く。
    目的、要件、結果、既存の承認を保てる修正は自分で確定して報告する。
-   合意済みの目的の側の要求を取り消す修正と、ユーザー固有の資料や判断が必要な修正だけを、論点を限定してユーザーへ確認する。
+   `agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従う。
 
 作業を進める間にどちらの規範に従うかは、本書「手順どおりに進められない場合」の判定順で決める。
 

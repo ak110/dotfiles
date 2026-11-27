@@ -102,7 +102,7 @@
 - `終了区分: 延期adopt`または`終了区分: 終了しない`（`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」の区分のうち、統合時に`adopt`しない値）、および実際の結論を書いた`後続工程:`、`検収時機:`
 - 公開工程で判定する条件は`判定工程: 公開工程`、並行して実施中の画面レビューで判定する条件は`判定工程: ユーザビリティレビュー`かつ`進行状態: 並行中`
 
-返却の状態行、続行不能の区分と理由、標識行と一行返却は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 完成条件証拠の提出を求められた場合は、末尾に`agent-toolkit:atk-mode/references/review-record.md`「条件別判定行の形式」の判定行を全条件の数だけ書き、求められていなければ判定行を置かない。
 一般的な要約などの地の文は加えず、役割固有の規定行だけを返す。
 

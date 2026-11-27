@@ -11,7 +11,7 @@ description: >
 
 仕組み、経緯、理解のための説明を求める依頼に、読み取りだけで答える。
 回答が成果物であり、説明だけを求める依頼を、実装や不具合対応へ広げない。
-事実と推論の区別は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）を適用する。
+`agent-basics:writing-standards/references/quality-principles-facts.md`「結果の返却」に従う。
 説明の組み立ては原則8（`agent-basics:writing-standards/references/quality-principles-readers.md`）を適用する。
 
 ## 手順

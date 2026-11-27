@@ -44,7 +44,7 @@ description: >
    各変更で、既存の成果物に残る同じ型の誤りも全て直す（後の作業者は規範より既存の実例を手本にするため、残すと同じ誤りが再生産される）。
    各変更の説明に、防ぐ型、確かめに使った過去の誤り（commit）、確かめた結果を書く。
 6. 置き換えた物を同じ変更で消す（原則9、`agent-basics:writing-standards/references/quality-principles-subtraction.md`）。
-   - 構造か検査で同じ害を防げることを確かめ、不要になった注意書きはQCDで削除する。
+   - `agent-basics:bugfix/references/prevention.md`「案を比べる」に従う。
      判断に必要な規範は保つ。
    - コードを言い換えるだけのコメント。
      コメントが述べる制約は、型・検査・名前へ移す案と、必要な説明を残す案をQCDで比べて選ぶ（`agent-basics:writing-standards/references/implementation-time.md`「コメントの記述粒度」）。

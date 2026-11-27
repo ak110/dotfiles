@@ -24,7 +24,7 @@
 
 1. 着手時に、managed-temp直下に現行の作業契約が無ければ、`agent-toolkit:atk-mode/references/work-contract.md`「作成と所有」で作る。
    系統は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入」の系統を登録したリポジトリ宛ての段に従って選び、内容から決まらなければ`default_branch`の系統とし、判断を報告に書く。
-   不具合・指摘・エラーは先に`agent-basics:bugfix`を起動する。
+   `agent-basics:bugfix/SKILL.md`「バグ対応」に従う。
    既存AWIの更新・懸念は、質問や調査の前に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」で扱う。
 2. `agent-toolkit:atk-mode/playbooks/request-intake.md`の手順で要求を受け付け、方針を確定する。
    宛先を決めたら、採否や方針を決めるための最初の現物調査より前に、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「対象の調査基点」で完全OIDを固定し、保存まで保持する。
@@ -68,7 +68,7 @@
 
 1. 要求単位へ分ける。
    文章の書き方への指示と行動の是正も含めて分け、単位ごとに、既存・起草中のAWIへ合流させるか独立した要求にするかを判定する。
-   発話が範囲の一部だけに触れていても、確定済みの範囲を縮めない。
+   `agent-basics:writing-standards/references/writing.md`「原文の保持」に従う。
    ユーザーが対象と変更を明示した縮小は、原文を記録して反映する。
    縮小の意図・対象が曖昧な時だけ、今の範囲を`共通前提`に示して確認する。
 2. 分類する。

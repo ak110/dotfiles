@@ -92,7 +92,7 @@ Webで判定が`未確定`の場合は、上記の固定行に続けて`E2E環�
 試行: <手段> | <実行したコマンド> | <終了コードまたは失敗の観測>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 環境による未確定の判定と試行結果は本節の固有結果として保持する。
 <!-- return-contract:usability-review:end -->
 

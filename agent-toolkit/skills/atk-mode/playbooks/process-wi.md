@@ -80,7 +80,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
   担当の範囲の一部を委譲する場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従い、計画、検収、commitの対応の記録、統合、メインへの返却はレーン担当が責任を持つ。
 - ユーザー由来の要求の全部か一部を不採用にする場合は、先にユーザーの確認かUWIの回答を得てから採否を確定する。
 - 選定で確定した処理対象WIを最後まで処理する。
-  常駐では起動直後、レーンの統合や完了で枠が空いた時、新着WIの通知、30分点検で候補を随時取り込み、CLIが未終了WIから算定する上限でレーン数を増減する。
+  常駐の候補の取り込みは`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従い、CLIが未終了WIから算定する上限でレーン数を増減する。
   手動の単回実行では初回のready一覧と従来の次回判定を保つ。
   追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の対象に限り、元の選定結果へ追記してレーンへ渡す。
 - 対象リポジトリへpushするのは公開担当だけとする。
@@ -149,7 +149,7 @@ GitHub CopilotのレビューとDependabotアラートの監査はリポジト�
 3. 作業を失わない形で残す。
    未統合の差分は各担当のworktreeとbranchに残し、選定YAML、計画、引き継ぎ記録の保存状態を確かめる。
 4. 再開の記録を会話の外へ書く。
-   作業契約（`agent-toolkit:atk-mode/references/work-contract.md`）の目的・制約・原本の所在を保つ。
+   `agent-toolkit:atk-mode/references/work-contract.md`「圧縮と再開の後の復元」に従う。
    工程・検証結果・再開位置は、担当の引き継ぎ記録・計画・WIの該当する原本に残す。
 5. ユーザーへ、工程の中の現在位置、保存済みのものと会話の中にしか無いもの（パスで示す）、作ったcommitと作業ツリーがcleanかどうか、再開の最初の操作を伝える。
    これは一時停止の連絡であり、作業完了報告とは別に扱う。
@@ -157,10 +157,8 @@ GitHub CopilotのレビューとDependabotアラートの監査はリポジト�
 ## 終了
 
 工程の区切りは確認の理由から外し、ユーザーの判断が本当に必要な事項だけを確認待ちにして、その判断を待たずに進められる工程は続ける。
-回答がすぐに得られない確認事項は`agent-toolkit:atk-mode/playbooks/confirmation.md`「未確定判断の保留と暫定判断」に従ってUWIへ移し、`processing`の元項目も同じ手順でそのUWIへの依存を保存して`inbox`へ戻す。
+回答がすぐに得られない確認事項は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「未確定判断の保留と暫定判断」に従う。
 作業完了の報告を所有するメインは、この作業で作ったcommitを公開してから`agent-toolkit:atk-mode/playbooks/report-completion.md`に従って報告する。
-常駐では前回報告以降に届いた成果を、dotfilesはリリースごと、リリース周期の無いリポジトリは公開ごとに報告し、[巡回の手順](process-loop.md#巡回する)へ戻る。
-process-loopの完了報告とホストの終了は同書「中断と再開」の条件に限る。
 明示的に委譲されたリポジトリ担当は役割の契約に従って委譲元へ返し、担当から外れるために同書を取得する必要は無い。
 反映は統括の公開の流れで担当し、反映が必要な公開担当は`agent-toolkit:atk-mode/playbooks/report-completion.md`「常時稼働サーバーへの反映」を使い、反映と稼働確認の結果を返す。
 公開工程の承認スコープは、選定工程で判別した結果を`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「公開工程の承認スコープ」に従って使う。

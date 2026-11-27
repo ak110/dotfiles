@@ -89,13 +89,13 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_OPERATION_APPROVAL_INTERLEAVINGS=all u
 
 反例の各行は、主体と、その主体が実行した手順の名前である。
 各行を実際のコードの分岐で起こりうるかを確かめ、起こらない行があれば検査の枠組み（`_instrument`の差し替え、`_FakeStorage`、前提）の誤りとして直す。
-全て起こりうれば欠陥として`agent-basics:bugfix`を起動する。
+全て起こりうる場合は、`agent-basics:bugfix/SKILL.md`「バグ対応」に従う。
 性質の判定は`_violations`にあり、性質を変えるのは意図した契約の変更の根拠（試験またはcommitの説明）がある場合だけにする。
 
 ## 追従
 
-- 版の記録はfrontmatterの`verifies`と`verified-digest`で持ち、pyfltrの`ci`とcommit時の`fast`が対象と記録の一致を確かめる。
-  対象を変えたら、`verified-digest`を最後に書いたcommitからの対象の差分を読み、検査を再実行して現在のコードを記述すると確かめる。
+- 版の記録と対象変更後の追従は、`agent-basics:formal-verification/SKILL.md`「生成するスキル」「追従の手順」に従う。
+  本リポジトリではpyfltrの`ci`とcommit時の`fast`で記録を検査する。
   確かめた後にだけ、`uv run --frozen pyfltr verification-sync --update .claude/skills/operation-approval-interleavings/SKILL.md`で記録を進める。
 - 永続状態への新しい読取・書込の経路を足した時は、`_instrument`で手順として止める。
   止めない経路の順序は列挙されない。

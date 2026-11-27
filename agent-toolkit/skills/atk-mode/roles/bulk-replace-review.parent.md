@@ -10,7 +10,7 @@
 
 ## 運用条件
 
-- 指摘を受けたら、採否と修正の前に`agent-basics:bugfix`を起動する。
+- 指摘の採否と修正の前に、`agent-basics:bugfix/SKILL.md`「バグ対応」に従う。
 - 害が大きく、類似見直しの走査（`agent-basics:bugfix/references/similar-review.md`「害が大きい時」）を独立した担当へ渡す時は、`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動する。
   結果の採否は委譲元が確定する。
 
@@ -58,5 +58,5 @@
 <問題のある箇所ごとのファイルと行、観点、問題点、修正案。0件なら全件で問題が無いこと>
 ```
 
-続行不能と追加報告行は、共通契約`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
+`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:bulk-replace-review:end -->

@@ -49,7 +49,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 
 ## 見つけた既存不良の扱い
 
-追加の操作を選ぶ前に、発話と発生条件を`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」の分類に当てはめ、ユーザーの是正要求、今回混入した不良、同じ実行への明示の追加を区別して手順を選ぶ。
+`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」に従う。
 直接修正の担当・基点・時機は同書「レーンの変更範囲へ加える修正の認可」に従い、統合後の独立した修正は統合先の担当が現行のHEADで行う。
 
 1. 実行レビューから返された差分外の既存不良は、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」の受領の契約で専任のWI投入担当へ渡す。

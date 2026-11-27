@@ -181,7 +181,7 @@ atk run-script session-review-evidence -- --stats --saved-plan "$plan" --saved-r
 - 重複した検証の排除と待ち時間の活用を観点に含める。
   ローカルとCIの重複は`agent-basics:check-execution/references/verification-scope.md`「ローカルとCIの分担」で判定する。
 - 外部サービスの利用上限、レート制限、課金枠による待機の扱いを変える対策は、AWIとして確定する前に`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」の裁量と変更の程度の判定を当てる。
-  待機、モデルや実行環境の切り替えは、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で確認の要否を判定し、指定された費用、サービス、待機の条件を保つ技術判断は自分で確定する。
+  待機、モデルや実行環境の切り替えは、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従い、指定された費用、サービス、待機の条件を保つ。
   比較には、停止、実行先の切り替え、打ち切り、上限到達の事前の回避に加え、今の待機を続ける案も残す。
 - 短時間に反復したコマンドも、呼び出しごとの所要時間と律速区間への寄与から見直す（努力目標。無駄な呼び出しの削減）。
   入力形式の誤りによる反復は最下層のヘルプや仕様の取得を先にし、成功した同種の操作の反復は複数の対象の指定でまとめられるかを比べる。

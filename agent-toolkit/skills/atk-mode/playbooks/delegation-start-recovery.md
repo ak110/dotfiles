@@ -4,7 +4,7 @@
 
 ## Codexのagents_server起動
 
-1. `agents_server`の`start`はネイティブの委譲とは別の仕組みで、`model_type`からengine、model、effortを解決する（`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
+1. `agents_server`の`start`はネイティブの委譲とは別の仕組みで、モデルの指定は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う。
 2. `engine=claude`の指定は`spawn_agent`へ置き換えず、`agents_server`から起動し、候補列を渡す場合は手順1の資料に従って上書きの区分と根拠を付ける。
    指定のengineを実行する手段が無い時は、未完了として返すか、続行できない理由を報告する。
 3. 起動の入力（通常の起動の`whole_contract_path`を含む）と依頼文は、`agent-toolkit:atk-mode/playbooks/delegation.md`に従う。
@@ -22,7 +22,7 @@
 
 `Agent`ツールを使う条件は`agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」が定める（`agents_server`が標準である）。
 
-1. モデルは`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従い、`atk config get <工程>_model`の候補列の最初の`claude:`候補から選ぶ。
+1. `agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う。
    `[1m]`などの接尾辞を除いて`Agent`の列挙値へ写し、Claudeの候補が無いか写せなければ未完了として返す。
    effort、バックグラウンドでの実行、省略時の値は、起動時の公開スキーマとagent定義のfrontmatterで決める。
    `Agent`の起動が通信タイムアウトしたら、起動結果と稼働観測で依頼の受理を確かめる。

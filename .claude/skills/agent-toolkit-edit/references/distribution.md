@@ -18,7 +18,7 @@ dotfilesの配布プラグインは、リリースworkflowの有無にかかわ�
 
 プラグインのディレクトリ配下に差分がある変更では、`*_test.py`だけの差分を除き、公開前に版数を上げる。
 `implement` のマージ用ブランチでは版数を上げず、更新種別と根拠をAWIに書く。
-統括が統合後の未公開差分を基準に`bump種別`を決め、公開直前に版数と生成物の更新を1つのcommitとして検証・統合する。
+統括は`agent-toolkit:atk-mode/playbooks/publish.md`「版数と生成物」に従い、公開直前に版数と生成物の更新を1つのcommitとして検証・統合する。
 コメント、docstring、文書、誤字、入出力を変えない内部整理の差分も対象とする。
 `.chezmoi-source/`のchezmoi配布物、`bin/`のCLIラッパー、`scripts/`の補助スクリプトだけの変更は対象外とし、版数を据え置く。
 この条件は`scripts/check_plugin_version.py`がCIの`plugin-version` jobとpyfltrの`plugin-version`で検査し、据え置いた差分を失敗にする。
@@ -102,7 +102,7 @@ rebaseやmergeの後は、競合の有無によらず次の順で確かめる。
 2. `version`が競合したら、`(major, minor, patch)`の数の組で大きい方を定義元の2ファイルへ反映する。
    `scripts/sync_codex_plugin_manifests.py`で派生マニフェストを同期し、`--check`の終了コードで整合を判定する。
 3. 公開済みの統合先と定義元の`version`を比べる。
-   未公開のcommitが本書「判定基準」の対象を含み、版数が同じなら、統合後の版数を基準に更新し直す。
+   未公開のcommitが本書「判定基準」の対象を含み、版数が同じ場合は、`agent-toolkit:atk-mode/playbooks/publish.md`「版数と生成物」に従って更新し直す。
    別の作業が先に同じ版数へ上げ、競合せずに統合された場合もこれに当たる。
 
 ## marketplace管理
