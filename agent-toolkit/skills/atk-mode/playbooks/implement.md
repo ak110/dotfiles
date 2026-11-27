@@ -48,7 +48,10 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - 同等のローカル検証が必要な場合は、証拠を作業ツリーの外に保存してから回収する。
 7. AWIをマージ用へ更新して保留を解く。
    - `atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で、frontmatterへ`merge_branch: <push済みブランチ名>`と`merge_commit: <push済みHEADの完全OID>`を加える。
-   - `edit`が対象OIDのCI未完了・取消・失敗を返した場合は、保留を解かず、同じOIDの必要なCIの成功後に再実行する。
+   - `edit`はCIの結果を`情報:`行で示す。
+     CIが失敗・未完了でもマージ用へ更新し、保留を解ける。
+     CIの状態と、失敗した場合は原因についてどこまで判断できたかを`## 調査結果と判断根拠`へ書く。
+     共有ブランチに原因があり、別のセッションが対処している可能性がある時は、[Claude Codeの手順](host-claude-code.md)に従って連絡の要否を判断する。
    - CI非対象とCLIが確定した場合は、同じ完全OIDの同等検証と独立文脈レビューを終えてから保存する。
      証拠の書式は `atk wi verify-merge --help` に従う。
    - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
@@ -74,6 +77,13 @@ AWIは保存・保留した項目だけを戻す。
    条件を満たしたら`git fetch origin <merge_branch>`で取得し、`FETCH_HEAD`の完全OIDが`merge_commit`と一致することを確かめる。
    取り込み前に`atk wi verify-merge <ファイル名> --head <FETCH_HEADの完全OID>`を実行する。
    ブランチ不在やOID不一致がある場合もマージせず、原因を調べて報告または保留する。
+   - 対象OIDのCIが成功していないため拒否された場合はマージしない。
+     処理中のセッションが`atk wi hold --state=processing <ファイル名>`を実行し、`hold`への移行を確認する。
+     保留に失敗したら後続の操作へ進まない。
+   - 取り込み先のブランチに既にある失敗が原因なら、そのブランチで修正された後に、修正済みのベースブランチを作業ブランチへmergeしてpushする。
+     取り込み先でも直っていない失敗は[CI失敗への対処](../references/ci.md)に従う。
+   - mergeで競合を解消した場合は、解消の差分を実行レビューへ出して指摘を解消する。
+     新しい完全OIDのCI成功後に`atk wi edit`で`merge_commit`を更新し、`atk wi unhold <ファイル名>`で保留を解く。
 3. 主作業ツリーのベースブランチへ取り込む。
    - ベースブランチが`merge_commit`の祖先なら`git merge --ff-only FETCH_HEAD`で取り込む。
    - 分岐していれば、ベースと取得済みOIDから隔離worktreeで`git merge --no-edit`し、できた統合候補を検証してから取り込む。

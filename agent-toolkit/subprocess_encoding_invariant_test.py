@@ -6,8 +6,9 @@ from pathlib import Path
 import pytest
 from agent_toolkit._git import command as git_command
 
+from scripts.verification_scan_rules import scan_files
+
 _PACKAGE_ROOT = Path(__file__).resolve().parent
-_SOURCE_ROOTS = (_PACKAGE_ROOT / "agent_toolkit", _PACKAGE_ROOT / "scripts", _PACKAGE_ROOT / "skills")
 _SUBPROCESS_CALLS = {"run", "Popen", "call", "check_call", "check_output"}
 
 
@@ -36,10 +37,7 @@ def _allows_conditional(node: ast.expr | None, expected: str) -> bool:
 def test_text_subprocesses_use_utf8_with_replacement() -> None:
     """テキストモードの全呼び出しでUTF-8と置換処理を明示する。"""
     violations: list[str] = []
-    paths = sorted(path for root in _SOURCE_ROOTS for path in root.rglob("*.py"))
-    for path in paths:
-        if path.name.endswith("_test.py") or "tests" in path.parts:
-            continue
+    for path in scan_files(__file__):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):

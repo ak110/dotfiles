@@ -4,7 +4,8 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk.wi import frontmatter, layout
+from agent_toolkit._atk.wi import add as wi_add
+from agent_toolkit._atk.wi import add_cli, add_drafts, frontmatter, layout
 from agent_toolkit._testing import git_repository
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
@@ -192,3 +193,133 @@ def test_cli_retry_reports_existing_proposal_without_saving_again(
     assert f"登録済みのため再登録しなかった: {saved.name}" in output.err
     assert list(layout.iter_entry_paths(notes)) == [saved]
     assert saved.read_bytes() == original
+
+
+def _unkeyed(title: str) -> str:
+    return f"# 原稿 {title}\n\n原稿の確認。\n\n## 反映内容と反映先\n\n対象を変更する。\n"
+
+
+@pytest.fixture(name="namespace")
+def _namespace(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "work-contract.md").touch()
+    monkeypatch.setattr(wi_add, "resolve_submitter_session", lambda: "draft-test")
+    monkeypatch.setattr(add_cli.managed_temp, "find_session_temp", lambda _: work)
+    return work
+
+
+@pytest.mark.usefixtures("namespace")
+def test_cli_retries_seven_unkeyed_drafts_without_saving_again(
+    drafts: tuple[pathlib.Path, Callable[..., int]],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes, add = drafts
+    messages = tuple(_unkeyed(str(index)) for index in range(7))
+    monkeypatch.setattr(wi_add, "resolve_add_target", lambda _: ("github.com/example/repo", notes))
+    monkeypatch.setattr(wi_add, "resolve_head_commit", lambda *_args, **_kwargs: "a" * 40)
+    assert add(*messages) == 0
+    before = _saved(notes)
+    assert len(before) == 7
+    assert all(data["target_commit"] == "a" * 40 and add_drafts.RETRY_FINGERPRINT in data for _, data, _ in before.values())
+    capsys.readouterr()
+
+    monkeypatch.setattr(wi_add, "resolve_head_commit", lambda *_args, **_kwargs: "b" * 40)
+    assert add(*messages, options=("--dry-run",)) == 0
+    preview = capsys.readouterr().err
+    assert _saved(notes) == before
+    assert add(*messages) == 0
+    saved = capsys.readouterr()
+    assert "0件をinboxへ投入した" in saved.out
+    for name, _, _ in before.values():
+        warning = f"同じ原稿は登録済みのため再登録しなかった: {name}"
+        assert preview.count(warning) == saved.err.count(warning) == 1
+    assert _saved(notes) == before
+
+
+@pytest.mark.usefixtures("namespace")
+@pytest.mark.parametrize(
+    ("body_changes", "options"),
+    [
+        (True, ()),
+        (False, ("--target-repo=github.com/example/other",)),
+        (False, ("--depends-on=20261101-000000-001.md",)),
+        (False, ("--detailed",)),
+        (False, ("--hold",)),
+        (False, ("--cooldown-until=2099-01-01T00:00:00+00:00",)),
+    ],
+)
+def test_unkeyed_retry_distinguishes_saved_data(
+    drafts: tuple[pathlib.Path, Callable[..., int]], body_changes: bool, options: tuple[str, ...]
+) -> None:
+    notes, add = drafts
+    draft = _unkeyed("A")
+    assert add(draft) == 0
+    assert add(draft.replace("確認", "確証") if body_changes else draft, options=options) == 0
+    assert len(list(layout.iter_entry_paths(notes))) == 2
+
+
+def test_unkeyed_retry_namespace_and_explicit_id_are_independent(
+    drafts: tuple[pathlib.Path, Callable[..., int]],
+    namespace: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes, add = drafts
+    draft = _unkeyed("A")
+    assert add(draft, draft) == 0
+    (path,) = list(layout.iter_entry_paths(notes))
+    parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert add_drafts.FINGERPRINT not in parsed[0]
+    assert f"再登録しなかった: {path.name}" in capsys.readouterr().err
+    assert add(f"---\nproposal_id: {parsed[0][add_drafts.RETRY_FINGERPRINT]}\n---\n{draft}") == 0
+    assert len(list(layout.iter_entry_paths(notes))) == 2
+
+    other = namespace.with_name("other")
+    other.mkdir()
+    (other / "work-contract.md").touch()
+    monkeypatch.setattr(add_cli.managed_temp, "find_session_temp", lambda _: other)
+    assert add(draft) == 0
+    assert len(list(layout.iter_entry_paths(notes))) == 3
+
+
+@pytest.mark.parametrize("is_uwi", [False, True])
+def test_unkeyed_add_without_automatic_retry(
+    drafts: tuple[pathlib.Path, Callable[..., int]], namespace: pathlib.Path, is_uwi: bool
+) -> None:
+    notes, add = drafts
+    if is_uwi:
+        options = ("--type=uwi", "--question-type=yes-no")
+    else:
+        (namespace / "work-contract.md").unlink()
+        options = ()
+    assert add(_unkeyed("A"), options=options) == 0
+    assert add(_unkeyed("A"), options=options) == 0
+    saved = list(layout.iter_entry_paths(notes))
+    assert len(saved) == 2
+    assert all(add_drafts.RETRY_FINGERPRINT not in path.read_text(encoding="utf-8") for path in saved)
+
+
+@pytest.mark.usefixtures("namespace")
+def test_retry_fingerprint_cannot_be_supplied_or_changed(
+    drafts: tuple[pathlib.Path, Callable[..., int]], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    notes, add = drafts
+    reserved = add_drafts.RETRY_FINGERPRINT
+    proposal = f"---\n{reserved}: invalid\n---\n{_unkeyed('A')}"
+    assert add(proposal) == 1
+    assert reserved in capsys.readouterr().err
+    assert not list(layout.iter_entry_paths(notes))
+
+    assert add(_unkeyed("A")) == 0
+    (saved,) = list(layout.iter_entry_paths(notes))
+    before = saved.read_bytes()
+    edit = tmp_path / "edit.md"
+    edit.write_text(proposal, encoding="utf-8")
+    with pytest.raises(SystemExit) as exit_info:
+        atk.main(["wi", "edit", saved.name, "--target-repo=github.com/example/repo", "--body-file", str(edit)], home=tmp_path)
+    assert exit_info.value.code == 1
+    assert reserved in capsys.readouterr().err
+    assert saved.read_bytes() == before

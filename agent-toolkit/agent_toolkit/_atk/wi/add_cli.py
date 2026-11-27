@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import datetime
 import os
 import pathlib
@@ -14,6 +15,7 @@ from agent_toolkit._atk.wi import add_drafts as _add_drafts
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi.add_reports import (
     compare_draft_openings,
@@ -208,10 +210,12 @@ def cmd_add(
     choices = normalize_choices(",".join(args.choices)) if args.choices is not None else None
     saved_details: dict[str, dict[str, object | None]] = {}
     namespace = _draft_namespace()
+    initial_state = WI_STATE_HOLD if hold else WI_STATE_INBOX
+    detailed = bool(getattr(args, "detailed", False))
     sources = [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
     try:
         if args.dry_run:
-            parsed_messages, normalized_target_repo, _cooldown = _validate_add_entries(
+            parsed_messages, normalized_target_repo, cooldown = _validate_add_entries(
                 messages=messages,
                 target_repo=target_repo,
                 entry_type=args.type,
@@ -234,14 +238,41 @@ def cmd_add(
             if draft_basis is not None:
                 _add_drafts.ensure_destinations(draft_basis, parsed_messages, item_branches, resolved_branch)
                 draft_basis.verify(resolved_branch)
-            _, key_names = _add_drafts.prepare(
-                private_notes,
-                parsed_messages,
-                entry_type=args.type,
-                namespace=namespace,
-                timestamp=None,
-                depends_on=canonical_dependencies,
+            preview_retries = (
+                namespace is not None
+                and args.type == WI_TYPE_AWI
+                and any(_add_drafts.KEY not in data and _add_drafts.PROPOSAL_ID_KEY not in data for data, _ in parsed_messages)
             )
+            with _wi_sync.repo_lock(private_notes) if preview_retries else contextlib.nullcontext():
+                insertions, key_names = _add_drafts.prepare(
+                    private_notes,
+                    parsed_messages,
+                    entry_type=args.type,
+                    namespace=namespace,
+                    timestamp=now.strftime("%Y%m%d-%H%M%S") if preview_retries else None,
+                    depends_on=canonical_dependencies,
+                )
+                if preview_retries:
+                    add.add_entries_locked(
+                        private_notes,
+                        parsed_messages=[item.message for item in insertions],
+                        target_repo=normalized_target_repo,
+                        source=args.source,
+                        now=now,
+                        entry_type=args.type,
+                        scope=args.scope,
+                        question_type=None,
+                        choices=None,
+                        item_branches=[item_branches[item.position] for item in insertions],
+                        cooldown_until=cooldown,
+                        initial_state=initial_state,
+                        insertions=insertions,
+                        detailed=detailed,
+                        draft_namespace=namespace,
+                        dry_run=True,
+                    )
+                    prospective = {item.filename for item in insertions}
+                    key_names = {key: "保存時に決まる" if name in prospective else name for key, name in key_names.items()}
             print_draft_openings(
                 messages,
                 sources,
@@ -276,10 +307,10 @@ def cmd_add(
             saved_details=saved_details,
             submitter_session=add.resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
             target_branch=target_branch,
-            initial_state=WI_STATE_HOLD if hold else WI_STATE_INBOX,
+            initial_state=initial_state,
             draft_basis=draft_basis,
             draft_namespace=namespace,
-            detailed=bool(getattr(args, "detailed", False)),
+            detailed=detailed,
             origin_reviews=tuple(getattr(args, "origin_review", None) or ()),
         )
     except WebInputError as error:

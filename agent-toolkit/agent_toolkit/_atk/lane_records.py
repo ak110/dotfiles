@@ -200,17 +200,27 @@ def read_selection(record: dict[str, typing.Any]) -> dict[str, typing.Any] | Non
         text = pathlib.Path(record["selection_file"]).read_text(encoding="utf-8")
     except FileNotFoundError:
         return None
-    return selection_snapshot(yaml.safe_load(text), record["lane"])
+    current = selection_snapshot(yaml.safe_load(text), record["lane"])
+    held = record.get("selection", {})
+    if (
+        current.get("unlisted")
+        and isinstance(held, dict)
+        and held.get("unlisted")
+        and held.get("integrated")
+        and (record.get("integration") or {}).get("phase") == "finalized"
+    ):
+        current["integrated"] = True
+    return current
 
 
 def selection_snapshot(document: object, lane: str) -> dict[str, typing.Any]:
+    decisions = selection.decisions(document)
+    costs = selection.lane_costs(document)
     items = [
-        row
-        for row in selection.decisions(document) or []
-        if isinstance(row, dict) and selection.lane_owns(row, lane) and selection.WI_KEY in row
+        row for row in decisions or [] if isinstance(row, dict) and selection.lane_owns(row, lane) and selection.WI_KEY in row
     ]
     integrated = lane in selection.integrated_lanes(document)
-    return {
+    snapshot: dict[str, typing.Any] = {
         "lane_wis": sorted(str(row[selection.WI_KEY]) for row in items),
         "processed_wis": sorted(
             str(row[selection.WI_KEY])
@@ -219,6 +229,23 @@ def selection_snapshot(document: object, lane: str) -> dict[str, typing.Any]:
         ),
         "integrated": integrated,
     }
+    if (
+        decisions is not None
+        and costs is not None
+        and all(
+            isinstance(row, dict)
+            and selection.WI_KEY in row
+            and isinstance(row.get(selection.LANE_KEY), str)
+            and row[selection.LANE_KEY] != lane
+            for row in decisions
+        )
+        and all(
+            isinstance(row, dict) and isinstance(row.get(selection.LANE_KEY), str) and row[selection.LANE_KEY] != lane
+            for row in costs
+        )
+    ):
+        snapshot["unlisted"] = True
+    return snapshot
 
 
 def selection_state(record: dict[str, typing.Any]) -> dict[str, typing.Any]:

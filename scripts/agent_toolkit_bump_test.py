@@ -8,8 +8,11 @@ import agent_toolkit_bump as bump
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit"))
-# pylint: disable-next=wrong-import-position,import-error
+# pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402
+from agent_toolkit._testing.git_repository import git_output, init_repository  # noqa: E402
+
+# pylint: enable=wrong-import-position,import-error
 
 
 class TestParseVersion:
@@ -216,6 +219,18 @@ class TestResolveBaseVersion:
             return available.get(ref)
 
         return _read
+
+    @pytest.fixture(autouse=True)
+    def _isolated_refs(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        init_repository(tmp_path, commit_message="initial")
+        monkeypatch.setattr(bump, "_REPO_ROOT", tmp_path)
+
+    def test_does_not_fall_back_when_published_version_cannot_be_read(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        git_output(tmp_path, "update-ref", "refs/remotes/origin/develop", "HEAD")
+        monkeypatch.setattr(bump, "_read_version_at", self._fake_reader({"origin/HEAD": "0.9.0"}))
+        assert bump.resolve_base_version(self._TARGET) is None
 
     def test_prefers_upstream_branch(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """上流ブランチを解決できる場合はそちらを採用する。"""

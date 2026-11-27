@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from importlib.util import resolve_name
 from pathlib import Path
 
 import pytest
+
+from scripts.verification_scan_rules import scan_files
 
 _PACKAGE = Path(__file__).with_name("agent_toolkit")
 
@@ -122,12 +124,10 @@ def _eager_imports(node: ast.AST, bindings: dict[str, str]) -> Iterator[ast.Impo
         del bindings[name]
 
 
-def _dependencies(root: Path) -> dict[str, set[str]]:
+def _dependencies(root: Path, paths: Iterable[Path]) -> dict[str, set[str]]:
     modules = {}
     root_offset = len(root.parent.parts)
-    for path in sorted(root.rglob("*.py")):
-        if path.name.endswith("_test.py") or path.name == "conftest.py":
-            continue
+    for path in paths:
         parts = path.parts[root_offset:-1]
         name = ".".join(parts if path.name == "__init__.py" else (*parts, path.stem))
         modules[name] = path
@@ -189,12 +189,16 @@ def _cycles(graph: dict[str, set[str]]) -> list[list[str]]:
     ),
 )
 def test_eager_imports_are_acyclic() -> None:
-    graph = _dependencies(_PACKAGE)
+    graph = _dependencies(_PACKAGE, scan_files(__file__))
     assert graph, f"検査対象が見つからない。作業ツリーに {_PACKAGE} のPythonファイルがあるか確認する。"
     cycles = _cycles(graph)
     assert not cycles, "起動時に循環するimportがある。共有する値や型を、双方が参照できる下位モジュールへ移す。\n" + "\n".join(
         " -> ".join(cycle) for cycle in cycles
     )
+
+
+def _sample_dependencies(root: Path) -> dict[str, set[str]]:
+    return _dependencies(root, sorted(root.rglob("*.py")))
 
 
 def test_dependency_resolution(tmp_path: Path) -> None:
@@ -216,7 +220,7 @@ def test_dependency_resolution(tmp_path: Path) -> None:
     (root / "second.py").write_text("", encoding="utf-8")
     (root / "third.py").write_text("", encoding="utf-8")
 
-    graph = _dependencies(root)
+    graph = _sample_dependencies(root)
     assert graph == {
         "sample": {"sample.first"},
         "sample.first": {"sample.second", "sample.third"},
@@ -225,7 +229,7 @@ def test_dependency_resolution(tmp_path: Path) -> None:
     }
     assert not _cycles(graph)
     (root / "third.py").write_text("from . import VALUE\n", encoding="utf-8")
-    assert _cycles(_dependencies(root)) == [["sample", "sample.first", "sample.third", "sample"]]
+    assert _cycles(_sample_dependencies(root)) == [["sample", "sample.first", "sample.third", "sample"]]
 
 
 def test_aliased_type_checking_guard(tmp_path: Path) -> None:
@@ -241,7 +245,7 @@ def test_aliased_type_checking_guard(tmp_path: Path) -> None:
         "    import sample\n"
     )
     source.write_text(guards, encoding="utf-8")
-    assert not _cycles(_dependencies(root))
+    assert not _cycles(_sample_dependencies(root))
 
     rebinds = (
         "TC = True\nif TC:",
@@ -254,10 +258,10 @@ def test_aliased_type_checking_guard(tmp_path: Path) -> None:
     )
     for rebound in rebinds:
         source.write_text(f"{guards}{rebound}\n    import sample\n", encoding="utf-8")
-        assert _cycles(_dependencies(root)) == [["sample", "sample"]], rebound
+        assert _cycles(_sample_dependencies(root)) == [["sample", "sample"]], rebound
 
     source.write_text(f"{guards}for TC in (True,):\n    if TC:\n        import sample\n", encoding="utf-8")
-    assert _cycles(_dependencies(root)) == [["sample", "sample"]]
+    assert _cycles(_sample_dependencies(root)) == [["sample", "sample"]]
 
 
 def test_cycle_through_parent_initializer(tmp_path: Path) -> None:
@@ -269,7 +273,7 @@ def test_cycle_through_parent_initializer(tmp_path: Path) -> None:
     (nested / "__init__.py").write_text("from ..first import VALUE\n", encoding="utf-8")
     (nested / "leaf.py").write_text("", encoding="utf-8")
 
-    assert _cycles(_dependencies(root)) == [["sample.first", "sample.nested", "sample.first"]]
+    assert _cycles(_sample_dependencies(root)) == [["sample.first", "sample.nested", "sample.first"]]
 
 
 def test_source_tree_keeps_last_multiline_import() -> None:

@@ -350,6 +350,7 @@ _RESERVED_ADD_KEY_NEXT_ACTIONS = {
     "cooldown_until": "--cooldown-untilで指定する",
     "target_commit": "atkによる対象HEADの自動取得に任せる",
     "proposal_fingerprint": "atkによる原稿の指紋の記録に任せる",
+    "draft_retry_fingerprint": "atkによる再投入の照合値の記録に任せる",
     "github_source": "GitHubの取り込み処理による出所の記録に任せる",
     "processing_owner": "atk wi start-processingまたはtake-overで担当を記録する",
     "detailed": "計画を作る時点で詳細化したAWIの新規投入では--detailedを指定する",

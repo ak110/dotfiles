@@ -71,9 +71,9 @@ def main(argv: list[str] | None = None) -> int:
     if resolved is None:
         print(f"{target.name} current version: {current}")
         print(
-            "基準版を確定できなかった（上流ブランチも origin/HEAD も解決できない）。既往のbumpを検出できないため増分しない。"
-            "git branch -vvで上流を確認し、git remote set-head origin --autoでorigin/HEADを設定してから"
-            "同じコマンドを再実行する。",
+            "基準版を確定できなかったため増分しない。"
+            "`git fetch origin`で公開済みdevelopの追跡refを更新し、対象のplugin.jsonの版数を確認して再実行する。"
+            "追跡refが無い構成では、上流ブランチまたはorigin/HEADの版数を確認する。",
             file=sys.stderr,
         )
         return 1
@@ -158,21 +158,27 @@ def _read_current_version(target: PluginTarget) -> str:
     return json.loads(target.manifest.read_text(encoding="utf-8"))["version"]
 
 
-BASE_VERSION_REFS: tuple[str, ...] = ("@{u}", "origin/HEAD")
-"""基準版の解決に試す参照。先頭から順に試し、最初に解決できたものを採用する。
-
-作業用の複製（git worktree等）では追跡先が失われて`@{u}`が解決できないため、
-リモートのデフォルトブランチを指す`origin/HEAD`を次に試す。
-"""
+_PUBLISHED_DEVELOP_REF = "refs/remotes/origin/develop"
+_FALLBACK_BASE_REFS = ("@{u}", "origin/HEAD")
 
 
 def resolve_base_version(target: PluginTarget) -> tuple[str, str] | None:
-    """公開済み時点のplugin.jsonから`version`と、取得に使った参照名を返す。
+    """公開済み時点のplugin.jsonから`version`と、取得に使った参照名を返す。  pyfltr: allow-comment
 
-    `BASE_VERSION_REFS`の順に試し、いずれからも取得できない場合は`None`を返す。
-    呼び出し元は`None`を「既往のbumpを検出できない」状態として扱い、増分しない。
+    developへのpush前の検査はリモート先端を基点とする。採番は通信せず、その追跡refを優先する。
+    追跡refが無い場合だけ上流、origin/HEADの順に試す。追跡refの版数が壊れていれば取得不能とする。
     """
-    for ref in BASE_VERSION_REFS:
+    published = _read_version_at(_PUBLISHED_DEVELOP_REF, target)
+    if published is not None:
+        return published, _PUBLISHED_DEVELOP_REF
+    result = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", _PUBLISHED_DEVELOP_REF],
+        cwd=_REPO_ROOT,
+        check=False,
+    )
+    if result.returncode != 1:
+        return None
+    for ref in _FALLBACK_BASE_REFS:
         version = _read_version_at(ref, target)
         if version is not None:
             return version, ref

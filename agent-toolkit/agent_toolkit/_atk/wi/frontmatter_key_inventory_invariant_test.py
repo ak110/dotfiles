@@ -4,6 +4,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk.wi import add_drafts, branches, priority
+from scripts.verification_scan_rules import scan_files
 
 _FIELD_USES = {
     "alert_keys": ("alerts.existing_alert_keys", "同じ警告を重ねて起票しないために記録する"),
@@ -27,6 +28,7 @@ _FIELD_USES = {
     "priority_evidence": ("priority.reason_of", "旧形式の緊急化の観測根拠を読む。手入力しない"),
     "priority_impact": ("priority.reason_of", "旧形式の緊急化の影響を読む。手入力しない"),
     "priority_release": ("priority.reason_of", "旧形式の緊急化の解除条件を読む。手入力しない"),
+    "draft_retry_fingerprint": ("add_drafts.registered_retries", "作業契約ごとに同じAWIの再投入を照合する。手入力しない"),
     "proposal_fingerprint": ("add_draftsの重複検査", "登録済み原稿との内容の一致を照合する。手入力しない"),
     "processing_owner": ("transitionsの担当照合", "処理中の担当を識別し、旧担当の終了操作を拒否する。手入力しない"),
     "proposal_id": ("addの重複検査", "同じ提案の再投入を防ぐ識別子を指定する"),
@@ -103,16 +105,15 @@ def _literal_metadata_keys(path: pathlib.Path) -> set[str]:
     reason="全WI実装のASTを調べる。判定CPU秒は走査改善前のCIで最大0.778、改善後のCIで0.458〜0.582。係数1.4適用後の上限0.742秒を保つ",
 )
 def test_each_wi_frontmatter_key_has_a_consumer_and_a_reason_to_change_it() -> None:
-    root = pathlib.Path(__file__).resolve().parent
     keys = {
         branches.KEY,
         priority.PRIORITY_KEY,
         "alert_keys",
         add_drafts.PROPOSAL_ID_KEY,
         add_drafts.FINGERPRINT,
+        add_drafts.RETRY_FINGERPRINT,
     }
-    for path in root.rglob("*.py"):
-        if not path.name.endswith("_test.py"):
-            keys.update(_literal_metadata_keys(path))
+    for path in scan_files(__file__):
+        keys.update(_literal_metadata_keys(path))
     missing = {key for key in keys - _NON_ACTIVE_FIELDS if not all(part.strip() for part in _FIELD_USES.get(key, ("", "")))}
     assert not missing, f"消費箇所と変更理由を確認できないWI frontmatterキー: {sorted(missing)}"

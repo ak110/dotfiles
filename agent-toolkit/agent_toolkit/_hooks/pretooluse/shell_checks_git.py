@@ -326,18 +326,12 @@ def _unknown_global_words(prefix: Sequence[str]) -> bool | None:
 _WORK_ITEM_FILENAME_PATTERN = re.compile(r"(?<![0-9A-Za-z_-])\d{8}-\d{6}-\d{3}\.md(?![0-9A-Za-z_.-])")
 
 
-_COMMIT_BLOCK_RERUN = (
-    "このBashコマンドは全体が実行されていない（`git add`など、連結した他のコマンドも実行されていない）。"
-    "同じコマンド全体へ修正を加えて再実行してください。"
-)
+_COMMIT_BLOCK_RERUN = "同じコマンド全体へ修正を加えて再実行してください（`git add`などの前段も含む）。"
 
 _COMMIT_MSG_RERUN = (
     "Gitがcommitの作成を止めた。連結した前段（`git add`など）は実行済みのため、"
     "前段を繰り返さず、本文を直してcommitだけを再実行してください。"
 )
-
-
-"""commitの遮断の是正へ添える、未実行の範囲と再実行の範囲。commitだけを直して前段を外す再実行を防ぐ。"""
 
 
 def _git_commit_format_violations(messages: Iterable[str]) -> list[tuple[str, str]]:
