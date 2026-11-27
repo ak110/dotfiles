@@ -82,7 +82,7 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
     assert "完成条件の根拠と残工程" in notice
     assert "完了見込み" not in notice
     assert "git -C" not in notice
-    assert ".md" not in notice
+    assert "`main-reporting.md`「進捗点検」" in notice
     assert "cat --" not in notice and "Get-Content" not in notice
 
     assert _entries(sid)["main"]["last_notified_at"] == 1000.0
@@ -131,7 +131,7 @@ def test_received_check_notice_does_not_block_a_report_without_time_estimate(too
 
 def test_in_process_subagent_notice_does_not_require_user_report() -> None:
     generated = _due_notice(_session_id(), agent="subagent-1")
-    assert "役割の契約に従って返却" in generated
+    assert "既存の引き継ぎ記録" in generated
     assert "完了見込み" not in generated
     progress_self_check.release_reservations()
 
@@ -489,7 +489,7 @@ def test_process_loop_point_lists_merge_candidate(monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", sid)
     name = "20261123-145959-001.md"
-    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid: (NewWorkItem(name, "implement", True),))
+    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid, **_kwargs: (NewWorkItem(name, "implement", True),))
 
     payload = {"session_id": sid}
     assert progress_self_check.claim_notice(payload, now=1.0) is None

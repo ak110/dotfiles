@@ -114,7 +114,7 @@ def register_version_routes(
     async def identity() -> quart.Response:
         return _shell_routes.json_no_store({"revision": revision})
 
-    def check() -> list[str]:
+    def checks_for_runtime() -> list[versions.VersionCheck]:
         checks = versions.check_versions(
             repo,
             versions.latest_published(repo),
@@ -122,8 +122,13 @@ def register_version_routes(
             include_serve=True,
             agents=agents_version() if agents_version else (False, None),
         )
-        return [check.message() for check in checks if check.status != "match"]
+        return [check for check in checks if check.status != "match"]
 
     @app.get("/api/runtime-versions")
     async def runtime_versions() -> quart.Response:
-        return _shell_routes.json_no_store(await asyncio.to_thread(check))
+        checks = await asyncio.to_thread(checks_for_runtime)
+        if quart.request.args.get("view") == "browser":
+            return _shell_routes.json_no_store(
+                [{"service": check.service, "status": check.status, "detail": check.message()} for check in checks]
+            )
+        return _shell_routes.json_no_store([check.message() for check in checks])

@@ -103,7 +103,7 @@ commitの示し方は`agent-toolkit:atk-mode/references/git-identifier.md`「読
 - 質問者が知らない内部の呼称を説明なしに使っていないこと。
 
 種別がWIのユーザー向け記述（AWIのタイトルとH1直下、UWIの冒頭）なら、次の基準が前提とする知識を持つユーザーを読者とする。
-基準は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」であり、同節の合否を対象部分だけから判定し、説明の足りない表現と多義的な用語を漏れなく指摘する。
+基準は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「ユーザーが読む部分の合格基準」であり、同節の合否を対象部分だけから判定し、説明の足りない表現と多義的な用語を漏れなく指摘する。
 AWIの内容の定義元は`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と分担」のH1直下の項目（目的、変更の要点、変更後の結果）である。
 UWIの内容の定義元は`agent-toolkit:atk-mode/references/uwi-format.md`「構成」である。
 

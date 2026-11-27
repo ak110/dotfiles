@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # pylint: disable=protected-access
 import asyncio
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from agent_toolkit._agents_server import (
     mcp_tools,
     retained_results,
     service_rpc,
+    service_transport,
     shared_layout,
     shared_roots,
     state,
@@ -35,7 +37,11 @@ from agent_toolkit._testing.agents_server_support import _complete, _write_notic
 async def test_formal_handoff_keeps_the_child_at_its_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, completed_before_handoff: bool, cli_collects: bool
 ) -> None:
-    target = {"generation": "current", "server_instance": "same-instance"}
+    target = {
+        "generation": "current",
+        "server_instance": "same-instance",
+        "process": service_transport.process_identity(os.getpid()),
+    }
     service = _coordinator(tmp_path / "services" / "agents-server", target)
     monkeypatch.setattr(service, "_current", lambda: target)
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", service.managers)
@@ -212,11 +218,16 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
 async def test_public_force_kill_stops_delegation_tree_during_send(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, foreign_owner: bool, release_failure: bool
 ) -> None:
-    target = {"generation": "current", "server_instance": "same-instance"}
+    target = {
+        "generation": "current",
+        "server_instance": "same-instance",
+        "process": service_transport.process_identity(os.getpid()),
+    }
     service = _coordinator(tmp_path / "services" / "agents-server", target)
     monkeypatch.setattr(service, "_current", lambda: target)
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", service.managers)
-    previous = _coordinator(service.directory, {"generation": "previous", "server_instance": "previous-instance"})
+    previous_target = {**target, "generation": "previous", "server_instance": "previous-instance"}
+    previous = _coordinator(service.directory, previous_target)
     foreign = {"generation": "previous"}
     rpc_calls: list[str] = []
 
@@ -369,7 +380,11 @@ async def test_public_force_kill_stops_delegation_tree_during_send(
 async def test_force_children_finds_grandchild_registered_during_child_stop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    target = {"generation": "current", "server_instance": "same-instance"}
+    target = {
+        "generation": "current",
+        "server_instance": "same-instance",
+        "process": service_transport.process_identity(os.getpid()),
+    }
     service = _coordinator(tmp_path / "services" / "agents-server", target)
     monkeypatch.setattr(service, "_owner", AsyncMock(return_value=None))
     stopped: list[str] = []
@@ -406,7 +421,11 @@ async def test_force_children_finds_grandchild_registered_during_child_stop(
 async def test_force_rechecks_descendant_after_queued_send_and_turn_change(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change_turn: bool
 ) -> None:
-    target = {"generation": "review", "server_instance": "review-instance"}
+    target = {
+        "generation": "review",
+        "server_instance": "review-instance",
+        "process": service_transport.process_identity(os.getpid()),
+    }
     service = _coordinator(tmp_path / "services" / "agents-server", target)
     monkeypatch.setattr(service, "_current", lambda: target)
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", service.managers)

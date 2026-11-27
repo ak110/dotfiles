@@ -28,6 +28,7 @@ import os
 import time
 
 from agent_toolkit._common import process_loop_session
+from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
@@ -57,8 +58,16 @@ _RESERVED_AT_KEY = "reserved_at"
 
 _reservations: list[tuple[str, str, float]] = []
 
-_SELF_CHECK_NOTICE_BODY = "進捗点検。完成条件の根拠と残工程を確かめ、未確認の点を報告してください。"
-_DELEGATED_NOTICE_BODY = "進捗点検。完成条件の根拠と残工程を確かめ、役割の契約に従って返却してください。"
+_SELF_CHECK_NOTICE_BODY = (
+    "通知の時刻は点検の結果ではない。"
+    "`main-reporting.md`「進捗点検」に従って作業契約を参照し、完成条件の根拠と残工程を照合してください。"
+    "照合した結果から、予定を維持するか組み直すかを判断してください。"
+    "確認済みの根拠は再掲せず、未達と処置を報告してください。"
+)
+_DELEGATED_NOTICE_BODY = (
+    "完成条件の根拠と残工程を照合してください。"
+    "差・未達があれば既存の引き継ぎ記録を更新し、委譲元の判断が必要な差は直上へ通知してください。"
+)
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -167,7 +176,7 @@ def _new_wi_text(session_id: str, recipient: str) -> tuple[str, str | None]:
     from agent_toolkit._atk.wi.listing import progress_new_wis  # pylint: disable=import-outside-toplevel
 
     try:
-        rows = progress_new_wis(session_id)
+        rows = progress_new_wis(session_id, track_merges=True)
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
         return (
             f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で確かめてください。",
@@ -175,7 +184,11 @@ def _new_wi_text(session_id: str, recipient: str) -> tuple[str, str | None]:
         )
     if rows is None:
         return "新着WIは未確認（開始時集合なし）。", None
-    return _notice.new_wi_preview(session_id, recipient, rows)
+    tracked = [row for row in rows if row.merge_pending == "processing"]
+    text, snapshot = _notice.new_wi_preview(session_id, recipient, [row for row in rows if row.merge_pending != "processing"])
+    if tracked:
+        text += " 取り込み結果待ち（再割当不要）: " + "、".join(row.filename for row in tracked) + "。"
+    return text, snapshot
 
 
 def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:
@@ -234,7 +247,7 @@ def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: b
         else "初回観測の保存時刻が通知生成時刻より後にあるため、経過時間は不明。"
     )
     main_agent = is_main_agent_context(payload)
-    instruction = _SELF_CHECK_NOTICE_BODY if main_agent else _DELEGATED_NOTICE_BODY
+    instruction = _SELF_CHECK_NOTICE_BODY if main_agent and not is_delegated(os.environ) else _DELEGATED_NOTICE_BODY
     skipped_text, skipped_receipts = _skipped_notices(session_id, agent_id)
     previous = f"前回の通知から{_format_elapsed(since_notice)}たった。" if since_notice is not None else ""
     new_wis, wi_snapshot = (

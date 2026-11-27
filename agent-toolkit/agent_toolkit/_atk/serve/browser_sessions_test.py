@@ -27,13 +27,15 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("pending", ["list", "detail"])
-async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
+async def test_mobile_session_keeps_list_visible_after_return_during_fetch(
+    screen_harness: _ScreenHarness, pending: str
+) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
-    await page.goto(screen_harness.base_url + "/sessions")
-    item = page.locator("#sessions .session-item").first
-    await item.wait_for(state="attached")
-    query = await item.evaluate("element => new URLSearchParams(element.dataset).toString()")
+    (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
+    record_path = record.as_posix()
+    item = page.locator(f'#sessions .session-item[data-path="{record_path}"]')
+    query = urlencode({"host": "browser-test", "engine": "claude", "path": record_path})
     started = asyncio.Event()
     release = asyncio.Event()
     pattern = "**/api/sessions/list" if pending == "list" else "**/api/sessions/detail?*"
@@ -42,14 +44,23 @@ async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harnes
     try:
         await page.goto(screen_harness.base_url + "/sessions?" + query, wait_until="domcontentloaded")
         await asyncio.wait_for(started.wait(), timeout=10)
-        menu = page.locator("#sessions-menu-btn")
-        await menu.click()
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
-
+        expect = playwright.async_api.expect
+        sidebar = page.locator("#sessions-sidebar")
+        await expect(sidebar).to_be_hidden()
+        await page.locator("#sessions-menu-btn").click()
+        await expect(sidebar).to_be_visible()
+        await expect(page.locator("#sessions-app main")).to_be_hidden()
+        if pending == "list":
+            await expect(page.locator("#sessions-list-loading")).to_be_visible()
+            await expect(page.locator("#sessions-filter")).to_be_focused()
         release.set()
-        await page.locator("#detail .event").first.wait_for(state="visible")
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
-        assert not await page.locator("#sessions-app > aside").evaluate("element => element.inert")
+        await expect(page.locator("#detail .event").first).to_be_attached()
+        await expect(item).to_be_visible()
+        await expect(page.locator("#sessions-app main")).to_be_hidden()
+        await item.click()
+        await expect(sidebar).to_be_hidden()
+        await expect(page.locator("#detail-title")).to_be_focused()
+        await expect(page.locator("#detail .event").first).to_be_visible()
     finally:
         release.set()
         await page.unroute(pattern, handler)
@@ -198,8 +209,8 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "コンテキスト圧縮" in await compacted.locator("summary").inner_text()
     assert await developer.evaluate("element => element.open")
     assert not await compacted.evaluate("element => element.open")
-    # 名前の記録を持たないCodexの記録はエンジン名だけを見出しへ表示し、ホスト名と作業ディレクトリを表示しない。
     assert await harness.page.locator("#detail-title").inner_text() == "Codex"
+    await playwright.async_api.expect(harness.page.locator("#session-context")).to_contain_text("browser-test")
     shell_summary = harness.page.locator("#detail .kind-tool_call", has_text="shell").locator("summary")
     assert "pwd" in await shell_summary.inner_text()
     broken_summary = harness.page.locator("#detail .kind-tool_call", has_text="broken").locator("summary")
@@ -264,7 +275,8 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert any("Bash" in summary and "ls" in summary and "pwd" not in summary for summary in tool_summaries)
     assert any("Read" in summary and "/tmp/input.md" in summary for summary in tool_summaries)
     assert any("Search" in summary and "needle" in summary for summary in tool_summaries)
-    assert "入力 12" in await harness.page.locator("#detail > .secondary-text").first.inner_text()
+    await harness.page.get_by_text("記録の詳細", exact=True).click()
+    await playwright.async_api.expect(harness.page.locator("#session-record-facts")).to_contain_text("入力 12")
 
     assert "解析できない行が1件あります" in detail_text
 
@@ -356,6 +368,60 @@ async def test_session_details_open_developer_by_default(screen_harness: _Screen
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_session_search_scope_and_metadata_are_keyboard_disclosures(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    expect = playwright.async_api.expect
+    scope = page.locator("#sessions-filter-scope")
+    summary = page.locator("#sessions-sidebar .pane-search-scope > summary")
+    await expect(scope).to_be_hidden()
+    await expect(page.get_by_role("searchbox", name="セッションを検索")).to_have_accessible_description(
+        "発話・作業ディレクトリ・ホスト・識別子・パス・ラベル"
+    )
+    await summary.focus()
+    await page.keyboard.press("Enter")
+    await expect(scope).to_be_visible()
+    await page.keyboard.press("Space")
+    await expect(scope).to_be_hidden()
+
+    await page.locator('#sessions .session-item[data-engine="claude"]').click()
+    await expect(page.locator("#detail > .event").first).to_be_visible()
+    await expect(page.locator("#session-context")).to_be_hidden()
+    metadata = page.locator("#session-record-meta > summary")
+    await metadata.focus()
+    await page.keyboard.press("Enter")
+    await expect(page.locator("#session-context")).to_be_visible()
+
+
+@pytest.mark.cpu_limit(0.75, reason="デスクトップとタッチ用の2つのChromiumコンテキストで発話リンクを操作する")
+@pytest.mark.asyncio(loop_scope="session")
+async def test_speech_link_names_the_navigation_on_touch(screen_harness: _ScreenHarness) -> None:
+    desktop = screen_harness.page
+    await desktop.goto(screen_harness.base_url + "/sessions")
+    desktop_link = desktop.get_by_role("link", name="この発話を開く").first
+    expect = playwright.async_api.expect
+    await expect(desktop_link).to_be_visible()
+    await expect(desktop_link.get_by_text("発話を開く")).to_be_hidden()
+
+    browser = desktop.context.browser
+    assert browser is not None
+    touch = await browser.new_context(has_touch=True, is_mobile=True, viewport={"width": 412, "height": 915})
+    try:
+        page = await touch.new_page()
+        await page.goto(screen_harness.base_url + "/sessions")
+        await page.locator("#sessions .session-item").first.tap()
+        link = page.get_by_role("link", name="この発話を開く").first
+        await expect(link.get_by_text("発話を開く")).to_be_visible()
+        target = await link.get_attribute("href")
+        assert target
+        await link.tap()
+        await page.wait_for_url(target)
+        await expect(page.locator(".event-linked")).to_be_visible()
+    finally:
+        await touch.close()
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": 900, "height": 360})
@@ -367,6 +433,8 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
     )
     toolbar = page.locator("#detail-title")
     reading_toolbar = page.locator("#session-reading")
+    await playwright.async_api.expect(reading_toolbar.get_by_label("記録内検索")).to_be_hidden()
+    await reading_toolbar.locator(".reading-controls > summary").click()
     before = await toolbar.bounding_box()
     assert before is not None
 
@@ -402,6 +470,8 @@ async def test_long_session_can_search_jump_and_link_without_initially_rendering
     events = page.locator("#detail > .event")
     await expect(events.first).to_be_visible()
     assert await events.count() < len(entries)
+    await page.locator(".reading-controls > summary").click()
+    await page.locator(".reading-jumps > summary").click()
     await page.get_by_role("button", name="次のユーザー発話").click()
     await expect(events.last).to_contain_text("目印の検索語")
     await page.get_by_role("button", name="先頭へ", exact=True).click()
@@ -411,10 +481,12 @@ async def test_long_session_can_search_jump_and_link_without_initially_rendering
     await page.get_by_label("記録内検索").fill("目印の検索語")
     await expect(page.locator("#session-search-count")).to_have_text("1 / 1件")
     await expect(events.last).to_have_class("event kind-user event-search-match")
-    link = await events.last.get_by_role("link", name="この発話へのリンク").get_attribute("href")
+    link = await events.last.get_by_role("link", name="この発話を開く").get_attribute("href")
     assert link is not None
     await page.goto(link)
+    await page.locator("#session-reading").wait_for(state="visible")
     await expect(page.locator("#detail .event-linked")).to_contain_text("目印の検索語")
+    await page.locator(".reading-controls > summary").click()
     await page.get_by_label("会話だけ").check()
     assert "view=conversation" in page.url
     if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
@@ -422,6 +494,7 @@ async def test_long_session_can_search_jump_and_link_without_initially_rendering
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(0.75, reason="セッションとエージェントの両画面から同じWI詳細を開く。CI実測は0.568秒。")
 async def test_sessions_and_agents_share_wi_reference_dialog(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
     filename = "question.md"
@@ -434,12 +507,12 @@ async def test_sessions_and_agents_share_wi_reference_dialog(screen_harness: _Sc
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator('#sessions .session-item[data-engine="claude"]').click()
     await page.locator("#detail .kind-tool_result summary").click()
-    links = page.locator("#detail").get_by_role("link", name=filename)
+    links = page.locator("#detail .event-markdown, #detail .event > pre").get_by_role("link", name=filename)
     expect = playwright.async_api.expect
     await expect(links).to_have_count(2)
     for link in await links.all():
         await link.click()
-        await expect(page.get_by_role("dialog", name="参照先のワークアイテム").first).to_contain_text(filename)
+        await expect(page.locator(".wi-reference-dialog").first).to_contain_text(filename)
         await page.keyboard.press("Escape")
 
     async def listing(route):
@@ -448,11 +521,10 @@ async def test_sessions_and_agents_share_wi_reference_dialog(screen_harness: _Sc
     await page.route("**/api/agents/list?*", listing)
     await page.goto(screen_harness.base_url + "/agents")
     await page.locator("#screen-agents").get_by_role("link", name=filename).click()
-    await expect(page.get_by_role("dialog", name="参照先のワークアイテム").first).to_contain_text(filename)
+    await expect(page.locator(".wi-reference-dialog").first).to_contain_text(filename)
 
 
-@pytest.mark.asyncio(loop_scope="session")
-async def test_session_links_distinguish_blocks_on_the_same_record_line(screen_harness: _ScreenHarness) -> None:
+def _shared_record_line_url(screen_harness: _ScreenHarness) -> str:
     (record,) = (screen_harness.root.parent / "claude" / "projects").glob("*/*.jsonl")
     entry = {
         "type": "assistant",
@@ -460,19 +532,29 @@ async def test_session_links_distinguish_blocks_on_the_same_record_line(screen_h
         "message": {"content": [{"type": "text", "text": "最初のブロック"}, {"type": "text", "text": "二番目のブロック"}]},
     }
     record.write_text("not-json\n" + json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-    page = screen_harness.page
     query = urlencode({"host": "browser-test", "engine": "claude", "path": record.as_posix()})
-    await page.goto(screen_harness.base_url + "/sessions?" + query)
+    return screen_harness.base_url + "/sessions?" + query
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_links_distinguish_blocks_on_the_same_record_line(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.goto(_shared_record_line_url(screen_harness))
     entries = page.locator("#detail [data-record-line='2']")
     expect = playwright.async_api.expect
     await expect(entries).to_have_count(2)
-    link = await entries.last.get_by_role("link", name="この発話へのリンク").get_attribute("href")
+    link = await entries.last.get_by_role("link", name="この発話を開く").get_attribute("href")
     assert link is not None and "ordinal=1" in link
     await page.goto(link)
     await expect(page.locator("#detail .event-linked")).to_have_count(1)
     await expect(page.locator("#detail .event-linked")).to_contain_text("二番目のブロック")
-    await page.goto(link.replace("&ordinal=1", ""))
-    await expect(page.locator("#detail .event-linked")).to_have_count(2)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_line_links_without_ordinal_mark_all_blocks(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.goto(_shared_record_line_url(screen_harness) + "&line=2")
+    await playwright.async_api.expect(page.locator("#detail .event-linked")).to_have_count(2)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -643,7 +725,8 @@ async def test_session_report_markdown_and_result_follow_the_view_mode(screen_ha
     await expect(result.locator("pre")).to_be_visible()
     if directory := os.environ.get("ATK_SERVE_SCREENSHOT_DIR"):
         await page.set_viewport_size({"width": 1280, "height": 900})
-        pricing = page.locator("#detail .detail-pricing")
+        await page.locator("#session-record-meta > summary").click()
+        pricing = page.locator("#session-record-meta .detail-pricing")
         await pricing.wait_for()
         await pricing.evaluate(
             """price => {
@@ -655,6 +738,7 @@ async def test_session_report_markdown_and_result_follow_the_view_mode(screen_ha
         await expect(pricing).to_be_in_viewport(ratio=1)
         await page.mouse.move(0, 0)
         await page.screenshot(path=Path(directory) / "002-user-report.png")
+    await page.locator(".reading-controls > summary").click()
     await page.get_by_label("会話だけ").check()
     await expect(report.locator("strong")).to_have_text("報告の本文")
     await expect(result).to_have_count(0)
@@ -705,22 +789,94 @@ async def test_full_text_search_keeps_matches_and_only_retries_temporary_records
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_full_text_search_abandons_retry_when_screen_changes(screen_harness: _ScreenHarness) -> None:
+async def test_full_text_search_waits_for_explicit_resume_after_screen_switch(
+    screen_harness: _ScreenHarness,
+) -> None:
     page = screen_harness.page
     attempts = 0
     noticed = asyncio.Event()
+    release = asyncio.Event()
+    finished = asyncio.Event()
 
     async def search(route: playwright.async_api.Route) -> None:
         nonlocal attempts
         attempts += 1
-        await route.fulfill(json={"matches": [], "incomplete": True, "retry": {"browser-test": None}})
-        noticed.set()
+        if attempts == 1:
+            noticed.set()
+            await release.wait()
+            await route.fulfill(json={"matches": [], "incomplete": True, "retry": {"browser-test": None}})
+        else:
+            await route.fulfill(json={"matches": [], "incomplete": False})
+            finished.set()
 
     await page.route("**/api/sessions/search", search)
     await page.goto(screen_harness.base_url + "/sessions")
     await page.clock.install()
     await page.locator("#sessions-filter").fill("fixture-search-unsupplied")
-    await asyncio.wait_for(noticed.wait(), 5)
-    await page.get_by_role("navigation", name="画面").get_by_role("link", name="計画ファイル").click()
+    nav = page.get_by_role("navigation", name="画面")
+    try:
+        await asyncio.wait_for(noticed.wait(), 5)
+        await nav.get_by_role("link", name="計画ファイル").click()
+        assert attempts == 1
+    finally:
+        release.set()
     await page.clock.fast_forward(31_000)
+    await nav.get_by_role("link", name="セッション").click()
+    expect = playwright.async_api.expect
+    await expect(page.locator("#sessions-search-status")).to_have_text("検索を中断しました。")
+    assert attempts == 1
+    await page.get_by_role("button", name="検索を再開").click()
+    await asyncio.wait_for(finished.wait(), 5)
+    await playwright.async_api.expect(page.locator("#sessions-empty")).to_be_visible()
+    assert attempts == 2
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_list_refresh_preserves_interrupted_search(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    records: list[dict] = []
+    changed = False
+    attempts = 0
+
+    async def listing(route: playwright.async_api.Route) -> None:
+        response = await route.fetch()
+        data = await response.json()
+        if not records:
+            records.extend(data["sessions"])
+        if changed:
+            data["sessions"].append({**records[0], "path": "/fixture/new-record.jsonl"})
+            data["warnings"] = [{"host": records[0]["host"], "reason": "一覧の更新を確認"}]
+        await route.fulfill(response=response, json=data)
+
+    async def search(route: playwright.async_api.Route) -> None:
+        nonlocal attempts
+        attempts += 1
+        record = records[0]
+        match = [record[key] for key in ("host", "engine", "path")]
+        await route.fulfill(
+            json={
+                "matches": [match],
+                "incomplete": True,
+                "unavailable": [record["host"]],
+                "retry": {record["host"]: [record["path"]]},
+            }
+        )
+
+    await page.route("**/api/sessions/list", listing)
+    await page.route("**/api/sessions/search", search)
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.clock.install()
+    await page.locator("#sessions-filter").fill("not-in-fixture-metadata")
+    expect = playwright.async_api.expect
+    status = page.locator("#sessions-search-status")
+    await expect(status).to_contain_text("検索できない記録")
+    nav = page.get_by_role("navigation", name="画面")
+    await nav.get_by_role("link", name="計画ファイル").click()
+    await expect(status).to_have_text("検索を中断しました。")
+    changed = True
+    await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    await expect(page.locator("#warnings")).to_contain_text("一覧の更新を確認")
+    await nav.get_by_role("link", name="セッション").click()
+    await expect(status).to_have_text("検索を中断しました。")
+    await expect(page.get_by_role("button", name="検索を再開")).to_be_visible()
     assert attempts == 1

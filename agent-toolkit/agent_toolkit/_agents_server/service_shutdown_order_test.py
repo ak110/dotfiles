@@ -1,13 +1,14 @@
 import asyncio
 import itertools
 import json
+import os
 import pathlib
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from agent_toolkit._agents_server import service, service_io, service_rpc
+from agent_toolkit._agents_server import service, service_io, service_rpc, service_transport
 from agent_toolkit._agents_server.service_context import ServiceManagers
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
@@ -15,7 +16,7 @@ from agent_toolkit._agents_server.service_resources import ResourceBroker
 
 
 def test_shutdown_guard_keeps_ownership_for_all_orderings_of_three_obligations(tmp_path: pathlib.Path) -> None:
-    target = {"generation": "G1", "epoch": 1}
+    target = {"generation": "G1", "epoch": 1, "process": service_transport.process_identity(os.getpid())}
     coordinator = ServiceCoordinator(target, tmp_path, ServiceManagers(), Mock(), Mock())
     coordinator.bind_runtime(service_io.Runtime("G1", target, ResourceBroker("G1")))
     moving = Mock()

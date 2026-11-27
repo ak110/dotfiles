@@ -500,6 +500,9 @@ def merge_selection(
         for key in (_selection.SHARED_WAIT_SECONDS_KEY, _selection.SHARED_WAIT_BASIS_KEY):
             if key in additional_correction:
                 correction[key] = additional_correction[key]
+    record_key = selection_contract.EXCLUSION_RECORDS_KEY
+    if record_key in existing or record_key in added:
+        result[record_key] = [*typing.cast(_Rows, existing.get(record_key, [])), *typing.cast(_Rows, added.get(record_key, []))]
     if _selection.INITIAL_ALLOCATION_KEY in existing:
         result[_selection.INITIAL_ALLOCATION_KEY] = existing[_selection.INITIAL_ALLOCATION_KEY]
     result[_selection.ADDED_WIS_KEY] = [

@@ -73,6 +73,7 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "message": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "prompt": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "session_id": {"type": "string"},
+                "supplement": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "timeout": {"default": 270.0, "type": "number"},
             },
             "required": ["session_id"],
@@ -84,7 +85,8 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "annotations": {"destructive_hint": False},
         "input_schema": {
             "properties": {
-                "message": {"type": "string"},
+                "message": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "body_ref": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "kind": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "misdetection": {
                     "anyOf": [
@@ -94,10 +96,17 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "default": None,
                 },
             },
-            "required": ["message"],
             "type": "object",
         },
         "output_schema": {"additionalProperties": True, "title": "send_to_userDictOutput", "type": "object"},
+    },
+    "send_to_user_preflight": {
+        "annotations": {"read_only_hint": True},
+        "input_schema": {
+            "properties": {"checked": {"default": False, "type": "boolean"}},
+            "type": "object",
+        },
+        "output_schema": {"additionalProperties": True, "title": "send_to_user_preflightDictOutput", "type": "object"},
     },
     "show": {
         "annotations": {"read_only_hint": True},
@@ -144,6 +153,23 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "type": "object",
         },
         "output_schema": {"additionalProperties": True, "title": "startDictOutput", "type": "object"},
+    },
+    "start_submit": {
+        "annotations": {"destructive_hint": False, "idempotent_hint": True},
+        "input_schema": {
+            "properties": {
+                "request_id": {"type": "string"},
+                "arguments": {"additionalProperties": True, "type": "object"},
+            },
+            "required": ["request_id", "arguments"],
+            "type": "object",
+        },
+        "output_schema": {"additionalProperties": True, "title": "start_submitDictOutput", "type": "object"},
+    },
+    "start_status": {
+        "annotations": {"read_only_hint": True},
+        "input_schema": {"properties": {"request_id": {"type": "string"}}, "required": ["request_id"], "type": "object"},
+        "output_schema": {"additionalProperties": True, "title": "start_statusDictOutput", "type": "object"},
     },
     "stop": {
         "annotations": {"destructive_hint": True},

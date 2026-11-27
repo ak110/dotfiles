@@ -5,6 +5,7 @@ import {
 import {
   byId, wiState
 } from "./wi_state.js";
+import {linkWiReferences} from "./wi_reference.js";
 import {
   syncDetailMutationAvailability
 } from "./wi_detail.js";
@@ -64,6 +65,12 @@ export function setTextMessage(id, message) {
   element.hidden = !message;
 }
 
+function setOperationReferenceText(element, message, filenames) {
+  element.textContent = message;
+  const names = filenames.filter(name => typeof name === 'string' && name.endsWith('.md'));
+  if (names.length) linkWiReferences(element, {referenced_wi_names: [...new Set(names)]}, {allowUnlistedDated: false});
+}
+
 export function setGlobalError(message) {
   wiState.refreshFocusRequested = false;
   if (message) showToast(message, true);
@@ -95,7 +102,7 @@ export function clearDialogMessages(dialogName) {
   setTextMessage(`${dialogName}-status`, '');
 }
 
-export function showToast(message, isError = false) {
+export function showToast(message, isError = false, filenames = []) {
   if (isError && !message.includes('［WI / ')) {
     message = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / 操作`, message);
   }
@@ -103,12 +110,13 @@ export function showToast(message, isError = false) {
   clearTimeout(wiState.noticeTimer);
   wiState.noticeOrigin = isError && wiState.pendingOperations.has('sync') ? byId('refresh-button') :
     (document.activeElement === document.body ? wiState.lastFocusedElement : document.activeElement);
-  byId('operation-notice-message').textContent = message;
+  const output = byId('operation-notice-message');
+  setOperationReferenceText(output, message, filenames);
   notice.dataset.error = String(isError);
   notice.setAttribute('role', isError ? 'alert' : 'status');
   notice.setAttribute('aria-live', isError ? 'assertive' : 'polite');
   notice.hidden = false;
-  if (!isError) wiState.noticeTimer = setTimeout(() => { notice.hidden = true; }, 6000);
+  if (!isError && !output.querySelector('a')) wiState.noticeTimer = setTimeout(() => { notice.hidden = true; }, 6000);
 }
 
 export function closeOperationNotice() {
@@ -128,16 +136,18 @@ function topmostDialog() {
   return null;
 }
 
-export function deliverOperationMessage(message, isError = false) {
+export function deliverOperationMessage(message, isError = false, filenames = []) {
   const dialog = topmostDialog();
   if (!dialog) {
-    showToast(message, isError);
+    showToast(message, isError, filenames);
     return;
   }
   // モーダルはtop layerへ描画されるため、ページに固定した通知は`::backdrop`の下に隠れ、暗く表示されて操作も受け付けない。
   // 開いているダイアログがあるときは、そのダイアログ内の結果表示領域へ配送する。
   const name = dialog.id.replace(/-dialog$/, '');
-  setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
+  const target = byId(`${name}-${isError ? 'alert' : 'status'}`);
+  setOperationReferenceText(target, message, filenames);
+  target.hidden = !message;
   setTextMessage(`${name}-${isError ? 'status' : 'alert'}`, '');
 }
 
@@ -190,16 +200,17 @@ export async function runPending(key, {container, button, busyLabel}, operation)
   const controls = Array.from(container.querySelectorAll('input, select, textarea, button'))
     .filter(control => !control.classList.contains('dialog-close'));
   const previous = controls.map(control => control.disabled);
-  const originalLabel = button.textContent;
+  const label = button.querySelector('[data-button-label]') ?? button;
+  const originalLabel = label.textContent;
   controls.forEach(control => { control.disabled = true; });
   button.disabled = true;
-  button.textContent = busyLabel;
+  if (busyLabel !== undefined) label.textContent = busyLabel;
   button.classList.add('is-pending');
   button.setAttribute('aria-busy', 'true');
   container.setAttribute('aria-busy', 'true');
   const restorePendingState = () => {
     controls.forEach((control, index) => { control.disabled = previous[index]; });
-    button.textContent = originalLabel;
+    if (busyLabel !== undefined) label.textContent = originalLabel;
     button.classList.remove('is-pending');
     button.setAttribute('aria-busy', 'false');
     container.setAttribute('aria-busy', 'false');

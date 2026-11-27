@@ -7,6 +7,7 @@ import collections.abc
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 from typing import Any
@@ -17,6 +18,7 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._testing import git_repository
+from check_selection_loading import load_inline_addition
 from selection_contract import _detail_requirement, complete_detail_requirements
 
 
@@ -325,6 +327,74 @@ def test_generated_addition_requires_a_decision_for_internal_dependency_wait(
         assert result != 0
         assert "処理可能な候補が選定にない: dependent.md" in capsys.readouterr().err
         assert output.read_bytes() == before
+
+
+def _set_candidate_rows(path: pathlib.Path, rows: list[dict[str, object]]) -> None:
+    path.write_text(
+        "".join(json.dumps({"staleness": {"status": "current"}, **row}) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
+def test_exclusion_confirmation_binds_initial_and_addition_to_full_candidates(
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo, notes = environment
+    first, second = "first.md", "second.md"
+    for name in (first, second):
+        _wi(notes, name)
+    omitted = [f"20261127-004056-{index:03}.md" for index in range(40)]
+    rows: list[dict[str, object]] = [{"filename": name, "state": "inbox", "ready": True} for name in omitted]
+    rows.append({"filename": "external.md", "state": "inbox", "ready": False, "blocked_reason": "dependency-unmet"})
+    output = tmp_path / "selection.yaml"
+    records = []
+    for name in (first, second):
+        facts, judgments = _inputs(tmp_path, [name])
+        document = yaml.safe_load(judgments.read_text(encoding="utf-8"))
+        assigned: list[dict[str, object]] = [{"filename": first, "state": "processing"}] if name == second else []
+        candidates: list[dict[str, object]] = [{"filename": name}, *rows, *assigned]
+        _set_candidate_rows(facts, candidates)
+        args = (
+            _merge_args(tmp_path, repo, output, facts, judgments, second)
+            if name == second
+            else [str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)]
+        )
+        prior = output.read_bytes() if output.exists() else None
+        assert _dispatch(*args) != 0
+        diagnostic = capsys.readouterr().err
+        assert "処理可能な候補が選定にない" in diagnostic
+        assert all(excluded in diagnostic for excluded in omitted)
+        assert "external.md" not in diagnostic and first not in diagnostic
+        token = re.search(r"照合値 ([a-f0-9]{64})", diagnostic)
+        assert token is not None
+        confirmation = {"照合値": token[1], "理由": "今回の期限に間に合わない", "例外": {"external.md": "依存待ち"}}
+        document["除外確認"] = confirmation
+        judgments.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+        assert _dispatch(*args) != 0
+        assert "今回除くWI" in capsys.readouterr().err
+        confirmation["例外"] = {omitted[0]: "別の巡回で行う"}
+        judgments.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+        _set_candidate_rows(facts, [*candidates, {"filename": "new.md", "ready": True}])
+        assert _dispatch(*args) != 0
+        assert "new.md" in capsys.readouterr().err
+        assert output.read_bytes() == prior if prior is not None else not output.exists()
+        _set_candidate_rows(facts, list(reversed(candidates)))
+        assert _dispatch(*args) == 0
+        records.append({**confirmation, "WI": omitted})
+        assert yaml.safe_load(output.read_text(encoding="utf-8"))["除外記録"] == records
+        old_input = yaml.safe_dump({"除外候補": omitted}, allow_unicode=True).encode()
+        new_input = yaml.safe_dump({"除外確認": confirmation}, allow_unicode=True).encode()
+        assert len(new_input.splitlines()) < len(old_input.splitlines())
+        assert len(new_input) < len(old_input)
+    assert records[0]["照合値"] != records[1]["照合値"]
+
+
+def test_inline_addition_without_candidate_file_cannot_confirm_exclusions(tmp_path: pathlib.Path) -> None:
+    judgments = "選定: [{WI: second.md}]\n除外確認: {照合値: 以前の値, 理由: 今回は扱わない}\n"
+    with pytest.raises(ValueError, match="候補全体を --candidate-file"):
+        load_inline_addition(judgments, {}, tmp_path, None)
 
 
 @pytest.mark.parametrize("staged", [False, True])

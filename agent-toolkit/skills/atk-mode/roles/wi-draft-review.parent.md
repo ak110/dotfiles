@@ -4,11 +4,11 @@
 起動対象: wi-draft-review.subagent.md
 ```
 
-意味を検収する親がいない作成主体の原稿を保存前に独立して確かめ、ユーザーの要求と食い違うWIが処理へ進まないようにするための文書である。
+意味を検収する親がいない作成主体の原稿を保存前に独立して確かめ、ユーザーの要求と一致しないWIが処理へ進まないようにするための文書である。
 投入前レビューは、親エージェントが意味を検収しない作成主体（専念型のWI投入担当、`add-awi-by-user`のメインなど）が、原稿の保存前に独立したレビュー担当から受けるレビューである。
 検収の品質水準は`agent-basics:review-standards`「文章成果物の実害」の作業項目の基準とし、意味を変えない表現だけの修正は保存の条件から外す。
 付随型では`agent-toolkit:atk-mode/roles/add-wi.parent.md`の委譲元による検収を使う。
-起動の要否は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「直接起草と独立した検収の選択」で判定する。
+起動の要否は`agent-toolkit:atk-mode/playbooks/wi-drafting-inputs.md`「直接起草と独立した検収の選択」で判定する。
 `add-awi-by-user`では同節の4条件によらず毎回行い、考慮漏れの点検資料の全類型もこのレビューで検収する。
 
 | 時点または条件 | 全文読む資料 |
@@ -24,6 +24,7 @@
 <!-- 生成元: skills/atk-mode/roles/wi-draft-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
+起動の準備で`<役割名>.subagent.md`の本文は読まず、入力はこの一覧で決め、形式の確認は`start`に任せる。
 通常起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意する。
 `agents_server.start`に役割文書の`subagent_md_path`と、以下の役割固有の入力をまとめた`extra_params`を渡す。
 `mode`は省略する（明示する場合は`mode: task`）。
@@ -105,7 +106,11 @@
    方式を変えた時は、開始・途中の失敗からの再開・終了までの成立性を`agent-toolkit:atk-mode/references/drafting-decisions.md`「実現方式の成立」で確かめる。
    修正のたびに状態管理や照会手段を足す指摘が続く時は、方式の維持、縮小、代替案への切り替えを`agent-basics:writing-standards/references/design-heuristics.md`「問題と手段の比例性」で比べる。
    指摘が繰り返される原因は`agent-basics:bugfix/references/recurrence.md`に従って分析し、成立性の未解決事項は繰り返されても解消してから合格とする。
-6. レビュー担当が「要」とした範囲の再判定は、`agent-toolkit:atk-mode/references/draft-semantic-review.md`「初回と再判定・差戻し」の受け渡しに従い、指摘ごとの扱いと根拠がそろってから `send_message` で頼む。
+6. レビュー担当が「要」とした範囲の再判定は、`agent-toolkit:atk-mode/references/draft-semantic-review.md`「初回と再判定・差戻し」手順2に従って指摘ごとの扱いをファイルへ保存し、同じsessionへ`send_message`で頼む。
+   `instruction: 再判定せよ`と、`extra_params`に`指摘の扱い`（ファイルの絶対パス）を渡す。
+   変わった資料は、方針段階では`方針`、本文段階では単一原稿か対応表の`原稿`と、単一原稿の新しい`ユーザー向け部分`・`dry-run出力`を渡す。
+   対応表の各原稿に属する抽出と出力は対応表に置く。
+   複数原稿から再判定する要求は`要求識別子`で特定し、必要な場合は`再判定の対象範囲`も渡す。
    前提が変わる修正は`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」で要否を照会する。
    「不要」の範囲は、起動側が採否と修正後の成立性・直接影響の検証を確かめて保存へ進める。
    変更の無い共通資料と合格済みの要求の結果は保ち、変わらない抽出は読者別探索の再点検を省く条件に従って再利用する。

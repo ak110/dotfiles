@@ -1,5 +1,4 @@
 import datetime
-import socket
 
 import playwright.async_api
 import pytest
@@ -64,7 +63,7 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         assert await page.locator(".entry-copy").first.evaluate("element => element.scrollWidth <= element.clientWidth")
         row = await _open_question(page)
-        dialog = page.get_by_role("dialog", name="詳細")
+        dialog = page.locator("#detail-dialog")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text("priority")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text('"branch": "main"')
         assert await dialog.locator("#detail-metadata dt").filter(has_text=_LONG_UNKNOWN_FRONTMATTER_KEY).count() == 1
@@ -165,6 +164,7 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
     error_region = page.locator("#operation-notice")
     error_message = page.locator("#operation-notice-message")
     close_button = page.get_by_role("button", name="操作通知を閉じる")
+    sync_context = f"［WI / browser-test / {browser_harness.root} / Git同期］"
 
     async def fail_first_list_request(route: playwright.async_api.Route) -> None:
         await route.fulfill(
@@ -175,9 +175,7 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 
     await page.route("**/api/sync", fail_first_list_request)
     await page.locator("#refresh-button").click()
-    await playwright.async_api.expect(error_message).to_contain_text(
-        f"［WI / {socket.gethostname()} / {browser_harness.root} / Git同期］一覧取得失敗"
-    )
+    await playwright.async_api.expect(error_message).to_contain_text(f"{sync_context}一覧取得失敗")
     await playwright.async_api.expect(error_region).to_be_visible()
     await page.unroute("**/api/sync", fail_first_list_request)
     await close_button.focus()
@@ -195,9 +193,7 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 
     await page.route("**/api/sync", fail_second_list_request)
     await page.locator("#refresh-button").click()
-    await playwright.async_api.expect(error_message).to_contain_text(
-        f"［WI / {socket.gethostname()} / {browser_harness.root} / Git同期］後続のエラー"
-    )
+    await playwright.async_api.expect(error_message).to_contain_text(f"{sync_context}後続のエラー")
     await playwright.async_api.expect(error_region).to_be_visible()
 
     metrics = await error_region.evaluate(
@@ -235,7 +231,7 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await _open_question(page)
 
-    dialog = page.get_by_role("dialog", name="詳細")
+    dialog = page.locator("#detail-dialog")
     long_key_term = dialog.locator("#detail-metadata dt").filter(has_text=_LONG_UNKNOWN_FRONTMATTER_KEY)
     await playwright.async_api.expect(long_key_term).to_have_count(1)
 
@@ -309,6 +305,7 @@ async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harnes
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.cpu_limit(0.75, reason="WIの表示を実ブラウザーで計測し、本文のみの更新前後を照合する。CI実測は0.530秒。")
 async def test_wi_rows_are_readable_and_keep_geometry_on_text_only_update(browser_harness: _BrowserHarness) -> None:
     harness = browser_harness
     page = harness.page
@@ -415,7 +412,7 @@ async def test_active_awi_detail_highlights_adoption_without_highlighting_edit(b
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator('.entry-select[data-key="awi.md"]').click()
-    dialog = page.get_by_role("dialog", name="詳細")
+    dialog = page.locator("#detail-dialog")
     expected = playwright.async_api.expect
     adopt = dialog.get_by_role("button", name="採用", exact=True)
     edit = dialog.get_by_role("button", name="編集", exact=True)

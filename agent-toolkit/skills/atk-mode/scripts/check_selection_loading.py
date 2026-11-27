@@ -142,6 +142,7 @@ def _generate_selection(
             _resume_plan_id,
             additional=additional,
             already_selected=already_selected,
+            full_candidates=isinstance(candidates, pathlib.Path),
         )
     except (OSError, UnicodeError, ValueError, KeyError, TypeError) as error:
         raise InputError(
@@ -190,7 +191,10 @@ def load_inline_addition(
             for row in rows
             if isinstance(row, dict) and isinstance(row.get(_selection.LANE_KEY), str) and row[_selection.LANE_KEY] != "なし"
         }
+    candidates: pathlib.Path | list[dict[str, typing.Any]]
     if candidate_file is None:
+        if selection_contract.EXCLUSION_CONFIRMATION_KEY in decisions:
+            raise ValueError("除外確認には取得した候補全体を --candidate-file で渡す")
         environment = dict(os.environ)
         for name in AGENT_ENVIRONMENT_VARIABLES:
             environment.pop(name, None)
@@ -223,7 +227,7 @@ def load_inline_addition(
         relevant = names + excluded if isinstance(excluded, list) else names
         candidates = [candidate for candidate in candidates if candidate.get("filename") in relevant]
     else:
-        candidates = _candidate_records(candidate_file)
+        candidates = candidate_file
     return _generate_selection(decisions, candidates, additional=True, already_selected=_selected_wis(existing)), mapping
 
 

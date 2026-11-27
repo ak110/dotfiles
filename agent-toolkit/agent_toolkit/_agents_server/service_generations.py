@@ -2,47 +2,37 @@
 
 from __future__ import annotations
 
-import contextlib
-import json
 import pathlib
-from collections.abc import Generator
+from contextlib import AbstractContextManager
 from typing import Any
 
 from agent_toolkit._agents_server import service_transport
-from agent_toolkit._common import file_lock, private_directory
-from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common import agents_generation_index
+
+
+def _allowed_reader(data: dict[str, Any], version: str) -> bool:
+    minimum = data.get("repository_reader_minimum")
+    return minimum is None or agents_generation_index.version_tuple(version) >= tuple(minimum)
 
 
 class GenerationRegistry:
     def __init__(self, directory: pathlib.Path) -> None:
         self.directory = directory
 
-    @contextlib.contextmanager
-    def _locked(self, *, write: bool = True) -> Generator[dict[str, Any]]:
-        self.directory.mkdir(parents=True, exist_ok=True, mode=private_directory.MODE)
-        with (self.directory / "generations.lock").open("a+", encoding="utf-8") as handle:
-            file_lock.acquire_lock(handle)
-            try:
-                path = self.directory / "generations.json"
-                if path.exists():
-                    data = json.loads(path.read_text(encoding="utf-8"))
-                    if not isinstance(data, dict) or data.get("schema") != 1 or not isinstance(data.get("generations"), dict):
-                        raise ValueError(f"管理サービスの世代索引が不正: {path}")
-                else:
-                    data = {"schema": 1, "next_epoch": 1, "current": None, "generations": {}}
-                yield data
-                if write:
-                    atomic_write(path, json.dumps(data, ensure_ascii=False))
-            finally:
-                file_lock.release_lock(handle)
+    def _locked(self, *, write: bool = True) -> AbstractContextManager[dict[str, Any]]:
+        return agents_generation_index.locked_index(self.directory, write=write)
 
     def reserve(self, generation: str, root: pathlib.Path, version: str) -> dict[str, Any]:
         with self._locked() as data:
             entries = data["generations"]
             current = entries.get(data["current"])
+            if not _allowed_reader(data, version):
+                if current is not None and _allowed_reader(data, current["version"]):
+                    return dict(current)
+                raise ValueError("設定の移行後は旧版の管理サービスを起動できません。新版から再接続してください")
             if generation not in entries:
-                requested = tuple(int(part) for part in version.split("."))
-                accepted = tuple(int(part) for part in current["version"].split(".")) if current else ()
+                requested = agents_generation_index.version_tuple(version)
+                accepted = agents_generation_index.version_tuple(current["version"]) if current else ()
                 if accepted > requested:
                     return dict(current)
                 entries[generation] = {
@@ -70,6 +60,8 @@ class GenerationRegistry:
         with self._locked() as data:
             entries = data["generations"]
             entry = entries[generation]
+            if not _allowed_reader(data, entry["version"]):
+                raise ValueError("設定の移行後は旧版を受付先として公開できません")
             if entry.get("process") != process:
                 entry.pop("handover_source", None)
                 entry.pop("handover_confirmed", None)
@@ -135,6 +127,7 @@ class GenerationRegistry:
                 if entry is not exited
                 and entry.get("ready")
                 and not entry.get("retired")
+                and _allowed_reader(data, entry["version"])
                 and service_transport.process_alive(entry["process"])
             ]
             if not survivors:

@@ -297,6 +297,7 @@ def _run_completion_launcher(command: list[str], wrapper: str, home: pathlib.Pat
             if message is not None:
                 path.unlink()
                 session = state["session"]
+                print("このセッションの完了報告:")
                 print(message)
                 resume = f"{wrapper} --resume {session}"
                 setting = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1"

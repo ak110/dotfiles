@@ -72,6 +72,7 @@
 <!-- 生成元: skills/atk-mode/roles/repository-process.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
 入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
 役割固有の入力（`extra_params`）はこの契約の入力一覧で完結する。
+起動の準備で`<役割名>.subagent.md`の本文は読まず、入力はこの一覧で決め、形式の確認は`start`に任せる。
 通常起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意する。
 `agents_server.start`に役割文書の`subagent_md_path`と、以下の役割固有の入力をまとめた`extra_params`を渡す。
 `mode`は省略する（明示する場合は`mode: task`）。
@@ -88,6 +89,9 @@
 
 1. 定型のリポジトリ担当は、agents_serverの`start`をtaskで呼ぶ。
    `model_type`は指定せず、役割文書の`execute`を使う。
+   本人の今回の指定がCodexに限定する場合に限り、`atk config get execute_model`のCodex候補だけを設定順のまま渡す。
+   `model_override=user_instruction`と[本人指定の根拠](../references/model-settings.md#本人指定による上書き)を添え、候補が無ければ起動しない。
+   終了した旧担当へ今回の指定を`send_message`で渡せない時は、同じ指定を`handoff_from`で照合し直し、後任にだけ新しい指示を送る。
 
    | 引数 | 値 |
    | --- | --- |
@@ -202,10 +206,12 @@ dotfilesの公開反映、本体・規範の更新や20時間点検で統括が�
    未統合のレーンの終了を待たない。
 2. 現在の要求・判断・認可、処理対象WI、計画と進捗、公開・検証の結果と残工程、会話ID、稼働版と更新後の版の所在を引き継ぎ記録に保存する。
    受領待ちの各レーンについて、担当の `session_id`、`lane_session_id`、対象worktree、選定結果の所在、次に受領する工程も保存し、読み戻す。
+   [前区間の振り返り](process-loop.md#前区間の振り返り)の境界も既存の作業契約の引き継ぎに残す。
 3. `atk wi process-loop resume <自分の会話ID>` の受理を確認してから `atk agents-exit-session` を実行する。
    配下のwriterの終了を求めず、通常終了の所有解放と実行中・未統合のレーン資源の回収は行わない。
 4. 同じ会話IDで再開したら、引き継ぎ記録と `atk agents list` を比べ、[レーンの復元手順](process-wi-lanes.md#各段階の全初期通常レーン起動後の会話圧縮)から同じ待機対象を復元する。
-   最初の `atk agents wait` で再起動中の上り通知と未受領の結果を重複なく回収し、結果のない稼働中レーンは待機対象に残す。
+   到着済みの上り通知と未受領の結果を回収し、結果のない稼働中レーンは待機対象に残す。
+   まだ結果がなければここで待たず、選定へ進む。
    状態確認・中断・追送には既存の `show`・`kill`・`send_message` を使う。
    AntigravityとOpenCodeのレーンへの追送はturn終了後に行う。
 5. 稼働版を確認し、成功済みの公開・検証を再利用して残工程を続ける。

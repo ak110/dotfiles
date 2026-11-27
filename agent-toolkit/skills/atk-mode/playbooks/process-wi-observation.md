@@ -41,6 +41,8 @@ atk run-script pick-wi-check -- <選定YAML> --handoff-observation <WI名> --lan
    - 自作の観測用CLIだけを空の環境で起動し、通常のホームと元の認証情報を使う。
      POSIXではペイン内も含め、`env -i HOME="$HOME" PATH="$PATH" … claude`（または `codex`）で、`…` に `TERM`、ロケール、ユーザー、シェル、デスクトップ接続に必要な変数だけを指定する。
      Windowsでは子の環境を空にして `USERPROFILE`、`PATH`、`SystemRoot` など必要な値だけを渡す。
+     どちらのOSでも観測ごとに識別子を決めて `AGENT_TOOLKIT_AGENTS_SERVICE_SCOPE` に渡し、同じ観測で起動するCLIも同じ識別子を使う。
+     通常の配布物であっても、観測用の管理サービスは通常側から分かれる。
      共有daemonが観測対象でなければCodexは `codex --no-daemon` で起動する。
      `CODEX_HOME`の分離だけではCLI終了後もdaemonが残る。
      tmuxは観測専用に作ったサーバーだけを観測後に終了する。

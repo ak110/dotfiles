@@ -11,8 +11,52 @@ import sys
 import time
 
 import filelock
+from agent_toolkit._atk import config, run_skill_batch
 from agent_toolkit._atk.wi import add_reports
-from agent_toolkit._common import next_action, session_review
+from agent_toolkit._common import next_action, session_review, session_review_analysis
+
+
+class _AnalysisIncomplete(next_action.ActionableError):
+    pass
+
+
+def _review_owner(host: str, session_id: str) -> dict[str, str | None]:
+    key = session_review.key(host, session_id)
+    target = {"host": host, "session_id": session_id}
+    root = session_review.directory()
+    state: dict[str, str | None] = {"status": "available", "batch_run_id": None, "processed_scope": None}
+    if not root.is_dir():
+        return state
+    try:
+        with filelock.FileLock(root / "batch.lock", timeout=0):
+            processed = session_review.previous_scope(target)
+            state["processed_scope"] = str(processed) if processed is not None else None
+            try:
+                failure_key = session_review.read(root / "pending" / f"{key}.json").get("failure_key")
+            except FileNotFoundError:
+                failure_key = None
+            for path in sorted((root / "runs").glob("*.json")):
+                try:
+                    batch = session_review.BatchWriter(path).load()
+                except FileNotFoundError:
+                    continue
+                if not any(item.key == key for item in batch.targets):
+                    continue
+                live = batch.status == session_review.BatchStatus.RUNNING and run_skill_batch.execution_live(
+                    {**batch.model_dump(mode="json", exclude_unset=True), "manifest_path": str(path)}
+                )
+                deferred = (
+                    batch.status == session_review.BatchStatus.USAGE_LIMIT_PAUSED
+                    or batch.status == session_review.BatchStatus.FAILED
+                    and batch.failure_key == failure_key
+                    or batch.status == session_review.BatchStatus.RUNNING
+                    and batch.analysis_succeeded
+                )
+                if live or (deferred and config.resolve_mutable_setting("session_review_auto_start") != "false"):
+                    return {**state, "status": "batch", "batch_run_id": batch.run_id}
+    except filelock.Timeout:
+        return {**state, "status": "batch-busy"}
+    return state
 
 
 def _finish() -> dict[str, str | bool]:
@@ -28,6 +72,18 @@ def _finish() -> dict[str, str | bool]:
         raise next_action.ActionableError(
             "確定済みbatchは更新できない",
             next_action="保存済みの実行記録で確定結果を確認する",
+        )
+    try:
+        unfinished = session_review_analysis.unfinished(writer.path, batch)
+    except FileNotFoundError as error:
+        raise _AnalysisIncomplete(
+            "batchの分析記録が無い",
+            next_action="同じbatch内で `atk run-script session-review-state -- prepare-analysis` を実行する",
+        ) from error
+    if unfinished:
+        raise _AnalysisIncomplete(
+            "分析記録の行が未完了か欠落している対象: " + "、".join(unfinished),
+            next_action=f"{session_review.batch_analysis_path(writer.path)}で対象の分析と記録を終えてからfinishを再実行する",
         )
     notes = session_review.resolve_report_notes(batch.report_notes)
     try:
@@ -65,15 +121,28 @@ def _finish() -> dict[str, str | bool]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True, help="待ちの照会、範囲の成功確定、batch分析完了の記録。")
-    commands.add_parser("show")
+    show = commands.add_parser("show")
+    show.add_argument("--target", nargs=2, metavar=("HOST", "ID"), help="指定セッションの処理済み位置とbatchの所有を確認する。")
+    commands.add_parser("prepare-analysis", help="同じbatchの分析記録が無ければ雛形を作る。")
     commands.add_parser("finish", help="報告の保存を確かめ、batch分析の完了を記録する。範囲の確定は起動元が行う。")
     complete = commands.add_parser("complete")
     complete.add_argument("--prepared", required=True, metavar="PATH", help="成功したprepareの1行JSONを保存したファイル。")
     args = parser.parse_args(argv)
     try:
         if args.command == "show":
-            targets = session_review.pending()
-            result = {"pending_count": len(targets), "targets": targets}
+            if args.target is not None:
+                result = _review_owner(*args.target)
+            else:
+                targets = session_review.pending()
+                result = {"pending_count": len(targets), "targets": targets}
+        elif args.command == "prepare-analysis":
+            if not (value := os.environ.get(session_review.BATCH_ENV)):
+                raise next_action.ActionableError(
+                    "batchのmanifestが未指定",
+                    next_action="同じbatch内でprepare-analysisを実行する",
+                )
+            writer = session_review.BatchWriter(pathlib.Path(value))
+            result = {"batch_analysis": str(session_review_analysis.ensure(writer))}
         elif args.command == "complete":
             result = session_review.complete(session_review.read(pathlib.Path(args.prepared)))
             try:
@@ -89,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
             result = _finish()
     except next_action.ActionableError as error:
         print(f"失敗: {error.message}", file=sys.stderr)
-        return 2
+        return 1 if isinstance(error, _AnalysisIncomplete) else 2
     except (OSError, ValueError, KeyError, TypeError) as error:
         recovery = (
             "batchの実行記録を確認し、読めない場合はログを保全して起動元へ返す"

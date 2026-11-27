@@ -39,8 +39,16 @@ from agent_toolkit._agents_server.state import (
     SessionState,
 )
 from agent_toolkit._agents_server.tool_descriptions import HANDOFF_MODEL_INPUTS, START_MODE_EXAMPLES, START_MODE_INPUTS
+from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import delegated_session, runtime_environment, session_registry, startup_documents, task_documents
+from agent_toolkit._common import (
+    codex_models,
+    delegated_session,
+    runtime_environment,
+    session_registry,
+    startup_documents,
+    task_documents,
+)
 from agent_toolkit._common.markdown_headings import parse_headings, without_literal_blocks
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
@@ -377,15 +385,59 @@ def current_role_model(session: SessionState | SessionResumeState, *, include_ex
 async def reject_stale_role_reply(session: SessionState | SessionResumeState) -> None:
     if session.status != "completed":
         return
-    current = await run_file_operation(current_role_model, session)
-    if current is not None and session.status == "completed" and current != session.model_type:
+    original = task_documents.launched_task_document(session.prompt)
+    if original is None:
+        return
+    current = await run_file_operation(current_role_model, session, include_explicit=True)
+    reason = "現在の役割の工程を確認できない" if current is None else None
+    if current is not None:
+        if current != session.model_type and not role_model_was_explicit(session):
+            reason = f"役割のmodel_typeが{session.model_type}から{current}へ変更された"
+        else:
+            try:
+                if not await run_file_operation(_configured_role_contains, session, original, current):
+                    reason = f"終了した担当のモデルが現行の工程{current}の候補に含まれない"
+            except (OSError, ValueError, RuntimeError) as error:
+                reason = f"現行の工程{current}と起動情報を比較できない: {error}"
+    if reason is not None and session.status == "completed":
+        phase_input = (
+            f"`model_type`へ現行の工程名`{current}`を渡す" if current is not None else "役割の現行工程が確定したら引き継ぐ"
+        )
         raise ActionableError(
-            f"役割のmodel_typeが{session.model_type}から{current}へ変更されたため、追送は配送していない: {session.session_id}",
+            f"{reason}ため、追送は配送していない: {session.session_id}",
             next_action=(
-                f"`start`の`handoff_from`へ`{session.session_id}`を、`model_type`へ現行の工程名`{current}`を渡して引き継ぎ、後任へ未配送の指示を渡す"
+                f"工程と候補を確認し、`start`の`handoff_from`へ`{session.session_id}`を、"
+                + phase_input
+                + "。今回だけの本人指定は後任起動で根拠を照合し、後任へ未配送の指示を渡す"
                 + ("。`write`は後任への実際のユーザー指示の根拠がある場合だけ指定する" if current == "write" else "")
             ),
         )
+
+
+def _configured_role_contains(session: SessionState | SessionResumeState, role: pathlib.Path, phase: str) -> bool:
+    if session.model is None or session.effort is None:
+        raise ValueError("終了した担当のモデルまたはeffortが記録されていない")
+    identities = {(session.engine, session.model, session.effort)}
+    if session.effort_history and (initial := session.effort_history[0][1]):
+        identities.add((session.engine, session.model, initial))
+    exec_lane = role.name == "exec.subagent.md" and "担当種別: レーン担当" in session.prompt.splitlines()
+    configured = _atk_config.parse_unresolved_model_candidates(phase, exec_lane=exec_lane)
+    same_engine = [item for item in configured if item[0] == session.engine]
+    if identities.intersection(same_engine):
+        return True
+    if not codex_models.needs_catalog(same_engine):
+        return False
+    catalog = codex_models.list_models()
+    unresolved = []
+    for item in same_engine:
+        try:
+            if codex_models.resolve_candidate(item, catalog) in identities:
+                return True
+        except codex_models.CatalogResolutionError as error:
+            unresolved.append(str(error))
+    if unresolved:
+        raise ValueError(" / ".join(unresolved))
+    return False
 
 
 def builtin_task_prompt(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:

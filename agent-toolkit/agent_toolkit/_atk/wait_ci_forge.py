@@ -164,6 +164,7 @@ def _gh_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -> 
                 "status": status,
                 "conclusion": conclusion,
                 "url": item.get("html_url", ""),
+                "checkRunUrl": item.get("check_run_url"),
                 "databaseId": item["id"],
                 "allowFailure": False,
             }

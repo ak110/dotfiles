@@ -56,8 +56,8 @@ async def test_exec_review_condition_table_preflight(
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     contract = tmp_path / "contract.md"
     header = "| WI | 条件番号 | 区分 | 内容 | 出典 |\n| --- | --- | --- | --- | --- |\n"
-    major = f"| {name} | 1 | 主要完成状態 | 完了 | 本文 |\n"
-    supplement = f"| {name} | 2 | 補足条件 | 条件 | 完成条件 |\n"
+    major = f"| {name} | 2 | 主要完成状態 | 完了 | 本文 |\n"
+    supplement = f"| {name} | 1 | 補足条件 | 条件 | 完成条件 |\n"
     content = header + major + supplement
     if defect == "columns":
         content = "条件表なし"
@@ -66,7 +66,7 @@ async def test_exec_review_condition_table_preflight(
     elif defect == "supplement":
         content = header + major
     elif defect == "duplicate":
-        content = header + major + supplement.replace("| 2 |", "| 1 |")
+        content = header + major + supplement.replace("| 1 |", "| 2 |")
     elif defect == "multiple":
         content = header + major + major
         body += "## 反映内容と反映先\n- 反映する\n"
@@ -147,7 +147,7 @@ async def test_exec_review_reflection_item_coverage_preflight(tmp_path, monkeypa
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     rows = ["| WI | 条件番号 | 区分 | 内容 | 出典 |", "| --- | --- | --- | --- | --- |"]
     if coverage == "whole-section":
-        rows.extend(f"| {name} | {n} | 主要完成状態 | 完了 | 目的・反映内容と反映先・原因分析 |" for n in range(1, 4))
+        rows.extend(f"| {name} | {n} | 主要完成状態 | 完了 | 目的・反映内容と反映先・原因分析 |" for n in range(2, 5))
     else:
         for number in range(1, 8):
             source = f"反映内容{number}"
@@ -162,8 +162,8 @@ async def test_exec_review_reflection_item_coverage_preflight(tmp_path, monkeypa
                     row_name = "20261028-130047-002.md"
                 elif coverage == "reason":
                     content = "背景であり完成判定に使わない。"
-            rows.append(f"| {row_name} | {number} | {kind} | {content} | {source} |")
-    rows.append(f"| {name} | 8 | 補足条件 | 条件 | 完成条件1 |")
+            rows.append(f"| {row_name} | {number + 1} | {kind} | {content} | {source} |")
+    rows.append(f"| {name} | 1 | 補足条件 | 条件 | 完成条件1 |")
     contract = tmp_path / "contract.md"
     contract.write_text("\n".join(rows), encoding="utf-8")
     params = {
@@ -213,8 +213,8 @@ async def test_exec_review_saved_wi_originals_preflight(tmp_path, monkeypatch, d
     contract = tmp_path / "contract.md"
     contract.write_text(
         "| WI | 条件番号 | 区分 | 内容 | 出典 |\n| --- | --- | --- | --- | --- |\n"
-        f"| {name} | 1 | 主要完成状態 | 保存要求 | H1 |\n"
-        f"| {name} | 2 | 補足条件 | 保存条件 | 完成条件1 |\n",
+        f"| {name} | 2 | 主要完成状態 | 保存要求 | H1 |\n"
+        f"| {name} | 1 | 補足条件 | 保存条件 | 完成条件1 |\n",
         encoding="utf-8",
     )
     params = {

@@ -30,6 +30,7 @@ class StartupInput(pydantic.BaseModel):
     accepted_scopes: list[str]
     target_repo: str | None
     batch_manifest: str | None
+    batch_analysis: str | None = None
 
 
 class RunRecord(pydantic.BaseModel):

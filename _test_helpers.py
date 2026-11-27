@@ -87,9 +87,12 @@ if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json"
     printf 1 > "$CODEX_PLUGIN_STATE_FILE"
     rm -rf "$CODEX_PLUGIN_CACHE_ROOT"
     if [ "$CODEX_STUB_CREATE_CACHE" = "1" ]; then
-        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit"
+        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit" \
+            "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts"
         printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit/hook.py"
         printf 'agents server\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit/agents_server_mcp.py"
+        printf 'import sys\nassert sys.argv[1:] == ["--prepare-if-missing", "scripts/install_git_hooks.py"]\n' \
+            > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/launch.py"
     fi
     if [ -n "$CODEX_STUB_CONFLICT_VERSION" ]; then
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION"

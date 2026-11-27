@@ -108,7 +108,7 @@ class _SendStream(ObjectSendStream[SessionMessage]):
         await self._peer.close()
 
 
-def _caller(payload: dict[str, Any]) -> runtime_environment.CallerContext:
+def _caller(payload: dict[str, Any], *, allow_detached: bool = False) -> runtime_environment.CallerContext:
     env = payload.get("environment")
     cwd = payload.get("cwd")
     if not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()):
@@ -116,7 +116,7 @@ def _caller(payload: dict[str, Any]) -> runtime_environment.CallerContext:
     if not isinstance(cwd, str):
         raise ValueError("管理サービスへ渡すcwdが不正")
     connection_id = payload.get("connection_id")
-    if not isinstance(connection_id, str):
+    if not isinstance(connection_id, str) and not (allow_detached and connection_id is None):
         raise ValueError("管理サービスの接続識別子が不正")
     settings = payload.get("parent_settings")
     if settings is not None and not isinstance(settings, str):
@@ -283,7 +283,7 @@ async def _rpc(
         elif operation == "owns" and isinstance(arguments, dict):
             result = coordinator.owns(arguments["parent"], arguments["session_id"])
         elif operation in {"public_call", "owned_call"} and isinstance(arguments, dict):
-            caller = _caller(arguments["caller"])
+            caller = _caller(arguments["caller"], allow_detached=operation == "public_call")
             if service_transport.namespace(caller).resolve() != coordinator.directory.resolve():
                 raise PermissionError("異なる管理領域への転送はできません")
             params = CallToolRequestParams.model_validate(arguments["params"])
@@ -425,6 +425,8 @@ async def run(
                     for task in tasks:
                         task.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
+                    if coordinator is not None:
+                        await coordinator.start_requests.close()
     finally:
         try:
             await projections.close()

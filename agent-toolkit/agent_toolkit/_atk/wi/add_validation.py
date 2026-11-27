@@ -1,10 +1,13 @@
 import datetime
+import pathlib
 import re
+from collections.abc import Mapping
 
 import markdown_it
 
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import constants as _constants
+from agent_toolkit._atk.wi import entries as _entries
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import origin_review
@@ -13,6 +16,7 @@ from agent_toolkit._atk.wi import uwi_body as _uwi
 from agent_toolkit._atk.wi.constants import REPORT_TITLE_PREFIX, WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common import markdown_headings, skill_modes
 from agent_toolkit._plan import structure as _plan_structure
 
 
@@ -28,6 +32,67 @@ def validate_report_body(body: str, choices: object) -> None:
             "報告は選択肢を持たない",
             next_action="choicesと`## 選択肢と帰結`を除き、本人の判断が必要な事項は別の質問のUWIとして投入する",
         )
+
+
+_RETROSPECTIVE_SCOPES = frozenset(
+    (
+        *skill_modes.accepted_scopes("agent-toolkit:review-session", None),
+        *skill_modes.accepted_scopes("agent-toolkit:review-session", "batch"),
+    )
+)
+_HANDOFF_NAME = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
+_CANDIDATE_SUFFIX = re.compile(r"\s*（c[0-9]+(?:[、,]\s*c[0-9]+)*）$")
+_UNCERTAIN_LINE = re.compile(r"(?:[-*+]\s+)?未確定:\s*(.*)")
+
+
+def validate_retrospective_report(private_notes: pathlib.Path, body: str, metadata: Mapping[str, object]) -> None:
+    scope = metadata.get("scope")
+    if not isinstance(scope, str) or scope not in _RETROSPECTIVE_SCOPES:
+        return
+    repo = metadata.get("target_repo")
+    names: list[tuple[str, str]] = []
+    filtered = markdown_headings.without_literal_blocks(body)
+    headings = {
+        token.map[0]: (level, title)
+        for level in (2, 3)
+        for token, title in markdown_headings.top_level_atx_headings(filtered, level)
+        if token.map is not None
+    }
+    in_carryover = False
+    for index, line in enumerate(filtered.splitlines()):
+        if (heading := headings.get(index)) is not None:
+            in_carryover = heading == (3, "未達・持ち越し")
+        if in_carryover or not (match := _UNCERTAIN_LINE.fullmatch(line.strip())):
+            continue
+        _, separator, value = match[1].rpartition("; 検証の引き継ぎ:")
+        if not separator and match[1].startswith("検証の引き継ぎ:"):
+            _, separator, value = match[1].partition("検証の引き継ぎ:")
+        handoff = _CANDIDATE_SUFFIX.sub("", value.strip())
+        if separator and _HANDOFF_NAME.fullmatch(handoff):
+            names.append((handoff, handoff))
+        elif not (
+            separator
+            and (reason := re.fullmatch(r"不要（(.+)）", handoff))
+            and reason[1].strip()
+            and not any(term in reason[1] for term in ("次回の振り返り", "次の振り返り", "同じ型が出た"))
+        ):
+            raise _retrospective_handoff_error("「検証の引き継ぎ」の値が不正か未記入")
+    if names:
+        if not isinstance(repo, str) or not repo:
+            raise _retrospective_handoff_error("報告の宛先が未指定")
+        _, missing = _entries.read_named_entries(private_notes, names, target_repo=repo, entry_type=(WI_TYPE_AWI,))
+        if missing:
+            raise _retrospective_handoff_error("報告と同じ宛先に調査AWIが見つからない: " + "、".join(missing))
+
+
+def _retrospective_handoff_error(reason: str) -> WebInputError:
+    return WebInputError(
+        f"未確定の問題の引き継ぎ: {reason}。後の振り返りは前の回の再開条件を読まないため、引き継ぎ先が無いと放置になる",
+        next_action=(
+            "調査AWIを登録してファイル名を書くか、原因が対策の採否を左右しない理由を「不要（…）」で書く。"
+            "欠陥が確定しているなら「### 確定した問題と対策」へ移す"
+        ),
+    )
 
 
 def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
@@ -326,17 +391,27 @@ def normalize_choices(value: object) -> str | None:
 
 def _remove_matching_uwi_fields(
     frontmatter: dict[str, object], *, question_type: str | None, scope: str | None, choices: str | None
-) -> None:
+) -> str | None:
+    body_scope = None
     for key, expected in (("type", WI_TYPE_UWI), ("question_type", question_type), ("scope", scope), ("choices", choices)):
         if key not in frontmatter:
             continue
         raw = frontmatter.pop(key)
         value = normalize_choices(raw) if key == "choices" else raw.strip() if isinstance(raw, str) else None
+        if (
+            key == "scope"
+            and scope is None
+            and question_type == _constants.QUESTION_TYPE_REPORT
+            and value in _RETROSPECTIVE_SCOPES
+        ):
+            body_scope = value
+            continue
         if value is None or value != expected:
             raise WebInputError(
                 f"UWIの{key}が本文frontmatterとCLIで一致しません",
                 next_action=f"本文frontmatterの{key}を除くか、--{key.replace('_', '-')}と同じ値を指定する",
             )
+    return body_scope
 
 
 _RESERVED_FRONTMATTER_KEYS = ("target_repo", "target_branch", "source", *_RESERVED_ADD_KEY_NEXT_ACTIONS)
@@ -400,11 +475,12 @@ def _validate_add_entries(
         )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     for message, (frontmatter, body) in zip(messages, parsed_messages, strict=True):
+        body_scope = None
         origin_review.require(message, body=body, entry_type=entry_type, reviews=origin_reviews)
         for key in _RETIRED_ADD_KEYS:
             frontmatter.pop(key, None)
         if entry_type == WI_TYPE_UWI:
-            _remove_matching_uwi_fields(frontmatter, question_type=question_type, scope=scope, choices=choices)
+            body_scope = _remove_matching_uwi_fields(frontmatter, question_type=question_type, scope=scope, choices=choices)
         rejected_keys = [key for key in _RESERVED_ADD_KEY_NEXT_ACTIONS if key in frontmatter]
         if rejected_keys:
             raise WebInputError(
@@ -421,6 +497,8 @@ def _validate_add_entries(
             entry_type=entry_type,
             source=source,
         )
+        if body_scope is not None:
+            frontmatter["scope"] = body_scope
     if normalized_target_repo is None:
         _verify_frontmatter_target_repos(parsed_messages)
     else:

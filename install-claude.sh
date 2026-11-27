@@ -391,6 +391,12 @@ _install_codex_plugin() {
         echo "$post_add_error" >&2
         return 1
     fi
+    if [ "$plugin_name" = "agent-toolkit" ]; then
+        local installed_root hook_configuration
+        installed_root=$(cd "$CODEX_PLUGIN_CACHE_ROOT/$expected_version" && pwd -P) || return 1
+        hook_configuration=$(cd / && "${CODEX_JSON_PYTHON[@]}" "$installed_root/scripts/launch.py" --prepare-if-missing scripts/install_git_hooks.py) || return 1
+        if [ "$hook_configuration" = "changed" ]; then CODEX_PLUGIN_UPDATED=1; fi
+    fi
     echo "Codex側の$plugin_name プラグインを設定しました。"
 }
 

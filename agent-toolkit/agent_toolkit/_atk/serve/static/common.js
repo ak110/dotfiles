@@ -23,24 +23,47 @@ if (bootstrap.runtime_versions === true) {
   const notice = document.getElementById("runtime-version-status");
   const button = notice.querySelector("button");
   const status = notice.querySelector("[role=status]");
-  let pending = false;
+  const details = notice.querySelector("details");
+  const list = details.querySelector("ul");
+  let detailsText = "";
+
+  function renderVersions(warnings) {
+    const mismatches = warnings.filter(item => item.status === "mismatch").map(item => item.service);
+    const unchecked = warnings.some(item => item.status === "unavailable");
+    const summary = [
+      mismatches.length && `${mismatches.join("・")}：更新の反映待ち`,
+      unchecked && "公開版との一致を確認できません",
+    ].filter(Boolean).join("。");
+    if (status.textContent !== summary) status.textContent = summary;
+    const next = warnings.map(item => item.detail).join("\n");
+    if (next !== detailsText) {
+      list.replaceChildren(...warnings.map(item => {
+        const line = document.createElement("li");
+        line.textContent = item.detail;
+        return line;
+      }));
+      detailsText = next;
+    }
+    list.hidden = !detailsText;
+    if (!warnings.length && notice.contains(document.activeElement)) {
+      document.querySelector(`#screen-${CSS.escape(document.body.dataset.screen)} h1`)?.focus();
+    }
+    notice.hidden = warnings.length === 0;
+    if (!warnings.length) details.open = false;
+  }
+
   async function checkRuntimeVersions() {
-    if (pending) return;
-    pending = true;
+    if (button.hasAttribute("aria-disabled")) return;
+    button.setAttribute("aria-disabled", "true");
     try {
-      const response = await fetch(`${BASE_PATH}/api/runtime-versions`, {signal: AbortSignal.timeout(35000)});
+      const response = await fetch(`${BASE_PATH}/api/runtime-versions?view=browser`, {signal: AbortSignal.timeout(35000)});
       const warnings = response.ok ? await response.json() : null;
       if (!Array.isArray(warnings)) throw new Error("runtime versions unavailable");
-      status.textContent = warnings.join(" / ");
-      if (!warnings.length && document.activeElement === button) {
-        document.querySelector(`#screen-${CSS.escape(document.body.dataset.screen)} h1`)?.focus();
-      }
-      notice.hidden = warnings.length === 0;
+      renderVersions(warnings);
     } catch {
-      notice.hidden = false;
-      status.textContent = "サービスの稼働版と公開版を取得できません。";
+      renderVersions([{status: "unavailable", detail: "接続してから版を再確認してください。"}]);
     } finally {
-      pending = false;
+      button.removeAttribute("aria-disabled");
     }
   }
   button.addEventListener("click", checkRuntimeVersions);
@@ -93,9 +116,10 @@ function renderUpdateStatus() {
     else document.querySelector(`#screen-${CSS.escape(screen)} h1`)?.focus();
   }
   updateStatus.hidden = failures.length === 0;
-  updateStatus.querySelector("[role=status]").textContent =
-    failures.length > 1 && !failures.some(item => item.stale) ? "一部の情報を更新できません。" :
-      failures.map(({message}) => message).join(" ");
+  const status = updateStatus.querySelector("[role=status]");
+  const message = failures.length > 1 && !failures.some(item => item.stale) ? "一部の情報を更新できません。" :
+    failures.map(error => error.message).join(" ");
+  if (status.textContent !== message) status.textContent = message;
   button.onclick = () => {
     rememberRetryFocus();
     for (const history of readFailures.values()) {
@@ -123,12 +147,11 @@ function stopDisplayedRetry(screen, key) {
 }
 
 export function setDisplayedReadError(screen, key, message, retry, manual = retry) {
-  if (document.body.dataset.screen !== screen) return;
   const id = JSON.stringify([screen, key]);
   const count = (displayedRetries.get(id)?.count ?? 0) + 1;
   stopDisplayedRetry(screen, key);
   async function run(retrieve = retry) {
-    if (displayedRetries.get(id) !== entry || entry.pending || document.body.dataset.screen !== screen) return;
+    if (displayedRetries.get(id) !== entry || entry.pending) return;
     clearTimeout(entry.timer);
     entry.pending = true;
     try {
@@ -141,7 +164,7 @@ export function setDisplayedReadError(screen, key, message, retry, manual = retr
     }
   }
   const delay = recoveryDelay(count);
-  const entry = {screen, key, count, pending: false, timer: setTimeout(run, delay)};
+  const entry = {count, pending: false, timer: setTimeout(run, delay)};
   displayedRetries.set(id, entry);
   setUpdateError(screen, key, message, () => run(manual));
 }
@@ -169,15 +192,7 @@ export function recordUpdateSuccess(screen, key) {
   updateTimes.set(historyKey, Date.now());
 }
 
-document.addEventListener("atk-screen-change", () => {
-  for (const {screen, key} of displayedRetries.values()) {
-    if (document.body.dataset.screen !== screen) {
-      stopDisplayedRetry(screen, key);
-      updateErrors.get(screen)?.delete(key);
-    }
-  }
-  renderUpdateStatus();
-});
+document.addEventListener("atk-screen-change", renderUpdateStatus);
 
 const reads = new Map();
 const readFailures = new Map();
@@ -292,40 +307,65 @@ function stallMs() {
 export function connectEvents(path, handlers) {
   const url = BASE_PATH + path;
   const limit = stallMs();
+  const eventNames = new Set(["heartbeat", "open", "error", "subscribed", ...Object.keys(handlers)]);
   let source = null;
   let lastSeen = 0;
   let timer = null;
   let retryTimer;
   let failures = 0;
+  let subscribed = false;
+  let shared = null;
   const touch = () => { lastSeen = Date.now(); };
+  const broadcast = (name, data = "") => shared?.channel.postMessage([name, data]);
 
   const screen = {"/api/events": "wi", "/api/plans/events": "plans", "/api/sessions/events": "sessions"}[path];
 
   function reconnect() {
+    if (!source && shared) {
+      broadcast("retry");
+      return;
+    }
     clearTimeout(retryTimer);
     retryTimer = undefined;
     source?.close();
     open();
   }
 
-  function disconnected() {
-    if (retryTimer !== undefined) return;
+  function showDisconnect() {
+    subscribed = false;
     failures += 1;
     if (screen && failures >= 2) setUpdateError(screen, "sse", "更新情報を取得できません。", reconnect);
+  }
+
+  function disconnected() {
+    if (retryTimer !== undefined) return;
+    deliver("error", new Event("error"));
+    broadcast("error");
     source?.close();
     retryTimer = setTimeout(reconnect, recoveryDelay(failures));
+  }
+
+  function deliver(name, event) {
+    if (name === "error") showDisconnect();
+    else touch();
+    if (name === "open") {
+      failures = 0;
+      subscribed = false;
+      if (screen) recordUpdateSuccess(screen, "sse");
+    }
+    if (name === "subscribed") subscribed = true;
+    if (Object.hasOwn(handlers, name)) handlers[name](event);
   }
 
   function open() {
     source = new EventSource(url);
     touch();
-    source.addEventListener("heartbeat", touch);
     source.addEventListener("error", disconnected);
-    source.addEventListener("open", () => { failures = 0; if (screen) recordUpdateSuccess(screen, "sse"); });
-    for (const [name, handler] of Object.entries(handlers)) {
+    for (const name of eventNames) {
+      if (name === "error") continue;
       source.addEventListener(name, (event) => {
-        if (name !== "error") touch();
-        handler(event);
+        deliver(name, event);
+        broadcast(name, event.data ?? "");
       });
     }
   }
@@ -341,24 +381,85 @@ export function connectEvents(path, handlers) {
     clearTimeout(retryTimer);
     retryTimer = undefined;
     failures = 0;
+    subscribed = false;
     if (screen) setUpdateError(screen, "sse");
     clearInterval(timer);
     timer = null;
     if (source) source.close();
     source = null;
+    shared?.dispose();
+    shared = null;
   }
 
-  function start() {
-    if (source || (screen && document.body.dataset.screen !== screen)) return;
+  function startSource() {
     open();
     timer = setInterval(check, Math.max(100, Math.min(5000, limit / 3)));
   }
 
+  function receive({data: packet}) {
+    if (!Array.isArray(packet) || packet.length !== 2 || typeof packet[1] !== "string") return;
+    const [name, data] = packet;
+    if (name === "probe" && source && subscribed) broadcast("available");
+    else if (name === "retry" && source) reconnect();
+    else if (!source && name === "available" && !subscribed) deliver("subscribed", new MessageEvent("subscribed"));
+    else if (!source && eventNames.has(name)) deliver(name, new MessageEvent(name, {data}));
+  }
+
+  function start() {
+    if (source || shared) return;
+    const locks = globalThis.navigator?.locks;
+    if (!globalThis.isSecureContext || !locks || typeof BroadcastChannel !== "function") {
+      if (!startWorker()) startSource();
+      return;
+    }
+    // pyfltr: allow-comment 3本のSSEをタブごとに開くと、HTTP/1.1で通常の取得や保存に使う接続が空かなくなる。
+    const name = `atk serve SSE: ${url}`;
+    const controller = new AbortController();
+    const {signal} = controller;
+    const channel = new BroadcastChannel(name);
+    shared = {channel, dispose: () => {
+      controller.abort();
+      channel.close();
+    }};
+    channel.addEventListener("message", receive);
+    broadcast("probe");
+    void locks.request(name, {signal}, async () => {
+      if (signal.aborted) return;
+      const {promise, resolve} = Promise.withResolvers();
+      signal.addEventListener("abort", resolve, {once: true});
+      startSource();
+      await promise;
+    }).catch(() => {
+      if (signal.aborted) return;
+      close();
+      startSource();
+    });
+  }
+
+  function startWorker() {
+    if (typeof SharedWorker !== "function") return false;
+    try {
+      const worker = new SharedWorker(BASE_PATH + "/static/events_worker.js");
+      const channel = worker.port;
+      shared = {channel, dispose: () => {
+        channel.postMessage(["close"]);
+        channel.close();
+      }};
+      worker.addEventListener("error", () => {
+        if (shared?.channel !== channel) return;
+        close();
+        startSource();
+      }, {once: true});
+      channel.addEventListener("message", receive);
+      channel.start();
+      channel.postMessage(["subscribe", path, limit]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   start();
-  document.addEventListener("atk-screen-change", () => {
-    if (screen && document.body.dataset.screen !== screen) close();
-    else start();
-  });
   globalThis.addEventListener?.("pagehide", close);
   globalThis.addEventListener?.("pageshow", (event) => { if (event.persisted) start(); });
   return {close, reopen: start};
@@ -432,18 +533,6 @@ export function renderWarnings(element, lines) {
     return row;
   }));
   element.hidden = lines.length === 0;
-}
-
-// 計画ファイル画面とセッション画面の左ペインを、狭い幅でドロワーとして開閉する。
-export function setDrawerOpen(screenName, open) {
-  const screen = document.getElementById(`screen-${screenName}`);
-  const button = document.getElementById(`${screenName}-menu-btn`);
-  const sidebar = screen.querySelector(`#${screenName}-app > aside`);
-  screen.classList.toggle("drawer-open", open);
-  button.setAttribute("aria-expanded", String(open));
-  sidebar.inert = window.matchMedia("(max-width: 768px)").matches && !open;
-  if (open) document.getElementById(`${screenName}-filter`).focus();
-  else if (screen.contains(document.activeElement) && sidebar.contains(document.activeElement)) button.focus();
 }
 
 // タブが表示された状態へ戻った時点で`resync`を呼ぶ。`focus`が真ならウィンドウのフォーカス時にも呼ぶ。
@@ -589,17 +678,30 @@ export function notifyDelayMs(event) {
 }
 
 export function attachScrollEdges(scroller, toolbar, observed, options = {}) {
+  const activeScroller = () => options.scrollTarget?.() ?? scroller;
   const group = document.createElement("span");
   group.className = "scroll-edges";
   group.hidden = true;
   const move = (label, bottom) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = label;
     button.className = "button-secondary";
+    if (options.icons) {
+      button.classList.add("browse-icon-action");
+      button.setAttribute("aria-label", label);
+      button.dataset.tooltip = label;
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      const use = document.createElementNS(svg.namespaceURI, "use");
+      svg.classList.add("app-icon");
+      svg.setAttribute("aria-hidden", "true");
+      use.setAttribute("href", bottom ? "#icon-chevrons-down" : "#icon-chevrons-up");
+      svg.append(use);
+      button.append(svg);
+    } else button.textContent = label;
     button.addEventListener("click", () => {
       if (bottom) options.beforeEnd?.();
-      scroller.scrollTop = bottom ? scroller.scrollHeight : 0;
+      const target = activeScroller();
+      target.scrollTop = bottom ? target.scrollHeight : 0;
     });
     group.append(button);
   };
@@ -607,8 +709,9 @@ export function attachScrollEdges(scroller, toolbar, observed, options = {}) {
   move("末尾へ", true);
   toolbar.append(group);
   const update = () => {
-    group.hidden = !scroller.clientHeight ||
-      !(options.hasMore?.() || scroller.scrollHeight > scroller.clientHeight + 1);
+    const target = activeScroller();
+    group.hidden = !target.clientHeight ||
+      !(options.hasMore?.() || target.scrollHeight > target.clientHeight + 1);
   };
   const resize = new ResizeObserver(update);
   resize.observe(scroller);

@@ -57,7 +57,9 @@ def test_review_table_is_rendered_as_table() -> None:
     html = plans_views.review_table_html(row + "\n")
 
     assert "<table" in html
-    assert "<th>ラウンド</th>" in html
+    assert '<th scope="col">ラウンド</th>' in html
+    assert '<col class="review-issue">' in html
+    assert '<col class="review-response">' in html
     assert "<td>指摘</td>" in html
 
 

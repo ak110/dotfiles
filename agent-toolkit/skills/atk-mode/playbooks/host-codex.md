@@ -192,11 +192,7 @@ forkしない時も、委譲先が読む`agent-toolkit:atk-mode/playbooks/subage
 
 ## agents_serverの起動
 
-1. `agents_server`の`start`はネイティブの委譲とは別の仕組みで、`model_type`からengine、model、effortを解決する（`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
-2. `engine=claude`の指定は`spawn_agent`へ置き換えず、`agents_server`から起動し、候補列を渡す場合は手順1の資料に従って上書きの区分と根拠を付ける。
-   指定のengineを実行する手段が無い時は、未完了として返すか、続行できない理由を報告する。
-3. 起動の入力（通常の起動の`whole_contract_path`を含む）と依頼文は、`agent-toolkit:atk-mode/playbooks/delegation.md`に従う。
-   起動後のturnが可用性のエラーで終わった時は、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`の引き継ぎ起動に従う。
+[Codexでの委譲起動と受付の回収](delegation-start-recovery.md#codexのagents_server起動)に従う。
 
 ## agents_serverの二層待機
 
@@ -209,7 +205,8 @@ forkしない時も、委譲先が読む`agent-toolkit:atk-mode/playbooks/subage
    子へは、対象の識別子（CIならSHAとbaseline）、コマンド自身の有限の期限、終了コードと両出力の保存先を渡す。
 3. 起動済みのコマンドは、保持したcell IDとsession IDで元の担当が回収し、委譲のために起動し直す誤りを避ける。
 4. 通知による同じ担当の再開の保証が無い最上位と、同じturnでの回収が必要な場合は、次の二層で回収する。
-   - `functions.exec`の中で`agents_server`を起動し、`PostToolUse`のhookがMCPの応答を直接観測できない環境では、起動応答の`root_session_id`を`atk agents wait --root-session-id <値>`へ渡す。
+   - `PostToolUse`のhookがMCPの応答を直接観測できない環境では、起動結果の`root_session_id`を`atk agents wait --root-session-id <値>`へ渡す。
+     非同期起動では`start_status`の`started`応答から取る。
    - 待機のCLIへタスク固有のtimeoutは渡さず、CLI自身の待機上限で終わって対象が未終了なら、その結果を確かめてから新しい待機を起動する。
    - 遅れて始まった待機の回収は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`に従う。
    - 代替起動、中断、巻き取りは、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「後続操作の共通先行条件」を満たした時だけ行う。

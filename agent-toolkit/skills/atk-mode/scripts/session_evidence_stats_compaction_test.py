@@ -8,6 +8,7 @@ import session_review_evidence as evidence
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_stats_support import _codex_token_count_entry
 from agent_toolkit._testing.session_evidence_support import compaction_entry, events_by_kind, read_jsonl, write_subagent
+from session_review_prepare_stats import _stats_detail_document
 
 
 def test_stats_reports_compaction_events_for_both_runtimes(tmp_path: pathlib.Path, capsys) -> None:
@@ -224,6 +225,61 @@ def test_stats_reports_compaction_interval_usage_for_claude(tmp_path: pathlib.Pa
         },
     ]
     assert len(events_by_kind(events, "stats-compaction")) == 2
+
+
+@pytest.mark.parametrize(
+    ("ordinary", "separate", "size", "unknown"),
+    [
+        ("あ" * 10, None, 30, 0),
+        ([], "あ" * 10, 30, 0),
+        ("あ" * 10, "あ" * 10, 30, 0),
+        ("", None, 0, 0),
+        ([], "", 0, 0),
+        (None, None, 0, 1),
+    ],
+)
+def test_claude_compaction_read_content_locations(tmp_path, capsys, ordinary, separate, size, unknown):
+    path = ".claude/skills/example/SKILL.md"
+    result = _claude_result("2026-09-02T00:00:04Z", "t2", ordinary)
+    if separate is not None:
+        result["toolUseResult"] = {"type": "text", "file": {"filePath": f"/repo/{path}", "content": separate}}
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _claude_call("2026-09-02T00:00:01Z", "t1", "Read", {"file_path": f"/repo/{path}"}),
+            _claude_result("2026-09-02T00:00:02Z", "t1", "い"),
+            _claude_call("2026-09-02T00:00:03Z", "t2", "Read", {"file_path": f"/repo/{path}"}),
+            result,
+            compaction_entry("2026-09-02T00:01:00Z", {"trigger": "auto"}),
+        ],
+    )
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = read_jsonl(capsys, raw=True)
+    (usage,) = events_by_kind(events, "stats-compaction-usage")
+    assert usage["tool_output_bytes"] == usage["norm_doc_display_bytes"] == 3 + size
+    assert usage["norm_doc_display_top"] == [{"path": path, "count": 2 - unknown, "bytes": 3 + size}]
+    assert usage.get("read_content_unknown_count", 0) == usage.get("norm_doc_read_content_unknown_count", 0) == unknown
+    assert ("読取本文不明1件" in _stats_detail_document(events)) == bool(unknown)
+
+
+def test_claude_compaction_does_not_assign_unidentified_fallback_to_multiple_results(tmp_path, capsys):
+    path = "/repo/.claude/skills/example/SKILL.md"
+    result = _claude_result("2026-09-02T00:00:03Z", "t1", None)
+    result["message"]["content"].append({"type": "tool_result", "tool_use_id": "t2", "content": None})
+    result["toolUseResult"] = {"file": {"content": "あ" * 10}}
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _claude_call("2026-09-02T00:00:01Z", "t1", "Read", {"file_path": path}),
+            _claude_call("2026-09-02T00:00:02Z", "t2", "Read", {"file_path": path}),
+            result,
+            compaction_entry("2026-09-02T00:01:00Z", {"trigger": "auto"}),
+        ],
+    )
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    (usage,) = events_by_kind(read_jsonl(capsys, raw=True), "stats-compaction-usage")
+    assert usage["tool_output_bytes"] == usage["norm_doc_display_bytes"] == 0
+    assert usage["read_content_unknown_count"] == usage["norm_doc_read_content_unknown_count"] == 2
 
 
 def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Path, capsys) -> None:

@@ -4,12 +4,15 @@ import dataclasses
 import hashlib
 import pathlib
 import re
+import subprocess
 from graphlib import CycleError, TopologicalSorter
 
 from agent_toolkit._atk import outcome
 from agent_toolkit._atk.wi import filenames, frontmatter, layout
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
+from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._git import command as _git_command
 
 KEY = "key"
 NEEDS = "needs"
@@ -206,3 +209,93 @@ def _check_registered(draft: Draft, name: str, fingerprint: object, referenced: 
             f"同じ原稿は登録済みのため再登録しなかった: {name}",
             next_action=f"`atk wi show {name}`で登録済みの内容を確かめる",
         )
+
+
+DRAFT_BASIS_NEXT = "上流があれば取得し、無ければ宛先ブランチを使って基点を選び直す。影響する前提を調べ、原稿を検収し直す"
+
+
+@dataclasses.dataclass(frozen=True)
+class DraftBasis:
+    repo: str
+    worktree: pathlib.Path
+    branch_ref: str
+    oid: str
+
+    def verify(self, registered_branch: str | None) -> None:
+        def git(*args: str) -> subprocess.CompletedProcess[str]:
+            return _git_command.run(["-C", str(self.worktree), *args], capture_output=True, text=True, check=False, timeout=10)
+
+        branch_ref = self.branch_ref
+        if not branch_ref.startswith("refs/heads/"):
+            if "/" in branch_ref:
+                candidates: set[str] = set()
+                local_ref = f"refs/heads/{branch_ref}"
+                if git("show-ref", "--verify", "--quiet", local_ref).returncode == 0:
+                    candidates.add(local_ref)
+                current_branch = git("symbolic-ref", "--quiet", "HEAD")
+                destination = (
+                    f"refs/heads/{registered_branch}" if registered_branch is not None else current_branch.stdout.strip()
+                )
+                if destination.startswith("refs/heads/") and branch_ref.partition("/")[2] == destination.removeprefix(
+                    "refs/heads/"
+                ):
+                    candidates.add(destination)
+                candidate = next(iter(candidates)) if len(candidates) == 1 else None
+                raise self._invalid_branch(candidate)
+            branch_ref = f"refs/heads/{branch_ref}"
+            if git("show-ref", "--verify", "--quiet", branch_ref).returncode != 0:
+                raise self._invalid_branch()
+        if git("check-ref-format", branch_ref).returncode != 0:
+            raise self._invalid_branch()
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", self.oid) is None:
+            raise WebInputError("起草の基点には完全なOIDが必要", next_action=DRAFT_BASIS_NEXT)
+        branch = branch_ref.removeprefix("refs/heads/")
+        if registered_branch is not None:
+            if registered_branch != branch:
+                raise WebInputError("起草のベースが登録済みの宛先系統と一致しない", next_action=DRAFT_BASIS_NEXT)
+            ref = f"refs/remotes/origin/{branch}"
+        else:
+            current_branch = git("symbolic-ref", "--quiet", "HEAD")
+            if current_branch.returncode != 0 or current_branch.stdout.strip() != branch_ref:
+                raise WebInputError("起草のベースが宛先worktreeの現在のブランチと一致しない", next_action=DRAFT_BASIS_NEXT)
+            result = git("for-each-ref", "--format=%(refname)%09%(upstream)", branch_ref)
+            if result.returncode != 0:
+                raise WebInputError("起草のベースrefを照会できない", next_action=DRAFT_BASIS_NEXT)
+            selected = next(
+                (line.partition("\t")[2] for line in result.stdout.splitlines() if line.partition("\t")[0] == branch_ref),
+                None,
+            )
+            if selected is None:
+                raise WebInputError("起草のベースrefが宛先のリポジトリに無い", next_action=DRAFT_BASIS_NEXT)
+            if not selected:
+                configured = (git("config", "--get", f"branch.{branch}.{key}") for key in ("remote", "merge"))
+                if any(setting.returncode != 1 for setting in configured):
+                    raise WebInputError("設定済みの宛先上流を解決できない", next_action=DRAFT_BASIS_NEXT)
+            ref = selected or branch_ref
+        current = git("rev-parse", "--verify", f"{ref}^{{commit}}")
+        if current.returncode != 0:
+            raise WebInputError(f"取得済みの宛先refを解決できない: {ref}", next_action=DRAFT_BASIS_NEXT)
+        if current.stdout.strip() != self.oid:
+            raise WebInputError(f"起草の基点が取得済みの宛先refと一致しない: {ref}", next_action=DRAFT_BASIS_NEXT)
+
+    @staticmethod
+    def _invalid_branch(candidate: str | None = None) -> WebInputError:
+        forms = "refs/heads/<ブランチ>、または宛先に実在する / を含まないブランチ名"
+        action = (
+            f"--draft-baseのブランチには {candidate} を指定する"
+            if candidate
+            else f"--draft-baseのブランチを {forms} で指定する"
+        )
+        return WebInputError(f"起草のベースには {forms} が必要", next_action=action)
+
+
+def ensure_destinations(
+    basis: DraftBasis,
+    messages: list[tuple[dict[str, object], str]],
+    branches: list[str | None],
+    commit_branch: str | None,
+) -> None:
+    for (metadata, _), branch in zip(messages, branches, strict=True):
+        raw = metadata.get("target_repo", basis.repo)
+        if not isinstance(raw, str) or resolve_repo_id_or_raise(raw) != basis.repo or branch != commit_branch:
+            raise WebInputError("起草の基点を使う原稿の宛先が別repoまたは別系統", next_action=DRAFT_BASIS_NEXT)

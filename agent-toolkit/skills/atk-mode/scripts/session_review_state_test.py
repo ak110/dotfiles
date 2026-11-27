@@ -1,9 +1,11 @@
+import json
+import os
 import pathlib
 
 import filelock
 import pytest
 import session_review_state
-from agent_toolkit._common import session_review
+from agent_toolkit._common import session_registry, session_review, session_review_analysis
 
 
 @pytest.mark.parametrize("condition", ["empty", "unconfirmed", "completed", "resolved", "running", "failed"])
@@ -22,6 +24,8 @@ def test_finish_validates_batch_without_committing_targets(tmp_path, monkeypatch
         value = session_review.read(path)
         value["status"] = condition
         session_review.write(path, value)
+    analysis = session_review_analysis.ensure(writer)
+    analysis.write_text(analysis.read_text(encoding="utf-8").replace(" | 未着手 | ", " | 完了 | "), encoding="utf-8")
     before = path.read_bytes()
     monkeypatch.setenv(session_review.BATCH_ENV, str(path))
     monkeypatch.setattr(session_review_state.add_reports, "check_run_report_sync", lambda *args, **kwargs: None)
@@ -92,6 +96,7 @@ def test_finish_outside_batch_points_to_batch_invocation(monkeypatch, capsys):
 def test_finish_report_read_failure_points_to_access_recovery(tmp_path, monkeypatch, capsys, error):
     writer = session_review.BatchWriter(tmp_path / "batch.json")
     writer.create({"run_id": "batch", "targets": [], "prepared": [{}]})
+    session_review_analysis.ensure(writer)
     monkeypatch.setenv(session_review.BATCH_ENV, str(writer.path))
 
     def check(*args, **kwargs):
@@ -103,3 +108,107 @@ def test_finish_report_read_failure_points_to_access_recovery(tmp_path, monkeypa
     assert type(error).__name__ in message
     assert "読み取り権限とロックの保持状況" in message
     assert not writer.load().analysis_succeeded
+
+
+@pytest.mark.parametrize("missing", ["file", "row", "status"])
+def test_finish_requires_the_analysis_record_and_completed_rows(tmp_path, monkeypatch, capsys, missing):
+    session_review.record({"hook_event_name": "SessionStart", "session_id": "one"}, host="codex")
+    writer = session_review.BatchWriter(tmp_path / "batch.json")
+    writer.create({"run_id": "batch", "targets": session_review.pending(), "prepared": []})
+    writer.prepare({"host": "codex", "session_id": "one", "partial_analysis": True, "unconfirmed_scope": ["欠測"]})
+    monkeypatch.setenv(session_review.BATCH_ENV, str(writer.path))
+    monkeypatch.setattr(session_review_state.add_reports, "check_run_report_sync", lambda *args, **kwargs: None)
+    if missing != "file":
+        analysis = session_review_analysis.ensure(writer)
+        if missing == "row":
+            text = analysis.read_text(encoding="utf-8")
+            analysis.write_text(
+                "\n".join(line for line in text.splitlines() if not line.startswith("| one |")), encoding="utf-8"
+            )
+    assert session_review_state.main(["finish"]) == 1
+    assert not writer.load().analysis_succeeded
+    assert ("prepare-analysis" if missing == "file" else "one") in capsys.readouterr().err
+    assert session_review_state.main(["prepare-analysis"]) == 0
+
+
+def test_analysis_template_preserves_existing_conclusions(tmp_path):
+    session_review.record({"hook_event_name": "SessionStart", "session_id": "one"}, host="codex")
+    writer = session_review.BatchWriter(tmp_path / "batch.json")
+    writer.create({"run_id": "old-batch", "targets": session_review.pending(), "prepared": []})
+    writer.prepare(
+        {"host": "codex", "session_id": "one", "conversation_path": "/bundle/conversation", "partial_analysis": True}
+    )
+    path = session_review_analysis.ensure(writer)
+    template = path.read_text(encoding="utf-8")
+    assert "| one | 未着手 | /bundle/conversation | なし | なし | なし | true |" in template
+    assert "## 横断の集計" in template
+    saved = template.replace(" | 未着手 | ", " | 完了 | ").replace("採否集計: 未着手", "採否集計: 保存の値")
+    path.write_text(saved, encoding="utf-8")
+    assert session_review_analysis.ensure(writer) == path
+    assert path.read_text(encoding="utf-8") == saved
+    assert not session_review_analysis.unfinished(writer.path, writer.load())
+
+
+def test_finish_distinguishes_same_session_id_in_two_hosts(tmp_path, monkeypatch, capsys):
+    for host in ("claude", "codex"):
+        assert session_review.record(
+            {"hook_event_name": "SessionStart", "session_id": "same", "transcript_path": str(tmp_path / "same.jsonl")},
+            host=host,
+        )
+    writer = session_review.BatchWriter(tmp_path / "batch.json")
+    writer.create(
+        {
+            "run_id": "batch",
+            "targets": session_review.pending(),
+            "started_at": "2026-11-27T00:00:00Z",
+            "target_repo": "github.com/example/repo",
+            "prepared": [{"host": "codex", "session_id": "same", "partial_analysis": True}],
+        }
+    )
+    monkeypatch.setenv(session_review.BATCH_ENV, str(writer.path))
+    monkeypatch.setattr(session_review_state.add_reports, "check_run_report_sync", lambda *args, **kwargs: None)
+    path = session_review_analysis.ensure(writer)
+    text = path.read_text(encoding="utf-8")
+    assert "- 開始時刻: 2026-11-27T00:00:00Z" in text
+    assert "- 報告先: github.com/example/repo" in text
+    text = text.replace("| claude:same | 未着手 |", "| claude:same | 完了 |")
+    path.write_text(text, encoding="utf-8")
+    assert session_review_state.main(["finish"]) == 1
+    error = capsys.readouterr().err
+    assert "codex:same" in error and "claude:same" not in error
+    path.write_text(text.replace("| codex:same | 未着手 |", "| codex:same | 完了 |"), encoding="utf-8")
+    assert session_review_state.main(["finish"]) == 0
+    assert writer.load().analysis_succeeded
+
+
+def test_show_target_avoids_running_batch_without_waiting(capsys, monkeypatch):
+    monkeypatch.setattr(session_review_state.config, "resolve_mutable_setting", lambda _key: "true")
+    session_review.record({"hook_event_name": "SessionStart", "session_id": "mine"}, host="codex")
+    root = session_review.directory()
+    runs = root / "runs"
+    runs.mkdir()
+    writer = session_review.BatchWriter(runs / "batch.json")
+    writer.create({"run_id": "batch", "targets": session_review.pending()})
+
+    def status(host, session_id):
+        assert session_review_state.main(["show", "--target", host, session_id]) == 0
+        return json.loads(capsys.readouterr().out)
+
+    assert status("codex", "mine")["status"] == "available"
+    writer.pause_for_usage_limit(9999999999.0, 3)
+    assert status("codex", "mine")["status"] == "batch"
+    monkeypatch.setattr(session_review_state.config, "resolve_mutable_setting", lambda _key: "false")
+    assert status("codex", "mine")["status"] == "available"
+    monkeypatch.setattr(session_review_state.config, "resolve_mutable_setting", lambda _key: "true")
+    writer.resume_usage_limited()
+    executor = session_registry.ProcessIdentity.of(os.getpid())
+    assert executor is not None
+    writer.attach(executor)
+    assert status("codex", "mine") == {"status": "batch", "batch_run_id": "batch", "processed_scope": None}
+    assert status("claude", "mine")["status"] == "available"
+    with filelock.FileLock(root / "batch.lock"):
+        assert status("codex", "mine")["status"] == "batch-busy"
+    writer.fail("failure", "実行できない")
+    assert status("codex", "mine")["status"] == "available"
+    writer.report_failure(synced=False)
+    assert status("codex", "mine")["status"] == "batch"

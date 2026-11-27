@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from session_evidence_delivery import RESPONSE_CANDIDATE
 from session_evidence_detail import _clip_event_body, _entry_detail_events, _entry_timestamp
 from session_evidence_extract import _CollectedRecord, _DetailBudget, _result_call_ids
 from session_evidence_hook_notices import _hook_records
@@ -21,7 +22,7 @@ UNTRUNCATED_EVIDENCE_KINDS = frozenset(
         "tool-failure",
         "delegate-return",
         "escalation",
-        "post-delivery-long-text",
+        RESPONSE_CANDIDATE,
     }
 )
 """個別証拠の本文を切り詰めない候補種別。
@@ -85,8 +86,9 @@ def _candidate_evidence_events(
         details: list[dict[str, Any]] = []
         source_chars = 0
         evidence_locators = list(candidate["locators"])
-        if candidate["candidate_kind"] == "post-delivery-long-text":
-            evidence_locators.append({"record": candidate["locators"][0]["record"], "line": candidate["delivery_line"]})
+        if candidate["candidate_kind"] == RESPONSE_CANDIDATE:
+            for line in sorted(set(candidate["delivery_lines"]) | set(candidate["delivery_result_lines"])):
+                evidence_locators.append({"record": candidate["locators"][0]["record"], "line": line})
         for locator in evidence_locators:
             key = (str(locator["record"]), int(locator["line"]))
             raw_entry = raw_entries.get(key)

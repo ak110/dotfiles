@@ -26,6 +26,7 @@ from agent_toolkit._agents_server.service_move_source import MoveSource
 from agent_toolkit._agents_server.service_projection import ProjectionHub, seed_from_previous
 from agent_toolkit._agents_server.service_registry import RegistryForwarder, restore_generation
 from agent_toolkit._agents_server.service_session_control import ServiceSessionControl, _caller_payload
+from agent_toolkit._agents_server.service_start_requests import StartRequests
 from agent_toolkit._common import file_lock
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.service")
@@ -63,6 +64,7 @@ class ServiceCoordinator(ServiceSessionControl):
         self.projections = projections
         self.registrations = registrations
         self.registry = GenerationRegistry(directory)
+        self.start_requests = StartRequests(directory, target["process"])
         self.gate = service_turns.TurnGate(self.generation, target)
         self._ended: dict[str, tuple[int, str | None]] = {}
         self._ended_sdk_clients: dict[str, Any] = {}
@@ -213,6 +215,7 @@ class ServiceCoordinator(ServiceSessionControl):
             or self._runtime.broker._resources
             or self._incoming
             or self._pending_adoptions
+            or self.start_requests.tasks
         )
 
     def can_shutdown(self) -> bool:

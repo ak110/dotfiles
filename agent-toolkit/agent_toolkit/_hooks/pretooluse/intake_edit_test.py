@@ -6,7 +6,7 @@ import shlex
 import pytest
 
 from agent_toolkit._git import command as git_command
-from agent_toolkit._hooks import hook_notice_response_gate, termination_evidence
+from agent_toolkit._hooks import hook_notice_response_gate, termination_evidence, user_prompt_submit
 from agent_toolkit._hooks.pretooluse import dispatch
 
 
@@ -71,7 +71,6 @@ def test_intake_repo_edit_notice_once_per_human_input(tmp_path, monkeypatch, cap
     prompt("要求を登録して")
     start("add-awi-by-user")
     assert "セッション境界" not in edit(tmp_path / "draft.md")
-    assert "セッション境界" not in edit(turn_id="codex")
     assert "セッション境界" not in edit(agent_id="child")
     context = edit(tracked)
     assert 'kind="notice"' in context
@@ -91,3 +90,51 @@ def test_intake_repo_edit_notice_once_per_human_input(tmp_path, monkeypatch, cap
         prompt("別の作業を開始して")
         start(work)
         assert "セッション境界" not in edit()
+
+
+@pytest.mark.parametrize(
+    ("host", "entry", "context"),
+    [
+        ("codex", "$atk-mode", {"turn_id": "turn"}),
+        ("agy", "/atk-mode", {"runtime": "agy"}),
+    ],
+)
+def test_named_intake_entry_tracks_human_prompts(tmp_path, monkeypatch, capsys, host, entry, context):
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(dispatch.repository_protection, "check", lambda *_args: None)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_command.run(["init", "-q"], cwd=repo, check=True)
+    base = {"session_id": "named-intake", "cwd": str(repo), **context}
+
+    def prompt(message, turn, **extra):
+        meta = {"turn_id": str(turn)} if host == "codex" else {}
+        assert user_prompt_submit.main(json.dumps({**base, **meta, "prompt": message, **extra})) == 0
+        return capsys.readouterr().out
+
+    def patch(turn):
+        payload = {
+            **base,
+            "turn_id": str(turn),
+            "tool_name": "apply_patch",
+            "tool_input": {"command": "*** Begin Patch\n*** Add File: example.txt\n+new\n*** End Patch"},
+        }
+        assert dispatch.main(json.dumps(payload)) == 0
+        return capsys.readouterr().out
+
+    assert "セッション境界" not in prompt("add-awi-by-user の使い方は？", 1)
+    assert "セッション境界" not in patch(1)
+    started = prompt(entry + " add-awi-by-user 登録して", 2)
+    assert "セッション境界" in started
+    if host == "codex":
+        assert "セッション境界" in patch(2)
+        assert "セッション境界" not in patch(2)
+    assert "セッション境界" in prompt("追加の変更をお願いします", 3)
+    if host == "codex":
+        assert "セッション境界" in patch(3)
+    assert "セッション境界" not in prompt(entry + " implement", 4, source="agent")
+    followed = prompt("もう1件お願いします", 5)
+    assert "セッション境界" in (followed if host == "agy" else patch(5))
+    assert "セッション境界" not in prompt(entry + " implement", 6)
+    assert "セッション境界" not in patch(6)

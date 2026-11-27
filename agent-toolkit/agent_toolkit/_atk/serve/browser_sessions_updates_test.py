@@ -216,6 +216,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
     if opened_from == "subagent":
+        await page.locator("#detail .subagents > summary").click()
         await page.locator(".subagent-item", has_text="長い調査").click()
     events = page.locator("#detail details.event")
     await playwright.async_api.expect(events).to_have_count(100)
@@ -426,6 +427,7 @@ async def test_focused_session_control_survives_append(screen_harness: _ScreenHa
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
+    await page.locator("#detail .subagents > summary").click()
     if control == "subagent-item":
         button = page.locator(".subagent-item", has_text="長い調査")
         changed_path = parent

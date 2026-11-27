@@ -30,7 +30,11 @@ async def test_navigation_serves_all_screens(tmp_path: pathlib.Path) -> None:
         response = await client.get(path)
         assert response.status_code == 200
         assert response.mimetype == "text/html"
-        assert f'id="screen-{screen}"' in await response.get_data(as_text=True)
+        html = await response.get_data(as_text=True)
+        assert f'id="screen-{screen}"' in html
+        assert html.count('<symbol id="icon-copy"') == 1
+        assert 'href="#icon-copy"' in html
+        assert "__ICON_SPRITE__" not in html
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agent_toolkit._common import session_review, session_review_analysis
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import (
     agents_server_observations,
@@ -143,3 +144,29 @@ def test_compact_delegation_wait_is_scoped_to_current_owner(tmp_path, monkeypatc
         assert "自セッションが待機中: running" in output and "待機の再開は不要" in output
     else:
         assert "自セッションに有効な待機なし" in output and "待機の再開が必要: running" in output
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_batch_compaction_names_current_analysis_and_only_unfinished(tmp_path, monkeypatch, capsys, host):
+    for target_host in ("claude", "codex"):
+        assert session_review.record(
+            {"hook_event_name": "SessionStart", "session_id": "same", "transcript_path": str(tmp_path / "same.jsonl")},
+            host=target_host,
+        )
+    path = tmp_path / "batch.json"
+    writer = session_review.BatchWriter(path)
+    writer.create({"run_id": "batch", "targets": session_review.pending(), "prepared": []})
+    analysis = session_review_analysis.ensure(writer)
+    text = analysis.read_text(encoding="utf-8")
+    analysis.write_text(text.replace("| claude:same | 未着手 |", "| claude:same | 完了 |"), encoding="utf-8")
+    monkeypatch.setenv(session_review.BATCH_ENV, str(path))
+    assert (
+        rules_context.main(
+            json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "batch"}), host=host
+        )
+        == 0
+    )
+    result = _output(capsys)
+    assert str(analysis) in result
+    assert "未完了の対象: codex:same。" in result
+    assert "claude:same" not in result

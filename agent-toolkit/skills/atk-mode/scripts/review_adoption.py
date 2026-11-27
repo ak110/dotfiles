@@ -12,7 +12,8 @@ import collections
 import datetime
 import json
 import re
-from pathlib import Path
+import shlex
+from pathlib import Path, PureWindowsPath
 from typing import Any, NamedTuple
 
 from agent_toolkit._atk import review_table_format
@@ -20,6 +21,7 @@ from agent_toolkit._common import host_homes, private_notes, session_record_path
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.runtime_identity import distinct_identities
 from cost_metrics import _history, saved_review_tables
+from session_evidence_execution import command_execution_input
 from session_evidence_stats import _parse_cli_timestamp
 
 _ROLE_MARKER = re.compile(r"出所: \S*(?:share|skills/atk-mode/roles)/exec-review\.subagent\.md")
@@ -27,6 +29,11 @@ _ROLE_MARKER = re.compile(r"出所: \S*(?:share|skills/atk-mode/roles)/exec-revi
 _CODEX_OUTPUT_TYPES = frozenset({"reasoning", "function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
 _CODEX_TOOL_TYPES = frozenset({"function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
 _ROLE_DOCUMENT = re.compile(r"(?<![\w.-])roles/exec-review\.subagent\.md(?![\w.-])")
+_ASSIGNED = re.compile(r'<atk-auto source="agents-server" kind="delivery">\s*(.*?)</atk-auto>', re.DOTALL)
+_REVIEW_PATH = re.compile(r'((?:[A-Za-z]:)?[/\\][^\s"\x60]+?)(\.md|\.exec-review\.tsv)(?=\s|$|["\x60])')
+_ADDED = re.compile(r"^成功: 指摘行を[1-9][0-9]*件追加した: (.+\.exec-review\.tsv)（[0-9]+件）$", re.MULTILINE)
+_RESULT_TABLE = re.compile(r"^(?:- )?レビュー指摘管理表: (.+?\.exec-review\.tsv)`?(?:（[^\n]*）)?$", re.MULTILINE)
+_RESULT_ORIGINAL = re.compile(r"^(?:- )?正式原本: ([^\n]+)$", re.MULTILINE)
 _MODEL_UNKNOWN = "モデル不明"
 _LOCATION, _LEVEL, _NO_RESPONSE = 2, 4, 6
 
@@ -58,6 +65,22 @@ class _RecordRole(NamedTuple):
     thread: str | None = None
     marked: bool = False
     review_parent: str | None = None
+    requested_tables: tuple[str, ...] = ()
+
+
+def _requested_tables(texts: list[str]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                plan.replace("\\", "/") + ".exec-review.tsv"
+                for text in texts
+                for match in _ASSIGNED.finditer(text)
+                for prompt in (match[1],)
+                if "独立実行レビュー" in prompt.partition("\n")[0]
+                for plan, _extension in _REVIEW_PATH.findall(prompt)
+            }
+        )
+    )
 
 
 def _meta(payload: object) -> tuple[str | None, str | None]:
@@ -84,6 +107,7 @@ def _calls_role_document(payload: dict[str, Any]) -> bool:
 def _record_role(path: Path) -> _RecordRole:
     thread = parent = None
     before_output = True
+    requested: set[str] = set()
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             for line in stream:
@@ -103,6 +127,8 @@ def _record_role(path: Path) -> _RecordRole:
                             break
                     elif any(_ROLE_MARKER.search(text) for text in texts):
                         return _RecordRole(thread, marked=True)
+                    else:
+                        requested.update(_requested_tables(texts))
                 payload = entry.get("payload")
                 if (
                     parent
@@ -110,13 +136,17 @@ def _record_role(path: Path) -> _RecordRole:
                     and isinstance(payload, dict)
                     and payload.get("type") in _CODEX_TOOL_TYPES
                 ):
-                    return _RecordRole(thread, review_parent=parent if _calls_role_document(payload) else None)
+                    return _RecordRole(
+                        thread,
+                        review_parent=parent if _calls_role_document(payload) else None,
+                        requested_tables=tuple(sorted(requested)),
+                    )
     except OSError:
         return _RecordRole()
-    return _RecordRole(thread)
+    return _RecordRole(thread, requested_tables=tuple(sorted(requested)))
 
 
-def _review_records(roots: list[Path]) -> list[Path]:
+def _review_records(roots: list[Path]) -> dict[Path, tuple[str, ...] | None]:
     roles: dict[Path, _RecordRole] = {}
     by_thread: dict[str, set[_RecordRole]] = collections.defaultdict(set)
     for root in roots:
@@ -127,16 +157,119 @@ def _review_records(roots: list[Path]) -> list[Path]:
             if role.thread:
                 by_thread[role.thread].add(role)
 
-    return [
-        path
-        for path, role in roles.items()
-        if role.marked
-        or (
+    result: dict[Path, tuple[str, ...] | None] = {}
+    for path, role in roles.items():
+        if role.marked or (
             role.review_parent != role.thread
             and (parents := by_thread.get(role.review_parent or ""))
             and not any(parent.marked or parent.review_parent for parent in parents)
-        )
-    ]
+        ):
+            result[path] = None
+        elif role.requested_tables:
+            result[path] = role.requested_tables
+    return result
+
+
+def _successful_output(value: object) -> str:
+    items = value if isinstance(value, list) else [value]
+    for item in items:
+        raw = item.get("text") if isinstance(item, dict) else item
+        try:
+            result = json.loads(raw) if isinstance(raw, str) else None
+        except ValueError, RecursionError:
+            continue
+        if not isinstance(result, dict):
+            continue
+        code = result.get("exit_code")
+        if isinstance(code, int) and not isinstance(code, bool) and code == 0 and isinstance(result.get("output"), str):
+            return result["output"]
+    return ""
+
+
+def _formal_result(text: str) -> bool:
+    return (
+        "状態: completed" in text.splitlines()
+        and re.search(r"^レビューHEAD: [a-f0-9]{7,40}$", text, re.MULTILINE) is not None
+        and re.search(r"^未解決の指摘数: [0-9]+$", text, re.MULTILINE) is not None
+    )
+
+
+def _reported_paths(pattern: re.Pattern[str], body: str) -> set[str]:
+    return {path.strip().strip("`").replace("\\", "/") for path in pattern.findall(body)}
+
+
+def _read_original_name(command: str) -> str | None:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    if tokens[:2] == ["cat", "--"]:
+        tokens.pop(1)
+    if len(tokens) == 2 and tokens[0] == "cat" and (Path(tokens[1]).is_absolute() or PureWindowsPath(tokens[1]).is_absolute()):
+        return tokens[1].replace("\\", "/")
+    return None
+
+
+def _confirmed_free_review_tables(text: str, requested: set[str]) -> set[str]:
+    calls: dict[str, str] = {}
+    registered: set[str] = set()
+    completed: set[str] = set()
+    inspected: dict[str, set[str]] = collections.defaultdict(set)
+    for line in split_lines(text):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event = entry.get("payload") if isinstance(entry, dict) and entry.get("type") == "event_msg" else None
+        command_record = event.get("item") if isinstance(event, dict) and event.get("type") == "item_completed" else None
+        if isinstance(command_record, dict) and command_record.get("type") == "CommandExecution":
+            original = _read_original_name(command_execution_input(command_record.get("command", "")))
+            output = command_record.get("aggregated_output")
+            if (
+                original is not None
+                and command_record.get("exit_code") == 0
+                and isinstance(output, str)
+                and _formal_result(output)
+            ):
+                inspected[original].update(_reported_paths(_RESULT_TABLE, output) & requested & registered)
+            continue
+        payload = entry.get("payload") if isinstance(entry, dict) and entry.get("type") == "response_item" else None
+        if not isinstance(payload, dict):
+            continue
+        kind = payload.get("type")
+        if kind == "message" and payload.get("role") == "assistant" and payload.get("phase") == "final_answer":
+            content = payload.get("content")
+            if not isinstance(content, list):
+                continue
+            message = "\n".join(
+                block["text"] for block in content if isinstance(block, dict) and isinstance(block.get("text"), str)
+            )
+            message = "\n".join(line.rstrip() for line in split_lines(message))
+            if _formal_result(message):
+                completed.update(_reported_paths(_RESULT_TABLE, message) & requested & registered)
+            if "状態: completed" in split_lines(message):
+                for path in _reported_paths(_RESULT_ORIGINAL, message):
+                    completed.update(inspected.get(path, set()) & registered)
+            continue
+        if not isinstance(call := payload.get("call_id"), str):
+            continue
+        if kind in _CODEX_TOOL_TYPES:
+            command = payload.get("input", payload.get("arguments"))
+            if isinstance(command, str):
+                calls[call] = command
+        elif kind in {"custom_tool_call_output", "function_call_output"} and call in calls:
+            command = calls.pop(call)
+            output = _successful_output(payload.get("output"))
+            if re.search(r"\breview-table add\b[^\n]*\s--track(?:\s+|=)exec-review(?:\s|$)", command):
+                registered.update(path.replace("\\", "/") for path in _ADDED.findall(output))
+            if _formal_result(output):
+                reported = _reported_paths(_RESULT_TABLE, output + "\n" + command) & requested & registered
+                originals = _reported_paths(_RESULT_ORIGINAL, output + "\n" + command)
+                if original := _read_original_name(command):
+                    originals.add(original)
+                for original in originals:
+                    inspected[original].update(reported)
+    return {path.rsplit("/", 1)[-1] for path in completed}
 
 
 def _record_identity(path: Path, text: str) -> str:
@@ -160,19 +293,23 @@ def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
     names_set = set(names)
     lengths = {len(name) for name in names_set}
     table_suffix = re.compile(r"\.exec-review\.tsv")
-    for record in _review_records(roots):
+    for record, requested in _review_records(roots).items():
         try:
             text = record.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
 
-        matched = {
-            text[end - length : end]
-            for suffix in table_suffix.finditer(text)
-            for end in (suffix.end(),)
-            for length in lengths
-            if length <= end and text[end - length : end] in names_set
-        }
+        matched = (
+            _confirmed_free_review_tables(text, {path for path in requested if path.rsplit("/", 1)[-1] in names_set})
+            if requested is not None
+            else {
+                text[end - length : end]
+                for suffix in table_suffix.finditer(text)
+                for end in (suffix.end(),)
+                for length in lengths
+                if length <= end and text[end - length : end] in names_set
+            }
+        )
         if not matched:
             continue
         identity = _record_identity(record, text)

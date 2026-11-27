@@ -11,12 +11,11 @@
   color: var(--color-text);
   background: var(--color-surface);
 }
-/* 新規追加は本文を長く書くため、幅が許す範囲で詳細（72rem）よりやや狭い幅まで広げる。 */
 :is(#screen-wi, .wi-reference-layer) dialog.create-dialog {
   width: min(64rem, calc(100% - 2rem));
 }
 :is(#screen-wi, .wi-reference-layer) dialog.detail-dialog {
-  width: min(72rem, calc(100% - 2rem));
+  width: min(calc(var(--reading-width) + 2 * var(--space-4)), calc(100% - 2rem));
 }
 :is(#screen-wi, .wi-reference-layer) dialog::backdrop {
   background: var(--color-backdrop);
@@ -64,6 +63,16 @@
   justify-content: flex-start;
   gap: var(--space-3);
 }
+#screen-wi .detail-footer-right {
+  margin-inline-start: auto;
+}
+#screen-wi .detail-dialog:has(.user-comment-panel:not([hidden])) .detail-footer {
+  display: none;
+}
+#screen-wi .user-comment-actions {
+  display: flex;
+  justify-content: flex-end;
+}
 :is(#screen-wi, .wi-reference-layer) .detail-more-actions {
   display: flex;
   flex-wrap: wrap;
@@ -71,7 +80,7 @@
 }
 :is(#screen-wi, .wi-reference-layer) .detail-more {
   min-inline-size: 0;
-  margin-inline-start: auto;
+  margin-inline-end: auto;
 }
 :is(#screen-wi, .wi-reference-layer) .detail-more > summary {
   display: none;
@@ -101,16 +110,21 @@
   gap: var(--space-2);
   flex-wrap: wrap;
 }
-:is(#screen-wi, .wi-reference-layer) .detail-title-row h3 {
-  margin: 0;
-  font-size: var(--font-size-base);
+:is(#screen-wi, .wi-reference-layer) .detail-filename {
   color: var(--color-secondary-text);
-  font-weight: var(--weight-label);
+  font-size: var(--font-size-secondary);
   overflow-wrap: anywhere;
 }
 :is(#screen-wi, .wi-reference-layer) .detail-dialog .dialog-header h2 {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+#screen-wi #detail-dialog .dialog-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+#screen-wi #detail-close-button {
+  margin-inline-start: 0;
 }
 :is(#screen-wi, .wi-reference-layer) .metadata {
   display: grid;
@@ -125,8 +139,16 @@
   overflow-wrap: anywhere;
 }
 :is(#screen-wi, .wi-reference-layer) .detail-metadata {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-small);
+  background: var(--color-background);
+}
+@media (min-width: 64rem) {
+  :is(#screen-wi, .wi-reference-layer) .detail-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 :is(#screen-wi, .wi-reference-layer) .detail-metadata .metadata-item {
   min-width: 0;
@@ -145,6 +167,12 @@
 :is(#screen-wi, .wi-reference-layer) .entry-content {
   max-inline-size: var(--reading-width);
   overflow-wrap: anywhere;
+}
+:is(#screen-wi, .wi-reference-layer) .entry-content :is(h1, h2) {
+  font-size: var(--font-size-heading);
+}
+:is(#screen-wi, .wi-reference-layer) .entry-content :is(h3, h4, h5, h6) {
+  font-size: var(--font-size-body);
 }
 .markdown-body {
   color: var(--color-text);
@@ -313,10 +341,6 @@
   }
 }
 @media (max-width: 48rem) {
-  #screen-wi .app-layout {
-    grid-template-columns: minmax(0, 1fr);
-    padding-block: var(--space-4);
-  }
   :is(#screen-wi, .wi-reference-layer) dialog.dialog-shell {
     width: calc(100% - 1rem);
     max-height: calc(100svh - 1rem);
@@ -335,7 +359,19 @@
   :is(#screen-wi, .wi-reference-layer) .detail-footer {
     gap: var(--space-2);
   }
-
+  #screen-wi #detail-dialog .dialog-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  #screen-wi #detail-heading {
+    font-size: var(--font-size-heading);
+  }
+  #screen-wi #detail-scroll-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  #screen-wi #detail-scroll-actions:empty {
+    display: none;
+  }
 }
 /* 低い画面では折り返す操作欄が本文を押し潰すため、詳細全体を単一のスクロール領域にする。 */
 @media (max-height: 30rem) {

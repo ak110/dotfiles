@@ -141,18 +141,12 @@
    Codexで`agents_server`を使えず組み込みの委譲で代える時は、`spawn_agent`に`fork_turns: "none"`を明示する。
 5. 起動時の可用性の障害による候補の切り替えはサーバーに任せる。
    実行中の担当は、経過時間や無応答の長さだけを理由に置き換えず、終了まで観測を続ける。
+6. 通常の委譲が使えず認可の範囲でCodex CLIを直接使う場合は、[非対話の直接起動](delegation-start-recovery.md#codex-cliの非対話の直接起動)に従う。
 
 ### 会話を引き継ぐ委譲
 
-ホスト標準のforkは、次の全てを満たす時に`agents_server`の代わりに選ぶ。
-
-- 委譲先が、委譲元の受けた指示、読んだ資料、調査の結果の大半を要し、新しく起動すると同じ背景を依頼文へ書き直すことになる。
-- 委譲元と同じモデルとeffortで作業を完了でき、上位のモデルが担う判断は元の担当が持つ。
-- 工程別のモデル設定のキーが割り当てられた工程でも、役割文書を渡す委譲でもない。
-- 独立文脈レビュー（実行レビューなど、成果物の作成者と文脈を共有しない委譲先が先入観を持たずに行う判定）でもない。
-
-forkの入力は、作業の対象、役割の分担、完了の条件、報告の様式に限り、会話で共有済みの規範と背景は省く。
-Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codexでは`fork_turns`を省くか`"all"`にし、どちらもモデルとeffortを上書きしない。
+独立文脈レビューでは、委譲元の会話を引き継がず、原要求と成果物を渡す。
+[会話を引き継ぐ起動](delegation-start-recovery.md#会話を引き継ぐ起動)の適用条件を確かめる。
 
 ## 送信
 
@@ -180,6 +174,7 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
 6. 依頼文を`agent-toolkit:atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」で組み、入れる要素を同書「入力の適格性と追送」で選ぶ。
    役割文書を持つ委譲は本書「`<役割名>.parent.md`を持つ委譲の起動」に従う。
 7. 引数、省略時の値、応答の項目を、起動の直前にMCPツールのスキーマで確かめ、`start`を1回発行する。
+   Codexで新規起動する場合は、ここで決めた引数を`agent-toolkit:atk-mode/playbooks/host-codex.md`「agents_serverの起動」の非同期受付へ渡す。
    返った`session_id`と`handoff_record_path`を保持し、待機と回収は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`へ進む。
 
 起動手段にかかわらず、適用する暫定規範を`agent-toolkit:atk-mode/references/delegation-prompt.md`「入力の適格性と追送」に従って届ける。
@@ -193,13 +188,14 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
 呼び出し元の起動契約（共有の`<役割名>.parent.md`か、呼び出し元の手順書へ統合された契約）で手順が決まった委譲は、次の手順で起動する。
 
 1. 起動契約を読み、前提の条件、入力値の決め方、受領と検収の要件に従う。
-   起動の準備のために`<役割名>.subagent.md`の本文は読まない（入力の形式はサーバーが確かめる）。
+   入力と担当の手順書の扱いは、起動契約の入力一覧にある注記に従う。
 2. `start`へ、起動契約が定める絶対パスを`cwd`、役割名（例: `add-wi`）を`subagent_md_path`、名前付きの入力を`extra_params`として渡す。
    `mode`は指定せず、`model_type`は起動契約に値の決め方がある時だけ指定する。
    全体作業契約は、起動契約の入力の区間が案内する時だけ`whole_contract_path`へ渡す。
 3. `extra_params`の値へ、`agent-toolkit:atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」の値の制限、`未検証`の明記、`forwarded-user-input`の標識、絶対パスを適用する。
    入力名は起動契約の名前のまま使い、宣言の無い入力名は加えない。
 4. 確定した引数で`start`を1回呼ぶ。
+   Codexなら本書「送信」と同じく非同期受付へ渡す。
    拒否された時は、診断が示す項目と指示に従って再発行する。
 5. 返った`session_id`を`atk agents wait`で観測する。
    Claude Codeでは、初回の`start`の処理の中でagent-toolkitのmodが定期の再確認を設定し、その結果が`start`の返却の後に通知される。
@@ -224,17 +220,17 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
 ## 実機の観測だけを目的とする起動
 
 応答の内容を使わず、実機の確認、対照実験、識別子の観測だけのためにエージェントCLIか`agents_server`の委譲を起動する時の指定である。
-検証の対象がモデル、effort、設定、ツールに左右されない限り、軽量の工程のモデル別名とeffort `low`を使い、版付きの古いIDに固定しない。
+観測にも作業に合う工程設定を使い、観測のために候補やeffortを変更しない。
 共有状態の隔離は`agent-basics:writing-standards/references/investigation.md`「エージェントCLIを検証で起動する時の隔離」に従う。
 
-- `agents_server`: `model_type`へ`claude:haiku/low`か`codex:luna/low`を渡す。
-  `model_override=observation`と`model_override_evidence`（観測する事象）を併記する。
+- `agents_server`: `task`は役割の工程を使い、それ以外では該当する工程名を渡す。
   検証の対象が`delegate`か`task`の起動そのものでない限り、`mode`は`explore`か`shell`にする。
-- Claude CodeのCLI: `--model haiku --effort low --no-session-persistence --setting-sources ""`を指定する。
+- Claude CodeのCLI: 工程設定のClaude候補に合わせて`--model`と`--effort`を指定し、`--no-session-persistence --setting-sources ""`を付ける。
   加えて`--tools "" --strict-mcp-config --disable-slash-commands --system-prompt <文>`を指定する。
   プロンプトは`--`の後ろに置く（`--tools ""`が後続の位置引数を値として取るため）。
   `--bare`はOAuthの認証を読まないので使わない。
-- CodexのCLI: `-c model_reasoning_effort=low --ignore-user-config --ignore-rules`を指定し、記録が不要なら`--ephemeral`も加える。
+- CodexのCLI: 工程設定のCodex候補に合わせてモデルとeffortを指定し、`--ignore-user-config --ignore-rules`を付ける。
+  記録が不要なら`--ephemeral`も加える。
   `codex exec`はChatGPTの認証で系列名`luna`を拒否するため、`luna`系列の最新の完全なIDを指定する。
 
 ## 再委譲する場合に守る事項

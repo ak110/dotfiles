@@ -77,6 +77,10 @@ def _build_parser() -> argparse.ArgumentParser:
     session = parser.add_mutually_exclusive_group(required=True)
     session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
+    parser.add_argument(
+        "--codex-home", type=pathlib.Path, metavar="DIR", help="Codexの記録の保存先。省略時はCODEX_HOMEか~/.codex。"
+    )
+    session.add_argument("--agy-session-id", metavar="ID", help="Antigravityの会話ID。")
     session.add_argument("--opencode-session-id", metavar="ID", help="OpenCodeのses_で始まるセッションID。")
     session.add_argument("--agents-session-id", metavar="ID", help="agents_serverが起動した委譲先のsession ID。")
     parser.add_argument(
@@ -102,6 +106,12 @@ def _build_parser() -> argparse.ArgumentParser:
     extent = parser.add_mutually_exclusive_group()
     extent.add_argument("--after", metavar="PATH", help="前回範囲に使うscope JSONを明示する。")
     extent.add_argument("--full", action="store_true", help="前回確定済みの範囲を使わず全量を分析する。")
+    parser.add_argument(
+        "--observation-boundary",
+        type=session_conversation.timestamp,
+        metavar="TIME",
+        help="この日時を超える最初の行より前だけを準備する。タイムゾーン付きISO 8601で指定する。",
+    )
     parser.add_argument("--conversation-window", action="store_true", help="会話を少量表示する。候補・統計は更新しない。")
     parser.add_argument(
         "--conversation-digest",
@@ -264,13 +274,18 @@ def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, A
 @session_evidence_execution.shell_parse_scope()
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.agy_session_id is not None:
+        record = session_record_paths.find_session_record(args.agy_session_id)
+        if record is None or record.engine != "agy" or len(record.paths) != 1:
+            return _missing("transcript_path", f"Antigravityのセッション記録を一意に解決できない: {args.agy_session_id}")
+        args.transcript = str(record.paths[0])
     if args.agents_session_id is not None:
         try:
             resolution = session_registry.resolve(args.agents_session_id)
             info = resolution.resume_info or resolution.handoff_info
             if info is None:
                 raise ValueError("session登録簿から実行エンジンを解決できない")
-            record = session_record_paths.find_session_record(args.agents_session_id)
+            record = session_record_paths.find_session_record(args.agents_session_id, codex_home=args.codex_home)
             if record is None or len(record.paths) != 1 or record.engine != info.engine:
                 raise ValueError("登録済みsessionのセッション記録を一意に解決できない")
             if info.engine in {"claude", "agy"}:
@@ -304,6 +319,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         return _missing("bundle", "開始日時が終了日時より後。--conversation-sinceと--conversation-untilを確認する")
     if args.conversation_after is not None and args.work_dir is None:
         return _missing("bundle", "--conversation-afterには同じbundleを持つ--work-dirを指定する")
+    if args.codex_home is not None and args.codex_thread_id is None:
+        return _missing("bundle", "--codex-homeはCodexの記録の取得と併用する")
     if args.opencode_db is not None and args.opencode_session_id is None:
         return _missing("bundle", "--opencode-dbは--opencode-session-idと併用する")
     local_evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
@@ -318,18 +335,20 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     if transcript_path is not None and not transcript_path.is_file():
         return _missing("transcript_path")
     target_repo = pathlib.Path(args.target_repo).expanduser().resolve() if args.target_repo is not None else None
-    session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id or args.opencode_session_id)
-    identity = session_review.prepare_identity(
-        "claude" if transcript_path is not None else "codex" if args.codex_thread_id else "opencode", session_id
-    )
+    if args.agy_session_id is not None:
+        host, session_id = "agy", args.agy_session_id
+    elif transcript_path is not None:
+        host, session_id = "claude", transcript_path.stem
+    elif args.codex_thread_id is not None:
+        host, session_id = "codex", args.codex_thread_id
+    else:
+        host, session_id = "opencode", str(args.opencode_session_id)
+    identity = session_review.prepare_identity(host, session_id)
     if args.work_dir is not None:
         work_dir = pathlib.Path(args.work_dir).expanduser()
         if not work_dir.is_absolute() or not work_dir.is_dir():
             return _missing("work_dir", f"既存の絶対ディレクトリではない: {work_dir}")
     else:
-        session_id = (
-            transcript_path.stem if transcript_path is not None else str(args.codex_thread_id or args.opencode_session_id)
-        )
         try:
             session_root = managed_temp.resolve_session_temp(session_id)
             work_dir = managed_temp.create_session_temp("session-review", session_root)
@@ -344,6 +363,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             session_arguments.extend(["--opencode-db", str(pathlib.Path(args.opencode_db).expanduser().resolve())])
     else:
         session_arguments = ["--codex-thread-id", args.codex_thread_id]
+        if args.codex_home is not None:
+            session_arguments.extend(["--codex-home", str(args.codex_home.expanduser().resolve())])
     lightweight = args.conversation_only or args.conversation_window or args.conversation_digest
     after = args.after
     if after is None and not args.full and not lightweight:
@@ -351,6 +372,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         after = str(previous) if previous is not None else None
     if after is not None:
         session_arguments.extend(["--after", after])
+    if args.observation_boundary is not None:
+        session_arguments.extend(["--observation-boundary", args.observation_boundary.isoformat()])
     if args.allow_partial_records:
         session_arguments.append("--allow-partial-records")
     bundle_dir = work_dir / "bundle"

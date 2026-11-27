@@ -8,8 +8,8 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as add_module
+from agent_toolkit._atk.wi import add_cli, frontmatter
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
-from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
@@ -172,7 +172,7 @@ def test_add_accepts_colloquial_and_dash_without_warnings(
     if editor:
         args.body_file = None
         monkeypatch.setattr(_wi_cli_input, "collect_message_via_editor", lambda: body)
-        add_module.cmd_add(args, notes, _FIXED_DT, tmp_path)
+        add_cli.cmd_add(args, notes, _FIXED_DT, tmp_path, matches_submit_bindings=lambda *_: False)
     else:
         _run_public_add(args, notes, _FIXED_DT, tmp_path)
     captured = capsys.readouterr()

@@ -33,8 +33,8 @@ async def test_navigation_switches_screens_in_declared_order(screen_harness: _Sc
     assert await navigation.locator("a").all_inner_texts() == [
         "ワークアイテム",
         "計画ファイル",
-        "エージェント",
         "セッション",
+        "エージェント",
         "利用枠",
         "設定",
     ]
@@ -81,15 +81,14 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
 @pytest.mark.cpu_limit(
     2.75,
     reason=(
-        "詳細取得と全文検索の成功・失敗が遷移後に届いても、旧DOMへ書き込まない。実ブラウザーの観測とt"
+        "別の画面で要求が完了しても、表示中の画面と通知は変わらない。実ブラウザーの観測とt"
         "race回収が必要（CPU最大実測1.182秒）。"
     ),
 )
 @pytest.mark.asyncio(loop_scope="session")
-async def test_navigation_ignores_delayed_detail_and_search_results(
+async def test_delayed_requests_do_not_change_the_visible_screen(
     screen_harness: _ScreenHarness,
 ) -> None:
-    """詳細取得と全文検索の成功・失敗が遷移後に届いても、旧DOMへ書き込まない。"""
     harness = screen_harness
     page = harness.page
     errors: list[str] = []
@@ -218,7 +217,7 @@ async def test_detail_loading_keeps_list_and_navigation_positions(browser_harnes
         assert await entry.bounding_box() == before_row
     finally:
         release.set()
-    await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    await page.locator("#detail-dialog").wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
 
 

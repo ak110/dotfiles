@@ -42,6 +42,7 @@ class _ActivityClock:
 
 _CLOCK = _ActivityClock()
 _LOG = logging.getLogger("agent-toolkit.usage")
+DISPLAY_REFRESH_INTERVAL_SEC = 300
 
 
 def enabled(*, force: bool = False) -> bool:
@@ -492,7 +493,7 @@ def _refresh_locked(
         try:
             state = usage_settings.read_settings()
             previous = state.get("last_refresh_at")
-            interval = 1 if requested_at is not None and state.get("refresh_failures") else 300
+            interval = 1 if requested_at is not None and state.get("refresh_failures") else DISPLAY_REFRESH_INTERVAL_SEC
             if (
                 state.get("refresh_context") == usage_settings.context_id()
                 and isinstance(previous, (int, float))

@@ -1,25 +1,35 @@
 import {readFailure} from "./common.js";
 import {BASE_PATH, recoverRead, setDisplayedReadError, setUpdateError} from "./common.js";
-import {api} from "./wi_feedback.js";
-import {entryPageUrl} from "./wi_list_render.js";
 
 const DATED = String.raw`\d{8}-\d{6}-\d{3,}\.md`;
 
 const childDialogs = [];
 let referenceSequence = 0;
-let renderDetailView, openMainDetail;
+let renderDetailView, openMainDetail, readEntry;
 let legacyNames;
 let legacyRequest;
 
-export function configureWiReferences(render, open) {
-  renderDetailView = render;
-  openMainDetail = open;
+export function entryPageUrl(entry) {
+  const query = new URLSearchParams({filename: entry.filename});
+  return `${BASE_PATH}/?${query.toString()}`;
 }
 
-export function decorateWiReferences(container) {
+export function configureWiReferences(render, open, read) {
+  renderDetailView = render;
+  openMainDetail = open;
+  readEntry = read;
+}
+
+export function decorateWiReferences(container, {beforeLink, filename} = {}) {
   const text = container.textContent;
   if (!text.includes(".md")) return;
-  linkWiReferences(container, {referenced_wi_names: legacyNames});
+  const prepare = beforeLink && (() => {
+    beforeLink?.();
+    beforeLink = undefined;
+  });
+  const decorate = names => linkWiReferences(container,
+    {filename, referenced_wi_names: names}, {beforeLink: prepare});
+  decorate(legacyNames);
   if (legacyNames || !text.replace(new RegExp(DATED, "g"), "").includes(".md")) return;
   legacyRequest ??= recoverRead(document.body.dataset.screen, BASE_PATH + "/api/wi-reference-names").then(async response => {
     if (!response.ok) throw new Error(String(response.status));
@@ -27,7 +37,7 @@ export function decorateWiReferences(container) {
     return Array.isArray(result.names) ? result.names.filter(name => typeof name === "string") : [];
   }).then(names => (legacyNames = names)).catch(() => []).finally(() => { legacyRequest = undefined; });
   void legacyRequest.then(names => {
-    if (container.isConnected && names.length) linkWiReferences(container, {referenced_wi_names: names});
+    if (container.isConnected && container.textContent === text && names.length) decorate(names);
   });
 }
 
@@ -49,15 +59,22 @@ export function wiLink(filename) {
   return link;
 }
 
-export function linkWiReferences(container, entry) {
+export function linkWiReferences(container, entry, {beforeLink, allowUnlistedDated = true} = {}) {
   const knownNames = (entry.referenced_wi_names ?? []).slice().sort((a, b) => b.length - a.length);
-  if (!knownNames.length && !new RegExp(DATED).test(container.textContent)) return;
-  const alternatives = [...knownNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), DATED];
+  const alternatives = knownNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (allowUnlistedDated) alternatives.push(DATED);
+  if (!alternatives.length) return;
   const filenames = new RegExp(
     String.raw`(?<![A-Za-z0-9_.-])(?:${alternatives.join('|')})(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])`, 'gu'
   );
+  if (!filenames.test(container.textContent)) return;
+  filenames.lastIndex = 0;
+  const surroundingLink = beforeLink ? container.closest('a') : null;
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-    acceptNode: node => node.parentElement.closest('a') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    acceptNode: node => {
+      const link = node.parentElement.closest('a');
+      return link && link !== surroundingLink ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
   });
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
@@ -72,6 +89,8 @@ export function linkWiReferences(container, entry) {
     }
     if (!end) continue;
     fragment.append(node.data.slice(end));
+    beforeLink?.();
+    beforeLink = undefined;
     node.replaceWith(fragment);
   }
 }
@@ -94,7 +113,7 @@ async function openReferencedWi(filename, origin) {
   dialog.className = 'dialog-shell detail-dialog wi-reference-dialog';
   const title = document.createElement('h2');
   title.id = `wi-reference-title-${childDialogs.length + 1}`;
-  title.textContent = "参照先のワークアイテム";
+  title.textContent = filename;
   title.className = "page-heading";
   dialog.setAttribute('aria-labelledby', title.id);
   const header = document.createElement('header');
@@ -110,7 +129,14 @@ async function openReferencedWi(filename, origin) {
   const body = document.createElement('div');
   body.className = 'dialog-body';
   body.tabIndex = 0;
-  body.textContent = `${filename}を読み込み中…`;
+  const loading = document.createElement('span');
+  loading.className = 'inline-loading';
+  loading.setAttribute('role', 'status');
+  const loadingLabel = document.createElement('span');
+  loadingLabel.className = 'visually-hidden';
+  loadingLabel.textContent = '読み込み中';
+  loading.append(loadingLabel);
+  body.append(loading);
   const open = document.createElement('button');
   open.type = 'button';
   open.textContent = 'このWIを開く';
@@ -158,7 +184,7 @@ async function openReferencedWi(filename, origin) {
   async function read() {
     if (!dialog.open) return;
     try {
-      const {entry} = await api(`/api/entries/${encodeURIComponent(filename)}`);
+      const {entry} = await readEntry(filename);
       if (!dialog.open || document.body.dataset.screen !== screen) return;
       setUpdateError(screen, key);
       const view = document.getElementById('detail-view-template').content.cloneNode(true);
@@ -167,7 +193,7 @@ async function openReferencedWi(filename, origin) {
         parts.set(part.id, part);
         part.removeAttribute('id');
       }
-      renderDetailView(entry, id => parts.get(id));
+      renderDetailView(entry, id => parts.get(id), title);
       body.replaceChildren(view);
       open.hidden = false;
       open.addEventListener('click', () => {

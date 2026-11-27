@@ -2,8 +2,9 @@ import {readFailure} from "./common.js";
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, recordUpdateSuccess, setUpdateError, createReadRecovery, setDisplayedReadError
+  resyncWhenVisible, updateNavButtons, timedFetch, beginOperation, recordUpdateSuccess, setUpdateError, createReadRecovery, setDisplayedReadError
 } from "./common.js";
+import {decorateWiReferences} from "./wi_reference.js";
 import {createSessionDetail} from "./sessions_detail.js";
 import {registerScreen} from "./shell.js";
 
@@ -13,7 +14,7 @@ function sessionDiagnostic(entry, reason) {
   return diagnostic("セッション", entry.host, `${ENGINE_LABELS[entry.engine] || entry.engine} / ${entry.path}`, reason);
 }
 let sessions = [];
-let sessionRoots = [];
+let listLoaded = false;
 let selected = null;
 let queryText = "";
 let visibleLimit = 100;
@@ -21,6 +22,7 @@ let filterTimer = null;
 let fullTextMatches = null;
 let fullTextRequest = null;
 let fullTextStatus = "";
+let searchInterrupted = false;
 const expandedKeys = new Set();
 let visibleSessions = [];
 // 画面DOMの参照は初回の`init`で確定する。
@@ -93,6 +95,11 @@ function isSelectedSession(entry) {
   return isSelected(selected, entry);
 }
 
+function showSessionList({focus = false} = {}) {
+  document.getElementById("sessions-app").dataset.view = "list";
+  if (focus) (listEl.querySelector('[aria-current="true"]') ?? filterEl).focus();
+}
+
 function renderSessions() {
   const rows = treeRows();
   visibleSessions = rows.map(row => row.entry);
@@ -103,9 +110,9 @@ function renderSessions() {
       row = document.createElement("div");
       row.className = "session-tree-row";
     }
-    row.setAttribute("role", "treeitem");
+    row.setAttribute("role", "listitem");
     row.setAttribute("aria-level", String(level));
-    row.style.paddingInlineStart = `${(level - 1) * 16}px`;
+    row.style.setProperty("--session-depth", String(level - 1));
     let item = row.querySelector(".session-item");
     if (!item) {
       item = document.createElement("button");
@@ -120,20 +127,18 @@ function renderSessions() {
 
     const cwd = document.createElement("div");
     cwd.className = "session-cwd pane-item-title";
-    cwd.textContent = entry.cwd || "(作業ディレクトリ不明)";
+    const labelText = entry.label;
+    row.querySelector(":scope > .session-cwd")?.remove();
+    item.removeAttribute("aria-label");
+    cwd.textContent = labelText || entry.cwd || "作業ディレクトリ不明";
+    item.title = [labelText, entry.cwd].filter(Boolean).join(" — ");
 
     const meta = document.createElement("div");
     meta.className = "session-meta pane-item-meta";
     const host = document.createElement("span");
-    host.textContent = entry.host;
+    host.textContent = [labelText && entry.cwd, entry.host].filter(Boolean).join(" · ");
     const startedAt = document.createElement("span");
     startedAt.textContent = formatTime(entry.started_at);
-    if (queryText && entry.label?.toLowerCase().includes(queryText)) {
-      const label = document.createElement("span");
-      label.className = "pane-item-title";
-      label.textContent = entry.label;
-      meta.append(label);
-    }
     meta.append(host, startedAt);
     item.replaceChildren(cwd, meta);
 
@@ -143,43 +148,57 @@ function renderSessions() {
       warning.textContent = sessionDiagnostic(entry, entry.warning);
       item.append(warning);
     }
-    // 子の無い行にも同じ幅の開閉欄を置き、子の有無で項目の開始位置がずれないようにする。
     let toggle = row.querySelector(".session-tree-toggle, .session-tree-leaf");
     if (childCount) {
       if (!toggle || toggle.tagName !== "BUTTON") {
         toggle?.remove();
         toggle = document.createElement("button");
         toggle.type = "button";
-        toggle.className = "session-tree-toggle";
+        toggle.className = "session-tree-toggle browse-icon-action";
+        toggle.innerHTML = '<svg class="app-icon" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>';
         toggle.addEventListener("click", () => {
           if (expandedKeys.has(key)) expandedKeys.delete(key);
           else expandedKeys.add(key);
           renderSessions();
           listEl.querySelector(`[data-key="${CSS.escape(key)}"] .session-tree-toggle`)?.focus();
         });
-        row.insertBefore(toggle, row.firstChild);
+        row.append(toggle);
       }
-      toggle.textContent = expandedKeys.has(key) ? "▾" : "▸";
-      toggle.setAttribute("aria-label", `${entry.session_id}の子セッションを${expandedKeys.has(key) ? "折り畳む" : "展開する"}`);
-      toggle.setAttribute("aria-expanded", String(expandedKeys.has(key)));
+      const expanded = expandedKeys.has(key) || Boolean(queryText);
+      const label = expanded ? "子セッションを折り畳む" : "子セッションを展開する";
+      toggle.setAttribute("aria-label", label + ": " + cwd.textContent);
+      toggle.dataset.tooltip = label;
+      toggle.setAttribute("aria-expanded", String(expanded));
+      toggle.hidden = Boolean(queryText);
     } else if (!toggle || toggle.tagName === "BUTTON") {
       toggle?.remove();
       toggle = document.createElement("span");
       toggle.className = "session-tree-leaf";
       toggle.setAttribute("aria-hidden", "true");
-      row.insertBefore(toggle, row.firstChild);
+      row.append(toggle);
     }
-    if (item.parentNode !== row) row.append(item);
+    if (item.parentNode !== row) row.insertBefore(item, toggle);
+    if (labelText) {
+      decorateWiReferences(cwd, {beforeLink: () => {
+        item.before(cwd);
+        const action = document.createElement("span");
+        action.className = "pane-item-title";
+        action.textContent = "セッションを開く";
+        item.prepend(action);
+        item.setAttribute("aria-label", `${action.textContent}: ${labelText}`);
+      }});
+    }
     return row;
   });
-  document.getElementById("sessions-empty").hidden = rows.length !== 0;
+  document.getElementById("sessions-empty").hidden = !listLoaded || rows.length !== 0;
   const empty = document.getElementById("sessions-empty");
   const searchStatus = document.getElementById("sessions-search-status");
   searchStatus.textContent = fullTextStatus;
   searchStatus.hidden = !fullTextStatus;
+  document.getElementById("sessions-restart-search").hidden = !searchInterrupted;
   if (fullTextStatus) empty.hidden = true;
   empty.querySelector("p").textContent = sessions.length === 0
-    ? `ユーザーの発話を含むセッション記録はまだありません。発話が保存された記録は自動で一覧へ加わります。対象root: ${sessionRoots.join("、")}`
+    ? "ユーザーの発話を含むセッション記録はまだありません。発話が保存された記録は自動で一覧へ加わります。"
     : "一致するセッションはありません。";
   empty.querySelector("button").hidden = !queryText;
   document.getElementById("sessions-sentinel").hidden = rows.length <= visibleLimit;
@@ -262,9 +281,7 @@ function showListWarnings(warnings) {
       setUpdateError("sessions", `host:${host}`, `${host}のセッション一覧を取得できません。`, loadList);
     }
   }
-  remoteRetry = setTimeout(() => {
-    if (document.body.dataset.screen === "sessions") void loadList();
-  }, delay);
+  remoteRetry = setTimeout(() => void loadList(), delay);
 }
 
 async function fetchList(timing = {}) {
@@ -279,7 +296,7 @@ async function fetchList(timing = {}) {
     const failed = new Set(warnings.filter(warning => warning.retryable !== undefined).map(warning => warning.host));
     sessions = [...(payload.sessions || []), ...sessions.filter(entry => failed.has(entry.host))];
     const hasMetadataMatch = queryText && sessions.some(matchesMetadata);
-    if (hasMetadataMatch) cancelFullTextSearch();
+    if (!searchInterrupted && hasMetadataMatch) cancelFullTextSearch();
     const currentKeys = new Set(sessions.map(sessionKey));
     const listChanged = currentKeys.size !== previousKeys.size || [...currentKeys].some(key => !previousKeys.has(key));
     for (const key of expandedKeys) if (!currentKeys.has(key)) expandedKeys.delete(key);
@@ -287,12 +304,14 @@ async function fetchList(timing = {}) {
       const message = sessionDiagnostic(selected, "選択したセッション記録は見つかりません。");
       selected = null;
       detail.clear(message);
+      document.getElementById("sessions-selection-status").textContent = message;
+      showSessionList({focus: window.matchMedia("(max-width: 768px)").matches && document.querySelector("#sessions-app main").contains(document.activeElement)});
       if (location.pathname.endsWith("/sessions") && location.search) history.replaceState({atkSession: true}, "", location.pathname);
     }
-    sessionRoots = payload.roots || [];
+    listLoaded = true;
     recordUpdateSuccess("sessions", "list");
     const searched = fullTextMatches !== null || fullTextRequest !== null;
-    if (queryText && !hasMetadataMatch && (hadMetadataMatch || (searched && listChanged))
+    if (!searchInterrupted && queryText && !hasMetadataMatch && (hadMetadataMatch || (searched && listChanged))
         && queryText === filterEl.value.trim().toLowerCase()) {
       void applySessionFilter();
     } else {
@@ -300,6 +319,8 @@ async function fetchList(timing = {}) {
     }
   } catch (error) {
     if (error.name !== "AbortError") setDisplayedReadError("sessions", "list", "セッション一覧を取得できません。", loadList);
+  } finally {
+    document.getElementById("sessions-list-loading").hidden = true;
   }
 }
 
@@ -322,6 +343,8 @@ function changesSelectedFamily(message) {
 
 const detail = createSessionDetail({ENGINE_LABELS, sessionDiagnostic, formatTime, getSessions: () => sessions, onSelect: (value) => {
   selected = value;
+  document.getElementById("sessions-app").dataset.view = "detail";
+  document.getElementById("sessions-selection-status").textContent = "";
   renderSessions();
 }});
 const openSession = (...args) => detail.openSession(...args);
@@ -367,6 +390,21 @@ function cancelFullTextSearch() {
   fullTextRequest = null;
   fullTextMatches = null;
   fullTextStatus = "";
+  searchInterrupted = false;
+}
+
+function stopSearchOnLeave() {
+  clearTimeout(filterTimer);
+  const input = filterEl.value.trim().toLowerCase();
+  if (!fullTextRequest && input === queryText) return;
+  fullTextRequest?.abort();
+  fullTextRequest = null;
+  if (input !== queryText) fullTextMatches = null;
+  queryText = input;
+  searchInterrupted = Boolean(input);
+  fullTextStatus = searchInterrupted ? "検索を中断しました。" : "";
+  setUpdateError("sessions", "search");
+  renderSessions();
 }
 
 async function applySessionFilter() {
@@ -433,17 +471,16 @@ function selectedRecordFromUrl() {
 }
 
 async function init() {
-  setDrawerOpen("sessions", false);
   listEl = document.getElementById("sessions");
   warningsEl = document.getElementById("warnings");
   detail.init();
   filterEl = document.getElementById("sessions-filter");
   document.addEventListener("atk-screen-change", () => {
-    if (document.body.dataset.screen !== "sessions") {
-      clearTimeout(filterTimer);
-      cancelFullTextSearch();
-      setUpdateError("sessions", "search");
-    } else if (filterEl.value.trim()) void applySessionFilter();
+    if (document.body.dataset.screen !== "sessions") stopSearchOnLeave();
+  });
+  document.getElementById("sessions-restart-search").addEventListener("click", () => {
+    filterEl.focus();
+    void applySessionFilter();
   });
   filterEl.addEventListener("input", () => {
     clearTimeout(filterTimer);
@@ -455,10 +492,7 @@ async function init() {
     if (!item) return;
     openSession(item.dataset.host, item.dataset.engine, item.dataset.path);
   });
-  document.getElementById("sessions-menu-btn").addEventListener("click", () => {
-    setDrawerOpen("sessions", !document.getElementById("screen-sessions").classList.contains("drawer-open"));
-  });
-  document.getElementById("sessions-drawer-backdrop").addEventListener("click", () => setDrawerOpen("sessions", false));
+  document.getElementById("sessions-menu-btn").addEventListener("click", () => showSessionList({focus: true}));
   document.getElementById("sessions-clear-filter").addEventListener("click", () => {
     filterEl.value = "";
     clearTimeout(filterTimer);
@@ -474,19 +508,24 @@ async function init() {
     .observe(document.getElementById("sessions-sentinel"));
   window.addEventListener("popstate", () => {
     const entry = selectedRecordFromUrl();
-    if (entry) void openSession(entry.host, entry.engine, entry.path, [], false);
+    if (entry && !isSelected(entry, selected ?? {})) void openSession(entry.host, entry.engine, entry.path, [], false);
+    else if (!entry && location.pathname === `${BASE_PATH}/sessions`) {
+      showSessionList({focus: matchMedia("(max-width: 768px)").matches});
+    }
   });
   document.getElementById("sessions-prev-btn").addEventListener("click", () => openRelativeSession(-1));
   document.getElementById("sessions-next-btn").addEventListener("click", () => openRelativeSession(1));
+  const fromUrl = selectedRecordFromUrl();
   subscribeEvents();
   await Promise.race([firstSubscription, new Promise(resolve => setTimeout(resolve, INITIAL_SUBSCRIBE_WAIT_MS))]);
   initialLoadStarted = true;
-  await loadList();
-  const fromUrl = selectedRecordFromUrl();
+  const initialList = loadList();
+  const explicitDetail = fromUrl && !selected
+    ? openSession(fromUrl.host, fromUrl.engine, fromUrl.path, [], false, false, initialList) : null;
+  await initialList;
   const mobile = window.matchMedia("(max-width: 768px)").matches;
-  if (fromUrl && !selected) {
-    await openSession(fromUrl.host, fromUrl.engine, fromUrl.path, [], false, false);
-  } else if (!selected && sessions.length > 0 && !mobile) {
+  if (explicitDetail) await explicitDetail;
+  else if (!selected && sessions.length > 0 && !mobile) {
     await openSession(sessions[0].host, sessions[0].engine, sessions[0].path, [], false, false);
   }
   resyncWhenVisible(resyncFromServer, {focus: false});

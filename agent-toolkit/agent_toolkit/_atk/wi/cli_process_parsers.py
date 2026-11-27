@@ -23,7 +23,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     check_alerts.add_argument(
         "--periodic",
         action="store_true",
-        help="取込を有効にしたGitHubリポジトリでCIとIssue・PRを定期確認する。",
+        help="GitLabのCI、または取込を有効にしたGitHubのCIとIssue・PRを定期確認する。",
     )
     loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
     loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)

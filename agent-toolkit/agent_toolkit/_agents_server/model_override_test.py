@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 import socket
@@ -9,10 +10,18 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import backends, mcp_tools
+from agent_toolkit._agents_server import backends, launch_requests, mcp_tools, session_handoff, state
 from agent_toolkit._atk.wi import repo
 from agent_toolkit._atk.wi.uwi_body import ANSWER_MARKER
-from agent_toolkit._testing.agents_server_support import _complete, _manager_with_fake, _observed_input_params
+from agent_toolkit._common.claude_usage_limit import UsageLimitState
+from agent_toolkit._common.task_documents import task_prompt_header
+from agent_toolkit._testing.agents_server_support import (
+    FakeBackend,
+    _complete,
+    _manager_with_fake,
+    _observed_input_params,
+    install_backend,
+)
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -220,6 +229,50 @@ async def test_handoff_override_is_bound_to_successor_before_release(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["current", "previous", "wrong-candidate", "no-codex"])
+async def test_repository_handoff_rechecks_codex_direction_in_the_latest_human_input(monkeypatch, tmp_path, scope):
+    setting = "claude:sonnet/high" if scope == "no-codex" else "codex:configured/high,claude:sonnet/high"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", setting)
+    monkeypatch.setattr(session_handoff, "prepare_prompt", lambda predecessor: predecessor.prompt)
+    async with _manager_with_fake("codex") as (manager, backend):
+        record = tmp_path / "session.jsonl"
+        _record(monkeypatch, manager, record)
+        records = [_human("あとrepository-processはcodex使えって言ったでしょ")]
+        if scope == "previous":
+            records.append(_human("次はモデルを指定せず、別の依頼を進める"))
+        _save(record, *records)
+        past = FakeBackend(manager.sessions, "claude")
+        install_backend(manager, "claude", past)
+        role = launch_requests.resolve_task_document_path("repository-process")
+        child = state.SessionState(
+            "old-claude",
+            str(tmp_path),
+            engine="claude",
+            model="sonnet",
+            effort="high",
+            model_type="execute",
+            prompt=task_prompt_header(role),
+        )
+        _complete(child, message="前任の成果")
+        manager.sessions[child.session_id] = child
+        alternate = "codex:configured/high" if scope != "wrong-candidate" else _MODEL
+        inputs = {
+            "handoff_from": child.session_id,
+            "model_type": alternate,
+            "model_override": "user_instruction",
+            "model_override_evidence": _PROOF,
+        }
+        if scope == "current":
+            await mcp_tools.mcp.call_tool("start", inputs)
+            assert backend.start_calls == [("configured", "high", "delegate")]
+        else:
+            with pytest.raises(ToolError, match="今回の対象・工程・全候補"):
+                await mcp_tools.mcp.call_tool("start", inputs)
+            assert not backend.start_calls
+        assert not past.start_calls and not past.send_calls
+
+
+@pytest.mark.asyncio
 async def test_role_override_requires_human_selection_before_the_backend(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -270,7 +323,7 @@ async def test_unrecorded_fallback_does_not_start_or_release(
                 backend.start_calls.clear()
         release = AsyncMock(wraps=backend.release_session)
         monkeypatch.setattr(backend, "release_session", release)
-        with pytest.raises(ToolError, match="失敗記録.*起動していない"):
+        with pytest.raises(ToolError, match="週間上限.*起動していない"):
             await mcp_tools.mcp.call_tool(
                 "start",
                 {
@@ -285,9 +338,7 @@ async def test_unrecorded_fallback_does_not_start_or_release(
 
 
 @pytest.mark.asyncio
-async def test_recorded_start_failure_allows_recovery_only_for_the_failed_phase(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
+async def test_dependency_failure_does_not_authorize_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_MODEL", "codex:configured/high")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_FAST_MODEL", "codex:configured/high")
     inputs = {"cwd": str(tmp_path), "mode": "delegate", "prompt": "画面の品質を判定する"}
@@ -301,11 +352,124 @@ async def test_recorded_start_failure_allows_recovery_only_for_the_failed_phase(
             await mcp_tools.mcp.call_tool("start", {**inputs, "model_type": "review"})
         monkeypatch.setattr(backend, "start", original_start)
         fallback = {**inputs, "model_type": _MODEL, "model_override": "fallback_failure"}
-        with pytest.raises(ToolError, match="失敗記録"):
-            await mcp_tools.mcp.call_tool("start", {**fallback, "model_override_evidence": "phase:review_fast"})
+        for phase in ("review", "review_fast"):
+            with pytest.raises(ToolError, match="週間上限"):
+                await mcp_tools.mcp.call_tool("start", {**fallback, "model_override_evidence": f"phase:{phase}"})
         assert not backend.start_calls
-        await mcp_tools.mcp.call_tool("start", {**fallback, "model_override_evidence": "phase:review"})
-        assert backend.start_calls == [("explicit", "high", "delegate")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "phase", "another_phase"), [("delegate", "review", "execute"), ("explore", "chores_fast", "chores")]
+)
+async def test_failed_handoff_does_not_change_phase_without_authority(monkeypatch, tmp_path, mode, phase, another_phase):
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{phase.upper()}_MODEL", "codex:original/high,codex:configured/high")
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{another_phase.upper()}_MODEL", "codex:other/high")
+    monkeypatch.setattr(session_handoff, "prepare_prompt", lambda predecessor: predecessor.prompt)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(cwd=str(tmp_path), mode=mode, prompt="前の作業", model_type=phase)
+        child = manager.sessions[started["session_id"]]
+        _complete(child, error={"codexErrorInfo": "serverOverloaded"})
+        backend.start_calls.clear()
+        release = AsyncMock(wraps=backend.release_session)
+        monkeypatch.setattr(backend, "release_session", release)
+        for wrong in (another_phase, _MODEL):
+            with pytest.raises(ToolError, match="週間上限"):
+                await mcp_tools.mcp.call_tool("start", {"handoff_from": child.session_id, "model_type": wrong})
+        assert not backend.start_calls
+        release.assert_not_awaited()
+        await mcp_tools.mcp.call_tool("start", {"handoff_from": child.session_id, "model_type": phase})
+        assert backend.start_calls == [("configured", "high", mode)]
+
+
+@pytest.mark.asyncio
+async def test_observation_can_use_configured_phase_but_not_override_it(monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:configured/high")
+    inputs = {"cwd": str(tmp_path), "mode": "explore", "prompt": "実機確認"}
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        with pytest.raises(ToolError, match="週間上限.*起動していない"):
+            await mcp_tools.mcp.call_tool(
+                "start",
+                {**inputs, "model_type": "codex:luna/low", "model_override": "observation", "model_override_evidence": "観測"},
+            )
+        assert not backend.start_calls
+        await mcp_tools.mcp.call_tool("start", inputs)
+        assert backend.start_calls == [("configured", "high", "explore")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["weekly", "available", "text", "five_hour", "expired", "other_phase", "other_cwd"])
+async def test_public_fallback_checks_weekly_evidence_for_every_candidate(monkeypatch, tmp_path, scenario):
+    inputs = {"cwd": str(tmp_path), "mode": "delegate", "prompt": "同じ作業の起動"}
+    alternate = tmp_path / "other"
+    alternate.mkdir()
+    now = datetime.datetime.now(datetime.UTC)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        for candidate in ("configured-a", "configured-b"):
+            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_MODEL", f"codex:{candidate}/high")
+            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_FAST_MODEL", f"codex:{candidate}/high")
+            second = candidate.endswith("-b")
+            phase = "review_fast" if second and scenario == "other_phase" else "review"
+            cwd = str(alternate) if second and scenario == "other_cwd" else str(tmp_path)
+            started = await mcp_tools.start(cwd=cwd, mode="delegate", prompt=inputs["prompt"], model_type=phase)
+            if second and scenario == "available":
+                continue
+            session = manager.sessions[started["session_id"]]
+            kind = "five_hour" if second and scenario == "five_hour" else "seven_day"
+            reset = now + datetime.timedelta(hours=-1 if second and scenario == "expired" else 1)
+            session.status = "failed"
+            session.error = (
+                {"message": "weekly usage limit"}
+                if second and scenario == "text"
+                else {"codexErrorInfo": "usageLimitExceeded", "usageLimit": {"type": kind, "resetsAt": reset.isoformat()}}
+            )
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_MODEL", "codex:configured-a/high,codex:configured-b/high")
+        backend.start_calls.clear()
+        fallback = {
+            **inputs,
+            "model_type": _MODEL,
+            "model_override": "fallback_failure",
+            "model_override_evidence": "phase:review",
+        }
+        if scenario == "weekly":
+            await mcp_tools.mcp.call_tool("start", fallback)
+            assert backend.start_calls == [("explicit", "high", "delegate")]
+        else:
+            with pytest.raises(ToolError, match="週間上限.*起動していない"):
+                await mcp_tools.mcp.call_tool("start", fallback)
+            assert not backend.start_calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_status", [429, 529])
+async def test_claude_fallback_combines_rejection_and_weekly_report(monkeypatch, tmp_path, api_status):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_MODEL", "claude:sonnet/high")
+    inputs = {"cwd": str(tmp_path), "mode": "delegate", "prompt": "作業を再開"}
+    async with _manager_with_fake("claude") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        result = await mcp_tools.start(cwd=str(tmp_path), mode="delegate", prompt=inputs["prompt"], model_type="review")
+        session = manager.sessions[result["session_id"]]
+        session.status = "failed"
+        session.error = {"apiErrorStatus": api_status}
+        future = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
+        session.usage_limit = UsageLimitState("rejected", "seven_day_sonnet", int(future.timestamp()))
+        backend.start_calls.clear()
+        fallback = {
+            **inputs,
+            "model_type": "claude:haiku/low",
+            "model_override": "fallback_failure",
+            "model_override_evidence": "phase:review",
+        }
+        if api_status == 429:
+            await mcp_tools.mcp.call_tool("start", fallback)
+            assert backend.start_calls == [("haiku", "low", "delegate")]
+        else:
+            with pytest.raises(ToolError, match="週間上限"):
+                await mcp_tools.mcp.call_tool("start", fallback)
+            assert not backend.start_calls
 
 
 @pytest.mark.asyncio

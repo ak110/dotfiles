@@ -556,7 +556,7 @@ sys.exit({status})
     output = capfd.readouterr().out
     assert output.startswith(child_hint + "\n")
     if display:
-        assert "完了報告\n\n本文\n" in output
+        assert output.splitlines()[:-2] == [*child_hint.splitlines(), "このセッションの完了報告:", "完了報告", "", "本文"]
         assert output.splitlines()[-2] == "同じ起動方法で再開:"
         command = output.splitlines()[-1]
         if os.name == "nt":

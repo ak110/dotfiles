@@ -13,7 +13,7 @@ from agent_toolkit._atk import config_repositories, outcome, reset_reservations
 from agent_toolkit._atk import config_settings as _settings
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
-lazy from agent_toolkit._atk import git_sync
+lazy from agent_toolkit._atk import config_repository_readers, git_sync
 lazy from agent_toolkit._atk.wi import sync as wi_sync
 lazy from agent_toolkit._git import command as git_command
 
@@ -378,11 +378,25 @@ def _migrate_locked(
     shared: dict[str, str],
     plan: dict[str, Any],
     choices: dict[str, Choice],
+    *,
+    require_repository_changes: bool = False,
 ) -> int:
     items = [item for item in plan["items"] if item["kind"] in ("equal", "local_only") or item["key"] in choices]
     values, retained = _transfer(local, shared, items, choices)
     if values == shared and retained == local:
         return 0
+    changes_repositories = values.get(_REPOSITORIES) != shared.get(_REPOSITORIES) or retained.get(_REPOSITORIES) != local.get(
+        _REPOSITORIES
+    )
+    if changes_repositories and not config_repository_readers.prepare_separated_format(required=require_repository_changes):
+        items = [item for item in items if not item.get("repo")]
+        values, retained = _transfer(local, shared, items, choices)
+        if _REPOSITORIES in shared:
+            values[_REPOSITORIES] = shared[_REPOSITORIES]
+        if _REPOSITORIES in local:
+            retained[_REPOSITORIES] = local[_REPOSITORIES]
+        if values == shared and retained == local:
+            return 0
     if pending(_settings.load_config_strict()) != local:
         raise _next_action.ActionableError("移行中にローカル設定が変わった", next_action=NEXT_ACTION)
     notes = path.parent
@@ -422,7 +436,7 @@ def apply(revision: str, choices: dict[str, Choice]) -> int:
                 raise _next_action.ActionableError(
                     "異なる設定ごとに選択が必要: " + "、".join(plan["required"]), next_action=NEXT_ACTION
                 )
-            moved = _migrate_locked(path, local, shared, plan, choices)
+            moved = _migrate_locked(path, local, shared, plan, choices, require_repository_changes=True)
             _startup_failures.discard(path)
             if not moved and plan["invalid"]:
                 raise _next_action.ActionableError(
@@ -536,6 +550,8 @@ def update_shared_settings(
             _startup_failures.discard(path)
             local, current = _read(path)
             changed = update(dict(current))
+            if changed.get(_REPOSITORIES) != current.get(_REPOSITORIES):
+                config_repository_readers.require_compatible_readers()
             if blocked := _blocked(_plan(path, local, current), current, changed, touched or set(), touched_repositories or {}):
                 raise _next_action.ActionableError(
                     "共有へ保存できない未解決の設定: " + "、".join(blocked), next_action=NEXT_ACTION

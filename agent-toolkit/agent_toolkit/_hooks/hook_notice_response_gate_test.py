@@ -1,5 +1,6 @@
 """警告のhook通知に対応行の無い終了を、Stop入力の記録で一度だけ止めることを確かめる。 pyfltr: allow-comment"""
 
+import hashlib
 import json
 import pathlib
 
@@ -16,6 +17,8 @@ _WARN = (
     '<atk-auto source="pretooluse" kind="warn">\n'
     "セッション原記録の直接参照である。\n次の操作: 照会コマンドを使ってください。\n</atk-auto>"
 )
+_WARN_ID = hashlib.sha256(_WARN.encode()).hexdigest()[:12]
+_RESPONSE = f"hook通知への対応: pretooluse: [{_WARN_ID}] セッション原記録の直接参照である。 → 照会コマンドで取得した。"
 _NOTICE = '<atk-auto source="pretooluse" kind="notice">\n検索の前に、スキルを起動してください。\n</atk-auto>'
 
 
@@ -66,13 +69,13 @@ def _send_receipt(identifier: str, *, ok: bool = True) -> dict:
     ("entries", "blocked"),
     [
         ([_HUMAN, _attachment(_WARN), _text("調査を終えた。")], True),
-        ([_HUMAN, _attachment(_WARN), _text("hook通知への対応: 照会コマンドへ切り替えた。\n調査を終えた。")], False),
-        ([_HUMAN, _attachment(_WARN), _text("- hook通知への対応: 誤検出（引用だけを読んだ）。")], False),
+        ([_HUMAN, _attachment(_WARN), _text(_RESPONSE + "\n調査を終えた。")], False),
+        ([_HUMAN, _attachment(_WARN), _text("- " + _RESPONSE)], False),
         (
             [
                 _HUMAN,
                 _attachment(_WARN),
-                _call(_SEND_TO_USER, "s1", {"message": "報告\nhook通知への対応: 処置した。"}),
+                _call(_SEND_TO_USER, "s1", {"message": "報告\n" + _RESPONSE}),
                 _send_receipt("s1"),
             ],
             False,
@@ -81,11 +84,11 @@ def _send_receipt(identifier: str, *, ok: bool = True) -> dict:
             [
                 _HUMAN,
                 _attachment(_WARN),
-                *repl_send_to_user_entries("repl_warn", {"message": "hook通知への対応: 処置した。"}, ok=True),
+                *repl_send_to_user_entries("repl_warn", {"message": _RESPONSE}, ok=True),
             ],
             False,
         ),
-        ([_HUMAN, _text("hook通知への対応: 先に書いた。"), _attachment(_WARN), _text("終えた。")], True),
+        ([_HUMAN, _text(_RESPONSE), _attachment(_WARN), _text("終えた。")], True),
         ([_HUMAN, _attachment(_NOTICE), _text("終えた。")], False),
         ([_attachment(_WARN), _HUMAN, _text("終えた。")], False),
         ([_HUMAN, _attachment(_WARN, record_type="hook_system_message"), _text("終えた。")], True),
@@ -155,14 +158,14 @@ def test_send_block_stops_report_once_until_response(tmp_path: pathlib.Path) -> 
     blocked = _send_block(entries, tmp_path, _SEND_TO_USER, {"message": "途中報告"})
     assert blocked is not None and "未対応の警告" in blocked and "pretooluse" in blocked
     assert _send_block(entries, tmp_path, _SEND_TO_USER, {"message": "途中報告"}) is None
-    assert _send_block(entries, tmp_path, _SEND_TO_USER, {"message": "hook通知への対応: 処置した。\n途中報告"}) is None
+    assert _send_block(entries, tmp_path, _SEND_TO_USER, {"message": _RESPONSE + "\n途中報告"}) is None
 
 
 def test_send_block_asks_question_after_response_report(tmp_path: pathlib.Path) -> None:
     entries = [_HUMAN, _attachment(_WARN)]
     blocked = _send_block(entries, tmp_path, "AskUserQuestion", {"questions": []})
     assert blocked is not None and "send_to_user" in blocked
-    answered = [*entries, _call(_SEND_TO_USER, "s1", {"message": "hook通知への対応: 誤検出。"}), _send_receipt("s1")]
+    answered = [*entries, _call(_SEND_TO_USER, "s1", {"message": _RESPONSE}), _send_receipt("s1")]
     assert _send_block(answered, tmp_path, "AskUserQuestion", {"questions": []}) is None
 
 
@@ -274,10 +277,60 @@ def test_misdetection_resolves_only_matching_delivery(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("repl", [False, True])
 def test_failed_send_does_not_resolve_warning(tmp_path: pathlib.Path, repl: bool) -> None:
-    body = {"message": "hook通知への対応: 処置した。"}
+    body = {"message": _RESPONSE}
     sent = (
         repl_send_to_user_entries("repl_warn", body, ok=False)
         if repl
         else [_call(_SEND_TO_USER, "s1", body), _send_receipt("s1", ok=False)]
     )
     assert _evaluate([_HUMAN, _attachment(_WARN), *sent], tmp_path)[0] == "block"
+
+
+def test_one_response_does_not_resolve_a_second_warning(tmp_path):
+    second = _WARN.replace("照会コマンド", "資料の全文取得")
+    first_warn = _attachment(_WARN)
+    second_warn = _attachment(second, uuid="warn-2")
+    decision, note = _evaluate([_HUMAN, first_warn, second_warn, _text(_RESPONSE)], tmp_path)
+    assert decision == "block"
+    assert _WARN_ID not in note
+    assert hashlib.sha256(second.encode()).hexdigest()[:12] in note
+
+
+@pytest.mark.parametrize("response", ["hook通知への対応:", "hook通知への対応: 処置済み"])
+def test_marker_by_itself_does_not_resolve_warning(tmp_path, response):
+    assert _evaluate([_HUMAN, _attachment(_WARN), _text(response)], tmp_path)[0] == "block"
+
+
+@pytest.mark.parametrize("order", ["unread", "unreviewed", "reversed", "read-then-review", "earlier-read", "missing-result"])
+def test_review_warning_needs_decision_after_full_read(tmp_path, order):
+    title = "レビュー返却が指定した資料の取得を確認できないまま、採否を記録する操作である。"
+    body = _WARN.replace("セッション原記録の直接参照である。", title)
+    identifier = hashlib.sha256(body.encode()).hexdigest()[:12]
+    response = f"hook通知への対応: pretooluse: [{identifier}] {title} → 対象全件を検証する判断に変更した。"
+    sid = "hook-notice-response"
+    required = json.dumps(["agent-basics:review-standards/SKILL.md"])
+    gate.review_receipt.observe(
+        {"tool_response": {"stdout": f"終了行: session_id=child status=completed read_requirements={required}"}},
+        sid,
+        "Bash",
+        {"command": "atk agents wait"},
+        str(tmp_path),
+    )
+    skill_input = {"skill": "agent-basics:review-standards"}
+    if order != "unread":
+        gate.review_receipt.observe({"tool_use_id": "read"}, sid, "Skill", skill_input, str(tmp_path))
+    read = [_call("Skill", "read", skill_input), _result("read", "レビューの判断基準")]
+    respond = _text(response)
+    turns = {
+        "unread": [respond],
+        "unreviewed": read,
+        "reversed": [respond, *read],
+        "read-then-review": [*read, respond],
+        "earlier-read": [respond],
+        "missing-result": [read[0], respond],
+    }
+    before = read if order == "earlier-read" else []
+    entries = [*before, _HUMAN, _attachment(body), *turns[order]]
+    decision, _ = _evaluate(entries, tmp_path)
+    assert (decision == "approve") is (order in {"read-then-review", "earlier-read"})
+    assert _evaluate(entries, tmp_path)[0] == decision

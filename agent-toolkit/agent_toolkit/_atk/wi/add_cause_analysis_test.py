@@ -8,7 +8,7 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk.wi import add as add_module
+from agent_toolkit._atk.wi import add_cli
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._testing import plan_fixture
 from agent_toolkit._testing.wi_add_support import (
@@ -230,11 +230,12 @@ def test_add_rejects_undetermined_cause_in_uwi(
     monkeypatch.setenv("CLAUDECODE", "1")
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module.cmd_add(
+        add_cli.cmd_add(
             _cmd_add_args(tmp_path, f"どちらを選ぶか？\n\n## 判断材料\n\n{material}", source="test", entry_type=WI_TYPE_UWI),
             notes,
             _FIXED_DT,
             tmp_path,
+            matches_submit_bindings=lambda *_: False,
         )
 
     assert exc_info.value.code == 1

@@ -272,10 +272,11 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
         snapshots[host] = snapshot
         errors.pop(host, None)
 
-    def with_host_status(snapshot: dict[str, typing.Any], hosts: tuple[str, ...]) -> quart.Response:
+    def with_host_status(snapshot: dict[str, typing.Any], hosts: tuple[str, ...], **status: str) -> quart.Response:
         return json_no_store(
             {
                 **snapshot,
+                **status,
                 "hosts": hosts,
                 "automatic_errors": {key: errors[key] for key in hosts if key in errors},
                 "automatic_unsupported": sorted(unsupported.intersection(hosts)),
@@ -301,13 +302,39 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
 
     pending: dict[str, asyncio.Task[None]] = {}
 
-    async def refresh_remote(host: str, *, observe_usage: bool = False) -> None:
+    def start_remote(host: str, *, observe_usage: bool = False) -> asyncio.Task[None]:
         task = pending.get(host)
         if task is None:
             task = asyncio.create_task(read_remote(host, observe_usage))
             pending[host] = task
             task.add_done_callback(lambda _: pending.pop(host, None))
-        await asyncio.shield(task)
+        return task
+
+    async def refresh_remote(host: str, *, observe_usage: bool = False) -> None:
+        await asyncio.shield(start_remote(host, observe_usage=observe_usage))
+
+    async def select_remote(host: str, hosts: tuple[str, ...]) -> quart.Response:
+        args = quart.request.args
+        task = pending.get(host)
+        current = snapshots.get(host)
+        waiting = args.get("wait") == "1"
+        retry = args.get("retry") == "1"
+        if task is None and not waiting:
+            known = host in unsupported or host in errors
+            if retry or (not known and (current is None or current["fetched_at"] == args.get("after"))):
+                task = start_remote(host)
+        if task is not None and waiting:
+            await asyncio.shield(task)
+        state = (
+            "pending"
+            if task is not None and not task.done()
+            else "legacy"
+            if host in unsupported
+            else "error"
+            if host in errors or host not in snapshots
+            else "ready"
+        )
+        return with_host_status(snapshots.get(host, {}), hosts, settings_state=state)
 
     async def refresh_remotes() -> None:
         shutdown = typing.cast(asyncio.Event, app.shutdown_event)
@@ -337,11 +364,18 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
             "text/html; charset=utf-8",
         )
 
+    @app.post("/api/settings/prepare")
+    async def settings_prepare() -> quart.Response:
+        start_refresh()
+        return json_no_store({})
+
     @app.get("/api/settings")
     async def settings_get() -> quart.Response:
-        start_refresh()
         try:
             host = await asyncio.to_thread(_request_host)
+            if host and quart.request.args.get("selection") == "1":
+                hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
+                return await select_remote(host, hosts)
             background = quart.request.args.get("background") == "1"
             observe_usage = background and quart.request.args.get("observe_usage") == "1"
             if observe_usage and not host:
@@ -406,8 +440,15 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
             raise WebInputError("JSONオブジェクトを指定してください", next_action="画面から値を入力して保存する")
         try:
             host = await asyncio.to_thread(_request_host)
+            revision = payload.pop("settings_revision", None)
+            if host and revision is not None and host in pending:
+                return _stale_write()
             async with locks.setdefault(host, asyncio.Lock()):
                 if host:
+                    if revision is not None and (
+                        revision != snapshots.get(host, {}).get("fetched_at") or host in errors or host in unsupported
+                    ):
+                        return _stale_write()
                     # 失敗時も遠隔で変更が行われたか分からないため、保存前の値を再利用しない。 pyfltr: allow-comment
                     snapshots.pop(host, None)
                     await asyncio.to_thread(_remote_update, host, payload)
@@ -416,3 +457,9 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
         except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
             raise web_input_error_from(error, next_action="説明で受理される値を確認し、入力を直して保存する") from error
         return json_no_store({"saved": True})
+
+
+def _stale_write() -> quart.Response:
+    response = json_no_store({"error": "最新の設定を取得し直してから保存してください"})
+    response.status_code = 409
+    return response

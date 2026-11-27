@@ -478,6 +478,7 @@ def _wait_session(
                 saved = False
                 _log_line(log, f"報告の保存確認に失敗した: {error}")
             if not saved:
+                output.report_missing = True
                 _outcome.report_failure(
                     f"報告用UWIのローカル保存を確認できない（ログ: {log_path}）",
                     next_action=(

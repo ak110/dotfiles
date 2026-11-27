@@ -449,7 +449,7 @@ def test_recover_keeps_registrations_with_selection_information(
         selected.unlink(missing_ok=True)
 
 
-@pytest.mark.parametrize("condition", ["dirty", "active-session", "foreign-owner", "partial-failure"])
+@pytest.mark.parametrize("condition", ["dirty", "ignored-config", "active-session", "foreign-owner", "partial-failure"])
 @pytest.mark.cpu_limit(
     2.0,
     reason=(
@@ -464,8 +464,16 @@ def test_recover_protects_unfinished_work_and_resumes_after_failure(
     worktree = pathlib.Path(record["worktree"])
     _legacy(record)
     record_path = pathlib.Path(record["record_path"])
+    before = record_path.read_bytes()
+    ignored_config = worktree / "agent-toolkit" / "tsconfig.json"
+    hand_written = '{"compilerOptions":{"strict":true}}\n'
     if condition == "dirty":
         (worktree / "unfinished.txt").write_text("未commitの成果", encoding="utf-8")
+    elif condition == "ignored-config":
+        (worktree / ".gitignore").write_text("/agent-toolkit/tsconfig.json\n", encoding="utf-8")
+        git_repository.commit_all(worktree, "型補完設定の無視規則")
+        ignored_config.parent.mkdir()
+        ignored_config.write_text(hand_written, encoding="utf-8")
     elif condition == "active-session":
         owner = session_registry.owner_process()
         assert owner is not None
@@ -499,6 +507,10 @@ def test_recover_protects_unfinished_work_and_resumes_after_failure(
         assert record["branch"] in git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
     else:
         assert "recovery" not in stored
+    if condition == "ignored-config":
+        assert record_path.read_bytes() == before
+        assert "agent-toolkit/tsconfig.json" in result["retained"][0]["reason"]
+        assert ignored_config.read_text(encoding="utf-8") == hand_written
 
 
 @pytest.mark.cpu_limit(

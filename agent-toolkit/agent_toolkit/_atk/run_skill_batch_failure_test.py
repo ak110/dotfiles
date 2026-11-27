@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import datetime
+import io
 import json
 import pathlib
-import platform
 import sys
+import threading
 
 import pytest
 
-from agent_toolkit._atk import run_skill_batch, run_skill_batch_evidence, run_skill_batch_test
+from agent_toolkit._atk import run_skill, run_skill_batch, run_skill_batch_evidence, run_skill_batch_test
+from agent_toolkit._atk.run_skill_progress import Progress
 from agent_toolkit._common import session_activity, session_review
 
 
@@ -118,6 +120,66 @@ def test_missing_record_does_not_discard_reregistered_generation(tmp_path, monke
 
 
 @pytest.mark.usefixtures("leaf_git_commands")
+def test_removed_codex_rollouts_do_not_fail_batch_preparation(tmp_path, monkeypatch):
+    notes = run_skill_batch_test._notes()  # pylint: disable=protected-access
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "default-codex"))
+    for session_id in ("removed-first", "removed-second"):
+        transcript = tmp_path / "isolated-codex" / "sessions" / "2026" / "11" / "26" / f"rollout-date-{session_id}.jsonl"
+        session_review.record(
+            {"hook_event_name": "SessionStart", "session_id": session_id, "transcript_path": str(transcript)},
+            host="codex",
+        )
+    assert len(session_review.pending()) == 2
+
+    def dispatch_model(_args):
+        pytest.fail("記録が残っていない対象でモデルを起動した")
+
+    assert run_skill_batch.dispatch(run_skill_batch_test._args("manual"), dispatch_model) == 0  # pylint: disable=protected-access
+    assert not session_review.pending()
+    assert not run_skill_batch_test._failure_awis(notes)  # pylint: disable=protected-access
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(1.25, reason="実Gitと`atk run-script session-review-prepare`で別のCodexホームから報告確定まで検証する。")
+@pytest.mark.parametrize("archived", [False, True])
+def test_batch_resolves_registered_rollout_in_other_codex_home(tmp_path, monkeypatch, archived):
+    # pylint: disable=protected-access
+    notes = run_skill_batch_test._notes()
+    session_id = "01a216c7-fe50-7361-878c-f507d87b537a"
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "runner-codex"))
+    registered = tmp_path / "other-codex" / "sessions" / "2026" / "11" / "26" / f"rollout-date-{session_id}.jsonl"
+    source = registered.parents[4] / "archived_sessions" / registered.name if archived else registered
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        json.dumps({"timestamp": "2026-11-26T07:35:35Z", "type": "session_meta", "payload": {"id": session_id}})
+        + "\n"
+        + json.dumps(
+            {
+                "timestamp": "2026-11-26T07:35:36Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "別のホームに保存した要求"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    session_review.record(
+        {"hook_event_name": "SessionStart", "session_id": session_id, "transcript_path": str(registered)},
+        host="codex",
+    )
+    calls: list[dict] = []
+    assert (
+        run_skill_batch.dispatch(
+            run_skill_batch_test._args("manual"), run_skill_batch_test._report_and_finish(notes, monkeypatch, calls)
+        )
+        == 0
+    )
+    assert [item["session_id"] for item in calls[0]["prepared"]] == [session_id]
+    assert not session_review.pending()
+    assert not run_skill_batch_test._failure_awis(notes)
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     1.0,
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.352秒。"),
@@ -154,27 +216,25 @@ def test_failure_body_survives_manifest_and_log_removal(tmp_path, phase):
     log.unlink(missing_ok=True)
     body = report.read_text(encoding="utf-8")
     details = json.loads("\n".join(line[4:] for line in body.splitlines() if line.startswith("    ")))
-    assert details["hostname"] == platform.node() and details["os"] == sys.platform
-    assert details["plugin_version"]
-    snapshot = details["targets"][0]
-    for field in ("host", "session_id", "transcript_path", "cwd", "target_repo", "review_batch"):
-        assert snapshot[field] == target[field]
-    # 選定と準備だけに使う項目は、準備に失敗した対象にだけ残す。  # pyfltr: allow-comment
-    for field in ("started_at", "updated_at", "generation"):
-        assert snapshot.get(field) == (target[field] if phase == "prepare" else None)
-    assert ("previous_scope" in snapshot) is (phase == "prepare")
-    assert snapshot["record_state"]["kind"] == ("ディレクトリ" if phase == "prepare" else "ファイル")
+    assert details["os"] == sys.platform
+    assert details["plugin_version"] and details["plugin_source"]["commit"]
     assert details["prepared_count"] == (0 if phase == "prepare" else 1)
-    assert details["prepared_session_ids"] == ([] if phase == "prepare" else ["one"])
     if phase == "prepare":
+        assert details["stage"] == "prepare-or-state"
+        snapshot = details["targets"][0]
+        for field in ("host", "session_id", "target_repo", "review_batch", "started_at", "updated_at", "generation"):
+            assert snapshot.get(field) == target.get(field)
+        assert snapshot["record_location"] == "hookが報告した記録の場所"
+        assert snapshot["record_state"]["kind"] == "ディレクトリ"
+        assert "previous_scope" in snapshot
         assert "prepareが終了2" in details["error"] and "不足: transcript_path" in details["error"]
         assert "ログなし" in details["log"]["status"]
     else:
+        assert details["stage"] == "run-skill-exit-7" and "targets" not in details
         assert details["exit_code"] == 7 and details["log"]["tail_truncated"]
         assert "モデル起動後の診断" in "\n".join(details["log"]["error_events"])
         assert "[stderr] 回収失敗" in details["log"]["tail"]
-        assert snapshot["record_state"]["size_bytes"] == transcript.stat().st_size
-        assert snapshot["record_state"]["modified_at"]
+    assert str(tmp_path) not in body and "実行記録: " not in body and "実行ログ: " not in body
     assert "初期要求" not in body and "会話本文の検出用" not in body
 
 
@@ -299,10 +359,10 @@ _LONG_EVENT = '[stdout] {"type":"result","is_error":true,"detail":"' + "y" * 300
 @pytest.mark.parametrize(
     "text",
     [
-        f"引数: {_HUGE}\n[stderr] 終了\n",
+        f"終了状態: {_HUGE}\n[stderr] 終了\n",
         f"[stderr] 開始\n[stderr] {_HUGE}\n",
         "[stderr] 開始\n" + _LONG_EVENT * 30,
-        f"引数: {_HUGE}\n" + _LONG_EVENT * 30 + f"[stderr] {_HUGE}\n",
+        f"終了状態: {_HUGE}\n" + _LONG_EVENT * 30 + f"[stderr] {_HUGE}\n",
     ],
     ids=["header", "tail", "events", "all"],
 )
@@ -324,3 +384,104 @@ def test_log_diagnostics_redact_before_truncating_lines(tmp_path):
     assert details["error_events"] == [f"{prefix}{filler} https://[REDACTED]"]
     assert details["tail"].endswith("\n[stderr] 正常な行")
     assert "[REDACTED]" in details["tail"]
+
+
+@pytest.mark.parametrize(
+    ("log_kind", "status"),
+    [
+        ("not-recorded", "実行ログの所在が記録されていない"),
+        ("missing", "読取不能"),
+        ("empty", "ログに採用できる診断がない"),
+    ],
+)
+def test_meta_log_evidence_distinguishes_unavailable_inputs(tmp_path, log_kind, status):
+    log = None if log_kind == "not-recorded" else tmp_path / "model.log"
+    if log_kind == "empty":
+        assert log is not None
+        log.touch()
+    evidence = run_skill_batch_evidence.meta_failure_evidence(
+        run_skill_batch.PLUGIN_ROOT, stage="execution-3", detail=None, log_path=log, report_target=None
+    )
+    diagnostics = evidence["failure_diagnostics"]
+    assert diagnostics["log"]["status"] == status
+    assert diagnostics["error"] is None
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize("separator", ["\n", "\r\n", "\r"])
+def test_terminal_progress_is_not_reproduced_in_batch_or_meta_failure(tmp_path, monkeypatch, engine, separator):
+    terminal = io.StringIO()
+    monkeypatch.setattr(terminal, "isatty", lambda: True)
+    text = f"転載しない発話の先頭{separator}転載しない発話の続き"
+    event = (
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+        if engine == "claude"
+        else {"type": "item.completed", "item": {"type": "agent_message", "text": text}}
+    )
+    error = {"type": "error", "message": "残す診断"}
+    source = io.BytesIO(("\n".join(json.dumps(row, ensure_ascii=False) for row in (event, error)) + "\n").encode())
+    path = tmp_path / "log.txt"
+    with path.open("w", encoding="utf-8") as log:
+        progress = Progress(log, terminal)
+        run_skill._copy_stream(source, "stdout", log, threading.Lock(), progress, engine)  # pylint: disable=protected-access
+        log.write("終了状態: exit code 3\n")
+    assert text in terminal.getvalue()
+    assert "[progress] 転載しない発話の続き" in path.read_text(encoding="utf-8")
+    details = run_skill_batch_evidence.meta_failure_evidence(
+        run_skill_batch.PLUGIN_ROOT, stage="execution-3", detail=None, log_path=path, report_target=None
+    )
+    bodies = [
+        run_skill_batch_evidence.meta_failure_message({**details, "failure_key": "test", "failure_stage": "execution-3"}),
+        run_skill_batch_evidence.failure_message(
+            "test", "run-skill-exit-3: 失敗", {"targets": [], "log_path": str(path)}, "github.com/example/repo"
+        ),
+    ]
+    for body in bodies:
+        assert "転載しない発話" not in body
+        assert "残す診断" in body and "終了状態: exit code 3" in body
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+def test_reissuing_legacy_batch_failure_does_not_copy_terminal_projection(tmp_path, monkeypatch):
+    notes = run_skill_batch_test._notes()  # pylint: disable=protected-access
+    run_skill_batch_test._target(tmp_path, "one")  # pylint: disable=protected-access
+    log = tmp_path / "legacy.log"
+    model_text = "旧ログの会話先頭\n[stderr] 旧ログの会話続き"
+    tool = {"type": "tool_use", "id": "same-call", "name": "Read", "input": {}}
+    first = {"type": "assistant", "message": {"content": [tool]}}
+    event = {"type": "assistant", "message": {"content": [tool, {"type": "text", "text": model_text}]}}
+    log.write_text(
+        f"[stdout] {json.dumps(first)}\ntool: Read\n"
+        f"[stdout] {json.dumps(event, ensure_ascii=False)}\nassistant: {model_text}\n"
+        "[stderr] 旧版のエラー\n終了状態: exit code 3\n",
+        encoding="utf-8",
+    )
+    version, oid = "0.0.1", "a" * 40
+    monkeypatch.setattr(run_skill_batch_evidence, "plugin_version", lambda _root: version)
+    monkeypatch.setattr(run_skill_batch_evidence, "plugin_source", lambda _root, _version: {"version": version, "commit": oid})
+    add_entries = run_skill_batch.add.add_entries
+
+    def unavailable(*_args, **_kwargs):
+        raise OSError("起票先を一時的に利用できない")
+
+    def fail(args):
+        path = pathlib.Path(args.batch_manifest)
+        session_review.write(path, {**session_review.read(path), "log_path": str(log)})
+        return 3
+
+    def unexpected(_args):
+        pytest.fail("保存だけの再試行でモデルを再起動した")
+
+    monkeypatch.setattr(run_skill_batch.add, "add_entries", unavailable)
+    args = run_skill_batch_test._args("manual")  # pylint: disable=protected-access
+    assert run_skill_batch.dispatch(args, fail) == 3
+    assert session_review.pending()[0]["failure_unreported"]
+    assert not run_skill_batch_test._failure_awis(notes)  # pylint: disable=protected-access
+    monkeypatch.setattr(run_skill_batch.add, "add_entries", add_entries)
+    version, oid = "0.0.2", "b" * 40
+    assert run_skill_batch.dispatch(args, unexpected) == 1
+    [report] = run_skill_batch_test._failure_awis(notes)  # pylint: disable=protected-access
+    body = report.read_text(encoding="utf-8")
+    assert "0.0.1" in body and "a" * 40 in body
+    assert "旧版のエラー" in body and "終了状態: exit code 3" in body
+    assert "旧ログの会話" not in body

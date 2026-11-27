@@ -5,9 +5,28 @@
 ## 検証コマンドの実行
 
 共有の実行枠の対象は、`make test`、`uv run --frozen pyfltr run`、`git commit`の中の`pyfltr fast`、共通のpytestプラグインを読むpytestである。
-直下の`pyproject.toml`の`addopts`が同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で外すものは枠の対象外となる。
+直下の`pyproject.toml`の`addopts`が同プラグインを`-p`で読む。
+`-o addopts=''`でプラグインを外したpytestは、明示的に同じプラグインを指定しない限り枠の対象外となる。
+`make test-browser`は`-p agent_toolkit._testing.pytest_plugin`を指定するため枠を使う。
 枠はホスト全体で2つ（pyfltr 3.30.0以降）で、pytestと統合の検証は開始からworker・子孫の回収まで枠を持ち、入れ子の実行は祖先の所有を継ぎ、収集だけのpytest（`--collect-only`）は枠を取らない。
 シェルからの起動は`agent-toolkit:atk-mode/playbooks/verification.md`「統合実行ツール経由の起動」の形式と3分類に従う。
+Codexでは、共有枠を取る構成のpyfltr検証を、検査の所要にかかわらず初回からCLIで起動する。
+呼出元のmanaged-tempに実行専用のprefixを決め、標準出力・標準エラー・終了コードを別々に残す。
+次は同じ実行の起動応答を失っても結果を読み直せるBashの例である。
+
+```bash
+prefix=/absolute/managed-temp/unique-verification
+rc=0
+uv run --frozen pyfltr run --output-format=jsonl "$@" > "$prefix.out" 2> "$prefix.err" || rc=$?
+printf '%s\n' "$rc" > "$prefix.exit.pending"
+mv -- "$prefix.exit.pending" "$prefix.exit"
+exit "$rc"
+```
+
+実行の引数は検証対象に合わせて渡す。
+起動応答を失っても再起動せず、そのprefixの`.exit`、`.err`、`.out`を観測する。
+`.exit`が無ければ終了未確定であり、0以外は成功としない。
+`.out`の`header`にある`run_id`で必要に応じて同じ実行のアーカイブを照会する。
 
 方式や性能を比べるための全量計測（全ファイルのPylintを方式ごとに比べる実行など）は、変更の受入に必要な検証と分けて扱う。
 まず既存の実行記録の再利用と代表対象での比較を選び、全量でしか判断できない比較だけを、自分の巡回の必須検証と重ならない時間帯に置き、比較を繰り返す場合はその時間帯で直列に実行する。
@@ -31,12 +50,14 @@
    `uv run --frozen pyfltr run --disable pytest <対象ファイルの絶対パス>`を失敗が無くなるまで直し、修正後の再実行は失敗したチェックへ限定する。
    pyfltrは1回の実行の間ずっと枠を持つため、静的チェックで失敗する実行にpytestを含めると枠を数分ずつ無駄に占める（2026年11月12日の同時数12では、失敗した`pyfltr run`18件のうち12件が静的チェックだけの失敗で、その12件でもpytestが流れていた）。
 4. commitする内容を確定してから、pytestを含む実行を1回行う。
-   MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`--commands`の指定なしで実行し、失敗したら直して同じ形で実行し直す。
+   上記の条件でMCPの`run`へパスを渡すかCLIで起動し、`--commands`は指定しない。
+   失敗を確定したら直して同じ形で実行し直す。
    `develop`・`master`・`main`以外のブランチ（レーンと内部群の作業ブランチ）では`--no-always-targets`を付け、変更ファイルと、変更した契約を使うテストを実行する（pyfltr 3.31.0以降）。
    全量は統合後のdevelop CIで実行する。
    `uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で、文書を読む横断試験やhookの入口を経由する試験を含む、根拠付きの候補のJSONを取得する。
    `required=true`の直接importのテストを引数へ加え、残る候補は実際の利用関係から採否を決める。
    参照を含むファイル（`.json`・`.md`・`.py`）か参照検査の定義を変えた時は、参照検査`agent_toolkit_reference_invariant_test.py`が`reference_contracts`として必須集合に入り、曖昧候補の判定の対象から外れる。
+   役割文書の入力・出力の同期元を変えた時は、`cross_contracts`が選んだ`agent-toolkit/task_documents_invariant_test.py`も実行する。
    元のJSONを保持し、曖昧な候補ごとに`source`・`test`・`include`（真偽値）・`reason`（空でない文字列）を持つ`decisions`配列を足して検証の証拠へ保存する（手順7の`--consumer-review`へ渡す判定JSON）。
    候補に出ない不変条件試験、動的な呼び出し、設定の移行、通知の旧期待値、CLI全体の一覧は、[verification.md](verification.md#変更範囲の検証の値)「変更範囲の検証の値」の探索で補う。
 5. 失敗の確かめ直しには次の形を使う。
@@ -60,6 +81,8 @@
    定義元の`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」は、条件の一致する成功の集合を合わせることを認める。
    dotfilesの統合前の最終確認はこれより厳しい追加の条件とし、最終の内容での単一の実行に限る。
    - 形は`uv run --frozen pyfltr run --no-fix --no-always-targets --commands=<手順2で選んだ全コマンド> <対象ファイルの絶対パス>`とする。
+     このrunに`DOTFILES_FILE_LINES_ALL=1`を渡し、`file-lines`だけは全追跡ファイルを調べる。
+     別のrunは立てない。
      変更箇所・直接の利用側・競合解消に関わるテストと、develop CIが実行しないチェックを含める。
    - 起動の前に`uv run --frozen python scripts/pyfltr_precommit.py --check-argv '<予定argvのJSON配列>' --consumer-review <判定JSONの絶対パス>`で引数と必須の範囲を確かめる。
      argvは`["run", "--no-fix", "--no-always-targets", "--commands=...", "<対象パス>"]`の形とし、曖昧な候補が無ければ`--consumer-review`を省く。
@@ -69,25 +92,33 @@
      `atk lane integrate`は`pyproject.toml`の`[tool.agent-toolkit.lane-integration]`から必須の横断試験の検証を呼ぶ。
      合成候補で必要な試験の成功を再利用できなければ該当試験を実行し、失敗ならfast-forwardしない。
      この自動検証はmanifestの変更範囲検証と最終runの受理を置き換えない。
+     担当数にかかわらず、同じ公開候補に複数の群を合わせた場合は合成版として扱う。
+     初めの群を取り込む前の統合先の完全OIDを`--against`へ渡し、最終候補の完全HEAD OIDと組にする。
+     実行の前後に`git status --porcelain`で作業ツリーとindexがcleanであることを確かめ、HEADと基点の組が同じことを照合する。
+     同じ組を成功したrun ID、`--verify-run`の結果、公開記録に対応付ける。
    - indexと作業ツリーを最終の統合入力のHEADへ一致させる。
      fast-forwardの直前に`uv run --frozen python scripts/pyfltr_precommit.py --verify-run <run_id> --consumer-review <判定JSON>`の終了0を確かめる。
      `--check-argv`の終了0は実際の実行の成功、版、cwd、HEADとindex、実行後の不変を確かめないため、verify-runは省かない。
    - 統合後・公開前に足した是正（統合時の検証失敗、CI失敗、案内文や構成の追随など）では、変えた文言・ジョブ名・設定キーの旧値を固定文字列で探し、それを期待するテスト（`ci_workflow*_test.py`、`<hook名>_test.py`など）を是正後のHEADで実行してから公開する。
    - 最終の検証が失敗したらfast-forwardせず、是正、必要な再レビュー、統合の再開へ戻る。
-   - 検証がmise管理のツールを使う場合は、追随後のレーンworktreeで `mise which <tool>` を実行して設定が選ぶ実行ファイルを確認し、検証と同じPATHから対象コマンドを `--version` など副作用のない引数で起動する。
-     どちらかが失敗したら検証へ進まず、実行ディレクトリ、ツール名、miseと起動の診断を記録する。
-     ツールが未導入なら `MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install` を案内し、実体が見つかっても起動できない場合はPATHの順序とshimの参照先を確認する。
+   - 検証がプロジェクトのmiseツールを使う場合は、追随後のレーンworktreeで `uv run --frozen python scripts/prepare_verification_tools.py --tool <miseの設定名> <実行名> -- pyfltr run ...` を実行する。
+     選択済みの検証が使うツールだけを、1つのツールにつき1つの `--tool` で渡す。
+     `mise which` と導入状況を調べ、不足した設定名に限って `MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install <不足した設定名...>` で用意する。
+     導入済みなら再導入せず、候補の選んだ実行ファイルを同じPATHから `--version` で起動してから検証する。
+     用意や起動に失敗した場合はcwd・ツール・診断を返し、検証や記録の受理へ進まない。
+     `make sync` はPython環境の同期だけを行い、仮想環境の `prek` を使う試験にmiseの `prek` を追加しない。
    - manifestへ渡す場合は、追随後のレーンworktreeでの `make sync`、実行の成功、run_idの取得、同じ入力のverify-runの成功を、失敗が伝わる1操作にまとめる。
      次のスクリプトを自分のmanaged-tempへ保存し、manifestのverificationに次の配列を1項目として渡す。
 
      ```json
-     ["bash", "<スクリプト>", "<ログprefix>", "<判定JSON>", "refs/heads/<統合先branch>", "--no-fix", "--no-always-targets", "--commands=<全チェック>", "<対象パス>"]
+     ["bash", "<スクリプト>", "<ログprefix>", "<判定JSON>", "refs/heads/<統合先branch>", "--tool", "shellcheck", "shellcheck", "--", "--no-fix", "--no-always-targets", "--commands=<全チェック>", "<対象パス>"]
      ```
 
      山括弧は実在の絶対パスと値へ置き換え、複数の対象パスは別々の要素にする。
      判定JSONが不要な場合は、その入力と`--consumer-review`を省いたスクリプトを使う。
-     mise管理ツールが必要な場合に限り、上記の照会と起動確認を、同じ検証argvが呼ぶ下のスクリプト内の `make sync` と `pyfltr run` の間に入れる。
-     manifestを渡す前の照会では、追随後のlockと検証時のPATHを確認できない。
+     `--` の前に実際に選んだツールを渡す。
+     例の `shellcheck` は選定した場合だけ指定し、mise管理ツールがなければ `--tool` の指定を省く。
+     manifestを渡す前の照会で代用せず、追随後のlockと選んだPATHで準備して同じ候補を検証する。
 
      ```bash
      #!/usr/bin/env bash
@@ -96,9 +127,20 @@
      consumer_review=$2
      integration_base=$(git rev-parse --verify "$3^{commit}")
      shift 3
+     mise_tools=()
+     while [[ $# -ge 3 && $1 == --tool ]]; do
+         mise_tools+=("$1" "$2" "$3")
+         shift 3
+     done
+     [[ ${1-} == -- ]] || { echo "検証引数の前に -- が必要" >&2; exit 2; }
+     shift
      make sync
-     # mise管理ツールが必要なら、ここで照会・起動確認する。
-     uv run --frozen pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err"
+     DOTFILES_FILE_LINES_ALL=1 uv run --frozen python scripts/prepare_verification_tools.py "${mise_tools[@]}" -- \
+         pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err" || {
+         code=$?
+         cat "$log_prefix.err" >&2
+         exit "$code"
+     }
      run_id=$(jq -er 'select(.kind == "header") | .run_id' "$log_prefix.out")
      uv run --frozen python scripts/pyfltr_precommit.py --verify-run "$run_id" --consumer-review "$consumer_review" --against "$integration_base"
      ```

@@ -22,7 +22,14 @@ from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
-from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATE_PROCESSING, WI_STATES, WI_TYPE_UWI, WI_TYPES
+from agent_toolkit._atk.wi.constants import (
+    WI_PROCESSABLE_STATES,
+    WI_STATE_PROCESSING,
+    WI_STATES,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
+    WI_TYPES,
+)
 from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import (
     NewWorkItem,
@@ -79,7 +86,7 @@ class RepositorySnapshot:
                 "target_repo": repo_id,
                 **({} if branch is None else {"target_branch": branch}),
                 "ready": state in WI_PROCESSABLE_STATES and path.name in self.readiness.ready,
-                "blocked_reason": _blocked_reason(self.readiness, path.name) if path.name in self.readiness.blocked else None,
+                "blocked_reason": self.readiness.blocked_reasons.get(path.name),
                 "source": parse_source(text),
                 "priority": _priority.priority_of((parse_frontmatter(text) or ({}, ""))[0]),
                 "priority_reason": _priority.reason_of(*(parse_frontmatter(text) or ({}, ""))),
@@ -148,32 +155,6 @@ def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> s
     return "ready" if filename in readiness.ready else "blocked"
 
 
-def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
-    """項目の具体的なblocked理由を安定した識別子で返す。
-
-    依存の未充足は、未終了の依存先が全て`--target-repo`の`processable`集合の内側にあるかで
-    2値へ分ける。未終了の依存先を持たないblockedは、その集合の内側にある項目が終了しても解除されないため
-    外側として返す。この対応が一致しなくなると、時間経過だけで解除される待機が内側として返り、
-    そのprocess-wiの実行で着手できない項目が選定の候補へ入る。
-    """
-    reasons = (
-        ("frontmatter-broken", readiness.frontmatter_broken),
-        ("branch-unregistered", readiness.unregistered_branches),
-        ("invalid-cooldown", readiness.invalid_cooldowns),
-        ("invalid-dependency", readiness.invalid_dependencies),
-        ("missing-dependency", readiness.missing_dependencies),
-        ("self-dependency", readiness.self_dependencies),
-        ("cyclic-dependency", readiness.cyclic_dependencies),
-        ("cooldown-until", readiness.cooldown_pending),
-    )
-    specific = next((reason for reason, filenames in reasons if filename in filenames), None)
-    if specific is not None:
-        return specific
-    if filename not in readiness.blocked:
-        return None
-    return "dependency-unmet-internal" if filename in readiness.internal_dependency_waits else "dependency-unmet-external"
-
-
 def print_entries(
     selected: list[_wi_entries.EntryRecord],
     readiness: ReadinessResult,
@@ -210,7 +191,7 @@ def print_entries(
             else:
                 display_repo = target_repo
             reason = (
-                _blocked_reason(readiness, path.name)
+                readiness.blocked_reasons.get(path.name)
                 if state_readiness == "blocked" and (entry_type != WI_TYPE_UWI or answered)
                 else None
             )
@@ -282,7 +263,7 @@ def _print_json_entries(
         state_readiness = _state_readiness(state, path.name, readiness)
         answered = entry_type == WI_TYPE_UWI and _wi_uwi_scan.is_uwi_answered(text)
         reason = (
-            _blocked_reason(readiness, path.name)
+            readiness.blocked_reasons.get(path.name)
             if state_readiness == "blocked" and (entry_type != WI_TYPE_UWI or answered)
             else None
         )
@@ -558,7 +539,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
 
 def progress_new_wis(
-    session_id: str, *, targets: frozenset[tuple[str, str | None]] | None = None
+    session_id: str, *, targets: frozenset[tuple[str, str | None]] | None = None, track_merges: bool = False
 ) -> tuple[NewWorkItem, ...] | None:
     if not (saved := _wi_snapshot.progress_sources(session_id)):
         return None
@@ -602,12 +583,23 @@ def progress_new_wis(
         for snapshot in snapshots:
             repo = snapshot.repository
             baseline = baselines[repo.repo_id, repo.branch]
-            for path, _repo, body, state, _kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
-                if state == WI_STATE_PROCESSING and path.name in started:
-                    continue
+            for path, _repo, body, state, kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
                 source = parse_source(body) or "未指定"
                 if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
                     source = "その他"
                 branch = (parse_frontmatter(body) or ({}, ""))[0].get("merge_branch")
-                rows[path.name] = NewWorkItem(path.name, source, bool(branch))
+                own = state == WI_STATE_PROCESSING and path.name in started
+                merge_pending = (
+                    state
+                    if track_merges
+                    and kind == WI_TYPE_AWI
+                    and source == "implement"
+                    and branch
+                    and path.name in snapshot.readiness.ready
+                    and (own or state != WI_STATE_PROCESSING)
+                    else None
+                )
+                if own and merge_pending is None:
+                    continue
+                rows[path.name] = NewWorkItem(path.name, source, bool(branch), merge_pending)
     return tuple(rows[name] for name in sorted(rows))

@@ -41,6 +41,7 @@ from session_evidence_candidates_returns import (
 )
 from session_evidence_candidates_users import _initial_request_locator, _initial_skill_input_locators, _user_candidate_exclusion
 from session_evidence_candidates_wi import _adhoc_processing_events, _wi_candidate_events
+from session_evidence_delivery import RESPONSE_CANDIDATE
 from session_evidence_extract import _CANDIDATE_VARIABLE, _CANDIDATE_VARIABLE_PLACEHOLDER
 from session_evidence_hook_notices import _normalize_candidate_kind_text, _normalize_hook_candidate_text
 
@@ -57,8 +58,9 @@ _CANDIDATE_CONTEXT_FIELDS = (
     "answer_line",
     "question_call_id",
     "question_index",
-    "delivery_line",
-    "delivery_timestamp",
+    "delivery_lines",
+    "delivery_result_lines",
+    "review_status",
     "text_length",
 )
 """候補へ写す判断材料の項目。確認の質問・選択肢・回答と、記入元のWIの所在を候補一覧へ載せるために使う。"""
@@ -150,7 +152,7 @@ def _candidate_events(
         ),
         ("confirmation-request", (event for event in wi_events or () if event.get("kind") == "submitted-uwi")),
         ("wi-user-response", (event for event in wi_events or () if event.get("kind") == "wi-user-response")),
-        ("post-delivery-long-text", (event for event in post_delivery or () if event["kind"] == "post-delivery-long-text")),
+        (RESPONSE_CANDIDATE, (event for event in post_delivery or () if event["kind"] == RESPONSE_CANDIDATE)),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -368,7 +370,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
     if candidate_kind in {"adhoc-processing", "definition-body-read", "definition-read-unresolved"}:
         return candidate_kind, str(event["record"])
-    if candidate_kind in {"confirmation-request", "wi-user-response", "post-delivery-long-text"}:
+    if candidate_kind in {"confirmation-request", "wi-user-response", RESPONSE_CANDIDATE}:
         return candidate_kind, str(event["record"]), f"{int(event['line']):010d}", str(event.get("tag", ""))
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 

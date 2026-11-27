@@ -25,3 +25,4 @@ class Decision:
     allow: bool = False
     ask: str | None = None
     updated_input: dict | None = None
+    keep_host_permission_check: bool = False

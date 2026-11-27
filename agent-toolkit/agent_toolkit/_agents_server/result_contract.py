@@ -5,6 +5,7 @@ import pathlib
 import re
 from typing import Any
 
+from agent_toolkit._agents_server.launch_requests_continuation import named_followup_body
 from agent_toolkit._agents_server.runtime_result_evidence import has_runtime_evidence
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._agents_server.tool_descriptions import FREEFORM_RESULT_CONTRACT_KINDS
@@ -220,7 +221,7 @@ def _current_named_input(session: SessionState, document: pathlib.Path, name: st
         lines = followup.strip().splitlines()
 
         if lines and lines[0] in instructions:
-            params = task_documents.parse_named_inputs(lines[1:])
+            params = task_documents.parse_named_inputs(named_followup_body(followup).strip().splitlines()[1:])
             if name in params:
                 return params[name]
     return task_documents.task_prompt_inputs(session.prompt)[name]

@@ -56,11 +56,11 @@ startup_documents:
    配信したHEADを記録する。
 5. 本番データへの書き込み、commitやpush、外部サービスへの通信など、検証環境の外へ影響が残る操作は、実データから切り離した`検証環境`でだけ行う（`agent-basics:writing-standards/references/ui-ux-topics.md`「完了前の実描画確認」の手順1）。
    `主要シナリオ`がそれ以外の環境でその操作を要する時と、`検証環境`で許されない操作を要する時は、その操作を見合わせ、該当する手順を`続行できない理由`に書いて返す。
-6. キャプチャと取得した記録は、`agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」の手段でmanaged-temp配下へ保存する。
+6. まだ保存していないキャプチャと取得した記録は、`agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」の手段でmanaged-temp配下へ保存する。
 
 ## 判定と記録
 
-1. `agent-basics:review-standards/references/reviewer-usability.md`「ユーザビリティレビューの判定」の手順で、主要シナリオと操作後に現れる各表示状態へ到達して判定する。
+1. `agent-basics:review-standards/references/reviewer-usability.md`「ユーザビリティレビューの判定」の手順で、主要シナリオと、同手順が選ぶ直接影響のある表示状態を判定する。
    round 2以降の観測と判定は、既指摘、修正差分とそのデグレードの範囲に限る。
 2. 主要作業の機能停止で以後のUXを確かめられない場合は、共通返却契約の`続行できない区分: owner_input`と`続行できない理由:`の2行で、必要な機能修正と、同じ通常の開始状態から再判定するための再開条件を返す。
    描画手段が使えない場合の`未確定`とは区別する。
@@ -91,6 +91,7 @@ startup_documents:
 ```
 
 合格では、各画面の比較と実画面の観測を次の7行へ示す。
+同じ観測の証拠は判定間で共用する。
 再判定で変わらない観点は前回の証拠を参照する。
 
 ```text

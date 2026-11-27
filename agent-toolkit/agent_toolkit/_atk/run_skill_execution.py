@@ -179,16 +179,26 @@ def run_locked(
             "accepted_scopes": skill_modes.accepted_scopes(args.skill, args.args),
             "run_id": run_id,
             "target_repo": args.target_repo if getattr(args, "work_dir", None) is not None else None,
-            "batch_manifest": getattr(args, "batch_manifest", None),
+            "batch_manifest": manifest,
+            **({"batch_analysis": str(session_review.batch_analysis_path(pathlib.Path(manifest)))} if manifest else {}),
         },
         ensure_ascii=False,
     )
     if record is not None:
-        env[mcp_environment.SESSION_START_INPUT_ENV] = record.input.model_dump_json()
+        startup_input = record.input
+        if manifest:
+            startup_input = startup_input.model_copy(
+                update={"batch_analysis": str(session_review.batch_analysis_path(pathlib.Path(manifest)))}
+            )
+        env[mcp_environment.SESSION_START_INPUT_ENV] = startup_input.model_dump_json(
+            exclude_unset=True, exclude=None if manifest else {"batch_analysis"}
+        )
     session_id: str | None = record.session_id if record is not None else None
     if orchestrator == "claude":
         if getattr(args, "batch_manifest", None):
             env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
+        else:
+            env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
         session_id = session_id or str(uuid.uuid4())
         progress.message(f"Claudeのセッション識別子: {session_id}")
         argv = [
@@ -338,6 +348,8 @@ def run_locked(
         remaining = writer.record.remaining
         code = output.exit_code
         assert code is not None
+        if scope == session_review.META_SCOPE and output.report_missing:
+            args.batch_failure = "report-save: 報告用UWIのローカル保存を確認できない"
         limit = output.paused_for_usage_limit
         if (
             limit is None
@@ -435,6 +447,7 @@ class _SessionOutput:
     usage_limit: _orchestrator.UsageLimitState | None = None
     on_thread_id: typing.Callable[[str], None] | None = None
     exit_code: int | None = None
+    report_missing: bool = False
     paused_for_usage_limit: _claude_usage_limit.UsageLimitState | None = None
 
     def receive(self, line: str) -> None:

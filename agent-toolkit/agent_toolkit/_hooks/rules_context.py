@@ -29,7 +29,7 @@ from agent_toolkit._common import delegated_session, mcp_environment, message_fo
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-lazy from agent_toolkit._common import host_homes, session_state, wait_schedule
+lazy from agent_toolkit._common import host_homes, session_review, session_review_analysis, session_state, wait_schedule
 lazy from agent_toolkit._common.process_loop_session import claim_process_loop_session, is_process_loop_session
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import agents_server_session_advisor, repository_protection, session_title, timing, work_contract
@@ -197,7 +197,9 @@ def compose_session_start(
             parts.append(_llm_notice(delegated_compact_notice(launch, own_contract)))
     elif source in _CONTEXT_LOSING_SOURCES:
         parts.append(_llm_notice(ENTRY_COMPACT_NOTICE if source == "compact" else ENTRY_START_NOTICE))
-    if host == "claude" and not delegated:
+    if host == "claude" and not delegated and os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID"):
+        parts.append(_llm_notice("この実行は画面が無いため、ユーザー向けの本文は最終応答に書いてください。"))
+    elif host == "claude" and not delegated:
         parts.append(
             _llm_notice(
                 "その場で回答を求める質問・選択には、ツール一覧にあれば`AskUserQuestion`を使ってください。"
@@ -291,6 +293,21 @@ def _existing_session_temp(session_id: object) -> str | None:
     except managed_temp.ManagedTempError, OSError:
         return None
     return str(path) if path is not None else None
+
+
+def _batch_analysis_notice() -> str:
+    if not (manifest := os.environ.get(session_review.BATCH_ENV)):
+        return ""
+    path = pathlib.Path(manifest)
+    analysis = session_review.batch_analysis_path(path)
+    try:
+        missing = session_review_analysis.unfinished(path, session_review.BatchWriter(path).load())
+    except OSError, ValueError:
+        return (
+            f"batchの分析記録: {analysis}。"
+            "記録が無ければ `atk run-script session-review-state -- prepare-analysis` を実行してください。"
+        )
+    return f"batchの分析記録: {analysis}。未完了の対象: {', '.join(missing) if missing else 'なし'}。"
 
 
 def _compaction_notice(session_id: str, transcript_path: object) -> str:
@@ -452,6 +469,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     notices = "\n".join(part for part in (compact_text, wait_notice) if part)
                     if notices:
                         recovery = _llm_notice(notices)
+                if not delegated and subject == MAIN_AGENT_ID and (analysis_notice := _batch_analysis_notice()):
+                    recovery = f"{recovery}\n{_llm_notice(analysis_notice)}"
                 content = f"{content}\n\n{recovery}" if content else recovery
     elif event_name == "SubagentStart":
         content = compose_subagent_start()

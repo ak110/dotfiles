@@ -28,18 +28,22 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    await page.get_by_text("計画ファイルを検索", exact=True).wait_for(state="visible")
-    await page.get_by_role("searchbox", name="計画ファイルを検索").fill("計画条件")
+    plan_search = page.get_by_role("searchbox", name="計画ファイルを検索")
+    await playwright.async_api.expect(plan_search).to_have_accessible_description("ファイル名・ホスト・本文")
+    scope = page.locator("#plans-filter-scope")
+    await playwright.async_api.expect(scope).to_be_hidden()
+    await page.locator("#plans-sidebar .pane-search-scope > summary").focus()
+    await page.keyboard.press("Enter")
+    await playwright.async_api.expect(scope).to_be_visible()
+    await page.keyboard.press("Enter")
+    await plan_search.fill("計画条件")
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await page.locator("#sessions .session-item").first.wait_for(state="visible")
     session_search = page.get_by_role("searchbox", name="セッションを検索")
-    scope = page.locator("#sessions-filter-scope")
-    await scope.wait_for(state="visible")
     await playwright.async_api.expect(session_search).to_have_accessible_description(
-        "検索対象: ホスト・作業ディレクトリ・識別子・パス・ラベル"
+        "発話・作業ディレクトリ・ホスト・識別子・パス・ラベル"
     )
     await session_search.fill("セッション条件")
-    await scope.wait_for(state="visible")
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     assert await page.locator("#plans-filter").input_value() == "計画条件"
@@ -161,12 +165,12 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
 @pytest.mark.cpu_limit(
     3.0,
     reason=(
-        "700・701・768pxでは一覧をメニューで開き、769pxから通常配置へ戻す。実ブラウザーの"
+        "700・701・768pxでは一覧と詳細を切り替え、769pxでは並置する。実ブラウザーの"
         "観測とtrace回収が必要（CPU最大実測1.259秒）。"
     ),
 )
 @pytest.mark.asyncio(loop_scope="session")
-async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness: _ScreenHarness) -> None:
+async def test_plan_and_session_panes_share_the_768px_boundary(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
     for width in (700, 701, 768, 769):
         mobile = width <= 768
@@ -174,17 +178,18 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
         await page.goto(screen_harness.base_url + "/plans")
         await page.locator("#files .file").first.wait_for(state="visible")
-        assert not await page.locator("#screen-plans").evaluate("element => element.classList.contains('drawer-open')")
+        plan_main = page.locator("#plans-app main")
+        plan_list = page.locator("#plans-sidebar")
         if mobile:
-            await page.locator("#plans-menu-btn").click()
-            assert await page.locator("#plans-menu-btn").get_attribute("aria-expanded") == "true"
-            assert await page.locator("#copy-btn .short-label").is_visible()
-            assert not await page.locator("#copy-btn .wide-label").is_visible()
+            await playwright.async_api.expect(plan_main).to_be_hidden()
             await page.locator("#files .file").first.click()
-            await page.locator("#preview h1").wait_for(state="visible")
-            assert not await page.locator("#screen-plans").evaluate("element => element.classList.contains('drawer-open')")
+            await playwright.async_api.expect(plan_list).to_be_hidden()
         else:
-            await page.locator("#preview h1").wait_for(state="visible")
+            await playwright.async_api.expect(plan_list).to_be_visible()
+        await page.locator("#preview h1").wait_for(state="visible")
+        copy = page.get_by_role("button", name="本文をコピー")
+        await playwright.async_api.expect(copy.locator("svg use")).to_have_attribute("href", "#icon-copy")
+        assert await page.locator("#plans-menu-btn").is_visible() is mobile
 
         toolbar = page.locator("#screen-plans .detail-toolbar")
         for control in ("#copy-btn", "#copy-path-btn", "#prev-btn", "#next-btn"):
@@ -199,12 +204,14 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
         await page.goto(screen_harness.base_url + "/sessions")
         await page.locator("#sessions .session-item").first.wait_for(state="visible")
-        assert not await page.locator("#screen-sessions").evaluate("element => element.classList.contains('drawer-open')")
+        session_list = page.locator("#sessions-sidebar")
+        session_main = page.locator("#sessions-app main")
         if mobile:
-            await page.locator("#sessions-menu-btn").click()
+            await playwright.async_api.expect(session_main).to_be_hidden()
         await page.locator("#sessions .session-item").first.click()
         await page.locator("#detail .event").first.wait_for(state="visible")
-        assert not await page.locator("#screen-sessions").evaluate("element => element.classList.contains('drawer-open')")
+        assert await session_list.is_visible() is not mobile
+        assert await page.locator("#sessions-menu-btn").is_visible() is mobile
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -215,13 +222,12 @@ async def test_plan_toolbar_keeps_actions_in_view_while_scrolling(screen_harness
     screen_harness.plan_path.write_text("# 先頭\n\n" + "計画の段落\n\n" * 100 + "最後の段落\n", encoding="utf-8")
     await page.goto(screen_harness.base_url + "/plans")
     main = page.locator("#screen-plans main")
-    toolbar = main.locator(".toolbar")
+    toolbar = main.locator(".browse-masthead")
     first = toolbar.get_by_role("button", name="先頭へ", exact=True)
     last = toolbar.get_by_role("button", name="末尾へ", exact=True)
     controls = [toolbar.locator(f"#{name}") for name in ("copy-btn", "copy-path-btn", "prev-btn", "next-btn")]
     if width <= 768:
         menu = toolbar.locator("#plans-menu-btn")
-        await menu.click()
         await page.locator("#files .file").first.click()
         controls.append(menu)
     controls.extend((first, last))
@@ -246,16 +252,18 @@ async def test_plan_toolbar_keeps_actions_in_view_while_scrolling(screen_harness
             assert max(rows) - min(rows) <= 1, rows
         return toolbar_box["y"]
 
-    toolbar_top = await check_toolbar()
+    await check_toolbar()
     await last.click()
     await expect(main.get_by_text("最後の段落")).to_be_in_viewport()
-    assert await check_toolbar() == pytest.approx(toolbar_top, abs=1)
+    pane_box = await main.bounding_box()
+    assert pane_box is not None
+    assert await check_toolbar() == pytest.approx(pane_box["y"], abs=1)
     await first.click()
     assert await main.evaluate("element => element.scrollTop") == 0
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _ScreenHarness) -> None:
+async def test_mobile_list_detail_labels_titles_and_reduced_motion(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
     await page.emulate_media(reduced_motion="reduce")
@@ -268,19 +276,19 @@ async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _
         sidebar = page.locator(f"#{name}-sidebar")
         menu = page.locator(f"#{name}-menu-btn")
         search = page.locator(f"#{name}-filter")
-        await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "false")
+        main = page.locator(f"#{name}-app main")
+        title = page.locator("#plan-title" if name == "plans" else "#detail-title")
         assert await search.get_attribute("id") == await page.get_by_label(f"{heading}を検索").get_attribute("id")
-        await menu.click()
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
-        await playwright.async_api.expect(search).to_be_focused()
-        await page.keyboard.press("Escape")
-        await playwright.async_api.expect(menu).to_be_focused()
-        await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
-        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "false")
-        await page.evaluate("() => window.scrollTo(0, 0)")
-        duration = await menu.evaluate("element => getComputedStyle(element).transitionDuration")
-        assert duration == "0s"
+        item = sidebar.locator(".pane-item").first
+        await item.focus()
+        await page.keyboard.press("Enter")
+        await playwright.async_api.expect(title).to_be_focused()
+        await playwright.async_api.expect(sidebar).to_be_hidden()
+        await menu.focus()
+        await page.keyboard.press("Enter")
+        await playwright.async_api.expect(item).to_be_focused()
+        await playwright.async_api.expect(main).to_be_hidden()
+        assert await sidebar.evaluate("element => getComputedStyle(element).transitionDuration") == "0s"
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -297,47 +305,34 @@ async def test_detail_toolbars_use_the_same_tokens(screen_harness: _ScreenHarnes
                 const button = getComputedStyle([...toolbar.querySelectorAll('button')]
                     .find(button => button.getClientRects().length));
                 const bounds = toolbar.getBoundingClientRect();
+                const masthead = toolbar.closest('.browse-masthead');
+                const inset = parseFloat(getComputedStyle(masthead).paddingRight);
                 return {
                     gap: style.columnGap, background: style.backgroundColor,
                     font: button.fontSize, height: button.minBlockSize,
-                    contentStart: bounds.left + parseFloat(style.paddingLeft)
+                    edgeOffset: masthead.getBoundingClientRect().right - bounds.right - inset
                 };
             }"""
         )
         assert float(observed[screen]["font"].removesuffix("px")) >= 16
-    session_start = observed["sessions"].pop("contentStart")
-    observed["plans"].pop("contentStart")
+    for result in observed.values():
+        assert result.pop("edgeOffset") == pytest.approx(0, abs=1)
     assert observed["plans"] == observed["sessions"]
-    title = page.locator("#detail-title")
-    await title.wait_for()
-    title_start = await title.evaluate("element => element.getBoundingClientRect().left")
-    assert session_start == pytest.approx(title_start, abs=1)
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_workspace_headings_use_the_same_hierarchy(screen_harness: _ScreenHarness) -> None:
+async def test_workspace_headings_identify_main_without_repeating_screen_name(screen_harness: _ScreenHarness) -> None:
     page = screen_harness.page
-    await page.route("**/api/usage**", lambda route: route.abort())
-    observed = []
-    for screen, heading in (
-        ("/", "#entry-heading"),
-        ("/agents", "#agents-app .page-heading"),
-        ("/usage", "#usage-heading"),
-        ("/settings", "#settings-heading"),
+    await page.goto(screen_harness.base_url + "/")
+    for screen, label in (
+        (None, "ワークアイテム一覧"),
+        ("エージェント", "エージェント"),
+        ("利用枠", "利用枠"),
+        ("設定", "設定"),
     ):
-        await page.goto(screen_harness.base_url + screen)
-        observed.append(
-            await page.locator(heading).evaluate(
-                """element => {
-                    const heading = getComputedStyle(element);
-                    const body = getComputedStyle(document.body);
-                    return {
-                        larger: parseFloat(heading.fontSize) > parseFloat(body.fontSize),
-                        size: heading.fontSize,
-                        weight: heading.fontWeight,
-                        line: heading.lineHeight
-                    };
-                }"""
-            )
-        )
-    assert all(item == observed[0] and item["larger"] for item in observed)
+        if screen:
+            await page.get_by_role("navigation", name="画面").get_by_role("link", name=screen).click()
+        main = page.get_by_role("main", name=label, exact=True)
+        await playwright.async_api.expect(main).to_be_visible()
+        heading = main.get_by_role("heading", name=label, level=2, exact=True)
+        await playwright.async_api.expect(heading).to_have_class("visually-hidden")

@@ -1,0 +1,160 @@
+.monitor-overview {
+  margin-block: 0 var(--space-4);
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.monitor-overview p { margin-block: var(--space-1); }
+
+.monitor-links {
+  list-style: none;
+  margin-block: var(--space-2) 0;
+  padding: 0;
+}
+
+.monitor-links > li:not([hidden]),
+.monitor-toolbar,
+.monitor-list-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.monitor-progress {
+  inline-size: min(100%, 10rem);
+  block-size: var(--space-2);
+  accent-color: var(--color-primary);
+}
+
+.monitor-links span,
+.monitor-links button,
+.metric-row h4,
+.metric-recovery p { overflow-wrap: anywhere; }
+
+.monitor-links button {
+  max-inline-size: 100%;
+  text-align: start;
+}
+
+@media (min-width: 769px) {
+  .monitor-links > li:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+  }
+  .monitor-links button { justify-self: start; }
+}
+
+.monitor-list-heading {
+  justify-content: space-between;
+  margin-block-end: var(--space-2);
+}
+
+#agents-app .agent-row { align-items: baseline; }
+
+#agents-app .agent-caption {
+  display: flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  min-inline-size: 0;
+}
+
+.agent-display-name,
+.agent-caption .agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-caption .agent-display-name {
+  flex: 0 0 auto;
+  max-inline-size: 70%;
+  font-weight: var(--weight-label);
+}
+
+#agents-app .agent-caption .agent-name {
+  flex: 0 1 auto;
+  color: var(--color-secondary-text);
+  font-weight: normal;
+}
+
+#agents-app .agent-identity { grid-template-rows: auto; }
+.agent-action-detail { min-inline-size: 0; }
+.agent-action-detail summary { cursor: pointer; }
+.agent-action-detail summary > span {
+  display: inline-block;
+  vertical-align: bottom;
+  max-inline-size: calc(100% - var(--space-4));
+}
+
+.agent-action-detail p {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin-block: var(--space-2);
+}
+
+.agent-status-detail {
+  display: block;
+  font-size: var(--font-size-secondary);
+  color: var(--color-warning);
+  white-space: normal;
+}
+
+#agents-app .agent-row[data-attention] { background: var(--color-warning-quiet); }
+
+.metric-snapshot-value {
+  color: var(--color-secondary-text);
+  font-weight: var(--weight-heading);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-height-compact);
+}
+
+.metric-row[data-stale] .metric-track progress { --metric-fill: var(--color-secondary-text); }
+.metric-row .metric-unavailable { font-weight: var(--weight-label); }
+.metric-row .metric-track { margin-block-start: var(--space-2); }
+.metric-row .metric-track:has(.metric-marker) {
+  margin-block-start: var(--space-5);
+}
+.metric-row .metric-tick {
+  inset-block: 100% auto;
+  block-size: var(--space-1);
+}
+.metric-row .metric-marker {
+  inset-inline-start: var(--metric-marker-position);
+  inset-block-end: calc(100% + var(--space-1));
+  padding-inline: 0;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+.metric-needle {
+  position: absolute;
+  inset-block: calc(-1 * var(--space-1));
+  inset-inline-start: var(--metric-marker-position);
+  border-inline-start: 2px solid var(--color-text);
+}
+.metric-row .metric-scale {
+  text-align: end;
+  font-size: var(--font-size-small);
+}
+
+@media (max-width: 480px) {
+  .metric-row > .metric-details {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+  .metric-row > .metric-details > div + div > dt { margin-block-start: var(--space-1); }
+}
+
+.metric-row .metric-warning { font-weight: var(--weight-label); }
+.metric-recovery {
+  display: grid;
+  gap: var(--space-2);
+  border-block-start: 1px solid var(--color-border);
+  padding-block-start: var(--space-3);
+}
+.metric-recovery :is(h4, p, dl) { margin-block: 0; }
+.metric-recovery h4:not(:first-child) { margin-block-start: var(--space-2); }
+.metric-evidence summary,
+.agent-action-detail summary { min-block-size: var(--space-4); }
+
+.monitor-permission-caption { overflow-wrap: anywhere; }
+.monitor-permission-suggestion p { margin-block: 0 var(--space-1); }

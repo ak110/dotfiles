@@ -3,6 +3,7 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,7 @@ import psutil
 import pytest
 from agent_toolkit._agents_server import service_forward, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
-from agent_toolkit._common import plugin_environment, process_tree, windows_job
+from agent_toolkit._common import delegated_session, plugin_environment, process_tree, windows_job
 from agent_toolkit._common.runtime_environment import CallerContext
 from agent_toolkit._testing import isolation
 from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT
@@ -42,7 +43,7 @@ def _service_environment(tmp_path_factory: pytest.TempPathFactory) -> dict[str, 
 
 def _stop_services(directory: pathlib.Path) -> None:
     for path in directory.glob("*.json"):
-        if path.name == "generations.json":
+        if not re.fullmatch(r"[0-9a-f]{64}", path.stem):
             continue
         identity = json.loads(path.read_text(encoding="utf-8"))["process"]
         if not service_transport.process_alive(identity):
@@ -74,8 +75,11 @@ def _launch_command(root: pathlib.Path) -> list[str]:
 @pytest.mark.windows
 @pytest.mark.timeout(240)
 @pytest.mark.cpu_limit(
-    3.0,
-    reason="実のlauncher・転送側・管理サービスを起動し、MCPのinitializeとtools/listを通して世代を公開する。",
+    4.0,
+    reason=(
+        "新旧2世代の実配布物で依存確認、MCP初期化、受付切替と停止を確認する。"
+        "配布物の比較と回収を含むLinuxの全量検証で所有CPU 3.37秒を観測したため、4秒で上限を設ける。"
+    ),
 )
 def test_published_service_outlives_startup_check(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, service_environment: dict[str, str]
@@ -94,6 +98,7 @@ def test_published_service_outlives_startup_check(
         LOCALAPPDATA=str(tmp_path / "state"),
         AGENT_TOOLKIT_PRIVATE_NOTES=str(tmp_path / "notes"),
     )
+    environment.pop(delegated_session.CALLER_PLUGIN_ROOT_ENV, None)
     monkeypatch.setattr(os, "environ", environment)
     monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 120.0)
 
@@ -161,7 +166,8 @@ def test_service_outlives_killing_job_of_its_launcher(tmp_path: pathlib.Path, se
     2026-11-19、SSHのセッションから起動した管理サービスが外側のJobに残り、セッションの終了とともに終了した。
     """
     environment = dict(service_environment, XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
-    registry = GenerationRegistry(service_transport.namespace(CallerContext(environment, tmp_path)))
+    caller = service_transport.plugin_caller(CallerContext(environment, tmp_path), _PLUGIN_ROOT)
+    registry = GenerationRegistry(service_transport.namespace(caller))
     try:
         with windows_job.WindowsJob() as job:
 

@@ -8,6 +8,7 @@ from agent_toolkit._atk import config, config_repositories
 from agent_toolkit._atk.wi import listing, snapshot
 from agent_toolkit._atk.wi.formatters import NewWorkItem
 from agent_toolkit._common import session_state
+from agent_toolkit._hooks import notice as hook_notice
 from agent_toolkit._hooks import progress_self_check, work_contract
 from agent_toolkit._hooks.pretooluse import publication_gate
 from agent_toolkit._testing.output_policy_support import assert_output_policy
@@ -145,6 +146,69 @@ def test_publication_uses_registered_baseline_after_session_temp_changes(tmp_pat
             assert denied is not None and late.name in denied[0]
 
 
+@pytest.mark.parametrize(
+    "push",
+    ["git push origin develop", f"git push --force-with-lease=refs/heads/develop:{'a' * 40} origin HEAD:refs/heads/develop"],
+)
+def test_publication_requires_recovery_of_the_same_circuit_baseline(tmp_path, monkeypatch, push):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repository = config.ConfiguredRepository("github.com/example/foo", tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    owner = "active-publication"
+    _register_circuit(tmp_path, monkeypatch, "previous-publication")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", owner)
+    command = {"command": push}
+    payload = {"session_id": owner, "cwd": str(tmp_path)}
+    for _ in range(2):
+        denied = publication_gate.check(payload, owner, "Bash", command)
+        assert denied is not None and "開始時集合がない" in denied[0]
+        assert "再発行すると実行" not in denied[1]
+
+    _register_circuit(tmp_path, monkeypatch, owner)
+    monkeypatch.setattr(snapshot.managed_temp, "find_session_temp", lambda _session_id: tmp_path / "compacted")
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner)
+    child = "publication-worker"
+    delegated = {"session_id": child, "agent_id": child, "cwd": str(tmp_path)}
+    assert publication_gate.check(delegated, child, "Bash", command) is None
+    late = _write_awi_file(notes, "20261124-085011-004.md")
+    initial = publication_gate.check(delegated, child, "Bash", command)
+    assert initial is not None and late.name in initial[0]
+
+    (source,) = snapshot.progress_sources(owner).values()
+    path = pathlib.Path(source["path"])
+    original = path.read_bytes()
+    path.write_bytes(b"invalid")
+    for _ in range(2):
+        denied = publication_gate.check(delegated, child, "Bash", command)
+        assert denied is not None and "新着WIを取得できない" in denied[0]
+        assert "再発行すると実行" not in denied[1]
+    path.write_bytes(original)
+    recovered = publication_gate.check(delegated, child, "Bash", command)
+    assert recovered is not None and late.name in recovered[0]
+    assert publication_gate.check(delegated, child, "Bash", command) is None
+
+
+@pytest.mark.parametrize(
+    "push",
+    [
+        "git push --force-with-lease origin HEAD:develop",
+        "git push --force-with-lease=develop:abcd origin HEAD:develop",
+        f"git push --force-with-lease=refs/heads/other:{'a' * 40} origin HEAD:develop",
+        f"git push --force-with-lease=refs/heads/develop:{'a' * 40}",
+    ],
+)
+def test_publication_does_not_accept_ambiguous_lease(tmp_path, monkeypatch, push):
+    owner = "ambiguous-publication"
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", owner)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    payload = {"session_id": owner, "cwd": str(tmp_path)}
+    denied = publication_gate.check(payload, owner, "Bash", {"command": push})
+    assert denied is not None and "公開対象を確定できない" in denied[0]
+    assert "再発行すると実行" not in denied[1]
+
+
 def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path, monkeypatch):
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -198,6 +262,81 @@ def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path,
         assert all(name not in notice for name in names[:2])
     finally:
         progress_self_check.release_reservations()
+
+
+def test_new_merge_stays_pending_until_adoption(tmp_path, monkeypatch):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    repository = config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    session = "pending-merge"
+    _register_circuit(tmp_path, monkeypatch, session)
+    item = _write_awi_file(notes, "20261124-085011-004.md", source="implement")
+    raw = item.read_text(encoding="utf-8").replace("source: implement\n", "source: implement\nmerge_branch: feature/test\n")
+    item.write_text(raw, encoding="utf-8")
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+    publish = {"command": "git push origin develop"}
+
+    for _ in range(2):
+        denied = publication_gate.check(payload, session, "Bash", publish)
+        assert denied is not None and "同じ操作の再発行では解除できません" in denied[1]
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "start-processing", item.name, f"--target-repo={repo}"], home=tmp_path)
+    assert listing.progress_new_wis(session) == ()
+    tracked = listing.progress_new_wis(session, track_merges=True)
+    assert tracked is not None and tracked[0].merge_pending == "processing"
+    pending, _ = progress_self_check._new_wi_text(session, session)  # pylint: disable=protected-access
+    assert item.name in pending and "取り込み結果待ち" in pending
+    assert publication_gate.check(payload, session, "Bash", publish) is not None
+
+    adopted = item.read_text(encoding="utf-8").replace("state: processing", "state: adopted")
+    item.write_text(adopted, encoding="utf-8")
+    assert publication_gate.check(payload, session, "Bash", publish) is None
+
+
+@pytest.mark.parametrize("transport", ["git", "gh", "mcp"])
+def test_new_merge_does_not_change_the_frozen_publication_unit(tmp_path, monkeypatch, transport):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    repository = config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    session = "existing-publication"
+    _register_circuit(tmp_path, monkeypatch, session)
+    run = publication_gate.git_command.run
+    head = "a" * 40
+    remote_head = "a" * 40
+
+    def git(args, cwd, **kwargs):
+        if args == ["rev-parse", "--verify", "HEAD^{commit}"]:
+            return subprocess.CompletedProcess(args, 0, head + "\n", "")
+        if args == ["ls-remote", "--refs", "--exit-code", "origin", "refs/heads/work"]:
+            if remote_head is None:
+                return subprocess.CompletedProcess(args, 2, "", "")
+            return subprocess.CompletedProcess(args, 0, remote_head + "\trefs/heads/work\n", "")
+        return run(args, cwd, **kwargs)
+
+    monkeypatch.setattr(publication_gate.git_command, "run", git)
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+    tool, request = {
+        "git": ("Bash", {"command": "git push origin HEAD:refs/heads/develop"}),
+        "gh": ("Bash", {"command": "gh pr create --repo example/foo --base develop --head work"}),
+        "mcp": ("mcp__github__create_pull_request", {"owner": "example", "repo": "foo", "base": "develop", "head": "work"}),
+    }[transport]
+    assert publication_gate.check(payload, session, tool, request) is None
+    item = _write_awi_file(notes, "20261124-085011-004.md", source="implement")
+    raw = item.read_text(encoding="utf-8").replace("source: implement\n", "source: implement\nmerge_branch: feature/test\n")
+    item.write_text(raw, encoding="utf-8")
+    assert publication_gate.check(payload, session, tool, request) is None
+    if transport == "git":
+        head = "b" * 40
+    else:
+        remote_head = "b" * 40
+    assert publication_gate.check(payload, session, tool, request) is not None
+    if transport != "git":
+        remote_head = None
+        assert publication_gate.check(payload, session, tool, request) is not None
 
 
 @pytest.mark.parametrize("transport", ["mcp", "gh", "git"])
@@ -425,8 +564,6 @@ def test_circuit_resume_uses_legacy_start(tmp_path, monkeypatch, configured, exp
 
 
 def test_publication_keeps_gate_but_does_not_repeat_delivered_progress_wis(tmp_path, monkeypatch):
-    from agent_toolkit._hooks import notice  # pylint: disable=import-outside-toplevel
-
     sid = "progress-publication-shared"
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", sid)
@@ -436,10 +573,10 @@ def test_publication_keeps_gate_but_does_not_repeat_delivered_progress_wis(tmp_p
     rows = [NewWorkItem(old, "implement", False)]
     monkeypatch.setattr(listing, "progress_new_wis", lambda *_args, **_kwargs: tuple(rows))
     monkeypatch.setattr(publication_gate, "progress_new_wis", listing.progress_new_wis)
-    text, snapshot_id = notice.new_wi_preview(sid, "main", rows)
+    text, snapshot_id = hook_notice.new_wi_preview(sid, "main", rows)
     assert old in text
-    notice.stage_new_wi_preview(text, sid, "main", snapshot_id)
-    notice.record_delivery(text)
+    hook_notice.stage_new_wi_preview(text, sid, "main", snapshot_id)
+    hook_notice.record_delivery(text)
     rows.append(NewWorkItem(new, "implement", False))
     payload = {"session_id": sid, "cwd": str(tmp_path)}
     command = {"command": "git push origin develop"}

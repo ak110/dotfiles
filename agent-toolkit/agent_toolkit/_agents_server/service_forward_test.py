@@ -531,7 +531,8 @@ def test_public_mcp_without_site_packages_reports_missing_service_copy(
     plugin = pathlib.Path(__file__).resolve().parents[2]
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
     prepare_plugin_environment(plugin, environment, timeout=_REAL_MCP_PREPARE_TIMEOUT)
-    registry = GenerationRegistry(service_transport.namespace(runtime_environment.CallerContext(environment, tmp_path)))
+    caller = service_transport.plugin_caller(runtime_environment.CallerContext(environment, tmp_path), plugin)
+    registry = GenerationRegistry(service_transport.namespace(caller))
     parameters = StdioServerParameters(
         command=sys.executable,
         args=["-S", str(plugin / "scripts/launch.py"), "agent_toolkit/agents_server_mcp.py"],

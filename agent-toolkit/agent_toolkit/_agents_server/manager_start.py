@@ -7,7 +7,6 @@ import datetime
 import json
 import logging
 import pathlib
-import re
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
@@ -48,7 +47,14 @@ from agent_toolkit._agents_server.session_errors import ActionableRuntimeError, 
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, SessionResumeState, SessionState
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import codex_models, session_launchers, startup_documents, startup_features, task_documents
+from agent_toolkit._common import (
+    codex_models,
+    session_launchers,
+    startup_documents,
+    startup_features,
+    task_documents,
+    usage_settings,
+)
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.plugin_roots import PluginRootError
 
@@ -71,6 +77,33 @@ def _require_write_model_evidence(model_type: str | None, authorized: bool) -> N
                 "実装・修正は`mode=delegate, model_type=execute`か、所定の`exec`の役割で起動する"
             ),
         )
+
+
+def _weekly_limit_active(session: SessionState, *, wall_now: float, loop_now: float) -> bool:
+    resume_at = session.usage_limit_resume_at
+    if session.status != "failed" and (session.status != "running" or resume_at is None or resume_at <= loop_now):
+        return False
+    error = (session.pending_result or {}).get("error") if resume_at is not None else session.error
+    if not isinstance(error, dict):
+        return False
+    if session.engine == "claude":
+        limit = session.usage_limit
+        return (
+            error.get("apiErrorStatus") == 429
+            and limit is not None
+            and limit.is_wait_target
+            and limit.limit_type in {"seven_day", "seven_day_opus", "seven_day_sonnet"}
+            and limit.resets_at is not None
+            and limit.resets_at > wall_now
+        )
+    if session.engine != "codex" or error.get("codexErrorInfo") != "usageLimitExceeded":
+        return False
+    usage = error.get("usageLimit")
+    resets = usage.get("resetsAt") if isinstance(usage, dict) and usage.get("type") == "seven_day" else None
+    if isinstance(resets, str):
+        with contextlib.suppress(ValueError, OverflowError, OSError):
+            return usage_settings.deadline(resets) > wall_now
+    return False
 
 
 async def check_model_override(
@@ -97,12 +130,12 @@ async def check_model_override(
     )
     if (
         (inherited and model_type != "write")
-        or reason not in ("user_instruction", "observation", "fallback_failure")
+        or reason not in ("user_instruction", "fallback_failure")
         or not (evidence or "").strip()
     ):
         raise ActionableError(
-            "候補列の直接指定・役割の工程の変更にはmodel_overrideとmodel_override_evidenceが必要です。委譲先は起動していない。",
-            next_action=next_action,
+            "候補外の起動には本人指定または全候補の週間上限を根拠とするmodel_overrideが必要です。委譲先は起動していない。",
+            next_action=next_action + "本人指定にはmodel_override=user_instructionと根拠を渡す。",
         )
     assert evidence is not None
     if reason == "user_instruction":
@@ -127,21 +160,12 @@ async def check_model_override(
             or phase is None
             or (requested_phase is not None and requested_phase != phase)
             or (known_phase is None and phase in {"orchestrate", "write"})
-            or not await manager.has_fallback_failure(phase, launch_kind, launch)
+            or not await manager.has_weekly_limit_for_all(phase, launch_kind, launch)
         ):
             raise ActionableError(
-                "工程設定の全候補に、今回の起動区分に対応する失敗記録を確認できない。委譲先は起動していない。",
-                next_action=next_action
-                + "自由本文のdelegateで候補を直接指定する回復時は、根拠にphase:<失敗した工程名>を渡す。",
+                "工程設定の全候補に、今回の起動区分に対応する週間上限を確認できない。委譲先は起動していない。",
+                next_action=next_action + "設定内の継続手段を使うか、候補外が必要なら本人の指定を得る。",
             )
-    if reason == "observation":
-        candidates = _atk_config.parse_unresolved_model_candidates(model_type)
-        if not candidates or not all(
-            (engine == "claude" and model == "haiku")
-            or (engine == "codex" and (model == "luna" or re.fullmatch(r"gpt-\d+(?:\.\d+)?-luna", model)))
-            for engine, model, _ in candidates
-        ):
-            raise ActionableError("observationにはhaikuとluna系だけを指定できます", next_action=next_action)
     return [
         {
             "scope": "model-override",
@@ -157,24 +181,28 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
     def model_override_context(self) -> tuple[dict[str, Any], pathlib.Path | None]:
         return self.launcher_record_context(), self._state_root()
 
-    async def has_fallback_failure(self, phase: str, launch_kind: LaunchKind, launch: Mapping[str, Any]) -> bool:
-        await self._drain_candidate_records()
+    async def has_weekly_limit_for_all(self, phase: str, launch_kind: LaunchKind, launch: Mapping[str, Any]) -> bool:
         params = launch.get("extra_params") or {}
         document = str(launch.get("subagent_md_path") or "")
         exec_lane = pathlib.Path(document).name == "exec.subagent.md" and params.get("担当種別") == "レーン担当"
-        recorded = await run_file_operation(
-            unavailable_candidates.load_unavailable_candidates,
-            phase,
-            launch_kind,
-            now=datetime.datetime.now(datetime.UTC),
-        )
-        if not recorded:
-            return False
         try:
             candidates, excluded = await self._resolve_start_candidates(phase, launch_kind=launch_kind, exec_lane=exec_lane)
         except ActionableError:
             return False
-        return bool(candidates) and all(recorded.get(candidate) for candidate in (*candidates, *excluded))
+        needed = set(candidates) | excluded.keys()
+        cwd = pathlib.Path(launch["cwd"])
+        wall_now = datetime.datetime.now(datetime.UTC).timestamp()
+        loop_now = asyncio.get_running_loop().time()
+        # 古い拒否より、後から起動した同じ候補の観測を優先する。pyfltr: allow-comment
+        for session in reversed(self.sessions.values()):
+            if session.model_type != phase or session.launch_kind != launch_kind or pathlib.Path(session.cwd) != cwd:
+                continue
+            candidate = state.selected_candidate(session)
+            if candidate is not None and candidate in needed:
+                if not _weekly_limit_active(session, wall_now=wall_now, loop_now=loop_now):
+                    return False
+                needed.remove(candidate)
+        return not needed and bool(candidates)
 
     async def _resolve_start_candidates(
         self,
@@ -555,27 +583,29 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         current = await self.resolve_handoff_predecessor(session_id)
         predecessor = SessionResumeState.from_session(current) if isinstance(current, SessionState) else current
         assert predecessor.model_type is not None
+        document = task_documents.launched_task_document(predecessor.prompt)
         role_type = await run_file_operation(launch_requests.current_role_model, predecessor, include_explicit=True)
+        previous_phase = predecessor.model_type if predecessor.model_type in _atk_config.MODEL_TYPES else None
         inherited_type = predecessor.model_type
         if inherited_type in _atk_config.MODEL_TYPES and role_type and not launch_requests.role_model_was_explicit(predecessor):
             inherited_type = role_type
         successor_type = model_type if model_type is not None else inherited_type
-        if task_documents.launched_task_document(predecessor.prompt) is None:
+        if document is None:
             launch_requests.validate_model_type_for_mode(predecessor.launch_kind, successor_type)
         warnings = await check_model_override(
             self,
             successor_type,
-            default_type=role_type,
+            default_type=role_type or previous_phase,
             reason=model_override,
             evidence=model_override_evidence,
             inherited=model_type is None,
             launch_kind=predecessor.launch_kind,
-            fallback_phase=predecessor.model_type if predecessor.model_type in _atk_config.MODEL_TYPES else None,
             launch={
                 "mode": "handoff",
                 "cwd": predecessor.cwd,
                 "handoff_from": predecessor.session_id,
                 "label": predecessor.label or None,
+                **({"subagent_md_path": str(document)} if document is not None else {}),
             },
         )
         if isinstance(current, SessionState):

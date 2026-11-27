@@ -152,6 +152,7 @@ ty-args = [
     "--output-format", "concise", "--error-on-warning",
     "--extra-search-path", "scripts",
     "--extra-search-path", "libexec",
+    "--extra-search-path", "agent-toolkit",
     "--extra-search-path", "agent-toolkit/skills/atk-mode/scripts",
 ]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
@@ -190,6 +191,7 @@ writing-check-dash-subproject-aware = false
 dotfiles-markdown-structure-subproject-aware = false
 file-lines-subproject-aware = false
 file-lines = true
+overrides = [{ when = "DOTFILES_FILE_LINES_ALL", file-lines-pass-filenames = false }]
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
 statusline-version-subproject-aware = false
@@ -251,7 +253,7 @@ pytest-always-targets = ["*_invariant_test.py"]
 [tool.pyfltr.custom-commands.sync-generated-files]
 type = "formatter"
 path = "uv"
-args = ["run", "--frozen", "python", "scripts/sync_generated_files.py"]
+args = ["run", "--frozen", "python", "-E", "scripts/sync_generated_files.py"]
 targets = [
     "AGENTS.md",
     "pyproject.toml",
@@ -299,10 +301,9 @@ pass-filenames = false
 [tool.pyfltr.custom-commands.file-lines]
 type = "linter"
 path = "uv"
-args = ["run", "--frozen", "python", "scripts/check_file_lines.py"]
+args = ["run", "--frozen", "python", "scripts/check_file_lines.py", "--"]
 targets = ["*"]
 fast = true
-pass-filenames = false
 
 [tool.pyfltr.custom-commands.dotfiles-test-copies]
 type = "linter"

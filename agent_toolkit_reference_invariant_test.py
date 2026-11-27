@@ -410,10 +410,13 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
         if relative == pathlib.Path("agent-toolkit/agent_toolkit/_testing/test_durations.json"):
             continue
         content = (root / relative).read_text(encoding="utf-8")
+        is_fixed_audit = relative in _FIXED_AUDIT_PATH_DIGESTS
+        if not is_fixed_audit and _PLUGIN_PREFIX not in content:
+            continue
         references.extend((match.group(), relative) for match in _SKILL_INVOCATION_PATTERN.finditer(content))
         paths = [match.group().rstrip("/") for match in _SKILL_PATH_PATTERN.finditer(content)]
         paths.extend(match.group() for match in _PYTHON_PATH_PATTERN.finditer(content))
-        if relative in _FIXED_AUDIT_PATH_DIGESTS:
+        if is_fixed_audit:
             record = json.loads(content)
             commit = record.get("target_commit") or record["対象版"]
             snapshot = "\n".join([commit, *sorted(set(paths))])

@@ -428,7 +428,9 @@ def settings_snapshot(home: pathlib.Path, *, read_only: bool = False) -> dict[st
         shared_key = shared_sync and key in _config_settings.SHARED_SETTING_KEYS
         failure = None
         try:
-            effective = resolve_mutable_setting(key, read_only=True, local=local, local_error=errors.get(key))
+            effective = resolve_mutable_setting(
+                key, read_only=True, local=local, local_error=errors.get(key), shared=shared, temporary=temporary
+            )
         except ValueError:
             effective = None
             failure = f"{key}の設定値を読めない"

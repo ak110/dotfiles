@@ -18,9 +18,9 @@ export function languageCheckUnavailable(diagnostic: string): LanguageCheck {
 // 判定不能の診断を元の操作の結果の後に読む文脈として返す。入力本文と判定プロセスの出力は載せない。
 export function languageCheckNotice(diagnostic: string): string {
   return automatedMessage("response-language", "warn", `記述言語を判定できず、元の操作を続けた。診断: ${diagnostic}。\n` +
-    "次の操作: 元の操作は再発行するな。診断を保全し、検査スクリプトの配置と終了状態から原因を確かめる。" +
-    "不具合なら agent-basics:bugfix で認可内の配布物・設定を修復し、言語検査だけを確かめる。" +
-    "回復結果か、回復できない分の影響・試した手段・再開の条件を伝える。");
+    "次の操作: 元の操作を再発行しないでください。診断を保全し、検査スクリプトの配置と終了状態を調べてください。" +
+    "不具合なら agent-basics:bugfix で認可内の配布物・設定を修復し、言語検査だけを確かめてください。" +
+    "回復結果か、回復できない分の影響・試した手段・再開の条件を伝えてください。");
 }
 
 export function languageCheckResult(root: string, checked: ProcessRunResult): LanguageCheck {

@@ -4,7 +4,7 @@ import { automatedMessage, startNextTurn } from "./automated_message.ts";
 import { register as registerCompactConversation } from "./compact_conversation.ts";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
 import { register as registerUsageLimitResume } from "./usage_limit_resume.ts";
-import { questionRoute } from "./send_to_user.tsx";
+import { questionRoute, recoveryRoute } from "./send_to_user.tsx";
 import { register as registerUIRequests } from "./ui_requests.tsx";
 import { register as registerRuntimeRestart } from "./runtime_restart.ts";
 import { register as registerAgentPanel } from "./agent_panel.ts";
@@ -37,8 +37,8 @@ export const register: Register = (on) => {
     if (!(await isTerminalMain($))) return result;
     return {
       ...result,
-      description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話を常にこのツールのmessageで送る。最終の完了報告には kind: completion を指定する。" +
-        questionRoute + "委譲先はこのツールを使わず委譲元へ返す。" + result.description,
+      description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話をこのツールで送る。最終の完了報告には kind: completion を指定する。" +
+        recoveryRoute + questionRoute + "委譲先はこのツールを使わず委譲元へ返す。" + result.description,
       isDeferred: false,
     };
   });
@@ -52,9 +52,9 @@ export const register: Register = (on) => {
     await $.state.set({ plugin: "agent-toolkit", key: "sendContractNotified" }, true);
     const listed = (await $.tool.list().catch(() => [])).some((tool) => tool.name === SEND_TO_USER);
     const notice = automatedMessage(listed ? "send-to-user-contract" : "send-to-user-search", "notice",
-      "着手・進捗・完了報告は、使える時は常に `send_to_user` で送る。最終の完了報告には `kind: \"completion\"` を指定する。" +
+      "着手・進捗・完了報告は `send_to_user`、最終は `kind: \"completion\"`。" +
       (listed ? `REPL: \`await tools['${SEND_TO_USER}']({message})\`。` : `検索対象: \`${SEND_TO_USER}\`。`) +
-      "一覧に無い時はREPLの `searchTools` か遅延公開ツールの検索で探す。質問は `AskUserQuestion`。");
+      "長文前の確認は `send_to_user_preflight`。無ければ `searchTools` で探す。質問は `AskUserQuestion`。");
     return next({ ...e, context: [...(e.context ?? []), notice] });
   });
   on("session.start", async ($, e, next) => {

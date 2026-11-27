@@ -12,7 +12,7 @@
 /* 計画ファイル画面とセッション画面の左ペインは、枠・検索欄・項目の見た目をここで共有する。
    画面ごとに規則を複製すると片方だけの変更で見た目がずれるため、画面固有の規則には構造上の差だけを置く。 */
 .pane-sidebar {
-  border-right: 1px solid var(--color-border);
+  border-inline-end: 1px solid var(--color-border);
   overflow: auto;
   background: var(--color-background);
   padding: 0;
@@ -41,10 +41,7 @@
   background: var(--color-primary-quiet);
 }
 .pane-item[aria-current="true"] {
-  background-image: linear-gradient(var(--color-primary), var(--color-primary));
-  background-position: left center;
-  background-repeat: no-repeat;
-  background-size: 2px 100%;
+  box-shadow: var(--shadow-selection);
   border-color: var(--color-primary);
 }
 .pane-item-title {
@@ -54,6 +51,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#screen-plans .file .name { display: flex; }
+#screen-plans .file-name-prefix {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#screen-plans .file .name > :last-child { flex: none; }
 .pane-item-meta {
   margin-top: var(--space-1);
   font-size: var(--font-size-small);
@@ -62,7 +66,7 @@
   justify-content: space-between;
   gap: var(--space-2);
 }
-.pane-item-meta > * {
+.pane-item-meta > span {
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -93,6 +97,122 @@
     display: none;
   }
 }
+.browse-workspace > .browse-detail {
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+.browse-masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding-block: var(--space-3) var(--space-2);
+  overflow-wrap: anywhere;
+}
+.browse-masthead > h2 {
+  flex: 1 1 14ch;
+  min-inline-size: 0;
+  margin-block: 0;
+  font-size: var(--font-size-base);
+}
+#screen-plans .browse-masthead > h2 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (min-height: 34rem) {
+  #screen-plans .browse-masthead {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    background: var(--color-surface);
+  }
+}
+.record-context > summary,
+.pane-search-scope > summary {
+  cursor: pointer;
+  color: var(--color-secondary-text);
+  font-size: var(--font-size-secondary);
+  line-height: var(--line-height-base);
+  min-block-size: var(--control-height);
+  align-content: center;
+}
+.record-context > :not(summary),
+.pane-search-scope > small {
+  overflow-wrap: anywhere;
+}
+.browse-workspace .pane-search {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding-inline: calc(var(--space-4) - var(--space-row)) var(--space-4);
+}
+.pane-search > [role="status"] { grid-column: 1 / -1; }
+.pane-search-scope,
+.browse-masthead > .record-context { position: relative; }
+.pane-search-scope > summary,
+.browse-masthead > .record-context > summary { white-space: nowrap; }
+.pane-search-scope > small,
+.browse-masthead > .record-context > :not(summary) {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  inline-size: min(16rem, calc(100vw - 2 * var(--page-gutter)));
+  box-sizing: border-box;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-secondary-text);
+}
+@media (min-width: 769px) {
+  .browse-workspace .browse-list-return { display: none; }
+}
+.browse-workspace .browse-masthead > .detail-toolbar {
+  position: relative;
+  justify-content: flex-end;
+  padding: 0;
+  border-block-end: 0;
+  margin-inline-start: auto;
+  gap: var(--space-1);
+}
+.browse-workspace :is(.detail-toolbar > .detail-navigation, .detail-toolbar > .scroll-edges) {
+  gap: var(--space-1);
+}
+.browse-icon-action {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--control-height);
+  min-block-size: var(--control-height);
+  padding: 0;
+}
+.browse-icon-action .app-icon { inline-size: 1.125rem; block-size: 1.125rem; }
+@media (hover: none) {
+  .browse-workspace .browse-icon-action:is(.nav-btn, .event-link, .session-tree-toggle, .scroll-edges > button, .reading-search > button) {
+    display: inline-grid;
+    inline-size: var(--control-height);
+    padding: 0;
+  }
+  .browse-workspace .browse-icon-action:is(.nav-btn, .event-link, .session-tree-toggle, .scroll-edges > button, .reading-search > button)::after {
+    content: none;
+  }
+  #copy-btn::after { content: "本文"; }
+  #copy-path-btn::after { content: "パス"; }
+}
+#plan-copy-status {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  max-inline-size: 100%;
+  text-align: end;
+  background: var(--color-surface);
+}
+.browse-workspace .pane-item:focus-visible { outline-offset: -3px; }
+.browse-workspace .pane-item-meta > :last-child { flex: none; }
+.browse-workspace .pane-sidebar > .loading-state { padding: var(--space-3); }
+.browse-workspace .pane-sidebar .toolbar :is(label, h2) { margin: 0; }
+.browse-workspace .pane-sidebar .toolbar [role="status"]:empty { display: none; }
+.browse-workspace .scroll-edges { flex-wrap: wrap; }
 /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
 #screen-plans .host-badge {
   display: none;
@@ -114,48 +234,65 @@
   box-sizing: border-box;
   background: var(--color-surface);
 }
-#screen-plans .detail-toolbar {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 2;
-  justify-content: flex-end;
+#screen-plans #meta-mobile .meta-path { display: block; }
+#screen-plans #meta-mobile .meta-ctime { margin-inline-start: var(--space-2); }
+#screen-plans #preview {
+  padding-block: var(--space-4) var(--space-6);
 }
-/* 結果文言を同じ領域へ重ね、コピー後も隣の操作を同じ位置へ保つ。 */
-#screen-plans main .toolbar .copy-feedback {
-  display: inline-grid;
+#screen-plans #preview.review-preview,
+#screen-plans main:has(.review-preview) > .browse-masthead {
+  max-inline-size: var(--workspace-width);
 }
-#screen-plans .copy-feedback > span,
-#screen-plans .copy-feedback::after {
-  grid-area: 1 / 1;
+#screen-plans main:has(.review-preview),
+#screen-plans #preview.review-preview {
+  display: flex;
+  flex-direction: column;
 }
-#screen-plans .copy-feedback::after {
-  content: attr(data-reserve-wide);
-  visibility: hidden;
+#screen-plans main:has(.review-preview) > .browse-masthead {
+  flex: none;
+  position: relative;
 }
-#screen-plans .short-label {
-  display: none;
+#screen-plans #preview.review-preview {
+  flex: 1 1 0;
+  min-block-size: calc(4 * var(--control-height));
 }
-/* デスクトップで表示する場合は、ハンバーガーとモバイル幅だけで使うメタ情報欄を隠す。 */
-#screen-plans #plans-menu-btn {
-  display: none;
-}
-#screen-plans #meta-mobile {
-  display: none;
-}
-#screen-plans #plans-drawer-backdrop {
-  display: none;
-}
-#screen-plans main article {
-  padding-block: var(--space-6);
-}
-/* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
-     通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
-#screen-plans main article:has(> .review-table) {
-  max-inline-size: none;
+#screen-plans .review-scroll {
+  overflow: auto;
+  max-inline-size: 100%;
 }
 #screen-plans .review-table {
-  width: 100%;
+  table-layout: fixed;
+  inline-size: 100%;
+  min-inline-size: 44rem;
+  margin-block-start: 0;
+  border-collapse: separate;
+  border-spacing: 0;
 }
+#screen-plans .review-round { inline-size: 8%; }
+#screen-plans .review-track { inline-size: 11%; }
+#screen-plans .review-location { inline-size: 14%; }
+#screen-plans .review-level { inline-size: 8%; }
+#screen-plans .review-no-response-reason { inline-size: 14%; }
+#screen-plans .review-table :is(th, td) {
+  padding: var(--space-2);
+  vertical-align: top;
+  border-inline-start: 0;
+  border-block-start: 0;
+}
+#screen-plans .review-table :is(th, td):first-child { border-inline-start: 1px solid var(--color-border); }
+#screen-plans .review-table th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--color-background);
+  border-block-start: 1px solid var(--color-border);
+}
+#screen-plans .review-table td {
+  overflow-wrap: anywhere;
+  line-height: var(--line-height-body);
+}
+#screen-plans .review-table td:nth-child(-n+2) { font-size: var(--font-size-body); }
+#screen-plans .review-table th { white-space: normal; overflow-wrap: anywhere; }
 #screen-plans .diagram {
   margin: 1.5rem 0;
   padding: var(--space-4);
@@ -194,81 +331,14 @@
   color: var(--color-danger);
   font-weight: var(--weight-label);
 }
-/* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
 @media (max-width: 768px) {
-  #screen-plans #plans-app {
-    grid-template-columns: 1fr;
-  }
-  #screen-plans :is(aside) {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: var(--two-pane-sidebar-width);
-    max-width: 85vw;
-    height: 100svh;
-    z-index: 20;
-    transform: translateX(-100%);
-    transition: transform 0.2s ease-out;
-  }
-  /* 失効理由がある一覧は、ドロワーを直ちに全幅で表示する。 */
-  #screen-plans:has(#plans-selection-status:not([hidden])) aside {
-    transition: none;
-  }
-  #screen-plans.drawer-open aside {
-    box-shadow: var(--shadow-overlay);
-    transform: translateX(0);
-  }
-  #screen-plans #plans-drawer-backdrop {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100svh;
-    background: var(--color-backdrop);
-    z-index: 10;
-  }
-  #screen-plans.drawer-open #plans-drawer-backdrop {
-    display: block;
-  }
-  #screen-plans main .toolbar {
-    padding-inline: var(--space-2);
-  }
-  #screen-plans #plans-menu-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #screen-plans .wide-label {
-    display: none;
-  }
-  #screen-plans .short-label {
-    display: inline;
-  }
-  #screen-plans .copy-feedback::after {
-    content: attr(data-reserve-short);
-  }
-  #screen-plans #meta-mobile {
-    display: block;
-    padding: var(--space-row) var(--space-3);
-    font-size: var(--font-size-small);
-    color: var(--color-secondary-text);
-    background: var(--color-background);
-    border-bottom: 1px solid var(--color-border);
-    overflow-wrap: anywhere;
-  }
-  #screen-plans #meta-mobile .meta-path {
-    display: block;
-    margin-block-end: var(--space-1);
-    color: var(--color-text);
-    font-size: var(--font-size-base);
-    font-weight: var(--weight-label);
-  }
-  #screen-plans #meta-mobile .meta-ctime {
-    display: inline-block;
-    margin-inline-start: var(--space-2);
-  }
-  #screen-plans #meta-mobile.empty {
-    display: none;
+  .browse-workspace.two-pane { grid-template-columns: minmax(0, 1fr); }
+  :is(#plans-app, #sessions-app)[data-view="list"] > .browse-detail,
+  :is(#plans-app, #sessions-app)[data-view="detail"] > .pane-sidebar { display: none; }
+  .browse-workspace > .pane-sidebar { border-inline-end: 0; }
+  .browse-masthead > h2 { flex-basis: 100%; }
+  .browse-workspace .browse-masthead > .detail-toolbar {
+    justify-content: flex-start;
+    margin-inline-start: 0;
   }
 }

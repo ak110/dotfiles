@@ -1,4 +1,5 @@
 import datetime
+import functools
 import re
 
 import playwright.async_api
@@ -11,6 +12,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _open_filters,
     _screen_harness_fixture,
 )
+from agent_toolkit._atk.wi import readiness
 from agent_toolkit._testing.serve_browser_wi_support import _entry_path, _state_text
 
 pytestmark = [
@@ -30,16 +32,35 @@ async def test_blocked_badge_tracks_unanswered_uwi_dependency(browser_harness: _
         "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\ndepends_on:\n  - wait-question.md\n---\n\n# 回答待ち\n",
         encoding="utf-8",
     )
+    _entry_path(harness.root, "wait-prerequisite.md").write_text(
+        "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\n---\n\n# 前提\n", encoding="utf-8"
+    )
+    _entry_path(harness.root, "wait-another-awi.md").write_text(
+        "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\ndepends_on: [wait-prerequisite.md]\n---\n\n# 依存あり\n",
+        encoding="utf-8",
+    )
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator('.entry-select[data-key="waiting-awi.md"]')
-    await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_text("blocked")
+    awi_row = page.locator('.entry-select[data-key="wait-another-awi.md"]')
+    await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_text("回答待ち")
+    await playwright.async_api.expect(row).to_have_accessible_name(re.compile("回答待ち"))
+    await playwright.async_api.expect(awi_row.locator(".blocked-badge")).to_have_text("依存先の処理待ち")
+    await playwright.async_api.expect(awi_row).to_have_accessible_name(re.compile("依存先の処理待ち"))
     await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("受信")
     question_badges = page.locator('.entry-select[data-key="wait-question.md"] .blocked-badge')
     await playwright.async_api.expect(question_badges).to_have_count(0)
 
     uwi_path.write_text(unanswered + "回答済み\n", encoding="utf-8")
     harness.current_state.publish()
+    await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_text("依存先の処理待ち")
+    uwi_path.write_text(unanswered.replace("state: inbox", "state: adopted") + "回答済み\n", encoding="utf-8")
+    prerequisite = _entry_path(harness.root, "wait-prerequisite.md")
+    prerequisite.write_text(
+        prerequisite.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8"
+    )
+    harness.current_state.publish()
+    await playwright.async_api.expect(awi_row.locator(".blocked-badge")).to_have_count(0)
     await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_count(0)
     await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("受信")
 
@@ -72,7 +93,7 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
     assert await badge.evaluate(style) == await processing_badge.evaluate(style)
 
     await row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認待ち")
     await detail.locator("#delete-button").click()
     delete_dialog = page.get_by_role("dialog", name="削除の確認")
@@ -113,7 +134,7 @@ async def test_answered_badge_replaces_inbox_for_answered_uwi(browser_harness: _
     assert await badge.evaluate(style) == await unanswered_badge.evaluate(style)
 
     await row.click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("回答済み")
     await detail.locator("#detail-more summary").click()
     await detail.locator("#delete-button").click()
@@ -179,7 +200,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     }""")
     await question.focus()
     await page.keyboard.press("Enter")
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("受信")
     # 保存済みの期限は詳細のメタデータに保存値のまま残り、解除日時としては示さない。
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text(deadline)
@@ -191,7 +212,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await deletion.locator("#delete-close-button").click()
     await detail.locator("#detail-close-button").click()
     await page.locator('.entry-select[data-key="verify.md"]').click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("再開待ち")
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
     await detail.locator("#detail-more > summary").click()
@@ -208,6 +229,49 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
         assert "再開待ち" not in (await row.get_attribute("aria-label") or "").split("、")
         assert await row.locator(".state-badge").get_attribute("title") is None
         assert "解除日時:" not in (await row.get_attribute("aria-label") or "")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_cooldown_expiry_updates_remaining_blocked_reasons(
+    browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness = browser_harness
+    page = harness.page
+    now = datetime.datetime(2099, 1, 2, tzinfo=datetime.UTC)
+    until = now + datetime.timedelta(seconds=20)
+    calculate = readiness.calculate_readiness
+    await page.clock.install(time=now)
+    monkeypatch.setattr(readiness, "calculate_readiness", functools.partial(calculate, now=now))
+    prefix = "---\nstate: inbox\ntarget_repo: github.com/example/repo\n"
+    _entry_path(harness.root, "prerequisite.md").write_text(prefix + "type: awi\n---\n\n前提\n", encoding="utf-8")
+    _entry_path(harness.root, "question.md").write_text(prefix + "type: uwi\n---\n\n## 回答\n", encoding="utf-8")
+    examples = {
+        "free.md": ("", ""),
+        "awi.md": ("depends_on: [prerequisite.md]\n", "依存先の処理待ち"),
+        "uwi.md": ("depends_on: [question.md]\n", "回答待ち"),
+        "invalid.md": ("depends_on: invalid\n", "依存先の指定が不正"),
+    }
+    for name, (dependency, _) in examples.items():
+        _entry_path(harness.root, name).write_text(
+            prefix + f"type: awi\ncooldown_until: '{until.isoformat()}'\n" + dependency + "---\n\n# 再開待ち\n",
+            encoding="utf-8",
+        )
+    await page.goto(harness.base_url + "/")
+    focused = page.locator('.entry-select[data-key="awi.md"]')
+    await playwright.async_api.expect(focused.locator(".state-badge")).to_have_text("再開待ち")
+    await focused.focus()
+    monkeypatch.setattr(readiness, "calculate_readiness", functools.partial(calculate, now=until))
+    await page.clock.run_for(21000)
+    for name, (_, reason) in examples.items():
+        row = page.locator(f'.entry-select[data-key="{name}"]')
+        blocked = row.locator(".blocked-badge")
+        await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("受信", timeout=10000)
+        if reason:
+            await playwright.async_api.expect(blocked).to_have_text(reason)
+            await playwright.async_api.expect(row).to_have_accessible_name(re.compile(reason))
+        else:
+            await playwright.async_api.expect(blocked).to_have_count(0)
+    await playwright.async_api.expect(focused).to_be_focused()
 
 
 @pytest.mark.asyncio(loop_scope="session")

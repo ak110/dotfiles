@@ -114,12 +114,12 @@ def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Pat
     inbox = tmp_path / "2024" / "01"
     inbox.mkdir(parents=True)
 
-    assert add_module._normalize_dependencies(["first", "first.md", "second.md"], inbox) == (  # pylint: disable=protected-access  # noqa: SLF001
+    assert add_module.normalize_dependencies(["first", "first.md", "second.md"], inbox) == (  # pylint: disable=protected-access  # noqa: SLF001
         "first.md",
         "second.md",
     )
     with pytest.raises(SystemExit) as exc_info:
-        add_module._normalize_dependencies(["../outside"], inbox)  # pylint: disable=protected-access  # noqa: SLF001
+        add_module.normalize_dependencies(["../outside"], inbox)  # pylint: disable=protected-access  # noqa: SLF001
     assert exc_info.value.code == 2
 
 

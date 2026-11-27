@@ -46,42 +46,37 @@ async def test_session_assistant_markdown_rendered(
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("variant", ["named", "unnamed", "long"])
 async def test_session_detail_title_shows_engine_and_session_name(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser, variant: str
 ) -> None:
-    named = _write_local_session(
-        tmp_path,
-        "named",
-        {"type": "ai-title", "aiTitle": "生成題名"},
-        {"type": "custom-title", "customTitle": "名前付きセッション"},
-        _assistant_record("応答"),
-    )
-    unnamed = _write_local_session(tmp_path, "unnamed", _assistant_record("応答"))
-    long_name = "長いセッション名の折り返し確認用" * 4
-    long_named = _write_local_session(
-        tmp_path, "long-named", {"type": "custom-title", "customTitle": long_name}, _assistant_record("応答")
-    )
+    titles = {"named": "名前付きセッション", "unnamed": "Claude Code", "long": "長いセッション名の折り返し確認用" * 4}
+    expected = titles[variant]
+    records = []
+    if variant == "named":
+        records.append({"type": "ai-title", "aiTitle": "生成題名"})
+    if variant != "unnamed":
+        records.append({"type": "custom-title", "customTitle": expected})
+    path = _write_local_session(tmp_path, variant, *records, _assistant_record("応答"))
     async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
+        await _open_session(page, base_url, "browser-test", path)
         title = page.locator("#detail-title")
-        await _open_session(page, base_url, "browser-test", named)
-        await playwright.async_api.expect(title).to_have_text("Claude Code / 名前付きセッション")
-        item = page.locator(f'#sessions .session-item[data-path="{named}"]')
-
-        assert "/home/aki/md" in await item.inner_text()
-        assert "browser-test" in await item.inner_text()
-        await _open_session(page, base_url, "browser-test", unnamed)
-        await playwright.async_api.expect(title).to_have_text("Claude Code")
-
-        await _open_session(page, base_url, "browser-test", long_named)
-        await playwright.async_api.expect(title).to_have_text(f"Claude Code / {long_name}")
-        await page.set_viewport_size({"width": 320, "height": 720})
-        metrics = await title.evaluate(
-            "element => ({scroll: element.scrollWidth, client: element.clientWidth,"
-            " right: element.getBoundingClientRect().right, viewport: document.documentElement.clientWidth})"
-        )
-        assert metrics["scroll"] <= metrics["client"], metrics
-        assert metrics["right"] <= metrics["viewport"], metrics
-        assert await title.evaluate("element => getComputedStyle(element).textOverflow") != "ellipsis"
+        expect = playwright.async_api.expect
+        await expect(title).to_have_text(expected)
+        if variant == "named":
+            await expect(page.locator("#session-context")).to_contain_text("Claude Code")
+            item = page.locator(f'#sessions .session-item[data-path="{path}"]')
+            await expect(item).to_contain_text("/home/aki/md")
+            await expect(item).to_contain_text("browser-test")
+        if variant == "long":
+            await page.set_viewport_size({"width": 320, "height": 720})
+            metrics = await title.evaluate(
+                "element => ({scroll: element.scrollWidth, client: element.clientWidth,"
+                " right: element.getBoundingClientRect().right, viewport: document.documentElement.clientWidth})"
+            )
+            assert metrics["scroll"] <= metrics["client"], metrics
+            assert metrics["right"] <= metrics["viewport"], metrics
+            assert await title.evaluate("element => getComputedStyle(element).textOverflow") != "ellipsis"
 
 
 @pytest.mark.asyncio(loop_scope="session")

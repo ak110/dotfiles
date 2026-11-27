@@ -117,6 +117,7 @@ _DELEGATED_ENVIRONMENTS = [None, ("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGE
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("run_skill", [False, True])
 @pytest.mark.parametrize("agent_id", [None, "builtin-child"])
 @pytest.mark.parametrize("environment", _DELEGATED_ENVIRONMENTS)
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
@@ -125,6 +126,7 @@ def test_session_start_delegated_requests_reread_only_after_compaction(
     source: str,
     agent_id: str | None,
     host: str,
+    run_skill: bool,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -135,6 +137,9 @@ def test_session_start_delegated_requests_reread_only_after_compaction(
     """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_RUN_SKILL_ID", raising=False)
+    if run_skill:
+        monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", "run")
     if environment is not None:
         monkeypatch.setenv(*environment)
     payload = {"hook_event_name": "SessionStart", "source": source} | ({"agent_id": agent_id} if agent_id else {})
@@ -142,8 +147,10 @@ def test_session_start_delegated_requests_reread_only_after_compaction(
     handler(json.dumps(payload))
     output = _output(capsys)
     delegated = environment is not None or agent_id is not None
-    assert ("send_to_user" in output) == (host == "claude" and not delegated)
-    assert ("AskUserQuestion" in output) == (host == "claude" and not delegated)
+    interactive = host == "claude" and not delegated and not run_skill
+    assert ("send_to_user" in output) == interactive
+    assert ("AskUserQuestion" in output) == interactive
+    assert ("ユーザー向けの本文は最終応答に書いてください" in output) == (host == "claude" and not delegated and run_skill)
     assert output.count(rules_context.DELEGATED_COMPACT_NOTICE) == (1 if delegated and source == "compact" else 0)
     if delegated:
         assert rules_context.ENTRY_START_NOTICE not in output

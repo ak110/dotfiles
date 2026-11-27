@@ -148,7 +148,7 @@ jobs:
     if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 16
     container:
       image: ghcr.io/ak110/pyfltr:latest
       options: --user root
@@ -339,6 +339,7 @@ jobs:
         env:
           SKIP: cargo-fmt,cargo-clippy
           CLAUDE_SETTINGS_BASE: ${{ github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || '' }}
+          DOTFILES_FILE_LINES_ALL: "1"
         run: pyfltr ci --disable=pylint,pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'

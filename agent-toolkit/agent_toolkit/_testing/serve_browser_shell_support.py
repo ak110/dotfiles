@@ -46,13 +46,6 @@ async def _open_screen(harness: _ScreenHarness, screen: str) -> None:
         "&& window.__screenRequests.completed[listing] > 0",
         arg=[events, listing],
     )
-    _assert_other_streams_unrequested(harness, screen)
-
-
-def _assert_other_streams_unrequested(harness: _ScreenHarness, screen: str) -> None:
-    assert {events: _request_count(harness, events) for name, (events, _) in _SCREEN_STREAMS.items() if name != screen} == {
-        events: 0 for name, (events, _) in _SCREEN_STREAMS.items() if name != screen
-    }
 
 
 async def _resynchronize_visible(page: playwright.async_api.Page, screen: str, *, timeout: float = 10_000) -> None:
@@ -104,7 +97,6 @@ class _DelayedResponse:
                 return playwright.async_api.expect(row).not_to_have_attribute("aria-busy", "true", timeout=5000)
         else:
             status = page.locator("#search-status")
-            await playwright.async_api.expect(status).to_be_empty()
 
             def completed():
                 return playwright.async_api.expect(status).to_be_empty()

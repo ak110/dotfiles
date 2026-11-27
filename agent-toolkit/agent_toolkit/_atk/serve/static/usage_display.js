@@ -32,7 +32,10 @@ export function quotaName(window) {
   if (window.engine === "claude" && kind === "seven_day_overage_included") return "週の利用枠（追加利用分を含む）";
   const period = seconds === 5 * 3600 ? "5時間" : seconds === 7 * DAY ? "週" : "";
   let target = kind;
-  if (window.engine === "codex") target = name || ({primary: "第1枠", secondary: "第2枠"})[kind] || kind;
+  if (window.engine === "codex") {
+    const label = {primary: "第1枠", secondary: "第2枠"}[kind?.replace(/^codex:/, "")];
+    target = name && name !== kind ? name : label || kind;
+  }
   else if (kind === "session" || kind === "weekly_all") target = "全体";
   else if (kind === "weekly_scoped") target = claudeScopedTarget(scope);
   return [period, target || kind].filter(Boolean).join(" · ");

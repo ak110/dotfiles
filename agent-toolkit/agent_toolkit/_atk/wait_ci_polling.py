@@ -38,6 +38,7 @@ from agent_toolkit._atk.wait_ci_records import (
     RunListFn,
     RunRecord,
     _all_completed,
+    _emit_cancelled_jobs,
     _emit_failure_summary,
     _emit_summary,
     _failure_next_action,
@@ -48,6 +49,10 @@ from agent_toolkit._atk.wait_ci_records import (
     _report_new_failures,
     _snapshot_completed,
 )
+
+
+def _snapshot_jobs(runs: list[RunRecord], job_list_fn: JobListFn) -> list[JobRecord]:
+    return [{**job, "runId": run["databaseId"]} for run in runs for job in job_list_fn(run)]
 
 
 def _fetch_snapshot(
@@ -64,8 +69,7 @@ def _fetch_snapshot(
         run for run in candidates if run["databaseId"] not in excluded_ids and not _is_excluded_run(run, superseded_ids)
     ]
     runs = new_runs if expected_ids is None else [run for run in new_runs if run["databaseId"] in expected_ids]
-    jobs = [job for run in runs for job in job_list_fn(run)]
-    return runs, jobs, superseded_ids
+    return runs, _snapshot_jobs(runs, job_list_fn), superseded_ids
 
 
 def _fetch_follow_snapshot(
@@ -86,8 +90,7 @@ def _fetch_follow_snapshot(
         and not _is_excluded_run(run, superseded_ids)
     ]
     runs = new_runs if expected_ids is None else [run for run in new_runs if run["databaseId"] in expected_ids]
-    jobs = [job for run in runs for job in job_list_fn(run)]
-    return runs, jobs, superseded_ids
+    return runs, _snapshot_jobs(runs, job_list_fn), superseded_ids
 
 
 def _is_excluded_run(run: RunRecord, superseded_ids: set[int]) -> bool:
@@ -164,6 +167,7 @@ def _wait_for_completion(
     now_fn: Callable[[], float],
     consecutive_failures: int,
     follow_mode: bool,
+    follow_cancelled: bool,
     reported: set[str],
     save: Callable[[set[str]], None] | None,
 ) -> tuple[int, list[RunRecord], float]:
@@ -204,6 +208,8 @@ def _wait_for_completion(
             if _all_success(runs):
                 return EXIT_SUCCESS, runs, elapsed
 
+            if follow_mode or not _all_cancelled(runs) or not follow_cancelled:
+                _emit_cancelled_jobs(runs, jobs, forge, repository)
             if follow_mode or not _all_cancelled(runs):
                 failed_run = next(run for run in runs if run.get("conclusion") != "success")
                 return _finish(EXIT_CI_FAILED, _failure_next_action(failed_run, "run", repository, forge)), runs, elapsed
@@ -337,6 +343,7 @@ def wait_for_ci(
         now_fn=now_fn,
         consecutive_failures=consecutive_failures,
         follow_mode=False,
+        follow_cancelled=follow_cancelled,
         reported=reported,
         save=save_failures,
     )
@@ -467,6 +474,7 @@ def _follow_cancelled(
         now_fn=now_fn,
         consecutive_failures=consecutive_failures,
         follow_mode=True,
+        follow_cancelled=False,
         reported=reported,
         save=save,
     )

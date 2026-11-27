@@ -19,10 +19,13 @@ class NewWorkItem:
     filename: str
     source: str
     has_merge_branch: bool
+    merge_pending: str | None = None
 
     def label(self, *, omit_defaults: bool) -> str:
         name = self.filename if re.fullmatch(r"[A-Za-z0-9._-]+", self.filename) else json.dumps(self.filename)
         merge = "、merge_branch: あり" if self.has_merge_branch else "" if omit_defaults else "、merge_branch: なし"
+        if self.merge_pending == "processing":
+            merge += "、担当済み・取り込み結果待ち"
         return f"{name} (source: {self.source}{merge})"
 
 

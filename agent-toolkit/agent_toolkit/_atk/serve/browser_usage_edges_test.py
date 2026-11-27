@@ -126,6 +126,7 @@ async def test_reset_inventory_distinguishes_zero_and_missing(
     await expect(missing).to_contain_text("クレジット残高")
 
 
+@pytest.mark.cpu_limit(0.75, reason="更新操作で複数モデルとClaudeの各状態を実ブラウザーで照合する。CI実測は0.509秒。")
 async def test_model_quota_displays_names_and_claude_states_after_refresh(
     screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:

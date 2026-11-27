@@ -26,35 +26,45 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
 
 ## 分析と保存
 
-短い起動目的から本節へ進み、今回のmanifest、自由記述、同一実行識別子、報告先はSessionStartの起動入力から取る。
+短い起動目的から本節へ進み、今回のmanifest、自由記述、同一実行識別子はSessionStartの起動入力から取る。
 中断から再開した時は同じmanifestの未完了の範囲を処理し、成功した時だけ手順5のfinishを実行する。
 回復できる残工程は続け、外部の前提の不足で終える場合は、未完了の対象と再開の条件を報告する。
 
-1. `AGENT_TOOLKIT_SESSION_REVIEW_BATCH`が指すmanifest JSONを読む。
-   `targets`が今回の固定対象、`prepared`が対象ごとの準備結果である。
-   `target_repo`は今回1件の結果報告UWIの登録先であり、各対象の分析先と区別する。
-   準備済みのbundleと文書を再利用し、対象の集合と処理範囲をmanifestに固定したまま分析する。
-   [作業契約](../references/work-contract.md#作成と所有)の「確定した判断」に、セッションの一時領域に置く分析記録の絶対パスを書く。
-   会話の圧縮後は作業契約からその記録を読み、同じmanifestで未完了の対象と未確定の集計から続ける。
-2. 対象ごとに分析の手順書の工程2〜4を行う。
-   各対象の`conversation_path`を通読し、`reference_document`があれば読む。
+1. SessionStartの起動入力にある`batch_analysis`の分析記録を読む。
+   起動元は、今回の固定対象のIDと準備結果の所在、状態、結論を書く行と、横断の集計欄を用意する。
+   冒頭の開始時刻を集計と計測に使い、報告用UWIは冒頭の報告先へ保存する。
+   同じIDの対象が別ホストにある場合は、表の `host:ID` で区別する。
+   変更前に始まった実行を再開する場合は、[作業契約](../references/work-contract.md#作成と所有)の「確定した判断」が指す既存の記録を先に読む。
+   起動元が用意した雛形へ、既存の記録から各対象の状態と結論、集計を移す。
+   済んだ分析はやり直さない。
+   作業契約の「確定した判断」に今回使う分析記録の絶対パスを書く。
+   圧縮後は通知が示す未完了の対象と、記録の未確定の集計から続ける。
+2. 未完了の対象ごとに分析の手順書の工程2〜4を行う。
+   記録にある各対象の`conversation_path`を通読し、`reference_document`があれば読む。
    同じ原因をセッション横断で整理し、対象IDと候補IDの組で出典を保つ。
-   分析記録には問題ごとの判断に加え、対象IDごとの状態（途中・完了。指摘なしも完了）と、採否集計や横断整理の結果と確定状況を、その都度書く。
+   対象の行に結論と状態（途中・完了。指摘なしも完了）を書いてから、次の対象の`conversation_path`を読む。
+   採否集計や横断整理の結果も、確定状況とともに横断の集計欄へその都度書く。
    - `partial_analysis`が真の対象は、読める全行を分析し、欠測を明示した部分分析として完了する。
      `unconfirmed_scope`と`recovered_record_lines`から、欠測の記録ID・物理行・件数、回復した後半と失われた断片を結果へ残す。
      所在が未解決の記録の内容と件数は不明とし、文脈や操作の対応の判断も読めた範囲に限る。
      これらの項目が無ければ欠測の申告なし、`partial_analysis`が無ければfalseと読む。
    - 準備自体の失敗、分析の未完了、外部の前提の不足は、原因と未完了の範囲を報告する。
-   - 実行レビューの採否を`atk run-script review-adoption -- --since <manifestのstarted_atの7日前>`で直近7日間と前の7日間について集計し、不採用率の高いモデルやlevel、同じ理由区分の不採用の反復、前の期間からの増加を分析の候補にする。
+   - 実行レビューの採否を`atk run-script review-adoption -- --since <記録の開始時刻の7日前>`で直近7日間と前の7日間について集計し、不採用率の高いモデルやlevel、同じ理由区分の不採用の反復、前の期間からの増加を分析の候補にする。
      不採用の理由は`review-adoption-rejection`の行の管理表を読んで判断し、移管（`transferred`）は不採用率の候補から除く。
      判断主体のラベルが無い旧表（`判断主体不明`）と、判断記録と明示されていない過去の行は、集計だけで完全には識別できないものとして扱う。
      モデル不明の割合が増えたら当該期間の `unknown_model_tables` から1件選び、表名でセッション記録を探す。
      担当を帰属できない不具合は証拠を保全し、`agent-basics:bugfix` で認可内の是正後に再集計し、結果か残る影響・試行・再開条件を伝える。
      担当の記録自体がなければ集計の限界として伝える。
-   - 同じ2期間を `atk run-script review-second-round -- --since <開始> --until <終了> --release-date <本変更の配布日> --draft-review` で集計する。
-     実行レビューとWI原稿の投入前レビューを別に判定する。
-     直近が95%未満か比較可能な前期間から低下した場合は、2回目の指摘と応答を読み、原因を確定して対策のAWIを起草する。
-     分母0は件数だけを報告する。
+   - 同じ2期間を `atk run-script review-second-round -- --since <開始> --until <終了> --release-date <実行レビュー集計の配布日> --draft-review --other-reviews` で集計する。
+     実行・WI原稿・読者別・ユーザビリティ・投稿前は種類別に判定する。
+     計画を正式に審査した旧工程は過去の記録だけを集計し、現在の計画の自己点検は対象外とする。
+     再レビューの要否だけの返却や、一括置換の未読範囲を補う読取は再判定に数えない。
+     帰属不能、再判定なし、判定を確定できない返却は合格とせず理由別に数える。
+     直近が95%未満か比較可能な前期間から低下した場合は、2回目の指摘と応答から残存、修正に起因、初回で指摘されなかった問題、要求追加を分け、頻度・手戻り・影響を比べて対策のAWIを起草する。
+     初回の確認が不足した場合は、当該レビューの初回で利用場面と直接影響を確かめる既存の手順を適用する。
+     再判定を依頼する前に、既存の返却・未解決事項・修正の記録で初回指摘の採否、変更箇所、修正後の確認を結び付ける。
+     不足があれば再判定の前に確かめる。
+     分母0は判定不能として件数を報告する。
      実行レビューは、配布日以降に2回目の合否を判定できた表が初めて50件に達した回に累計の合格率を95%と比べて報告する。
      それまでは判定済み件数だけを示し、未達とは扱わない。
      この集計の配布日は `2026-11-26` とし、`--release-date` に渡す。
@@ -68,14 +78,14 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
    同書「直接起草と独立した検収の選択」に従い、`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`の投入前レビューを経て保存する。
    原因分析を含む原稿の独立した検収は省かない。
    全対象の分析と横断の整理の後に全要求を予告し、合格した原稿を保存する（`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「工程5」）。
-   `source`は起票経路として`session-review`を指定する。
+   起票時の`source`には`session-review`を指定する。
    処理担当は同書「工程5」に従い、要求・完成条件の各項目の出所と採否の根拠を確かめる。
    所要時間の目標、計測の起点と終点、超過の分析は`agent-toolkit:atk-mode/references/review-session-cost.md`「所要時間の分析と改善」のbatchの定義に従う。
 4. 終了の前にAWIの保存を検収し、対象一覧、登録したAWI、見送り、費用確認を対象IDと対応付けて報告の本文を確定する。
    部分分析の対象は、その限界と、欠測の記録ID・物理行・件数も同じ本文に書く。
 5. batchのメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`を読み、その工程で結果を報告用UWI 1件へ保存する。
    本文は`agent-toolkit:atk-mode/references/report-formats-retrospective.md`の振り返り結果報告の書式で書く。
-   `source`は`run-skill`、scopeは`agent-toolkit:review-session batch`、本文のfrontmatterは`run_skill_report: true`とし、manifestの`target_repo`を`--target-repo`へ明示する。
+   `source`は`run-skill`、scopeは`agent-toolkit:review-session batch`、本文のfrontmatterは`run_skill_report: true`とし、手順1の報告先を`--target-repo`へ明示する。
    同一実行の報告があれば同じUWIを更新して1件に保ち、report-completionをやり直す場合もこの報告を再利用する。
    同書の終了処理へ進む前に報告の保存を検収し、次の操作で分析の完了を記録する。
 
@@ -105,7 +115,7 @@ batchの状態（待ち、処理済みの範囲、実行ごとのmanifest、排�
   手動の振り返りは、全体の分析の後に`agent-toolkit:atk-mode/playbooks/review-session.md`「工程6」で確定し、未確認範囲を含む準備結果は確定できない。
 - カタログ走査は、記録ごとの本文なしの値を`record-index/<runtime>-<走査rootのハッシュ>.json`（`_common/record_metadata_index.py`）へ保存する。
   記録の識別（inode・更新時刻・大きさ）と値を計算するコードの版が同じ記録は解析し直さず、全記録の列挙とstatは照会のたびに行う。
-  壊れた索引と別のコードの索引は、解析し直した値で置き換える。
+  読み取れない索引と別のコードの索引は、解析し直した値で置き換える。
 - 準備に失敗した対象だけを切り離し、残りの対象の分析は続ける。
   失敗は起動元が配布元リポジトリへの是正AWI（`source: session-review`）として報告し、UWIの回答は待たない。
 

@@ -128,8 +128,10 @@ def _bundle_events(
         if after is not None or inherited is not None
         else collected
     )
-    timeline = _default_events(collected, [])
-    post_delivery = post_delivery_events(timeline)
+    timeline = _default_events(collected, [], include_delivery_id=True)
+    post_delivery = post_delivery_events(timeline, collected)
+    for event in timeline:
+        event.pop("delivery_tool_use_id", None)
     if after is not None or inherited is not None:
         timeline = [event for event in timeline if _in_scope(event, scope)]
     if detached:

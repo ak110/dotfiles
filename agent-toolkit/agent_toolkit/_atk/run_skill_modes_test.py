@@ -73,6 +73,8 @@ def test_batch_uses_existing_runner_and_report_receipt(
         assert data["free_text"] == arguments
         return
     assert not session_review.pending()
+    if engine == "claude":
+        assert records[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert len(manifests) == 1
     value = session_review.read(manifests[0])
     assert value["status"] == "completed" and len(value["prepared"]) == 2
@@ -87,6 +89,8 @@ def test_batch_uses_existing_runner_and_report_receipt(
     assert data["free_text"] == "auto 任意の着眼点"
     assert data["target_repo"] == "example.com/team/repo"
     assert pathlib.Path(data["batch_manifest"]) == manifests[0]
+    assert pathlib.Path(data["batch_analysis"]) == session_review.batch_analysis_path(manifests[0])
+    assert "| one | 完了 |" in pathlib.Path(data["batch_analysis"]).read_text(encoding="utf-8")
 
 
 @pytest.mark.usefixtures("leaf_git_commands")
@@ -118,12 +122,15 @@ def test_batch_rejects_finish_without_report_and_resumes_prepared_scope(engine_e
     assert "終了状態: exit code 2" in pathlib.Path(failed["log_path"]).read_text(encoding="utf-8")
     assert session_review.previous_scope(failed["targets"][0]) is None
 
+    analysis = session_review.batch_analysis_path(path)
+    analysis.unlink()
     monkeypatch.setenv("FAKE_REPORT_MODE", "saved")
     code, out, err = _run(["--resume", path.stem], capsys)
     assert code == 0, err
     assert "成功:" in out
     completed = session_review.read(path)
     assert completed["status"] == "completed" and completed["prepared"] == failed["prepared"]
+    assert "| one | 完了 |" in analysis.read_text(encoding="utf-8")
     assert session_review.previous_scope(failed["targets"][0]) is not None
     assert not session_review.pending()
 

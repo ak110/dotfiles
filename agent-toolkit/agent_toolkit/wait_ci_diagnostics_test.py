@@ -204,6 +204,68 @@ class TestNextActionOnNonZeroExit:
         assert _run_wait(lambda _sha: [_run(db_id=301), _run(db_id=302, conclusion="skipped")]) == wait_ci.EXIT_CI_FAILED
         assert "gh run view 302 --repo owner/repository --json jobs" in _next_action(capsys.readouterr().err)
 
+    def test_terminal_github_guidance_includes_only_cancelled_jobs_of_non_successful_runs(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        results = {
+            301: [_job(db_id=901, name="失敗ジョブ", conclusion="failure")],
+            302: [
+                {
+                    **_job(db_id=902, name="打ち切りジョブA", conclusion="cancelled"),
+                    "checkRunUrl": "https://github.example.com/api/v3/repos/team/project/check-runs/42",
+                },
+                _job(db_id=903, name="打ち切りジョブB", conclusion="cancelled"),
+            ],
+            303: [_job(db_id=904, name="成功runの打ち切り", conclusion="cancelled")],
+        }
+        assert (
+            _run_wait(
+                lambda _sha: [
+                    _run(db_id=301, conclusion="failure"),
+                    _run(db_id=302, name="別workflow", conclusion="cancelled"),
+                    _run(db_id=303),
+                ],
+                job_list_fn=lambda run: results[run["databaseId"]],
+                repository="https://github.example.com/team/project.git",
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+        _, err = capsys.readouterr()
+        assert "打ち切りジョブA (cancelled)" in err
+        assert "/check-runs/42/annotations" in err
+        assert "actions/jobs/902/logs" in err
+        assert "--hostname github.example.com" in err
+        assert "打ち切りジョブB (cancelled)" in err
+        assert "actions/jobs/903/logs" in err
+        assert "成功runの打ち切り" not in err
+
+    @pytest.mark.parametrize("follow", [False, True])
+    def test_all_cancelled_gitlab_guidance_only_at_terminal_failure(
+        self, capsys: pytest.CaptureFixture[str], follow: bool
+    ) -> None:
+        assert _run_wait(
+            lambda sha: (
+                [_run(db_id=301, head_sha=sha, conclusion="cancelled")] if sha == "sha1" else [_run(db_id=302, head_sha=sha)]
+            ),
+            forge="gitlab",
+            follow_cancelled=follow,
+            job_list_fn=lambda run: (
+                [
+                    {
+                        **_job(db_id=904, name="元の打ち切り", conclusion="cancelled"),
+                        "url": "https://gitlab.example/team/project/-/jobs/904",
+                    }
+                ]
+                if run["databaseId"] == 301
+                else []
+            ),
+        ) == (wait_ci.EXIT_SUCCESS if follow else wait_ci.EXIT_CI_FAILED)
+        _, err = capsys.readouterr()
+        assert ("元の打ち切り" in err) is not follow
+        assert ("https://gitlab.example/team/project/-/jobs/904" in err) is not follow
+        assert ("glab ci trace 904" in err) is not follow
+        assert "/annotations" not in err
+
     def test_gitlab_failure_guidance_uses_job_trace(self, capsys: pytest.CaptureFixture[str]) -> None:
         """GitLabの失敗jobには検出したjob IDでtrace取得を案内する。"""
         assert (

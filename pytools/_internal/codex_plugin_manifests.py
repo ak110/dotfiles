@@ -175,9 +175,10 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
         (CODEX_PRE_TOOL_USE_COMMAND,),
         output_command=_codex_hook_command("pretooluse"),
         matcher=(
-            "Bash|Edit|Write|spawn_agent|request_user_input|request_user_input_async|"
-            "mcp__agents_server__start|mcp__agents_server__send_message|"
-            "mcp__agents_server__send_to_user|mcp__agents_server__kill|mcp__agents_server__list|"
+            r"Bash|Edit|Write|exec_command|functions\.exec_command|spawn_agent|request_user_input|request_user_input_async|"
+            "mcp__agents_server__start|mcp__agents_server__start_submit|mcp__agents_server__send_message|"
+            "mcp__agents_server__send_to_user|mcp__agents_server__send_to_user_preflight|"
+            "mcp__agents_server__kill|mcp__agents_server__list|"
             "mcp__agents_server__show|mcp__pyfltr__run"
         ),
     ),
@@ -186,7 +187,7 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
         output_command=_codex_hook_command("posttooluse"),
         matcher=(
             r"Bash|Edit|Write|exec_command|functions\.exec_command|functions\.exec|"
-            "mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|"
+            "mcp__agents_server__start|mcp__agents_server__start_submit|mcp__agents_server__send_message|mcp__agents_server__kill|"
             "request_user_input|request_user_input_async|mcp__agents_server__send_to_user|"
             "mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show"
         ),

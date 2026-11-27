@@ -2,19 +2,26 @@
 
 # pylint: disable=protected-access,subprocess-run-check
 
+import json
 import pathlib
 
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import config
+from agent_toolkit._atk.config_repositories import BranchSettings
+from agent_toolkit._atk.wi import submit
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_add_support import _patch_add_editor, _patch_add_git
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
-@pytest.mark.parametrize("case", ["upstream", "advanced", "missing-upstream", "local", "other-repo", "other-branch"])
-def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
+@pytest.mark.parametrize("short", [False, True])
+@pytest.mark.parametrize(
+    "case", ["upstream", "advanced", "missing-upstream", "local", "other-repo", "other-branch", "other-line"]
+)
+def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, monkeypatch, case, short):
     notes = git_repository.init_repository(_setup_notes(tmp_path), commit_message="notes")
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="base")
     older = git_repository.git_output(repo, "rev-parse", "HEAD")
@@ -28,10 +35,16 @@ def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
         git_repository.run_git(repo, "config", "branch.main.merge", "refs/heads/main")
         if case != "missing-upstream":
             git_repository.run_git(repo, "update-ref", "refs/remotes/origin/main", latest)
-    base = older if case in {"local", "other-branch"} else latest
-    branch = "feature" if case == "other-branch" else "main"
-    if case == "other-branch":
+    base = older if case in {"local", "other-branch", "other-line"} else latest
+    branch = "feature" if case in {"other-branch", "other-line"} else "main"
+    if case in {"other-branch", "other-line"}:
         git_repository.run_git(repo, "branch", branch, older)
+    if case == "other-line":
+        monkeypatch.setattr(
+            config,
+            "repository_branch_settings",
+            lambda: {"github.com/example/draft-base": BranchSettings(("main", "feature"), "main", {})},
+        )
     body = tmp_path / "body.md"
     text = "# 調査した要求\n\n## 反映内容と反映先\n\n上流の記述を読んで本文を更新する。\n"
     if case == "other-repo":
@@ -47,7 +60,7 @@ def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
         "--source",
         "human",
         "--draft-base",
-        f"refs/heads/{branch}",
+        branch if short else f"refs/heads/{branch}",
         base,
     ]
 
@@ -56,13 +69,14 @@ def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
             atk.main([*args, *options], home=tmp_path, now=_FIXED_DT)
         return status.value.code
 
-    if case in {"missing-upstream", "other-repo", "other-branch"}:
+    if case in {"missing-upstream", "other-repo", "other-branch", "other-line"}:
         assert add(["--dry-run"]) != 0
         assert add([]) != 0
         expected = {
             "missing-upstream": "宛先refを解決できない",
             "other-repo": "別repoまたは別系統",
             "other-branch": "宛先worktreeの現在のブランチと一致しない",
+            "other-line": "登録済みの宛先系統と一致しない",
         }[case]
         assert expected in capsys.readouterr().err
         assert not tuple(notes.rglob("*.md"))
@@ -80,6 +94,34 @@ def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
         assert add([]) == 0
         (saved,) = notes.rglob("*.md")
         assert f"target_commit: {base}" in saved.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("branch", "candidate"),
+    [("unknown", None), ("origin/main", "refs/heads/main"), ("feature/x", "refs/heads/feature/x")],
+)
+def test_draft_base_branch_diagnostic(tmp_path, capsys, branch, candidate):
+    _setup_notes(tmp_path)
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="base")
+    oid = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.run_git(repo, "remote", "add", "origin", "https://github.com/example/draft-base.git")
+    git_repository.run_git(repo, "branch", "feature/x")
+    body = tmp_path / "body.md"
+    body.write_text("# 調査した要求\n\n## 反映内容と反映先\n\n上流の記述を読んで本文を更新する。\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as status:
+        atk.main(
+            ["wi", "add", str(repo), "--body-file", str(body), "--source", "human", "--draft-base", branch, oid, "--dry-run"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert status.value.code == 1
+    message = capsys.readouterr().err
+    assert "refs/heads/<ブランチ>" in message
+    assert "を含まないブランチ名" in message
+    if candidate:
+        assert f"{candidate} を指定する" in message
 
 
 class TestAddEmptyBodyRejection:
@@ -306,22 +348,104 @@ def test_batch_rejects_process_wi_timing(capsys: pytest.CaptureFixture[str], tmp
     assert "--process-wi-timingは--batchと併用できません" in capsys.readouterr().err
 
 
-def test_process_wi_dry_run_does_not_require_saving_timing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+def test_process_wi_dry_run_requires_the_same_timing_as_save(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     notes = _setup_notes(tmp_path)
-    myrepo = tmp_path / "myrepo"
-    myrepo.mkdir()
-    _patch_add_git(monkeypatch, myrepo)
     body = tmp_path / "body.md"
-    body.write_text("# 見出し\n\n## 反映内容と反映先\n\n前提を確認する。\n", encoding="utf-8")
+    body.write_text("---\nsource: process-wi\n---\n# 見出し\n\n## 反映内容と反映先\n\n前提を確認する。\n", encoding="utf-8")
+    messages = []
+    for options in (["--dry-run"], []):
+        with pytest.raises(SystemExit) as status:
+            atk.main(
+                ["wi", "add", "--target-repo", "github.com/example/repo", "--body-file", str(body), *options],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert status.value.code == 1
+        messages.append(capsys.readouterr().err)
+    assert messages[0] == messages[1]
+    assert "--process-wi-timing" in messages[0]
+    assert not tuple(notes.rglob("*.md"))
 
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(
-            ["wi", "add", str(myrepo), "--body-file", str(body), "--source", "process-wi", "--dry-run"],
-            home=tmp_path,
-            now=_FIXED_DT,
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "valid",
+        "hold",
+        "missing-run",
+        "missing-receipt",
+        "unaccepted-request",
+        "wrong-repo",
+        "completed",
+        "failed",
+        "loop",
+        "flag",
+    ],
+)
+def test_process_wi_submission_bindings_at_add_boundary(tmp_path, monkeypatch, capsys, case):
+    notes = git_repository.init_repository(_setup_notes(tmp_path), commit_message="notes")
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
+    target = "github.com/example/repo"
+    run_id = "a" * 32
+    request_id = "receipt-1"
+    if case != "missing-run":
+        run_path = submit._run_path(run_id)
+        run_path.parent.mkdir(parents=True)
+        run_path.write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "request_ids": [] if case == "unaccepted-request" else [request_id],
+                    "target_repo": target,
+                    "status": case if case in {"completed", "failed"} else "running",
+                }
+            ),
+            encoding="utf-8",
         )
-
-    assert exc_info.value.code == 0, capsys.readouterr().err
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    if case != "missing-receipt":
+        receipt_path = submit._receipt_path(request_id)
+        receipt_path.parent.mkdir(parents=True)
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "accepted_at": 1,
+                    "request": {
+                        "request_id": request_id,
+                        "target_repo": "github.com/example/other" if case == "wrong-repo" else target,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+    body = tmp_path / "body.md"
+    bindings = json.dumps({run_id: [request_id]})
+    body.write_text(
+        f"---\ntarget_repo: {target}\nsource: process-wi\nwi_submit_bindings: {bindings}\n---\n"
+        "# 受付からの変更\n\n## 反映内容と反映先\n\n受付が確認した要件を保存する。\n",
+        encoding="utf-8",
+    )
+    if case == "loop":
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    extra = ["--source", "process-wi"] if case == "flag" else ["--hold"] if case == "hold" else []
+    for options in (["--dry-run"], []):
+        with pytest.raises(SystemExit) as status:
+            atk.main(
+                ["wi", "add", "--target-repo", "github.com/example/fallback", "--body-file", str(body), *extra, *options],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        captured = capsys.readouterr()
+        if case in {"valid", "hold"}:
+            assert status.value.code == 0, captured.err
+            assert "pick-wi-check --merge" not in captured.err
+        else:
+            assert status.value.code == 1
+            assert "--process-wi-timing" in captured.err
+        if options or case not in {"valid", "hold"}:
+            assert not tuple(notes.rglob("*.md"))
+        else:
+            (saved,) = notes.rglob("*.md")
+            assert "source: process-wi" in saved.read_text(encoding="utf-8")

@@ -10,6 +10,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as add_module
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import uwi as uwi_module
+from agent_toolkit._atk.wi.add_validation import validate_retrospective_report
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._testing import git_repository
@@ -267,3 +268,89 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
 
     assert exc_info.value.code == 0
     assert list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "agent-toolkit:review-session",
+        "agent-toolkit:review-session batch",
+        *(f"agent-toolkit:{legacy_mode}" for legacy_mode in ("session-review", "session-review batch", "session-review-batch")),
+        "review-session",
+        "review-session batch",
+    ],
+)
+def test_retrospective_handoff_required_in_all_review_scopes(tmp_path, scope):
+    metadata = {"scope": scope, "target_repo": "github.com/example/repo"}
+    opening = "# 報告: 振り返り\n\n- 未確定: 再現しない; 検証の引き継ぎ: "
+    for value in (
+        "",
+        "なし（次回の振り返りで同じ型が出た時に調べる）",
+        "不要（次の振り返りで同じ型が出たら調べる）",
+        "20261126-183408-001.md",
+    ):
+        with pytest.raises(WebInputError, match="引き継ぎ"):
+            validate_retrospective_report(tmp_path, opening + value, metadata)
+    validate_retrospective_report(tmp_path, opening + "不要（対策の採否は原因に依存しない）（c0001）", metadata)
+    validate_retrospective_report(tmp_path, "# 報告: 振り返り\n\n### 未達・持ち越し\n\n- 未確定: 記録が追記された", metadata)
+    for other in ("agent-toolkit:review-session architecture", "agent-toolkit:process-wi"):
+        validate_retrospective_report(tmp_path, opening, {**metadata, "scope": other})
+
+
+@pytest.mark.parametrize("heading", ["### 未達・持ち越し", "### 未達・持ち越し  ", "### 未達・持ち越し ###"])
+def test_retrospective_handoff_ignores_equivalent_carryover_headings(tmp_path, heading):
+    metadata = {"scope": "agent-toolkit:review-session", "target_repo": "github.com/example/repo"}
+    body = f"# 報告: 振り返り\n\n{heading}\n\n- 未確定: 追記された"
+    validate_retrospective_report(tmp_path, body, metadata)
+    with pytest.raises(WebInputError, match="引き継ぎ"):
+        validate_retrospective_report(tmp_path, body + "\n\n### 他の節\n\n- 未確定: 別の問題", metadata)
+
+
+@pytest.mark.parametrize(
+    ("value", "valid"),
+    [
+        ("20261126-183408-001.md", True),
+        ("不要（対策の採否は原因に依存しない）", True),
+        ("20261126-183408-002.md", False),
+        ("不要（次の振り返りで調べる）", False),
+    ],
+)
+@pytest.mark.parametrize("scope_in_body", [False, True])
+def test_report_dry_run_and_save_check_handoff_in_effective_repo(tmp_path, monkeypatch, capsys, value, valid, scope_in_body):
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    awi = notes / "2026/11/20261126-183408-001.md"
+    awi.parent.mkdir(parents=True, exist_ok=True)
+    awi.write_text("---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/other\n---\n\n# 調査\n", encoding="utf-8")
+    body = tmp_path / "report.md"
+    scope = "agent-toolkit:review-session batch"
+    frontmatter_scope = f"scope: {scope}\n" if scope_in_body else ""
+    body.write_text(
+        f"---\ntarget_repo: github.com/example/other\n{frontmatter_scope}---\n\n# 報告: 振り返り\n\n"
+        f"- 未確定: 再現しない; 検証の引き継ぎ: {value}",
+        encoding="utf-8",
+    )
+    args = [
+        "wi",
+        "add",
+        "--target-repo",
+        "github.com/example/repo",
+        "--type=uwi",
+        "--question-type=report",
+        *([] if scope_in_body else ["--scope", scope]),
+        "--source",
+        "test",
+        "--body-file",
+        str(body),
+    ]
+    for dry_run in (True, False):
+        with pytest.raises(SystemExit) as result:
+            atk.main([*args, *(["--dry-run"] if dry_run else [])], home=tmp_path, now=_FIXED_DT)
+        assert (result.value.code == 0) == valid
+        if not valid:
+            assert "未確定の問題の引き継ぎ" in capsys.readouterr().err
+        saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+        assert len(saved) == 1 + int(valid and not dry_run)
+        if valid and not dry_run:
+            parsed = frontmatter.parse_frontmatter(next(path for path in saved if path != awi).read_text(encoding="utf-8"))
+            assert parsed is not None and parsed[0]["scope"] == scope

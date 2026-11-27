@@ -170,11 +170,11 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stale_role", [False, True])
+@pytest.mark.parametrize("stale_role", [None, "phase", "candidate"])
 async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
-    stale_role: bool,
+    stale_role: str | None,
 ) -> None:
     async with subject.AppServerManager() as manager:
         client = SteerRaceClient()
@@ -188,7 +188,10 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
             role = task_documents.find_role_document(plugin_root.SERVER_PLUGIN_ROOT, "repository-process.subagent.md")
             assert role is not None
             session.prompt = task_documents.task_prompt_header(role)
-            session.model_type = "orchestrate"
+            session.model_type = "orchestrate" if stale_role == "phase" else "execute"
+            session.model = "previous"
+            session.effort = "medium"
+            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:configured/high")
         send_task = asyncio.create_task(manager.send_message(session, "続行"))
         await client.steer_called.wait()
         assert send_task.done() is False
@@ -203,10 +206,11 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
             }
         )
         if stale_role:
-            with pytest.raises(ActionableError, match="orchestrate.*execute"):
+            with pytest.raises(ActionableError, match="orchestrate.*execute|現行の工程executeの候補に含まれない"):
                 await send_task
             assert session.status == "completed"
             assert [method for method, _ in client.requests].count("turn/start") == 1
+            assert [method for method, _ in client.requests].count("thread/resume") == 0
             return
         response = await send_task
         assert response["delivery"] == "reply_started"

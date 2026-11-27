@@ -3,13 +3,93 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 from collections.abc import Iterable
+lazy import subprocess
 
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
 from agent_toolkit._hooks.host import is_antigravity_payload
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+lazy from agent_toolkit._common import atomic_file, commit_hook_environment, state_paths
+lazy from agent_toolkit._git import command as git_command
+
+_ACTOR_KEY = re.compile(r"[A-Za-z0-9_-]{1,96}")
+_ACTOR_RECORD_KEY = re.compile(r"[A-Za-z0-9_-]{1,96}(?:\.[A-Za-z0-9_-]{1,96})?")
+_OBSERVATION_FIELDS = ("session_id", "agent_id", "model", "effort", "reasoning_effort", "transcript_path")
+
+
+def _actor_path(runtime: str, actor: str) -> pathlib.Path:
+    return state_paths.state_dir() / "commit-observations" / runtime / (actor + ".json")
+
+
+def record_commit_observation(payload: dict, *, is_codex: bool) -> str | None:
+    session = payload.get("session_id")
+    if not isinstance(session, str) or not _ACTOR_KEY.fullmatch(session):
+        return None
+    actor = session
+    agent = payload.get("agent_id")
+    if not is_codex and agent is not None:
+        if not isinstance(agent, str) or not _ACTOR_KEY.fullmatch(agent):
+            return None
+        actor += "." + agent
+    runtime = "codex" if is_codex else "claude"
+    observation = {key: payload[key] for key in _OBSERVATION_FIELDS if key in payload}
+    try:
+        atomic_file.atomic_write(_actor_path(runtime, actor), json.dumps(observation, ensure_ascii=False))
+    except OSError:
+        return None
+    return actor
+
+
+def read_commit_observation(runtime: str, actor: str) -> dict:
+    if runtime not in {"codex", "claude"} or not _ACTOR_RECORD_KEY.fullmatch(actor):
+        return {}
+    try:
+        value = json.loads(_actor_path(runtime, actor).read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def persist_claude_commit_actor(payload: dict) -> None:
+    destination = os.environ.get("CLAUDE_ENV_FILE")
+    if not destination or not (actor := record_commit_observation(payload, is_codex=False)):
+        return
+    with pathlib.Path(destination).open("a", encoding="utf-8", newline="\n") as output:
+        output.write(f"export {commit_hook_environment.CLAUDE_ACTOR_ENV}={actor}\n")
+
+
+def commit_hook_installed(*, is_codex: bool) -> bool:
+    host = "codex" if is_codex else "claude"
+    return (_host_homes.commit_hook_directory(pathlib.Path.home(), host) / "commit-msg").is_file()
+
+
+def static_commit_body_safe(command: str, cwd: str) -> bool:
+    if not cwd or not re.fullmatch(r"git (?:commit\b[^\n;|&]*|add\b[^\n;|&]* && git commit\b[^\n;|&]*)", command):
+        return False
+    try:
+        settings = git_command.run(
+            ["config", "--get-regexp", r"^(core\.(hookspath|commentchar|commentstring)|commit\.cleanup)$"],
+            cwd=cwd,
+            capture_output=True,
+            timeout=3,
+        )
+        if settings.returncode != 1 or settings.stdout:
+            return False
+        hooks = git_command.run(
+            ["rev-parse", "--git-path", "hooks"],
+            cwd=cwd,
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=3,
+        )
+    except OSError, subprocess.SubprocessError:
+        return False
+    home = pathlib.Path(cwd) / hooks.stdout.rstrip("\r\n")
+    return not any((home / name).is_file() for name in ("prepare-commit-msg", "commit-msg"))
 
 
 def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:

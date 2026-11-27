@@ -171,6 +171,43 @@ async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
+async def test_named_continuation_delivers_supplement_once_without_using_it_as_input(monkeypatch, tmp_path):
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
+    session_id = started["session_id"]
+    count = backend.send_calls
+    named = {"session_id": session_id, "instruction": "再レビューせよ"}
+    extra = "依頼元からの詳しい説明\n" * 60 + "レビュー基準: WI"
+    try:
+        rejected = (
+            ({"session_id": session_id, "supplement": extra}, "supplement"),
+            ({"session_id": session_id, "message": "自由文", "supplement": extra}, "supplement"),
+            ({**named, "supplement": extra}, "必須欠落"),
+            ({**named, "extra_params": {"round": "2", "未宣言": "値"}, "supplement": extra}, "宣言外"),
+            (
+                {**named, "extra_params": {"round": "2", "rewrite_map": str(tmp_path / "absent")}, "supplement": extra},
+                "パス入力",
+            ),
+        )
+        for args, reason in rejected:
+            with pytest.raises(ToolError, match=reason):
+                await mcp_tools.mcp.call_tool("send_message", args)
+            assert backend.send_calls == count
+        await mcp_tools.mcp.call_tool(
+            "send_message",
+            {**named, "extra_params": {"round": "2"}, "supplement": extra},
+        )
+        assert backend.send_calls == count + 1
+        assert delivery_payload(backend.prompts[-1]) == f"再レビューせよ\nround: 2\n\n## 補足\n\n{extra}"
+        assert manager.sessions[session_id].followup_prompts[-1].endswith(extra)
+        freeform = "レビュー基準: WI\nこの入力で確認してください。"
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "prompt": freeform})
+        assert backend.send_calls == count + 2
+        assert delivery_payload(backend.prompts[-1]) == freeform
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_continuation_input_errors_return_reason_and_next_action(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -364,7 +401,7 @@ async def test_wi_policy_review_continues_to_draft_in_same_session(
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         materials = {}
-        for name in ("方針", "原稿", "要求原本"):
+        for name in ("方針", "原稿", "要求原本", "指摘の扱い"):
             path = tmp_path / f"{name}.md"
             path.write_text(f"# {name}\n", encoding="utf-8")
             materials[name] = str(path)
@@ -393,6 +430,28 @@ async def test_wi_policy_review_continues_to_draft_in_same_session(
         assert materials["原稿"] in backend.prompts[-1]
         assert len(manager.sessions) == 1
         assert len(manager.sessions[session_id].followup_prompts) == 1
+
+        for params in ({}, {"指摘の扱い": str(tmp_path / "missing.md")}):
+            with pytest.raises(ToolError, match="指摘の扱い"):
+                await mcp_tools.mcp.call_tool(
+                    "send_message",
+                    {"session_id": session_id, "instruction": "再判定せよ", "extra_params": params},
+                )
+        assert len(manager.sessions[session_id].followup_prompts) == 1
+        await mcp_tools.mcp.call_tool(
+            "send_message",
+            {
+                "session_id": session_id,
+                "instruction": "再判定せよ",
+                "extra_params": {"指摘の扱い": materials["指摘の扱い"], "原稿": materials["原稿"]},
+            },
+        )
+        assert "再判定せよ" in backend.prompts[-1]
+        assert materials["指摘の扱い"] in backend.prompts[-1]
+        assert materials["原稿"] in backend.prompts[-1]
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "prompt": "訂正: 原稿の対象は開発用"})
+        assert "訂正: 原稿の対象は開発用" in backend.prompts[-1]
+        assert len(manager.sessions[session_id].followup_prompts) == 3
 
 
 @pytest.mark.parametrize(

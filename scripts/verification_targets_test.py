@@ -83,13 +83,17 @@ def test_empty_result_and_failed_listing_are_distinct(tmp_path: pathlib.Path, mo
             "agent-toolkit/skills/atk-mode/SKILL.md",
             "# 前\n",
             "# 次\n",
-            ["markdown_link_anchor_invariant_test.py", "norm_size_budget_invariant_test.py", "retired_terms_invariant_test.py"],
+            ["markdown_link_anchor_invariant_test.py", "retired_terms_invariant_test.py"],
         ),
         (
             "agent-toolkit/agent_toolkit/_atk/run_skill.py",
             "",
             'commands.add_parser("sample")\n',
-            ["agent-toolkit/agent_toolkit/atk_help_test.py", "markdown_link_anchor_invariant_test.py"],
+            [
+                "agent-toolkit/agent_toolkit/atk_help_test.py",
+                "agent-toolkit/agent_toolkit/hook_budget_test.py",
+                "markdown_link_anchor_invariant_test.py",
+            ],
         ),
         ("pytools/process_example.py", "", "child.terminate()\n", ["subprocess_stop_invariant_test.py"]),
         ("scripts/message.py", "", 'MESSAGE = "変更"\n', ["retired_terms_invariant_test.py"]),
@@ -120,6 +124,100 @@ def test_integration_argv_covers_cross_contracts_even_if_sources_are_omitted(
     assert precommit_main(["--check-argv", json.dumps(planned), "--against", base]) == bool(expected)
     err = capsys.readouterr().err
     assert all(test in err for test in expected)
+
+
+@pytest.mark.parametrize(
+    ("path", "before", "after", "reason", "tests"),
+    [
+        (
+            "agent-toolkit/agent_toolkit/_hooks/permission_denial_notice.py",
+            "import time\n",
+            "import time\nimport pathlib\n",
+            "hook-import-budget",
+            {"hook_budget_test.py"},
+        ),
+        (
+            "agent-toolkit/agent_toolkit/_agents_server/launch_requests.py",
+            "LABEL = 'long'\n",
+            "LABEL = 'short'\n",
+            "shared-codex-launch",
+            {"codex_auto_reset_backend_test.py", "codex_resume_test.py"},
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def sync_return_contracts():\n    return 1\n",
+            "def sync_return_contracts():\n    return 2\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def main():\n    sync_return_contracts()\n",
+            "def main():\n    pass\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def main():\n    sync_return_contracts()\nif __name__ == '__main__':\n    main()\n",
+            "def main():\n    sync_return_contracts()\nif __name__ == '__main__':\n    pass\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def main():\n    sync_return_contracts()\n",
+            "def main():\n    return 0\n    sync_return_contracts()\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def main():\n    try:\n        sync_return_contracts()\n    except ValueError:\n        print('old')\n",
+            "def main():\n    try:\n        sync_return_contracts()\n    except ValueError:\n        print('new')\n",
+            "role-document-generation",
+            set(),
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def main():\n    'old'\n    sync_return_contracts()\n",
+            "def main():\n    'new'\n    sync_return_contracts()\n",
+            "role-document-generation",
+            set(),
+        ),
+        (
+            "scripts/sync_generated_files.py",
+            "def other():\n    return 1\n",
+            "def other():\n    return 2\n",
+            "role-document-generation",
+            set(),
+        ),
+        (
+            "agent-toolkit/agent_toolkit/_common/task_documents.py",
+            "NOTICE = 'old'\ndef input_contract_body():\n    return NOTICE\n",
+            "NOTICE = 'new'\ndef input_contract_body():\n    return NOTICE\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+        (
+            f"{_PLUGIN}/skills/atk-mode/roles/example.subagent.md",
+            "# Example\n\n## 出力\n\n- 前\n",
+            "# Example\n\n## 出力\n\n- 後\n",
+            "role-document-generation",
+            {"task_documents_invariant_test.py"},
+        ),
+    ],
+)
+def test_source_changes_select_cross_contracts(
+    tmp_path: pathlib.Path, path: str, before: str, after: str, reason: str, tests: set[str]
+) -> None:
+    root = init_repository(tmp_path / "repo", files={path: before})
+    base = commit_all(root, "基点")
+    (root / path).write_text(after, encoding="utf-8")
+    selected = consumer_tests(root, [path], base=base)
+    assert {pathlib.Path(row["test"]).name for row in selected["cross_contracts"] if row["reason"] == reason} == tests
+    if reason == "role-document-generation":
+        assert {pathlib.Path(row["test"]).name for row in consumer_tests(root, [path]).get("cross_contracts", [])} == tests
 
 
 @pytest.mark.parametrize("remove_policy", [False, True])

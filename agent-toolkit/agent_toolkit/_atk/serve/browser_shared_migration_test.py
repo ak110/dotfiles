@@ -4,9 +4,11 @@ import pathlib
 
 import playwright.async_api
 import pytest
+import pytest_asyncio
 
 from agent_toolkit._atk import config, config_settings, config_shared_migration, usage_refresh
 from agent_toolkit._atk.config_sharing_test import _Hosts
+from agent_toolkit._atk.serve.browser_settings_test import _open_setting
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_fixture,
     _screen_harness_fixture,
@@ -19,6 +21,14 @@ pytestmark = [pytest.mark.browser]
 @pytest.fixture(autouse=True)
 def isolate_observation_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(usage_refresh, "refresh", lambda **_kwargs: [])
+
+
+@pytest_asyncio.fixture(autouse=True, loop_scope="session")
+async def isolate_settings_screen(screen_harness: _ScreenHarness) -> None:
+    await screen_harness.page.route(
+        "**/static/{wi,plans,sessions,agents,usage}.js",
+        lambda route: route.fulfill(content_type="text/javascript", body="export {};"),
+    )
 
 
 @pytest.mark.cpu_limit(1.5, reason="独立2 cloneの作成、実Gitの同期、ブラウザーからの許可再発行を確認する。")
@@ -45,6 +55,7 @@ async def test_settings_reissues_a_blocked_legacy_codex_grant(
     await page.goto(screen_harness.base_url + "/settings")
     nav = page.get_by_role("navigation", name="設定の分類")
     await nav.get_by_role("button", name="利用枠", exact=True).click()
+    await _open_setting(page.locator('[data-setting="usage_reset_permissions"]'))
     row = page.locator('[data-editor="usage_reset_permissions:permitted-period"]')
     await row.locator("summary").first.click()
     await playwright.async_api.expect(row.get_by_text("他端末の未共有の消費", exact=False)).to_be_visible()
@@ -69,15 +80,16 @@ async def test_settings_only_asks_about_conflicts_and_saves_the_choice(
 
     page = screen_harness.page
     await page.clock.install()
+    await page.set_viewport_size({"width": 360, "height": 700})
     await page.goto(screen_harness.base_url + "/settings")
     expect = playwright.async_api.expect
-    category = page.get_by_role("navigation", name="設定の分類").get_by_role("button", name="共有設定の選択")
-    await category.click()
+    shortcut = page.get_by_role("button", name="共有設定に残す値を選ぶ")
+    await shortcut.press("Enter")
+    await expect(page.get_by_role("heading", name="共有設定の選択")).to_be_focused()
     panel = page.locator("[data-shared-migration]")
     await expect(panel.get_by_role("group", name="レビューのモデル")).to_be_visible()
     await expect(panel.get_by_text("実装のモデル", exact=False)).to_have_count(0)
     await expect(panel.get_by_role("button", name="差を確認")).to_have_count(0)
-    await page.set_viewport_size({"width": 360, "height": 700})
     options = panel.locator(".settings-migration-option")
     first, second = await options.nth(0).bounding_box(), await options.nth(1).bounding_box()
     assert first is not None and second is not None and second["y"] >= first["y"] + first["height"]
@@ -87,6 +99,7 @@ async def test_settings_only_asks_about_conflicts_and_saves_the_choice(
     async with page.expect_response(lambda response: "background=1" in response.url and response.ok):
         await page.clock.fast_forward(30_000)
     save = panel.get_by_role("button", name="選んだ値を保存")
+    await expect(save).to_have_class("button-primary")
     await expect(save).to_be_enabled()
     await expect(radio).to_be_checked()
     await expect(radio).to_be_focused()
@@ -98,6 +111,7 @@ async def test_settings_only_asks_about_conflicts_and_saves_the_choice(
     await expect(save).to_be_focused()
     await page.keyboard.press("Enter")
     await expect(panel).to_have_count(0)
+    await expect(shortcut).to_be_hidden()
 
     assert hosts.local("b") == {}
     hosts.use("a")
@@ -106,8 +120,9 @@ async def test_settings_only_asks_about_conflicts_and_saves_the_choice(
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("persistent", [False, True])
 async def test_migration_save_keeps_focus_while_settings_refresh_recovers(
-    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, persistent: bool
 ) -> None:
     hosts = _Hosts(tmp_path, monkeypatch)
     hosts.use("a")
@@ -129,7 +144,8 @@ async def test_migration_save_keeps_focus_while_settings_refresh_recovers(
         await release.wait()
         await route.fulfill(status=503, json={"error": "一時的な取得不能"})
 
-    await page.route("**/api/settings?background=1", fail_once, times=1)
+    read_route = "**/api/settings?background=1"
+    await page.route(read_route, fail_once, times=None if persistent else 1)
     requests: list[str] = []
 
     def record_migration(request: playwright.async_api.Request) -> None:
@@ -145,8 +161,24 @@ async def test_migration_save_keeps_focus_while_settings_refresh_recovers(
     assert not requests
     async with page.expect_response(lambda response: "background=1" in response.url and response.status == 503):
         release.set()
-    async with page.expect_response(lambda response: "background=1" in response.url and response.ok):
-        await page.clock.run_for(2_000)
+    if persistent:
+        for _ in range(3):
+            async with page.expect_response(lambda response: "background=1" in response.url and response.status == 503):
+                await page.clock.run_for(2_000)
+        retry = page.locator("#update-status").get_by_role("button", name="再取得")
+        await expect(retry).to_be_visible()
+        await expect(save).to_be_disabled()
+        await expect(save).to_be_focused()
+        await expect(panel.get_by_text("最新の共有設定を確認できるまで保存できません。")).to_be_visible()
+        await page.keyboard.press("Enter")
+        assert not requests
+        await page.unroute(read_route, fail_once)
+        await retry.click()
+        await expect(save).to_be_enabled()
+        await save.focus()
+    else:
+        async with page.expect_response(lambda response: "background=1" in response.url and response.ok):
+            await page.clock.run_for(2_000)
     await expect(save).to_be_enabled()
     await expect(save).to_be_focused()
     await page.keyboard.press("Enter")
@@ -180,6 +212,7 @@ async def test_invalid_shared_setting_has_repair_destination_without_blocking_ch
     assert json.loads(path.read_text(encoding="utf-8")) == {"codex_fast_mode": False}
     await nav.get_by_role("button", name="その他の設定とパス").click()
     row = page.locator('[data-setting="codex_fast_mode"]')
+    await _open_setting(row)
     await expect(row.get_by_text("この端末のconfig.jsonに無効な値があります。", exact=False)).to_be_visible()
     await expect(row.get_by_role("button", name="保存", exact=True)).to_have_count(0)
     path.write_text('{"codex_fast_mode": "false"}', encoding="utf-8")

@@ -45,8 +45,33 @@ async def _open_add(screen_harness: _ScreenHarness) -> Locator:
     await page.goto(screen_harness.base_url + "/settings")
     await page.get_by_role("navigation", name="設定の分類").get_by_text("利用枠", exact=True).click()
     section = page.locator('[data-setting="usage_reset_permissions"]')
+    await section.locator(":scope > summary").click()
     await section.get_by_text("許可を追加", exact=True).click()
     return section
+
+
+@pytest.mark.usefixtures("isolated_permissions")
+@pytest.mark.parametrize("via_link", [False, True])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_reset_permissions_shortcut_opens_the_setting_on_entry_only(
+    screen_harness: _ScreenHarness, via_link: bool
+) -> None:
+    page = screen_harness.page
+    target = screen_harness.base_url + "/settings?group=usage&host="
+    if via_link:
+        await page.goto(screen_harness.base_url + "/usage")
+        await page.get_by_role("link", name="リセットの許可を設定").click()
+    else:
+        await page.goto(target)
+    await expect(page).to_have_url(target)
+    row = page.locator('[data-setting="usage_reset_permissions"]')
+    await expect(row.get_by_text("許可を追加", exact=True)).to_be_visible()
+    await row.locator(":scope > summary").click()
+    groups = page.get_by_role("navigation", name="設定の分類")
+    await groups.get_by_role("button", name="工程別モデル", exact=True).click()
+    await groups.get_by_role("button", name="利用枠", exact=True).click()
+    await expect(row).to_be_visible()
+    await expect(row.get_by_text("許可を追加", exact=True)).to_be_hidden()
 
 
 @pytest.mark.usefixtures("isolated_permissions")
@@ -200,6 +225,7 @@ async def test_permission_draft_survives_host_switch_and_remote_unknown_has_no_c
     page = screen_harness.page
     host = page.get_by_label("設定対象ホスト")
     await host.select_option("synthetic-host")
+    await section.locator(":scope > summary").click()
     await expect(section.get_by_text("許可を追加", exact=True)).to_be_visible()
     await section.get_by_text("許可を追加", exact=True).click()
     assert await account.locator("option").count() == 0
@@ -333,7 +359,7 @@ async def test_existing_permission_keeps_legacy_scope_and_shows_period_states(sc
     await expect(active).to_contain_text("自動のresetの対象外の範囲")
     await active.get_by_role("button", name="7日後").click()
     await active.get_by_role("button", name="保存", exact=True).click()
-    await expect(section.get_by_text("設定を保存しました。", exact=True)).to_be_visible()
+    await expect(section.locator("[data-settings-result]")).to_contain_text("許可を更新しました")
     saved = json.loads(config_settings.load_config()["usage_reset_permissions"])
     assert saved[0]["until"] != entries[0]["until"]
     assert [saved[0][field] for field in ("id", "account", "scope")] == [

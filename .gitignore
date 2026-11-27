@@ -16,6 +16,7 @@
 /.codex/
 /agent-toolkit-codex/
 /agent-toolkit-agy/
+/agent-toolkit/tsconfig.json
 /agent-basics-agy/
 /.config/
 /.ipython/

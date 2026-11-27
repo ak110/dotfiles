@@ -46,7 +46,7 @@ async def test_global_error_closed_during_sync_restores_refresh_focus(
         await playwright.async_api.expect(refresh_button).to_be_disabled()
 
         await page.locator('.entry-select[data-key="awi.md"]').click()
-        await page.get_by_role("dialog", name="詳細").get_by_role("button", name="削除", exact=True).click()
+        await page.locator("#detail-dialog").get_by_role("button", name="削除", exact=True).click()
         await page.locator("#delete-submit-button").click()
         await playwright.async_api.expect(page.locator("#operation-notice")).to_contain_text("削除しました。")
 
@@ -175,7 +175,7 @@ async def test_detail_retry_preserves_unsaved_input(browser_harness: _BrowserHar
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator('.entry-select[data-key="awi.md"]').click()
-    detail = page.get_by_role("dialog", name="詳細")
+    detail = page.locator("#detail-dialog")
     await detail.get_by_role("button", name="編集", exact=True).click()
     field = detail.locator("#edit-content")
     await field.fill("編集途中の本文")
@@ -240,6 +240,6 @@ async def test_normal_detail_deleted_after_retry_clears_common_notice(browser_ha
     await expect(notice).to_contain_text("WIの詳細を取得できません。")
     await notice.get_by_role("button", name="再取得").click()
     await expect(notice).to_be_hidden()
-    await expect(page.get_by_role("dialog", name="詳細")).to_be_hidden()
+    await expect(page.locator("#detail-dialog")).to_be_hidden()
     await expect(page.locator("#operation-notice")).to_contain_text("削除されたため")
     assert attempts == 3

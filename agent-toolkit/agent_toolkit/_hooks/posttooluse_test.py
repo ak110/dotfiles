@@ -1,14 +1,16 @@
 # pylint: disable=protected-access
 """posttooluseの契約テスト。"""
 
+import hashlib
 import json
 import pathlib
 
 import pytest
 
-from agent_toolkit._agents_server import agents_wait, shared_layout, wait_targets
+from agent_toolkit._agents_server import agents_wait, result_projection, shared_layout, wait_targets
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._common import state_paths
+from agent_toolkit._common.session_state import update_state
 from agent_toolkit._testing.posttooluse_support import _isolate_conversation, _load_posttooluse_module, _write_root_status
 
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
@@ -237,3 +239,58 @@ def test_start_registers_wait_target_for_delegated_caller(
             tmp_path,
         )
     ).exists()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.parametrize("via", ["terminal", "jsonl", "mcp"])
+def test_receipt_shortens_only_guidance_already_read_and_received_by_recipient(tmp_path, via) -> None:
+    document = tmp_path / "reviewee.md"
+    document.write_text("既読の本文", encoding="utf-8")
+    digest = hashlib.sha256(document.read_bytes()).hexdigest()
+    recipient = "6e52e871-44ac-4011-a502-97e16b3a7b0b"
+    item = {"status": "completed", "agent_message": "指摘1件", "next_action": "個別のエラーを確かめてください。"}
+    first = result_projection.with_result_next_action(item, "example-review")
+    unread_recipient = "3f74bbd3-197f-4df8-85d1-a4b9c258d840"
+    assert result_projection.concise_review_receipt(first, unread_recipient) == first
+    update_state(
+        recipient,
+        lambda state: {
+            **state,
+            "exec_review_receipt_sources": {
+                "main": {"read": {"SKILL.md": "activated", "reviewee.md": [str(document), digest]}}
+            },
+        },
+    )
+    assert result_projection.concise_review_receipt(first, recipient) == first
+    assert result_projection.concise_review_receipt(first, recipient) == first
+    if via == "mcp":
+        tool_name, tool_input = "mcp__agents_server__send_message", {}
+        response = {"structuredContent": {"previous_result": first}}
+    else:
+        tool_name, tool_input = "Bash", {"command": "atk agents wait"}
+        action = result_projection.REVIEW_RESULT_NEXT_ACTION
+        response = (
+            "終了行: session_id=review status=completed "
+            f"next_action={action} read_requirements={json.dumps(first['read_requirements'], ensure_ascii=False)}"
+            if via == "terminal"
+            else json.dumps(first, ensure_ascii=False)
+        )
+    payload = {
+        "session_id": recipient,
+        "hook_event_name": "PostToolUse",
+        "cwd": str(tmp_path),
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "tool_response": response,
+    }
+    assert _POSTTOOLUSE_MODULE.main(json.dumps(payload)) == 0
+    short = result_projection.concise_review_receipt(first, recipient)
+    assert short["agent_message"] == item["agent_message"]
+    assert "reviewee.md" not in short["next_action"]
+    assert item["next_action"] in short["next_action"]
+    assert short["read_requirements"] == first["read_requirements"]
+    assert result_projection.concise_review_receipt(first, None) == first
+    changed = result_projection.with_result_next_action(item, "reader-fit-review")
+    assert result_projection.concise_review_receipt(changed, recipient) == changed
+    document.write_text("新しい版", encoding="utf-8")
+    assert result_projection.concise_review_receipt(first, recipient) == first

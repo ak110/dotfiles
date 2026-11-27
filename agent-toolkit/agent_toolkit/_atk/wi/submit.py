@@ -177,6 +177,38 @@ def _run_path(run_id: str) -> pathlib.Path:
     return _root() / "runs" / run_id / "run.json"
 
 
+def matches_active_bindings(bindings: object, target_repo: str) -> bool:
+    if not isinstance(bindings, dict) or not bindings:
+        return False
+    try:
+        for run_id, request_ids in bindings.items():
+            if not isinstance(run_id, str) or not isinstance(request_ids, list) or not request_ids:
+                return False
+            run = _read(_run_path(run_id))
+            if (
+                run.get("run_id") != run_id
+                or run.get("target_repo") != target_repo
+                or run.get("status") not in {"queued", "running", "waiting"}
+                or not isinstance(accepted := run.get("request_ids"), list)
+            ):
+                return False
+            for request_id in request_ids:
+                if not isinstance(request_id, str) or request_id not in accepted:
+                    return False
+                receipt = _read(_receipt_path(request_id))
+                if (
+                    receipt.get("run_id") != run_id
+                    or receipt.get("accepted_at") is None
+                    or not isinstance(request := receipt.get("request"), dict)
+                    or request.get("request_id") != request_id
+                    or request.get("target_repo") != target_repo
+                ):
+                    return False
+    except OSError, ValueError, TypeError, KeyError:
+        return False
+    return True
+
+
 def _target(request: dict[str, Any]) -> str:
     return hashlib.sha256(request["target_repo"].encode()).hexdigest()
 

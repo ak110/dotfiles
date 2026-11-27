@@ -745,6 +745,10 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if message is not None or tmp_path is not None:
             parsed_edited = _frontmatter.parse_frontmatter(edited)
             entry_type = parsed_edited[0].get("type") if parsed_edited is not None else None
+            if parsed_edited is not None:
+                metadata, body = parsed_edited
+                if entry_type == WI_TYPE_UWI and metadata.get("question_type") == _constants.QUESTION_TYPE_REPORT:
+                    _add_validation.validate_retrospective_report(private_notes, body, metadata)
             _add.require_confirmed_cause(edited, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI)
             _add.require_cause_analysis_format(
                 edited, original=original, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI

@@ -5,7 +5,7 @@ import {
   TERMINAL_STATES, byId, deleteEntrySnapshot, entryKey, wiState
 } from "./wi_state.js";
 import {
-  entryPageUrl, entrySelectionFromUrl, entryStateText, formatDateParts, refreshCooldownDisplays, stateLabel
+  entrySelectionFromUrl, entryStateText, entryTitle, formatDateParts, refreshCooldownDisplays, stateLabel
 } from "./wi_list_render.js";
 import {
   renderWaitingProgress
@@ -24,12 +24,12 @@ import {
   BASE_PATH, setUpdateError, setDisplayedReadError
 } from "./common.js";
 
-import {closeWiReferences, configureWiReferences, linkWiReferences, wiLink} from "./wi_reference.js";
+import {closeWiReferences, configureWiReferences, entryPageUrl, linkWiReferences, wiLink} from "./wi_reference.js";
 
 configureWiReferences(renderDetailView, entry => {
   closeDetailDialog();
   if (!byId("detail-dialog").open) void selectEntry(entry);
-});
+}, filename => api(`/api/entries/${encodeURIComponent(filename)}`));
 
 function updateCurrentRowSelection() {
   document.querySelectorAll('.entry-select').forEach(button => {
@@ -164,9 +164,13 @@ function renderAttachmentReferences(content, entry) {
   }
 }
 
-function renderDetailView(entry, part) {
+function renderDetailView(entry, part, heading) {
+  const title = entryTitle(entry);
+  heading.textContent = title;
   part('detail-view').hidden = false;
-  part('detail-filename').textContent = entry.filename;
+  const filename = part('detail-filename');
+  filename.textContent = entry.filename;
+  filename.classList.toggle('visually-hidden', title === entry.filename);
   const state = part('detail-state');
   state.textContent = entryStateText(entry);
   state.dataset.state = entry.state;
@@ -181,6 +185,8 @@ function renderDetailView(entry, part) {
   }
   renderAttachmentReferences(content, entry);
   linkWiReferences(content, entry);
+  const first = content.firstElementChild;
+  if (first?.matches('h1:not([id])') && first.childElementCount === 0 && first.textContent.trim() === title) first.remove();
   renderMetadata(entry, part('detail-metadata'));
   part('readonly-notice').hidden = EDITABLE_STATES.has(entry.state);
 }
@@ -298,7 +304,7 @@ export function displayEntry(entry) {
   wiState.detailRefreshRequired = false;
   byId('decision-note').value = '';
   setTextMessage('detail-alert', '');
-  renderDetailView(entry, byId);
+  renderDetailView(entry, byId, byId('detail-heading'));
   renderAnswerChoices(entry);
   setDetailMode('view');
   updateCurrentRowSelection();

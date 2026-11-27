@@ -3,6 +3,7 @@ from __future__ import annotations
 # 同期転送側は軽量に保ち、asyncio・worker・Win32は使う分岐だけで読み込む。
 # pylint: disable=import-outside-toplevel
 import contextlib
+import dataclasses
 import hashlib
 import json
 import os
@@ -15,7 +16,7 @@ from multiprocessing import connection
 from typing import TYPE_CHECKING, Any
 
 from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
-from agent_toolkit._common import runtime_environment, state_paths
+from agent_toolkit._common import delegated_session, runtime_environment, state_paths
 
 if TYPE_CHECKING:
     import asyncio
@@ -97,14 +98,35 @@ AUTO_PUBLISH_ENV = "AGENT_TOOLKIT_SERVICE_AUTO_PUBLISH"
 
 
 def namespace(caller: runtime_environment.CallerContext) -> pathlib.Path:
+    from agent_toolkit._agents_server import service_distribution
+
     base = _state_directory(caller) / "services" / "agents-server"
     if os.name == "nt":
         from agent_toolkit._agents_server.windows_service_transport import current_process_elevated
 
         # 従来の共通索引にはどちらの権限の世代も残り得るため、両方を分ける。
         suffix = "elevated" if current_process_elevated() else "standard"
-        return base.with_name(f"{base.name}-{suffix}")
-    return base
+        base = base.with_name(f"{base.name}-{suffix}")
+    scope = caller.environment.get(service_distribution.SCOPE_ENV)
+    root = caller.environment.get(delegated_session.CALLER_PLUGIN_ROOT_ENV)
+    if not scope and root and caller.environment.get(service_distribution.UPDATE_ENV) != "1":
+        scope = service_distribution.isolated_scope(base, pathlib.Path(root))
+    if not scope:
+        return base
+    digest = hashlib.sha256(scope.encode()).hexdigest()
+    return base.with_name(f"{base.name}-isolated-{digest}")
+
+
+def plugin_caller(caller: runtime_environment.CallerContext, root: pathlib.Path) -> runtime_environment.CallerContext:
+    from agent_toolkit._agents_server import service_distribution
+
+    environment = {**caller.environment, delegated_session.CALLER_PLUGIN_ROOT_ENV: str(root)}
+    if not environment.get(service_distribution.SCOPE_ENV) and environment.get(service_distribution.UPDATE_ENV) != "1":
+        base_caller = dataclasses.replace(caller, environment={**environment, service_distribution.UPDATE_ENV: "1"})
+        scope = service_distribution.isolated_scope(namespace(base_caller), root)
+        if scope:
+            environment[service_distribution.SCOPE_ENV] = scope
+    return dataclasses.replace(caller, environment=environment)
 
 
 def endpoint(directory: pathlib.Path, generation: str) -> str:

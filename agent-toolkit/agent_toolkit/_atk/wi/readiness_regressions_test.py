@@ -33,19 +33,24 @@ def test_pending_count_filters_repositories(tmp_path: pathlib.Path) -> None:
 def test_unanswered_dependency_prefers_same_repository(legacy: bool, same_repo_answered: bool) -> None:
     repo = "github.com/example/repo"
     other = "github.com/example/other"
-    metadata: dict[str, object] = (
-        {"queue_schedule": {"dependency": {"kind": "entries", "filenames": ["question.md"]}}}
+
+    dependency = (
+        "queue_schedule:\n  dependency:\n    kind: entries\n    filenames: [question.md]\n"
         if legacy
-        else {"depends_on": ["question.md"]}
+        else "depends_on: [question.md]\n"
     )
-    records: tuple[tuple[pathlib.Path, str | None, str | None, dict[str, object], str], ...] = (
-        (pathlib.Path("request.md"), repo, "awi", metadata, ""),
-        (pathlib.Path("question.md"), repo, "uwi", {}, "\n## 回答\n" + ("回答済み" if same_repo_answered else "")),
-        (pathlib.Path("elsewhere/question.md"), other, "uwi", {}, "\n## 回答\n"),
-        (pathlib.Path("plain.md"), repo, "awi", {}, ""),
+    snapshot = (
+        (pathlib.Path("request.md"), repo, f"---\n{dependency}---\n", "inbox", "awi"),
+        (pathlib.Path("question.md"), repo, _answer_text(same_repo_answered), "inbox", "uwi"),
+        (pathlib.Path("elsewhere/question.md"), other, _answer_text(False), "inbox", "uwi"),
+        (pathlib.Path("plain.md"), repo, "---\n---\n", "inbox", "awi"),
     )
-    expected = frozenset() if same_repo_answered else frozenset({pathlib.Path("request.md")})
-    assert _wi_readiness.unanswered_uwi_dependents(records) == expected
+    result = _wi_readiness.calculate_readiness(pathlib.Path(), repo, snapshot=snapshot)
+    assert result.unanswered_uwi_waits == (frozenset() if same_repo_answered else frozenset({"request.md"}))
+
+
+def _answer_text(answered: bool) -> str:
+    return "---\n---\n\n## 回答\n" + ("回答済み" if answered else "")
 
 
 @pytest.mark.parametrize(
@@ -161,7 +166,7 @@ def test_legacy_user_dependency_requires_answer_in_active_or_terminal_entry(
 def test_report_before_ready_entry_does_not_stop_scan(tmp_path: pathlib.Path) -> None:
     repo = "github.com/example/repo"
     snapshot = (
-        (tmp_path / "report.md", repo, "---\nrun_skill_report: true\n---\n\n## 回答\n", "inbox", "uwi"),
+        (tmp_path / "report.md", repo, "---\nquestion_type: report\nrun_skill_report: true\n---\n\n## 回答\n", "inbox", "uwi"),
         (tmp_path / "ready.md", repo, "---\n---\n", "inbox", "awi"),
         (tmp_path / "waiting.md", repo, "---\ndepends_on: [report.md]\n---\n", "inbox", "awi"),
     )
@@ -169,16 +174,20 @@ def test_report_before_ready_entry_does_not_stop_scan(tmp_path: pathlib.Path) ->
     assert result.ready == ("ready.md",)
     assert result.blocked == ("report.md", "waiting.md")
     assert not result.internal_dependency_waits
+    assert not result.unanswered_uwi_waits
 
 
 def test_unanswered_cross_repository_fallback_and_missing_target() -> None:
     repo = "github.com/example/repo"
-    records: tuple[tuple[pathlib.Path, str | None, str | None, dict[str, object], str], ...] = (
-        (pathlib.Path("answer.md"), "github.com/example/other", "uwi", {}, "\n## 回答\n"),
-        (pathlib.Path("request.md"), repo, "awi", {"depends_on": ["answer.md"]}, ""),
-        (pathlib.Path("missing.md"), repo, "awi", {"depends_on": ["absent.md"]}, ""),
+
+    snapshot = (
+        (pathlib.Path("answer.md"), "github.com/example/other", _answer_text(False), "inbox", "uwi"),
+        (pathlib.Path("request.md"), repo, "---\ndepends_on: [answer.md]\n---\n", "inbox", "awi"),
+        (pathlib.Path("missing.md"), repo, "---\ndepends_on: [absent.md]\n---\n", "inbox", "awi"),
     )
-    assert _wi_readiness.unanswered_uwi_dependents(records) == frozenset({pathlib.Path("request.md")})
+    result = _wi_readiness.calculate_readiness(pathlib.Path(), repo, snapshot=snapshot)
+    assert result.unanswered_uwi_waits == frozenset({"request.md"})
+    assert result.missing_dependencies == ("missing.md",)
 
 
 @pytest.mark.parametrize("value", [1, True, ["2026-08-12"], {"date": "2026-08-12"}])
@@ -291,21 +300,20 @@ def test_non_mapping_legacy_dependency_is_not_executed(tmp_path: pathlib.Path) -
     repo = "github.com/example/repo"
     text = "---\nqueue_schedule:\n  dependency: [entries]\n---\n"
     snapshot = ((tmp_path / "one.md", repo, text, "inbox", "awi"),)
-    assert _wi_readiness.calculate_readiness(tmp_path, repo, snapshot=snapshot).ready == ("one.md",)
-    records: tuple[tuple[pathlib.Path, str | None, str | None, dict[str, object], str], ...] = (
-        (tmp_path / "one.md", repo, "awi", {"queue_schedule": {"dependency": ["entries"]}}, ""),
-    )
-    assert not _wi_readiness.unanswered_uwi_dependents(records)
+    result = _wi_readiness.calculate_readiness(tmp_path, repo, snapshot=snapshot)
+    assert result.ready == ("one.md",)
+    assert not result.unanswered_uwi_waits
 
 
 def test_answered_same_repo_target_is_not_an_unanswered_dependency() -> None:
-    """同じrepoに回答済みの対象が存在する場合も空集合を安全に扱う。"""
     repo = "github.com/example/repo"
-    records: tuple[tuple[pathlib.Path, str | None, str | None, dict[str, object], str], ...] = (
-        (pathlib.Path("answer.md"), repo, "uwi", {}, "\n## 回答\n承認"),
-        (pathlib.Path("request.md"), repo, "awi", {"depends_on": ["answer.md"]}, ""),
+    snapshot = (
+        (pathlib.Path("answer.md"), repo, _answer_text(True), "inbox", "uwi"),
+        (pathlib.Path("request.md"), repo, "---\ndepends_on: [answer.md]\n---\n", "inbox", "awi"),
     )
-    assert not _wi_readiness.unanswered_uwi_dependents(records)
+    result = _wi_readiness.calculate_readiness(pathlib.Path(), repo, snapshot=snapshot)
+    assert not result.unanswered_uwi_waits
+    assert "request.md" in result.blocked
 
 
 def test_non_string_repair_target_does_not_suppress_broken_entry(tmp_path: pathlib.Path) -> None:

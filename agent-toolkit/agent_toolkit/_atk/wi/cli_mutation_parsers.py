@@ -52,8 +52,11 @@ def _add_wi_add_parser(sub: Any) -> None:
     placement.add_argument(
         "--draft-base",
         nargs=2,
-        metavar=("REF", "OID"),
-        help="調査で固定した宛先のrefs/heads/...と完全OID。宛先worktreeの取得済みの上流と比べる。",
+        metavar=("BRANCH", "OID"),
+        help=(
+            "宛先のrefs/heads/<ブランチ>か、宛先に実在する / を含まないブランチ名と、調査で固定した完全OID。"
+            "取得済みの宛先refと照合する。"
+        ),
     )
     add.add_argument(
         "--dry-run",

@@ -1,4 +1,4 @@
-"""全追跡ファイルのLF数を検査し、上限超過時だけ整理を求める。
+"""追跡ファイルのLF数を検査し、上限超過時だけ整理を求める。  pyfltr: allow-comment
 
 1ファイル約1万トークンの予算を、Markdownは約40〜55、コードは約11トークン/行で
 概算した上限を使う（トークン数の保証ではない）。整理後は上限の60%とし、追記の余裕を戻す。
@@ -35,10 +35,21 @@ def _git(root: pathlib.Path, *arguments: str, data: bytes | None = None) -> byte
     return result.stdout
 
 
-def check_repository(directory: pathlib.Path) -> int:
+def _selected_paths(root: pathlib.Path, directory: pathlib.Path, files: list[pathlib.Path]) -> tuple[str, ...]:
+    relative = tuple(pathlib.Path(os.path.abspath(directory / path)).relative_to(root) for path in files)
+    if any(
+        path.name == ".gitattributes" or path.as_posix() in {"pyproject.toml", "scripts/check_file_lines.py"}
+        for path in relative
+    ):
+        return ()
+    return tuple(path.as_posix() for path in relative)
+
+
+def check_repository(directory: pathlib.Path, files: list[pathlib.Path] | None = None) -> int:
     try:
         root = pathlib.Path(os.fsdecode(_git(directory, "rev-parse", "--show-toplevel").rstrip(b"\n")))
-        tracked = _git(root, "ls-files", "-z")
+        selected = _selected_paths(root, directory, files) if files else ()
+        tracked = _git(root, "--literal-pathspecs", "ls-files", "-z", "--", *selected)
         attributes = _git(root, "check-attr", "-z", "--stdin", "linguist-generated", "linguist-vendored", data=tracked)
         fields = attributes.split(b"\0")
         excluded = {
@@ -83,8 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")
-    argparse.ArgumentParser(description=__doc__).parse_args(argv)
-    return check_repository(pathlib.Path.cwd())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("files", nargs="*", type=pathlib.Path)
+    args = parser.parse_args(argv)
+    return check_repository(pathlib.Path.cwd(), args.files)
 
 
 if __name__ == "__main__":

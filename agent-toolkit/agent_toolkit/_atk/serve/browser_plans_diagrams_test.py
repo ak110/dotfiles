@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import datetime
 
 import playwright.async_api
 import pytest
@@ -235,12 +236,34 @@ async def test_mermaid_cdn_failure_stays_near_source_and_keeps_preview(screen_ha
 
 
 @pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("screen_harness", [_valid_diagram_markdown("初回")], indirect=True, ids=["initial-diagram"])
 async def test_mermaid_cdn_without_response_ends_loading_with_error(screen_harness: _ScreenHarness) -> None:
     harness = screen_harness
-    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     started = asyncio.Event()
     release = asyncio.Event()
-    await harness.page.clock.install()
+    epoch = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    await harness.page.clock.install(time=epoch)
+    await harness.page.clock.pause_at(epoch + datetime.timedelta(days=1))
+    await harness.page.add_init_script("""
+        const NativeEventSource = window.EventSource;
+        window.EventSource = class extends NativeEventSource {
+          constructor(url, options) {
+            if (new URL(url, location.href).pathname !== '/api/plans/events') {
+              super(url, options);
+              return;
+            }
+            const source = new EventTarget();
+            source.readyState = NativeEventSource.OPEN;
+            const heartbeat = setInterval(() => source.dispatchEvent(new Event('heartbeat')), 1000);
+            source.close = () => clearInterval(heartbeat);
+            queueMicrotask(() => source.dispatchEvent(new Event('subscribed')));
+            return source;
+          }
+        };
+        for (const type of ['focus', 'visibilitychange']) {
+          window.addEventListener(type, event => event.stopImmediatePropagation(), true);
+        }
+    """)
 
     async def hold(route: playwright.async_api.Route) -> None:
         started.set()
@@ -255,8 +278,11 @@ async def test_mermaid_cdn_without_response_ends_loading_with_error(screen_harne
         await asyncio.wait_for(started.wait(), timeout=30)
         preview = harness.page.locator("#preview")
         assert await preview.get_attribute("aria-busy") == "true"
-        await harness.page.clock.run_for(30_000)
         error = harness.page.locator("#preview .diagram-mermaid .diagram-error")
+        await harness.page.clock.run_for(29_999)
+        assert await error.count() == 0
+        assert await preview.get_attribute("aria-busy") == "true"
+        await harness.page.clock.run_for(1)
         await playwright.async_api.expect(error).to_contain_text("Mermaidの読み込みが30秒以内に終わりませんでした")
         await playwright.async_api.expect(preview).to_have_attribute("aria-busy", "false")
         assert "本文-初回" in await preview.inner_text()

@@ -16,6 +16,7 @@ from agent_toolkit._atk import config_settings
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_app,
     _browser_fixture,
+    _isolate_creation_time_index,
     _screen_harness_fixture,
     _ScreenHarness,
     _serve,
@@ -50,6 +51,7 @@ async def test_web_push_disabled_never_registers_service_worker(screen_harness: 
 async def test_worker_displays_notification_without_work_item_page(
     notification_browser: playwright.async_api.Browser, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _isolate_creation_time_index(tmp_path, monkeypatch)
     config_settings.save_config({"serve_web_push": "true"})
     plans = tmp_path / "plans"
     plans.mkdir()

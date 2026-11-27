@@ -1,9 +1,12 @@
+import argparse
 import asyncio
 import contextlib
 import dataclasses
 import json
 import os
 import socket
+import subprocess
+import sys
 import tempfile
 import threading
 from collections.abc import AsyncGenerator, Generator, Iterable
@@ -14,15 +17,19 @@ import playwright.async_api
 import pytest
 import pytest_asyncio
 
+from agent_toolkit._atk import config as atk_config
+from agent_toolkit._atk import config_migration, config_settings, usage_refresh
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import config, wi_operations
+from agent_toolkit._atk.serve import config, entry_index, timings, wi_operations
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._atk.wi import sync as wi_sync
+from agent_toolkit._common import host_homes, state_paths
+from agent_toolkit._common import private_notes as private_notes_store
 from agent_toolkit._plan import creation_times as plan_creation_times
-from agent_toolkit._testing import wi_entry_files
+from agent_toolkit._testing import git_repository, isolation, wi_entry_files
 from agent_toolkit._testing.pytest_plugin import _BROWSER_EVIDENCE
 
 _SERVER_START_TIMEOUT_SEC = 10.0
@@ -125,7 +132,7 @@ class _BrowserOperations(wi_operations.Operations):
     """製品の更新処理を通し、画面の待機制御と呼出し記録を付加する。"""
 
     def __init__(self, private_notes: Path) -> None:
-        super().__init__(private_notes)
+        super().__init__(private_notes, index_cache_path=None)
         self._storage = _BrowserStorage(local_only=True)
         self.delay_edit = False
         self.edit_started = threading.Event()
@@ -304,11 +311,14 @@ def _write_entries(root: Path) -> None:
 async def _browser_fixture(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     shared_serve_browser: playwright.async_api.Browser,
     browser_evidence_root: Path,
 ) -> AsyncGenerator[playwright.async_api.Browser]:
+    _isolate_creation_time_index(tmp_path, monkeypatch)
     evidence = Path(tempfile.mkdtemp(prefix="browser-failure-", dir=browser_evidence_root))
     request.node.stash[_BROWSER_EVIDENCE] = evidence
+    monkeypatch.setattr(usage_refresh, "refresh", lambda **_options: [])
     browser = shared_serve_browser
     create_context = browser.new_context
     contexts: list[playwright.async_api.BrowserContext] = []
@@ -367,12 +377,7 @@ async def _browser_harness_fixture(
     monkeypatch.setattr(wi_frontmatter, "parse_frontmatter", parse_with_integer_key)
     current_state = serve_state.ServeState(tmp_path)
     operations = _BrowserOperations(tmp_path)
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        current_state,
-        operations=operations,
-    )
+    app = _browser_app(tmp_path, tmp_path / "plans", current_state=current_state, operations=operations)
     async with _serve(app, browser) as (context, page, port):
         yield _BrowserHarness(
             page=page,
@@ -387,7 +392,7 @@ async def _browser_harness_fixture(
 async def _open_question(page: playwright.async_api.Page) -> playwright.async_api.Locator:
     row = page.locator('#entry-list .entry-select[data-kind="uwi"]')
     await row.click()
-    await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    await page.locator("#detail-dialog").wait_for(state="visible")
     return row
 
 
@@ -496,21 +501,218 @@ async def _serve(
                 await server_task
 
 
-def _browser_app(tmp_path: Path, plans_root: Path, *, agent_listing: Any = None, **sessions_options: Any) -> Any:
+def _require_browser_paths(root: Path, paths: dict[str, Path]) -> None:
+    for label, path in paths.items():
+        if not path.is_absolute() or not path.resolve().is_relative_to(root.resolve()):
+            raise ValueError(f"ブラウザー検証の一時領域外: {label} ({path})")
+
+
+def _manual_cli_inputs(root: Path, port: int) -> tuple[Path, config.ServeConfig]:
+    home = Path.home()
+    state = state_paths.state_dir()
+    notes = private_notes_store.default_private_notes(home)
+    claude = host_homes.claude_config_dir()
+    codex = host_homes.codex_home()
+    _require_browser_paths(
+        root,
+        {
+            "home": home,
+            "設定": config_settings.config_file_path(),
+            "旧設定": config_migration.legacy_serve_config_path(),
+            "状態": state,
+            "WI": notes,
+            "WI設定": notes / ".git" / "config",
+            "WI索引": entry_index.default_cache_path(),
+            "計測": timings.default_log_path(),
+            "計画作成時刻の索引": plan_creation_times._CREATION_TIME_INDEX_PATH,  # noqa: SLF001  # pylint: disable=protected-access
+            "Claude Code": claude / "projects",
+            "Codex": codex / "sessions",
+            "古いCodex記録": codex / "archived_sessions",
+            **{
+                name: state / "serve" / name
+                for name in ("session-summaries.json", "session-list.json", "session-costs.json", "cost-records")
+            },
+        },
+    )
+    if not (notes / ".git").is_dir():
+        raise ValueError("ブラウザー検証のWIは独立したローカルGitリポジトリにする")
+    remotes = subprocess.run(["git", "-C", str(notes), "remote"], check=True, capture_output=True, timeout=10)  # noqa: S607
+    if remotes.stdout.strip():
+        raise ValueError("ブラウザー検証のWIにはリモートを設定しない")
+    serve = config.resolve_config(host="127.0.0.1", port=port)
+    if serve.plans.remote_hosts or serve.sessions.remote_hosts:
+        raise ValueError("ブラウザー検証の計画・会話にはリモートを設定しない")
+    if atk_config.resolve_mutable_setting("serve_web_push") == "true":
+        raise ValueError("ブラウザーの手動検証ではWeb Pushを無効にする")
+    roots = (
+        {"計画": Path(serve.plans.root).expanduser()}
+        if serve.plans.root
+        else {"WI内の計画": notes / "plans", "作業中の計画": claude / "plans"}
+    )
+    _require_browser_paths(root, roots)
+    return notes, serve
+
+
+_BROWSER_SUPPORT_MODULE = "agent_toolkit._atk.serve.browser_support_test"
+
+
+def _manual_browser_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="隔離した子プロセスでブラウザーの手動確認を起動する。")
+    parser.add_argument("mode", choices=("cli", "fixture"))
+    parser.add_argument("root", type=Path)
+    parser.add_argument("--port", type=int, default=28766)
+    parser.add_argument("--isolated-child", action="store_true", help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+    root = args.root.resolve()
+    if not args.isolated_child:
+        if not root.is_dir() or any(root.iterdir()):
+            parser.error("別に作成した空の一時ディレクトリを指定する")
+        with isolation.isolated_development_state(root):
+            environment = {**os.environ, "CLAUDE_CONFIG_DIR": str(root / "claude"), "CODEX_HOME": str(root / "codex")}
+            with subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    _BROWSER_SUPPORT_MODULE,
+                    args.mode,
+                    str(root),
+                    "--port",
+                    str(args.port),
+                    "--isolated-child",
+                ],
+                env=environment,
+            ) as child:
+                try:
+                    return child.wait()
+                except KeyboardInterrupt:
+                    try:
+                        return child.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        child.terminate()
+                        return child.wait(timeout=10)
+
+    if args.mode == "cli":
+        from agent_toolkit import atk  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._atk.serve import cli  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        notes = root / "private-notes"
+        _require_browser_paths(root, {"home": Path.home(), "WI": notes})
+        if not notes.exists():
+            git_repository.init_repository(notes)
+        notes, serve = _manual_cli_inputs(root, args.port)
+        plans = Path(serve.plans.root).expanduser() if serve.plans.root else notes / "plans"
+        _seed_manual_browser(notes, plans, root)
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(cli, "_weekly_loop", _wait_without_host_weekly_work)
+            atk.main(["serve", "--host", "127.0.0.1", "--port", str(args.port)])
+        return 0
+    plans = root / "plans"
+    app = _browser_app(root, plans)
+    _seed_manual_browser(root, plans, root)
+    asyncio.run(app.run_task(host="127.0.0.1", port=args.port))
+    return 0
+
+
+async def _wait_without_host_weekly_work(stop: asyncio.Event) -> None:
+    await stop.wait()
+
+
+def test_manual_cli_rejects_external_legacy_config_before_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_creation_time_index(tmp_path, monkeypatch)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("AGENT_TOOLKIT_SERVE_CONFIG", str(tmp_path.parent / "outside-serve.toml"))
+    monkeypatch.setattr(config, "resolve_config", lambda **_kwargs: pytest.fail("旧設定の移行より先に拒否する"))
+    with pytest.raises(ValueError, match="一時領域外: 旧設定"):
+        _manual_cli_inputs(tmp_path, 28766)
+
+
+def _seed_manual_browser(notes: Path, plans: Path, root: Path) -> None:
+    _write_entries(notes)
+    plans.mkdir(parents=True, exist_ok=True)
+    (plans / "sample.md").write_text("# 検証用の計画\n", encoding="utf-8")
+    _write_session_records(root)
+
+
+def _browser_app(
+    tmp_path: Path,
+    plans_root: Path | None = None,
+    *,
+    plan_roots: tuple[serve_plans.RootSpec, ...] = (),
+    hostname: str = "browser-test",
+    agent_listing: Any = None,
+    current_state: serve_state.ServeState | None = None,
+    operations: _BrowserOperations | None = None,
+    **sessions_options: Any,
+) -> Any:
+    if (plans_root is None) == (not plan_roots):
+        raise ValueError("ブラウザー検証の計画ルートを単一または複数で指定する")
+    session_state = sessions_options.setdefault("state_dir", tmp_path / "state")
+    claude = tmp_path / "claude"
+    codex = tmp_path / "codex"
+    timing = tmp_path / "state" / "serve" / "timings.jsonl"
+    if sessions_options.get("remote_hosts") and sessions_options.get("ssh_runner") in (None, serve_sessions.default_ssh_runner):
+        raise ValueError("ブラウザー検証のリモートホストには代替SSH応答が必要")
+    _require_browser_paths(
+        tmp_path,
+        {
+            "home": Path.home(),
+            "状態": state_paths.state_dir(),
+            "既定の計測": timings.default_log_path(),
+            "WI": tmp_path,
+            "Claude Code": claude / "projects",
+            "Codex": codex / "sessions",
+            "古いCodex記録": codex / "archived_sessions",
+            "セッション状態": session_state,
+            "要約キャッシュ": session_state / "serve" / "session-summaries.json",
+            "一覧キャッシュ": session_state / "serve" / "session-list.json",
+            "費用キャッシュ": session_state / "serve" / "session-costs.json",
+            "費用記録": session_state / "serve" / "cost-records",
+            "計測": timing,
+            "計画作成時刻の索引": plan_creation_times._CREATION_TIME_INDEX_PATH,  # noqa: SLF001  # pylint: disable=protected-access
+            **({"計画": plans_root} if plans_root is not None else {}),
+            **{f"計画{index}": spec.path for index, spec in enumerate(plan_roots)},
+        },
+    )
     return serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
-        serve_state.ServeState(tmp_path),
-        operations=_BrowserOperations(tmp_path),
+        current_state if current_state is not None else serve_state.ServeState(tmp_path),
+        operations=operations if operations is not None else _BrowserOperations(tmp_path),
         agent_listing=agent_listing,
-        plans_context=serve_plans.create_context(root=plans_root, hostname="browser-test"),
+        timing_log_path=timing,
+        plans_context=serve_plans.create_context(root=plans_root, roots=plan_roots or None, hostname=hostname),
         sessions_context=serve_sessions.create_context(
-            hostname="browser-test",
-            claude_home=tmp_path / "claude",
-            codex_home=tmp_path / "codex",
+            hostname=hostname,
+            claude_home=claude,
+            codex_home=codex,
             **sessions_options,
         ),
     )
+
+
+@pytest.mark.parametrize("blocked", ["home", "state", "plan", "index", "remote"])
+def test_browser_app_rejects_nonisolated_inputs_before_context_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, blocked: str
+) -> None:
+    outside = tmp_path.parent / "outside-browser"
+    _isolate_creation_time_index(tmp_path, monkeypatch)
+    options: dict[str, Any] = {}
+    plans = tmp_path / "plans"
+    if blocked == "home":
+        monkeypatch.setenv("HOME", str(outside))
+        monkeypatch.setenv("USERPROFILE", str(outside))
+    elif blocked == "state":
+        options["state_dir"] = outside
+    elif blocked == "plan":
+        plans = outside
+    elif blocked == "index":
+        _isolate_creation_time_index(outside, monkeypatch)
+    else:
+        options["remote_hosts"] = ("unreachable.invalid",)
+    monkeypatch.setattr(serve_plans, "create_context", lambda **_kwargs: pytest.fail("計画の初期化より先に拒否する"))
+    with pytest.raises(ValueError, match="ブラウザー検証"):
+        _browser_app(tmp_path, plans, **options)
 
 
 @pytest.mark.asyncio
@@ -556,13 +758,14 @@ async def _screen_harness_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     browser: playwright.async_api.Browser,
+    request: pytest.FixtureRequest,
 ) -> AsyncGenerator[_ScreenHarness]:
     _isolate_creation_time_index(tmp_path, monkeypatch)
     _write_entries(tmp_path)
     plans_root = tmp_path / "plans"
     plans_root.mkdir()
     plan_path = plans_root / "plan.md"
-    plan_path.write_text("# 初回\n\n本文-初回\n", encoding="utf-8")
+    plan_path.write_text(getattr(request, "param", "# 初回\n\n本文-初回\n"), encoding="utf-8")
     _write_session_records(tmp_path)
     app = _browser_app(tmp_path, plans_root)
     plans_state: serve_plans.BroadcastState = app.config["PLANS_CONTEXT"].state
@@ -756,3 +959,7 @@ __all__ = [
     "_screen_harness_fixture",
     "_write_session_records",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(_manual_browser_main(sys.argv[1:]))

@@ -518,7 +518,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane recover": {
         "summary": "旧レーンの作業ツリーを解放し成果のbranchを残す",
-        "description": "旧レーンの作業ツリーを解放し成果のbranchを残す。\n\n目的: 選定YAMLが失効し所有登録にも選定情報が無い旧登録が固定作成先を占有し続ける状態を、成果を失わずに解消する。\n利用場面: `atk lane delete`や`atk lane create`が「選定原本が失効し、所有登録に選定情報が無い」と返したとき。\n対象と出力: --session-idの所有sessionの登録（--laneで限定）ごとに、元branchとHEADを登録の`recovery`へ記録してから作業ツリーを解放し、recoveredとretainedの理由をJSONで返す。branchと所有登録は残し、回復済みの登録は固定作成先の所有判定と`atk lane delete`の回収対象から外れる。保持した登録がある場合は終了1、入力不正は2。\n前提: 選定原本も所有登録の選定情報も無い登録に限る。所有一致、Git共通ディレクトリの一致、担当と外部プロセスの終了、未commit・未追跡の変更が無いことを確かめ、成立しない登録は保持する。\n復元・後始末: 途中で失敗した登録は到達点を保持し、同じlane recoverで残る工程から続ける。残したbranchは`atk lane delete --list`の登録本文と本操作の結果から読める。",
+        "description": "旧レーンの作業ツリーを解放し成果のbranchを残す。\n\n目的: 選定YAMLが失効し所有登録にも選定情報が無い旧登録が固定作成先を占有し続ける状態を、成果を失わずに解消する。\n利用場面: `atk lane delete`や`atk lane create`が「選定原本が失効し、所有登録に選定情報が無い」と返したとき。\n対象と出力: --session-idの所有sessionの登録（--laneで限定）ごとに、元branchとHEADを登録の`recovery`へ記録してから作業ツリーを解放し、recoveredとretainedの理由をJSONで返す。branchと所有登録は残し、回復済みの登録は固定作成先の所有判定と`atk lane delete`の回収対象から外れる。保持した登録がある場合は終了1、入力不正は2。\n前提: 選定原本も所有登録の選定情報も無い登録に限る。所有一致、Git共通ディレクトリの一致、担当と外部プロセスの終了、未commit・未追跡の変更が無いことを確かめ、成立しない登録は保持する。組み込みの回復では、Gitで無視されていても回収可能と確認できないファイルがあれば、対象のパスを示して保持する。\n復元・後始末: 途中で失敗した登録は到達点を保持し、同じlane recoverで残る工程から続ける。残したbranchは`atk lane delete --list`の登録本文と本操作の結果から読める。",
         "epilog": "実行例:\n\n  atk lane recover --session-id <旧登録の所有session> --lane lane-01",
     },
     "atk worktree-stash": {
@@ -657,6 +657,7 @@ HELP["atk agents"]["description"] += (
     "\n操作の分担: 開始はMCPサーバーagents_serverのstart、追送はsend_message、実行中turnの中断はkill、"
     "終了済みsessionの破棄はstopを呼び出す。引数は各MCPツールの公開説明で確認する。"
     "操作権限の要求・取消はpermissions、ユーザー画面への本文表示はsend_to_user、"
+    "表示前の確認はsend_to_user_preflight、"
     "会話圧縮の予約はcompact_conversation、同一会話への変更反映予約はapply_runtime_changesを使う。"
     "正式に引き継いだ子の通知・終了結果はcollect_handoffで回収する。"
     "これらはCLIから実行できない。CLIはwaitで自分が起動した子の待機・回収、notifyで委譲元への通知、"

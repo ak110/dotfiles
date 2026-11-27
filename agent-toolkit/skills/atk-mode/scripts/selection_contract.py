@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import math
 import typing
 from collections.abc import Callable, Mapping
@@ -15,6 +17,8 @@ from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import selection_estimate as _estimate
 
 JUDGED_PAIRS_KEY = "判定済みWIの組"
+EXCLUSION_CONFIRMATION_KEY = "除外確認"
+EXCLUSION_RECORDS_KEY = "除外記録"
 
 _LANE_NONE = "なし"
 _STALENESS_KEY = "鮮度"
@@ -78,6 +82,7 @@ _TOP_LEVEL_KEYS = frozenset(
         _selection.INITIAL_ALLOCATION_KEY,
         _selection.ADDED_WIS_KEY,
         _selection.ADDITION_ALLOCATIONS_KEY,
+        EXCLUSION_RECORDS_KEY,
     }
 )
 _WRITE_OVERLAP_KEYS = frozenset({"定義1", "定義2", "段階比較"})
@@ -134,8 +139,7 @@ def require_shared_wait_basis(correction: object) -> None:
         )
 
 
-def _check_ready_selection(facts: Mapping[str, Mapping[str, typing.Any]], selected: set[str], excluded: set[str]) -> None:
-    """処理できる候補の脱落と、urgentの根拠の欠落を検出する。"""
+def _check_urgent_candidates(facts: Mapping[str, Mapping[str, typing.Any]]) -> None:
     for name, fact in facts.items():
         if fact.get("priority") == _wi_priority.URGENT:
             reason = fact.get("priority_reason")
@@ -144,19 +148,96 @@ def _check_ready_selection(facts: Mapping[str, Mapping[str, typing.Any]], select
                     f"{name}: urgentに優先の根拠が無い。"
                     "`atk wi set-priority`で根拠を補うか、損失を示せなければnormalへ戻してから候補を取り直す"
                 )
-    missing = sorted(
+
+
+def _remaining_candidates(facts: Mapping[str, Mapping[str, typing.Any]], assigned: set[str]) -> list[str]:
+    return sorted(
         name
         for name, fact in facts.items()
-        if name not in selected
-        and name not in excluded
+        if name not in assigned
         and (
             fact.get("ready") is True
             or fact.get("state") == "processing"
             or (fact.get("state") == "inbox" and fact.get("blocked_reason") == "dependency-unmet-internal")
         )
     )
-    if missing:
+
+
+def _has_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _confirm_exclusions(
+    judgments: dict[str, typing.Any],
+    facts: dict[str, dict[str, typing.Any]],
+    selected: set[str],
+    already_selected: frozenset[str],
+    *,
+    additional: bool,
+    full_candidates: bool,
+) -> tuple[set[str], dict[str, object] | None]:
+    excluded = judgments.get("除外候補", [])
+    if (
+        not is_string_list(excluded)
+        or len(excluded) != len(set(excluded))
+        or set(excluded) - facts.keys()
+        or set(excluded) & selected
+    ):
+        raise ValueError("除外候補は候補にある未選定WIだけを重複なく指定する")
+    already_processing = {name for name in already_selected if facts.get(name, {}).get("state") == "processing"}
+    _check_urgent_candidates(facts)
+    remaining = _remaining_candidates(facts, selected | already_processing)
+    missing = [name for name in remaining if name not in excluded]
+    if EXCLUSION_CONFIRMATION_KEY in judgments and not full_candidates:
+        raise ValueError("除外確認には取得した候補全体を --candidate-file で渡す")
+    if EXCLUSION_CONFIRMATION_KEY in judgments and "除外候補" in judgments:
+        raise ValueError("除外確認と除外候補を併記しない。異なる除外理由は除外確認の例外に書く")
+    if missing and (not full_candidates or excluded):
         raise ValueError(f"処理可能な候補が選定にない: {', '.join(missing)}。処理可否の判定を確かめて全件を扱う")
+    if not missing:
+        if EXCLUSION_CONFIRMATION_KEY in judgments:
+            raise ValueError("処理可能な未選定候補がないため除外確認を除く")
+        return set(excluded), None
+    snapshot = (additional, facts, sorted(selected), sorted(already_selected), remaining)
+    token = hashlib.sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    confirmation = judgments.get(EXCLUSION_CONFIRMATION_KEY)
+    if not isinstance(confirmation, dict) or confirmation.get("照合値") != token:
+        raise ValueError(
+            f"処理可能な候補が選定にない: {', '.join(remaining)}。"
+            f"全てを今回扱わないと確認した場合は、除外確認に照合値 {token} と理由を記録する"
+        )
+    exceptions = confirmation.get("例外", {})
+    reason = confirmation.get("理由")
+    if (
+        set(confirmation) - {"照合値", "理由", "例外"}
+        or not _has_text(reason)
+        or not isinstance(exceptions, dict)
+        or set(exceptions) - set(remaining)
+        or not all(_has_text(value) for value in exceptions.values())
+    ):
+        raise ValueError("除外確認に共通の理由を記録し、例外は今回除くWIと空でない理由の写像にする")
+    return set(remaining), {
+        "照合値": token,
+        "理由": reason,
+        "WI": remaining,
+        "例外": exceptions,
+    }
+
+
+def _valid_exclusion_record(record: object) -> bool:
+    if not isinstance(record, dict) or set(record) != {"照合値", "理由", "WI", "例外"}:
+        return False
+    names, reasons = record["WI"], record["例外"]
+    return bool(
+        _has_text(record["照合値"])
+        and _has_text(record["理由"])
+        and is_string_list(names)
+        and names
+        and len(names) == len(set(names))
+        and isinstance(reasons, dict)
+        and not (set(reasons) - set(names))
+        and all(_has_text(value) for value in reasons.values())
+    )
 
 
 def _detail_requirement(metadata: dict[str, typing.Any]) -> str:
@@ -186,11 +267,12 @@ def generate_selection(
     *,
     additional: bool = False,
     already_selected: frozenset[str] = frozenset(),
+    full_candidates: bool = True,
 ) -> dict[str, object]:
     """意味判断を保持し、候補情報と確定入力から定型欄を生成する。分類とモデルは推測しない。"""
     if not isinstance(judgments, dict):
         raise ValueError("判断入力は選定・レーンの所要時間・結合条件を持つ写像で指定する")
-    if set(judgments) - (_TOP_LEVEL_KEYS | {"結合条件", "除外候補"}):
+    if set(judgments) - (_TOP_LEVEL_KEYS | {"結合条件", "除外候補", EXCLUSION_CONFIRMATION_KEY}):
         raise ValueError(
             "判断入力に未知の欄がある。`agent-toolkit:atk-mode/references/process-wi-selection-format.md`「選定の生成入力」へそろえる"
         )
@@ -198,6 +280,8 @@ def generate_selection(
         raise ValueError("初回配分は生成側が候補と判断から作成するため、判断入力から除く")
     if _selection.ADDITION_ALLOCATIONS_KEY in judgments:
         raise ValueError("追加時の配分は追加操作で記録するため、判断入力から除く")
+    if EXCLUSION_RECORDS_KEY in judgments:
+        raise ValueError("除外記録は生成結果から読む。判断入力には記載しない")
     require_shared_wait_basis(judgments.get(_selection.ESTIMATE_CORRECTION_KEY))
     facts: dict[str, dict[str, typing.Any]] = {}
     for candidate in candidates:
@@ -210,7 +294,7 @@ def generate_selection(
     if items is None or costs is None:
         raise ValueError("選定とレーンの所要時間は意味判断として列で指定する。0件も空列を明示する")
     generated: dict[str, object] = copy.deepcopy(judgments)
-    for key in ("結合条件", "除外候補", "decisions", "lane_costs"):
+    for key in ("結合条件", "除外候補", EXCLUSION_CONFIRMATION_KEY, "decisions", "lane_costs"):
         generated.pop(key, None)
     decisions: list[dict[str, typing.Any]] = []
     seen: set[str] = set()
@@ -233,16 +317,11 @@ def generate_selection(
         )
     generated[_selection.DECISIONS_KEY] = decisions
     generated[_selection.LANE_COSTS_KEY] = copy.deepcopy(costs)
-    excluded = judgments.get("除外候補", [])
-    if (
-        not is_string_list(excluded)
-        or len(excluded) != len(set(excluded))
-        or set(excluded) - facts.keys()
-        or set(excluded) & seen
-    ):
-        raise ValueError("除外候補は候補にある未選定WIだけを重複なく指定する")
-    already_processing = {name for name in already_selected if facts.get(name, {}).get("state") == "processing"}
-    _check_ready_selection(facts, seen | already_processing, set(excluded))
+    excluded, record = _confirm_exclusions(
+        judgments, facts, seen, already_selected, additional=additional, full_candidates=full_candidates
+    )
+    if record is not None:
+        generated[EXCLUSION_RECORDS_KEY] = [record]
     if additional:
         if judgments.get("結合条件"):
             raise ValueError("追加入力へ初回の結合条件を加えない。元の初回履歴を保持する")
@@ -339,6 +418,9 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
     comparison = _selection.SINGLE_STAGE_ESTIMATE_KEY
     if comparison in selection and not is_non_negative_number(selection[comparison]):
         errors.append(f"`{comparison}`の型はbool以外の0以上の数値とする: {selection[comparison]!r}")
+    exclusion_records = selection.get(EXCLUSION_RECORDS_KEY, [])
+    if not isinstance(exclusion_records, list) or not all(_valid_exclusion_record(row) for row in exclusion_records):
+        errors.append("除外記録は照合値、理由、WI一覧、例外の対応を持つ列とする")
     model_errors: list[str] = []
     staged = _selection.STAGED_ESTIMATE_KEY
     if staged in selection and selection[staged] != _selection.NO_STAGED_PLAN and not is_non_negative_number(selection[staged]):

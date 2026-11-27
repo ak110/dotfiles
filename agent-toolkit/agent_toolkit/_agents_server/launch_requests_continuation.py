@@ -9,6 +9,12 @@ from agent_toolkit._agents_server.launch_requests_inputs import _PLUGIN_ROOT_VAR
 from agent_toolkit._common import task_documents
 from agent_toolkit._common.next_action import ActionableError
 
+_SUPPLEMENT_BOUNDARY = "\n\n## 補足\n\n"
+
+
+def named_followup_body(prompt: str) -> str:
+    return prompt.partition(_SUPPLEMENT_BOUNDARY)[0]
+
 
 def _continuation_recovery(declaration: task_documents.TaskDocumentDeclaration | str | None) -> str:
     freeform = json.dumps({"prompt": "<今回の指示と新しい入力>"}, ensure_ascii=False)
@@ -33,12 +39,18 @@ def continuation_prompt(
     prompt: str | None = None,
     instruction: str | None = None,
     extra_params: Mapping[str, str] | None = None,
+    supplement: str | None = None,
 ) -> str:
     first_line = launch_prompt.split("\n", 1)[0]
     documents = task_documents.find_task_documents(first_line)
     declaration = task_documents.read_declaration(documents[0]) if documents else None
     if declaration is None and ".subagent.md" in first_line:
         declaration = "起動記録の役割文書へ到達できません"
+    if supplement is not None and (instruction is None or prompt is not None):
+        raise ActionableError(
+            "supplementは宣言されたinstructionにだけ添えられます。追送は未配送です。",
+            next_action="定型指示と名前付き入力にsupplementを添えるか、自由な指示なら補足もpromptに入れる",
+        )
     if (prompt is None) == (instruction is None) or (prompt is not None and extra_params is not None):
         raise ActionableError(
             "promptとinstruction/extra_paramsは排他的です。どちらか一方が必要です。",
@@ -59,7 +71,11 @@ def continuation_prompt(
         if isinstance(declaration, task_documents.TaskDocumentDeclaration):
             known_lines = set(launch_prompt.splitlines())
             for followup in followup_prompts:
-                known_lines.update(followup.splitlines())
+                first_line = followup.partition("\n")[0]
+                body = (
+                    named_followup_body(followup) if any(item.instruction == first_line for item in continuations) else followup
+                )
+                known_lines.update(body.splitlines())
             controls = frozenset(name for item in continuations for name in item.accepted)
             for line in text.splitlines():
                 name, separator, value = line.partition(": ")
@@ -143,4 +159,5 @@ def continuation_prompt(
                 f"パス入力{name}を受理できません: {value}",
                 next_action=f"{name}へ実在するファイルの絶対パスだけを渡す。空白を含むファイル名はそのまま指定する",
             )
-    return "\n".join([contract.instruction, *named_input_lines(params)])
+    body = "\n".join([contract.instruction, *named_input_lines(params)])
+    return body if supplement is None else f"{body}{_SUPPLEMENT_BOUNDARY}{supplement}"

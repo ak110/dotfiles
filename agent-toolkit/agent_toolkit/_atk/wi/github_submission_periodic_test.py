@@ -103,6 +103,41 @@ def test_periodic_alert_cli_respects_settings_interval_and_stop(
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(remote, "rev-parse", "main")
 
 
+@pytest.mark.parametrize(("interval", "due"), [(None, 1800), ("3600", 3600)])
+def test_periodic_gitlab_schedule_is_submitted_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, interval: str | None, due: int
+) -> None:
+    repo, notes = _prepare_alert_cli(monkeypatch, tmp_path, forge="gitlab")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
+    clock = SimpleNamespace(value=10000)
+    monkeypatch.setattr(process_loop_alerts, "time", SimpleNamespace(time=lambda: clock.value))
+    if interval is None:
+        monkeypatch.delenv(process_loop_env.ALERT_INTERVAL_ENV, raising=False)
+    else:
+        monkeypatch.setenv(process_loop_env.ALERT_INTERVAL_ENV, interval)
+    schedule_list = "projects/owner%2Frepo/pipeline_schedules?per_page=100"
+
+    def response(command: list[str]) -> object:
+        assert command[0] == "glab"
+        if command[1:3] == ["ci", "list"]:
+            return []
+        if command[2] == schedule_list:
+            return [{"id": 1, "ref": "main", "active": True}]
+        return {"last_pipeline": {"id": 23, "status": "failed", "ref": "main"}}
+
+    calls: list[list[str]] = []
+    _forge_responses(monkeypatch, response, calls)
+    monkeypatch.setenv(process_loop_env.NO_ALERTS_ENV, "1")
+    assert _invoke_alert_cli(repo, periodic=True) == 0
+    assert not calls
+    monkeypatch.setenv(process_loop_env.NO_ALERTS_ENV, "0")
+    for elapsed, expected_checks in [(0, 1), (due - 1, 1), (1, 2)]:
+        clock.value += elapsed
+        assert _invoke_alert_cli(repo, periodic=True) == 0
+        assert sum(schedule_list in command for command in calls) == expected_checks
+    assert list(_saved_awis_by_heading(notes)) == ["# パイプライン23失敗"]
+
+
 @pytest.mark.usefixtures("leaf_git_commands")
 def test_periodic_import_refreshes_and_publishes_shared_queue(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     repo, notes = _prepare_alert_cli(monkeypatch, tmp_path, mock_notes=False)

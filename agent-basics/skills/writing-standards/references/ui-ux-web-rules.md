@@ -19,10 +19,16 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 ## アクセシビリティとフォーカス
 
 - 実行は`button`、遷移は`a`で書き、アイコンだけのボタンには`aria-label`などの名前、意味を持つ画像には`alt`を付け、装飾のアイコンは`aria-hidden="true"`で隠す
-- 入力欄にラベル（`label`、`aria-labelledby`）を関連付け、見出しを階層順に置き、スキップリンクを用意し、非同期の通知と検証結果は`aria-live`で伝える
+- 入力欄にラベル（`label`、`aria-labelledby`）を関連付け、見出しを階層順に置き、スキップリンクを用意する
 - フォーカスは`:focus-visible`で見せ、`outline`を消す時は同じ状態に同等以上の代替を付け、固定ヘッダーやオーバーレイに隠れないようにする
 - 色だけで選択・警告・成功を伝えず、状態を文言や形でも示す（[WCAG 2.2 SC 1.4.1](https://www.w3.org/TR/WCAG22/#use-of-color)）。
   フォーカスの視認と遮蔽はSC 2.4.7・2.4.11、フォーカス表示や入力境界の対比はSC 1.4.11で判定する
+
+モーダルは[APGのキーボード操作](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/#keyboardinteraction)を実装の参考とし、開始位置、背景の操作不能化、閉じた後の復帰を実機で確かめる。
+操作順と拡大時の到達は[WCAG 2.2 SC 2.4.3](https://www.w3.org/TR/WCAG22/#focus-order)・[SC 1.4.10](https://www.w3.org/TR/WCAG22/#reflow)で判定する。
+比較表など2次元表示が情報に不可欠な場合は、表だけを横にスクロールできるようにし、周囲の操作まで画面外へ出さない。
+任意の短い補足をツールチップにする場合は、キーボード・タッチでも意味に到達できる代替を保ち、適用される[SC 1.4.13](https://www.w3.org/WAI/WCAG22/Understanding/content-on-hover-or-focus.html)の閉じ方・ポインターの移動・表示の持続を確かめる。
+操作の名前や必須条件をホバーだけに置かない。
 
 ## フォーム
 
@@ -32,9 +38,16 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 ## コンテンツ、状態、画面遷移
 
 - 再訪や「戻る」で復元すべき状態（検索条件、フィルター条件、ページ番号など）は、URLのクエリーなどへ反映する
+- 同じ作業内で準備できる表示は、切替より先に最初に見える内容を用意し、通常の切替は表示・現在地・フォーカスの更新とする。
+  背景取得・更新と切替を分け、大きなデータや遠隔データを一括先読みしない。
+  対象や検索条件の明示変更、再取得は通常の切替と区別する。
+  [W3C APG Tabs](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/#keyboard_interaction)でフォーカスと同時にパネルを切り替えるのは、表示に気づくほどの遅延がない場合に限る
 - 非表示にしたモーダルやオーバーレイにはフォーカスが届かないよう、DOMから外すか`inert`を付ける
 - コンポーネントごとにdefault、hover、focus、active、disabled、loading、errorの状態をそろえる。
-  取得中と完了はフォーカスを移さずに通知し、`role="status"`などで支援技術に伝える（[WCAG 2.2 SC 4.1.3](https://www.w3.org/TR/WCAG22/#status-messages)）
+  非同期の進捗・結果・検証エラーの状態通知は、内容と緊急度に合うロールやライブ領域でフォーカスを移さず伝える（[WCAG 2.2 SC 4.1.3](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html)）。
+  通常の完了・件数は`role="status"`など、すぐ気付く必要があるエラーは`role="alert"`などを選ぶ。
+  明示的な`aria-live`を必須にせず、監視で変化しない内容を読み上げ直さない。
+  通知を変えたら実際の支援技術で状態の変化・無変化・フォーカス保持を確かめ、DOMの確認と区別する
 - `overflow: hidden`や`auto`の祖先に切り取られる絶対配置のドロップダウンには、`dialog`、Popover API、portalなどを使う。
   fixed配置を選ぶ場合は、祖先が包含ブロックを作っていないかも確かめる
 

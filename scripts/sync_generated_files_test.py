@@ -99,6 +99,7 @@ def test_input_contract_tracks_declaration_changes(tmp_path: Path, embedded: boo
     assert not _generated_input_errors(plugin)
     text = target.read_text(encoding="utf-8")
     assert task_documents.INPUT_CONTRACT_NOTICE in text
+    assert "起動の準備で`<役割名>.subagent.md`の本文は読まず" in text
     assert "入力値の説明。" in text and "内部手順。" not in text
     for label, names in (("必須入力名", required), ("任意入力名", optional)):
         if names:

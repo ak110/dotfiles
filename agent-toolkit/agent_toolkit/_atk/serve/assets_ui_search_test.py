@@ -44,7 +44,7 @@ process.stdout.write(JSON.stringify({
         "keys": ["u.md", "x.md", "f.md"],
         "unanswered": "true",
         "unknownKind": "unknown",
-        "count": "3件（未回答の質問 1件）",
+        "count": "表示中: 3件（未回答の質問 1件）",
         "warning": "［WI / node-test / /notes / inbox/bad.md］一覧から除外したファイル: UTF-8として読み取れません",
         "announced": "3件を表示",
         "kindState": ["作業", "受信", "計画あり"],

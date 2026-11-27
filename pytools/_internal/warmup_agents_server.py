@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_toolkit._agents_server import service_forward
+from agent_toolkit._agents_server import service_distribution, service_forward, service_transport
 from agent_toolkit._atk import config_settings
 from agent_toolkit._common import dotfiles_mode, process_tree, runtime_environment, windows_security
 from agent_toolkit._git import command as git
@@ -121,7 +121,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     elevated = windows_security.is_elevated_above_user_processes()
     if elevated:
         checks = _check_targets(commands, skip_startup=_ELEVATED)
-    elif post_apply_cache.matches("agents-server-startup", key):
+    elif post_apply_cache.matches("agents-server-startup", key) and _published_targets(commands):
         checks = _check_targets(commands, skip_startup=_UNCHANGED)
     else:
         checks = _check_targets(commands)
@@ -228,13 +228,19 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
     phase = "service-start"
     root = _service_root(command)
     environment = dict(os.environ, PYTHONIOENCODING="utf-8")
+    approved = None
     if root is not None:
         environment[service_forward.DEFER_PUBLISH_ENV] = "1"
+        environment[service_distribution.UPDATE_ENV] = "1"
     inherited_job = False
     service_output = ""
     with contextlib.ExitStack() as capture:
         errors = None
         try:
+            if root is not None:
+                if environment.get(service_distribution.SCOPE_ENV):
+                    raise ValueError("隔離した管理サービスの起動から通常側へ公開できません")
+                approved = service_distribution.identity(root)
             parameters = StdioServerParameters(command=command[0], args=list(command[1:]), env=environment)
             remaining = _STARTUP_TIMEOUT
             if root is not None:
@@ -265,8 +271,10 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
                         phase = "close"
             if root is not None:
                 phase = "publish"
-                caller = runtime_environment.CallerContext(os.environ, Path.cwd())
-                await asyncio.to_thread(service_forward.publish_service, caller, root, timeout=_STARTUP_TIMEOUT)
+                caller = runtime_environment.CallerContext(environment, Path.cwd())
+                await asyncio.to_thread(
+                    service_forward.publish_service, caller, root, timeout=_STARTUP_TIMEOUT, approved=approved
+                )
         except Exception as exc:  # noqa: BLE001  # 公開transportの例外群とstderrをpost-applyへ伝える。
             output = service_output
             if errors is not None:
@@ -301,6 +309,15 @@ def _service_root(command: Sequence[str]) -> Path | None:
         return None
     root = Path(command[command.index("--project") + 1])
     return root if (root / "agent_toolkit" / "_agents_server" / "service.py").is_file() else None
+
+
+def _published_targets(commands: Sequence[Sequence[str]]) -> bool:
+    caller = runtime_environment.CallerContext(os.environ, Path.cwd())
+    directory = service_transport.namespace(caller)
+    return all(
+        (root := _service_root(command)) is None or service_distribution.isolated_scope(directory, root) is None
+        for command in commands
+    )
 
 
 def _registered_checkout() -> Path | None:
@@ -348,7 +365,7 @@ def _warn_skip(reason: str, registered: Path | None, checkout: Path | None) -> N
 
 def _approved_scripts(registered: Path | None, installed: Sequence[Path]) -> set[Path]:
     marketplace = Path("plugins", "cache", claude_common.MARKETPLACE_NAME, "agent-toolkit")
-    homes = (claude_common.CLAUDE_HOME, Path(os.environ.get("CODEX_HOME", install_codex_plugins.CODEX_HOME)))
+    homes = (claude_common.CLAUDE_HOME, install_codex_plugins.CODEX_HOME)
     caches = {(home / marketplace).resolve() for home in homes}
     approved = {registered / "agent-toolkit" / _SCRIPT_RELATIVE} if registered is not None else set()
     for script in installed:

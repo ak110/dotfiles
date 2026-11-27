@@ -34,6 +34,7 @@ from agent_toolkit._atk import (
     run_script,
     run_skill_batch_evidence,
     run_skill_batch_finalize,
+    run_skill_batch_records,
     weekly_schedule,
 )
 from agent_toolkit._atk.managed_temp import paths as managed_temp_paths
@@ -56,9 +57,9 @@ from agent_toolkit._common import (
     plugin_environment,
     private_notes,
     session_activity,
-    session_record_paths,
     session_registry,
     session_review,
+    session_review_analysis,
     skill_modes,
     weekly_work,
 )
@@ -101,9 +102,9 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         if event == "SessionStart" and count:
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                "まとめて振り返る場合は、起動の失敗があれば先に原因を是正する。"
+                "まとめて振り返る場合は、起動の失敗があれば先に原因を是正してください。"
                 "未処理の対象を確認できた場合だけ、"
-                f"`{skill_modes.entry_command(host, 'review-session batch')}`を実行する。"
+                f"`{skill_modes.entry_command(host, 'review-session batch')}`を実行してください。"
             )
             return waiting
         return notice
@@ -114,7 +115,9 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     elif (
         count
         and session_review.auto_start_due(now=now)
-        and any(not target.get("review_batch") and not _waiting_for_rollout(target) for target in pending)
+        and any(
+            not target.get("review_batch") and not run_skill_batch_records.waiting_for_rollout(target) for target in pending
+        )
     ):
         mode = "batch"
     else:
@@ -235,31 +238,6 @@ def weekly_auto_start_due(work: str, *, now: float) -> bool:
     return not _failure_blocks(key, same_version=record.get("failure_version") == version)
 
 
-def _lacks_record(target: dict[str, Any]) -> bool:
-    """Claudeの対象の記録ファイルが存在しないかを返す。記録の所在を別の識別子で解決するhostは対象外とする。"""
-    if target["host"] != "claude":
-        return False
-    path = target.get("transcript_path")
-    if not isinstance(path, str) or not path:
-        return False
-    try:
-        pathlib.Path(path).lstat()
-    except FileNotFoundError:
-        return True
-    except OSError:
-        # 読取権限や形式の問題は、不在として待ちを消さずprepareの診断へ渡す。
-        return False
-    return False
-
-
-def _waiting_for_rollout(target: dict[str, Any]) -> bool:
-    return (
-        target["host"] == "codex"
-        and not target.get("transcript_path")
-        and not session_record_paths.find_codex_records(target["session_id"])
-    )
-
-
 def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
     selected = []
     for target in session_review.pending():
@@ -268,16 +246,14 @@ def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
             continue
         if session_activity.review_activity({target["session_id"]}).has_activity:
             continue
-        if _lacks_record(target):
-            # 発話せずに終了した会話は開始時に待ちへ登録されるが、記録ファイルは作られない。
-            # 準備へ渡すと不足の失敗として報告と抑止の対象になるため、振り返る内容の無い対象として待ちから外す。
+        if run_skill_batch_records.lacks_record(target):
             if session_review.discard_pending(target):
                 print(f"記録ファイルの無い対象を振り返りの待ちから外した: {target['session_id']}", file=sys.stderr)
             continue
         blocked = _blocked(target)
         if not manual and (blocked or target.get("failure_unreported")):
             continue
-        if _waiting_for_rollout(target):
+        if run_skill_batch_records.waiting_for_rollout(target):
             continue
         selected.append(target)
     return selected if any(not target.get("review_batch") for target in selected) else []
@@ -330,13 +306,7 @@ def _meta_report_target(*, now: datetime.datetime) -> str:
 def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
     if session_activity.review_activity({target["session_id"]}).has_activity:
         return None
-    arguments = (
-        ["--agents-session-id", target["session_id"]]
-        if target.get("lane_parent_session_id")
-        else ["--transcript", target["transcript_path"]]
-        if target["host"] == "claude"
-        else ["--codex-thread-id", target["session_id"]]
-    )
+    arguments = run_skill_batch_records.prepare_arguments(target)
     if target.get("target_repo") and target.get("cwd") and pathlib.Path(target["cwd"]).is_dir():
         arguments.extend(["--target-repo", target["cwd"]])
     previous = session_review.previous_scope(target)
@@ -387,10 +357,6 @@ def _plugin_repository() -> str:
     return json.loads((PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["repository"]
 
 
-def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest: dict[str, Any]) -> str:
-    return run_skill_batch_evidence.failure_message(failure_key, reason, path, manifest, _plugin_repository())
-
-
 def _failure(
     manifest: dict[str, Any],
     path: pathlib.Path,
@@ -424,7 +390,9 @@ def _failure(
         "報告用UWIのcommitがリモートへ未到達",
     }
     saved = _save_failure_report(
-        failure_key, lambda: _failure_message(failure_key, reason, path, manifest), defer_push=defer_push
+        failure_key,
+        lambda: run_skill_batch_evidence.failure_message(failure_key, reason, manifest, _plugin_repository()),
+        defer_push=defer_push,
     )
     writer.report_failure(synced=saved)
 
@@ -525,6 +493,8 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
     weekly_schedule.write_record(work, record)
     session_review.launch_result()
     stage = "worktree"
+    detail = None
+    report_target = None
     try:
         research_repo = None
         if work == "research":
@@ -547,7 +517,7 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
                     raise ValueError(f"{definition.title}のGit作業ツリーを `atk config repos` で登録する: {source}")
                 work_dir = PLUGIN_ROOT
         stage = "queue"
-        args.target_repo = (
+        args.target_repo = report_target = (
             _meta_report_target(now=now) if research_repo is None else repo.resolve_repo_id_or_raise(research_repo)
         )
         args.work_dir = str(work_dir)
@@ -555,8 +525,10 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
         code = execute(args)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         _LOG.error("%sを完了できなかった: %s", definition.title, redact_secrets(str(error)))
+        detail = str(error)
         code = 1
-    stage = (getattr(args, "batch_failure", None) or "").partition(":")[0] or f"{stage}-{code}"
+    failure_stage, _, failure_detail = (getattr(args, "batch_failure", None) or "").partition(":")
+    stage = failure_stage or f"{stage}-{code}"
     if not code and definition.require_saved_result and not run_skill_weekly_result.result_saved(definition, identifier, args):
         stage, code = "result-uwi", 1
     if not code:
@@ -572,13 +544,17 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
         _weekly_failed(definition, record, stage, code)
         return code
     failure_key = hashlib.sha256(f"meta:{stage}".encode()).hexdigest()
-    log_path = getattr(args, "log_path", None)
     record.update(
+        run_skill_batch_evidence.meta_failure_evidence(
+            PLUGIN_ROOT,
+            stage=stage,
+            detail=detail or failure_detail.strip(),
+            log_path=getattr(args, "log_path", None),
+            report_target=report_target,
+        ),
         failure_key=failure_key,
-        failure_version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT),
         failure_stage=stage,
         exit_code=code,
-        log_name=log_path.name if isinstance(log_path, pathlib.Path) and log_path.is_file() else None,
         report_synced=False,
     )
     weekly_schedule.write_record(work, record)
@@ -619,35 +595,13 @@ def _weekly_failed(definition: weekly_work.WeeklyWork, record: dict[str, Any], s
 
 
 def _save_meta_failure(start: pathlib.Path, record: dict[str, Any]) -> bool:
-    failure_key = record["failure_key"]
-    if log_name := record.get("log_name"):
-        locate = f"起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログ `{log_name}` で原因を確かめる。"
-    elif record["failure_stage"] == "worktree-1":
-        locate = "起票元の `atk config repos list` で配布元のGit作業ツリーの登録と実体を確かめる。実行ログは未作成。"
-    elif record["failure_stage"] == "queue-1":
-        locate = "起票元で `atk wi list --state=all --target-repo=all --skip-pull` を実行し、読取の診断を確かめる。"
-    else:
-        locate = "起票元で `atk run-skill --args meta review-session` を実行して起動の診断を確かめる。"
-    saved = _save_failure_report(
-        failure_key,
-        lambda: (
-            f"---\nsession_review_failure_key: {json.dumps(failure_key)}\n---\n\n"
-            "# 週次メタ分析（review-session meta）の失敗の是正\n\n"
-            f"週次メタ分析が終了{record['exit_code']}となり、報告を完了できなかった"
-            f"（段階: {record['failure_stage']}、開始: {record['started_at']}）。\n\n"
-            "## 反映内容と反映先\n\n"
-            f"{locate}配布元で失敗原因を是正する。\n\n"
-            "## 完成条件\n\n"
-            "原因を再現する入力で失敗と是正後の報告の保存を確かめる。"
-            "手動での確認には `atk run-skill --args meta review-session` を使う。\n"
-        ),
-    )
+    saved = _save_failure_report(record["failure_key"], lambda: run_skill_batch_evidence.meta_failure_message(record))
     if saved:
         session_review.write(start, {**record, "report_synced": True})
     return saved
 
 
-def _live(manifest: dict[str, Any]) -> bool:
+def execution_live(manifest: dict[str, Any]) -> bool:
     stable = manifest.get("process_identities", [])
     processes = manifest.get("processes", [])
     if processes:
@@ -798,6 +752,7 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
         if manifest["status"] == session_review.BatchStatus.USAGE_LIMIT_PAUSED:
             args.resume_usage_limited = True
             session_review.BatchWriter(path).resume_usage_limited()
+        session_review_analysis.ensure(session_review.BatchWriter(path))
         code = execute(args)
         manifest = session_review.read(path)
         if code:
@@ -869,7 +824,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             resumed.timeout, resumed.run_id = record.remaining, record.input.run_id
             resumed.batch_manifest, resumed.resume_record = str(path), record
             return _resume_batch(resumed, execute)
-        if old["status"] == "running" and _live(old):
+        if old["status"] == "running" and execution_live(old):
             session_review.launch_result()
             return 1
         if (finished := run_skill_batch_finalize.resume_finished_analysis(old, path)) is not None:
@@ -947,6 +902,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             run_args = argparse.Namespace(**vars(args))
             run_args.target_repo, run_args.work_dir = target_repo, str(cwd)
             run_args.batch_manifest, run_args.run_id = str(path), run_id
+            session_review_analysis.ensure(writer)
             code = execute(run_args)
             manifest = session_review.read(path)
             if code:

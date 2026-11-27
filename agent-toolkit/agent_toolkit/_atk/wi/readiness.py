@@ -1,9 +1,12 @@
 import dataclasses
 import datetime
+import functools
 import pathlib
+from collections import Counter
 from collections.abc import Iterable
 from typing import Literal
 
+from agent_toolkit._atk.serve.entry_index import IndexedEntry
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi.constants import (
@@ -16,6 +19,7 @@ from agent_toolkit._atk.wi.constants import (
     WI_TYPE_UWI,
 )
 from agent_toolkit._atk.wi.entry_text import EntryText, EntryTexts, parse_frontmatter
+from agent_toolkit._atk.wi.uwi_scan import is_report as _is_uwi_report
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
 from agent_toolkit._git import remote as _git_remote
 
@@ -52,6 +56,28 @@ class ReadinessResult:
     invalid_cooldowns: tuple[str, ...] = ()
     cooldown_values: tuple[tuple[str, str], ...] = ()
     unregistered_branches: tuple[str, ...] = ()
+    unanswered_uwi_waits: frozenset[str] = frozenset()
+
+    @functools.cached_property
+    def blocked_reasons(self) -> dict[str, str]:
+        """CLI既定の理由の優先順を維持する。後の更新が優先。  pyfltr: allow-comment"""
+        internal = set(self.internal_dependency_waits)
+        reasons = {
+            filename: "dependency-unmet-internal" if filename in internal else "dependency-unmet-external"
+            for filename in self.blocked
+        }
+        for reason, filenames in (
+            ("cooldown-until", self.cooldown_pending),
+            ("cyclic-dependency", self.cyclic_dependencies),
+            ("self-dependency", self.self_dependencies),
+            ("missing-dependency", self.missing_dependencies),
+            ("invalid-dependency", self.invalid_dependencies),
+            ("invalid-cooldown", self.invalid_cooldowns),
+            ("branch-unregistered", self.unregistered_branches),
+            ("frontmatter-broken", self.frontmatter_broken),
+        ):
+            reasons.update(dict.fromkeys(filenames, reason))
+        return reasons
 
     @property
     def actionable_count(self) -> int:
@@ -96,7 +122,6 @@ def _queue_entry(
     entry_repo: str,
     text: str,
     entry_type: str | None,
-    resolver_cache: dict[str, str | None] | None = None,
 ) -> QueueEntry:
     text = text if isinstance(text, EntryText) else EntryText(text)
     parsed = parse_frontmatter(text)
@@ -117,7 +142,7 @@ def _queue_entry(
         filename=path.name,
         text=text,
         kind=entry_type,
-        target_repo=_normalized_repo_or_none(entry_repo, resolver_cache),
+        target_repo=entry_repo,
         uwi_answered=_is_uwi_answered(text) if entry_type == WI_TYPE_UWI else None,
         frontmatter_broken=frontmatter_broken,
         cooldown_present="cooldown_until" in data,
@@ -244,32 +269,32 @@ def _internal_dependency_waits(
     return [filename for filename, _repo in internal]
 
 
-def unanswered_uwi_dependents(
-    entries: Iterable[tuple[pathlib.Path, str | None, str | None, dict[str, object], str]],
-) -> frozenset[pathlib.Path]:
-    records = tuple(entries)
-    repos_by_name: dict[str, set[str | None]] = {}
-    unanswered: dict[str, set[str | None]] = {}
-    for path, target_repo, kind, _metadata, text in records:
-        repos_by_name.setdefault(path.name, set()).add(target_repo)
-        if kind == WI_TYPE_UWI and not _is_uwi_answered(text):
-            unanswered.setdefault(path.name, set()).add(target_repo)
-    resolver_cache: dict[str, str | None] = {}
-    dependents: set[pathlib.Path] = set()
-    for path, target_repo, kind, metadata, _text in records:
-        if kind != WI_TYPE_AWI:
-            continue
-        schedule = metadata.get("queue_schedule")
-        legacy = schedule.get("dependency") if isinstance(schedule, dict) else None
-        names = _dependency_names(metadata, legacy if isinstance(legacy, dict) else None, resolver_cache) or ()
-        for name in names:
-            waiting = unanswered.get(name, set())
+def _indexed_record(entry: IndexedEntry) -> _wi_entries.EntryRecord:
+    from_metadata = entry.metadata.get("target_repo")
+    repo = from_metadata if isinstance(from_metadata, str) and from_metadata else "(unknown)"
+    parsed = None if entry.parsed.frontmatter_broken else (entry.metadata, entry.body)
+    return (entry.path, repo, EntryText.from_parsed(entry.text, parsed), entry.state, entry.kind)
 
-            same_repo = target_repo in repos_by_name.get(name, set())
-            if (target_repo in waiting) if same_repo else bool(waiting):
-                dependents.add(path)
-                break
-    return frozenset(dependents)
+
+def snapshot_from_index(
+    entries: list[IndexedEntry], *, resolver_cache: dict[str, str | None] | None = None
+) -> tuple[_wi_entries.EntryRecord, ...]:
+    """終了項目の本文は依存先と判明するまで読み込まない。  pyfltr: allow-comment"""
+    active = [entry for entry in entries if entry.state in WI_PROCESSABLE_STATES]
+    resolver_cache = {} if resolver_cache is None else resolver_cache
+    dependency_names: set[str] = set()
+    for entry in active:
+        schedule = entry.metadata.get("queue_schedule")
+        legacy = schedule.get("dependency") if isinstance(schedule, dict) else None
+        dependency_names.update(
+            _dependency_names(entry.metadata, legacy if isinstance(legacy, dict) else None, resolver_cache) or ()
+        )
+    terminal = (
+        entry
+        for entry in entries
+        if entry.state in (WI_STATE_ADOPTED, WI_STATE_REJECTED) and entry.path.name in dependency_names
+    )
+    return tuple(_indexed_record(entry) for entry in (*active, *terminal))
 
 
 def _legacy_dependency_is_satisfied(
@@ -363,6 +388,23 @@ def _dependency_targets(
     return same_repo or candidates
 
 
+def _repository_comparison_names(
+    all_active: tuple[QueueEntry, ...],
+    terminal: tuple[QueueEntry, ...],
+    dependency_map: dict[str, tuple[str, ...] | None],
+    dependency_names: set[str],
+) -> tuple[set[str], set[str]]:
+    """同名候補の優先には依存元も、旧repo指定の照合には依存先だけが必要。  pyfltr: allow-comment"""
+    counts = Counter(entry.filename for entry in (*all_active, *terminal) if entry.filename in dependency_names)
+    ambiguous = {name for name, count in counts.items() if count > 1}
+    names = set(ambiguous)
+    for entry in all_active:
+        legacy = entry.legacy_dependency
+        if legacy is not None and legacy.get("kind") == "external-repo-entry" and not _has_explicit_dependencies(entry):
+            names.update(dependency_map.get(entry.filename) or ())
+    return names, ambiguous
+
+
 def calculate_readiness(
     private_notes: pathlib.Path,
     target_repo: str | None,
@@ -372,6 +414,7 @@ def calculate_readiness(
     texts: EntryTexts | None = None,
     branch_settings: _wi_branches.Registry | None = None,
     target_branch: str | None = None,
+    resolver_cache: dict[str, str | None] | None = None,
 ) -> ReadinessResult:
     if now is None:
         now = datetime.datetime.now(datetime.UTC)
@@ -380,14 +423,42 @@ def calculate_readiness(
     if snapshot is None:
         snapshot = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
     now_utc = now.astimezone(datetime.UTC)
-    resolver_cache: dict[str, str | None] = {}
+    resolver_cache = {} if resolver_cache is None else resolver_cache
     canonical_target = _normalized_repo_or_none(target_repo, resolver_cache)
     all_active = tuple(
-        _queue_entry(path, repo, text, kind, resolver_cache)
-        for path, repo, text, state, kind in snapshot
-        if state in WI_PROCESSABLE_STATES
+        _queue_entry(path, repo, text, kind) for path, repo, text, state, kind in snapshot if state in WI_PROCESSABLE_STATES
     )
     processing_names = {path.name for path, _repo, _text, state, _kind in snapshot if state == WI_STATE_PROCESSING}
+    all_dependency_map = {
+        entry.filename: _effective_dependencies(entry, resolver_cache) for entry in all_active if not entry.frontmatter_broken
+    }
+    dependency_names = {
+        dependency for dependencies in all_dependency_map.values() if dependencies is not None for dependency in dependencies
+    }
+    terminal = tuple(
+        _queue_entry(path, repo, text, kind)
+        for path, repo, text, state, kind in snapshot
+        if state in (WI_STATE_ADOPTED, WI_STATE_REJECTED) and path.name in dependency_names
+    )
+    compared, ambiguous = _repository_comparison_names(all_active, terminal, all_dependency_map, dependency_names)
+
+    def normalized(entry: QueueEntry, *, needed: bool) -> QueueEntry:
+        if not needed:
+            return entry
+        repo = _normalized_repo_or_none(entry.target_repo, resolver_cache)
+        return entry if repo == entry.target_repo else dataclasses.replace(entry, target_repo=repo)
+
+    all_active = tuple(
+        normalized(
+            entry,
+            needed=target_repo is not None
+            or entry.filename in compared
+            or any(name in ambiguous for name in all_dependency_map.get(entry.filename) or ())
+            or (branch_settings is not None and _wi_branches.stored(entry.text) is not None),
+        )
+        for entry in all_active
+    )
+    terminal = tuple(normalized(entry, needed=entry.filename in compared) for entry in terminal)
     active = (
         all_active
         if target_repo is None
@@ -404,17 +475,6 @@ def calculate_readiness(
                 )
             )
         )
-    )
-    all_dependency_map = {
-        entry.filename: _effective_dependencies(entry, resolver_cache) for entry in all_active if not entry.frontmatter_broken
-    }
-    dependency_names = {
-        dependency for dependencies in all_dependency_map.values() if dependencies is not None for dependency in dependencies
-    }
-    terminal = tuple(
-        _queue_entry(path, repo, text, kind, resolver_cache)
-        for path, repo, text, state, kind in snapshot
-        if state in (WI_STATE_ADOPTED, WI_STATE_REJECTED) and path.name in dependency_names
     )
     existing_repairs = {
         (entry.repair_target_filename, entry.repair_kind)
@@ -496,6 +556,7 @@ def calculate_readiness(
     )
     ready: list[str] = []
     blocked: list[str] = []
+    unanswered_uwi_waits: set[str] = set()
     internal_wait_targets: dict[tuple[str, str | None], tuple[QueueEntry, ...]] = {}
     for entry in active:
         if entry.filename in deferred:
@@ -528,6 +589,11 @@ def calculate_readiness(
             ready.append(entry.filename)
             continue
         blocked.append(entry.filename)
+        if any(
+            target.kind == WI_TYPE_UWI and target.uwi_answered is False and not _is_uwi_report(target.text)
+            for target in waiting_targets
+        ):
+            unanswered_uwi_waits.add(entry.filename)
         if waiting_targets and all((target.filename, target.target_repo) in target_pairs for target in waiting_targets):
             internal_wait_targets[(entry.filename, entry.target_repo)] = waiting_targets
     internal_waits = _internal_dependency_waits(internal_wait_targets, set(ready), processing_names)
@@ -545,4 +611,5 @@ def calculate_readiness(
         invalid_cooldowns=tuple(sorted(invalid_cooldowns)),
         cooldown_values=tuple(sorted(cooldown_values.items())),
         unregistered_branches=unregistered_branches,
+        unanswered_uwi_waits=frozenset(unanswered_uwi_waits),
     )

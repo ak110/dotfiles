@@ -24,6 +24,9 @@
 
 ## 待機手段の選択
 
+Codexの非同期起動は、受付の`request_id`では終了を待てない。
+`agent-toolkit:atk-mode/playbooks/host-codex.md`「agents_serverの起動」で`started`の`session_id`を回収してから終了待機へ進み、hookが応答を観測できない場合は同じ応答の`root_session_id`を二層待機へ渡す。
+
 | 待機対象 | 待機手段 | 終了の受領 |
 | --- | --- | --- |
 | 自分のwriterの子 | `atk agents wait` | 終了行の`session_id`と`agent_message_path`の本文 |

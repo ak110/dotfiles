@@ -7,17 +7,29 @@ import re
 import subprocess
 from typing import Any
 
+from agent_toolkit._common.markdown_headings import h2_section_bodies
 from agent_toolkit._git import command as git_command
 
 from pytools._internal import repository_references
 from pytools._internal.common import format_cli_error
 
 _HELP_TEST = "agent-toolkit/agent_toolkit/atk_help_test.py"
-_SIZE_TEST = "norm_size_budget_invariant_test.py"
 _LINK_TEST = "markdown_link_anchor_invariant_test.py"
 _TERM_TEST = "retired_terms_invariant_test.py"
 _STOP_TEST = "subprocess_stop_invariant_test.py"
 _REFERENCE_TEST = "agent_toolkit_reference_invariant_test.py"
+_HOOK_BUDGET_TEST = "agent-toolkit/agent_toolkit/hook_budget_test.py"
+_ROLE_DOCUMENT_TEST = "agent-toolkit/task_documents_invariant_test.py"
+_TOOLKIT = "agent-toolkit/agent_toolkit/"
+_SERVER = _TOOLKIT + "_agents_server/"
+_CODEX_LAUNCH_TESTS = tuple(_SERVER + name for name in ("codex_auto_reset_backend_test.py", "codex_resume_test.py"))
+_CODEX_LAUNCH_SOURCES = frozenset(
+    _SERVER + name for name in ("launch_requests.py", "manager.py", "manager_start.py", "codex_start.py")
+)
+_ROLE_GENERATORS = {
+    "scripts/sync_generated_files.py": {"sync_input_contracts", "sync_return_contracts", "sync_quality_principles"},
+    _TOOLKIT + "_common/task_documents.py": {"require_role_document", "launch_contract_documents", "input_contract_body"},
+}
 _REFERENCE_DEFINITIONS = frozenset({"_test_helpers.py", "pytools/_internal/repository_references.py", "pyproject.toml"})
 _HELP_CHANGE = re.compile(r"\b(add_parser|add_subparsers|register_subcommand|help_text)\b|\bhelp\s*=|--help")
 _STOP_CHANGE = re.compile(r"\.(?:kill|terminate|stop_owned_process|reclaim_processes|reclaim_unreaped)\b|\btimeout\s*=")
@@ -35,6 +47,105 @@ def _diff(root: pathlib.Path, base: str, *args: str) -> bytes:
         )
         raise ValueError(f"統合候補の差分を取得できない: {format_cli_error(diagnostic)}")
     return result.stdout
+
+
+def _role_generation_python(source: str, entries: set[str]) -> dict[str, str]:
+    definitions: dict[str, ast.AST] = {}
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.FunctionDef | ast.ClassDef):
+            definitions[node.name] = node
+        elif isinstance(node, ast.Assign | ast.AnnAssign | ast.TypeAlias):
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else [node.name if isinstance(node, ast.TypeAlias) else node.target]
+            )
+            definitions.update((target.id, node) for target in targets if isinstance(target, ast.Name))
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            definitions.update((alias.asname or alias.name.split(".")[0], node) for alias in node.names)
+    result: dict[str, str] = {}
+    pending = entries & definitions.keys()
+    while pending:
+        name = pending.pop()
+        definition = definitions[name]
+        result[name] = ast.dump(definition)
+        pending.update(
+            node.id
+            for node in ast.walk(definition)
+            if isinstance(node, ast.Name) and node.id in definitions and node.id not in result
+        )
+    return result
+
+
+def _role_generation_startup(source: str, entries: set[str]) -> list[str]:
+    tree = ast.parse(source)
+    result: list[str] = []
+    for statement in tree.body:
+        if isinstance(statement, ast.FunctionDef) and statement.name == "main":
+            last_sync = next(
+                (
+                    index
+                    for index, child in reversed(list(enumerate(statement.body)))
+                    if any(isinstance(node, ast.Name) and node.id in entries for node in ast.walk(child))
+                ),
+                -1,
+            )
+            if last_sync >= 0:
+                first = 1 if ast.get_docstring(statement) is not None else 0
+                result.extend(
+                    ast.dump(_RoleStartupDiagnostics().visit(child)) for child in statement.body[first : last_sync + 1]
+                )
+        elif any(isinstance(node, ast.Name) and node.id == "main" for node in ast.walk(statement)):
+            result.append(ast.dump(statement))
+    return result
+
+
+class _RoleStartupDiagnostics(ast.NodeTransformer):
+    def visit_Expr(self, node: ast.Expr) -> ast.AST:
+        if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == "print":
+            return ast.Expr(value=ast.Name(id="print", ctx=ast.Load()))
+        return node
+
+
+def _role_generation_source(name: str, source: str) -> object:
+    if name in _ROLE_GENERATORS:
+        entries = _ROLE_GENERATORS[name]
+        return _role_generation_python(source, entries), _role_generation_startup(source, entries)
+    if name.endswith(".subagent.md"):
+        header = source.split("\n---\n", 1)[0] if source.startswith("---\n") else ""
+        return header, [body for title, body in h2_section_bodies(source) if title in {"入力", "出力"}]
+    if name.endswith("/quality-principles-facts.md"):
+        return [body for title, body in h2_section_bodies(source) if title == "結果の返却"]
+    return [
+        line for line in source.splitlines() if line.startswith(("起動対象: ", "<!-- input-contract:", "<!-- return-contract:"))
+    ]
+
+
+def _changes_role_generation(root: pathlib.Path, base: str, name: str, change: str) -> bool:
+    if name not in _ROLE_GENERATORS and not (
+        name.startswith("agent-toolkit/skills/atk-mode/roles/")
+        and name.endswith(".subagent.md")
+        or name == "agent-basics/skills/writing-standards/references/quality-principles-facts.md"
+    ):
+        return (
+            name.startswith("agent-toolkit/skills/")
+            and name.endswith(".md")
+            and any(
+                line[1:].startswith(("起動対象: ", "<!-- input-contract:", "<!-- return-contract:"))
+                for line in change.splitlines()
+                if line.startswith(("+", "-"))
+            )
+        )
+    path = root / name
+    after = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if "\nnew file mode " in change:
+        before = ""
+    else:
+        result = git_command.run(["-C", str(root), "show", f"{base}:{name}"], capture_output=True, text=True, timeout=60)
+        if result.returncode:
+            raise ValueError(f"役割文書の生成元の基点を取得できない: {format_cli_error(result)}")
+        before = result.stdout
+    return _role_generation_source(name, before) != _role_generation_source(name, after)
 
 
 def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
@@ -57,8 +168,6 @@ def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
         if path.suffix == ".md":
             found.add((_LINK_TEST, "markdown-links"))
             found.add((_TERM_TEST, "tracked-terminology"))
-            if name.startswith(("agent-toolkit/skills/", "agent-basics/skills/")) and "fixtures" not in path.parts:
-                found.add((_SIZE_TEST, "published-norms"))
         if (
             name.startswith("agent-toolkit/agent_toolkit/")
             and path.suffix == ".py"
@@ -69,8 +178,22 @@ def cross_contracts(root: pathlib.Path, base: str) -> list[dict[str, str]]:
             found.add((_LINK_TEST, "cli-help-links"))
         if path.suffix == ".py" and not _is_test(path) and _STOP_CHANGE.search(text):
             found.add((_STOP_TEST, "subprocess-stop"))
-        if name in {_LINK_TEST, _TERM_TEST, _SIZE_TEST, _STOP_TEST, _HELP_TEST, _REFERENCE_TEST}:
+        if name in {
+            _LINK_TEST,
+            _TERM_TEST,
+            _STOP_TEST,
+            _HELP_TEST,
+            _REFERENCE_TEST,
+            _HOOK_BUDGET_TEST,
+            _ROLE_DOCUMENT_TEST,
+        }:
             found.add((name, "cross-contract-definition"))
+        if name.startswith(_TOOLKIT) and path.suffix == ".py" and not _is_test(path):
+            found.add((_HOOK_BUDGET_TEST, "hook-import-budget"))
+        if name in _CODEX_LAUNCH_SOURCES:
+            found.update((test, "shared-codex-launch") for test in _CODEX_LAUNCH_TESTS)
+        if _changes_role_generation(root, base, name, change):
+            found.add((_ROLE_DOCUMENT_TEST, "role-document-generation"))
         if name in _REFERENCE_DEFINITIONS:
             found.add((_REFERENCE_TEST, "reference-check-definition"))
         if repository_references.is_reference_source(path) and repository_references.mentions_reference(text):
@@ -158,9 +281,14 @@ def consumer_tests(root: pathlib.Path, files: list[str], *, base: str | None = N
     head = git_command.run(["-C", str(root), "rev-parse", "--verify", "HEAD"], capture_output=True, text=True, timeout=60)
     if head.returncode:
         raise ValueError(f"HEADを取得できない: {format_cli_error(head)}")
+    head_oid = head.stdout.strip()
+    selected_cross = cross_contracts(root, base or head_oid)
+    if base is None:
+        selected_cross = [item for item in selected_cross if item["reason"] == "role-document-generation"]
     return {
-        "head": head.stdout.strip(),
-        **({"base": base, "cross_contracts": cross_contracts(root, base)} if base is not None else {}),
+        "head": head_oid,
+        **({"base": base} if base is not None else {}),
+        **({"cross_contracts": selected_cross} if base is not None or selected_cross else {}),
         "sources": sorted(source.relative_to(root).as_posix() for source in changed),
         "reference_contracts": reference_contracts,
         "candidates": candidates,

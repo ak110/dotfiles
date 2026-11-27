@@ -488,7 +488,11 @@ def _record_fix(message: object) -> str:
     labels = [f"`{label}:`" for label in _missing_record_labels(message)]
     if not _has_typed_prevention(message):
         labels.append("種類付きの `再発防止:`")
-    return "、".join(labels) + " に実施結果か行わない理由を書いてください。類似見直しは予定や未確認だけで終えないでください。"
+    return (
+        "、".join(labels) + " に実施結果か行わない理由を書いてください。"
+        "完了報告の前に、原因に対する処置と確認を既存の変更・検証記録と照合してください。"
+        "類似見直しは予定や未確認だけで終えないでください。"
+    )
 
 
 def _wait_started_during_correction(payload: dict, session_id: str, entries: list[dict]) -> bool:

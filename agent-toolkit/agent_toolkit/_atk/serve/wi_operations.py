@@ -232,19 +232,6 @@ def _branch_field(branch: str | None) -> dict[str, str]:
     return {} if branch is None else {wi_branches.KEY: branch}
 
 
-def _unanswered_uwi_dependents(active: list[entry_index.IndexedEntry]) -> frozenset[pathlib.Path]:
-    return wi_readiness.unanswered_uwi_dependents(
-        (
-            indexed.path,
-            target_repo if isinstance(target_repo := indexed.metadata.get("target_repo"), str) else None,
-            indexed.kind,
-            indexed.metadata,
-            indexed.text,
-        )
-        for indexed in active
-    )
-
-
 def _needs_verify(kind: str, state: str, text: str) -> bool:
     if kind != wi_constants.WI_TYPE_AWI or state != wi_constants.WI_STATE_INBOX:
         return False
@@ -419,21 +406,28 @@ class Operations:
         period_weeks = PERIOD_WEEKS.get(filters.get("period", "all"))
         created_after = datetime.datetime.now() - datetime.timedelta(weeks=period_weeks) if period_weeks is not None else None
         states = wi_filters.resolve_states(status_filter)
-        target_repo_matcher = wi_filters.TargetRepoMatcher(target_repo_filter)
-        needs_blocked = kind_filter in ("all", wi_constants.WI_TYPE_AWI)
-
+        resolver_cache: dict[str, str | None] = {}
+        target_repo_matcher = wi_filters.TargetRepoMatcher(target_repo_filter, resolver_cache=resolver_cache)
         selected_states = set(states)
-        scanned, warnings = self._entry_index.scan(
-            selected_states | set(wi_constants.WI_ACTIVE_STATES) if needs_blocked else selected_states
-        )
-        blocked_paths = (
-            _unanswered_uwi_dependents([indexed for indexed in scanned if indexed.state in wi_constants.WI_ACTIVE_STATES])
-            if needs_blocked
-            else frozenset()
-        )
-        indexed_entries = [indexed for indexed in scanned if indexed.state in selected_states]
+        needs_readiness = not waiting and not selected_states.isdisjoint(wi_constants.WI_PROCESSABLE_STATES)
+        scanned, warnings = self._entry_index.scan(wi_constants.WI_STATES if needs_readiness else selected_states)
         branch_registry = wi_branches.registry()
-        for indexed in indexed_entries:
+        readiness = (
+            wi_readiness.calculate_readiness(
+                self.private_notes,
+                target_repo_filter or None,
+                snapshot=wi_readiness.snapshot_from_index(scanned, resolver_cache=resolver_cache),
+                branch_settings=branch_registry,
+                target_branch=target_branch_filter,
+                resolver_cache=resolver_cache,
+            )
+            if needs_readiness
+            else wi_readiness.ReadinessResult()
+        )
+        ready = set(readiness.ready)
+        for indexed in scanned:
+            if indexed.state not in selected_states:
+                continue
             if kind_filter not in ("all", indexed.kind):
                 continue
             if created_after is not None:
@@ -494,7 +488,20 @@ class Operations:
                 )
                 indexed.derived[_LIST_ENTRY_KEY] = cached_entry
 
-            result.append({**cached_entry[1], "blocked": indexed.path in blocked_paths, **_branch_field(item_branch)})
+            processable = indexed.state in wi_constants.WI_PROCESSABLE_STATES
+            answered = indexed.kind != wi_constants.WI_TYPE_UWI or wi_uwi_scan.is_uwi_answered(indexed.text)
+            filename = indexed.path.name
+            reason = readiness.blocked_reasons.get(filename) if processable and answered else None
+            result.append(
+                {
+                    **cached_entry[1],
+                    "ready": processable and filename in ready,
+                    "blocked": reason is not None,
+                    "blocked_reason": reason,
+                    "waiting_for_answer": reason is not None and filename in readiness.unanswered_uwi_waits,
+                    **_branch_field(item_branch),
+                }
+            )
         if waiting:
             return sorted(result, key=lambda item: (item["important"] is not True, str(item["filename"]))), warnings
         return sorted(result, key=lambda item: str(item["filename"]), reverse=True), warnings

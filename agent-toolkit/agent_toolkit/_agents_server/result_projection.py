@@ -10,7 +10,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import logging_config, turn_state
 from agent_toolkit._common import runtime_inserted, session_registry
-from agent_toolkit._common.output_policy import rules
+from agent_toolkit._common.output_policy import has_read_review_guidance, rules, was_review_guidance_presented
 
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終了を観測してから`send_message`を再送する"
 """turnが中断中または未終了のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
@@ -21,22 +21,33 @@ REVIEW_LABEL_SUFFIX = "-review"
 
 
 REVIEW_RESULT_NEXT_ACTION = (
-    "レビューの指摘を受領した。採否を確定する前に`agent-basics:review-standards`を起動し、"
-    "同スキルの`references/reviewee.md`に従って採否と修正を確定する。"
-    "ユーザーの合意を見送りの根拠にする場合は、合意を示すユーザー発話を特定してから根拠にする"
+    "レビュー結果を受領しました。採否を確定する前に`agent-basics:review-standards`を起動し、"
+    "同スキルの`references/reviewee.md`に従ってください。"
+    "見送りの根拠にする場合は、合意を示すユーザー発話を特定してください。"
 )
 
 
 # 読者別探索の結果はレビュー担当が受領し、同担当向けの契約で採否を確定する。
 READER_FIT_REVIEW_RESULT_NEXT_ACTION = (
-    "読者別探索の指摘を受領した。採否を確定する前に`agent-basics:review-standards`を起動し、"
-    "`reader-fit-review.parent.md`「受領」に従って、指摘ごとの採否と根拠を確定する"
+    "読者別探索の結果を受領しました。採否を確定する前に`agent-basics:review-standards`を起動し、"
+    "`reader-fit-review.parent.md`「受領」に従ってください。"
 )
 
 _REVIEW_STANDARDS_DOCUMENT = "agent-basics:review-standards/SKILL.md"
 _REVIEWEE_DOCUMENT = "agent-basics:review-standards/references/reviewee.md"
 _READER_FIT_RECEIPT_DOCUMENT = "agent-toolkit:atk-mode/roles/reader-fit-review.parent.md#「受領」"
 _REVIEW_RECEIPT_DOCUMENTS = frozenset((_REVIEW_STANDARDS_DOCUMENT, _REVIEWEE_DOCUMENT, _READER_FIT_RECEIPT_DOCUMENT))
+_REVIEW_RECEIPT_SHORT = "結果と根拠を照合し、指摘の採否を確定してください。"
+_LEGACY_REVIEW_RECEIPT = (
+    "レビューの指摘を受領した。採否を確定する前に`agent-basics:review-standards`を起動し、"
+    "同スキルの`references/reviewee.md`に従って採否と修正を確定する。"
+    "ユーザーの合意を見送りの根拠にする場合は、合意を示すユーザー発話を特定してから根拠にする",
+    "読者別探索の指摘を受領した。採否を確定する前に`agent-basics:review-standards`を起動し、"
+    "`reader-fit-review.parent.md`「受領」に従って、指摘ごとの採否と根拠を確定する",
+)
+FULL_REVIEW_RECEIPT_ACTIONS = frozenset(
+    (REVIEW_RESULT_NEXT_ACTION, READER_FIT_REVIEW_RESULT_NEXT_ACTION, *_LEGACY_REVIEW_RECEIPT)
+)
 _LANE_RECEIPT_DOCUMENT = "agent-toolkit:atk-mode/playbooks/lane-receipt.md#「実測と判断の検収」"
 _LANE_RECEIPT_ACTION = (
     "`lane-receipt.md`「実測と判断の検収」を読み、担当の結論が原要求・証拠・現行の方針に合うか確かめてから受理・報告する。"
@@ -70,13 +81,32 @@ def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[s
     return result
 
 
+def concise_review_receipt(result: dict[str, Any], recipient: str | None) -> dict[str, Any]:
+    action = result.get("next_action")
+    requirements = result.get("read_requirements")
+    if recipient is None or not isinstance(action, str) or not isinstance(requirements, list):
+        return result
+    documents = tuple(item for item in requirements if isinstance(item, str) and item in _REVIEW_RECEIPT_DOCUMENTS)
+    if not documents:
+        return result
+    actions = action.splitlines()
+    already_presented = was_review_guidance_presented(recipient, FULL_REVIEW_RECEIPT_ACTIONS.intersection(actions))
+    if not already_presented or not has_read_review_guidance(recipient, documents):
+        return result
+    return {
+        **result,
+        "next_action": "\n".join(
+            [_REVIEW_RECEIPT_SHORT, *(line for line in actions if line not in FULL_REVIEW_RECEIPT_ACTIONS)]
+        ),
+    }
+
+
 def _without_review_receipt(result: dict[str, Any]) -> dict[str, Any]:
     """旧版で待機表明に付いたレビュー受領案内だけを、回復して出力するときにも除く。"""
     result = dict(result)
     action = result.get("next_action")
     if isinstance(action, str):
-        legacy = {REVIEW_RESULT_NEXT_ACTION, READER_FIT_REVIEW_RESULT_NEXT_ACTION}
-        remaining = [line for line in action.split("\n") if line not in legacy]
+        remaining = [line for line in action.split("\n") if line not in FULL_REVIEW_RECEIPT_ACTIONS]
         if remaining:
             result["next_action"] = "\n".join(remaining)
         else:

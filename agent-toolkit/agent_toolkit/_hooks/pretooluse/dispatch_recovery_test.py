@@ -5,10 +5,17 @@
 
 import hashlib
 import json
+import os
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult
 
+from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import function_hook_requests
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.pretooluse import dispatch, operation_skills, user_facing_checks
 from agent_toolkit._hooks.pretooluse.decision import Decision
@@ -245,3 +252,56 @@ def test_generic_retry_retains_only_latest_32_inputs(capsys) -> None:
         assert _reason(payload, "Agent", {"prompt": f"調査{index}"}, capsys)
     assert _reason(payload, "Agent", {"prompt": "調査32"}, capsys) is None
     assert _reason(payload, "Agent", {"prompt": "調査0"}, capsys)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("call_prefix", ["toolu", "repl"])
+async def test_saved_report_uses_one_validated_snapshot(monkeypatch, tmp_path, capsys, call_prefix):
+    session = "report-owner"
+    reference = "rejected-send-to-user-abcd1234"
+    root = managed_temp.resolve_session_temp(session)
+    saved = root / reference / "message.md"
+    saved.parent.mkdir()
+    visible = "検査した長文を一度だけ表示する。\n" * 100
+    saved.write_bytes(visible.encode("utf-8"))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: session))
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    request = AsyncMock(return_value={"status": "confirmed"})
+    monkeypatch.setattr(function_hook_requests, "request", request)
+
+    def hook(arguments: dict, *, identifier: str = session) -> dict:
+        payload = {
+            "session_id": identifier,
+            "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+            "tool_use_id": f"{call_prefix}_report",
+            "tool_input": arguments,
+            "cwd": str(tmp_path),
+        }
+        assert dispatch.main(json.dumps(payload)) == 0
+        return json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+
+    with pytest.raises(ToolError, match="事前検査"):
+        await mcp_tools.mcp.call_tool("send_to_user", {"body_ref": reference})
+    for invalid in ({}, {"body_ref": reference, "message": visible}):
+        with pytest.raises(ToolError, match="一方だけ"):
+            await mcp_tools.mcp.call_tool("send_to_user", invalid)
+    with pytest.raises(ToolError, match="証明できない"):
+        await mcp_tools.mcp.call_tool("send_to_user_preflight", {})
+    assert hook({"body_ref": reference}, identifier="other")["permissionDecision"] == "deny"
+    for misplaced in (str(saved), "../" + reference, "%2e%2e/" + reference):
+        assert hook({"body_ref": misplaced})["permissionDecision"] == "deny"
+    alias = root / "rejected-send-to-user-abcd1235" / "message.md"
+    alias.parent.mkdir()
+    os.link(saved, alias)
+    assert hook({"body_ref": alias.parent.name})["permissionDecision"] == "deny"
+    alias.unlink()
+    request.assert_not_awaited()
+    ready = hook({"body_ref": reference})
+    assert ready["permissionDecision"] == "allow"
+    saved.write_text("検査後に変えた別の本文。", encoding="utf-8")
+    response = await mcp_tools.mcp.call_tool("send_to_user", ready["updatedInput"])
+    request.assert_awaited_once_with(session, "send_to_user", {"message": visible})
+    assert isinstance(response, CallToolResult)
+    assert response.structured_content == {"status": "confirmed"}

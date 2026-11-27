@@ -72,8 +72,8 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
 )
 lazy from agent_toolkit._hooks import command_timing, session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
-lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-lazy from agent_toolkit._hooks.pretooluse import user_facing_checks
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._hooks.pretooluse import intake_edit, user_facing_checks
 
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*(?:\[SYSTEM NOTIFICATION - NOT USER INPUT\]\s*)?<task-notification\b")
@@ -155,8 +155,8 @@ def _entry_work_notice(session_id: str, full_name: str, arguments: str | None) -
     return informational(
         _llm_notice(
             f"起動入力の先頭の語 `{work}` は作業の指定である。"
-            f"`agent-toolkit:atk-mode/playbooks/{work}.md` に従う。"
-            f"{mode_notice}指定の後ろにある本文だけを入力として扱う。"
+            f"`agent-toolkit:atk-mode/playbooks/{work}.md` を読み、その手順に従ってください。"
+            f"{mode_notice}指定の後ろにある本文だけを入力として扱ってください。"
         )
     )
 
@@ -179,13 +179,30 @@ def main(payload_text: str) -> int:
     if not isinstance(prompt, str) or not prompt:
         return 0
 
-    if is_codex_payload(payload):
+    is_codex = is_codex_payload(payload)
+    is_antigravity = is_antigravity_payload(payload)
+    delegated = is_delegated(os.environ)
+    is_normal_prompt = not _is_machine_injected(payload, prompt)
+    command_text = prompt.lstrip(" \t")
+    first_line = command_text.split("\n", 1)[0].strip()
+    prefix = "$" if is_codex else "/"
+    match = _SKILL_COMMAND_PATTERN.match(first_line[1:]) if first_line.startswith(prefix) else None
+    typed_name = f"agent-toolkit:{match.group(1)}" if match is not None else ""
+    arguments = command_text[1 + match.end() :] if match is not None else None
+    full_name, arguments = skill_modes.resolve_work(typed_name, arguments) if not delegated else (typed_name, arguments)
+    named_by_entry = full_name != typed_name
+    work = full_name.removeprefix("agent-toolkit:")
+
+    if is_codex:
         user_facing_checks.observe_async_policy_reply(session_id, prompt)
 
     set_warning_session_id(session_id)
     initial_notices: list[str] = []
     try:
-        termination_evidence.observe_user(payload_text)
+        if is_normal_prompt and named_by_entry and (is_codex or is_antigravity) and not payload.get("agent_id"):
+            termination_evidence.observe_user(payload_text, entry_work=work)
+        else:
+            termination_evidence.observe_user(payload_text)
     except (OSError, ValueError, TypeError, KeyError) as error:
         initial_notices.append(
             _llm_notice(
@@ -231,14 +248,6 @@ def main(payload_text: str) -> int:
             _emit_hook_output(additional_context="\n".join(harness_notices))
         return 0
 
-    machine_injected = _is_machine_injected(payload, prompt)
-    is_codex = is_codex_payload(payload)
-    command_text = prompt.lstrip(" \t")
-    first_line = command_text.split("\n", 1)[0].strip()
-    command_prefix = "$" if is_codex else "/"
-
-    is_normal_prompt = not machine_injected
-
     notices: list[str] = list(initial_notices)
     if is_normal_prompt:
         try:
@@ -262,38 +271,29 @@ def main(payload_text: str) -> int:
                 notices.append(_work_contract_notice(session_id, contract_notice))
         notices.extend(content_notices(prompt, "user_prompt_submit"))
         notices.append(_utterance_notice())
+        if (is_codex or is_antigravity) and (boundary := intake_edit.prompt_notice(payload, session_id)):
+            notices.append(boundary)
     if self_check_notice is not None:
         notices.append(self_check_notice)
 
-    if first_line.startswith(command_prefix):
-        match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
-        if match is not None:
-            full_name = f"agent-toolkit:{match.group(1)}"
-            arguments = command_text[len(command_prefix) + match.end() :]
+    if match is not None:
+        if (
+            is_normal_prompt
+            and not is_codex
+            and not delegated
+            and not payload.get("agent_id")
+            and (named_by_entry or work in work_contract.EXTERNAL_SOURCE_WORKS)
+        ):
+            work_contract.observe_external_source_entry(session_id, work, arguments or "")
+        if named_by_entry:
+            session_title.observe_add_awi(session_id, full_name)
+            if is_normal_prompt:
+                notices.append(_entry_work_notice(session_id, full_name, arguments))
+        if not is_codex:
+            session_title.observe_skill(session_id, full_name, arguments)
 
-            typed_name = full_name
-            if not is_delegated(os.environ):
-                full_name, arguments = skill_modes.resolve_work(full_name, arguments)
-
-            named_by_entry = full_name != typed_name
-            work = full_name.removeprefix("agent-toolkit:")
-            if (
-                is_normal_prompt
-                and not is_codex
-                and not is_delegated(os.environ)
-                and not payload.get("agent_id")
-                and (named_by_entry or work in work_contract.EXTERNAL_SOURCE_WORKS)
-            ):
-                work_contract.observe_external_source_entry(session_id, work, arguments or "")
-            if named_by_entry:
-                session_title.observe_add_awi(session_id, full_name)
-                if is_normal_prompt:
-                    notices.append(_entry_work_notice(session_id, full_name, arguments))
-            if not is_codex:
-                session_title.observe_skill(session_id, full_name, arguments)
-
-            if named_by_entry and full_name == skill_modes.PROCESS_WI:
-                update_state(session_id, set_process_wi_invoked)
+        if named_by_entry and full_name == skill_modes.PROCESS_WI:
+            update_state(session_id, set_process_wi_invoked)
 
     additional_context = "\n".join(notice for notice in notices if notice) or None
     title = None if is_codex else session_title.proposed_title(session_id, payload.get("session_title"))

@@ -78,22 +78,22 @@ _PRECEDING_WAIT_NEXT_ACTION = (
 _BROKEN_STATE_NEXT_ACTION = recover_from_failure(
     component="待機状態",
     evidence="待機の診断と保存状態",
-    first_step="MCPの`list`で保持状態を確かめる",
-    retry="状態を回復し、対象を確認できてから待機を再実行する",
+    first_step="MCPの`list`で保持状態を確かめてください",
+    retry="状態を回復し、対象を確認できてから待機を再実行してください",
 )
 _READ_FAILURE_NEXT_ACTION = recover_from_failure(
     component="待機結果の読取",
     evidence="診断と結果ファイル",
-    first_step="この待機では結果本文を配送していないため、MCPの`show`で対象とファイルの権限・内容を確認する",
-    retry="結果を読み取れる状態に戻してから`atk agents wait`を再実行する",
+    first_step="MCPの`show`で対象とファイルの権限・内容を確認してください",
+    retry="結果を読み取れる状態に戻してから`atk agents wait`を再実行してください",
 )
-_ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行する"
+_ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行してください。"
 _SAVED_RESULT_NEXT_ACTION = (
-    "`agent_message_paths`にある本文ファイルを読む。保存runの終了行は`jq -r .output -- <run_path>`で読める。"
-    "新しい結果の待機が必要な場合だけ`atk agents wait`を実行する"
+    "`agent_message_paths`にある本文ファイルを読んでください。保存runの終了行は`jq -r .output -- <run_path>`で読める。"
+    "新しい結果の待機が必要な場合だけ`atk agents wait`を実行してください。"
 )
 _IDENTITY_NEXT_ACTION = (
-    "MCPの`list`を1回呼び出し、応答の`root_session_id`を`atk agents wait --root-session-id <値>`へ渡して再実行する"
+    "MCPの`list`を1回呼び出し、応答の`root_session_id`を`atk agents wait --root-session-id <値>`へ渡して再実行してください。"
 )
 _FAILED_RESULT_NEXT_ACTION = (
     "`agent_message`と`error`で失敗の種類を確かめる。作業を続けられる失敗なら同じsessionへ`send_message`で継続し、"
@@ -689,7 +689,7 @@ def _wait_for_result(
                             roots=stranded_roots,
                         )
                     if read_error is not None:
-                        read_failure = f"終了時の結果ファイルを読めません（session {session_id}）: {read_error}"
+                        read_failure = f"終了時の結果ファイルを読めません（{session_id}）: {read_error}\n本文は未配送です。"
                         break
                     notices = notice_inbox.take_notices(
                         root_session_id,
@@ -729,7 +729,9 @@ def _wait_for_result(
                                 )
                         if notices:
                             result["notices"] = notices
-                        result = _with_result_next_action(result)
+                        result = result_projection.concise_review_receipt(
+                            _with_result_next_action(result), recipient_session_id
+                        )
                         seconds = continuation_wait.continuation_wait_seconds(session_id, state_root=state_root)
                         if seconds is not None:
                             result = result_projection.append_result_next_action(
