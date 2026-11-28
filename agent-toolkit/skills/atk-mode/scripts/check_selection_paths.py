@@ -62,7 +62,7 @@ class _Segment:
 
 
 def _explicit_paths(text: str, work_dir: pathlib.Path, declared_paths: frozenset[str]) -> set[str]:
-    """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
+    """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。  pyfltr: allow-comment
 
     インラインコードは、内容全体が解決可能なパスの場合に空白を含めて1つの候補とし、非ASCIIの文字を含む
     パス（`docs/dev/ログ監視.md`、`ログ/a.md`）も末尾まで読む。文章の中のパスはASCIIの文字で区切って探し、
@@ -73,9 +73,8 @@ def _explicit_paths(text: str, work_dir: pathlib.Path, declared_paths: frozenset
     `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採用する。
     実在しないファイルの候補は、追跡ファイルのパス末尾と1件だけ一致すればその追跡ファイルへ読み替え、
     それ以外は`_new_file_path`の新設先の条件で採る。
-    `/`を含まない候補は、`work_dir`直下に実在するファイルの場合だけ採る。
+    `/`を含まない候補は、`work_dir`直下に実在するファイルか、インラインコード全体で選定と同じ個別の新設名を示す場合に採る。
     ディレクトリに続き区切り記号で列挙されたファイル名は、そのディレクトリ内の候補として同じ条件で採る。
-    孤立した語はコマンド名や識別子であることが多く、作業ツリー直下の実在ファイルだけを採用する。
     直後にグロブ記号が続く語は、グロブや波括弧展開の途中で途切れた断片であり個別のパスを指さないため採らない。
     """
     paths: set[str] = set()
@@ -85,8 +84,9 @@ def _explicit_paths(text: str, work_dir: pathlib.Path, declared_paths: frozenset
         explicit_directory = False
         directory_particle = False
         last_end = 0
-        for start, end in _path_tokens(segments, work_dir, declared_paths):
-            candidate = _normalize_candidate(run[start:end])
+        for start, end, whole_code in _path_tokens(segments, work_dir, declared_paths):
+            token = run[start:end]
+            candidate = _normalize_candidate(token)
             gap = run[last_end:start]
             if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or directory_particle and gap.strip() == "の"):
                 directory = None
@@ -116,12 +116,23 @@ def _explicit_paths(text: str, work_dir: pathlib.Path, declared_paths: frozenset
                 is not None
             ):
                 paths.add(resolved)
+            elif (
+                directory is None
+                and whole_code
+                and candidate in declared_paths
+                and token.strip() == candidate
+                and not any(char.isspace() or ord(char) < 32 or char in '\\:*?[]{}<>"|' for char in candidate)
+                and _new_file_path(candidate, work_dir) == candidate
+            ):
+                paths.add(candidate)
             directory_particle = False
     return paths
 
 
-def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path, declared_paths: frozenset[str]) -> list[tuple[int, int]]:
-    tokens: list[tuple[int, int]] = []
+def _path_tokens(
+    segments: list[_Segment], work_dir: pathlib.Path, declared_paths: frozenset[str]
+) -> list[tuple[int, int, bool]]:
+    tokens: list[tuple[int, int, bool]] = []
     offset = 0
     for segment in segments:
         content = segment.text
@@ -137,7 +148,7 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path, declared_path
                 or (work_dir / candidate).is_file()
             )
         ):
-            tokens.append((offset, offset + len(content)))
+            tokens.append((offset, offset + len(content), True))
             offset += len(content)
             continue
         for match in _PATH_TOKEN_RE.finditer(content):
@@ -147,7 +158,7 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path, declared_path
                 if extended is None and not _is_complete_ascii_part(match.group()):
                     continue
                 end = extended or end
-            tokens.append((offset + match.start(), offset + end))
+            tokens.append((offset + match.start(), offset + end, False))
         offset += len(content)
     return tokens
 
