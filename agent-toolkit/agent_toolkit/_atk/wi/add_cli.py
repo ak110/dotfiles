@@ -328,7 +328,7 @@ def cmd_add(
     count = len(generated)
     inbox_dir = private_notes
     for warning in add.missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
-        _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
+        _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION, source="wi-missing-dependency")
     _outcome.report_success(
         f"{count}件をholdへ保存した" if hold else f"{count}件を報告として保存した" if report else f"{count}件をinboxへ投入した"
     )

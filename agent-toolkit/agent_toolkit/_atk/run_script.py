@@ -32,6 +32,7 @@ SCRIPT_PATHS = {
     "record-stall-detection": pathlib.Path("skills/atk-mode/scripts/record_stall_detection.py"),
     "wait-compaction-context": pathlib.Path("skills/atk-mode/scripts/wait_compaction_context.py"),
     "session-review-evidence": pathlib.Path("skills/atk-mode/scripts/session_review_evidence.py"),
+    "warning-count": pathlib.Path("skills/atk-mode/scripts/session_evidence_warn.py"),
     "session-review-prepare": pathlib.Path("skills/atk-mode/scripts/session_review_prepare.py"),
     "session-review-state": pathlib.Path("skills/atk-mode/scripts/session_review_state.py"),
     "research-sources": pathlib.Path("skills/atk-mode/scripts/research_sources.py"),

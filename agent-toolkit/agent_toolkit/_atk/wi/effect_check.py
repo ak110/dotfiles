@@ -15,6 +15,7 @@ from agent_toolkit._git import command
 RECORD_PREFIX = "- 効果確認: "
 OVERALL_RECORD_PREFIX = "- 効果確認全体: "
 VERDICTS = ("pending", "confirmed", "insufficient", "not_required")
+_MONITORING = re.compile(r"監視: source=[\w.-]+(?:,[\w.-]+)*; 開始版=[^\s;]+(?=; |$)")
 
 
 def validate_adoption_effect(verdict: str | None, reason: str | None) -> None:
@@ -259,6 +260,14 @@ def _updated_effect_check(text: str, worktree: pathlib.Path, record: dict[str, s
         if file is not None
         else next((json.loads(value) for value in reversed(result_values(text, "効果確認全体"))), None)
     )
+    if verdict == "pending" and current == "pending" and isinstance(previous, dict):
+        previous_reason = previous.get("reason")
+        if (
+            isinstance(previous_reason, str)
+            and not record["reason"].startswith("監視:")
+            and (monitoring := _MONITORING.match(previous_reason))
+        ):
+            record = {**record, "reason": f"{monitoring.group()}; {record['reason']}"}
     if previous == record:
         return text
     if file is not None and file in checks:

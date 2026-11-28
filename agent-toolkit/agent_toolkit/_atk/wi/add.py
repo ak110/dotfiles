@@ -518,6 +518,7 @@ def add_entries(
         _outcome.report_warning(
             "巡回の終了判定に使う報告用UWIの保存記録を残せなかった",
             next_action="保存を検収してから、送達と終了操作を行う",
+            source="wi-report-save-record",
         )
     if (
         submitter_session is not None
@@ -528,6 +529,7 @@ def add_entries(
         _outcome.report_warning(
             f"回答の通知先を記録できなかった: {'、'.join(generated)}",
             next_action="回答の有無は`atk wi show <ファイル名>`で確かめる",
+            source="wi-answer-watch",
         )
     return generated
 

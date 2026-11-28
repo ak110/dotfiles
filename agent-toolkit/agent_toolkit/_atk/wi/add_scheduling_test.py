@@ -85,10 +85,12 @@ def test_add_warns_for_missing_dependency_and_keeps_registering(
     captured = capsys.readouterr()
     generated = sorted(path.name for path in notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md") if path.suffix == ".md")
     assert len(generated) == 1
-    warning, next_action = captured.err.splitlines()
+    marker, warning, next_action, end_marker = captured.err.splitlines()
+    assert marker == '<atk-auto source="wi-missing-dependency" kind="warn">'
     assert warning == f"警告: {generated[0]}のdepends_onが参照するabsent.mdは取り込み先に実在しません"
     assert next_action.startswith("次の操作: 登録は完了した。")
     assert "atk wi set-dependencies" in next_action
+    assert end_marker == "</atk-auto>"
     assert "成功: 1件をinboxへ投入した" in captured.out
 
 

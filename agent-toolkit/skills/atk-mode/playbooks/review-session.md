@@ -160,6 +160,7 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
 | --- | --- |
 | 登録と結果 | `source: session-review`のAWIの登録・採否・効果状態、反復の束、起票経路別の登録件数、`## ユーザーコメント`見出しを持つ項目の件数（すべて投入日で区切る） |
 | 規範と自動チェック | 期間末のdevelopで `agent-toolkit`・`agent-basics`・`.claude/skills` のMarkdownの数とバイト数、`scripts/check_*.py` のテスト以外の本数、`pyproject.toml` のcustom-commands数 |
+| 警告の発火 | 確認待ちの理由にある `source` ごとの件数と会話数を `atk run-script warning-count -- --source <名前> --since <開始> --until <終了>` で2期間分取得する。観測したホストと期間を記し、抜粋や会話の識別子を共有しない |
 | 修正の割合と種類 | 非mergeの `git log` で件名が`fix`から始まる数と割合。その修正の規範変更、規範だけの変更、`*_test.py`・`*.test.ts`・`*.test.tsx`・`scripts/check_*.py`の新設、削除行が上回る件数（区分は重複可） |
 | CIの結果 | developのCIの実行結果別件数と失敗率。取得が件数上限に達したら期間を分割し、成功・失敗の母集団をそろえる。同じジョブの反復は `gh run view` で失敗の段と最初のエラーを比べる |
 

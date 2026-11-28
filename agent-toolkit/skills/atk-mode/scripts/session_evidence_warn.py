@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import argparse
+import bisect
+import dataclasses
+import datetime
 import json
 import re
+import socket
+from pathlib import Path
 from typing import Any
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
+from agent_toolkit._common import host_homes, session_record_paths, shell_segments, shell_tokens
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common.git_invocation import git_subcommand_tokens
+from agent_toolkit._common.persisted_output_reference import PERSISTED_OUTPUT_PREFIX
 from session_evidence_detail import (
     _persisted_result,
     _tool_hint,
@@ -16,12 +25,21 @@ from session_evidence_extract import (
     _clip,
     _CollectedRecord,
     _events_with_record,
+    _load_records_checked,
     _Record,
     _scannable_records,
     _unresolved_events,
     _UnresolvedRecord,
 )
-from session_evidence_hook_notices import _hook_notice_bodies, _hook_notice_parts, _hook_occurrence, _hook_records
+from session_evidence_hook_notices import (
+    _hook_notice_bodies,
+    _hook_notice_parts,
+    _hook_occurrence,
+    _hook_records,
+    _result_hook_records,
+)
+from session_evidence_stats import _parse_cli_timestamp, _record_timestamp
+from session_evidence_tool_calls_records import _record_tool_calls, _restored_result
 
 _WARNING_LINE_PATTERN = re.compile(
     r"^(?:"
@@ -409,3 +427,262 @@ def _warning_collection_events(collected: list[_CollectedRecord], unresolved: li
         events.append({"kind": "warning", "text": "一致なし"})
     events.extend(_unresolved_events(unresolved))
     return events
+
+
+def _warning_issuer(command: str) -> str | None:
+    commands = shell_segments.extract_execution_segments(command)
+    if not commands or any(
+        not segment.resolved
+        or not (
+            segment.tokens in {("set", "-o", "pipefail"), ("set", "-euo", "pipefail")}
+            or len(segment.tokens) == 2
+            and segment.tokens[0] == "cd"
+            and not segment.tokens[1].startswith("-")
+        )
+        for segment in commands[:-1]
+    ):
+        return None
+    segment = commands[-1]
+    if not segment.resolved or not (tokens := segment.tokens):
+        return None
+    if shell_tokens.is_atk_command(tokens) and tokens[1:3] in {("wi", "add"), ("wi", "edit")}:
+        return "wi"
+    if tokens[0].replace("\\", "/").rsplit("/", 1)[-1] in {"git", "git.exe"}:
+        segment = dataclasses.replace(segment, tokens=("git", *tokens[1:]))
+    parsed = git_subcommand_tokens(segment)
+    return "git" if parsed is not None and parsed[0] == "commit" else None
+
+
+_DRAFT_OUTPUT_BOUNDARY = re.compile(
+    r"(?m)^(?:原稿: [^\r\n]*\r?\n冒頭保存先: [^\r\n]*\r?\n"
+    r"冒頭文字数: (?P<size>[0-9]{1,10})\r?\n冒頭本文:(?P<transport_eol>\r?\n)"
+    r"|失敗: (?:HEADコミットの取得|remote同期)に失敗した。確定済みの本文を以下に再表示する\r?$)"
+)
+_DRAFT_PREVIEW_END = re.compile(r"\r?\n冒頭本文終了(?=\r?\n|$)")
+_DRAFT_CANDIDATE_LINE = re.compile(r"(?m)^情報: 先送りの候補 [0-9]+行目: [^\r\n]*")
+
+
+def _warning_output(body: str, issuer: str) -> str:
+    if issuer != "wi":
+        return body
+    parts = []
+    start = 0
+    while (preview := _DRAFT_OUTPUT_BOUNDARY.search(body, start)) is not None:
+        parts.append(body[start : preview.start()])
+        if (size := preview["size"]) is None:
+            break
+        opening_start = preview.end()
+        if preview["transport_eol"] == "\r\n":
+            body = body[:opening_start] + body[opening_start:].replace("\r\n", "\n")
+        end = opening_start + int(size)
+        if (closing := _DRAFT_PREVIEW_END.match(body, end)) is None:
+            break
+        start = closing.end()
+    else:
+        parts.append(body[start:])
+    return _DRAFT_CANDIDATE_LINE.sub("", "".join(parts))
+
+
+def _result_warning_body(entry: dict[str, Any], call_id: str) -> str:
+    payload = entry.get("payload")
+    item = payload.get("item") if isinstance(payload, dict) else None
+    if isinstance(item, dict) and item.get("type") == "CommandExecution":
+        for key in ("aggregated_output", "output"):
+            if isinstance(value := item.get(key), str) and value:
+                return value
+        streams = (item.get("stdout"), item.get("stderr"))
+        return "\n".join(value for value in streams if isinstance(value, str))
+    return _restored_result(entry, call_id) or ""
+
+
+def _assistant_speech(entry: dict[str, Any]) -> str:
+    message = entry.get("message") if entry.get("type") == "assistant" else entry.get("payload")
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return _clip(content)
+    if isinstance(content, list):
+        return _clip(
+            " ".join(
+                block["text"]
+                for block in content
+                if isinstance(block, dict)
+                and block.get("type") in {"text", "output_text"}
+                and isinstance(block.get("text"), str)
+            )
+        )
+    return ""
+
+
+def _countable_warnings(
+    records: list[_Record], sources: set[str], since: datetime.datetime, until: datetime.datetime
+) -> tuple[list[dict[str, Any]], int]:
+    events = {}
+    undated = set()
+    records = _scannable_records(records)
+    by_line = {record.line: record for record in records}
+    calls = _record_tool_calls(records)
+    operations = [(call.line, call.text or call.tool) for call in calls]
+    operation_lines = [line for line, _ in operations]
+    speeches = [(record.line, spoken) for record in records if (spoken := _assistant_speech(record.entry))]
+    speech_lines = [line for line, _ in speeches]
+
+    def collect(bodies: list[str], record: _Record, channel: str, occurrence: str) -> None:
+        indexes: dict[tuple[str, str], int] = {}
+        timestamp = _record_timestamp(record)
+        for part, text, _ in (notice for body in bodies for notice in _hook_notice_parts(body, None)):
+            if part.hook not in sources or part.tag not in {"warn", "warning", "block"} or not text:
+                continue
+            kind = "warn" if part.tag == "warning" else part.tag
+            source_tag = part.hook, kind
+            position = indexes.get(source_tag, 0)
+            indexes[source_tag] = position + 1
+            key = (channel, occurrence, *source_tag, position)
+            if timestamp is None:
+                undated.add(key)
+            elif since <= timestamp < until and key not in events:
+                speech = bisect.bisect_left(speech_lines, record.line) - 1
+                action = bisect.bisect_right(operation_lines, record.line)
+                events[key] = {
+                    "source": part.hook,
+                    "kind": kind,
+                    "line": record.line,
+                    "text": _clip(text),
+                    "previous_speech": speeches[speech][1] if speech >= 0 else None,
+                    "next_operation": _clip(operations[action][1]) if action < len(operations) else None,
+                }
+
+    blocked: set[tuple[int, str]] = set()
+    for record in records:
+        for hook in _result_hook_records(record.entry):
+            if isinstance(call_id := hook.get("toolUseID"), str):
+                blocked.add((record.line, call_id))
+        hook_bodies: dict[str, list[str]] = {}
+        for hook in _hook_records(record.entry):
+            occurrence = _hook_occurrence(hook, record.line)
+            hook_bodies.setdefault(occurrence, []).extend(_hook_notice_bodies(hook))
+        for occurrence, bodies in hook_bodies.items():
+            collect(bodies, record, "hook", occurrence)
+    for call in calls:
+        if (
+            call.call_id is not None
+            and call.result_line is not None
+            and (call.result_line, call.call_id) not in blocked
+            and _is_execution_tool_name(call.tool)
+            and (issuer := _warning_issuer(call.text)) is not None
+        ):
+            record = by_line[call.result_line]
+            body = _warning_output(_result_warning_body(record.entry, call.call_id), issuer)
+            collect([body], record, "command", call.call_id)
+    return [dict(event, occurrence=key[:2] + key[-1:]) for key, event in events.items()], len(undated - events.keys())
+
+
+def _warning_records() -> list[tuple[str, Path, str]]:
+    projects = host_homes.claude_config_dir() / "projects"
+    claude = [("claude", path, path.stem) for path in projects.glob("*/*.jsonl") if path.is_file()]
+    claude.extend(
+        ("claude", path, path.parent.parent.name) for path in projects.glob("*/*/subagents/*.jsonl") if path.is_file()
+    )
+    codex = [
+        ("codex", path, session_record_paths.codex_session_id(path))
+        for path in session_record_paths.codex_rollouts(host_homes.codex_home())
+    ]
+    return sorted(claude + codex)
+
+
+def _has_warning_candidate(path: Path, needles: tuple[bytes, ...]) -> bool:
+    overlap = max(map(len, needles)) - 1
+    try:
+        with path.open("rb") as stream:
+            tail = b""
+            while chunk := stream.read(1024 * 1024):
+                block = tail + chunk
+                if any(needle in block for needle in needles):
+                    return True
+                tail = block[-overlap:]
+    except OSError:
+        return True
+    return False
+
+
+def warning_count_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="このホストで記録した警告・遮断を発行元と期間で集計する。")
+    parser.add_argument("--source", action="append", required=True, help="発行元。複数回指定できる。")
+    parser.add_argument("--since", required=True, help="開始日またはISO 8601日時。開始を含む。")
+    parser.add_argument("--until", required=True, help="終了日（その日を含む）またはISO 8601日時（終了を含まない）。")
+    args = parser.parse_args(argv)
+    try:
+        since, until = (_parse_cli_timestamp(value) for value in (args.since, args.until))
+        if len(args.until) == 10:
+            until = _parse_cli_timestamp((datetime.date.fromisoformat(args.until) + datetime.timedelta(days=1)).isoformat())
+        if since >= until:
+            raise ValueError("開始は終了より前を指定する")
+    except ValueError, OverflowError:
+        parser.error("範囲をYYYY-MM-DDかISO 8601日時で指定する。開始は終了より前を指定する。")
+    sources = set(args.source)
+    if any(not re.fullmatch(r"[A-Za-z0-9_.-]+", source) for source in sources):
+        parser.error("sourceには英数字・ピリオド・アンダースコア・ハイフンを指定する。")
+    needles = (*[source.encode("ascii") for source in sources], b"persistedOutputPath", PERSISTED_OUTPUT_PREFIX.encode())
+    found: dict[tuple, dict[str, Any]] = {}
+    candidates = unresolved = undated = 0
+    paths = _warning_records()
+    for engine, path, session in paths:
+        if not _has_warning_candidate(path, needles):
+            continue
+        candidates += 1
+        loaded = _load_records_checked(str(path))
+        if loaded.records is None and loaded.failure is not None and loaded.failure.line is not None:
+            loaded = _load_records_checked(str(path), allow_partial_records=True)
+        if loaded.records is None:
+            unresolved += 1
+            continue
+        unresolved += bool(loaded.gaps)
+        timestamps = (_record_timestamp(record) for record in loaded.records)
+        if not any(since <= timestamp < until for timestamp in timestamps if timestamp is not None):
+            continue
+        events, skipped = _countable_warnings(loaded.records, sources, since, until)
+        undated += skipped
+        for event in events:
+            channel, call, position = event.pop("occurrence")
+            identity = (
+                engine,
+                session,
+                event["source"],
+                event["kind"],
+                channel,
+                path if call.startswith("line:") else None,
+                call,
+                position,
+            )
+            found.setdefault(
+                identity, {**event, "engine": engine, "conversation": session, "record": f"{path}:{event['line']}"}
+            )
+    counts = {}
+    for source in sorted(sources):
+        matching = [event for event in found.values() if event["source"] == source]
+        counts[source] = {
+            "occurrences": len(matching),
+            "conversations": len({(event["engine"], event["conversation"]) for event in matching}),
+        }
+    print(
+        json.dumps(
+            {
+                "host": socket.gethostname(),
+                "since": since.isoformat(),
+                "until_exclusive": until.isoformat(),
+                "records": len(paths),
+                "candidate_records": candidates,
+                "partial_records": unresolved,
+                "undated_occurrences": undated,
+                "sources": counts,
+                "occurrences": list(found.values()),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(warning_count_main())
