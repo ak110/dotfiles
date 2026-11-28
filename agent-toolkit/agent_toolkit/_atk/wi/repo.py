@@ -108,6 +108,7 @@ def _warn_non_origin_remote(repo_id: str, cwd: pathlib.Path | None) -> None:
             _outcome.report_warning(
                 f"target_repoがorigin以外のリモート{name}に一致する: {repo_id}（origin: {origin_id}）",
                 next_action="指定先を受理して続行します。意図した投入先かを確認してください",
+                source="wi-non-origin-target",
             )
             return
 

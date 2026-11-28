@@ -206,21 +206,25 @@ export function register(on: On): void {
       </Box>
     );
   });
-  // 置いた行と会話状態は会話の終了・/resume・/branchで失われる。再開後の画面では、transcriptに残る
-  // send_to_userのツール入力から元の位置へ本文を描く。稼働中に置いた行がある呼出しは二重に描かない。
   on("ui.render", { component: "ToolGroup" }, async ($, e, next) => {
-    const calls = e.props.calls.filter((call) => isSendToUser(call.tool) && deliveredMessage(call) !== undefined);
+    const calls = e.props.calls.flatMap((call) => {
+      const report = isSendToUser(call.tool) ? deliveredReport(call) : undefined;
+      return report === undefined ? [] : [{ call, report }];
+    });
     const props = { ...e.props, calls: e.props.calls.map(withoutUndeliveredInput) };
     if (!props.isExpanded && calls.length > 0) {
-      props.isExpanded = !(await Promise.all(calls.map((call) => placedLive($, call)))).every(Boolean);
+      props.isExpanded = !(await Promise.all(calls.map(({ call, report }) => placedLive($, call, report)))).every(Boolean);
     }
     return next({ ...e, props });
   });
   on("ui.render", { component: "ToolUse" }, async ($, e, next) => {
     if (!isSendToUser(e.props.tool)) return next(e);
-    const message = deliveredMessage(e.props);
-    if (message === undefined) return next({ ...e, props: withoutUndeliveredInput(e.props) });
-    if (await placedLive($, e.props)) return next(e);
+    const report = deliveredReport(e.props);
+    if (!report) return next({ ...e, props: withoutUndeliveredInput(e.props) });
+    if (await placedLive($, e.props, report)) return next(e);
+    const snapshot = report.deliveryId ? await completionSnapshot($, report.deliveryId) : undefined;
+    const message = snapshot ?? report.message;
+    if (message === undefined) return next(e);
     const { Markdown, Box } = $.ui.resolve(e);
     return (
       <Box marginTop={1} marginBottom={1}>
@@ -239,28 +243,87 @@ export function placedMessage(stored: string | { message: string; placedAt: numb
   return typeof stored === "string" ? stored : stored.message;
 }
 
-type SendCall = { tool_use_id?: string; input: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean };
+type SendCall = { tool_use_id?: string; input: unknown; output?: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean };
+type SendReport = { completion: boolean; message?: string; deliveryId?: string };
+type DeliveryReceipt = { ok: true; id: string } | { ok: false };
 
 function withoutUndeliveredInput<T extends SendCall & { tool: string }>(call: T): T {
-  return isSendToUser(call.tool) && (call.isRunning || call.isErrored || call.isInterrupted)
+  const completion = (call.input as { kind?: unknown } | null)?.kind === "completion";
+  return isSendToUser(call.tool) &&
+    (call.isRunning || call.isErrored || call.isInterrupted || (completion && !deliveredReport(call)))
     ? { ...call, input: {} }
     : call;
 }
 
-// この会話の稼働中に行を置いた呼出しかを返す。会話状態は再開で初期化されるため、再開前の呼出しは偽になる。
-// 要求がtool_use_idを持つ場合は呼出しで照合し、再開後に同じ本文を送っても再開前の呼出しの表示を消さない。
-// tool_use_idを持たない要求（MCP要求の_metaに無い場合）だけを本文の一致で照合する。
-async function placedLive($: EngineInterface, call: SendCall): Promise<boolean> {
+async function placedLive($: EngineInterface, call: SendCall, report: SendReport): Promise<boolean> {
   const messages = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {};
   const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};
-  if (call.tool_use_id !== undefined && Object.hasOwn(calls, call.tool_use_id)) return Object.hasOwn(messages, calls[call.tool_use_id] ?? "");
+  const ordinary = report.completion ? undefined : deliveryReceipt(call.output);
+  const deliveryId = report.deliveryId ?? (ordinary?.ok ? ordinary.id : undefined);
+  if (call.tool_use_id !== undefined && Object.hasOwn(calls, call.tool_use_id)) {
+    const id = calls[call.tool_use_id] ?? "";
+    return (!deliveryId || deliveryId === id) && Object.hasOwn(messages, id);
+  }
+  if (report.completion || deliveryId) return deliveryId !== undefined && Object.hasOwn(messages, deliveryId);
   const keyed = new Set(Object.values(calls));
-  return Object.entries(messages).some(([id, message]) => !keyed.has(id) && placedMessage(message) === deliveredMessage(call));
+  return Object.entries(messages).some(([id, message]) => !keyed.has(id) && placedMessage(message) === report.message);
 }
 
-// 表示に成功した呼び出しの本文を返す。実行中・失敗・中断の呼び出しは本文を描かない。
-function deliveredMessage(call: { input: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean }): string | undefined {
+function parseJson(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return undefined; }
+}
+
+function resultReceipt(value: unknown): DeliveryReceipt | undefined {
+  const result = value as { ok?: unknown; id?: unknown } | null;
+  if (result?.ok === false) return { ok: false };
+  if (result?.ok !== true) return undefined;
+  return typeof result.id === "string" && /^[a-f0-9]{32}$/.test(result.id) ? { ok: true, id: result.id } : { ok: false };
+}
+
+function deliveryReceipt(output: unknown): DeliveryReceipt | undefined {
+  const value = parseJson(output);
+  const envelope = value as { isError?: unknown; structuredContent?: unknown; content?: unknown } | null;
+  if (envelope?.isError === true) return { ok: false };
+  const structured = resultReceipt(envelope?.structuredContent ?? value);
+  if (structured) return structured;
+  const content = Array.isArray(value) ? value : envelope?.content;
+  if (!Array.isArray(content)) return undefined;
+  let receipt: DeliveryReceipt | undefined;
+  for (const block of content) {
+    if (block?.type !== "text") continue;
+    const item = resultReceipt(parseJson(block.text));
+    if (!item) continue;
+    if (receipt && (!receipt.ok || !item.ok || receipt.id !== item.id)) return { ok: false };
+    receipt = item;
+  }
+  return receipt;
+}
+
+function deliveredReport(call: SendCall): SendReport | undefined {
   if (call.isRunning || call.isErrored || call.isInterrupted) return undefined;
-  const message = (call.input as { message?: unknown } | null)?.message;
-  return typeof message === "string" ? message : undefined;
+  const input = call.input as { kind?: unknown; message?: unknown; body_ref?: unknown } | null;
+  const message = typeof input?.message === "string" ? input.message : undefined;
+  if (input?.kind !== "completion") return message === undefined ? undefined : { completion: false, message };
+  if (message !== undefined ? input.body_ref != null :
+    input.message != null || typeof input.body_ref !== "string" || !input.body_ref) return undefined;
+  const receipt = deliveryReceipt(call.output);
+  if (receipt?.ok === false) return undefined;
+  if (receipt) return { completion: true, message, deliveryId: receipt.id };
+  return message === undefined ? undefined : { completion: true, message };
+}
+
+async function completionSnapshot($: EngineInterface, id: string): Promise<string | undefined> {
+  const session = await $.session.id();
+  const configured = await $.env.get("CLAUDE_CONFIG_DIR");
+  const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
+  const marker = exitStatePath(session, configured, home, "marker");
+  if (!marker) return undefined;
+  const directory = marker.slice(0, marker.lastIndexOf("/"));
+  try {
+    const body = parseJson(await $.fs.read(`${directory}/completion-receipts/${session}/${id}.json`));
+    return typeof body === "string" ? body : undefined;
+  } catch {
+    return undefined;
+  }
 }

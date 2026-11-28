@@ -353,6 +353,106 @@ test("会話の再開後は置いた行が無い送達本文をツール入力�
   expect(JSON.stringify(earlier)).toContain('"Markdown","props":{"text":"稼働中に置いた本文"}');
 });
 
+const completionBody = "最終報告。\n\n以上で、このセッションの作業は全て終わった。";
+const completionId = "a".repeat(32);
+
+for (const input of [{ message: "送達時の原文でない本文" }, { body_ref: "編集された参照元" }]) {
+  test(`再開後に成功IDの当会話の写しだけを描く: ${Object.keys(input)[0]}`, async ($, on) => {
+    mock.env(on, { CLAUDE_CONFIG_DIR: "/isolated/config" });
+    on("session.id", () => ({ value: "resumed-owner" }));
+    const reads: string[] = [];
+    on("fs.read", (_$, e) => {
+      reads.push(e.path);
+      return { value: JSON.stringify(completionBody) };
+    });
+    const output = [{ type: "text", text: JSON.stringify({ ok: true, id: completionId }) }];
+    const rendered = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "after-resume", props: {
+      ...call("unused"), input: { kind: "completion", ...input }, output,
+    } });
+    expect(JSON.stringify(rendered)).toContain(JSON.stringify(completionBody));
+    expect(reads).toEqual([`/isolated/config/agent-toolkit-function-hooks/completion-receipts/resumed-owner/${completionId}.json`]);
+  });
+}
+
+test("成功の同一送達だけを配置済みとして扱い、本文が同じ別IDを消さない", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  const id = completionId;
+  const other = "b".repeat(32);
+  queue(on, "live-owner", id);
+  on("session.id", () => ({ value: "live-owner" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.read", (_$, e) => ({ value: e.path.endsWith(`/${other}.json`) ? JSON.stringify(completionBody) :
+    JSON.stringify({ id, operation: "send_to_user", input: { kind: "completion", message: completionBody }, expires: 99999999999 }),
+  }));
+  const writes: { id: string; ok: boolean }[] = [];
+  on("fs.write", (_$, e) => {
+    if (e.path.includes("/ui-response-")) writes.push(JSON.parse(e.text));
+    return { value: undefined };
+  });
+  on("ui.place", () => ({ value: { isPlaced: true, requestId: "completion-row" } }));
+  const expansions: boolean[] = [];
+  on("ui.render", { component: "ToolGroup" }, (_$, e, next) => {
+    expansions.push(e.props.isExpanded);
+    return next(e);
+  });
+  await $.turn.start({ text: "操作", turnId: "live-turn" });
+  await clock.advance(100);
+  const receipt = writes.find((item) => item.id === id && item.ok);
+  expect(receipt).toBeDefined();
+  const placed = await $.ui.render({ surface: "terminal", component: "Placed", requestId: "completion-row",
+    props: { plugin: "agent-toolkit", id },
+  });
+  expect(JSON.stringify(placed)).toContain(JSON.stringify(completionBody));
+  const raw = { ...call("unused"), input: { kind: "completion", message: "最終報告。" } };
+  const same = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "live", props: {
+    ...raw, tool_use_id: "live-use", output: JSON.stringify(receipt),
+  } });
+  expect(JSON.stringify(same)).not.toContain('"Markdown"');
+  const distinct = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "past", props: {
+    ...raw, tool_use_id: "past-use", input: { kind: "completion", message: completionBody }, output: { ok: true, id: other },
+  } });
+  expect(JSON.stringify(distinct)).toContain(JSON.stringify(completionBody));
+  const ordinary = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "ordinary", props: {
+    ...call(completionBody), tool_use_id: "ordinary-use", output: { ok: true, id: other },
+  } });
+  expect(JSON.stringify(ordinary)).toContain(JSON.stringify(completionBody));
+
+  for (const received of [id, other]) {
+    await $.ui.render({ surface: "terminal", component: "ToolGroup", requestId: received, props: {
+      calls: [{ ...raw, input: { kind: "completion", body_ref: "保存空間の本文" }, output: { ok: true, id: received } }],
+      isActive: false, isExpanded: false,
+    } });
+  }
+  expect(expansions).toEqual([false, true]);
+});
+
+test("別会話・不正なID・失敗・未確定では完了写しを使わず、旧messageは保つ", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  on("session.id", () => ({ value: "another-session" }));
+  const reads: string[] = [];
+  on("fs.read", (_$, e) => {
+    reads.push(e.path);
+    return { value: e.path.includes("/owning-session/") ? JSON.stringify(completionBody) : "not a snapshot" };
+  });
+  const raw = { ...call("unused"), input: { kind: "completion", body_ref: "/owning-session/shared-source.md" } };
+  for (const [i, props] of [
+    { ...raw, output: { ok: true, id: completionId } },
+    { ...raw, output: { ok: false, id: completionId } },
+    { ...raw, output: { ok: true, id: "../owning-session/" + completionId } },
+    { ...raw, isRunning: true, output: { ok: true, id: completionId } },
+    { ...raw, input: { ...raw.input, message: "両方を指定" }, output: { ok: true, id: completionId } },
+  ].entries()) {
+    const rendered = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: `rejected-${i}`, props });
+    expect(JSON.stringify(rendered)).not.toContain('"Markdown"');
+  }
+  expect(reads).toEqual([`/home/tester/.claude/agent-toolkit-function-hooks/completion-receipts/another-session/${completionId}.json`]);
+  const legacy = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "legacy", props: {
+    ...call(completionBody), input: { kind: "completion", message: completionBody }, output: "ok",
+  } });
+  expect(JSON.stringify(legacy)).toContain(JSON.stringify(completionBody));
+});
+
 test("再開後にまとめられた送達は展開して呼び出しごとに描く", async ($, on) => {
   const expanded: boolean[] = [];
   on("ui.render", { component: "ToolGroup" }, (_$, e, next) => {

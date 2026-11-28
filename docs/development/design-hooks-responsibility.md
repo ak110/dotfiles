@@ -21,10 +21,16 @@ hookは読込表を解析せず、資料の選択は読み手が担う（`docs/d
 
 ### エントリーポイントと判定の集約
 
-`agent-toolkit/agent_toolkit/hook.py`が受け付けるサブコマンドは、`agent-toolkit/hooks/hooks.json`と`hooks.codex.json`が登録するものだけとする。
-旧定義を読み込んだセッションが残らないことを確かめて、これらを除いた。
-`hook.py`は未知のサブコマンドを終了コード0で通過させるため、旧定義が届いてもツール呼び出しは拒否されない。
-登録した全サブコマンドが処理モジュールへ届くことは、`agent-toolkit/agent_toolkit/hook_input_test.py`が両方のhook定義から求めた和集合の各サブコマンドで確かめる。
+Claude CodeとCodexのコマンドフックは、`agent-toolkit/hooks/hooks.json`と`hooks.codex.json`で指定したイベントと条件に従って、`agent-toolkit/agent_toolkit/hook.py`へ処理を渡す。
+Python側で共通の判定を使い、ホストごとに受理する入力と返せる判定・通知を区別する。
+両JSONのコマンドがPythonの処理モジュールに届くことは`agent-toolkit/agent_toolkit/hook_input_test.py`が確かめる。
+Antigravityのフックは`pytools/_internal/antigravity_plugin.py`が生成し、`atk-hook antigravity <イベント>`から`hook.py`の`antigravity`サブコマンドへ処理を渡す。
+ホスト固有の入出力は`agent-toolkit/agent_toolkit/_hooks/antigravity.py`が扱い、配布時と同じ呼び出し形を`antigravity_test.py`で確かめる。
+`hook.py`は未知のサブコマンドを終了コード0で通過させるため、古い登録が残っていても、それだけではツール呼び出しを拒否しない。
+
+Claude CodeのFunction hooks moduleは`hooks.json`の`modules`から`agent-toolkit/hooks/register.ts`を読み込む。
+Pythonのサブコマンドとは別に、会話の開始・再開や結果の送達などホスト側で行う処理を登録する。
+同じイベントに条件を指定せずに登録できるのは1回なので、複数の機能で使う`session.start`処理は`register.ts`にまとめる。
 
 `hooks.json`と生成する`hooks.codex.json`の全commandは末尾に`|| exit 1`を持つ。
 uvやPythonの起動失敗、起動スクリプトの不在は終了コード2で終わることがあり、ホストはPreToolUse・UserPromptSubmit・Stopの終了コード2を遮断として扱うため、起動の失敗だけで全操作が止まっていた。
@@ -42,5 +48,6 @@ Stop時の書き込み完了の待機（`wait_for_end_turn`）では1回の待�
 いずれかが変わった回だけ全量を読み直して判定を更新する。
 未変更の記録をpollごとに全量で読むと、待機時間あたりの費用が記録の大きさに比例して増えるためである。
 更新時刻の分解能の内側で起きた同サイズの更新はファイルの観測値に現れないため、Claude Codeが追記する末尾の内容で検出する。
-ホストの判定は`host.py`の`is_codex_payload`だけが行う。
+ホスト固有の処理に使う判定は`_hooks/host.py`で共有する。
+`hook.py`と`_hooks/stop.py`は`is_codex_payload`と`is_antigravity_payload`でそれぞれCodexとAntigravityの入力を判定する。
 これらをStopの名前を持つ1つのモジュールへまとめる構成は、PreToolUseとPostToolUseも使う処理の所在を名前から判断できないため採らない。

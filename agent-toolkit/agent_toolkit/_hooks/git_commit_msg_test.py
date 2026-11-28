@@ -88,10 +88,13 @@ def test_existing_commit_msg_uses_original_config_and_can_rewrite(repo: pathlib.
     original.mkdir()
     assert _git(repo, "config", "--local", "core.hooksPath", "my-hooks").returncode == 0
     hook = original / "commit-msg"
+    warning = '<atk-auto source="fixture-commit-msg" kind="warn">追加確認の案内</atk-auto>'
+    notice = f"printf '%s\\n' {shlex.quote(warning)} >&2\n" if status == 0 else ""
     hook.write_text(
         "#!/bin/sh\n"
         '[ -n "$1" ] && [ "$(git config --get color.ui)" = never ] || exit 43\n'
         f"printf '%s\\n' {shlex.quote(_GOOD)} > \"$1\"\n"
+        f"{notice}"
         f"exit {status}\n",
         encoding="utf-8",
     )
@@ -104,6 +107,7 @@ def test_existing_commit_msg_uses_original_config_and_can_rewrite(repo: pathlib.
         assert "違反が" not in result.stderr
     else:
         assert result.returncode == 0, result.stderr
+        assert result.stderr.splitlines().count(warning) == 1
         assert _git(repo, "show", "-s", "--format=%B").stdout.rstrip() == _GOOD
 
 

@@ -1,9 +1,9 @@
 import dataclasses
+import itertools
 import pathlib
 import subprocess
 from collections.abc import Iterable
 
-from agent_toolkit._common import path_ownership
 from agent_toolkit._git import command as git_command
 
 _SYMBOLIC_REF_PREFIX = "ref: "
@@ -34,8 +34,11 @@ def resolve_worktrees(entries: Iterable[Worktree]) -> dict[pathlib.Path, Worktre
 
 
 def owning_resolved_worktree(path: pathlib.Path, resolved: dict[pathlib.Path, Worktree]) -> Worktree | None:
-    root = path_ownership.owning_resolved_root(path, resolved)
-    return resolved.get(root) if root is not None else None
+    canonical = path.resolve()
+    for candidate in itertools.chain((canonical,), canonical.parents):
+        if (owner := resolved.get(candidate)) is not None:
+            return owner
+    return None
 
 
 def _git(repo: pathlib.Path, args: list[str], timeout: float | None) -> str:

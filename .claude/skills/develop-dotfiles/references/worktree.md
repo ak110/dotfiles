@@ -1,5 +1,7 @@
 # dotfilesの作業ツリーの準備
 
+専用worktreeや検証用複製を準備する担当は、既存の作業環境を保ち、対象の依存と実行条件がそろった環境を後続の担当へ渡す。
+
 ## 作業ツリーの準備
 
 1. 専用worktreeや回収予定の検証用複製では、`mise trust`の後にルートで`make sync`を実行し、リポジトリ直下の`.venv`を`uv.lock`と`.python-version`へ合わせてから後続へ渡す（`agent-toolkit/`には仮想環境を作らない）。

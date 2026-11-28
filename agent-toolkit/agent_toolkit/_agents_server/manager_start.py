@@ -104,6 +104,7 @@ async def check_model_override(
     launch: Mapping[str, Any],
     launch_kind: LaunchKind = "delegate",
     fallback_phase: str | None = None,
+    wi_task: Mapping[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     if (
         model_type is None
@@ -119,7 +120,8 @@ async def check_model_override(
     if inherited or reason not in ("user_instruction", "fallback_failure") or not (evidence or "").strip():
         raise ActionableError(
             "候補外の起動には本人指定または全候補の週間上限を根拠とするmodel_overrideが必要です。委譲先は起動していない。",
-            next_action=next_action + "本人指定にはmodel_override=user_instructionと根拠を渡す。",
+            next_action=next_action + "本人指定にはmodel_override=user_instructionと根拠を渡す。"
+            "同じWIの担当モデルの指定はmodel_override_evidence=wi:<WI名.md>で参照する。",
         )
     assert evidence is not None
     if reason == "user_instruction":
@@ -134,6 +136,7 @@ async def check_model_override(
             launch=launch,
             launcher=launcher,
             state_root=state_root,
+            wi_task=wi_task,
         )
     if reason == "fallback_failure":
         known_phase = default_type or fallback_phase
@@ -148,7 +151,8 @@ async def check_model_override(
         ):
             raise ActionableError(
                 "工程設定の全候補に、今回の起動区分に対応する週間上限を確認できない。委譲先は起動していない。",
-                next_action=next_action + "設定内の継続手段を使うか、候補外が必要なら本人の指定を得る。",
+                next_action=next_action + "設定内の継続手段を使う。同じWIに候補外の本人指定があれば"
+                "model_override=user_instructionとmodel_override_evidence=wi:<WI名.md>を渡す。",
             )
     return [
         {
@@ -282,6 +286,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         startup_document: pathlib.Path | None = None,
         startup_inputs: Mapping[str, str] | None = None,
         explicit_role_model: bool = False,
+        task_role: str | None = None,
     ) -> dict[str, Any]:
         validate_prompt(prompt)
         validate_cwd(cwd)
@@ -297,6 +302,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 startup_document=startup_document,
                 startup_inputs=startup_inputs,
                 explicit_role_model=explicit_role_model,
+                task_role=task_role,
             )
         finally:
             ticket.release()
@@ -339,6 +345,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         startup_document: pathlib.Path | None = None,
         startup_inputs: Mapping[str, str] | None = None,
         explicit_role_model: bool = False,
+        task_role: str | None = None,
     ) -> dict[str, Any]:
         """モデル設定の候補を先頭から試し、起動できたturnを返す。
 
@@ -461,6 +468,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 continue
             session.engine = engine
             session.explicit_role_model = explicit_role_model
+            session.task_role = startup_document.name if startup_document is not None else task_role
 
             if self._status_writer is not None:
                 await self._status_writer.launcher_session_id_async()
@@ -594,6 +602,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             evidence=model_override_evidence,
             inherited=model_type is None,
             launch_kind=predecessor.launch_kind,
+            wi_task=_model_override.wi_task_context(predecessor, role_type) if role_type is not None else None,
             launch={
                 "mode": "handoff",
                 "cwd": predecessor.cwd,
@@ -627,6 +636,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 label=predecessor.label or None,
                 excluded_candidates=excluded,
                 explicit_role_model=model_type is not None or launch_requests.role_model_was_explicit(predecessor),
+                task_role=predecessor.task_role,
             )
         response["cwd"] = predecessor.cwd
         if warnings:

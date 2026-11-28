@@ -6525,7 +6525,7 @@
     "定期再確認の標識と実行手順の一致を確かめる。": 1
   },
   "agent-toolkit/agent_toolkit/_hooks/permissionrequest.py": {
-    "Claude Code plugin agent-toolkit: PermissionRequestフック。 Claude Codeの確認ダイアログを無条件に許可する。 許可した要求は、設定`state_dir`が指すディレクトリ配下の`permissionrequest.log`へ1行1レコードのJSONで追記する。 レコードには要求元セッションの識別子に加えて、委譲の起点となった最上位セッションの識別子を`root_session_id`として残す。 値は`AGENT_TOOLKIT_OWNER_SESSION`と`CLAUDE_CODE_SESSION_ID`の順で環境から解決する。 委譲元は自身が解決した値を同名の変数で委譲先へ渡すため、多段の委譲でも最上位の識別子が保たれる。解決できない場合はnullとする。 ログが上限を超えた場合は`permissionrequest.log.1`へ退避し、退避は1世代だけ保持する。 記録に失敗した場合も許可の応答を返す。フックの障害で操作が止まる事態を避けるためである。 本フックはセキュリティ境界ではない。auto modeとユーザーの権限設定が担う。 組み込みのdeny規則とask規則はフックの応答より先に評価されるため、 deny規則またはask規則に一致する要求の確認は、本フックでは抑止できない。": 1,
+    "Claude Code plugin agent-toolkit: PermissionRequestフック。 Claude Codeの確認ダイアログを無条件に許可する。 許可した要求は、設定`state_dir`が指すディレクトリ配下の`permissionrequest.log`へ1行1レコードのJSONで追記する。 レコードには要求元セッションの識別子に加えて、委譲の起点となった最上位セッションの識別子を`root_session_id`として残す。 値は`AGENT_TOOLKIT_OWNER_SESSION`と`CLAUDE_CODE_SESSION_ID`の順で環境から解決する。 委譲元は自身が解決した値を同名の変数で委譲先へ渡すため、多段の委譲でも最上位の識別子が保たれる。解決できない場合はnullとする。 ログが上限を超えた場合は`permissionrequest.log.1`へ退避し、退避は1世代だけ保持する。 記録に失敗した場合も許可の応答を返す。フックの障害で操作が止まる事態を避けるためである。 明示的なask規則に一致していても、このフックに届いた確認要求には許可を返す。 本フックはセキュリティ境界ではない。許否の歯止めはClaude Code本体のdeny規則とauto modeが担う。": 1,
     "許可した要求を記録する。記録できない場合は何もしない。 許可の応答は記録の成否によらず返すため、記録する処理の失敗はすべて無視する。": 1
   },
   "agent-toolkit/agent_toolkit/_hooks/permissionrequest_test.py": {

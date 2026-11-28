@@ -151,6 +151,7 @@ class SessionResumeState:
     label: str = ""
     prompt: str = ""
     explicit_role_model: bool | None = None
+    task_role: str | None = None
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
     terminal_error: str | None = None

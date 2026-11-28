@@ -591,14 +591,23 @@
             <h3 id="usage-overview-heading" class="section-heading">利用を続けるための確認</h3>
             <div class="monitor-toolbar">
               <a href="__BASE_PATH_HTML__/settings?group=usage&amp;host=">リセットの許可を設定</a>
-              <button id="usage-refresh" class="button-secondary" type="button">再取得</button>
+              <button id="usage-refresh" class="button-secondary" type="button" aria-describedby="usage-antigravity-refresh-scope">再取得</button>
             </div>
           </div>
+          <p id="usage-antigravity-refresh-scope" class="secondary-text" hidden></p>
           <progress id="usage-loading" class="monitor-progress" aria-label="利用枠を取得中" hidden></progress>
           <p id="usage-overview" class="secondary-text" role="status" hidden></p>
           <ul id="usage-attention" class="monitor-links" hidden></ul>
         </section>
-        <div id="usage-content" class="metric-columns"></div>
+        <div id="usage-content" class="metric-columns">
+          <section id="usage-antigravity" class="metric-section" aria-labelledby="usage-antigravity-heading" hidden>
+            <header class="metric-provider">
+              <h3 id="usage-antigravity-heading" class="section-heading">Antigravity</h3>
+            </header>
+            <p id="usage-antigravity-status" class="secondary-text" role="status"></p>
+            <div id="usage-antigravity-windows"></div>
+          </section>
+        </div>
       </div>
     </main>
   </section>

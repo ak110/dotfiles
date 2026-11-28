@@ -634,6 +634,18 @@ def test_implemented_awi_records_exemption_with_multiline_note(
     assert effect_check.pending_reason(saved) == "採用前の検収で目的を達成"
 
 
+@pytest.mark.cpu_limit(2.0, reason="採用済み項目への監視理由を実際の保存経路で更新する。")
+def test_public_pending_update_keeps_sources_and_start_version(effect_repository):
+    notes, worktree, path = effect_repository
+    monitoring = "監視: source=fixture-one,fixture-two; 開始版=2.316.3"
+    assert _invoke(notes, worktree, path.name, None, "pending", "--reason", f"{monitoring}; まだ適用機会なし") == 0
+    assert _invoke(notes, worktree, path.name, None, "pending", "--reason", "今週は観測無し") == 0
+    saved = path.read_text(encoding="utf-8")
+    assert effect_check.pending_reason(saved) == f"{monitoring}; 今週は観測無し"
+    assert _invoke(notes, worktree, path.name, None, "not_required", "--reason", "監視終了の根拠") == 0
+    assert effect_check.pending_reason(path.read_text(encoding="utf-8")) == "監視終了の根拠"
+
+
 @pytest.mark.parametrize("bulk", [False, True])
 def test_implemented_awi_validates_all_targets_before_adopting(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],

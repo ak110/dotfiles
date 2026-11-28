@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import functools
 import json
 import logging
 import os
@@ -78,10 +79,10 @@ from agent_toolkit._common import (
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common.next_action import ActionableError
-from agent_toolkit._common.send_to_user import CLAUDE_TOOL_NAME
+from agent_toolkit._common.send_to_user import CLAUDE_TOOL_NAME, COMPLETION_KIND, normalize_completion_message
 lazy from agent_toolkit._atk.send_to_user_recovery import resend_guidance
 lazy from agent_toolkit._atk.wi import operation_permissions
-lazy from agent_toolkit._common import send_misdetection, sent_warnings
+lazy from agent_toolkit._common import completion_exit, send_misdetection, sent_warnings
 lazy from agent_toolkit._common.operation_approvals import request_display
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -126,7 +127,7 @@ _UI_UNAVAILABLE_NEXT_ACTIONS: dict[str, dict[str, str]] = {
 }
 
 
-async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
+async def _ui_request(operation: str, inputs: dict[str, Any], *, original_message: str | None = None) -> dict[str, Any]:
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
@@ -141,7 +142,7 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
             next_action = await run_file_operation(
                 resend_guidance,
                 identifier,
-                inputs.get("message"),
+                original_message if original_message is not None else inputs.get("message"),
                 tool_name=CLAUDE_TOOL_NAME,
                 tool_use_id=inputs.get("tool_use_id"),
                 kind=inputs.get("kind"),
@@ -543,7 +544,7 @@ async def send_message(
     name="collect_handoff",
     title="引き継いだ子sessionの通知・結果の回収",
     description=(
-        "同じ管理サービスで正式に引き継いだ直属の子だけを対象に、通知または終了結果を1件回収する。"
+        "後任が子の作業を起動し直さずに続けられるよう、同じ管理サービスで正式に引き継いだ直属の子だけから通知または終了結果を1件回収する。"
         "未回収の通知・結果がなければ待機し、上限に達するとrunningを返す。runningなら回収を再発行し、対象なしのexpiredで終える。"
         "自分で起動した子の回収には従来どおり`atk agents wait`を使う。"
     ),
@@ -846,14 +847,18 @@ async def send_to_user(
             "報告した逸脱は`agent-basics:bugfix`を起動して診断と是正を行う。"
         )
 
-    inputs: dict[str, Any] = {"message": message}
+    visible = normalize_completion_message(message) if kind == COMPLETION_KIND else message
+    inputs: dict[str, Any] = {"message": visible}
     if kind is not None:
         inputs["kind"] = kind
     if tool_use_id:
         inputs["tool_use_id"] = tool_use_id
     if retry:
         inputs["misdetection_checks"] = sorted(retry)
-    result, sources = await send_retry.deliver(_ui_request, inputs, session_id, retry, message)
+    request = functools.partial(_ui_request, original_message=message)
+    result, sources = await send_retry.deliver(request, inputs, session_id, retry, message)
+    if kind == COMPLETION_KIND:
+        guidance += await run_file_operation(completion_exit.keep_delivered_report, session_id, result, visible)
     if (
         claims
         and session_id

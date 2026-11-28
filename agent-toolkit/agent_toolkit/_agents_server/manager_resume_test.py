@@ -274,6 +274,7 @@ async def test_resumed_session_keeps_every_launch_info_item(
     launch_values: dict[str, Any] = {
         **expected_launch,
         "explicit_role_model": True,
+        "task_role": f"{label.removeprefix('lane-01-')}.subagent.md",
         "followup_prompts": ("先行追送",),
         "final_responses": ((1, "先行応答"),),
         "terminal_error": None,
@@ -308,6 +309,7 @@ async def test_resumed_session_keeps_every_launch_info_item(
         assert {name: entry[name] for name in expected_launch} == expected_launch
         shown = await manager.show_session(session.session_id)
         assert (shown["label"], shown["prompt"]) == (label, expected_launch["prompt"])
+        assert "task_role" not in shown
         resume_info = session_registry.resolve(session.session_id).resume_info
         assert resume_info is not None
         assert session_registry.LaunchInfo.of(resumed) == expected_info
