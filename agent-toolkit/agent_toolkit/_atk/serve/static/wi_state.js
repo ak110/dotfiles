@@ -4,7 +4,7 @@ export const KIND_LABELS = {awi: '作業', uwi: 'ユーザー向け', unknown: '
 // 確認状態の値ごとの表示名。キーを持たない項目は表示しない。
 export const STATE_LABELS = {
   inbox: '受信', processing: '処理中', hold: '保留', adopted: '採用', rejected: '却下',
-  cooldown: '再開待ち', answered: '回答済み', 'needs-verify': '確認待ち', unknown: '不明',
+  cooldown: '再開待ち', answered: '回答済み', unknown: '不明',
   active: '未完了', processable: '受信・処理中', all: 'すべて'
 };
 export const PROCESSABLE_STATES = new Set(['inbox', 'processing']);

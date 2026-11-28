@@ -243,7 +243,7 @@ const rows = entries => { wiState.entries = entries; renderEntries(); return byI
   row => row.children[0].children.find(cell => cell.classList.contains('status-cell')).children
     .filter(cell => cell.classList.contains('branch-badge')).map(cell => cell.textContent)); };
 const entry = (filename, extra = {}) => ({
-  kind: 'awi', state: 'inbox', filename, important: false, answered: null, needs_verify: false, cooldown_until: null,
+  kind: 'awi', state: 'inbox', filename, important: false, answered: null, awaiting_observation: false, cooldown_until: null,
   plan: false, target_repo: 'github.com/example/repo', source: null, summary: filename,
   updated_at: '2026-10-01T00:00:00+00:00', blocked: false, ...extra
 });

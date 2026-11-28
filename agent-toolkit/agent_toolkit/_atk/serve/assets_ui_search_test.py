@@ -238,7 +238,7 @@ process.stdout.write(JSON.stringify({normalUrls, searchUrls, retainedTarget, can
   copied}));
 """
     )
-    normal = "/atk/api/entries?type=all&status=active&answered=all&period=2w"
+    normal = "/atk/api/entries?view=normal&type=all&status=active&answered=all&period=2w"
     search = (
         "/atk/api/entries?type=uwi&status=adopted&answered=yes&period=8w&important=yes"
         "&target_repo=missing%2Frepo&source_kind=unset&q=keyword"

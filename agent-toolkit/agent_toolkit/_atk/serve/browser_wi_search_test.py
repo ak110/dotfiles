@@ -128,7 +128,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     async with page.expect_response(
         lambda response: (
             response.request.method == "GET"
-            and response.url.endswith("/api/entries?type=all&status=active&answered=all&period=2w&page=1")
+            and response.url.endswith("/api/entries?view=normal&type=all&status=active&answered=all&period=2w&page=1")
         )
     ):
         await page.locator("#clear-filters-button").click()

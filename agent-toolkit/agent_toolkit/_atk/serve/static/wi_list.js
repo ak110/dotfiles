@@ -171,9 +171,7 @@ export function syncNotificationButton() {
   button.hidden = typeof Notification === 'undefined' || Notification.permission !== 'default';
 }
 
-// 新しく登録されたユーザー対応の項目（未回答UWIと要確認AWI）だけを通知する。
-// 既知集合はファイル名で持ち、初回取得では通知せずに基準だけを作る。
-// 既知の項目の回答・確認状態・対象repoの変化と、削除後の同名の再登録は通知しない。
+// 既知集合はファイル名で持ち、削除後の同名の再登録を通知しない。 pyfltr: allow-comment
 export async function refreshKnownEntries({notify = false, timing = {}} = {}) {
   const generation = ++wiState.knownEntryRequestGeneration;
   let payload;
@@ -188,23 +186,17 @@ export async function refreshKnownEntries({notify = false, timing = {}} = {}) {
   if (generation !== wiState.knownEntryRequestGeneration) return;
   const allEntries = Array.isArray(payload.entries) ? payload.entries : [];
   const added = wiState.knownEntryBaselineReady && notify
-    ? allEntries.filter(entry => !wiState.knownEntryFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state))
+    ? allEntries.filter(entry => entry.kind === 'uwi' && entry.answered === false &&
+        PROCESSABLE_STATES.has(entry.state) && !wiState.knownEntryFilenames.has(entry.filename))
     : [];
   allEntries.forEach(entry => wiState.knownEntryFilenames.add(entry.filename));
   wiState.knownEntryBaselineReady = true;
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   if (!added.length || await pushHandlesNotifications()) return;
-  const notifications = [
-    ['新規未回答UWI', added.filter(entry => entry.kind === 'uwi' && entry.answered === false)],
-    ['新規要確認AWI', added.filter(entry => entry.kind === 'awi' && entry.needs_verify === true)],
-  ];
-  for (const [title, entries] of notifications) {
-    if (!entries.length) continue;
-    const filenames = entries.map(entry => entry.filename);
-    new Notification(title, {
-      body: filenames.length === 1 ? filenames[0] : `${filenames.length}件: ${filenames.join('、')}`
-    });
-  }
+  const filenames = added.map(entry => entry.filename);
+  new Notification('新規未回答UWI', {
+    body: filenames.length === 1 ? filenames[0] : `${filenames.length}件: ${filenames.join('、')}`
+  });
 }
 
 export async function enableNotifications() {

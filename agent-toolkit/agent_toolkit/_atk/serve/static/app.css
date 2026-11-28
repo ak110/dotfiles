@@ -235,8 +235,7 @@ button.choice-button[aria-current="page"] {
   background: var(--color-primary-quiet);
 }
 .status-chip[data-state="processing"],
-.status-chip[data-state="warning"],
-.status-chip[data-needs-verify="true"]:not([data-cooldown="true"]) {
+.status-chip[data-state="warning"] {
   color: var(--color-warning);
   background: var(--color-warning-quiet);
 }

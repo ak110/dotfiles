@@ -208,7 +208,7 @@ def _entry(
         "filename": path.name,
         "important": metadata.get("important") is True,
         "answered": answered,
-        "needs_verify": _needs_verify(kind, state, text),
+        "awaiting_observation": _awaiting_observation(kind, state, text),
         "cooldown_until": cooldown.isoformat() if cooldown is not None else None,
         "plan": kind == wi_constants.WI_TYPE_AWI and isinstance(metadata.get("plan_file"), str),
         "target_repo": _json_compatible(metadata.get("target_repo")),
@@ -232,8 +232,8 @@ def _branch_field(branch: str | None) -> dict[str, str]:
     return {} if branch is None else {wi_branches.KEY: branch}
 
 
-def _needs_verify(kind: str, state: str, text: str) -> bool:
-    if kind != wi_constants.WI_TYPE_AWI or state != wi_constants.WI_STATE_INBOX:
+def _awaiting_observation(kind: str, state: str, text: str) -> bool:
+    if kind != wi_constants.WI_TYPE_AWI or state not in wi_constants.WI_PROCESSABLE_STATES:
         return False
     lines = wi_headings.last_h2_section_lines(text, wi_constants.OBSERVATION_RESUME_HEADING)
     return lines is not None and any(line.strip() == wi_constants.OBSERVATION_ONLY_RESUME_LINE for line in lines)
@@ -487,6 +487,8 @@ class Operations:
                     ),
                 )
                 indexed.derived[_LIST_ENTRY_KEY] = cached_entry
+            if filters.get("view") == "normal" and cached_entry[1]["awaiting_observation"] is True:
+                continue
 
             processable = indexed.state in wi_constants.WI_PROCESSABLE_STATES
             answered = indexed.kind != wi_constants.WI_TYPE_UWI or wi_uwi_scan.is_uwi_answered(indexed.text)

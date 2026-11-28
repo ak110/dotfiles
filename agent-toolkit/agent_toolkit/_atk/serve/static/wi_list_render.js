@@ -30,13 +30,12 @@ export function formatDateParts(value) {
 
 function kindLabel(kind) { return KIND_LABELS[kind] || '種別不明'; }
 export function stateLabel(state) { return STATE_LABELS[state] || state || '不明'; }
-// 反映後の観測だけが残るinboxのawiは、保存状態をinboxのまま、表示だけをneeds-verifyにする。
 // inboxの回答済みuwiは表示だけをansweredにし、色は保存状態inboxのバッジと同じにする。
 // 状態フィルター・件数・操作の可否は保存状態で判定する。
 function displayState(entry) {
   if (entry.state === 'inbox' && Date.parse(entry.cooldown_until) > Date.now()) return 'cooldown';
   if (entry.state === 'inbox' && entry.kind === 'uwi' && entry.answered === true) return 'answered';
-  return entry.needs_verify === true ? 'needs-verify' : entry.state;
+  return entry.state;
 }
 export function entryStateText(entry) {
   return STATE_LABELS[displayState(entry)] || STATE_LABELS.unknown;
@@ -162,7 +161,6 @@ function renderEntry(entry) {
   const badge = document.createElement('span');
   badge.className = 'status-chip state-badge';
   badge.dataset.state = entry.state;
-  badge.dataset.needsVerify = String(entry.needs_verify === true);
   badge.textContent = entryStateText(entry);
   status.append(badge);
   if (entry.important === true) {
@@ -345,7 +343,7 @@ export function buildQuery(page = wiState.currentPage) {
     return parameters;
   }
   if (wiState.displayMode === 'normal') {
-    return new URLSearchParams({type: 'all', status: 'active', answered: 'all', period: DEFAULT_PERIOD, page: String(page)});
+    return new URLSearchParams({view: 'normal', type: 'all', status: 'active', answered: 'all', period: DEFAULT_PERIOD, page: String(page)});
   }
   parameters.set('type', byId('kind-filter').value);
   parameters.set('status', byId('state-filter').value);

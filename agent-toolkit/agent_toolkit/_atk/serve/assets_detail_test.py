@@ -43,7 +43,7 @@ def test_operations_reads_local_entries_and_detail_without_pull(
         "state": "inbox",
         "filename": "entry.md",
         "answered": None,
-        "needs_verify": False,
+        "awaiting_observation": False,
         "blocked": False,
         "blocked_reason": None,
         "ready": True,

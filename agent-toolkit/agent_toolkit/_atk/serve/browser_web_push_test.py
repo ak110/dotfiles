@@ -85,6 +85,13 @@ async def test_worker_displays_notification_without_work_item_page(
         await page.add_init_script(
             f"""(() => {{
               let subscription;
+              window.browserNotices = [];
+              window.Notification = new Proxy(Notification, {{
+                construct: (target, args) => {{
+                  window.browserNotices.push(args[0]);
+                  return Reflect.construct(target, args);
+                }}
+              }});
               PushManager.prototype.getSubscription = async () => subscription;
               PushManager.prototype.subscribe = async () => subscription = {{
                 endpoint: {json.dumps(endpoint)}, toJSON: () => ({fake})
@@ -92,6 +99,7 @@ async def test_worker_displays_notification_without_work_item_page(
             }})();"""
         )
         await page.goto(base + "/")
+        await playwright.async_api.expect(page.locator("#entry-list .entry-row").first).to_be_visible()
         subscribe = page.get_by_role("button", name="閉じていても通知する")
         await playwright.async_api.expect(subscribe).to_be_visible()
         async with page.expect_response(
@@ -101,8 +109,21 @@ async def test_worker_displays_notification_without_work_item_page(
         assert await (await pending.value).json() == {"subscribed": True}
         await playwright.async_api.expect(page.get_by_role("button", name="Web Pushを解除")).to_be_visible()
 
+        item = "20261125-231000-001.md"
+        async with page.expect_response(
+            lambda response: (
+                "/api/web-push" in response.url
+                and response.request.method == "POST"
+                and response.request.post_data_json == {"endpoint": endpoint, "check": True}
+            )
+        ) as subscription_check:
+            wi_entry_files.write_uwi(tmp_path, item, state="inbox")
+            app.config["SERVE_STATE"].publish()
+        assert await (await subscription_check.value).json() == {"subscribed": True}
+
         holder = await context.new_page()
         await holder.goto(base + "/agents")
+        assert await page.evaluate("window.browserNotices") == []
         await page.close()
         cdp = await context.new_cdp_session(holder)
         registered: asyncio.Future[str] = asyncio.get_running_loop().create_future()
@@ -115,9 +136,6 @@ async def test_worker_displays_notification_without_work_item_page(
         cdp.on("ServiceWorker.workerRegistrationUpdated", on_update)
         await cdp.send("ServiceWorker.enable")
         registration_id = await asyncio.wait_for(registered, timeout=5)
-        item = "20261125-231000-001.md"
-        wi_entry_files.write_uwi(tmp_path, item, state="inbox")
-        app.config["SERVE_STATE"].publish()
         packet = await asyncio.wait_for(packets.get(), timeout=10)
         assert packet.url == endpoint
         assert packet.headers["Content-Encoding"] == "aes128gcm"

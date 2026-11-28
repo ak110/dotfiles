@@ -343,11 +343,19 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
     await observe_no_extra_notification()
 
     awi_path = _entry_path(harness.root, "new-awi.md")
-    required_awi = "---\ntype: awi\nstate: inbox\ntarget_repo: new/repo\nconfirmation: required\n---\n\n# 要確認\n"
-    awi_path.write_text(required_awi, encoding="utf-8")
+    observed_awi = (
+        "---\ntype: awi\nstate: inbox\ntarget_repo: new/repo\n---\n\n# 観測待ち\n\n"
+        "## 反映後の観測の再開記録\n\n- 再開区分: 反映後の観測だけが残る\n- 計画: 計画なし\n"
+    )
+    awi_path.write_text(observed_awi, encoding="utf-8")
+    _entry_path(harness.root, "processing-observation.md").write_text(
+        observed_awi.replace("state: inbox", "state: processing"), encoding="utf-8"
+    )
+    _entry_path(harness.root, "ordinary-awi.md").write_text(observed_awi.split("##")[0], encoding="utf-8")
+    _entry_path(harness.root, "new-answered.md").write_text(new_unanswered + "回答です。\n", encoding="utf-8")
     await publish_and_wait()
     await observe_no_extra_notification()
-    awi_path.write_text(required_awi.replace("confirmation: required", "confirmation: confirmed"), encoding="utf-8")
+    _set_entry_state(awi_path, "processing")
     await publish_and_wait()
     await observe_no_extra_notification()
 
@@ -619,3 +627,36 @@ async def test_wi_reference_stops_offset_at_readable_boundary(
     await playwright.async_api.expect(next_link).to_be_focused()
     await page.keyboard.press("Escape")
     await playwright.async_api.expect(opened_from).to_be_focused()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_copy_all_observation_awi_requires_condition_search(browser_harness: _BrowserHarness) -> None:
+    page = browser_harness.page
+    for state in ("inbox", "processing"):
+        name = f"observation-{state}.md"
+        _entry_path(browser_harness.root, name).write_text(
+            f"---\ntype: awi\nstate: {state}\n---\n\n# 観測\n\n"
+            "## 反映後の観測の再開記録\n\n- 再開区分: 反映後の観測だけが残る\n- 計画: 計画なし\n",
+            encoding="utf-8",
+        )
+    await browser_harness.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=browser_harness.base_url)
+    await page.goto(browser_harness.base_url + "/")
+    expect = playwright.async_api.expect
+    await expect(page.locator('.entry-select[data-key="awi.md"]')).to_be_visible()
+    copy = page.locator("#copy-all-button")
+    await copy.click()
+    await expect(page.locator("#copy-all-status")).to_contain_text("件をコピーしました")
+    normal = await page.evaluate("navigator.clipboard.readText()")
+    assert "awi.md" in normal
+    for state in ("inbox", "processing"):
+        await expect(page.locator(f'.entry-select[data-key="observation-{state}.md"]')).to_have_count(0)
+        assert f"observation-{state}.md" not in normal
+
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option("processing")
+    await expect(page.locator('.entry-select[data-key="observation-processing.md"]')).to_be_visible()
+    await copy.click()
+    await expect(page.locator("#copy-all-status")).to_contain_text("件をコピーしました")
+    searched = await page.evaluate("navigator.clipboard.readText()")
+    assert "observation-processing.md" in searched
+    assert "observation-inbox.md" not in searched

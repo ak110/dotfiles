@@ -92,10 +92,7 @@ def _send(subscription: dict, payload: str, key_path: Path) -> int:
 
 
 def _target(entry: dict) -> bool:
-    return entry.get("state") in ("inbox", "processing") and (
-        (entry.get("kind") == "uwi" and entry.get("answered") is False)
-        or (entry.get("kind") == "awi" and entry.get("needs_verify") is True)
-    )
+    return entry.get("state") in ("inbox", "processing") and entry.get("kind") == "uwi" and entry.get("answered") is False
 
 
 def _payload(entry: dict, *, details: bool) -> str:
