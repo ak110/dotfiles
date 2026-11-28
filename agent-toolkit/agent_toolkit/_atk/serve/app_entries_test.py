@@ -84,7 +84,7 @@ async def test_entries_exclude_observation_only_awi_before_pagination(
     monkeypatch.setattr(wi_routes, "_ENTRY_PAGE_SIZE", 2)
     awi = "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n# 件名\n\n本文\n\n"
     uwi = "---\nstate: inbox\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
-    other_record = _OBSERVATION_RECORD.replace("反映後の観測だけが残る", "実装から再開する")
+    other_record = _OBSERVATION_RECORD.replace("反映後の観測だけが残る", "再実装へ戻す")
     cases = {
         ("inbox", "verify.md"): (awi + _OBSERVATION_RECORD, True),
         ("inbox", "latest-verify.md"): (awi + other_record + "\n" + _OBSERVATION_RECORD, True),
@@ -93,6 +93,10 @@ async def test_entries_exclude_observation_only_awi_before_pagination(
         ("hold", "hold.md"): (awi + _OBSERVATION_RECORD, False),
         ("inbox", "other.md"): (awi + _OBSERVATION_RECORD + "\n" + other_record, False),
         ("inbox", "fenced.md"): (awi + "```markdown\n" + _OBSERVATION_RECORD + "```\n", False),
+        ("inbox", "fenced-marker.md"): (
+            awi + other_record + "\n```markdown\n" + _OBSERVATION_RECORD.split("\n\n", 1)[1] + "```\n",
+            False,
+        ),
         ("inbox", "uwi.md"): (uwi + _OBSERVATION_RECORD, False),
     }
     for (state_name, filename), (text, _expected) in cases.items():
@@ -111,10 +115,10 @@ async def test_entries_exclude_observation_only_awi_before_pagination(
     assert _OBSERVATION_RECORD.strip() in detail["entry"]["content"]
     url = "/api/entries?view=normal&status=active&period=all"
     normal = await (await client.get(url)).get_json()
-    expected = {"hold.md", "plain.md", "other.md", "fenced.md", "uwi.md"}
+    expected = {"hold.md", "plain.md", "other.md", "fenced.md", "fenced-marker.md", "uwi.md"}
     assert {item["filename"] for item in normal["entries"]} == expected
     pages = [await (await client.get(f"{url}&page={number}")).get_json() for number in (1, 2, 3)]
-    assert [page["pagination"]["total_count"] for page in pages] == [5, 5, 5]
+    assert [page["pagination"]["total_count"] for page in pages] == [6, 6, 6]
     assert [page["pagination"]["page_count"] for page in pages] == [3, 3, 3]
     assert [item for page in pages for item in page["entries"]] == normal["entries"]
     processing = await (await client.get("/api/entries?status=processing&period=all")).get_json()

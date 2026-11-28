@@ -235,8 +235,9 @@ def _branch_field(branch: str | None) -> dict[str, str]:
 def _awaiting_observation(kind: str, state: str, text: str) -> bool:
     if kind != wi_constants.WI_TYPE_AWI or state not in wi_constants.WI_PROCESSABLE_STATES:
         return False
-    lines = wi_headings.last_h2_section_lines(text, wi_constants.OBSERVATION_RESUME_HEADING)
-    return lines is not None and any(line.strip() == wi_constants.OBSERVATION_ONLY_RESUME_LINE for line in lines)
+    lines = wi_headings.last_h2_section_lines(text, wi_constants.OBSERVATION_RESUME_HEADING) or ()
+    resume = next((line.rstrip() for line in lines if line.strip()), "")
+    return resume == wi_constants.OBSERVATION_ONLY_RESUME_LINE
 
 
 def _json_sort_key(value: typing.Any) -> str:
