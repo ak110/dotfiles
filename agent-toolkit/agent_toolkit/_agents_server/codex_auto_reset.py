@@ -207,7 +207,7 @@ async def check_auto_reset(
             await _rpc(request, "account/rateLimitResetCredit/consume", params, rpc_timeout)
         ).outcome
         confirmed = outcome in ("reset", "alreadyRedeemed")
-        status = "success" if confirmed else "closed"
+        status: reset_reservations.Status = "success" if confirmed else "closed"
         try:
             await asyncio.to_thread(reset_reservations.finish, shared_notes, attempt.idempotency_key, status)
         except (reset_reservations.ReservationError, OSError, ValueError, subprocess.SubprocessError) as error:

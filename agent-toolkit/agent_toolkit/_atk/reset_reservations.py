@@ -109,13 +109,15 @@ def _weekly_upstream(notes: pathlib.Path) -> tuple[dict[str, str], list[dict[str
     records = _parse(git_command.output(["show", f"{upstream}:{FILENAME}"], notes)) if FILENAME in names else []
     for item in records:
         if item["status"] == "pending" or any(name in item for name in ("key", "account", "resets_at")):
+            resets_at = item.get("resets_at")
             valid = (
                 isinstance(item.get("key"), str)
                 and bool(item["key"])
                 and isinstance(item.get("account"), str)
                 and bool(item["account"])
-                and type(item.get("resets_at")) is int
-                and item["resets_at"] > 0
+                and isinstance(resets_at, int)
+                and not isinstance(resets_at, bool)
+                and resets_at > 0
                 and ("credit_id" not in item or item["credit_id"] is None or isinstance(item["credit_id"], str))
             )
             if not valid:

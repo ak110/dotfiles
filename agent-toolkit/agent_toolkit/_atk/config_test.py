@@ -522,19 +522,19 @@ def test_cli_usage_recommends_only_manual_claude_reset_when_enabled(tmp_path, ca
 
 @pytest.mark.parametrize("key", ["codex_auto_reset", "claude_auto_reset"])
 def test_reset_flag_reads_writes_without_reviving_old_authorization(tmp_path, capsys, monkeypatch, key):
-    _write_config(tmp_path, {key: "true", "usage_reset_permissions": "[]"})
+    path = _write_config(tmp_path, {key: "true", "usage_reset_permissions": "[]"})
     monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", "true")
     assert _main(tmp_path, "config", "get", key) == 0
     assert capsys.readouterr().out == "false\n"
     assert _main(tmp_path, "config", "set", key, "true") == 0
-    assert _saved(tmp_path)[key] is True
+    assert json.loads(path.read_text(encoding="utf-8"))[key] is True
     capsys.readouterr()
     assert _main(tmp_path, "config", "get", key) == 0
     assert capsys.readouterr().out == "true\n"
     assert _main(tmp_path, "config", "set", key, "false") == 0
-    assert _saved(tmp_path)[key] is False
+    assert json.loads(path.read_text(encoding="utf-8"))[key] is False
     assert _main(tmp_path, "config", "set", key, "yes") == 2
-    assert _saved(tmp_path)[key] is False
+    assert json.loads(path.read_text(encoding="utf-8"))[key] is False
     assert _main(tmp_path, "config", "get", "usage_reset_permissions") == 2
     assert _main(tmp_path, "config", "reissue-reset", "old") == 2
 
