@@ -19,9 +19,9 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 ## アクセシビリティとフォーカス
 
 - 実行は`button`、遷移は`a`で書き、アイコンだけのボタンには`aria-label`などの名前、意味を持つ画像には`alt`を付け、装飾のアイコンは`aria-hidden="true"`で隠す
-- 入力欄にラベル（`label`、`aria-labelledby`）を関連付け、見出しを階層順に置き、スキップリンクを用意する
+- 入力欄に可視ラベル（`label`、`aria-labelledby`）を関連付け、見出しを階層順に置き、スキップリンクを用意する
 - フォーカスは`:focus-visible`で見せ、`outline`を消す時は同じ状態に同等以上の代替を付け、固定ヘッダーやオーバーレイに隠れないようにする
-- 色だけで選択・警告・成功を伝えず、状態を文言や形でも示す（[WCAG 2.2 SC 1.4.1](https://www.w3.org/TR/WCAG22/#use-of-color)）。
+- 色だけで選択・警告・成功を伝えず、形や配置で区別し、それだけで意味が分からなければ短い表示を使う（[WCAG 2.2 SC 1.4.1](https://www.w3.org/TR/WCAG22/#use-of-color)）。
   フォーカスの視認と遮蔽はSC 2.4.7・2.4.11、フォーカス表示や入力境界の対比はSC 1.4.11で判定する
 
 モーダルは[APGのキーボード操作](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/#keyboardinteraction)を実装の参考とし、開始位置、背景の操作不能化、閉じた後の復帰を実機で確かめる。
@@ -33,7 +33,9 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 ## フォーム
 
 - 目的に合う`name`、`autocomplete`、`type`、`inputmode`を指定し、ラベルのクリックで入力欄へフォーカスが移るようにし、貼り付けを受け付ける
-- 送信の開始前は送信ボタンを押せる状態に保ち、送信中は進行中と示し、「戻る」とダイアログを閉じる操作でも未保存の入力を確かめる
+- 送信の開始前は送信ボタンを押せる状態に保ち、送信中は操作箇所で進捗を示し、重複送信など防ぐ必要のある操作だけを非活性にする。
+  通常の待機文は足さない。
+  「戻る」とダイアログを閉じる操作でも未保存の入力を確かめる
 
 ## コンテンツ、状態、画面遷移
 
@@ -45,6 +47,7 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 - 非表示にしたモーダルやオーバーレイにはフォーカスが届かないよう、DOMから外すか`inert`を付ける
 - コンポーネントごとにdefault、hover、focus、active、disabled、loading、errorの状態をそろえる。
   非同期の進捗・結果・検証エラーの状態通知は、内容と緊急度に合うロールやライブ領域でフォーカスを移さず伝える（[WCAG 2.2 SC 4.1.3](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html)）。
+  可視の説明を省いても必要な名前や通知は保ち、必要なら視覚的に隠したテキストを通知に使う。
   通常の完了・件数は`role="status"`など、すぐ気付く必要があるエラーは`role="alert"`などを選ぶ。
   明示的な`aria-live`を必須にせず、監視で変化しない内容を読み上げ直さない。
   通知を変えたら実際の支援技術で状態の変化・無変化・フォーカス保持を確かめ、DOMの確認と区別する
