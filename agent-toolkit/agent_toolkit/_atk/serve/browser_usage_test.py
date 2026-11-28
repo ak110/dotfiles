@@ -314,6 +314,7 @@ async def test_antigravity_display_failure_does_not_block_existing_usage(
     main = page.locator("#usage-workspace")
     card = main.get_by_role("region", name="Antigravity")
     refresh = main.get_by_role("button", name="再取得")
+    scope = main.locator("#usage-antigravity-refresh-scope")
     headings = main.locator("#usage-content h3")
     await expect(main.get_by_role("heading", name="Codex", exact=True)).to_be_visible()
     await expect(card).to_have_count(0)
@@ -335,11 +336,18 @@ async def test_antigravity_display_failure_does_not_block_existing_usage(
         await expect(status).to_contain_text("Antigravityを再取得中")
         await expect(status).to_contain_text("前回の観測")
         await expect(status).to_contain_text("ClaudeとCodexだけ")
+        await expect(scope).to_be_visible()
+        await expect(scope).to_be_in_viewport()
+        await expect(refresh).to_have_accessible_description(
+            "Antigravityを再取得中です。この間、再取得はClaudeとCodexだけに適用されます。"
+        )
         await expect(main.get_by_role("heading", name="Codex", exact=True)).to_be_visible()
         await expect(main.get_by_role("link", name="リセットの許可を設定")).to_be_enabled()
         await expect(card.get_by_text("50%", exact=True)).to_be_visible()
     finally:
         release.set()
+    await expect(scope).to_be_hidden()
+    await expect(refresh).to_have_accessible_description("")
     await expect(card.get_by_role("status")).to_contain_text("最新の利用枠を取得できません")
     await expect(card.get_by_role("status")).to_contain_text("前回の観測")
     await expect(card.get_by_text("50%", exact=True)).to_be_visible()

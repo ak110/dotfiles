@@ -8,6 +8,7 @@ const overview = document.getElementById("usage-overview");
 const attention = document.getElementById("usage-attention");
 const antigravity = document.getElementById("usage-antigravity");
 const antigravityStatus = document.getElementById("usage-antigravity-status");
+const antigravityRefreshScope = document.getElementById("usage-antigravity-refresh-scope");
 const antigravityWindows = document.getElementById("usage-antigravity-windows");
 const percent = new Intl.NumberFormat("ja-JP", {style: "percent", maximumFractionDigits: 1});
 let antigravityPending = false;
@@ -398,8 +399,10 @@ async function updateAntigravity(force) {
   if (antigravityPending) return;
   antigravityPending = true;
   if (!antigravity.hidden) {
-    antigravityStatus.textContent =
-      `Antigravityを再取得中です。この間、再取得はClaudeとCodexだけに適用されます。前回の観測: ${dateJst(antigravityObservedAt)}`;
+    const pendingMessage = "Antigravityを再取得中です。この間、再取得はClaudeとCodexだけに適用されます。";
+    antigravityRefreshScope.textContent = pendingMessage;
+    antigravityRefreshScope.hidden = false;
+    antigravityStatus.textContent = `${pendingMessage}前回の観測: ${dateJst(antigravityObservedAt)}`;
   }
   try {
     const result = await request("/api/usage/antigravity", {force});
@@ -439,6 +442,8 @@ async function updateAntigravity(force) {
     if (!antigravity.hidden) antigravityStatus.textContent = staleAntigravity();
   } finally {
     antigravityPending = false;
+    antigravityRefreshScope.hidden = true;
+    antigravityRefreshScope.textContent = "";
   }
 }
 
