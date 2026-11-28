@@ -373,7 +373,7 @@ def tally(delegations: list[Delegation]) -> tuple[dict[tuple, dict[str, Any]], d
     継続の有無を判別できない入力を持つ委譲は、継続なしと断定せず別に数える。
     """
     groups: dict[tuple, dict[str, Any]] = collections.defaultdict(_empty_group)
-    summary = dict.fromkeys(
+    summary: dict[str, int] = dict.fromkeys(
         (
             "delegations_with_continuation",
             "delegations_incomplete_without_continuation",
