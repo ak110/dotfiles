@@ -148,29 +148,46 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
 
         pending = None
         initial_ticket = 0
+        send_timeout = 0.01
         release_connect = asyncio.Event()
+        connect_entered = asyncio.Event()
+        send_timers: list[asyncio.Timeout] = []
         try:
             if query_started_before_timeout:
                 resume_state = manager.expired_sessions[session_id]
                 pending, initial_ticket = manager._start_resume(resume_state, "準備指示", None)  # pylint: disable=protected-access
                 await asyncio.wait_for(client.query_started.wait(), timeout=1)
             else:
+                send_timeout_expired_only_by_connect = 10
+                send_timeout = send_timeout_expired_only_by_connect
                 original_connect = client.connect
+                original_timeout = asyncio.timeout
 
-                async def blocked_connect() -> None:
+                def recording_timeout(delay: float | None) -> asyncio.Timeout:
+                    timer = original_timeout(delay)
+                    if delay == send_timeout_expired_only_by_connect:
+                        send_timers.append(timer)
+                    return timer
+
+                async def connect_expiring_send_timeout() -> None:
+                    connect_entered.set()
+                    assert len(send_timers) == 1
+                    send_timers[0].reschedule(asyncio.get_running_loop().time())
                     await release_connect.wait()
                     await original_connect()
 
-                monkeypatch.setattr(client, "connect", blocked_connect)
+                monkeypatch.setattr(asyncio, "timeout", recording_timeout)
+                monkeypatch.setattr(client, "connect", connect_expiring_send_timeout)
 
             with pytest.raises(TimeoutError, match="send_message timed out: claude-pending"):
-                await manager.send_message(session_id, "再開指示", timeout=0.01)
+                await manager.send_message(session_id, "再開指示", timeout=send_timeout)
 
             if query_started_before_timeout:
                 assert pending is not None
                 pending.prompt.cancel(initial_ticket)
                 await asyncio.wait_for(client.query_cancelled.wait(), timeout=1)
             else:
+                assert connect_entered.is_set()
                 assert not client.query_started.is_set()
                 release_connect.set()
                 client.release_query.set()
