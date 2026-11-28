@@ -199,8 +199,12 @@ async def test_rejected_consumption_releases_reservation(tmp_path, monkeypatch, 
     assert [item["status"] for item in _upstream_records(notes_a)] == ["closed"]
 
 
+@pytest.mark.parametrize(
+    ("shared_resets_at", "replays"),
+    [(1900000000, True), (True, False), (False, False), (1900000000.0, False), ("1900000000", False), (0, False), (-1, False)],
+)
 @pytest.mark.asyncio
-async def test_only_original_host_replays_frozen_legacy_payload(tmp_path, clones):
+async def test_only_original_host_replays_frozen_legacy_payload(tmp_path, clones, shared_resets_at, replays):
     notes_a, notes_b, _ = clones
     _publish_settings(notes_a)
     state = tmp_path / "state-a"
@@ -228,7 +232,7 @@ async def test_only_original_host_replays_frozen_legacy_payload(tmp_path, clones
                         "permission_id": "old",
                         "key": key,
                         "account": identity,
-                        "resets_at": 1900000000,
+                        "resets_at": shared_resets_at,
                         "status": "pending",
                     }
                 ]
@@ -245,9 +249,25 @@ async def test_only_original_host_replays_frozen_legacy_payload(tmp_path, clones
     assert not other.consumptions
     original = _RPC()
     original.outcomes = ["alreadyRedeemed"]
-    assert (await check_auto_reset(original, state_dir=state, configured=True, shared_notes=notes_a)).reset_confirmed
-    assert original.consumptions == [{"idempotencyKey": key, "creditId": "credit-original"}]
-    assert _upstream_records(notes_a)[0]["status"] == "success"
+    confirmations = []
+    result = await check_auto_reset(
+        original,
+        state_dir=state,
+        configured=True,
+        shared_notes=notes_a,
+        on_permission_confirmed=lambda: confirmations.append(key),
+    )
+    assert result.reset_confirmed is replays
+    [record] = _upstream_records(notes_a)
+    if replays:
+        assert confirmations == [key]
+        assert original.consumptions == [{"idempotencyKey": key, "creditId": "credit-original"}]
+        assert record["status"] == "success"
+    else:
+        assert "試行の形式が不正" in result.diagnostic
+        assert not confirmations and not original.consumptions
+        assert record["status"] == "pending"
+        assert json.loads(local.read_text(encoding="utf-8"))["status"] == "pending"
 
 
 @pytest.mark.asyncio
