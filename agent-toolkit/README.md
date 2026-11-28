@@ -121,10 +121,11 @@ atk serve
 警告や遮断が表示された場合は、本文が示す次の操作に従う。
 ホストごとのフックの対応範囲は[フックの設計資料](https://github.com/ak110/dotfiles/blob/master/docs/development/design-hooks-host-support.md)を参照。
 
-Claude Codeで応答が終わって入力待ちになったとき、端末ベルを鳴らすには
-`atk config set claude_stop_bell true`を実行する。
-端末ごとの設定で、既定値は`false`。
-`AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL`で保存値を上書きできる。
+Claude Codeで応答が終わって入力待ちになったときの端末ベルは、agent-toolkit単体では既定で無効（`false`）。
+端末ごとに`atk config set claude_stop_bell true`で有効にできる。
+dotfilesのLinux向け管理設定を適用した環境では、`AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL=true`が設定済みのため、この操作は不要である。
+この環境変数は保存値より優先される。
+Linux向け管理設定で有効になったベルを止めるには、Claude Codeの設定の`env`でこの変数を`false`にする。
 
 ## 更新と削除
 
