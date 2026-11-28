@@ -197,7 +197,7 @@ async def test_antigravity_refresh_keeps_the_other_providers_independent(usage_c
         return await response.get_json()
 
     assert await request(False) == {"windows": [], "observed_at": None, "stale": False}
-    assert calls == []
+    assert not calls
     available = True
     failure = True
     assert await request(True) == {"windows": [], "observed_at": None, "stale": True}
