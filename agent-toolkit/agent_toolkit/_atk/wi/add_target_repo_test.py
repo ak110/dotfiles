@@ -222,6 +222,35 @@ def test_cli_add_omits_target_commit_for_url_only_target(
     assert not any("HEAD^{commit}" in command for command in git_commands)
 
 
+def test_non_origin_target_warning_is_marked_for_add_dry_run_and_edit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    notes = _setup_notes(tmp_path)
+    origin = "https://github.com/example/origin.git"
+    upstream = "github.com/example/upstream"
+    worktree = git_repository.init_repository(tmp_path / "repo", origin=origin)
+    git_repository.run_git(worktree, "remote", "add", "upstream", f"https://{upstream}.git")
+    monkeypatch.chdir(worktree)
+    body = tmp_path / "input.md"
+    body.write_text(f"---\ntarget_repo: {upstream}\n---\n\n# 更新する本文\n", encoding="utf-8")
+    path = write_awi(notes, "entry.md", target_repo="github.com/example/origin")
+    remote = git_repository.init_bare_repository(tmp_path / "notes-remote.git")
+    git_repository.init_repository(notes, initial_branch="main", origin=str(remote), commit_message="編集対象を保存")
+    git_repository.run_git(notes, "push", "--set-upstream", "origin", "main")
+
+    for command in (
+        ["add", "--dry-run", "--target-repo", upstream, "--body-file", str(body)],
+        ["edit", path.name, "--body-file", str(body)],
+    ):
+        with pytest.raises(SystemExit) as completed:
+            atk.main(["wi", *command], home=tmp_path, now=_FIXED_DT)
+        stderr = capsys.readouterr().err
+        assert completed.value.code == 0, stderr
+        diagnostics = stderr.count("警告: target_repoがorigin以外のリモートupstreamに一致する")
+        assert diagnostics >= 1
+        assert stderr.count('<atk-auto source="wi-non-origin-target" kind="warn">') == diagnostics
+
+
 def test_cli_add_rejects_existing_path_outside_worktree(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

@@ -5,8 +5,10 @@ import pathlib
 
 import pytest
 import session_review_evidence as evidence
+from agent_toolkit._atk.wi.add_reports import print_draft_openings
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import execution_tool_use, read_jsonl
+from session_evidence_warn import warning_count_main
 
 
 def _execution_result_transcript(tmp_path: pathlib.Path, *contents: str) -> pathlib.Path:
@@ -404,3 +406,174 @@ def test_bundle_preserves_each_hook_warning_and_its_full_body(tmp_path, capsys):
     assert warnings[0]["full_text"] == warnings[2]["full_text"] == "短い警告"
     assert warnings[1]["full_text"].endswith("\n" + tail) and tail not in warnings[1]["text"]
     assert warnings[1]["record"] == warnings[0]["record"]
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize(
+    ("draft_eol", "stdout_eol"),
+    [("\n", "\n"), ("\r\n", "\n"), ("\n", "\r\n"), ("\r\n", "\r\n")],
+    ids=["lf", "crlf-draft", "crlf-transport", "crlf-draft-and-transport"],
+)
+def test_warning_count_pairs_emitter_with_result_and_keeps_repeated_markers(
+    tmp_path, capsys, monkeypatch, engine, draft_eol, stdout_eol
+):
+    claude = tmp_path / "claude"
+    codex = tmp_path / "codex"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    transcript = (
+        claude / "projects" / "fixture" / "session.jsonl"
+        if engine == "claude"
+        else codex / "sessions" / "2026" / "11" / "27" / "rollout-fixture.jsonl"
+    )
+    transcript.parent.mkdir(parents=True)
+    timestamp = "2026-11-27T12:00:00+00:00"
+    records = []
+    notice = '<atk-auto source="fixture" kind="warn">対象を確認する</atk-auto>'
+    after_preview = notice.replace("対象を確認する", "冒頭表示後の警告")
+    block = notice.replace('kind="warn"', 'kind="block"')
+    quoted = notice.replace("対象を確認", "原稿を引用")
+    reprint = "失敗: remote同期に失敗した。確定済みの本文を以下に再表示する"
+    print_draft_openings(
+        [f"# 原稿\n\n冒頭本文終了\n{reprint}\n{quoted}\n".replace("\n", draft_eol)],
+        ["draft.md"],
+        output_paths=[str(tmp_path / "opening.md")],
+    )
+    draft = capsys.readouterr().out
+    host_block = (
+        "PreToolUse:Bash hook error: " if engine == "claude" else "Script error:\nCommand blocked by PreToolUse hook: "
+    ) + block
+    for index, (command, output, refused) in enumerate(
+        [
+            ("atk wi add --dry-run", notice, False),
+            ("atk wi add --dry-run", draft, False),
+            ("atk wi edit example.md", f"{notice}\n{draft}{after_preview}\n情報: 先送りの候補 8行目: {quoted}", False),
+            ("atk wi add", f"{notice}\n{reprint}\n次の操作: 保存して再投入する\n---\n{quoted}", False),
+            ("git -C repo commit --allow-empty -m check", notice, False),
+            ("git --no-pager commit -m check", notice, False),
+            ("set -o pipefail; atk wi add --dry-run", f"{notice}\n{draft}", False),
+            ("cd repo && atk run-script commit-with-timeout -- --timeout 30 -- -m check", notice, False),
+            ("cat captured.txt && atk wi add --dry-run", quoted, False),
+            ("set -o pipefail && git commit -m check", host_block, True),
+            ("cat captured.txt", notice, False),
+            ("atk run-script session-review-evidence -- --warn", notice, False),
+            ("atk run-script warning-count -- --source fixture", notice, False),
+            ("git status", notice, False),
+        ]
+    ):
+        call_id = f"call-{index}"
+        output = output.replace("\n", stdout_eol)
+        if engine == "claude":
+            records.extend(
+                [
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {"type": "tool_use", "name": "Bash", "id": call_id, "input": {"command": command}},
+                            ],
+                        },
+                    },
+                    {
+                        "type": "user",
+                        "message": {
+                            "role": "user",
+                            "content": [
+                                {"type": "tool_result", "tool_use_id": call_id, "content": output, "is_error": refused},
+                            ],
+                        },
+                        "toolUseResult": {"stdout": output},
+                    },
+                ]
+            )
+        elif command.startswith("git -C "):
+            records.append(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "item_completed",
+                        "item": {
+                            "type": "CommandExecution",
+                            "id": call_id,
+                            "command": command,
+                            "aggregated_output": output,
+                            "exit_code": 0,
+                        },
+                    },
+                }
+            )
+        else:
+            records.append(
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "function_call",
+                        "name": "exec_command",
+                        "call_id": call_id,
+                        "arguments": json.dumps({"cmd": command}),
+                    },
+                }
+            )
+            records.append(
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": output,
+                    },
+                }
+            )
+        records.append(records[-1].copy())
+    records.append({"type": "assistant", "message": {"role": "assistant", "content": notice}})
+    if engine == "claude":
+        hook = {
+            "type": "attachment",
+            "attachment": {"type": "hook_additional_context", "toolUseID": "hook-1", "content": [notice, notice]},
+        }
+    else:
+        hook = {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "developer",
+                "id": "hook-1",
+                "content": [{"type": "input_text", "text": notice}],
+                "internal_chat_message_metadata_passthrough": {
+                    "content_item_kinds": ["hooks.additional_context"],
+                    "content_item_metadata": [{"provenance": {"type": "harness", "hook": True}}],
+                },
+            },
+        }
+    records += [hook, hook, {**hook, "timestamp": "2026-11-28T00:00:00Z"}]
+    transcript.write_text(
+        "".join(json.dumps({"timestamp": timestamp, **record}, ensure_ascii=False) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    assert (
+        warning_count_main(
+            [
+                "--source",
+                "fixture",
+                "--source",
+                "absent",
+                "--since",
+                "2026-11-27T00:00:00Z",
+                "--until",
+                "2026-11-28T00:00:00Z",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["sources"] == {
+        "absent": {"occurrences": 0, "conversations": 0},
+        "fixture": {"occurrences": 9 + (engine == "claude") + 1, "conversations": 1},
+    }
+    assert sum(row["kind"] == "block" for row in result["occurrences"]) == 1
+    texts = [row["text"] for row in result["occurrences"]]
+    assert texts.count("冒頭表示後の警告") == 1
+    assert texts.count("対象を確認する") == len(texts) - 1
+    assert all(row["record"].startswith(str(transcript)) for row in result["occurrences"])
+    assert result["partial_records"] == result["undated_occurrences"] == 0

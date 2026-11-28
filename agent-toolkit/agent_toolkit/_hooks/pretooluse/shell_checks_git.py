@@ -7,30 +7,16 @@ import re
 lazy import subprocess
 lazy from collections.abc import Iterable, Sequence
 
-lazy from agent_toolkit._common import shell_cwd
+lazy from agent_toolkit._common import git_invocation, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations, is_unknown_word
 lazy from agent_toolkit._common.heredocs import mask_heredoc_bodies
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
-lazy from agent_toolkit._common.shell_segments import ExecutionSegment
 lazy from agent_toolkit._common.shell_tokens import is_atk_command, strip_redirections
 lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
-_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
-    {
-        "-C",
-        "-c",
-        "--git-dir",
-        "--work-tree",
-        "--namespace",
-        "--super-prefix",
-        "--config-env",
-        "--list-cmds",
-    }
-)
-
-
+_GLOBAL_OPTIONS_WITH_VALUE = git_invocation.GLOBAL_OPTIONS_WITH_VALUE
 _GLOBAL_OPTIONS_LOCATING_REPOSITORY: frozenset[str] = frozenset({"-C", "--git-dir", "--work-tree"})
 
 
@@ -52,58 +38,7 @@ _GLOBAL_OPTIONS_POSSIBLY_AFFECTING_MESSAGE: frozenset[str] = frozenset(
 """
 
 
-_GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
-    {
-        "--no-pager",
-        "-p",
-        "--paginate",
-        "--bare",
-        "--no-replace-objects",
-        "--literal-pathspecs",
-        "--glob-pathspecs",
-        "--noglob-pathspecs",
-        "--icase-pathspecs",
-        "--no-optional-locks",
-        "--exec-path",
-        "--html-path",
-        "--man-path",
-        "--info-path",
-        "--help",
-        "--version",
-    }
-)
-
-
-def git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
-    if not segment.resolved or not segment.tokens:
-        return None
-    tokens = segment.tokens
-
-    if is_atk_command(tokens) and tokens[1:4] == ("run-script", "commit-with-timeout", "--"):
-        arguments = tokens[4:]
-        if len(arguments) >= 3 and arguments[0] == "--timeout" and arguments[2] == "--":
-            return "commit", arguments[3:]
-        if len(arguments) >= 2 and arguments[0].startswith("--timeout=") and arguments[1] == "--":
-            return "commit", arguments[2:]
-        return None
-    if pathlib.PurePath(tokens[0]).name != "git":
-        return None
-    index = 1
-    while index < len(tokens):
-        token = tokens[index]
-        if not token.startswith("-"):
-            return token, tuple(tokens[index + 1 :])
-        if token in _GLOBAL_OPTIONS_WITH_VALUE:
-            index += 2
-            continue
-        if token in _GLOBAL_OPTIONS_WITHOUT_VALUE or "=" in token:
-            index += 1
-            continue
-        return None
-    return None
-
-
-_git_subcommand_tokens = git_subcommand_tokens
+git_subcommand_tokens = _git_subcommand_tokens = git_invocation.git_subcommand_tokens
 
 
 _GIT_COMMIT_VALUE_OPTIONS = frozenset(

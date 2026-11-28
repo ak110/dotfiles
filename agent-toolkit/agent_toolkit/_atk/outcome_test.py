@@ -37,3 +37,15 @@ def test_warning_line_is_followed_by_next_action(capsys: pytest.CaptureFixture[s
     outcome.report_warning("自動削除に失敗した", next_action="対応不要（処理は継続した）", to_stderr=False)
 
     assert capsys.readouterr().out.splitlines() == ["警告: 自動削除に失敗した", "次の操作: 対応不要（処理は継続した）"]
+
+
+def test_warning_can_identify_its_producer_without_changing_stream(capsys: pytest.CaptureFixture[str]) -> None:
+    outcome.report_warning("確認が必要", next_action="対象を確かめる", source="fixture-source")
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert captured.err.splitlines() == [
+        '<atk-auto source="fixture-source" kind="warn">',
+        "警告: 確認が必要",
+        "次の操作: 対象を確かめる",
+        "</atk-auto>",
+    ]
