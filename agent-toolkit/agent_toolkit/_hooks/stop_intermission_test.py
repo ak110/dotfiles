@@ -10,7 +10,7 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
-from agent_toolkit._hooks import delivered_repost_gate, stop, termination_evidence
+from agent_toolkit._hooks import busy_loop_guard, delivered_repost_gate, stop, termination_evidence
 from agent_toolkit._testing.helpers import repl_send_to_user_entries
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -67,6 +67,33 @@ def _understood() -> list[dict]:
 
 def _automatic(text: str) -> dict:
     return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": text}}
+
+
+@pytest.mark.parametrize("main", [True, False])
+def test_stop_warns_on_main_final_response_without_blocking(tmp_path, main):
+    extra = {} if main else {"agent_id": "worker"}
+    body = "既存の条文で足りるため、再発防止のWIは作らない。"
+    payload = _payload([_human("不具合の原因を確かめてください。")], tmp_path, last_assistant_message=body, **extra)
+    result = stop.evaluate(json.dumps(payload))
+    assert result.get("decision") != "block"
+    message = result.get("systemMessage")
+    assert (isinstance(message, str) and '<atk-auto source="norm_excuse_gate" kind="warn">' in message) is main
+
+
+@pytest.mark.parametrize(("status", "warns"), [("exit_requested", False), ("changed", True)])
+def test_stop_preserves_halt_result_without_warning_when_termination_is_issued(tmp_path, monkeypatch, status, warns):
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("busy_loop_guard", "norm_excuse_gate"))
+    monkeypatch.setattr(busy_loop_guard, "evaluate", lambda _payload: ("halt", "3"))
+    monkeypatch.setattr(busy_loop_guard, "halt", lambda _session, _count: (status, "停止要求の結果。"))
+    payload = _payload([], tmp_path, last_assistant_message="既存の条文で足りる。")
+    result = stop.evaluate(json.dumps(payload))
+    message = result["systemMessage"]
+    assert isinstance(message, str)
+    assert "停止要求の結果。" in message
+    assert ('<atk-auto source="norm_excuse_gate" kind="warn">' in message) is warns
+    assert "decision" not in result
+    if status == "exit_requested":
+        assert result == {"systemMessage": "停止要求の結果。"}
 
 
 def _bash_wait() -> list[dict]:

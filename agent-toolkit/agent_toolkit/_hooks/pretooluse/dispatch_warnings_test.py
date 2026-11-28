@@ -162,3 +162,65 @@ def test_masked_clock_warning_is_left_to_successful_display():
     assert decision.allow
     assert not decision.context
     assert not decision.notices
+
+
+@pytest.mark.parametrize("input_kind", ["message", "body_ref"])
+def test_send_advises_against_skipping_prevention_without_changing_input(monkeypatch, input_kind):
+    tool = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
+    body = "既存の条文で足りるため、再発防止のWIは作らない。"
+    args = {input_kind: body if input_kind == "message" else "fixture-body-ref"}
+    monkeypatch.setattr(pretooluse, "load_body_reference", lambda *_args: body)
+    payload = {"session_id": "send-prevention"}
+    result = pretooluse._decide(payload, tool, args, "send-prevention", is_codex=False)
+    assert result.allow and result.block is None
+    assert '<atk-auto source="norm_excuse_gate" kind="warn">' in (result.context or "")
+    assert result.updated_input == ({"message": body} if input_kind == "body_ref" else None)
+
+
+def test_send_rejection_with_body_and_reference_does_not_emit_prevention_warning():
+    tool = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
+    payload = {"session_id": "send-prevention"}
+    args = {"message": "既存の条文で足りる。", "body_ref": "fixture-body-ref"}
+    result = pretooluse._decide(payload, tool, args, "send-prevention", is_codex=False)
+    assert result.block and not result.context
+
+
+@pytest.mark.parametrize("tool", ["AskUserQuestion", "ExitPlanMode"])
+@pytest.mark.parametrize("quoted", [False, True])
+def test_user_facing_tools_warn_without_denying_or_changing_input(tool: str, quoted: bool) -> None:
+    phrase = "既存の条文で足りる"
+    text = f"「{phrase}」では再発防止にならない。" if quoted else f"{phrase}ため、再発防止のWIは作らない。"
+    args = {"questions": [{"question": text}]} if tool == "AskUserQuestion" else {"plan": text}
+    result = pretooluse._decide({}, tool, args, "", is_codex=False)
+    assert result.block is None and result.updated_input is None
+    assert ('<atk-auto source="norm_excuse_gate" kind="warn">' in (result.context or "")) is not quoted
+
+
+@pytest.mark.parametrize("tool", ["AskUserQuestion", "ExitPlanMode", "mcp__plugin_agent-toolkit_agents_server__send_to_user"])
+def test_user_facing_warning_distinguishes_independent_calls_from_retry(tmp_path, tool: str) -> None:
+    def deliver(text: str, call: str) -> bool:
+        match tool:
+            case "AskUserQuestion":
+                inputs = {"questions": [{"question": text}]}
+            case "ExitPlanMode":
+                inputs = {"plan": text}
+            case _:
+                inputs = {"message": text}
+        payload = {
+            "session_id": "independent-prevention-requests",
+            "tool_name": tool,
+            "tool_input": inputs,
+            "tool_use_id": call,
+        }
+        result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
+        assert result.returncode == 0 and not result.stderr
+        output = json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
+        assert output.get("permissionDecision") != "deny" and not output.get("updatedInput")
+        return '<atk-auto source="norm_excuse_gate" kind="warn">' in _additional_context(result)
+
+    text = "既存の条文で足りるため対策しない。"
+    assert deliver(text, "call-a")
+    assert not deliver(text, "call-a")
+    assert deliver(text, "call-b")
+    assert not deliver("今回は実際に通る試行を記録しました。", "call-c")
+    assert deliver(text, "call-d")

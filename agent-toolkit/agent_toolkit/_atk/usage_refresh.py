@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import subprocess
 import time
 from collections.abc import Awaitable, Callable, Generator, Mapping
@@ -476,6 +477,60 @@ def ensure_fresh(*, force: bool = False, environment: Mapping[str, str] | None =
 
 def refresh_for_display(*, force: bool = False) -> dict[str, Any]:
     return _refresh_locked(force=force, requested_at=time.time())
+
+
+def read_antigravity_usage() -> list[dict[str, Any]]:
+    executable = shutil.which("agy")
+    if executable is None:
+        return []
+    result = process_tree.run_with_timeout(
+        [executable, "-p", "/usage", "--output-format=json"],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=15,
+        check=False,
+    )
+    if result.returncode:
+        raise ValueError(f"Antigravityの利用枠を取得できません（終了{result.returncode}）")
+    report = json.loads(result.stdout)
+    command = report.get("command") if isinstance(report, dict) and report.get("status") == "SUCCESS" else None
+    data = command.get("data") if isinstance(command, dict) and command.get("name") == "usage" else None
+    groups = data.get("groups") if isinstance(data, dict) else None
+    if not isinstance(groups, list):
+        raise ValueError("Antigravityの構造化利用枠を取得できません")
+    windows = []
+    for group in groups:
+        name = _text(group.get("name")) if isinstance(group, dict) else None
+        buckets = group.get("buckets") if name else None
+        if not isinstance(buckets, list):
+            continue
+        for item in buckets:
+            if (
+                not isinstance(item, dict)
+                or not _text(item.get("id"))
+                or not _text(item.get("window"))
+                or not (label := _text(item.get("name")))
+            ):
+                continue
+            fraction = item.get("remaining_fraction")
+            remaining = _number(fraction, 1) if isinstance(fraction, (int, float)) and 0 <= fraction <= 1 else None
+            reset = item.get("reset_time")
+            try:
+                resets_at = _timestamp(reset) if isinstance(reset, str) else None
+            except OverflowError, OSError:
+                resets_at = None
+            windows.append(
+                {
+                    "group": name,
+                    "name": label,
+                    "remaining_fraction": remaining,
+                    "resets_at": resets_at if resets_at and resets_at > 0 else None,
+                }
+            )
+    if groups and not windows:
+        raise ValueError("Antigravityの利用枠に表示できる項目がありません")
+    return windows
 
 
 def _refresh_locked(

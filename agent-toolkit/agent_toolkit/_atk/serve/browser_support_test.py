@@ -319,6 +319,7 @@ async def _browser_fixture(
     evidence = Path(tempfile.mkdtemp(prefix="browser-failure-", dir=browser_evidence_root))
     request.node.stash[_BROWSER_EVIDENCE] = evidence
     monkeypatch.setattr(usage_refresh, "refresh", lambda **_options: [])
+    monkeypatch.setattr(usage_refresh, "read_antigravity_usage", lambda: [])
     browser = shared_serve_browser
     create_context = browser.new_context
     contexts: list[playwright.async_api.BrowserContext] = []

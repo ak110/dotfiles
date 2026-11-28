@@ -67,12 +67,14 @@ CHECK_MODULE_NAMES = (
     "process_loop_exit_gate",
     "queued_notification_advisor",
     "improvement_status_advisor",
+    "norm_excuse_gate",
 )
 
 CODEX_CHECK_MODULE_NAMES = (
     "response_language_advisor",
     "run_skill_report_gate",
     "process_loop_exit_gate",
+    "norm_excuse_gate",
 )
 
 
@@ -271,13 +273,14 @@ def evaluate(payload_text: str) -> dict[str, object]:
 
 
 def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.Stages) -> dict[str, object]:
+    codex = is_codex_payload(payload)
     with stages.measure("recheck_reset"):
         _write_recheck_verdict(session_id, payload, may_collect=False)
 
     source = payload.get("transcript_path")
     delivery = None
     quiet_intermission = False
-    if isinstance(source, str) and source and not (is_codex_payload(payload) or is_antigravity_payload(payload)):
+    if isinstance(source, str) and source and not (codex or is_antigravity_payload(payload)):
         try:
             with stages.measure("current_turn_delivery"):
                 delivery = delivered_repost_gate.current_turn_delivery(source)
@@ -289,15 +292,17 @@ def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.
     options: dict[str, dict[str, Any]] = {
         "delivered_repost_gate": {"quiet_intermission": quiet_intermission, "delivery": delivery},
         "agents_server_session_advisor": {"entries": entries},
+        "norm_excuse_gate": {"entries": entries},
     }
 
     block_reasons: list[str] = []
     blocking_checks: list[str] = []
     notifications: list[str] = []
     user_messages: list[str] = []
+    prevention_warning = ""
     yield_for_delivery = False
     halt_request: functools.partial[tuple[str, str]] | None = None
-    for module_name in CODEX_CHECK_MODULE_NAMES if is_codex_payload(payload) else CHECK_MODULE_NAMES:
+    for module_name in CODEX_CHECK_MODULE_NAMES if codex else CHECK_MODULE_NAMES:
         if module_name == "response_language_advisor" and "delivered_repost_gate" in blocking_checks:
             continue
         try:
@@ -317,7 +322,10 @@ def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.
         elif decision == "notify" and body:
             notifications.append(body)
         elif decision == "notify_user" and body:
-            user_messages.append(body)
+            if module_name == "norm_excuse_gate":
+                prevention_warning = body
+            elif not codex:
+                user_messages.append(body)
         elif decision == "yield":
             yield_for_delivery = True
         elif decision == "halt":
@@ -327,8 +335,10 @@ def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.
 
     def _finalize(result: dict[str, object], *, terminating: bool = False) -> dict[str, object]:
         stages.rows.append(("aggregate_result", time.monotonic() - finalize_started, "ok"))
-        if is_codex_payload(payload):
+        if codex:
             result = {key: value for key, value in result.items() if key in {"decision", "reason"}}
+            if prevention_warning and not terminating:
+                result["systemMessage"] = prevention_warning
         else:
             with stages.measure("completion_verdict"):
                 _completion_verdict(
@@ -342,6 +352,8 @@ def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.
                     payload,
                     may_collect=result.get("decision") != "block" and not yield_for_delivery and halt_request is None,
                 )
+            if prevention_warning and not terminating:
+                user_messages.append(prevention_warning)
             if user_messages:
                 result["systemMessage"] = "\n\n".join(user_messages)
             if (

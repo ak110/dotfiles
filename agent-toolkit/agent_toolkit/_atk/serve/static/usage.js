@@ -6,6 +6,13 @@ const view = document.getElementById("usage-content");
 const refreshButton = document.getElementById("usage-refresh");
 const overview = document.getElementById("usage-overview");
 const attention = document.getElementById("usage-attention");
+const antigravity = document.getElementById("usage-antigravity");
+const antigravityStatus = document.getElementById("usage-antigravity-status");
+const antigravityRefreshScope = document.getElementById("usage-antigravity-refresh-scope");
+const antigravityWindows = document.getElementById("usage-antigravity-windows");
+const percent = new Intl.NumberFormat("ja-JP", {style: "percent", maximumFractionDigits: 1});
+let antigravityPending = false;
+let antigravityObservedAt;
 const providerNames = {claude: "Claude", codex: "Codex"};
 const providers = Object.keys(providerNames);
 let pending = false;
@@ -318,7 +325,10 @@ function render(payload, reportFailure = false) {
   if (!focusTarget && view.contains(active) && active.tagName === "A") {
     focusTarget = [...body.querySelectorAll("a")].find(link => link.href === active.href);
   }
-  view.replaceChildren(body);
+  for (const child of [...view.children]) {
+    if (child !== antigravity) child.remove();
+  }
+  antigravity.before(body);
   if (focusTarget) focusTarget.focus({preventScroll: true});
   describeAttention(items.sort((a, b) => a.priority - b.priority).map(({item}) => item), payload.windows, refreshed || payload.last_refresh_at);
 }
@@ -377,7 +387,7 @@ async function update(force) {
       overview.hidden = false;
     }
     refreshButton.hidden = true;
-    setDisplayedReadError("usage", "refresh", "利用枠を取得できません。", () => update(false), () => update(true));
+    setDisplayedReadError("usage", "refresh", "利用枠を取得できません。", () => update(false), () => updateProviders(true));
   } finally {
     pending = false;
     refreshButton.disabled = false;
@@ -385,15 +395,76 @@ async function update(force) {
   }
 }
 
+async function updateAntigravity(force) {
+  if (antigravityPending) return;
+  antigravityPending = true;
+  if (!antigravity.hidden) {
+    const pendingMessage = "Antigravityを再取得中です。この間、再取得はClaudeとCodexだけに適用されます。";
+    antigravityRefreshScope.textContent = pendingMessage;
+    antigravityRefreshScope.hidden = false;
+    antigravityStatus.textContent = `${pendingMessage}前回の観測: ${dateJst(antigravityObservedAt)}`;
+  }
+  try {
+    const result = await request("/api/usage/antigravity", {force});
+    const groups = new Map();
+    for (const window of result.windows) {
+      if (!groups.has(window.group)) groups.set(window.group, []);
+      groups.get(window.group).push(window);
+    }
+    const content = document.createDocumentFragment();
+    for (const [name, windows] of groups) {
+      const group = element("div");
+      group.setAttribute("role", "group");
+      group.setAttribute("aria-label", name);
+      group.append(element("p", name, "secondary-text"));
+      for (const window of windows) {
+        const row = element("article", "", "list-row metric-row");
+        row.append(element("h4", window.name));
+        const showRemaining = Number.isFinite(window.remaining_fraction) &&
+          (!Number.isFinite(window.resets_at) || window.resets_at > Date.now() / 1000);
+        const amount = showRemaining ? percent.format(window.remaining_fraction) : "不明";
+        const observed = element("p");
+        observed.append(
+          element("span", "観測残量 ", "secondary-text"),
+          element("span", amount, showRemaining ? "metric-value" : "metric-unavailable"),
+        );
+        row.append(observed);
+        values(row, [["リセット時刻", dateJst(window.resets_at)]]);
+        group.append(row);
+      }
+      content.append(group);
+    }
+    antigravityObservedAt = result.observed_at;
+    antigravityWindows.replaceChildren(content);
+    antigravity.hidden = !groups.size;
+    antigravityStatus.textContent = result.stale ? staleAntigravity() : `取得時刻: ${dateJst(antigravityObservedAt)}`;
+  } catch {
+    if (!antigravity.hidden) antigravityStatus.textContent = staleAntigravity();
+  } finally {
+    antigravityPending = false;
+    antigravityRefreshScope.hidden = true;
+    antigravityRefreshScope.textContent = "";
+  }
+}
+
+function staleAntigravity() {
+  return `前回の観測: ${dateJst(antigravityObservedAt)}。最新の利用枠を取得できません。`;
+}
+
+function updateProviders(force) {
+  void update(force);
+  void updateAntigravity(force);
+}
+
 function visibility() {
   clearInterval(timer);
   if (document.hidden) return;
-  void update(false);
-  timer = setInterval(() => void update(false), 300000);
+  updateProviders(false);
+  timer = setInterval(() => updateProviders(false), 300000);
 }
 
 registerScreen("usage", {init: () => {
-  refreshButton.addEventListener("click", () => void update(true));
+  refreshButton.addEventListener("click", () => updateProviders(true));
   document.addEventListener("visibilitychange", visibility);
   visibility();
 }});

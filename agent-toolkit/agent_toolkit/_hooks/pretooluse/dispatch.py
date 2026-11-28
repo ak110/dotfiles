@@ -98,6 +98,7 @@ lazy from agent_toolkit._hooks.agents_server_observations import start_observati
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.message_format import llm_notice
+lazy from agent_toolkit._hooks.norm_excuse_gate import warning_for_texts
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import commit_identity, intake_edit, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
@@ -328,12 +329,13 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             return _retry_send(payload, tool_name, tool_input, session_id, reason, edit_body=edit_body)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
-        timing = (
-            clock_claims.warning([message], payload, skip_masked=True)
-            if is_send_to_user_tool(tool_name) and isinstance(message, str)
-            else None
-        )
-        return Decision(allow=True, context=timing, updated_input=hydrated)
+        warnings = []
+        if is_send_to_user_tool(tool_name) and isinstance(message, str):
+            if timing := clock_claims.warning([message], payload, skip_masked=True):
+                warnings.append(timing)
+            if warning := warning_for_texts((message,), session_id, event_id=payload.get("tool_use_id")):
+                warnings.append(warning)
+        return Decision(allow=True, context=format_warning_context(warnings) if warnings else None, updated_input=hydrated)
     if tool_name == "Skill":
         return Decision()
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:

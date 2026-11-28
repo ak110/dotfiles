@@ -5,6 +5,7 @@ from collections.abc import Mapping
 
 import markdown_it
 
+from agent_toolkit._atk import outcome
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import entries as _entries
@@ -17,7 +18,54 @@ from agent_toolkit._atk.wi.constants import REPORT_TITLE_PREFIX, WI_TYPE_AWI, WI
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import markdown_headings, skill_modes
+from agent_toolkit._common.prevention_kinds import starts_with_kind
 from agent_toolkit._plan import structure as _plan_structure
+
+_COVERAGE_SECTION_TITLE = re.compile(r"「[^」]*」|『[^』]*』")
+_COVERAGE_EVIDENCE = re.compile(
+    r"(?<![\w/])(?:commit[ :：]+`?[0-9a-f]{7,40}\b|[a-z]+:[0-9a-f-]{8,}:[1-9][0-9]*\b|"
+    r"CI[ :：]+`[^`\n]+`|[^\s`(、。]*_test\.py\b|scripts/check_[\w-]+\.py\b|"
+    r"\.github/workflows/[\w.-]+\.ya?ml\b|[\w./-]+\.(?:jsonl|log|out)\b)"
+)
+_COVERAGE_MARKDOWN_PATH = re.compile(r"([\w./-]+\.md)\b(?:`?[:：]([1-9][0-9]*)\b)?")
+_COVERAGE_RECORD = re.compile(r"観測|実測|検証|対照|試験|実行結果|記録|ログ|verification|evidence|result|report", re.IGNORECASE)
+_NORM_DIRS = ("agent-toolkit/skills/", "agent-basics/skills/", ".claude/skills/", ".claude/rules/")
+
+
+def _has_coverage_evidence(reason: str) -> bool:
+    reason = _COVERAGE_SECTION_TITLE.sub(" ", reason).replace("\\", "/")
+    if _COVERAGE_EVIDENCE.search(reason):
+        return True
+    describes_observation = _COVERAGE_RECORD.search(reason) is not None
+    return any(
+        (lineno or describes_observation)
+        and not path.endswith(("/AGENTS.md", "/CLAUDE.md"))
+        and path not in {"AGENTS.md", "CLAUDE.md"}
+        and all(directory not in path for directory in _NORM_DIRS)
+        for path, lineno in _COVERAGE_MARKDOWN_PATH.findall(reason)
+    )
+
+
+def warn_prevention_coverage(body: str, *, original: str | None = None, entry_type: str = WI_TYPE_AWI) -> None:
+    if entry_type != WI_TYPE_AWI:
+        return
+    current = _headings.last_h2_section_lines(body, _CAUSE_ANALYSIS_HEADING)
+    previous = _headings.last_h2_section_lines(original, _CAUSE_ANALYSIS_HEADING) if original is not None else None
+    if not current or "\n".join(current).strip() == "\n".join(previous or []).strip():
+        return
+    for line in _plan_structure.cause_record_lines("\n".join(current)):
+        if line.label != "再発防止" or not starts_with_kind(line.text):
+            continue
+        label, covered, reason = line.text.lstrip(" \t　*_`~").partition("被覆")
+        if not label and covered and not _has_coverage_evidence(reason):
+            outcome.report_warning(
+                "再発防止を「被覆」とする根拠に、今回の条件を防ぐ対策の所在が見つかりません。",
+                next_action=(
+                    "`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」に従い、"
+                    "対策が今回の条件を防ぐことを確かめて所在を示すか、既存対策が効かなかった理由を区分して次の案を比べる"
+                ),
+                source="prevention_coverage",
+            )
 
 
 def validate_report_body(body: str, choices: object) -> None:
