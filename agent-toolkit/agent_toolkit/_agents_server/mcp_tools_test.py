@@ -14,6 +14,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import mcp_tools, shared_roots, state, status_file, tool_names
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._common import completion_exit, function_hook_requests
 from agent_toolkit._testing.agents_server_support import (
     LISTED_SESSION_KEYS,
     FakeBackend,
@@ -427,3 +428,57 @@ async def test_send_message_response_adds_next_action_for_unconfirmed_reply(
         assert "atk agents wait" in response["next_action"]
     else:
         assert "next_action" not in response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "",
+        "\n\n以上で、このセッションの作業は全て終わった。",
+        "\n以上で、このセッションの作業は全て終わった",
+        "\n…  \n",
+        "\n以上で、このセッションの作業は全て終わった。\n…\n以上で、このセッションの作業は全て終わった",
+    ],
+)
+@pytest.mark.parametrize("kind", [None, "completion"])
+async def test_completion_display_only_normalizes_the_end(monkeypatch, tmp_path, tail, kind):
+    session = "report-fixture"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: session))
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    identifier = "a" * 32
+    deliver = AsyncMock(return_value={"ok": True, "id": identifier})
+    monkeypatch.setattr(function_hook_requests, "request", deliver)
+
+    marker = "以上で、このセッションの作業は全て終わった。"
+    body = f"「{marker}」という文を途中で引用する。\n作業を反映した。"
+    message = body + tail
+    result = await mcp_tools.send_to_user(message=message, kind=kind)
+    assert result["ok"] is True
+    if kind is None:
+        deliver.assert_awaited_once_with(session, "send_to_user", {"message": message})
+        assert completion_exit.read_receipt(session, identifier, root=tmp_path) is None
+    else:
+        expected = body + "\n\n" + marker
+        deliver.assert_awaited_once_with(session, "send_to_user", {"message": expected, "kind": kind})
+        assert completion_exit.read_receipt(session, identifier, root=tmp_path) == expected
+
+
+@pytest.mark.asyncio
+async def test_unsuccessful_completion_or_snapshot_does_not_change_delivery_status(monkeypatch, tmp_path):
+    session = "receipt-policy"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: session))
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    rejected = {"ok": False, "id": "a" * 32}
+    failed_snapshot = {"ok": True, "id": "invalid"}
+    send = AsyncMock(side_effect=[rejected.copy(), failed_snapshot.copy()])
+    monkeypatch.setattr(function_hook_requests, "request", send)
+    assert await mcp_tools.send_to_user(message="最終報告。", kind="completion") == rejected
+    assert completion_exit.read_receipt(session, rejected["id"], root=tmp_path) is None
+    accepted = await mcp_tools.send_to_user(message="最終報告。", kind="completion")
+    assert {k: accepted[k] for k in failed_snapshot} == failed_snapshot
+    assert "写しを保存できなかった" in accepted["guidance"] and "再送しない" in accepted["guidance"]

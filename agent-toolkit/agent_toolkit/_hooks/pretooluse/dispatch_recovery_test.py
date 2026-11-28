@@ -15,7 +15,7 @@ from mcp.types import CallToolResult
 
 from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import function_hook_requests
+from agent_toolkit._common import completion_exit, function_hook_requests
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks.pretooluse import dispatch, user_facing_checks
 from agent_toolkit._hooks.pretooluse.decision import Decision
@@ -174,7 +174,9 @@ def test_generic_retry_retains_only_latest_32_inputs(capsys) -> None:
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("call_prefix", ["toolu", "repl"])
-async def test_saved_report_uses_one_validated_snapshot(monkeypatch, tmp_path, capsys, call_prefix):
+@pytest.mark.parametrize("kind", [None, "completion"])
+async def test_saved_report_uses_one_validated_snapshot(monkeypatch, tmp_path, capsys, call_prefix, kind):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
     session = "report-owner"
     reference = "rejected-send-to-user-abcd1234"
     root = managed_temp.resolve_session_temp(session)
@@ -185,7 +187,9 @@ async def test_saved_report_uses_one_validated_snapshot(monkeypatch, tmp_path, c
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: session))
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
     monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
-    request = AsyncMock(return_value={"status": "confirmed"})
+    delivery_id = "4" * 32
+    confirmed = {"ok": True, "id": delivery_id}
+    request = AsyncMock(return_value=confirmed.copy())
     monkeypatch.setattr(function_hook_requests, "request", request)
 
     def hook(arguments: dict, *, identifier: str = session) -> dict:
@@ -215,10 +219,41 @@ async def test_saved_report_uses_one_validated_snapshot(monkeypatch, tmp_path, c
     assert hook({"body_ref": alias.parent.name})["permissionDecision"] == "deny"
     alias.unlink()
     request.assert_not_awaited()
-    ready = hook({"body_ref": reference})
+    original = {"body_ref": reference, **({"kind": kind} if kind is not None else {})}
+    ready = hook(original)
     assert ready["permissionDecision"] == "allow"
     saved.write_text("検査後に変えた別の本文。", encoding="utf-8")
     response = await mcp_tools.mcp.call_tool("send_to_user", ready["updatedInput"])
-    request.assert_awaited_once_with(session, "send_to_user", {"message": visible})
+    expected = visible
+    inputs = {"message": visible}
+    if kind is not None:
+        expected = visible.rstrip() + "\n\n以上で、このセッションの作業は全て終わった。"
+        inputs = {"message": expected, "kind": kind}
+    request.assert_awaited_once_with(session, "send_to_user", inputs)
     assert isinstance(response, CallToolResult)
-    assert response.structured_content == {"status": "confirmed"}
+    assert response.structured_content == confirmed
+    if kind is None:
+        return
+
+    call = f"{call_prefix}_report"
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "tool_use", "id": call, "name": mcp_tools.CLAUDE_TOOL_NAME, "input": original},
+                ],
+            },
+        },
+        {
+            "type": "user",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": call, "content": json.dumps(confirmed)}]},
+        },
+    ]
+    record = tmp_path / "projects" / "report" / f"{session}.jsonl"
+    record.parent.mkdir(parents=True)
+    record.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
+    state = {"status": "exiting", "session": session, "call": call}
+    assert not completion_exit.save_receipt(session, delivery_id, "後から写しを書き替える。", root=tmp_path)
+    assert completion_exit.report_text(state, root=tmp_path) == expected
+    assert not completion_exit.current_reports(entries, session="other")

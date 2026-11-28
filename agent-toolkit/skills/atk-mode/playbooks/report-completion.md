@@ -106,7 +106,9 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    保存に失敗した時は、同じUWIの保存を回復する。
 7. 協調モードは確定した本文を、自律モードは保存を検収した報告用UWIのファイル名を、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従って1回送達する。
    - Claude Codeで最終報告を`send_to_user`で送る時は`kind: "completion"`を指定し、表示の成功を確かめる。
+     送信側が末尾をそろえるため、本文に固定文は書かなくてよい。
    - 協調モードの `add-awi-by-user`、`implement`、`process-user-comments` では、送達成功を確かめてから最後のツール呼び出しとして `atk agents-exit-session --after-completion` を実行する。
+     REPL内のツール結果はスクリプトが終わってからセッション記録に書かれるため、送信結果の`ok: true`を確認し、別のツール呼び出しで実行する。
      ユーザーの回答・承認・本人作業を待つ場合は呼ばない。
      環境による対象判定はコマンドに任せ、自動終了しない理由が返った場合も通常どおりターンを終える。
      Claude Codeの終え方は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
@@ -114,7 +116,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    - ホスト本体を停止する場合は、報告の保存検収と送達を終え、停止操作を最後のツール呼び出しにする。
    - process-loopの`atk agents-exit-session`による終了は、[中断と再開](process-loop.md#中断と再開)の条件に限る。
 
-   最終報告の末尾にだけ、次の固定文を置く。
+   Codexなどで最終報告を通常の応答本文で届ける時は、その末尾にだけ次の固定文を置く。
 
    ```text
    以上で、このセッションの作業は全て終わった。

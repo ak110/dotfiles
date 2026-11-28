@@ -154,7 +154,7 @@ def _completion_verdict(session_id: str, payload: dict, *, allowed: bool) -> Non
             allowed
             and state.get("status") == "requested"
             and isinstance(source, str)
-            and state.get("call") in completion_exit.current_reports(read_stop_entries(source))
+            and state.get("call") in completion_exit.current_reports(read_stop_entries(source), session=session_id)
             and pending_async_status(
                 source, session_id, background_tasks=payload.get("background_tasks"), session_state=read_state(session_id)
             )
@@ -234,7 +234,7 @@ def _intermission(payload: dict, session_id: str, delivery: tuple[list[dict], bo
                 prompt = text.lstrip()
             break
     turn = entries[turn_start:]
-    if completion_exit.reports(turn) or any(
+    if completion_exit.reports(turn, session=session_id) or any(
         is_completion(text, None) for _, _, text in delivered_repost_gate.delivered_messages(turn)
     ):
         return False

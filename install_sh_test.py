@@ -111,6 +111,9 @@ def test_install_sh_deploys_distribution(tmp_path: pathlib.Path):
 
     shutil.copy2(uv_bin.with_name("uvx"), local_bin / "uvx")
     _write_fake_cli(local_bin / "claude")
+    # 実配布物の取得は速度依存で上限を超えうるため導入済み相当とし、導入経路は個別試験で確かめる  pyfltr: allow-comment
+    _write_fake_cli(local_bin / "agy")
+    _write_fake_cli(local_bin / "herdr")
     _write_fake_codex(local_bin / "codex", fake_home, fake_dotfiles)
     _write_fake_npm(local_bin / "npm")
     _write_fake_mise(local_bin / "mise")

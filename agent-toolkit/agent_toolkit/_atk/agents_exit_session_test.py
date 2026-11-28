@@ -380,6 +380,13 @@ def test_sweep_function_hook_files_includes_recheck(
         ("repl-error", False),
         ("repl-not-completion", False),
         ("repl-previous-turn", False),
+        ("repl-unwritten", False),
+        ("repl-body-ref", True),
+        ("repl-body-ref-unrecorded", False),
+        ("repl-body-ref-other-session", False),
+        ("repl-body-ref-other-id", False),
+        ("repl-body-ref-error", False),
+        ("repl-body-ref-previous-turn", False),
     ],
 )
 def test_request_completion_exit_is_fail_closed(
@@ -448,6 +455,20 @@ def test_request_completion_exit_is_fail_closed(
             {"kind": "completion", "message": "今回の報告"} if case != "repl-not-completion" else {"message": "今回の報告"},
             ok=case != "repl-error",
         )
+    if case == "repl-unwritten":
+        entries = [entry for entry in entries if not entry.get("isVirtual")]
+    if case.startswith("repl-body-ref"):
+        call = next(entry for entry in entries if entry.get("isVirtual") and entry["type"] == "assistant")
+        call["message"]["content"][0]["input"] = {"kind": "completion", "body_ref": "existing-draft"}
+        receipt = next(entry for entry in entries if entry.get("isVirtual") and entry["type"] == "user")
+        receipt["toolUseResult"] = json.dumps({"ok": not case.endswith("-error"), "id": "a" * 32})
+        if not case.endswith("-unrecorded"):
+            assert completion_exit.save_receipt(
+                "other-session" if case.endswith("-other-session") else session,
+                "b" * 32 if case.endswith("-other-id") else "a" * 32,
+                "送達済みの本文。",
+                root=tmp_path,
+            )
     if case.endswith("previous-turn"):
         entries.append({"type": "user", "origin": {"kind": "human"}, "message": {"role": "user", "content": "新しい依頼"}})
     record.write_text("".join(json.dumps(event) + "\n" for event in entries), encoding="utf-8")
@@ -458,6 +479,8 @@ def test_request_completion_exit_is_fail_closed(
         assert "追加のツールを呼ばず、通常どおりターンを終えてください。" in output
     else:
         assert output.startswith("自動終了しない: ")
+    if case in {"repl-unwritten", "repl-body-ref-unrecorded"}:
+        assert "同じREPL" in output and "ok: true" in output and "別のツール呼び出し" in output
     state = completion_exit.state_path(launch, root=tmp_path)
     assert state is not None
     assert state.exists() is requested
