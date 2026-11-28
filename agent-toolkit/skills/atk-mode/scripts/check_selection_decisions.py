@@ -135,7 +135,7 @@ def _derived_record_failures(path: str, scope: str, work_dir: pathlib.Path) -> l
         or not (work_dir / scope).is_dir()
     ):
         failures.append("反映範囲が末尾/付きの実在ディレクトリではない")
-    elif not _covers(scope, path):
+    elif scope != "./" and not _covers(scope, path):
         failures.append("反映範囲がパスを含まない")
     return failures
 

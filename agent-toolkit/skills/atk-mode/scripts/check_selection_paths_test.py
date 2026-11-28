@@ -454,3 +454,59 @@ def test_new_path_recognition_preserves_command_argument(env, command):
     body = (notes / "processing/a.md").read_text(encoding="utf-8")
 
     assert check_selection.reflected_paths(body, repo) == {"src/known.py"}
+
+
+@pytest.mark.parametrize(
+    ("body", "filename", "expected"),
+    [
+        ("ルートに `ACCESSIBILITY.md` を置く。", "ACCESSIBILITY.md", 0),
+        ("ルートに `操作案内.md` を置く。", "操作案内.md", 0),
+        ("ルートに `カ\u3099イド.md` を置く。", "カ\u3099イド.md", 0),
+        ("ルートに `操作・案内.md` を置く。", "操作・案内.md", 0),
+        ("`操作案内.md:12` を参照する。", "操作案内.md", 1),
+        ("`操作案内.md#節` を参照する。", "操作案内.md", 1),
+        ("`操作?.md` を対象にする。", "操作?.md", 1),
+        ("`操作].md` を対象にする。", "操作].md", 1),
+        ("`a\\b.md` を対象にする。", "a\\b.md", 1),
+        ("`C:操作.md` を対象にする。", "C:操作.md", 1),
+        ("エラーコードは 操作案内.md です。", "操作案内.md", 1),
+        ("`python 表示.py` を実行する。", "表示.py", 1),
+        ("`python 表示.py` を実行する。", "python 表示.py", 1),
+        ("`ACCESSIBILITY.md` を読み、ルートに `DISPLAY.md` を置く。", "UNRELATED.md", 1),
+        ("エラーコードは access.log です。", "access.log", 1),
+        ("`python check.py` を実行する。", "check.py", 1),
+        ("`python check.py` を実行する。", "python check.py", 1),
+        ("`src/` の `other.py` を新設する。", "other.py", 1),
+    ],
+)
+def test_public_selection_new_root_name_requires_an_individual_body_reference(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    body: str,
+    filename: str,
+    expected: int,
+) -> None:
+    repo, notes = env
+    assert not (repo / filename).exists()
+    _awi(notes, "a.md", body)
+    selection = _write_selection(tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": [filename]}])
+    assert _dispatch(str(selection), "--work-dir", str(repo)) == expected
+
+
+def test_public_selection_new_root_name_still_requires_lane_overlap_record(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, notes = env
+    for name in ("a.md", "b.md"):
+        _awi(notes, name, "ルートに `ACCESSIBILITY.md` を置く。")
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": ["ACCESSIBILITY.md"]},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": ["ACCESSIBILITY.md"]},
+        ],
+    )
+    assert _dispatch(str(selection), "--work-dir", str(repo)) == 1
+    diagnostic = capsys.readouterr().err
+    assert "レーン間の重なり" in diagnostic and "ACCESSIBILITY.md" in diagnostic
+    assert "パスの不正" not in diagnostic
