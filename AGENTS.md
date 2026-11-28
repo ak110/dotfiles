@@ -23,7 +23,7 @@ dotfilesは、chezmoiで `.chezmoi-source/` を `~/.*` に配布し、小さなC
 | `develop`と`master`のリリース運用、周期に沿ったリリースの判定と実施 | `release-dotfiles` |
 | PRのマージ、マージ後のブランチの同期、CIと必要なリリースの検収 | `merge-pr` |
 | `agent-toolkit/`・`agent-basics/`と`.claude-plugin/marketplace.json`の編集、バージョンの更新、権限設定の配置 | `agent-toolkit-edit` |
-| エージェント向け文書の改訂、変更した規範の自セッションへの適用、`プロジェクト規範の指定`、規範の削除・縮小 | `edit-dotfiles-norms` |
+| エージェント向け文書の改訂、変更した規範の自セッションへの適用、`プロジェクト規範の指定`、規範の削除・縮小、規範の追従（dotfiles自身・追従台帳・姉妹プロジェクト） | `edit-dotfiles-norms` |
 | ロールとファイル群の対応、配布元と配布先の対応 | `dotfiles-repo-layout` |
 | `pytools/`、`scripts/`、`libexec/`、`bin/`、`rust/`の配置と実装 | `pytools-edit` |
 | LinuxとWindowsのペアファイルの同期 | `sync-platform-pair` |
