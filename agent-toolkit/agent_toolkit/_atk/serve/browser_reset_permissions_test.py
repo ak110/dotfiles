@@ -138,10 +138,12 @@ async def test_reset_save_keeps_keyboard_in_the_setting(screen_harness: _ScreenH
     try:
         await asyncio.wait_for(started.wait(), 5)
         progress = form.get_by_role("progressbar", name="保存中")
-        await expect(status).to_have_text("現在: 無効。")
         await expect(progress).to_be_in_viewport()
-        assert await progress.evaluate("node => getComputedStyle(node, '::before').borderTopStyle") == "solid"
-        await expect(choice).to_be_disabled()
+        assert await progress.evaluate("""node => [
+          node.closest('[role="status"]').textContent.trim(),
+          getComputedStyle(node, '::before').borderTopStyle,
+          node.closest('form').querySelector('input[type="checkbox"]').matches(':disabled'),
+        ]""") == ["現在: 無効。", "solid", True]
         await expect(status).to_be_focused(timeout=1000)
         await expect(status).to_be_in_viewport()
         await page.keyboard.press("Enter")
