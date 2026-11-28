@@ -351,7 +351,7 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
     _entry_path(harness.root, "processing-observation.md").write_text(
         observed_awi.replace("state: inbox", "state: processing"), encoding="utf-8"
     )
-    _entry_path(harness.root, "ordinary-awi.md").write_text(observed_awi.split("##")[0], encoding="utf-8")
+    _entry_path(harness.root, "ordinary-awi.md").write_text(observed_awi.split("##", maxsplit=1)[0], encoding="utf-8")
     _entry_path(harness.root, "new-answered.md").write_text(new_unanswered + "回答です。\n", encoding="utf-8")
     await publish_and_wait()
     await observe_no_extra_notification()
