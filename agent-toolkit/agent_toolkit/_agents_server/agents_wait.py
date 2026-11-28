@@ -752,6 +752,7 @@ def _wait_for_result(
                         collected.append(response)
                 if collected:
                     continuable = all(item.get("status") == "running" for item in collected)
+                    wait_run.add_first_review_reply_actions(collected, result_turns, run_path.parent, state_root)
                     collected.extend(continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root))
                     output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
                     _LOG.info(

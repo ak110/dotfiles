@@ -1,11 +1,8 @@
 import copy
 import datetime
-import json
 import os
 import pathlib
-import re
 import threading
-import time
 
 import playwright.async_api
 import pytest
@@ -21,154 +18,30 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _screen_harness_fixture,
     _ScreenHarness,
 )
-from agent_toolkit._common import codex_fast_mode, usage_observation, usage_settings
+from agent_toolkit._common import codex_fast_mode
 
 pytestmark = [pytest.mark.browser]
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_remote_permission_conflict_preserves_entry_written_during_refresh(
-    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+async def test_settings_can_compare_old_ssh_value_without_restoring_reset_editor(
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
     config_settings.save_config({"remote_hosts": '["demo-host"]'})
-    release = threading.Event()
-    snapshot = config.settings_snapshot(tmp_path)
-    key = "usage_reset_permissions"
-    update_started = threading.Event()
-    pending: list[dict] = []
-    other = {
-        "id": "other-writer",
-        "engine": "codex",
-        "account": "other-account",
-        "scope": "codex",
-        "count": 1,
-        "from": "2099-01-01T00:00:00Z",
-        "until": "2099-01-02T00:00:00Z",
-    }
-
-    def remote_snapshot(_host: str, **_kwargs):
-        result = copy.deepcopy(snapshot)
-        if update_started.is_set():
-            if not release.wait(timeout=8):
-                raise TimeoutError
-            result["settings"][key].update(saved=json.dumps(pending or [other]))
-        return result, None
-
-    def remote_update(_host: str, payload: dict):
-        assert payload["key"] == key
-        pending[:] = json.loads(payload["value"])
-
-    monkeypatch.setattr(settings_routes, "_remote_snapshot", remote_snapshot)
-    monkeypatch.setattr(settings_routes, "_remote_update", remote_update)
+    snapshot = {"settings": {"usage_reset_permissions": {"saved": '[{"id":"old-right"}]'}}, "paths": {}}
+    monkeypatch.setattr(settings_routes, "_remote_snapshot", lambda _host, **_kwargs: (snapshot, None))
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/settings")
+    await page.get_by_label("設定対象ホスト").select_option("demo-host")
     await page.get_by_role("navigation", name="設定の分類").get_by_text("利用枠", exact=True).click()
-    picker = page.get_by_label("設定対象ホスト")
-    editor = page.locator(f'[data-setting="{key}"]')
-    new_permission = editor.locator('details[data-editor="usage_reset_permissions:"]')
-    add = new_permission.get_by_text("許可を追加", exact=True)
     expect = playwright.async_api.expect
-    await picker.select_option("demo-host")
-    await _open_setting(editor)
-    await expect(add).to_be_visible()
-    await picker.select_option("")
-    await expect(page.locator("#settings-status")).to_be_empty()
-
-    async def draft():
-        await _open_setting(editor)
-        await add.click()
-        await new_permission.get_by_text("詳細: アカウントの直接入力", exact=True).click()
-        await new_permission.get_by_label("アカウントを直接入力").fill("my-account")
-        await new_permission.get_by_label("回数").fill("1")
-        await new_permission.get_by_label("開始（このブラウザーの時刻）").fill("2099-02-01T00:00")
-        await new_permission.get_by_label("終了（このブラウザーの時刻）").fill("2099-02-02T00:00")
-
-    update_started.set()
-    try:
-        await picker.select_option("demo-host")
-        await expect(page.get_by_role("progressbar", name="設定の取得")).to_be_visible()
-        await draft()
-        await expect(editor.get_by_role("button", name="追加", exact=True)).to_be_disabled()
-    finally:
-        release.set()
-    await expect(editor).to_contain_text("最新の保存値: other-writer")
-    await expect(editor.get_by_label("アカウントを直接入力")).to_have_value("my-account")
-    await expect(editor.get_by_role("button", name="追加", exact=True)).to_be_disabled()
-    await editor.get_by_role("button", name="保存値を使う").click()
-    captions = editor.locator(
-        'details[data-editor^="usage_reset_permissions:"]:not([data-editor="usage_reset_permissions:"]) > summary'
-    )
-    await expect(captions).to_contain_text("other-writer")
-    await draft()
-    await editor.get_by_role("button", name="追加", exact=True).click()
-    await expect(captions).to_have_count(2)
-    assert pending[0] == other
-    assert pending[1]["account"] == "my-account"
-
-
-@pytest.mark.parametrize("grace", [1, 2, 3])
-@pytest.mark.asyncio(loop_scope="session")
-async def test_observed_codex_account_and_weekly_cutoff_save_without_typing_identifiers(
-    screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, grace: int
-) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    account = "fixture-account"
-    now = int(time.time())
-    day = 86400
-    reset = (now + 7 * day // 2) // 60 * 60 + 37
-    usage_settings.record_metadata(
-        "codex",
-        {
-            "account": "fixture-workspace",
-            "permission_account": account,
-            "contract": "promax",
-            "weekly_window": {"window_id": "codex:secondary", "resets_at": reset},
-        },
-    )
-    usage_observation.observe(
-        [
-            usage_observation.QuotaWindow(
-                "codex", "fixture-workspace", "codex:secondary", 80, reset, now, contract="promax", duration_seconds=7 * day
-            )
-        ],
-        setting_signature="fixture",
-        active_seconds=0,
-    )
-    page = screen_harness.page
-    await page.goto(screen_harness.base_url + "/settings")
-    await page.get_by_role("navigation", name="設定の分類").get_by_text("利用枠", exact=True).click()
-    section = page.locator('[data-setting="usage_reset_permissions"]')
-    await _open_setting(section)
-    await section.get_by_text("許可を追加", exact=True).click()
-    expect = playwright.async_api.expect
-    await expect(section.get_by_label("アカウント", exact=True)).to_have_value(account)
-    await section.get_by_role("button", name="今", exact=True).click()
-    await section.get_by_label("リセット前の猶予").select_option(str(grace))
-    if grace == 1:
-        await expect(section).to_contain_text("おすすめ: 1回、今から次の週次リセットの1日前まで")
-        await section.get_by_role("button", name="この提案を入力").click()
-        assert "usage_reset_permissions" not in config_settings.load_config()
-    if grace == 3:
-        await expect(section).to_contain_text("今週は許可不要")
-    await section.get_by_role("button", name=f"次の週次リセットの{grace}日前まで").click()
-    await section.get_by_role("button", name="追加", exact=True).click()
-    await expect(section).to_contain_text("期間内")
-    saved = section.get_by_role("status").filter(has_text="0件の許可 → 1件の許可")
-    await expect(saved).to_be_visible()
-    await expect(saved).to_be_focused()
-    await expect(section.get_by_role("button", name="追加", exact=True)).to_be_hidden()
-    raw = config_settings.load_config()["usage_reset_permissions"]
-    usage_settings.validate_permissions(raw)
-    permit = json.loads(raw)[0]
-    assert permit["account"] == account
-    assert permit["scope"] == "codex"
-    assert permit["count"] == 1
-    assert re.fullmatch(r"codex-\d{8}-\d{6}-[0-9a-f]{8}", permit["id"])
-    assert datetime.datetime.fromisoformat(permit["until"]).timestamp() == reset - grace * day
+    await expect(page.locator("#settings-host-progress")).to_be_hidden()
+    await expect(page.locator('[data-setting="usage_reset_permissions"]')).to_have_count(0)
+    comparison = page.locator("#settings-compare")
+    await comparison.locator("summary").click()
+    old_right = comparison.get_by_role("row").filter(has_text="old-right")
+    await expect(old_right).to_be_visible()
+    await expect(old_right.locator("button, input, textarea, select")).to_have_count(0)
 
 
 @pytest.mark.asyncio(loop_scope="session")

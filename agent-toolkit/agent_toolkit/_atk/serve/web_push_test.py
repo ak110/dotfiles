@@ -55,12 +55,15 @@ def test_known_items_survive_state_changes_removal_and_restart(tmp_path, monkeyp
     monkeypatch.setattr(web_push, "_send", send)
     known = {**UWI, "filename": "known.md", "answered": True}
     new = {**UWI, "filename": "new.md"}
-    awi = {"kind": "awi", "needs_verify": True, "state": "inbox", "filename": "review.md"}
+    awi = {"kind": "awi", "awaiting_observation": True, "state": "inbox", "filename": "review.md"}
+    processing_awi = {**awi, "state": "processing", "filename": "review-processing.md"}
+    normal_awi = {**awi, "awaiting_observation": False, "filename": "work.md"}
+    answered = {**UWI, "filename": "answered.md", "answered": True}
     push.scan([known])
-    push.scan([{**known, "answered": False}, new, awi])
+    push.scan([{**known, "answered": False}, new, answered, awi, processing_awi, normal_awi])
     push.scan([])
-    web_push.WebPush(tmp_path).scan([known, new, awi])
-    assert sent == ["./?filename=new.md", "./?filename=review.md"]
+    web_push.WebPush(tmp_path).scan([known, new, awi, processing_awi, normal_awi])
+    assert sent == ["./?filename=new.md"]
 
 
 def test_only_expired_subscriptions_are_deleted_and_processing_continues(tmp_path, monkeypatch, caplog):

@@ -112,7 +112,7 @@ const snapshots = [
     {kind: 'uwi', state: 'inbox', filename: 'new.md', answered: false},
     {kind: 'awi', state: 'inbox', filename: 'base-awi.md', confirmation: 'confirmed'},
     {kind: 'awi', state: 'inbox', filename: 'confirmed-awi.md', confirmation: 'required'},
-    {kind: 'awi', state: 'inbox', filename: 'new-awi.md', confirmation: 'required'},
+    {kind: 'awi', state: 'inbox', filename: 'new-awi.md', awaiting_observation: true},
     {kind: 'awi', state: 'inbox', filename: 'plain-awi.md', confirmation: null}
   ],
   [

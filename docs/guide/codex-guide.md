@@ -185,21 +185,16 @@ ChatGPTのtokenをAPIキーとして使わない。
 `atk run-skill`、`atk wi process-loop`、`agents_server`の委譲先は、Codexの利用上限の解除後に自動で作業を続ける。
 待つ範囲は`codex_usage_limit_wait`で選ぶ（[工程別モデル設定](claude-code-models.md#工程別モデル設定)を参照）。
 
-`agents_server`のCodex委譲先では、`usage_reset_permissions`に対象アカウント・期間・回数を明示した場合だけ、自動resetでcreditを消費できる。
-消費許可の初期値は空である。
-許可は同じprivate-notesを使う端末で共有し、回数は全端末の合計で数える。
-消費の前に共有先へ予約を書き、同期できない間は消費しない。
-条件と設定例は[利用枠とreset許可](claude-code-models.md#利用枠とreset許可)を参照する。
+`agents_server`のCodex委譲先でリセット権を自動で使うには、同じprivate-notesを使う全端末を更新してから、`atk serve`の「利用枠」でCodexの「リセット権を自動で使う」を有効にして保存する。
+既定は無効。
+旧許可・旧保存値・旧環境変数では有効にならない。
+CLIでは `atk config get codex_auto_reset` で確認し、必要なときに `atk config set codex_auto_reset true` で保存する。
 
-```bash
-atk config get usage_reset_permissions
-```
-
-旧`codex_auto_reset`と環境変数`AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET`は廃止した。
-旧環境変数を解除する。
-以前の真偽値から消費許可は作成しないので、許可を設定しない場合は手動でresetする。
-
-有効な許可がある間はモデルを呼ばずに利用枠を確認し、reset後に利用枠を再取得して同じsessionの再開を判定する。
+消費の前に共有先で予約を確定する。
+共有先がない場合や同期できない場合、未確定の別試行が残る場合には送信しない。
+既存試行を回復するときは同じキーと送信内容を使う。
+[利用枠とリセット設定](claude-code-models.md#利用枠とリセット設定)を参照。
+自動リセットが有効な間はモデルを呼ばずに利用枠を確認し、成功後に利用枠を再取得して同じ会話の再開を判定する。
 APIキー接続は対象外で、アカウントのemailを取得できない場合もcreditを消費せず診断を記録する。
 在庫が無い場合やresetが成立しない場合は、既存の利用上限待機設定に従う。
 

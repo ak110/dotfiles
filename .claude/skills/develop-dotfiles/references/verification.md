@@ -136,7 +136,24 @@ push前の検証は`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI�
 2. 生成型を前提とする`function-hooks-types`を単独で先に実行する（`uv run --frozen pyfltr run --commands=function-hooks-types`）。
    型が未展開で終了2になったら、本書「変更範囲の検証の値」のFunction hooksモジュールの項のとおり型を用意して`FUNCTION_HOOKS_TYPES`で渡し、同じコマンドを再実行する。
 3. CIのpyfltrで無効にしている残りのチェックを実行する。
-   形は`uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version,plugin-version --enable=statusline-version,plugin-version`である。
+   通常の作業ブランチでは次のコマンドを使う。
+
+   ```bash
+   uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version,plugin-version --enable=statusline-version,plugin-version
+   ```
+
+   固定OIDを送る場合は、検証用worktreeのHEADが送る候補の完全OIDと一致し、変更が残っていないことを確かめる。
+   今回の宛先の直前の公開済み完全OIDを`base`、実際に送る候補の完全OIDを`candidate`に置く。
+   候補のupstreamや別の公開先の先端で代用しない。
+   次の2回で3チェックを各1回実行する。
+   固定した2つのOIDは`plugin-version`だけに渡し、`statusline-version`は従来どおり`origin/master`との共通祖先を基点にする。
+
+   ```bash
+   env -u BASE_SHA -u CURRENT_SHA uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version --enable=statusline-version
+   BASE_SHA="$base" CURRENT_SHA="$candidate" uv run --frozen pyfltr run --commands=plugin-version --enable=plugin-version
+   ```
+
+   両方の結果を確認してから公開へ進む。
 4. Windowsの分岐の実装、公開ランチャー、テストの入力・配置・共有fixtureを変え、同じ結果を手元で観測できない場合は、認可済みの候補branchの既存CIで、公開branchへ反映する前にWindows側を確かめる。
    Linuxで模した判定値と実Windowsの保証の分け方は`agent-basics:writing-standards/references/testing.md`「プラットフォーム分岐の検証」に従い、Linuxで完全に観測できる変更はローカルの検証と通常のCIで終える。
 

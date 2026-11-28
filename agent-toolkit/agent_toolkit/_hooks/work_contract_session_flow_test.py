@@ -8,9 +8,14 @@ import pathlib
 import pytest
 
 from agent_toolkit._agents_server import launch_requests
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import session_activity, session_registry
 from agent_toolkit._hooks import pretooluse, rules_context, user_prompt_submit, work_contract
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook
+
+
+@pytest.fixture(autouse=True)
+def _disable_live_review_host_for_contract_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(session_activity, "host_process", lambda: None)
 
 
 def _publish_launch(session_id: str, whole: pathlib.Path, handoff: pathlib.Path | None = None) -> None:

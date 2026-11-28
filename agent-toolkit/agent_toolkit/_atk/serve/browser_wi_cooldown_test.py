@@ -66,7 +66,7 @@ async def test_blocked_badge_tracks_unanswered_uwi_dependency(browser_harness: _
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarness) -> None:
+async def test_observation_awi_is_searchable_without_special_badge(browser_harness: _BrowserHarness) -> None:
     harness = browser_harness
     page = harness.page
     (_entry_path(harness.root, "verify.md")).write_text(
@@ -78,33 +78,28 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
         "---\ntype: awi\nstate: processing\ntarget_repo: example/repo\nsource: browser\n---\n\n処理中の本文\n", encoding="utf-8"
     )
     await page.goto(harness.base_url + "/")
-
-    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    expect = playwright.async_api.expect
+    await expect(page.locator('.entry-select[data-key="working.md"]')).to_be_visible()
     row = page.locator('.entry-select[data-key="verify.md"]')
-    badge = row.locator(".state-badge")
-    await playwright.async_api.expect(badge).to_have_text("確認待ち")
-    assert "受信" not in await row.locator(".status-cell").inner_text()
-    label = await row.get_attribute("aria-label")
-    assert label is not None
-    assert "確認待ち" in label.split("、")
-    assert "受信" not in label.split("、")
-    processing_badge = page.locator('.entry-select[data-key="working.md"] .state-badge')
-    style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
-    assert await badge.evaluate(style) == await processing_badge.evaluate(style)
-
-    await row.click()
-    detail = page.locator("#detail-dialog")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認待ち")
-    await detail.locator("#delete-button").click()
-    delete_dialog = page.get_by_role("dialog", name="削除の確認")
-    await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text("確認待ち")
-    await delete_dialog.locator("#delete-close-button").click()
-    await detail.locator("#detail-close-button").click()
+    await expect(row).to_have_count(0)
 
     await _open_filters(page)
     await page.locator("#state-filter").select_option("inbox")
-    await playwright.async_api.expect(page.locator('.entry-select[data-key="verify.md"]')).to_be_visible()
-    assert (_entry_path(harness.root, "verify.md")).is_file()
+    await expect(row.locator(".state-badge")).to_have_text("受信")
+    await expect(row).not_to_have_accessible_name(re.compile("確認待ち"))
+    assert await row.locator(".state-badge").get_attribute("data-needs-verify") is None
+
+    await page.goto(harness.base_url + "/?filename=verify.md")
+    detail = page.locator("#detail-dialog")
+    await expect(detail.locator("#detail-state")).to_have_text("受信")
+    await expect(detail.locator("#detail-content")).to_contain_text("観測待ちの本文")
+    more = detail.locator("#detail-more")
+    if await more.get_attribute("open") is None:
+        await more.locator("summary").click()
+    await detail.locator("#delete-button").click()
+    deletion = page.get_by_role("dialog", name="削除の確認")
+    await expect(deletion.locator("#delete-state")).to_have_text("受信")
+    assert _entry_path(harness.root, "verify.md").is_file()
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -171,6 +166,8 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await playwright.async_api.expect(warning).to_contain_text("unreadable.md")
     warning_text = await warning.text_content()
     assert warning_text is not None
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option("inbox")
     style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
     normal = page.locator('.entry-select[data-key="normal.md"] .state-badge')
     for filename in ["verify.md", "plain.md"]:
@@ -221,9 +218,9 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("再開待ち")
     await page.clock.run_for(11000)
     await playwright.async_api.expect(warning).to_have_text(warning_text)
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("確認待ち")
-    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("確認待ち")
-    for filename, expected in [("verify.md", "確認待ち"), ("plain.md", "受信"), ("question.md", "受信")]:
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("受信")
+    await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("受信")
+    for filename, expected in [("verify.md", "受信"), ("plain.md", "受信"), ("question.md", "受信")]:
         row = page.locator(f'.entry-select[data-key="{filename}"]')
         await playwright.async_api.expect(row.locator(".state-badge")).to_have_text(expected)
         assert "再開待ち" not in (await row.get_attribute("aria-label") or "").split("、")

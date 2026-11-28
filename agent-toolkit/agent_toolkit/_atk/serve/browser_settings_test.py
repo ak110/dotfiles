@@ -119,9 +119,10 @@ async def test_settings_shows_supported_keys_and_saves_with_cli_validation(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SERVE_PORT", "54001")
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/settings")
-    await playwright.async_api.expect(page.locator("[data-setting]")).to_have_count(
-        len(config_settings.MUTABLE_KEY_DEFAULTS) - 1
-    )
+    ordinary_keys = config_settings.MUTABLE_KEY_DEFAULTS.keys() - {"repositories", "codex_auto_reset", "claude_auto_reset"}
+    rows = page.locator("[data-setting]")
+    await playwright.async_api.expect(rows).to_have_count(len(ordinary_keys))
+    assert set(await rows.evaluate_all("elements => elements.map(row => row.dataset.setting)")) == ordinary_keys
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     port = page.locator('[data-setting="serve_port"]')
     await playwright.async_api.expect(port.get_by_label("保存値")).to_be_hidden()
@@ -272,36 +273,8 @@ async def test_settings_host_scope_and_native_deadline(
     await expect(page.get_by_label("期限（このブラウザーの時刻）")).to_have_attribute("type", "datetime-local")
     await expect(page.get_by_role("heading", name="工程別モデル")).not_to_be_visible()
     await page.get_by_role("navigation", name="設定の分類").get_by_text("利用枠", exact=True).click()
-    permission = page.locator('[data-setting="usage_reset_permissions"]')
-    await _open_setting(permission)
-    await permission.get_by_text("許可を追加").click()
-    await permission.get_by_text("詳細: アカウントの直接入力", exact=True).click()
-    await permission.get_by_label("アカウントを直接入力").fill("account")
-    await permission.get_by_label("回数").fill("0")
-    await permission.get_by_label("開始（このブラウザーの時刻）").fill("2099-01-01T00:00")
-    await permission.get_by_label("終了（このブラウザーの時刻）").fill("2099-01-02T00:00")
-    await permission.get_by_role("button", name="追加", exact=True).click()
-    await expect(permission.locator(".permission-caption").first).to_contain_text("回数0（使わない）")
-    saved = json.loads(config_settings.load_config()["usage_reset_permissions"])
-    expected_start = await page.evaluate("new Date('2099-01-01T00:00').toISOString()")
-    assert saved[0]["from"] == expected_start
-    assert saved[0]["scope"] == "codex"
-    assert re.fullmatch(r"codex-\d{8}-\d{6}-[a-f0-9]{8}", saved[0]["id"])
-    existing = permission.locator(f'[data-editor="usage_reset_permissions:{saved[0]["id"]}"]')
-    await existing.locator(".permission-caption").click()
-    direct = existing.get_by_text("詳細: アカウントの直接入力", exact=True)
-    await expect(existing.get_by_label("アカウント", exact=True)).to_have_value("account")
-    await expect(direct).to_be_hidden()
-    await expect(existing).not_to_contain_text("atk config usage --refresh")
-    await existing.get_by_label("エンジン").select_option("claude")
-    await expect(direct).to_be_visible()
-    await expect(existing).not_to_contain_text("atk config usage --refresh")
-    disclosure = direct.locator("xpath=..")
-    if await disclosure.get_attribute("open") is not None:
-        await direct.click()
-    await expect(disclosure).not_to_have_attribute("open", "")
-    await direct.click()
-    await expect(existing.get_by_label("アカウントを直接入力")).to_be_visible()
+    for key in ("usage_reset_permissions", "codex_auto_reset", "claude_auto_reset"):
+        await expect(page.locator(f'[data-setting="{key}"]')).to_have_count(0)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -420,7 +393,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
 
 
 @pytest.mark.parametrize("fails", [False, True])
-@pytest.mark.parametrize("editing", ["model", "permission", "hosts"])
+@pytest.mark.parametrize("editing", ["model", "server", "hosts"])
 @pytest.mark.asyncio(loop_scope="session")
 async def test_remote_save_result_remains_visible_while_editing_elsewhere(
     screen_harness: _ScreenHarness, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fails: bool, editing: str
@@ -457,14 +430,12 @@ async def test_remote_save_result_remains_visible_while_editing_elsewhere(
     status = page.locator("#settings-status")
     hosts_editor = page.locator('[data-setting="remote_hosts"]')
     try:
-        if editing == "permission":
-            await nav.select_option(label="利用枠")
-            await _open_setting(page.locator('[data-setting="usage_reset_permissions"]'))
-            add = page.locator('details[data-editor="usage_reset_permissions:"]')
-            await add.get_by_text("許可を追加", exact=True).click()
-            await add.get_by_text("詳細: アカウントの直接入力", exact=True).click()
-            draft = add.get_by_label("アカウントを直接入力")
-            save = add.get_by_role("button", name="追加", exact=True)
+        if editing == "server":
+            await nav.select_option(label="atk serve")
+            editor = page.locator('[data-setting="serve_host"]')
+            await _open_setting(editor)
+            draft = editor.get_by_label("保存値")
+            save = editor.get_by_role("button", name="保存", exact=True)
         elif editing == "hosts":
             await nav.select_option(label="atk serve")
             await _open_setting(hosts_editor)

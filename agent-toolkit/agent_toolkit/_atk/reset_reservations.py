@@ -1,7 +1,7 @@
-"""共有した利用枠のreset許可の回数を、同じprivate-notesを使う全端末の合計で数える予約台帳。  pyfltr: allow-comment
+"""同じprivate-notesを使う全端末の利用枠リセットを排他する予約台帳。  pyfltr: allow-comment
 
 消費の前に共有先へ予約を書き、同期先が受理したことを確かめてから消費を送る。
-予約の件数は確定（success）と未確定（pending）の合計で数え、拒否が確定した予約（closed）だけを除く。
+未確定の試行中や、同じアカウントの週次窓で成功後は、新しい消費を送らない。
 応答を失った予約はpendingのまま残し、同じ冪等キーで再送する。
 """
 
@@ -9,16 +9,12 @@ from __future__ import annotations
 
 import json
 import pathlib
-import socket
 import subprocess
-import time
-from collections.abc import Iterable
 from typing import Any, Literal
 
 from agent_toolkit._atk import config_settings
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._common.usage_settings import deadline
 lazy from agent_toolkit._atk import git_sync
 lazy from agent_toolkit._atk.wi import sync as wi_sync
 lazy from agent_toolkit._git import command as git_command
@@ -35,8 +31,12 @@ class ReservationError(_next_action.ActionableError):
     """共有先で予約を確定できない。消費を送ってはならない。  pyfltr: allow-comment"""
 
 
+class ReservationDenied(ReservationError):
+    """共有先でこの試行を受け付けないことが確定した。  pyfltr: allow-comment"""
+
+
 def shared_notes() -> pathlib.Path | None:
-    """同期先を持つprivate-notesを返す。無い環境は端末内の記録だけで数える。  pyfltr: allow-comment"""
+    """同期先を持つprivate-notesを返す。同期先がないときは消費の予約を作らない。  pyfltr: allow-comment"""
     path = config_settings.shared_settings_path()
     if path is None or not git_sync.has_remote(path.parent):
         return None
@@ -45,82 +45,6 @@ def shared_notes() -> pathlib.Path | None:
 
 def permission_entries(settings: dict[str, str]) -> list[dict[str, Any]]:
     return json.loads(settings.get(PERMISSIONS, "[]"))
-
-
-def encode_permissions(entries: list[dict[str, Any]]) -> str:
-    return json.dumps(entries, ensure_ascii=False, sort_keys=True)
-
-
-def _public_grant(grant: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in grant.items() if key not in {ISSUED, RETIRED}}
-
-
-def public_permissions(value: str) -> str:
-    entries = json.loads(value)
-    if any(ISSUED in item or RETIRED in item for item in entries):
-        return encode_permissions([_public_grant(item) for item in entries if item.get(RETIRED) is not True])
-    return value
-
-
-def retire_grant(grant: dict[str, Any]) -> dict[str, Any]:
-    return dict(grant, count=0) | {RETIRED: True}
-
-
-def _with_retirements(current: dict[str, str], entries: list[dict[str, Any]]) -> str:
-    identifiers = {item["id"] for item in entries}
-    for old in permission_entries(current):
-        # 別端末から古い一覧を保存しても、停止した旧許可を新規許可として復活させない。  # pyfltr: allow-comment
-        if old.get(RETIRED) is True and old["id"] in identifiers:
-            raise ValueError("発行し直した旧許可は復元できません。共有の値を使ってください")
-        if old["engine"] == "codex" and old.get(ISSUED) is not True and old["id"] not in identifiers:
-            entries.append(retire_grant(old))
-    return encode_permissions(entries)
-
-
-def migrate_permissions(current: dict[str, str], value: str) -> str:
-    issued = {
-        grant["id"]: grant
-        for grant in permission_entries(current)
-        if grant.get(ISSUED) is True and grant.get(RETIRED) is not True
-    }
-    entries = []
-    for item in json.loads(public_permissions(value)):
-        grant = issued.get(item["id"])
-        entries.append(grant if grant is not None and _public_grant(grant) == item else item)
-    return _with_retirements(current, entries)
-
-
-def mark_new_permissions(current: dict[str, str], value: str) -> str:
-    previous = {item["id"]: item.get(ISSUED) is True for item in permission_entries(current)}
-    entries = [{key: val for key, val in item.items() if key not in {ISSUED, RETIRED}} for item in json.loads(value)]
-    for item in entries:
-        if item["engine"] == "codex" and previous.get(item["id"], True):
-            item[ISSUED] = True
-    return _with_retirements(current, entries)
-
-
-def _active_grant(notes: pathlib.Path, permission: dict[str, Any], *, upstream: bool = False) -> dict[str, Any]:
-    path = notes / config_settings.SHARED_SETTINGS_FILENAME
-    if upstream:
-        result = git_command.run(["show", f"@{{u}}:{path.name}"], cwd=notes, capture_output=True, text=True, check=False)
-        current = json.loads(result.stdout) if result.returncode == 0 else {}
-    else:
-        current = config_settings.load_shared_settings(path)
-    for entry in permission_entries(current):
-        if entry.get(RETIRED) is not True and _public_grant(entry) == permission:
-            return entry
-    return {}
-
-
-def is_issued(notes: pathlib.Path, permission: dict[str, Any]) -> bool:
-    return _active_grant(notes, permission).get(ISSUED) is True
-
-
-def _legacy_unconfirmed() -> ReservationError:
-    return ReservationError(
-        "旧端末の消費回数を確認できないため、この許可から新しい消費は送らない",
-        next_action="設定画面の利用枠で旧許可を確認し、必要な回数を共有許可として発行し直す",
-    )
 
 
 def _parse(text: str) -> list[dict[str, Any]]:
@@ -144,58 +68,6 @@ def _read(notes: pathlib.Path) -> list[dict[str, Any]]:
         return []
 
 
-def _read_upstream(notes: pathlib.Path) -> list[dict[str, Any]]:
-    result = git_command.run(["show", f"@{{u}}:{FILENAME}"], cwd=notes, capture_output=True, text=True, check=False)
-    return _parse(result.stdout) if result.returncode == 0 else []
-
-
-def used(records: Iterable[dict[str, Any]], permission_id: str) -> int:
-    return sum(
-        int(item.get("count", 1))
-        for item in records
-        if item["permission_id"] == permission_id and item["status"] in ("pending", "success")
-    )
-
-
-def read_used(notes: pathlib.Path, permission_id: str) -> int:
-    """現在の作業ツリーにある台帳の使用数。判定の確定は`reserve`が共有先で行う。  pyfltr: allow-comment"""
-    return used(_read(notes), permission_id)
-
-
-def local_unshared_usage(state_dir: pathlib.Path, permission_id: str) -> int:
-    root = state_dir / "agents-server" / "codex-auto-reset"
-    try:
-        paths = list(root.iterdir())
-    except FileNotFoundError:
-        return 0
-    total = 0
-    for path in paths:
-        if path.suffix != ".json":
-            continue
-        try:
-            attempt = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            continue
-        if not isinstance(attempt, dict):
-            raise ValueError("端末のCodex reset記録が不正です")
-        carried = attempt.get("carried_permissions", [])
-        used_permissions = attempt.get("used_permissions", {})
-        if not isinstance(carried, list) or not isinstance(used_permissions, dict):
-            raise ValueError("端末のCodex reset記録が不正です")
-        if permission_id not in carried:
-            count = used_permissions.get(permission_id, 0)
-            if not isinstance(count, int) or isinstance(count, bool) or count < 0:
-                raise ValueError("端末のCodex reset記録の使用回数が不正です")
-            total += count
-    return total
-
-
-def _prune(records: list[dict[str, Any]], permissions: list[dict[str, Any]], now: float) -> list[dict[str, Any]]:
-    # 許可期間が終わった許可の記録は、回数の判定にも同じ冪等キーの再送にも使わないため整理する。  # pyfltr: allow-comment
-    open_ids = {item["id"] for item in permissions if now < deadline(item["until"])}
-    return [item for item in records if item["permission_id"] in open_ids]
-
-
 def _write(notes: pathlib.Path, records: list[dict[str, Any]]) -> None:
     atomic_write(notes / FILENAME, json.dumps({"reservations": records}, ensure_ascii=False, indent=2) + "\n", fsync=True)
 
@@ -217,91 +89,124 @@ def _commit(notes: pathlib.Path, message: str, verify: Any) -> None:
         )
 
 
-def reserve(
+def _weekly_upstream(notes: pathlib.Path) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    if not git_sync.has_remote(notes):
+        raise ReservationError(
+            "利用枠のreset予約に必要な共有先がありません",
+            next_action="private-notesの共有先を設定する",
+        )
+    upstream = git_command.output(["rev-parse", "@{u}"], notes)
+    names = git_command.output(
+        ["ls-tree", "--name-only", upstream, "--", config_settings.SHARED_SETTINGS_FILENAME, FILENAME], notes
+    ).splitlines()
+    settings = (
+        json.loads(git_command.output(["show", f"{upstream}:{config_settings.SHARED_SETTINGS_FILENAME}"], notes))
+        if config_settings.SHARED_SETTINGS_FILENAME in names
+        else {}
+    )
+    if not isinstance(settings, dict):
+        raise ValueError("共有の利用枠設定の形式が不正")
+    records = _parse(git_command.output(["show", f"{upstream}:{FILENAME}"], notes)) if FILENAME in names else []
+    for item in records:
+        if item["status"] == "pending" or any(name in item for name in ("key", "account", "resets_at")):
+            resets_at = item.get("resets_at")
+            valid = (
+                isinstance(item.get("key"), str)
+                and bool(item["key"])
+                and isinstance(item.get("account"), str)
+                and bool(item["account"])
+                and isinstance(resets_at, int)
+                and not isinstance(resets_at, bool)
+                and resets_at > 0
+                and ("credit_id" not in item or item["credit_id"] is None or isinstance(item["credit_id"], str))
+            )
+            if not valid:
+                raise ValueError(f"{FILENAME}の試行の形式が不正")
+    return settings, records
+
+
+def reserve_weekly(
     notes: pathlib.Path,
     *,
-    permission: dict[str, Any],
     key: str,
     account: str,
     resets_at: int,
-    carried: int,
-    permissions: list[dict[str, Any]],
-    now: float | None = None,
-    retry: bool = False,
-) -> None:
-    """共有先で予約を確定する。上限を超える場合と共有先が受理しない場合は`ReservationError`を送出する。  pyfltr: allow-comment
+    credit_id: str | None,
+    legacy_permission_id: str | None = None,
+) -> Status | None:
+    """同一内容の記録があれば状態を返し、新規予約を確定した場合はNoneを返す。  pyfltr: allow-comment"""
+    attempt = {"key": key, "account": account, "resets_at": resets_at, "credit_id": credit_id}
 
-    `carried`は共有を始める前に端末内で数えた使用数で、初回の予約と同時に台帳へ移す。
-    """
+    def check() -> tuple[Status | None, list[dict[str, Any]]]:
+        settings, records = _weekly_upstream(notes)
+        if settings.get("codex_auto_reset", "false") != "true":
+            raise ReservationError(
+                "共有のCodex自動リセット設定が有効ではありません",
+                next_action="同じprivate-notesの共有設定を確認する",
+            )
+        if any(item.get(ISSUED) is True and item.get(RETIRED) is not True for item in permission_entries(settings)):
+            raise ReservationError(
+                "旧版向けの共有許可が残っているため、新しい試行を開始しません",
+                next_action="全端末の更新後に旧共有許可と台帳を確認する",
+            )
+        for item in records:
+            if item.get("key") == key:
+                if all(item.get(name) == attempt[name] for name in ("account", "resets_at")) and (
+                    ("credit_id" in item and item["credit_id"] == credit_id)
+                    or ("credit_id" not in item and item["permission_id"] == legacy_permission_id)
+                ):
+                    return item["status"], records
+                raise ReservationError(
+                    "同じキーの共有予約と試行内容が一致しません",
+                    next_action="既存の共有予約と送信結果を確認する",
+                )
+        if any(item["status"] == "pending" for item in records) or any(
+            item["status"] == "success" and item.get("account") == account and item["resets_at"] >= resets_at
+            for item in records
+        ):
+            raise ReservationDenied(
+                "未確定の試行または同じ週次窓以降の成功が共有先にあります",
+                next_action="既存の予約と利用枠の最新状態を確認する",
+            )
+        return None, records
+
     with wi_sync.repo_lock(notes):
         wi_sync.pull(notes)
-        permission_id, limit = permission["id"], permission["count"]
-
-        def check_grant(*, upstream: bool = False) -> None:
-            grant = _active_grant(notes, permission, upstream=upstream)
-            if not grant or (not retry and grant.get(ISSUED) is not True):
-                raise _legacy_unconfirmed()
-
-        check_grant()
-        upstream_records = _read_upstream(notes)
-        if retry and any(
-            item.get("key") == key
-            and item["permission_id"] == permission_id
-            and item.get("account") == account
-            and item["status"] == "pending"
-            for item in upstream_records
-        ):
-            check_grant(upstream=True)
-            return
-        records = _prune(_read(notes), permissions, time.time() if now is None else now)
-        if retry and any(item.get("key") == key for item in records):
-            raise _legacy_unconfirmed()
-        additions: list[dict[str, Any]] = []
-        if carried:
-            additions.append(
-                {
-                    "permission_id": permission_id,
-                    "count": carried,
-                    "status": "success",
-                    "host": socket.gethostname(),
-                    "carried": True,
-                }
+        status, records = check()
+        if status is not None:
+            return status
+        if legacy_permission_id is not None:
+            raise ReservationError(
+                "旧試行の未確定予約を共有先で確認できません",
+                next_action="新しい消費を送らず、旧版の送信結果と共有台帳を確認する",
             )
-        additions.append(
-            {
-                "permission_id": permission_id,
-                "key": key,
-                "account": account,
-                "resets_at": resets_at,
-                "status": "pending",
-                "host": socket.gethostname(),
-            }
-        )
-        needed = sum(int(item.get("count", 1)) for item in additions)
-
-        def check(current: list[dict[str, Any]]) -> None:
-            if used(current, permission_id) + needed > limit:
-                raise ReservationError(
-                    "共有先で数えたreset許可の回数が上限に達している",
-                    next_action="usage_reset_permissionsの許可と共有先の予約台帳を確認する",
-                )
-
-        check(records)
-        _write(notes, records + additions)
+        if _read(notes) != records:
+            raise ReservationError(
+                "共有先とこの端末のリセット台帳が一致しません",
+                next_action="private-notesのGit同期を確認する",
+            )
+        _write(notes, [*records, attempt | {"permission_id": "weekly", "status": "pending"}])
 
         def verify() -> None:
-            check_grant(upstream=True)
-            check(_read_upstream(notes))
+            concurrent_status, _ = check()
+            if concurrent_status is not None:
+                raise ReservationError(
+                    "同じ試行が先に共有先へ書き込まれました",
+                    next_action="同じキーと内容で共有予約を確認する",
+                )
 
-        _commit(notes, "chore: reserve usage reset", verify)
+        _commit(notes, "chore: reserve weekly usage reset", verify)
+        return None
 
 
 def finish(notes: pathlib.Path, key: str, status: Status) -> None:
-    """予約の結果を記録する。closedにすると件数から外れる。同期できなくても件数は多い側に残る。  pyfltr: allow-comment"""
+    """未確定の予約だけを確定する。同期できなければ共有の未確定予約が残る。  pyfltr: allow-comment"""
     with wi_sync.repo_lock(notes):
         wi_sync.pull(notes)
         records = _read(notes)
-        changed = [dict(item, status=status) if item.get("key") == key else item for item in records]
+        changed = [
+            dict(item, status=status) if item.get("key") == key and item["status"] == "pending" else item for item in records
+        ]
         if changed == records:
             return
         _write(notes, changed)

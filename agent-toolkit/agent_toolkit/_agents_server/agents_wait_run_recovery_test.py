@@ -4,13 +4,23 @@
 import json
 import pathlib
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
-from agent_toolkit._agents_server import agents_wait, notice_inbox, retained_results, shared_layout
+from agent_toolkit._agents_server import (
+    agents_wait,
+    notice_inbox,
+    responses,
+    result_projection,
+    retained_results,
+    shared_layout,
+    wait_run,
+)
+from agent_toolkit._common import session_registry
 from agent_toolkit._testing.agents_wait_support import _publish_result_on_sleep, _running_body, _write_own_status
 from agent_toolkit._testing.agents_wait_support import _short_wait as _short_wait
+from agent_toolkit._testing.agents_wait_support import _wait_environment as _wait_environment
 from agent_toolkit._testing.agents_wait_support_contention import (
     _alive_followers,
     _interrupt_after_published,
@@ -21,6 +31,304 @@ from agent_toolkit._testing.agents_wait_support_contention import (
     _stash_result,
     _write_current_wait_run,
 )
+
+_REVIEW_ACTION = "同じレビュー担当の前回の返却"
+
+
+@pytest.fixture(name="review_results")
+def _review_results(wait_environment: pathlib.Path) -> pathlib.Path:
+    wait_environment.mkdir(parents=True)
+    return wait_environment
+
+
+def _write_review_reply(
+    results: pathlib.Path,
+    turn: int,
+    *,
+    session_id: str = "session-1",
+    label: str = "continuation-review",
+    kind: Literal["delegate", "explore", "shell"] = "delegate",
+    task_role: str | None = None,
+    status: str = "completed",
+    held: bool = False,
+    record_turn: bool = True,
+    body: bool = True,
+    format_recovered: bool = False,
+) -> None:
+    session_registry.publish(
+        session_id,
+        state=session_registry.PublicationState.from_status(status, result_available=True),
+        launch_kind=kind,
+        launch_info=session_registry.LaunchInfo(task_role=task_role),
+        model_type="execute",
+        turn_seq=turn,
+        result_contract_recovery_consumed=format_recovered,
+        state_root=results.parents[2],
+    )
+    result = {
+        "session": {"session_id": session_id, "label": label},
+        "status": status,
+        **({"agent_message": f"返却 {turn}"} if body else {}),
+        **({"turn_seq": turn, "finalized_at": "2026-11-28T09:00:00Z"} if record_turn else {}),
+        **({"error": {"heldResultFinalized": True}} if held else {}),
+    }
+    (results / f"{session_id}.json").write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+
+
+def _wait_review(results: pathlib.Path) -> int:
+    return agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=results.parents[2])
+
+
+def _review_row(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
+    result = capsys.readouterr()
+    assert not result.err
+    return json.loads(result.out)
+
+
+def _review_run_directory(results: pathlib.Path) -> pathlib.Path:
+    return results.parent / "wait-results" / "root.json"
+
+
+@pytest.mark.parametrize("last_turn", [3, 6])
+def test_wait_guides_only_first_free_text_review_reply(review_results, capsys, monkeypatch, last_turn):
+    monkeypatch.setattr(result_projection, "was_review_guidance_presented", lambda *_: True)
+    monkeypatch.setattr(result_projection, "has_read_review_guidance", lambda *_: True)
+    rows = []
+    for turn in range(1, last_turn + 1):
+        _write_own_status(review_results, [{"session_id": "session-1"}])
+        _write_review_reply(review_results, turn, kind="explore")
+        assert _wait_review(review_results) == 0
+        rows.append(_review_row(capsys))
+
+    assert [index for index, row in enumerate(rows, 1) if _REVIEW_ACTION in row["next_action"]] == [2]
+    previous_path = pathlib.Path(rows[0]["agent_message_path"])
+    assert previous_path.read_text(encoding="utf-8") == "返却 1"
+    action = rows[1]["next_action"]
+    assert result_projection.REVIEW_RESULT_NEXT_ACTION not in action
+    assert action.splitlines()[:-1] == rows[0]["next_action"].splitlines()
+    assert str(previous_path) in action
+    assert "「方式見直しと再レビュー」手順11の条件に当たるかを判定してから修正を依頼する" in action
+    assert "論点の再発や再レビューの要否を判定したものではない" in action
+
+
+@pytest.mark.parametrize(
+    ("earlier", "current"),
+    [
+        ({"status": "failed"}, {}),
+        ({"status": "interrupted"}, {}),
+        ({"held": True}, {}),
+        ({}, {"status": "failed"}),
+        ({}, {"status": "interrupted"}),
+        ({}, {"held": True}),
+        ({}, {"label": "reader-fit-review"}),
+        ({}, {"label": "other-label"}),
+        ({}, {"task_role": "exec-review"}),
+        ({}, {"kind": "shell"}),
+        ({}, {"record_turn": False}),
+        ({"record_turn": False}, {}),
+    ],
+    ids=[
+        "previous-failed",
+        "previous-interrupted",
+        "previous-wait-statement",
+        "failed",
+        "interrupted",
+        "wait-statement",
+        "reader-fit",
+        "other-label",
+        "task-role",
+        "shell",
+        "unknown-current-turn",
+        "unknown-previous-turn",
+    ],
+)
+def test_wait_keeps_normal_delivery_outside_review_reply_conditions(review_results, capsys, earlier, current):
+    for turn, options in enumerate((earlier, current), 1):
+        _write_own_status(review_results, [{"session_id": "session-1"}])
+        _write_review_reply(review_results, turn, **options)
+        assert _wait_review(review_results) == 0
+        row = _review_row(capsys)
+        assert row["agent_message"] == f"返却 {turn}"
+        assert _REVIEW_ACTION not in row.get("next_action", "")
+
+
+@pytest.mark.parametrize(
+    "source", ["send-message", "other-recipient", "unreadable-directory", "damaged-run", "format-recovery"]
+)
+def test_wait_counts_only_eligible_deliveries_in_recipient_history(review_results, capsys, monkeypatch, source):
+    if source == "send-message":
+        previous = result_projection.with_result_next_action({"status": "completed", "agent_message": "返却 1"}, "scope-review")
+        reply = responses.public_send_message_response(
+            {"delivery": "reply_started", "label": "scope-review", "previous_result": previous}
+        )
+        assert reply["previous_result"]["next_action"] == result_projection.REVIEW_RESULT_NEXT_ACTION
+    else:
+        directory = _review_run_directory(review_results)
+        target = directory.with_name("other.json") if source == "other-recipient" else directory
+        target.mkdir(parents=True)
+        recorded = wait_run.RunningRun(run_id="earlier", targets=["session-1"]).publish(
+            json.dumps({"status": "completed", "session_id": "session-1"}), 0, "stdout", result_turns={"session-1": 1}
+        )
+        if source != "format-recovery":
+            recorded = recorded.deliver(continuable=False)
+        (target / "earlier.json").write_text(
+            "{" if source == "damaged-run" else recorded.model_dump_json(exclude_unset=True), encoding="utf-8"
+        )
+        if source == "unreadable-directory":
+            original = pathlib.Path.iterdir
+
+            def unreadable(path):
+                if path == directory:
+                    raise PermissionError("待機run一覧を読めない")
+                return original(path)
+
+            monkeypatch.setattr(pathlib.Path, "iterdir", unreadable)
+
+    _write_own_status(review_results, [{"session_id": "session-1"}])
+    _write_review_reply(review_results, 2, format_recovered=source == "format-recovery")
+    assert _wait_review(review_results) == 0
+    first = _review_row(capsys)
+    assert first["agent_message"] == "返却 2"
+    assert _REVIEW_ACTION not in first["next_action"]
+    if source == "format-recovery":
+        _write_own_status(review_results, [{"session_id": "session-1"}])
+        _write_review_reply(review_results, 3)
+        assert _wait_review(review_results) == 0
+        assert first["agent_message_path"] in _review_row(capsys)["next_action"]
+
+
+@pytest.mark.parametrize("damage", ["launch-kind-type", "missing-model"])
+def test_wait_delivers_when_review_registry_becomes_invalid_after_collection(review_results, capsys, monkeypatch, damage):
+    for turn in (1, 2):
+        _write_own_status(review_results, [{"session_id": "session-1"}])
+        _write_review_reply(review_results, turn)
+        if turn == 1:
+            assert _wait_review(review_results) == 0
+            _review_row(capsys)
+    path = session_registry.registry_directory(review_results.parents[2]) / "session-1.json"
+    release = agents_wait.wait_targets.release_wait_target
+
+    def release_then_damage(root, owner, session_id, state_root):
+        release(root, owner, session_id, state_root)
+        if session_id == "session-1":
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if damage == "launch-kind-type":
+                record["launch_kind"] = []
+            else:
+                record.pop("model")
+            replacement = path.with_suffix(".replacement")
+            replacement.write_text(json.dumps(record), encoding="utf-8")
+            replacement.replace(path)
+
+    monkeypatch.setattr(agents_wait.wait_targets, "release_wait_target", release_then_damage)
+    assert _wait_review(review_results) == 0
+    row = _review_row(capsys)
+    assert row["status"] == "completed"
+    assert row["agent_message"] == "返却 2"
+    assert pathlib.Path(row["agent_message_path"]).read_text(encoding="utf-8") == "返却 2"
+    assert row["next_action"] == result_projection.REVIEW_RESULT_NEXT_ACTION
+
+
+@pytest.mark.parametrize("interrupt", ["before-body", "before-output", "after-output"])
+def test_wait_recovers_first_review_reply_until_delivery_is_confirmed(review_results, capsys, monkeypatch, interrupt):
+    _write_own_status(review_results, [{"session_id": "session-1"}])
+    _write_review_reply(review_results, 1, body=False)
+    assert _wait_review(review_results) == 0
+    assert _REVIEW_ACTION not in _review_row(capsys)["next_action"]
+    _write_own_status(review_results, [{"session_id": "session-1"}])
+    _write_review_reply(review_results, 2)
+    first_output: dict[str, Any] | None = None
+    if interrupt == "before-output":
+        _interrupt_after_published(monkeypatch, review_results.parents[2], capsys)
+    elif interrupt == "before-body":
+
+        def fail_body(*_args):
+            raise OSError("本文を保存できない")
+
+        with monkeypatch.context() as injection:
+            injection.setattr(agents_wait._BodyFileWriter, "write", fail_body)  # pylint: disable=protected-access
+            assert _wait_review(review_results) == 11
+        output = capsys.readouterr()
+        assert not output.out and "結果本文のファイルを書けません" in output.err
+    else:
+        original_write = agents_wait._write_json  # pylint: disable=protected-access
+
+        def interrupt_before_confirmation(path, value):
+            if value.get("status") == "foreground-delivered":
+                raise KeyboardInterrupt
+            original_write(path, value)
+
+        with monkeypatch.context() as injection:
+            injection.setattr(agents_wait, "_write_json", interrupt_before_confirmation)
+            with pytest.raises(KeyboardInterrupt):
+                _wait_review(review_results)
+        first_output = _review_row(capsys)
+        assert _REVIEW_ACTION in first_output["next_action"]
+
+    assert _wait_review(review_results) == 0
+    recovered = _review_row(capsys)
+    assert recovered["agent_message"] == "返却 2"
+    assert recovered["next_action"].count(_REVIEW_ACTION) == 1
+    assert "前回の`atk agents wait`の出力" in recovered["next_action"]
+    if first_output is not None:
+        assert recovered == first_output
+
+    directory = _review_run_directory(review_results)
+    current = wait_run.read_current(directory / "current.json")
+    assert current is not None
+    _write_own_status(review_results, [{"session_id": "still-running", "status": "running"}])
+    acquire = agents_wait.acquire_lock
+    contended = True
+
+    def acquire_after_preceding_wait(stream, **options):
+        nonlocal contended
+        if contended:
+            contended = False
+            raise BlockingIOError("先行する待機が所有")
+        acquire(stream, **options)
+
+    with monkeypatch.context() as injection:
+        injection.setattr(agents_wait, "acquire_lock", acquire_after_preceding_wait)
+        injection.setattr(agents_wait, "get_cli_wait_timeout", lambda _: 10)
+        injection.setattr(agents_wait.time, "sleep", lambda _: None)
+        assert _wait_review(review_results) == 8
+    reference = _review_row(capsys)
+    assert reference["status"] == "consumed"
+    assert reference["recovery"]["run_path"] == str(directory / f"{current.run_id}.json")
+    assert reference["recovery"]["agent_message_paths"] == [recovered["agent_message_path"]]
+    assert _REVIEW_ACTION not in json.dumps(reference, ensure_ascii=False)
+
+
+def test_wait_deduplicates_review_turns_with_one_scan_for_the_batch(review_results, capsys, monkeypatch):
+    directory = _review_run_directory(review_results)
+    ids = ["session-1", "session-2"]
+    reads = []
+    original_read = wait_run.read_run
+
+    def read(path):
+        if path.name.startswith("history-"):
+            reads.append(path.name)
+        return original_read(path)
+
+    monkeypatch.setattr(wait_run, "read_run", read)
+    directory.mkdir(parents=True)
+    for index in range(1, 101):
+        earlier_ids = ids if index <= 2 else ["other-session"]
+        launch = wait_run.RunningRun(run_id=f"history-{index}", targets=earlier_ids)
+        output = "\n".join(json.dumps({"status": "completed", "session_id": identifier}) for identifier in earlier_ids)
+        turns = dict.fromkeys(earlier_ids, 1)
+        delivered = launch.publish(output, 0, "stdout", result_turns=turns).deliver(continuable=False)
+        (directory / f"history-{index}.json").write_text(delivered.model_dump_json(), encoding="utf-8")
+
+    for label, current_ids in (("other-label", ["session-3", "session-4"]), ("scope-review", ids)):
+        _write_own_status(review_results, [{"session_id": identifier} for identifier in current_ids])
+        for identifier in current_ids:
+            _write_review_reply(review_results, 2, session_id=identifier, label=label)
+        assert _wait_review(review_results) == 0
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert {row["session_id"] for row in rows} == set(current_ids)
+        assert [_REVIEW_ACTION in row.get("next_action", "") for row in rows] == [label == "scope-review"] * len(current_ids)
+        assert len(reads) == len(set(reads)) == (0 if label == "other-label" else 100)
 
 
 @pytest.mark.parametrize(

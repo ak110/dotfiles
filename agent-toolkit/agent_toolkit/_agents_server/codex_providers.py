@@ -18,7 +18,7 @@ from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._atk import codex_connection, reset_reservations, usage_refresh
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._common import codex_fast_mode, codex_usage_limit, runtime_environment, state_paths
+from agent_toolkit._common import codex_fast_mode, codex_usage_limit, runtime_environment
 
 CONTINUE_PROMPT = "以前の会話と実行結果を確認し、完了済みの操作を繰り返さず、未完了の作業を続けて所定の返却形式を返せ。"
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -205,17 +205,11 @@ async def select(
             usage_limit_type, usage_limit_resets_at = limit.limit_type, limit.resets_at
             if allowed is False and primary is None and quota_workspace is None:
                 try:
-                    permissions = await run_file_operation(codex_auto_reset.active_permissions)
-                    if permissions:
-                        root = await run_file_operation(state_paths.state_dir)
-                        auto_reset_permitted = await run_file_operation(
-                            codex_auto_reset.has_permission,
-                            permissions,
-                            account,
-                            snapshot_id,
-                            state_dir=root,
-                            shared_notes=await run_file_operation(reset_reservations.shared_notes),
-                        )
+                    auto_reset_permitted = (
+                        codex_auto_reset.eligible_account(account)
+                        and await run_file_operation(codex_auto_reset.enabled)
+                        and await run_file_operation(reset_reservations.shared_notes) is not None
+                    )
                 except OSError, ValueError:
                     _LOG.exception("Codex自動resetの許可を確認できません。設定と台帳を確認してください")
     return ProviderSelection(

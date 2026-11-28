@@ -8,7 +8,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import config, state, wi_operations
+from agent_toolkit._atk.serve import config, state, wi_operations, wi_routes
 from agent_toolkit._atk.wi.layout import entry_path
 from agent_toolkit._testing.serve_app_support import _OBSERVATION_RECORD, _fixed_path, _serve_app
 from agent_toolkit._testing.serve_support import AWI_TEXT, _write_repo_entry
@@ -78,18 +78,25 @@ async def test_entries_cooldown_conditions(
 
 
 @pytest.mark.asyncio
-async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> None:
+async def test_entries_exclude_observation_only_awi_before_pagination(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(wi_routes, "_ENTRY_PAGE_SIZE", 2)
     awi = "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n# 件名\n\n本文\n\n"
     uwi = "---\nstate: inbox\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
-    other_record = _OBSERVATION_RECORD.replace("反映後の観測だけが残る", "実装から再開する")
+    other_record = _OBSERVATION_RECORD.replace("反映後の観測だけが残る", "再実装へ戻す")
     cases = {
         ("inbox", "verify.md"): (awi + _OBSERVATION_RECORD, True),
         ("inbox", "latest-verify.md"): (awi + other_record + "\n" + _OBSERVATION_RECORD, True),
         ("inbox", "plain.md"): (awi, False),
-        ("processing", "processing.md"): (awi + _OBSERVATION_RECORD, False),
+        ("processing", "processing.md"): (awi + _OBSERVATION_RECORD, True),
         ("hold", "hold.md"): (awi + _OBSERVATION_RECORD, False),
         ("inbox", "other.md"): (awi + _OBSERVATION_RECORD + "\n" + other_record, False),
         ("inbox", "fenced.md"): (awi + "```markdown\n" + _OBSERVATION_RECORD + "```\n", False),
+        ("inbox", "fenced-marker.md"): (
+            awi + other_record + "\n```markdown\n" + _OBSERVATION_RECORD.split("\n\n", 1)[1] + "```\n",
+            False,
+        ),
         ("inbox", "uwi.md"): (uwi + _OBSERVATION_RECORD, False),
     }
     for (state_name, filename), (text, _expected) in cases.items():
@@ -100,11 +107,22 @@ async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> N
     inbox = await (await client.get("/api/entries?status=inbox&period=all")).get_json()
     detail = await (await client.get("/api/entries/inbox/verify.md")).get_json()
 
-    flags = {(item["state"], item["filename"]): item["needs_verify"] for item in listed["entries"]}
+    flags = {(item["state"], item["filename"]): item["awaiting_observation"] for item in listed["entries"]}
     assert flags == {key: expected for key, (_text, expected) in cases.items()}
     assert ("inbox", "verify.md") in {(item["state"], item["filename"]) for item in inbox["entries"]}
-    assert detail["entry"]["needs_verify"] is True
+    assert detail["entry"]["awaiting_observation"] is True
     assert detail["entry"]["state"] == "inbox"
+    assert _OBSERVATION_RECORD.strip() in detail["entry"]["content"]
+    url = "/api/entries?view=normal&status=active&period=all"
+    normal = await (await client.get(url)).get_json()
+    expected = {"hold.md", "plain.md", "other.md", "fenced.md", "fenced-marker.md", "uwi.md"}
+    assert {item["filename"] for item in normal["entries"]} == expected
+    pages = [await (await client.get(f"{url}&page={number}")).get_json() for number in (1, 2, 3)]
+    assert [page["pagination"]["total_count"] for page in pages] == [6, 6, 6]
+    assert [page["pagination"]["page_count"] for page in pages] == [3, 3, 3]
+    assert [item for page in pages for item in page["entries"]] == normal["entries"]
+    processing = await (await client.get("/api/entries?status=processing&period=all")).get_json()
+    assert [item["filename"] for item in processing["entries"]] == ["processing.md"]
 
 
 @pytest.mark.asyncio

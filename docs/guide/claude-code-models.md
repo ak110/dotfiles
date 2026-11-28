@@ -31,7 +31,7 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 
 ## 工程別モデル設定
 
-### 利用枠とreset許可
+### 利用枠とリセット設定
 
 利用枠は画面の裏で取り直す。
 前回取得できた値は表示に残り、取得できない状態が続いたら「再取得」で取り直せる。
@@ -41,25 +41,22 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 取得できない枠は不明とし、取得済みの観測は時刻とともに表示する。
 追加課金の使用額、サブスクリプションの使用率、トークンから推定したAPI料金は別の値である。
 
-resetの自動消費は`usage_reset_permissions`の許可だけを使う。
-`atk serve`の「利用枠」では、使用率とリセット権を確認できる。
-画面で許可を登録するには「リセットの許可を設定」でエンジン・アカウントを選び、回数と開始・終了を確認して追加する。
-終了は週次リセットの1〜3日前を選べる。
-日時はブラウザーの時刻で入力する。
-おすすめは入力を補うだけで、保存は自動で行わない。
-CLIで許可を書く場合、Codexの`account`は`atk config usage --json`の`metadata.codex.permission_account`を使う。
-空なら`atk config usage --refresh`で取り直すか、メールアドレスまたはそのSHA-256を使う。
-Claudeでは登録済みの在庫の`account`を使う。
-`account`は確認したアカウント、日時はタイムゾーン付き、`count`は期間内の上限回数とする。
-Codexの対象は`scope`を`codex`とし、旧`codex_auto_reset=true`だけを消費許可には読み替えない。
-自然回復が近い場合や作業がない場合は消費しない。
-検収や導入だけを目的に実際の権利を消費しない。
-消費ペースから週次枠の枯渇を見込む時は、同じ観測元・契約・アカウントで2区間かつ30分以上の稼働を観測し、直近の観測が10分以内なら、その稼働割合を反映する。
-観測が足りなければ連続稼働を仮定する。
-許可が空なら、自動resetのための定期照会は行わない。
+「利用枠」に、Codexの「リセット権を自動で使う」とClaudeの「手動リセットを推奨する」がある。
+どちらも既定は無効で、無効でも利用枠は読める。
+設定を変えるには対象の項目を選び「保存」を押す。
+CLIでは `atk config get`、`atk config set` にキー `codex_auto_reset` または `claude_auto_reset` を指定する。
 
-Claudeの在庫・期限・対象は`atk config usage --set-claude-reset-inventory <JSON配列>`に入力し、`atk config usage --json`の案内にある公式Usage画面で手動消費する。
-消費後は在庫を更新し、`atk config usage --refresh`で残量を取り直す。
+同じprivate-notesを使うホストを全て更新してから、必要な項目だけを有効にする。
+旧許可、旧保存値、旧環境変数から有効にはしない。
+Codexの消費は共有先に予約が確定した場合だけ送る。
+未確定の別試行がある間は送らず、同じアカウントの同じ週次窓で成功した後に重ねて消費しない。
+自然回復が近い場合や作業がない場合も新たには消費しない。
+導入確認に実際の権利を使わない。
+
+Claudeの自動消費は未対応。
+登録した在庫・期限・対象と利用枠の状態が合うときだけ、手動操作を推奨する。
+在庫は `atk config usage --set-claude-reset-inventory <JSON配列>` で記録する。
+[Claudeの利用状況画面](https://claude.ai/settings/usage) で手動で使用し、在庫を更新してから `atk config usage --refresh` で残量を取り直す。
 Fable限定などの対象を、他モデルや別の枠の回復へ読み替えない。
 
 ### モデル候補の保存
@@ -176,16 +173,16 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 未設定の環境では、executeを`codex:sol/medium,claude:opus[1m]/medium`の順に試す。
 以前に保存した候補列はそのまま使う。
 
-同じprivate-notesを同期する環境では、工程別モデル、`codex_fast_mode`、`usage_reset_permissions`を共有する。
-reset許可の回数は、共有先の予約台帳で全端末の合計として数える。
+同じprivate-notesを同期する環境では、工程別モデル、`codex_fast_mode`、リセット設定を共有する。
+リセット設定は一時指定・環境変数ではなく保存した値を使う。
 ファイルの場所と共有設定から解決したキーは`atk config show`の標準エラーで確認できる。
-特定のホストだけ変える場合は`atk config temporary`か`AGENT_TOOLKIT_CONFIG_<KEY>`を使う。
+リセット設定以外を特定のホストだけ変える場合は、`atk config temporary`か`AGENT_TOOLKIT_CONFIG_<KEY>`を使う。
 共有する値は、安全に確定できる分を起動や保存時に移す。
 端末と共有先で異なる保存値の扱いは[共有設定への移行](claude-code-settings.md#共有設定への移行)を参照。
 `set`で保存済みでも上書き元の案内が出たときは、その設定を解除して`get`で確かめる。
 
 初期設定ではCodexの5時間枠の解除を待つ。
-それ以外の枠は適用できるreset許可があれば先に確認し、resetしなければ使用順の残りの接続先や次のモデル候補を使う。
+それ以外の枠はCodexの自動リセットを有効にした場合は先に確認し、resetしなければ使用順の残りの接続先や次のモデル候補を使う。
 利用上限で待つ間は、`agents_server`の委譲先、`atk wi process-loop`、`atk run-skill`が解除後に同じ会話で作業を続け、待機理由と予定時刻を表示する。
 ユーザーが起動したClaude Codeの会話も、agent-toolkitのFunction hooksを有効にしていれば解除後に自動で再開する。
 解除予定が不明な場合は300秒ごとに再確認するため、待機中もClaude Codeを起動したままにする。

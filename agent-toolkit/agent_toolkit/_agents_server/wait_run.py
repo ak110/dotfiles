@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import pathlib
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, TypeAdapter
 
-from agent_toolkit._agents_server import shared_layout
+from agent_toolkit._agents_server import result_projection, shared_layout
+from agent_toolkit._common import session_registry
+from agent_toolkit._common.json_lines import split_lines
 
 
 def _identifier(value: str) -> str:
@@ -131,3 +134,78 @@ def delivered_children(directory: pathlib.Path, turns: dict[str, int]) -> set[st
                 if delivered == turns.keys():
                     break
     return delivered
+
+
+def add_first_review_reply_actions(
+    results: list[dict[str, Any]], result_turns: dict[str, int], run_directory: pathlib.Path, state_root: pathlib.Path | None
+) -> None:
+    candidates: dict[str, int] = {}
+    for result in results:
+        seq = result_turns.get(result["session_id"])
+        label = result.get("label")
+        if (
+            seq is None
+            or seq <= 1
+            or result.get("status") != "completed"
+            or result_projection.is_finalized_wait_statement(result)
+            or not isinstance(label, str)
+            or not label.endswith(result_projection.REVIEW_LABEL_SUFFIX)
+            or label.endswith("reader-fit-review")
+        ):
+            continue
+        try:
+            info = session_registry.resolve(result["session_id"], state_root=state_root).resume_info
+        except KeyError, TypeError:
+            continue
+        if info is not None and info.launch_kind in {"delegate", "explore"} and not info.launch_info.task_role:
+            candidates[result["session_id"]] = seq
+    if not candidates:
+        return
+    previous_paths = _previous_completed_paths(run_directory, candidates)
+    for index, result in enumerate(results):
+        if result["session_id"] in previous_paths:
+            previous = previous_paths[result["session_id"]] or "前回の`atk agents wait`の出力"
+            results[index] = result_projection.append_result_next_action(
+                result,
+                f"同じレビュー担当の前回の返却（本文: {previous}）を受領済みで、今回はその後の返却である。"
+                "前回と今回の指摘を原因と害で対応付け、`reviewee.md`「方式見直しと再レビュー」手順11の条件に当たるかを判定してから"
+                "修正を依頼する。この行は、論点の再発や再レビューの要否を判定したものではない。",
+            )
+
+
+def _previous_completed_paths(directory: pathlib.Path, turns: dict[str, int]) -> dict[str, str | None]:
+    candidates = turns.copy()
+    previous: dict[str, tuple[int, str | None]] = {}
+    try:
+        for path in directory.iterdir():
+            if path.suffix != ".json" or path.name == "current.json":
+                continue
+            run = read_run(path)
+            if not isinstance(run, (ForegroundDeliveredRun, ConsumedRun)) or run.stream != "stdout":
+                continue
+            if not any(key in candidates and 0 < seq <= candidates[key] for key, seq in run.result_turns.items()):
+                continue
+            for line in split_lines(run.output):
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if not isinstance(row, dict) or not isinstance(key := row.get("session_id"), str):
+                    continue
+                seq = run.result_turns.get(key)
+                current = candidates.get(key)
+                if seq is None or current is None or not 0 < seq <= current:
+                    continue
+                if row.get("status") != "completed" or result_projection.is_finalized_wait_statement(row):
+                    continue
+                known = previous.get(key)
+                if seq == current or (known is not None and known[0] != seq):
+                    candidates.pop(key)
+                    previous.pop(key, None)
+                elif known is None or known[1] is None:
+                    body = row.get("agent_message_path")
+                    previous[key] = (seq, body if isinstance(body, str) and body else None)
+            if not candidates:
+                break
+    except OSError, UnicodeError, ValueError:
+        return {}
+    return {key: previous_path for key, (_, previous_path) in previous.items()}

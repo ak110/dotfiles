@@ -219,3 +219,62 @@ def test_public_check_rejects_invalid_derived_new_paths(
 
 
 __all__ = ["fixture_env"]
+
+
+@pytest.mark.parametrize(
+    ("filename", "scope", "expected"),
+    [
+        ("DISPLAY.md", "./", 0),
+        ("src/display.py", "./", 0),
+        ("DISPLAY.md", "src/", 1),
+        ("../DISPLAY.md", "./", 1),
+        ("/DISPLAY.md", "./", 1),
+        ("display?.md", "./", 1),
+        ("./DISPLAY.md", "./", 1),
+    ],
+)
+def test_public_selection_root_scope_applies_to_individual_derived_paths(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    filename: str,
+    scope: str,
+    expected: int,
+) -> None:
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`に新しい表示方針への導線を追記する。")
+    record = _derived(filename, scope)
+    record["要求"] = "表示方針を新設する"
+    record["配置根拠"] = "READMEと同じリポジトリの文書として置く"
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md", filename], "導出した新設先": [record]}],
+    )
+    assert _dispatch(str(selection), "--work-dir", str(repo)) == expected
+
+
+@pytest.mark.parametrize("individual_write", [False, True])
+def test_public_selection_keeps_derived_root_scope_separate_from_write_ownership(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    individual_write: bool,
+) -> None:
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`に新しい表示方針への導線を追記する。")
+    _awi(notes, "b.md", "`src/model.py`を変更する。")
+    writes = ["README.md", "DISPLAY.md" if individual_write else "./"]
+    selection = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": writes, "導出した新設先": [_derived("DISPLAY.md", "./")]},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": ["src/model.py"]},
+        ],
+    )
+    saved = tmp_path / "selected.yaml"
+    result = _dispatch(str(selection), "--work-dir", str(repo), "--output", str(saved))
+    if individual_write:
+        assert result == 0
+        assert yaml.safe_load(saved.read_text(encoding="utf-8"))["選定"][0]["書込対象"] == writes
+    else:
+        assert result == 1
+        assert "書込区分（`書込対象`・`公開工程の書込対象`）に同じパスが無い" in capsys.readouterr().err

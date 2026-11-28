@@ -335,7 +335,7 @@ def test_record_observation_updates_needs_verify_without_modifying_user_comment(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent_toolkit._atk.serve.wi_operations import _needs_verify  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk.serve.wi_operations import _awaiting_observation  # pylint: disable=import-outside-toplevel
 
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb-001.md", body="## 反映後の観測だけが残る\n\n旧記録\n\n## ユーザーコメント\n\n本人の記入")
@@ -343,12 +343,12 @@ def test_record_observation_updates_needs_verify_without_modifying_user_comment(
     details = tmp_path / "observation.md"
     details.write_text("- 残る完成条件: 配備先で新しい挙動を確認する", encoding="utf-8")
 
-    assert not _needs_verify("awi", "inbox", path.read_text(encoding="utf-8"))
+    assert not _awaiting_observation("awi", "inbox", path.read_text(encoding="utf-8"))
     for resume in ("needs-verify", "reimplement"):
         with pytest.raises(SystemExit) as result:
             atk.main(["wi", "record-observation", path.name, resume, "--body-file", str(details)], home=tmp_path)
         assert result.value.code == 0
         saved = path.read_text(encoding="utf-8")
-        assert _needs_verify("awi", "inbox", saved) is (resume == "needs-verify")
+        assert _awaiting_observation("awi", "inbox", saved) is (resume == "needs-verify")
         assert "state: inbox" in saved
         assert "旧記録" in saved and saved.endswith("## ユーザーコメント\n\n本人の記入\n")
