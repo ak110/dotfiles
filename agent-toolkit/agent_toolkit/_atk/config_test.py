@@ -13,10 +13,10 @@ import sys
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import claude_connection, codex_connection, config_migration, config_settings, git_sync
+from agent_toolkit._atk import claude_connection, codex_connection, config_migration, config_settings, git_sync, usage_refresh
 from agent_toolkit._atk import config as config_module
 from agent_toolkit._atk.wi import sync
-from agent_toolkit._common import codex_fast_mode, state_paths
+from agent_toolkit._common import codex_fast_mode, state_paths, usage_settings
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.config_support import (
     _config_file,
@@ -479,19 +479,64 @@ class TestCodexFastMode:
         assert capsys.readouterr().out == "false\n"
 
 
-@pytest.mark.parametrize(
-    "config", [{"codex_auto_reset": "true"}, {"codex_auto_reset": "true", "usage_auto_allocation": "true"}]
-)
-def test_codex_auto_reset_retires_key_without_creating_permissions(tmp_path, capsys, config):
-    _write_config(tmp_path, config)
-    assert _main(tmp_path, "config", "get", "usage_reset_permissions") == 0
-    output = capsys.readouterr()
-    assert output.out.splitlines() == ["[]"]
-    assert "消費許可は作成していない" in output.err
-    assert not _saved(tmp_path)
-    for action in (["get", "codex_auto_reset"], ["set", "codex_auto_reset", "true"]):
-        assert _main(tmp_path, "config", *action) == 2
-        assert "usage_reset_permissions" in capsys.readouterr().err
+def test_cli_usage_recommends_only_manual_claude_reset_when_enabled(tmp_path, capsys, monkeypatch):
+    now = 2000000000
+    monkeypatch.setattr(usage_refresh.time, "time", lambda: now)
+    usage_settings.record_metadata("claude", {"account": "cli-claude", "contract": "max"})
+    usage_refresh.record_claude_report(
+        {
+            "rate_limits": {
+                "limits": [{"kind": "weekly_scoped", "scope": {"model": "Opus"}, "percent": 95, "resets_at": now + 3600}]
+            }
+        },
+        contract="max",
+    )
+    usage_settings.save_claude_reset_inventory(
+        json.dumps(
+            [
+                {
+                    "id": "cli-right",
+                    "engine": "claude",
+                    "account": "cli-claude",
+                    "scope": "model:opus",
+                    "count": 1,
+                    "from": datetime.datetime.fromtimestamp(now - 600, datetime.UTC).isoformat(),
+                    "until": datetime.datetime.fromtimestamp(now + 1800, datetime.UTC).isoformat(),
+                }
+            ]
+        )
+    )
+
+    for enabled in (False, True):
+        assert _main(tmp_path, "config", "set", "claude_auto_reset", str(enabled).lower()) == 0
+        capsys.readouterr()
+        assert _main(tmp_path, "config", "usage") == 0
+        report = capsys.readouterr().out
+        assert "観測残量=5%" in report
+        assert ("自動消費は未対応。https://claude.ai/settings/usage" in report) is enabled
+        assert _main(tmp_path, "config", "usage", "--json") == 0
+        [right] = json.loads(capsys.readouterr().out)["claude_reset_advice"]
+        assert right["recommended"] is enabled
+        assert "手動消費後" in right["action"]
+
+
+@pytest.mark.parametrize("key", ["codex_auto_reset", "claude_auto_reset"])
+def test_reset_flag_reads_writes_without_reviving_old_authorization(tmp_path, capsys, monkeypatch, key):
+    path = _write_config(tmp_path, {key: "true", "usage_reset_permissions": "[]"})
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", "true")
+    assert _main(tmp_path, "config", "get", key) == 0
+    assert capsys.readouterr().out == "false\n"
+    assert _main(tmp_path, "config", "set", key, "true") == 0
+    assert json.loads(path.read_text(encoding="utf-8"))[key] is True
+    capsys.readouterr()
+    assert _main(tmp_path, "config", "get", key) == 0
+    assert capsys.readouterr().out == "true\n"
+    assert _main(tmp_path, "config", "set", key, "false") == 0
+    assert json.loads(path.read_text(encoding="utf-8"))[key] is False
+    assert _main(tmp_path, "config", "set", key, "yes") == 2
+    assert json.loads(path.read_text(encoding="utf-8"))[key] is False
+    assert _main(tmp_path, "config", "get", "usage_reset_permissions") == 2
+    assert _main(tmp_path, "config", "reissue-reset", "old") == 2
 
 
 def test_removed_allocation_setting_is_deleted_and_rejected(tmp_path, monkeypatch, capsys):

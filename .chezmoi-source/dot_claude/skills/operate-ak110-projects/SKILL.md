@@ -9,6 +9,8 @@ description: >
   「他プロジェクトへの反映」「プロジェクト間の同期」などを受けたエージェントが起動する。
   判定済みの依存更新だけを受託するレーンはAWI着手の契機では起動せず、独立した足回り変更など他の契機は適用する。
   個人プロジェクトで、他のプロジェクトでも個別の作業が必要なコード整理やテスト・検証・CIの改善を確定したときにも使う。
+  不具合の類似見直しや品質規範の改訂後の見直しを姉妹プロジェクトへ広げると判断したときにも使う。
+  dotfilesで成果物の品質基準を新設・強化し、姉妹プロジェクトの既存成果物へ追従させるときに使う。
   プロジェクト固有のアプリケーションロジック変更は対象外
 ---
 
@@ -21,18 +23,21 @@ description: >
 | 作業・条件 | 読む資料 |
 | --- | --- |
 | 足回り（ツールチェイン、lint設定、CI、文書構成）の変更や推奨ガイドの改訂を姉妹プロジェクトへ広げる。波及先の判定、追従提案の投入 | `references/project-synchronization.md` |
+| dotfilesの成果物の品質基準を新設・強化し、姉妹プロジェクトの既存成果物へ追従させる | dotfilesの `.claude/skills/edit-dotfiles-norms/references/norm-followup.md`「3つの追従」「工程と担当」。そこから `references/project-synchronization.md`「同期の手順」の5と7を使う |
 | 足回りファイルを編集する。追従提案のAWIの実施、lint違反と設定の緩和 | `references/cross-project-followup.md` |
 | 依存を更新する。AWI処理での要否の判定、明示の更新要求 | `references/dependency-update.md` |
 | 個人プロジェクトやdotfiles配布プラグインのバージョンを提案・確認する。リリースworkflowの有無を問わない | `references/release-operations.md`「実施」2 |
 | 公開とリリース。公開範囲、リリースの要否と実施、GLATasksの配備 | `references/release-operations.md` |
 | `README.md`、`AGENTS.md`、`docs/development/`の章構成を変える、そろえる | `references/doc-structure.md` |
 | gv・lcをLinuxで編集・検証する。prek、pyfltr、文書lintの呼び出しやCI workflowを変える | `references/ci-and-tooling.md` |
-| 他のプロジェクトでも個別の作業が必要な改善を確定する。追従台帳への追記 | `references/project-synchronization.md`「台帳への追記」 |
+| 姉妹プロジェクトまで類似見直しを広げるか、他のプロジェクトでも個別の作業が必要な改善を確定する。追従台帳への追記 | `references/project-synchronization.md`「台帳への追記」 |
 
 ## 前提
 
 対象はセッションの開始時に読み込まれるローカル指示のプロジェクト一覧に絶対パスが載るリポジトリである。
-台帳からの適用には、一覧内外を問わず手動スキル `apply-followup-ledger` を使う。
+届く姉妹プロジェクトへは追従AWIで適用する。
+この環境から届かない仕事用リポジトリなどや、WIを登録できないプロジェクトへ台帳を適用するときは、手動スキル `apply-followup-ledger` を使う。
+届くプロジェクトでも、本人が明示的に同スキルを起動できる。
 他のプロジェクトの作業中に`~/.claude/rules/agent-toolkit/`や`agent-toolkit:*`スキルの問題を見つけたら、原本のdotfiles側を直す。
 
 | プロジェクト | 一括更新コマンド | リリース運用の対象 |
@@ -62,4 +67,4 @@ description: >
 
 ## 台帳への追記
 
-足回り、コード整理、テスト・検証・CIの改善のうち、他のプロジェクトの既存成果物や設定に個別の作業が必要なものは、改善を確定した時に追従台帳へ記録する（`references/project-synchronization.md`「台帳への追記」）。
+追従台帳に記録する改善と類似見直しの条件、作業元に応じた追記・引き渡しは、`references/project-synchronization.md`「台帳への追記」に従う。

@@ -1,5 +1,3 @@
-  content: "";
-}
 :is(#screen-wi, .wi-reference-layer) dialog.dialog-shell {
   width: min(42rem, calc(100% - 2rem));
   max-height: calc(100svh - 2rem);

@@ -93,6 +93,7 @@
 3. 変更対象と方針を左右する未確定の判断を整理し（WIで確定済みの事項を除く）、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」を当てる。
    実装中に生じた同様の判断も同じに扱う。
    方針を確定する前に`agent-basics:writing-standards/references/quality-principles-subtraction.md`「変更の範囲」の既存例と比べ、比較先と結論を詳細化するWIの`## 調査結果と判断根拠`（詳細化しないWIは引き継ぎ記録）へ書く。
+   方針や完成条件を良くする見込みがある時は、`agent-toolkit:atk-mode/playbooks/request-intake.md`手順4の一流の専門家の問いも適用し、見込みが無ければ省く。
 4. `agent-toolkit:atk-mode/references/plan-format.md`「初回起草の雛形」へ対象WIを記入し、原稿をmanaged-tempへ保存する。
    `atk run-script plan-create -- --main-source <原稿の絶対パス> --name <名称> --work-dir <対象リポジトリ>`で計画ファイルを作る。
    レーン担当は`--name`の代わりに`--lane <レーン識別子>`を渡す（`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`）。

@@ -50,9 +50,9 @@ def enabled(*, force: bool = False) -> bool:
     now = time.monotonic()
     if force or now - _CLOCK.checked_at >= 60:
         try:
-            value = bool(json.loads(config.resolve_mutable_setting("usage_reset_permissions")))
+            value = any(config.resolve_mutable_setting(key) == "true" for key in ("codex_auto_reset", "claude_auto_reset"))
         except (OSError, ValueError, KeyError) as error:
-            _LOG.warning("利用枠の観測設定を読めません。config get usage_reset_permissionsで確認してください: %s", error)
+            _LOG.warning("リセット設定を読めないため稼働時間の記録を見送る: %s", error)
             value = False
         _CLOCK.checked_at = now
         _CLOCK.enabled = value

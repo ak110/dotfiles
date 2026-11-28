@@ -87,9 +87,8 @@ async def test_usage_displays_observations_and_refresh_failure_without_losing_va
     await expect(screen.get_by_role("progressbar")).to_have_attribute("value", "80")
     await expect(details.get_by_text("codex:primary", exact=True)).to_be_visible()
     assert started.is_set()
-    await screen.get_by_role("link", name="リセットの許可を設定").click()
-    await expect(page.get_by_label("設定対象ホスト")).to_have_value("")
-    await expect(page.locator('[data-setting="usage_reset_permissions"]')).to_be_visible()
+    await expect(screen.get_by_role("checkbox", name="リセット権を自動で使う")).to_be_enabled()
+    await expect(page).to_have_url(screen_harness.base_url + "/usage")
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -342,7 +341,7 @@ async def test_antigravity_display_failure_does_not_block_existing_usage(
             "Antigravityを再取得中です。この間、再取得はClaudeとCodexだけに適用されます。"
         )
         await expect(main.get_by_role("heading", name="Codex", exact=True)).to_be_visible()
-        await expect(main.get_by_role("link", name="リセットの許可を設定")).to_be_enabled()
+        await expect(main.get_by_role("checkbox", name="リセット権を自動で使う")).to_be_enabled()
         await expect(card.get_by_text("50%", exact=True)).to_be_visible()
     finally:
         release.set()

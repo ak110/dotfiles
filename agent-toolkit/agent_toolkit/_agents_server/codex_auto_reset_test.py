@@ -71,60 +71,19 @@ class _RPC:
         return [params for method, params in self.calls if method == "account/rateLimitResetCredit/consume"]
 
 
-def _permission(**updates: Any) -> dict[str, Any]:
-    return {
-        "id": "permitted-period",
-        "engine": "codex",
-        "account": "example@example.invalid",
-        "scope": "codex",
-        "count": 1,
-        "from": "1970-01-01T00:00:00+00:00",
-        "until": "1970-01-01T01:00:00+00:00",
-        **updates,
-    }
+@pytest.fixture(autouse=True)
+def _confirmed_shared_boundary(monkeypatch):
+    monkeypatch.setattr(codex_auto_reset.reset_reservations, "reserve_weekly", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(codex_auto_reset.reset_reservations, "finish", lambda *_args: None)
 
 
-@pytest.mark.parametrize(
-    "updates",
-    [
-        {"engine": "claude"},
-        {"account": "other"},
-        {"scope": "other"},
-        {"count": 0},
-        {"from": "1970-01-01T00:10:00+00:00"},
-        {"until": "1970-01-01T00:00:30+00:00"},
-    ],
-)
 @pytest.mark.asyncio
-async def test_auto_reset_never_consumes_outside_permission(tmp_path, monkeypatch, updates):
-    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    rpc = _RPC(used=100)
-    result = await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission(**updates)])
+async def test_disabled_configuration_still_reads_limits(tmp_path):
+    rpc = _RPC()
+    result = await check_auto_reset(rpc, state_dir=tmp_path, configured=False, shared_notes=tmp_path)
+    assert result.rate_limits == rpc.limits
     assert not result.reset_confirmed
     assert not rpc.consumptions
-
-
-@pytest.mark.asyncio
-async def test_permission_count_survives_window_change(tmp_path, monkeypatch):
-    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    rpc = _RPC(used=100)
-    assert (await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()])).reset_confirmed
-    rpc.limits["rateLimits"]["secondary"]["resetsAt"] += 1
-    result = await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()])
-    assert not result.reset_confirmed
-    assert len(rpc.consumptions) == 1
-
-
-@pytest.mark.asyncio
-async def test_permission_retry_reuses_reserved_count_and_key(tmp_path, monkeypatch):
-    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    rpc = _RPC(used=100)
-    rpc.outcomes = [OSError("response lost"), "alreadyRedeemed"]
-    with pytest.raises(OSError, match="response lost"):
-        await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()])
-    rpc.limits["rateLimitResetCredits"]["availableCount"] = 0
-    assert (await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()])).reset_confirmed
-    assert rpc.consumptions[0] == rpc.consumptions[1]
 
 
 @pytest.mark.parametrize("active,reset", [(False, 1900000000), (True, 200)])
@@ -133,13 +92,14 @@ async def test_idle_or_near_natural_recovery_does_not_spend(tmp_path, monkeypatc
     monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
     rpc = _RPC(used=100)
     rpc.limits["rateLimits"]["secondary"]["resetsAt"] = reset
-    assert not (await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()], active=active)).reset_confirmed
+    assert not (
+        await check_auto_reset(rpc, state_dir=tmp_path, configured=True, shared_notes=tmp_path, active=active)
+    ).reset_confirmed
     assert not rpc.consumptions
 
 
 async def _check_permitted(rpc: _RPC, *, state_dir: Path, **kwargs: Any) -> codex_auto_reset.AutoResetResult:
-    permission = _permission(count=10, **{"from": "2000-01-01T00:00:00+00:00", "until": "2100-01-01T00:00:00+00:00"})
-    return await check_auto_reset(rpc, state_dir=state_dir, permissions=[permission], **kwargs)
+    return await check_auto_reset(rpc, state_dir=state_dir, configured=True, shared_notes=state_dir, **kwargs)
 
 
 @pytest.mark.parametrize(("used", "count", "expected"), [(89, 1, False), (99, 1, False), (100, 1, True), (100, 0, False)])

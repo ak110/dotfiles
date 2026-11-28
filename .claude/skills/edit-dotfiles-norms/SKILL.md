@@ -5,7 +5,7 @@ description: >
   dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/skills/`、
   `agent-basics/skills/`、`.claude/skills/`などのエージェント向け文書を変更・削除・縮小するときとその差分を実行レビューするとき、
   変更した規範を同じセッションへ適用するとき、規範を変更したセッションで会話圧縮後に作業を続けるとき、
-  変更または新設したスキルを起動するとき、`agent-toolkit:atk-mode`の作業`process-wi`のメインがAWIごとに
+  dotfilesの規範を変えるWIを起草するとき、変更または新設したスキルを起動するとき、`agent-toolkit:atk-mode`の作業`process-wi`のメインがAWIごとに
   `プロジェクト規範の指定`を記述するとき、新しい仕組み（hook、自動チェック、永続状態、配送経路、規範の条文など）を
   加える計画の起草・実行レビューや仕組みの撤去をするとき、および不具合の原因が過去の対策と同じと判定したときに起動する。
 ---
@@ -17,6 +17,7 @@ description: >
 
 | 作業・条件 | 読む資料 |
 | --- | --- |
+| 成果物の品質基準を新設・強化する変更の追従（起草・実装・実行レビュー・採用） | `references/norm-followup.md` |
 | 規範を追記・新設・移動する置き場所を選ぶ、置き場所を実行レビューで判定する | `references/norm-layer-map.md`と`agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所の選定」 |
 | 不具合の原因が過去の対策と同じかを分類する、同じ原因と判定して記録する | `references/recurrence-record.md` |
 | 規範を編集する作業を始める（モデルIDとホストのバージョンの点検） | `references/model-host-audit.md` |
@@ -46,6 +47,7 @@ description: >
 6. 規範の節の内容を変える時は、ファイル名と節名を個別の固定文字列で`docs/development/`から検索し、その節を現行規定の所在として挙げる記録も同じ変更で直す。
    編集の過程で新たな障害が起きたか方針が確定した場合は、対応する記録を直す。
 7. 工程の担当（その工程を実行する主体）を移す時は、工程名（`実行レビュー`、`実装完了`など）を固定文字列で`agent-toolkit/`、`agent-basics/`、`.claude/skills/`から全件検索し、主体を述べる全ての箇所（例示、別の役割の手順、受領の手順を含む）を新しい担当へそろえる。
+8. 品質規範の改訂後の見直しを姉妹プロジェクトへ広げると判断したら、`operate-ak110-projects`の`references/project-synchronization.md`「台帳への追記」に進む。
 
 ## 変更した規範の自セッション適用
 

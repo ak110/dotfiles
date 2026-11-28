@@ -1,6 +1,5 @@
 import {readFailure} from "./common.js";
 import {BASE_PATH, recordUpdateSuccess, setUpdateError, setDisplayedReadError, recoverRead} from "./common.js";
-import {formatLocalMinute} from "./reset_permissions.js";
 import {registerScreen} from "./shell.js";
 import {createSettingsView, savedSettingMessage, settingName} from "./settings_view.js";
 
@@ -24,6 +23,12 @@ function inSharedScope(node) {
 }
 const comparison = document.getElementById("settings-comparison");
 const search = document.getElementById("settings-search");
+function formatLocalMinute(instant) {
+  if (!instant) return "";
+  const date = new Date(instant);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 let localData;
 const navigation = document.getElementById("settings-nav");
 let host = "";
@@ -33,7 +38,6 @@ let loading = false;
 let fetching = false;
 let loadGeneration = 0;
 let displayedData;
-let openPermissionsOnLoad = false;
 const hostDrafts = new Map();
 const conflicts = new Map();
 const {button, element, renderComparison, renderHost, renderShared, renderSharedComparison, showGroup, getActionControl} = createSettingsView({
@@ -215,7 +219,6 @@ async function operate(payload, output, submittedEditor = null) {
     const scrollTop = scroll.scrollTop;
     const submittedKey = submittedEditor?.dataset.editor ?? editorKey;
     const drafts = rememberEditors(submittedKey);
-    if (submittedKey === "usage_reset_permissions:") drafts.delete(submittedKey);
     for (const {key, old} of conflicts.values()) data.settings[key] = old;
     render(data);
     const savedEditor = restoreEditors(drafts, editorKey);
@@ -588,12 +591,9 @@ function renderConflicts() {
     const notice = element("div", "", "notice notice-warning");
     notice.dataset.conflict = "";
     notice.id = `settings-conflict-${key}`;
-    const latestValue = key === "usage_reset_permissions" ?
-      JSON.parse(latest.saved).map(entry => `${entry.id} · ${entry.count}回 · ${entry.from}〜${entry.until}`).join(" / ") || "許可なし" :
-      latest.saved;
     notice.append(
       element("p", "取得中に保存値が変更されました。"),
-      element("p", `最新の保存値: ${latestValue}`),
+      element("p", `最新の保存値: ${latest.saved}`),
     );
     for (const [label, keepDraft] of [["保存値を使う", false], ["入力を残す", true]]) {
       const choice = button(label, () => resolveConflict(slot, keepDraft));
@@ -605,47 +605,7 @@ function renderConflicts() {
   updateWriteControls();
 }
 
-let observingHost;
 let staleSnapshotHost;
-async function observeUsage() {
-  if (document.body.dataset.screen !== "settings" || busy || fetching) return;
-  const target = host;
-  if (observingHost === target || (target && !displayedData?.can_observe_usage)) return;
-  const generation = loadGeneration;
-  observingHost = target;
-  if (target) {
-    staleSnapshotHost = target;
-    updateWriteControls();
-  }
-  try {
-    for (const delay of [0, 1500]) {
-      if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-      if (host !== target || generation !== loadGeneration) return;
-      try {
-        const data = await request(undefined, {background: true, target, observeUsage: true});
-        if (host !== target || generation !== loadGeneration || busy || document.body.dataset.screen !== "settings") return;
-        const failed = data.reset_editor?.refresh_failed;
-        if (failed && !delay && !target) continue;
-        const changed = JSON.stringify(data.reset_editor) !== JSON.stringify(displayedData?.reset_editor);
-        if (target || changed) applyHostSnapshot(data, displayedData, rememberEditors());
-        if (!failed) {
-          setUpdateError("settings", "usage");
-          return;
-        }
-      } catch {
-        if (target && host === target && generation === loadGeneration) {
-          staleSnapshotHost = target;
-          updateWriteControls();
-        }
-      }
-    }
-    if (host === target && document.body.dataset.screen === "settings") {
-      setDisplayedReadError("settings", "usage", "利用枠を取得できません。", observeUsage);
-    }
-  } finally {
-    if (observingHost === target) observingHost = undefined;
-  }
-}
 
 function applyHostSnapshot(data, previous, drafts) {
   const scroll = content.closest("main");
@@ -669,7 +629,6 @@ function applyHostSnapshot(data, previous, drafts) {
   }
   render(rendered);
   restoreEditors(drafts);
-  applyPermissionsShortcut();
   renderConflicts();
   updateUnsaved();
   scroll.scrollTop = scrollTop;
@@ -775,39 +734,23 @@ async function loadHost(background = false, retry = false) {
   }
 }
 
-function applyPermissionsShortcut() {
-  if (!openPermissionsOnLoad || host) return;
-  const editor = content.querySelector('[data-setting="usage_reset_permissions"]');
-  if (!editor) return;
-  editor.open = true;
-  openPermissionsOnLoad = false;
-}
-
 function restoreSettingsFromUrl() {
   if (document.body.dataset.screen !== "settings") return;
   const query = new URLSearchParams(location.search);
   if (query.get("group") === "usage") activeGroup = "usage";
-  openPermissionsOnLoad = query.get("group") === "usage" && query.get("host") === "";
-  if (openPermissionsOnLoad) search.value = "";
   if (query.get("host") === "" && host) {
     selectHost("");
     return;
   }
   if (displayedData && query.get("group") === "usage") {
     filterSettings();
-    applyPermissionsShortcut();
-  }
+    }
 }
 
 async function refreshSettings() {
   if (document.hidden || busy || fetching) return;
-  const refresh = loadHost(true);
-  const generation = loadGeneration;
-  await refresh;
+  await loadHost(true);
   prepareRemotes();
-  if (generation === loadGeneration && content.querySelector('details[data-editor^="usage_reset_permissions:"][open]')) {
-    await observeUsage();
-  }
 }
 
 let preparation;
@@ -855,9 +798,3 @@ function selectHost(selected) {
 hostPicker.addEventListener("change", () => selectHost(hostPicker.value));
 
 registerScreen("settings", {init});
-
-content.addEventListener("click", event => {
-  if (event.target.closest('details[data-editor^="usage_reset_permissions:"] > summary')) {
-    setTimeout(() => void observeUsage(), 0);
-  }
-});

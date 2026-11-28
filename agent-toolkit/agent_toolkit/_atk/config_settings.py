@@ -147,10 +147,13 @@ WI_ATTACHMENT_LIMIT_DEFAULTS = {
 }
 
 
+AUTO_RESET_KEYS = ("codex_auto_reset", "claude_auto_reset")
+LEGACY_RESET_PERMISSIONS = "usage_reset_permissions"
+
 MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
     "codex_fast_mode": "auto",
-    "usage_reset_permissions": "[]",
+    **dict.fromkeys(AUTO_RESET_KEYS, "false"),
     **CONNECTION_DEFAULTS,
     "claude_credits_env": "",
     "claude_payg_env": "",
@@ -190,7 +193,7 @@ SPLIT_SETTING_KEYS = frozenset({"repositories"})
 
 SHARED_SETTING_KEYS = frozenset(MUTABLE_KEY_DEFAULTS) - HOST_SETTING_REASONS.keys() - SPLIT_SETTING_KEYS
 
-SHARED_FILE_KEYS = SHARED_SETTING_KEYS | SPLIT_SETTING_KEYS
+SHARED_FILE_KEYS = SHARED_SETTING_KEYS | SPLIT_SETTING_KEYS | {LEGACY_RESET_PERMISSIONS}
 
 # 旧接続設定キーと移行先。保存値は読込時に移行先へ移し、環境変数とget・setでは移行先を示して拒否する。
 RETIRED_CONNECTION_KEYS = {
@@ -337,7 +340,18 @@ def load_config() -> dict[str, str]:
         return {}
     if not isinstance(data, dict):
         return {}
-    return {key: value for key, value in data.items() if isinstance(value, str)}
+    return local_setting_strings(data)
+
+
+def local_setting_strings(data: Mapping[str, Any]) -> dict[str, str]:
+    settings = {key: value for key, value in data.items() if key not in AUTO_RESET_KEYS and isinstance(value, str)}
+    # 旧Codex設定の文字列と、今回明示的に設定したJSONの真偽値を区別する。  # pyfltr: allow-comment
+    settings.update({key: str(data[key]).lower() for key in AUTO_RESET_KEYS if isinstance(data.get(key), bool)})
+    return settings
+
+
+def encode_local_setting(key: str, value: str) -> str | bool:
+    return value == "true" if key in AUTO_RESET_KEYS else value
 
 
 def load_config_strict() -> dict[str, Any]:
@@ -482,7 +496,8 @@ _SETTING_DESCRIPTIONS = {
     "orchestrate_model": "統括を担当するモデル候補",
     "write_model": "文書執筆を担当するモデル候補",
     "codex_fast_mode": "Codexの高速モード（autoは契約と提供期間で判定）",
-    "usage_reset_permissions": "利用枠のresetを許可する対象と期間",
+    "codex_auto_reset": "共有予約で排他してCodexのリセット権を自動で使う",
+    "claude_auto_reset": "Claudeのリセット権を手動で使う目安を表示する",
     "codex_credits_provider": "Codexの有限クレジット用provider ID",
     "codex_payg_provider": "Codexの従量課金用provider ID",
     "claude_orchestrator_connections": "Claudeの統括で試す接続順",
@@ -531,7 +546,8 @@ def setting_format(key: str) -> str:
         "agents_concurrency": "上限の整数、論理CPU数への倍率（例: 2.5x）、またはoff",
         "serve_host": "空でないホスト名またはIPアドレス",
         "serve_port": "1から65535までの整数",
-        "usage_reset_permissions": "id・engine・account・scope・count・from・untilを含むJSON配列。日時はタイムゾーン付き",
+        "codex_auto_reset": "trueまたはfalse（既定はfalse）",
+        "claude_auto_reset": "trueまたはfalse（既定はfalse）",
     }.get(key, "設定値")
 
 
@@ -571,8 +587,11 @@ def validate_mutable_setting(key: str, value: str) -> None:
         parse_remote_hosts(value)
     elif key == "repositories":
         config_repositories.parse_local(value)
-    elif key == "usage_reset_permissions":
+    elif key == LEGACY_RESET_PERMISSIONS:
         validate_permissions(value)
+    elif key in AUTO_RESET_KEYS:
+        if value not in {"true", "false"}:
+            raise ValueError(f"受理可能値: {setting_format(key)}")
     elif key == "agents_concurrency":
         parse_agents_concurrency(value)
     elif key in MODEL_DEFAULTS:
@@ -746,7 +765,7 @@ def raw_mutable_setting(
     """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
     default = mutable_setting_default(key)
     explicit = runtime_environment.environment().get(config_env_name(key), "")
-    if explicit:
+    if explicit and key not in AUTO_RESET_KEYS:
         return explicit
     if local is None:
         local = load_config()
