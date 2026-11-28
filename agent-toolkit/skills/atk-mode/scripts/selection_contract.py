@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 
 from agent_toolkit._atk import config as _model_config
 from agent_toolkit._atk.wi import priority as _wi_priority
-from agent_toolkit._atk.wi.constants import DETAILED_SOURCES, is_detailed
+from agent_toolkit._atk.wi.constants import is_detailed, requires_detail_for_plan
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import selection_estimate as _estimate
@@ -242,7 +242,7 @@ def _valid_exclusion_record(record: object) -> bool:
 
 def _detail_requirement(metadata: dict[str, typing.Any]) -> str:
     # UWIは本文を置き換えず、回答の反映先のAWIか回答から作るAWIで詳細化する。  # pyfltr: allow-comment
-    if metadata.get("type") == "uwi" or metadata.get("source") in DETAILED_SOURCES or is_detailed(metadata):
+    if metadata.get("type") == "uwi" or not requires_detail_for_plan(metadata.get("source")) or is_detailed(metadata):
         return _selection.DETAIL_NOT_REQUIRED
     return _selection.DETAIL_REQUIRED
 

@@ -153,7 +153,7 @@ def test_public_generation_uses_candidate_facts_and_typed_edges_once(
 
 
 def test_generated_detail_requirement_uses_source_mark_and_wi_type() -> None:
-    for source in ("add-awi-by-user", "process-user-comments", "implement"):
+    for source in ("add-awi-by-user", "process-user-comments", "implement", "user"):
         assert _detail_requirement({"type": "awi", "source": source}) == "詳細化なし"
         assert _detail_requirement({"type": "uwi", "source": source}) == "詳細化なし"
     assert _detail_requirement({"type": "awi", "source": "human"}) == "詳細化あり"
@@ -680,18 +680,21 @@ def test_legacy_plan_requirement_is_recomputed_from_metadata() -> None:
             {"WI": "uwi.md", "計画要否": "計画あり"},
             {"WI": "user.md", "計画要否": "計画あり"},
             {"WI": "other.md", "計画要否": "計画なし"},
+            {"WI": "explicit.md", "詳細化要否": "詳細化あり"},
         ]
     }
     metadata = {
         "uwi.md": {"type": "uwi"},
-        "user.md": {"type": "awi", "source": "add-awi-by-user"},
+        "user.md": {"type": "awi", "source": "user"},
         "other.md": {"type": "awi", "source": "human"},
     }
     decisions = _selection.decisions(legacy) or []
-    assert all(isinstance(item, dict) and "計画要否" not in item and "詳細化要否" not in item for item in decisions)
+    assert all(isinstance(item, dict) and "計画要否" not in item for item in decisions)
+    assert all(isinstance(item, dict) and "詳細化要否" not in item for item in decisions[:3])
     complete_detail_requirements(legacy, lambda name: metadata[name])
     assert {item["WI"]: item["詳細化要否"] for item in legacy["選定"]} == {
         "uwi.md": "詳細化なし",
         "user.md": "詳細化なし",
         "other.md": "詳細化あり",
+        "explicit.md": "詳細化あり",
     }
