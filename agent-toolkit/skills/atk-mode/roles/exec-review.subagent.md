@@ -47,7 +47,7 @@ startup_documents:
 
 # 実行レビュータスク
 
-実行レビュー担当は、要件と外部仕様の水準から1段階でレビューする（`agent-basics:review-standards/SKILL.md`「判断の初動」）。
+実行レビュー担当は、実装担当と独立した文脈で、実装した差分が要件と外部仕様を満たすかを証拠に基づき1段階で確かめる（`agent-basics:review-standards/SKILL.md`「判断の初動」）。
 本担当が行うのは、レビューと、判定に必要な検証だけである。
 実装と修正は、委譲元が別の担当へ割り当てる。
 手順は`agent-toolkit:atk-mode/playbooks/exec-review.md`にあり、起動の本文と一緒に届くので、上から実行する。

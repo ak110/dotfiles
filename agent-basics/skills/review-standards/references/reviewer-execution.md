@@ -1,6 +1,7 @@
 # 実行レビューの判定基準
 
-実行レビューで、要求単位と完成条件の達成・提出された証拠・直接影響範囲・設計と認可を判定する基準を定める。
+実行レビュー担当が、実装した差分を独立した文脈で確かめ、要件を満たす変更を届けるための基準である。
+要求ごとの達成、提出された証拠、直接影響範囲、設計と認可を判断する。
 原則6（`agent-basics:writing-standards/references/quality-principles-verification.md`）を独立した確認へ適用する。
 原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）を判定の根拠へ適用する。
 最初の合否は`agent-basics:review-standards/references/reviewer.md`「初回レビュー」に従い、本書「提出された実動作の証拠」の代表操作が原要求を裏付けるかを先に確かめる。
