@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from playwright.async_api import Route, expect
 
@@ -74,6 +76,140 @@ async def test_failed_save_shows_reason_without_changing_other_setting(screen_ha
     await expect(codex.locator("..").get_by_role("status")).to_contain_text("共有先へ書き込めません")
     await expect(page.get_by_label("手動リセットを推奨する")).to_be_enabled()
     assert "codex_auto_reset" not in config_settings.load_config()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_saved_setting_stays_saved_when_observation_needs_retry(screen_harness: _ScreenHarness) -> None:
+    page = screen_harness.page
+    await page.route(
+        "**/api/usage/reset-setting",
+        lambda route: route.fulfill(
+            json={
+                "reset_settings": {"codex": {"enabled": True}},
+                "claude_reset_recommended": False,
+                "observation_error": "利用枠を読み取れません。利用枠の観測を再取得してください。",
+            }
+        ),
+    )
+    await page.goto(screen_harness.base_url + "/usage")
+    choice = page.get_by_role("checkbox", name="リセット権を自動で使う")
+    form = choice.locator("..")
+    await choice.check()
+    await form.get_by_role("button", name="保存").click()
+    await expect(form.get_by_role("status")).to_have_text("現在: 有効。 保存しました。")
+    await expect(page.get_by_role("checkbox", name="手動リセットを推奨する")).not_to_be_checked()
+    banner = page.locator("#update-status")
+    await expect(banner).to_contain_text("利用枠を読み取れません")
+    await expect(banner.get_by_role("button", name="再取得")).to_be_visible()
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize(
+    ("engine", "label"),
+    [("claude", "手動リセットを推奨する"), ("codex", "リセット権を自動で使う")],
+)
+@pytest.mark.asyncio(loop_scope="session")
+async def test_reset_save_keeps_keyboard_in_the_setting(screen_harness: _ScreenHarness, width, engine, label) -> None:
+    page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 900})
+    started = asyncio.Event()
+    release = asyncio.Event()
+    writes = []
+
+    async def fail_once(route: Route) -> None:
+        writes.append(route.request.post_data_json)
+        if len(writes) == 1:
+            started.set()
+            await release.wait()
+            await route.fulfill(status=400, json={"error": "共有先へ書き込めません"})
+        else:
+            await route.continue_()
+
+    await page.route("**/api/usage/reset-setting", fail_once)
+    await page.goto(screen_harness.base_url + "/usage")
+    choice = page.get_by_role("checkbox", name=label)
+    form = choice.locator("..")
+    save = form.get_by_role("button", name="保存")
+    status = form.get_by_role("status")
+    await choice.press("Space")
+    await page.keyboard.press("Tab")
+    await expect(save).to_be_focused()
+    await page.keyboard.press("Enter")
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        await expect(status).to_contain_text("保存中")
+        await expect(status).to_be_focused(timeout=1000)
+        await expect(status).to_be_in_viewport()
+        await page.keyboard.press("Enter")
+        await expect(save).to_be_disabled()
+    finally:
+        release.set()
+    await expect(status).to_contain_text("共有先へ書き込めません")
+    await expect(status).to_be_in_viewport()
+    await expect(choice).to_be_checked()
+    await expect(choice).to_be_focused()
+    assert f"{engine}_auto_reset" not in config_settings.load_config()
+    await page.keyboard.press("Tab")
+    await expect(save).to_be_focused()
+    await page.keyboard.press("Enter")
+    await expect(status).to_contain_text("現在: 有効。 保存しました")
+    await expect(status).to_be_focused()
+    await expect(status).to_be_in_viewport()
+    assert writes == [{"engine": engine, "enabled": True}] * 2
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("first_engine", ["claude", "codex"])
+@pytest.mark.parametrize("first_succeeds", [True, False])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_reset_response_preserves_other_save_focus(
+    screen_harness: _ScreenHarness, width: int, first_engine: str, first_succeeds: bool
+) -> None:
+    page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 844})
+    labels = {"claude": "手動リセットを推奨する", "codex": "リセット権を自動で使う"}
+    second_engine = next(engine for engine in labels if engine != first_engine)
+    choices = {engine: page.get_by_role("checkbox", name=label) for engine, label in labels.items()}
+    forms = {engine: choice.locator("..") for engine, choice in choices.items()}
+    saves = {engine: form.get_by_role("button", name="保存") for engine, form in forms.items()}
+    first_started = asyncio.Event()
+    first_release = asyncio.Event()
+    submitted = []
+
+    async def save_one(route: Route) -> None:
+        payload = route.request.post_data_json
+        assert isinstance(payload, dict)
+        engine = payload["engine"]
+        submitted.append(engine)
+        if engine == first_engine:
+            first_started.set()
+            await first_release.wait()
+            if not first_succeeds:
+                await route.fulfill(status=400, json={"error": "共有先へ書き込めません"})
+                return
+        await route.continue_()
+
+    await page.route("**/api/usage/reset-setting", save_one)
+    await page.goto(screen_harness.base_url + "/usage")
+    await choices[first_engine].press("Space")
+    await page.keyboard.press("Tab")
+    await expect(saves[first_engine]).to_be_focused()
+    await page.keyboard.press("Enter")
+    try:
+        await asyncio.wait_for(first_started.wait(), 5)
+        await choices[second_engine].press("Space")
+        await page.keyboard.press("Tab")
+        await expect(saves[second_engine]).to_be_focused()
+    finally:
+        first_release.set()
+    first_result = "保存しました" if first_succeeds else "共有先へ書き込めません"
+    await expect(forms[first_engine].get_by_role("status")).to_contain_text(first_result)
+    await expect(saves[second_engine]).to_be_focused(timeout=1000)
+    await expect(saves[second_engine]).to_be_in_viewport()
+    await expect(choices[second_engine]).to_be_checked()
+    await page.keyboard.press("Enter")
+    await expect(forms[second_engine].get_by_role("status")).to_have_text("現在: 有効。 保存しました。")
+    assert submitted == [first_engine, second_engine]
 
 
 @pytest.mark.parametrize("remote", [False, True])

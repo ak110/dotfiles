@@ -176,7 +176,7 @@ async def check_auto_reset(
             )
             await run_file_operation(_write_attempt, path, attempt)
         try:
-            await asyncio.to_thread(
+            shared_status = await asyncio.to_thread(
                 reset_reservations.reserve_weekly,
                 shared_notes,
                 key=attempt.idempotency_key,
@@ -191,6 +191,13 @@ async def check_auto_reset(
             return AutoResetResult(rate_limits=raw, diagnostic=f"共有予約を確認できないため消費を見送った: {error}")
         except (reset_reservations.ReservationError, OSError, ValueError, subprocess.SubprocessError) as error:
             return AutoResetResult(rate_limits=raw, diagnostic=f"共有予約を確認できないため消費を見送った: {error}")
+        if shared_status in ("success", "closed"):
+            await run_file_operation(_write_attempt, path, attempt.model_copy(update={"status": shared_status}))
+            return AutoResetResult(
+                reset_confirmed=shared_status == "success" and same_window,
+                rate_limits=raw,
+                diagnostic="共有予約に記録済みの試行結果を確認したため消費は再送しない",
+            )
         if on_permission_confirmed is not None:
             on_permission_confirmed()
         params = {"idempotencyKey": attempt.idempotency_key}

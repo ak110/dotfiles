@@ -131,11 +131,11 @@ def reserve_weekly(
     resets_at: int,
     credit_id: str | None,
     legacy_permission_id: str | None = None,
-) -> None:
-    """共有先で同じ内容の未確定試行を確認するか、新規予約を確定してから返す。  pyfltr: allow-comment"""
+) -> Status | None:
+    """同一内容の記録があれば状態を返し、新規予約を確定した場合はNoneを返す。  pyfltr: allow-comment"""
     attempt = {"key": key, "account": account, "resets_at": resets_at, "credit_id": credit_id}
 
-    def check() -> tuple[bool, list[dict[str, Any]]]:
+    def check() -> tuple[Status | None, list[dict[str, Any]]]:
         settings, records = _weekly_upstream(notes)
         if settings.get("codex_auto_reset", "false") != "true":
             raise ReservationError(
@@ -149,17 +149,13 @@ def reserve_weekly(
             )
         for item in records:
             if item.get("key") == key:
-                if (
-                    item["status"] == "pending"
-                    and all(item.get(name) == attempt[name] for name in ("account", "resets_at"))
-                    and (
-                        ("credit_id" in item and item["credit_id"] == credit_id)
-                        or ("credit_id" not in item and item["permission_id"] == legacy_permission_id)
-                    )
+                if all(item.get(name) == attempt[name] for name in ("account", "resets_at")) and (
+                    ("credit_id" in item and item["credit_id"] == credit_id)
+                    or ("credit_id" not in item and item["permission_id"] == legacy_permission_id)
                 ):
-                    return True, records
+                    return item["status"], records
                 raise ReservationError(
-                    "同じキーの予約が未確定の同一内容と一致しません",
+                    "同じキーの共有予約と試行内容が一致しません",
                     next_action="既存の共有予約と送信結果を確認する",
                 )
         if any(item["status"] == "pending" for item in records) or any(
@@ -170,13 +166,13 @@ def reserve_weekly(
                 "未確定の試行または同じ週次窓以降の成功が共有先にあります",
                 next_action="既存の予約と利用枠の最新状態を確認する",
             )
-        return False, records
+        return None, records
 
     with wi_sync.repo_lock(notes):
         wi_sync.pull(notes)
-        retry, records = check()
-        if retry:
-            return
+        status, records = check()
+        if status is not None:
+            return status
         if legacy_permission_id is not None:
             raise ReservationError(
                 "旧試行の未確定予約を共有先で確認できません",
@@ -190,14 +186,15 @@ def reserve_weekly(
         _write(notes, [*records, attempt | {"permission_id": "weekly", "status": "pending"}])
 
         def verify() -> None:
-            retry, _ = check()
-            if retry:
+            concurrent_status, _ = check()
+            if concurrent_status is not None:
                 raise ReservationError(
                     "同じ試行が先に共有先へ書き込まれました",
                     next_action="同じキーと内容で共有予約を確認する",
                 )
 
         _commit(notes, "chore: reserve weekly usage reset", verify)
+        return None
 
 
 def finish(notes: pathlib.Path, key: str, status: Status) -> None:

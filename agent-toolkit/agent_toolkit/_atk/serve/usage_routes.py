@@ -164,9 +164,18 @@ def register_usage_routes(app: quart.Quart) -> None:
                     "value": str(payload["enabled"]).lower(),
                 },
             )
-            return json_no_store(await asyncio.to_thread(_display_data))
         except (OSError, ValueError) as error:
             raise WebInputError(str(error), next_action="設定と共有先を確認してから利用枠画面で再取得する") from error
+        try:
+            return json_no_store(await asyncio.to_thread(_display_data))
+        except OSError, ValueError:
+            return json_no_store(
+                {
+                    "reset_settings": {engine: {"enabled": payload["enabled"]}},
+                    "claude_reset_recommended": False,
+                    "observation_error": "利用枠を読み取れません。利用枠の観測を再取得してください。",
+                }
+            )
 
     @app.post("/api/usage/refresh")
     async def usage_refresh_request() -> quart.Response:

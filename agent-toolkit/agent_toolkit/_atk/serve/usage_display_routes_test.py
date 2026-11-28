@@ -10,7 +10,7 @@ import pytest
 import quart
 
 from agent_toolkit._atk import config, usage_refresh
-from agent_toolkit._atk.serve import usage_routes
+from agent_toolkit._atk.serve import shell_routes, usage_routes
 from agent_toolkit._common import process_tree, state_paths, usage_observation, usage_settings
 
 
@@ -21,8 +21,40 @@ def _usage_client_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     app = quart.Quart(__name__)
+    shell_routes.register_error_handlers(app)
     usage_routes.register_usage_routes(app)
     return app.test_client()
+
+
+@pytest.mark.parametrize("engine", ["codex", "claude"])
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.asyncio
+async def test_reset_setting_reports_save_separately_from_observation(usage_client, tmp_path, monkeypatch, engine, enabled):
+    key = f"{engine}_auto_reset"
+    config.update_settings({"action": "set", "key": key, "value": str(not enabled).lower()})
+    initial = await usage_client.get("/api/usage")
+    assert (await initial.get_json())["reset_settings"][engine]["enabled"] is not enabled
+    (tmp_path / "usage-observations.json").write_text("[]", encoding="utf-8")
+    target = "/api/usage/reset-setting"
+    request = {"engine": engine, "enabled": enabled}
+
+    def fail_write(_payload):
+        raise OSError("共有先へ書き込めません")
+
+    with monkeypatch.context() as fault:
+        fault.setattr(config, "update_settings", fail_write)
+        denied = await usage_client.post(target, json=request)
+    assert denied.status_code == 400
+    assert "共有先へ書き込めません" in (await denied.get_json())["error"]
+    assert config.resolve_mutable_setting(key) == str(not enabled).lower()
+
+    saved = await usage_client.post(target, json=request)
+    assert saved.status_code == 200
+    payload = await saved.get_json()
+    assert payload["reset_settings"] == {engine: {"enabled": enabled}}
+    assert "再取得" in payload["observation_error"]
+    assert payload["claude_reset_recommended"] is False
+    assert config.resolve_mutable_setting(key) == str(enabled).lower()
 
 
 @pytest.mark.asyncio

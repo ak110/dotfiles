@@ -176,7 +176,7 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 同じprivate-notesを同期する環境では、工程別モデル、`codex_fast_mode`、リセット設定を共有する。
 リセット設定は一時指定・環境変数ではなく保存した値を使う。
 ファイルの場所と共有設定から解決したキーは`atk config show`の標準エラーで確認できる。
-特定のホストだけ変える場合は`atk config temporary`か`AGENT_TOOLKIT_CONFIG_<KEY>`を使う。
+リセット設定以外を特定のホストだけ変える場合は、`atk config temporary`か`AGENT_TOOLKIT_CONFIG_<KEY>`を使う。
 共有する値は、安全に確定できる分を起動や保存時に移す。
 端末と共有先で異なる保存値の扱いは[共有設定への移行](claude-code-settings.md#共有設定への移行)を参照。
 `set`で保存済みでも上書き元の案内が出たときは、その設定を解除して`get`で確かめる。

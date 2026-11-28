@@ -23,7 +23,6 @@ pytestmark = [pytest.mark.browser, pytest.mark.asyncio(loop_scope="session")]
 def isolate_usage(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(usage_observation, "state_dir", lambda: tmp_path)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", "[]")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))

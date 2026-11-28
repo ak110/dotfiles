@@ -232,18 +232,21 @@ function renderResetSetting(parent, engine, setting) {
   const label = element("label", engine === "claude" ? "手動リセットを推奨する" : "リセット権を自動で使う");
   label.htmlFor = choice.id;
   const save = element("button", "保存");
+  save.id = `${choice.id}-save`;
   save.type = "submit";
   const message = element("p", "", "secondary-text");
   message.id = `${choice.id}-status`;
+  message.tabIndex = -1;
   message.setAttribute("role", "status");
   choice.setAttribute("aria-describedby", message.id);
-  function reflect() {
+  function reflect(focusStatus = false) {
     const write = resetWrites.get(engine);
-    choice.disabled = setting?.enabled == null || write?.pending === true;
-    save.disabled = choice.disabled || choice.checked === setting.enabled;
     const saved = setting?.enabled == null ? setting?.error ?? "設定を読み取れません。" :
       `現在: ${setting.enabled ? "有効" : "無効"}。`;
     message.textContent = [saved, write?.message].filter(Boolean).join(" ");
+    if (focusStatus) message.focus();
+    choice.disabled = setting?.enabled == null || write?.pending === true;
+    save.disabled = choice.disabled || choice.checked === setting.enabled;
   }
   choice.addEventListener("change", () => {
     resetDrafts.set(engine, choice.checked);
@@ -255,17 +258,28 @@ function renderResetSetting(parent, engine, setting) {
     if (save.disabled) return;
     const enabled = choice.checked;
     resetWrites.set(engine, {pending: true, message: "保存中です。"});
-    reflect();
+    reflect(form.contains(document.activeElement));
+    let failed = false;
     try {
       const updated = await request("/api/usage/reset-setting", {engine, enabled});
       resetWrites.set(engine, {message: "保存しました。"});
       resetDrafts.delete(engine);
       data = {...(data ?? updated), reset_settings: {...data?.reset_settings, [engine]: updated.reset_settings[engine]},
-        ...(engine === "claude" ? {claude_reset_recommended: updated.claude_reset_recommended} : {})};
+        ...(engine === "claude" || updated.observation_error ?
+          {claude_reset_recommended: updated.claude_reset_recommended} : {})};
+      if (updated.observation_error) {
+        setDisplayedReadError("usage", "refresh", updated.observation_error, () => update(false), () => updateProviders(true));
+      }
     } catch (error) {
+      failed = true;
       resetWrites.set(engine, {message: `保存できませんでした。${error.message}`});
     }
     if (data) render(data);
+    const focused = document.activeElement;
+    if (focused?.id === message.id) {
+      focused.scrollIntoView({block: "nearest"});
+      if (failed) document.getElementById(choice.id)?.focus({preventScroll: true});
+    }
   });
   reflect();
   form.append(choice, label, save, message);
@@ -366,6 +380,8 @@ function render(payload, reportFailure = false) {
     body.append(section);
   }
   const active = document.activeElement;
+  const activeSubmit = view.contains(active) && active.matches('button[type="submit"]') ? active.getBoundingClientRect() : null;
+  const wasVisibleSubmit = activeSubmit && activeSubmit.bottom > 0 && activeSubmit.top < window.innerHeight;
   const selected = active?.closest("[data-metric-detail]");
   const open = new Set([...view.querySelectorAll("[data-metric-detail][open]")].map(node => node.dataset.metricDetail));
   let focusTarget;
@@ -383,7 +399,10 @@ function render(payload, reportFailure = false) {
     if (child !== antigravity) child.remove();
   }
   antigravity.before(body);
-  if (focusTarget) focusTarget.focus({preventScroll: true});
+  if (focusTarget) {
+    focusTarget.focus({preventScroll: true});
+    if (wasVisibleSubmit) focusTarget.scrollIntoView({block: "nearest"});
+  }
   describeAttention(items.sort((a, b) => a.priority - b.priority).map(({item}) => item), payload.windows, refreshed || payload.last_refresh_at);
 }
 

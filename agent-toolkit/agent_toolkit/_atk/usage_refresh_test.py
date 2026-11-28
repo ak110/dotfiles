@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_toolkit._atk import config_usage, usage_refresh
+from agent_toolkit._atk import config, config_usage, usage_refresh
 from agent_toolkit._atk.usage_refresh import _ActivityClock
 from agent_toolkit._common import state_paths, usage_observation, usage_settings
 
@@ -19,11 +19,7 @@ def isolated_observations(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(usage_refresh, "_CLOCK", _ActivityClock())
     monkeypatch.setattr(usage_refresh, "_ACTIVE", {})
     monkeypatch.setattr(usage_refresh, "_SECONDS", {})
-    monkeypatch.setenv(
-        "AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS",
-        '[{"id":"test","engine":"codex","account":"test","scope":"codex","count":1,'
-        '"from":"2000-01-01T00:00:00+00:00","until":"2100-01-01T00:00:00+00:00"}]',
-    )
+    config.update_settings({"action": "set", "key": "codex_auto_reset", "value": "true"})
 
 
 def test_usage_report_percent_and_extra_spend_are_distinct() -> None:

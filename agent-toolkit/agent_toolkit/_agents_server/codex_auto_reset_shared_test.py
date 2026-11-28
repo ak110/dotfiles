@@ -51,6 +51,53 @@ def _upstream_records(clone: pathlib.Path) -> list[dict]:
     return json.loads(text)["reservations"]
 
 
+@pytest.mark.parametrize(("outcome", "terminal"), [("reset", "success"), ("noCredit", "closed")])
+@pytest.mark.asyncio
+async def test_restart_after_shared_completion_does_not_repeat_a_finished_attempt(
+    tmp_path, monkeypatch, clones, outcome, terminal
+):
+    notes_a, notes_b, _ = clones
+    state = tmp_path / "state"
+    _publish_settings(notes_a)
+    first = _RPC()
+    first.outcomes = [outcome]
+    window = first.limits["rateLimits"]["secondary"]["resetsAt"]
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: window - 600)
+    write_attempt = codex_auto_reset._write_attempt  # noqa: SLF001  # pylint: disable=protected-access
+
+    def interrupted(path, attempt):
+        if attempt.status == terminal:
+            raise OSError("共有確定後の停止")
+        write_attempt(path, attempt)
+
+    async def run(rpc):
+        return await check_auto_reset(rpc, state_dir=state, configured=True, shared_notes=notes_a)
+
+    with monkeypatch.context() as fault:
+        fault.setattr(codex_auto_reset, "_write_attempt", interrupted)
+        with pytest.raises(OSError, match="共有確定後の停止"):
+            await run(first)
+    [record] = _upstream_records(notes_b)
+    assert record["status"] == terminal
+    assert len(first.consumptions) == 1
+    [local] = (state / "agents-server" / "codex-auto-reset").glob("*.json")
+    assert json.loads(local.read_text(encoding="utf-8"))["status"] == "pending"
+
+    restarted = _RPC()
+    assert (await run(restarted)).reset_confirmed == (terminal == "success")
+    assert restarted.consumptions == []
+    assert json.loads(local.read_text(encoding="utf-8"))["status"] == terminal
+    if terminal == "success":
+        other = _RPC()
+        await check_auto_reset(other, state_dir=tmp_path / "other", configured=True, shared_notes=notes_b)
+        assert other.consumptions == []
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: window + 1)
+    restarted.limits["rateLimits"]["secondary"]["resetsAt"] = window + 7 * 86400
+    assert (await run(restarted)).reset_confirmed
+    assert len(restarted.consumptions) == 1
+    assert _upstream_records(notes_b)[-1]["key"] != record["key"]
+
+
 @pytest.mark.asyncio
 async def test_success_cannot_be_spent_twice_even_from_another_clone(tmp_path, monkeypatch, clones):
     """片方の端末で消費した週次窓を、他方の端末から再消費しない。  pyfltr: allow-comment"""
