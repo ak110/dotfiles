@@ -7,6 +7,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import wait_ci_forge
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
 from agent_toolkit._atk.wi import processing_owner
+from agent_toolkit._testing.wi_add_support import _write_origin_review
 from agent_toolkit._testing.wi_mutations_content_support import _edit_body_args
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes
 
@@ -42,9 +43,9 @@ def fixture_agent_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
     return _setup_notes(tmp_path)
 
 
-def _detail(tmp_path: pathlib.Path, text: str) -> int:
+def _detail(tmp_path: pathlib.Path, text: str, *args: str) -> int:
     with pytest.raises(SystemExit) as exc_info:
-        atk.main([*_edit_body_args(tmp_path, "fb-001.md", text), "--detail"], home=tmp_path)
+        atk.main([*_edit_body_args(tmp_path, "fb-001.md", text), "--detail", *args], home=tmp_path)
     return int(exc_info.value.code or 0)
 
 
@@ -62,15 +63,37 @@ def test_owner_details_once_and_second_replacement_is_rejected(agent_env: pathli
     assert path.read_text(encoding="utf-8") == saved
 
 
+def test_owner_details_user_awi_only_with_origin_review(agent_env: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    path = _processing_entry(agent_env, source="user")
+    quote = "請求書の取引日を表示する"
+    old = path.read_text(encoding="utf-8") + f"\n## ユーザー指摘の逐語引用\n\n{quote}\n"
+    path.write_text(old, encoding="utf-8")
+    draft = f"# 詳細化した要求\n\n取引日のない行は未登録と表示する。\n\n## ユーザー指摘の逐語引用\n\n{quote}\n"
+    review = _write_origin_review(tmp_path, draft, quote)
+
+    assert _detail(tmp_path, draft) != 0
+    assert path.read_text(encoding="utf-8") == old
+    assert _detail(tmp_path, draft, "--origin-review", review) == 0
+    saved = path.read_text(encoding="utf-8")
+    parsed = frontmatter_parser.parse_frontmatter(saved)
+    assert parsed is not None
+    assert parsed[0]["source"] == "user"
+    assert parsed[0]["detailed"] in (True, "true")
+    assert "取引日のない行は未登録と表示する。" in parsed[1]
+    assert _detail(tmp_path, draft, "--origin-review", review) == 2
+    assert path.read_text(encoding="utf-8") == saved
+
+
 @pytest.mark.parametrize(
     ("source", "owner"),
     [
         ("process-wi", "session-b"),
+        ("user", "session-b"),
         ("add-awi-by-user", "session-a"),
         ("process-user-comments", "session-a"),
         ("implement", "session-a"),
     ],
-    ids=["other-conversation", "add-awi-by-user", "process-user-comments", "implement"],
+    ids=["other-conversation", "user-other-conversation", "add-awi-by-user", "process-user-comments", "implement"],
 )
 def test_detail_is_rejected_for_other_conversation_and_exempt_sources(
     agent_env: pathlib.Path, tmp_path: pathlib.Path, source: str, owner: str
