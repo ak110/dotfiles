@@ -386,6 +386,7 @@ def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib
                 session_names = (
                     "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDE_ENV_FILE",
                     "AGENT_TOOLKIT_COMMIT_HOOKS", "AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR", "AGENT_TOOLKIT_RUN_SKILL_ID",
+                    "AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT", "AGENT_TOOLKIT_COMMIT_CLAUDE_UV",
                 )
                 leaked = [name for name in session_names if name in os.environ]
                 assert not leaked, leaked
@@ -413,6 +414,8 @@ def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib
         "CLAUDE_ENV_FILE": str(tmp_path / "parent-env.sh"),
         "AGENT_TOOLKIT_COMMIT_HOOKS": str(tmp_path / "parent-hooks"),
         "AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR": "parent-actor",
+        "AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT": str(tmp_path / "parent-plugin-root"),
+        "AGENT_TOOLKIT_COMMIT_CLAUDE_UV": str(tmp_path / "parent-uv"),
         "AGENT_TOOLKIT_RUN_SKILL_ID": "parent-run",
         "PARENT_VENV_BIN": str(tmp_path / "parent-venv" / "bin"),
     }

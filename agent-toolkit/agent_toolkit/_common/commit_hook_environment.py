@@ -7,10 +7,16 @@ import shlex
 import shutil
 from collections.abc import Mapping, Sequence
 
-from agent_toolkit._common import atomic_file
+from agent_toolkit._common import atomic_file, host_homes
 
 HOOKS_ENV = "AGENT_TOOLKIT_COMMIT_HOOKS"
 CLAUDE_ACTOR_ENV = "AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR"
+_CLAUDE_ROOT_ENV = "AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT"
+_CLAUDE_UV_ENV = "AGENT_TOOLKIT_COMMIT_CLAUDE_UV"
+
+_LAUNCHER = "scripts/launch.py"
+_TARGET = "agent_toolkit/_hooks/git_commit_msg.py"
+_UV_ARGUMENTS = ("run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python")
 
 _HOOKS = (
     "applypatch-msg",
@@ -44,6 +50,10 @@ _HOOKS = (
 )
 
 
+def claude_directory(home: pathlib.Path) -> pathlib.Path:
+    return host_homes.commit_hook_directory(home, "claude") / "session"
+
+
 def config_parameter(directory: pathlib.Path) -> str:
     value = directory.as_posix().replace("'", "'\\''").replace("!", "'\\!'")
     return "'core.hooksPath'='" + value + "'"
@@ -52,13 +62,21 @@ def config_parameter(directory: pathlib.Path) -> str:
 def original_environment(directory: pathlib.Path, environment: Mapping[str, str]) -> dict[str, str]:
     original = dict(environment)
     key = "GIT_CONFIG_PARAMETERS"
-    pattern = r"(?<!\S)" + re.escape(config_parameter(directory)) + r"(?!\S)"
-    restored = re.sub(pattern, "", original.get(key, ""), count=1).strip()
+    directories = [directory]
+    home = pathlib.Path.home()
+    if directory == claude_directory(home):
+        # 入れ子の会話が継承した旧Claude・Codexのラッパーを再実行せず、既存hookへ転送する。  # pyfltr: allow-comment
+        directories.extend(host_homes.commit_hook_directory(home, host) for host in ("claude", "codex"))
+    restored = original.get(key, "")
+    for installed in directories:
+        pattern = r"(?<!\S)" + re.escape(config_parameter(installed)) + r"(?!\S)"
+        restored = re.sub(pattern, "", restored).strip()
     if restored:
         original[key] = restored
     else:
         original.pop(key, None)
-    original.pop(HOOKS_ENV, None)
+    for name in (HOOKS_ENV, _CLAUDE_ROOT_ENV, _CLAUDE_UV_ENV):
+        original.pop(name, None)
     return original
 
 
@@ -69,42 +87,45 @@ def atk_environment(arguments: Sequence[str], environment: dict[str, str]) -> di
     return environment
 
 
-def shell_exports(directory: pathlib.Path) -> str:
+def install_claude(directory: pathlib.Path, root: pathlib.Path) -> str:
+    uv = _validate_installation(directory, root).absolute()
+    runner = (
+        f'"${{{_CLAUDE_UV_ENV}:?}}" {shlex.join(_UV_ARGUMENTS)} '
+        f'"${{{_CLAUDE_ROOT_ENV}:?}}/{_LAUNCHER}" "${{{_CLAUDE_ROOT_ENV}:?}}/{_TARGET}" ' + shlex.quote(directory.as_posix())
+    )
+    _install(directory, runner)
     setting = shlex.quote(config_parameter(directory))
     return (
         f"export {HOOKS_ENV}={shlex.quote(directory.as_posix())}\n"
-        f'case " ${{GIT_CONFIG_PARAMETERS-}} " in\n'
-        f'  *" "{setting}" "*) ;;\n'
+        f"export {_CLAUDE_ROOT_ENV}={shlex.quote(root.as_posix())}\n"
+        f"export {_CLAUDE_UV_ENV}={shlex.quote(uv.as_posix())}\n"
+        f'case " ${{GIT_CONFIG_PARAMETERS-}}" in\n'
+        f'  *" "{setting}) ;;\n'
         f'  *) export GIT_CONFIG_PARAMETERS="${{GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }}"{setting} ;;\n'
         "esac\n"
     )
 
 
 def install(directory: pathlib.Path, root: pathlib.Path) -> bool:
+    uv = _validate_installation(directory, root)
+    runner = shlex.join(
+        [uv.as_posix(), *_UV_ARGUMENTS, (root / _LAUNCHER).as_posix(), (root / _TARGET).as_posix(), directory.as_posix()]
+    )
+    return _install(directory, runner)
+
+
+def _validate_installation(directory: pathlib.Path, root: pathlib.Path) -> pathlib.Path:
     if not directory.is_absolute() or not root.is_absolute():
         raise ValueError("Git hookの固定配置と配布先は絶対パスで指定する")
     uv = shutil.which("uv")
     if not uv:
         raise FileNotFoundError("Git hookの起動に必要なuvが見つからない")
-    launch = root / "scripts" / "launch.py"
-    target = root / "agent_toolkit" / "_hooks" / "git_commit_msg.py"
-    if not launch.is_file() or not target.is_file():
+    if not (root / _LAUNCHER).is_file() or not (root / _TARGET).is_file():
         raise FileNotFoundError(f"Git hookの配布先が揃っていない: {root}")
-    runner = shlex.join(
-        [
-            pathlib.Path(uv).as_posix(),
-            "run",
-            "--no-cache",
-            "--no-config",
-            "--no-project",
-            "--python",
-            "3.15",
-            "python",
-            launch.as_posix(),
-            target.as_posix(),
-            directory.as_posix(),
-        ]
-    )
+    return pathlib.Path(uv)
+
+
+def _install(directory: pathlib.Path, runner: str) -> bool:
     changed = False
     for name in _HOOKS:
         path = directory / name

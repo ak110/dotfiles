@@ -12,7 +12,9 @@ from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit._common import commit_hook_environment, inherited_venv, plugin_environment
+from agent_toolkit._common import commit_hook_environment, host_homes, inherited_venv, plugin_environment
+from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
+from agent_toolkit._hooks.pretooluse import commit_identity, dispatch
 from agent_toolkit._testing.git_repository import git_output, init_repository, run_git
 from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES, HOME_ENVIRONMENT_NAMES
 
@@ -45,9 +47,8 @@ class HookEnvironment:
     expected: dict[str, str | None]
 
 
-def _install_hooks(tmp_path: pathlib.Path, caller: str, host_environment: dict[str, str]) -> HookEnvironment:
+def _copy_distribution(distribution: pathlib.Path) -> None:
     source = pathlib.Path(__file__).resolve().parents[2]
-    distribution = tmp_path / "distribution"
     shutil.copytree(
         source / "agent_toolkit",
         distribution / "agent_toolkit",
@@ -56,6 +57,11 @@ def _install_hooks(tmp_path: pathlib.Path, caller: str, host_environment: dict[s
     (distribution / "scripts").mkdir()
     for name in ("launch.py", "launch.py.lock"):
         shutil.copyfile(source / "scripts" / name, distribution / "scripts" / name)
+
+
+def _install_hooks(tmp_path: pathlib.Path, caller: str, host_environment: dict[str, str]) -> HookEnvironment:
+    distribution = tmp_path / "distribution"
+    _copy_distribution(distribution)
     (distribution / "worktree_api.py").write_text("old = 1\n", encoding="utf-8")
     repository = init_repository(
         tmp_path / "repository",
@@ -67,6 +73,27 @@ def _install_hooks(tmp_path: pathlib.Path, caller: str, host_environment: dict[s
         commit_message="基点",
     )
     venv.EnvBuilder(with_pip=False).create(repository / ".venv")
+    environment = _hook_environment(tmp_path, host_environment)
+    if caller != "unset":
+        environment.update(
+            PYTHONPATH="" if caller == "empty" else str(repository / "src"),
+            UV_PROJECT_ENVIRONMENT="" if caller == "empty" else str(repository / ".venv"),
+            VIRTUAL_ENV="" if caller == "empty" else str(repository / ".venv"),
+        )
+    if caller == "explicit":
+        environment["PATH"] = str(repository / ".venv" / "bin") + os.pathsep + environment["PATH"]
+    runtime = _prepare_runtime(distribution, environment)
+    hooks = tmp_path / "fixed hooks"
+    uv = _uv_path(host_environment)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("PATH", str(uv.parent) + os.pathsep + os.environ["PATH"])
+        commit_hook_environment.install(hooks, distribution)
+    environment[commit_hook_environment.HOOKS_ENV] = str(hooks)
+    environment["GIT_CONFIG_PARAMETERS"] += " " + commit_hook_environment.config_parameter(hooks)
+    return HookEnvironment(repository, distribution, runtime, environment, {key: environment.get(key) for key in _SEARCH_KEYS})
+
+
+def _hook_environment(tmp_path: pathlib.Path, host_environment: dict[str, str]) -> dict[str, str]:
     environment = dict(host_environment)
     inherited_venv.strip_inherited_venv(environment)
     environment["PATH"] = os.pathsep.join(
@@ -87,14 +114,19 @@ def _install_hooks(tmp_path: pathlib.Path, caller: str, host_environment: dict[s
         UV_OFFLINE="true",
         PYTHONDONTWRITEBYTECODE="1",
     )
-    if caller != "unset":
-        environment.update(
-            PYTHONPATH="" if caller == "empty" else str(repository / "src"),
-            UV_PROJECT_ENVIRONMENT="" if caller == "empty" else str(repository / ".venv"),
-            VIRTUAL_ENV="" if caller == "empty" else str(repository / ".venv"),
-        )
-    if caller == "explicit":
-        environment["PATH"] = str(repository / ".venv" / "bin") + os.pathsep + environment["PATH"]
+    return environment
+
+
+def _uv_path(environment: dict[str, str]) -> pathlib.Path:
+    search_path = os.pathsep.join(
+        directory for directory in os.get_exec_path(environment) if pathlib.Path(directory).name != "shims"
+    )
+    uv = shutil.which("uv", path=search_path)
+    assert uv is not None
+    return pathlib.Path(uv)
+
+
+def _prepare_runtime(distribution: pathlib.Path, environment: dict[str, str]) -> pathlib.Path:
     runtime = plugin_environment.project_environment(distribution, environment)
     builder = venv.EnvBuilder(with_pip=False)
     builder.create(runtime)
@@ -103,18 +135,7 @@ def _install_hooks(tmp_path: pathlib.Path, caller: str, host_environment: dict[s
         sysconfig.get_path("purelib") + "\n", encoding="utf-8"
     )
     plugin_environment.publish_prepared_environment(distribution, environment)
-    hooks = tmp_path / "fixed hooks"
-    search_path = os.pathsep.join(
-        directory for directory in os.get_exec_path(host_environment) if pathlib.Path(directory).name != "shims"
-    )
-    uv = shutil.which("uv", path=search_path)
-    assert uv is not None
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setenv("PATH", str(pathlib.Path(uv).parent) + os.pathsep + os.environ["PATH"])
-        commit_hook_environment.install(hooks, distribution)
-    environment[commit_hook_environment.HOOKS_ENV] = str(hooks)
-    environment["GIT_CONFIG_PARAMETERS"] += " " + commit_hook_environment.config_parameter(hooks)
-    return HookEnvironment(repository, distribution, runtime, environment, {key: environment.get(key) for key in _SEARCH_KEYS})
+    return runtime
 
 
 def _pre_commit(case: HookEnvironment) -> None:
@@ -199,3 +220,181 @@ def test_forwarded_hook_returns_its_exit_status_after_restoring_environment(
     )
     assert result.returncode == status, result.stderr
     assert (case.repository / "received").read_text(encoding="utf-8") == "before after\n"
+
+
+def _start_claude_session(root: pathlib.Path, env_file: pathlib.Path, environment: dict[str, str], *, actor: str) -> None:
+    target = root / "agent_toolkit/_hooks/git_commit_msg.py"
+    text = target.read_text(encoding="utf-8")
+    entrypoint = 'if __name__ == "__main__":\n'
+    target.write_text(text.replace(entrypoint, entrypoint + f"    print({root.name!r})\n"), encoding="utf-8")
+    probe = root / "session_start.py"
+    probe.write_text(
+        "import json, sys\n"
+        "from agent_toolkit._hooks.pretooluse.commit_identity import persist_claude_commit_actor\n"
+        "persist_claude_commit_actor(json.load(sys.stdin))\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, str(root / "scripts/launch.py"), "--persist-claude-env", probe.name],
+        cwd=env_file.parent,
+        env={**environment, "CLAUDE_ENV_FILE": str(env_file)},
+        input=json.dumps({"session_id": actor, "model": "claude-opus-5-5", "effort": "low"}),
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def _session_git(
+    repository: pathlib.Path,
+    env_file: pathlib.Path,
+    environment: dict[str, str],
+    *arguments: str,
+    command: str = 'exec git "$@"',
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["sh", "-c", '. "$1"; shift; ' + command, "sh", env_file.as_posix(), *arguments],
+        cwd=repository,
+        env=environment,
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+
+
+def test_temporary_claude_distribution_does_not_replace_other_sessions_hooks(
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    host = host_environ()
+    environment = _hook_environment(tmp_path, host)
+    environment["PATH"] = str(_uv_path(host).parent) + os.pathsep + environment["PATH"]
+    repo_id = "example.test/team/git-hook-regression"
+    repository = init_repository(tmp_path / "repo", origin=f"https://{repo_id}", commit_message="基点")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", json.dumps({repo_id: {"edit": "allow"}}))
+    original = repository / "local hooks"
+    original.mkdir()
+    run_git(repository, "config", "core.hooksPath", "local hooks")
+    hook = original / "pre-commit"
+    hook.write_text(
+        "#!/bin/sh\n"
+        '[ "$(git config --get core.hooksPath)" = "local hooks" ] && [ "$(git config --get color.ui)" = never ] || exit 42\n'
+        '[ -z "${AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT+x}${AGENT_TOOLKIT_COMMIT_CLAUDE_UV+x}" ] || exit 43\n'
+        "if [ -f reject ]; then echo local-hook-rejected >&2; exit 41; fi\n"
+        "echo local-hook\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    hook.chmod(0o755)
+    assert not commit_identity.commit_hook_installed(is_codex=False)
+
+    stable = tmp_path / "stable root"
+    temporary = tmp_path / "temporary root's"
+    _copy_distribution(stable)
+    _copy_distribution(temporary)
+    _prepare_runtime(stable, environment)
+
+    stable_env = tmp_path / "stable.env"
+    temporary_env = tmp_path / "temporary.env"
+    _start_claude_session(stable, stable_env, environment, actor="stable")
+    assert commit_identity.commit_hook_installed(is_codex=False)
+    trailer = co_author_trailer(RuntimeIdentity("claude", "claude-opus-5-5", "low", "observed"))
+    commit = ("commit", "--allow-empty", "-m", "試験", "-m", trailer)
+    before = _session_git(repository, stable_env, environment, *commit)
+    assert before.returncode == 0, before.stderr
+
+    home = pathlib.Path.home()
+    legacy = host_homes.commit_hook_directory(home, "claude")
+    codex = host_homes.commit_hook_directory(home, "codex")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("PATH", environment["PATH"])
+        for directory in (legacy, codex):
+            commit_hook_environment.install(directory, stable)
+    legacy_pre_commit = legacy / "pre-commit"
+    legacy_before = legacy_pre_commit.read_bytes()
+
+    _start_claude_session(temporary, temporary_env, environment, actor="temporary")
+    during = _session_git(repository, stable_env, environment, *commit)
+    temp_commit = _session_git(repository, temporary_env, environment, *commit)
+    assert temp_commit.returncode == 0, temp_commit.stderr
+    bad_commit = ("commit", "--allow-empty", "-m", "帰属がない")
+    blocked_temporary = _session_git(repository, temporary_env, environment, *bad_commit)
+    assert blocked_temporary.returncode != 0 and trailer in blocked_temporary.stderr
+    shutil.rmtree(temporary)
+    assert not temporary.exists()
+    after = _session_git(repository, stable_env, environment, *commit)
+    assert after.returncode == 0, after.stderr
+    assert during.returncode == 0, during.stderr
+    for result, root in ((before, stable), (during, stable), (temp_commit, temporary), (after, stable)):
+        output = (result.stdout + result.stderr).splitlines()
+        assert root.name in output
+        assert output.count("local-hook") == 1
+
+    head = git_output(repository, "rev-parse", "HEAD")
+    assert legacy_pre_commit.read_bytes() == legacy_before
+    blocked = _session_git(repository, stable_env, environment, *bad_commit)
+    assert blocked.returncode != 0
+    assert trailer in blocked.stderr
+    assert git_output(repository, "rev-parse", "HEAD") == head
+
+    reject = repository / "reject"
+    reject.touch()
+    rejected = _session_git(repository, stable_env, environment, *commit)
+    assert rejected.returncode != 0 and "local-hook-rejected" in rejected.stderr
+    assert git_output(repository, "rev-parse", "HEAD") == head
+    reject.unlink()
+
+    old_env = {
+        **environment,
+        commit_hook_environment.CLAUDE_ACTOR_ENV: "stable",
+        commit_hook_environment.HOOKS_ENV: legacy.as_posix(),
+        "GIT_CONFIG_PARAMETERS": environment["GIT_CONFIG_PARAMETERS"] + " " + commit_hook_environment.config_parameter(legacy),
+    }
+    old_commit = run_git(repository, *commit, env=old_env, check=False)
+    assert old_commit.returncode == 0 and stable.name in old_commit.stdout + old_commit.stderr, old_commit.stderr
+
+    inherited = {
+        **environment,
+        "GIT_CONFIG_PARAMETERS": " ".join(
+            (environment["GIT_CONFIG_PARAMETERS"], *(commit_hook_environment.config_parameter(d) for d in (legacy, codex)))
+        ),
+    }
+    nested = _session_git(repository, stable_env, inherited, *commit)
+    assert nested.returncode == 0, nested.stderr
+    assert (nested.stdout + nested.stderr).splitlines().count("local-hook") == 1
+    assert git_output(repository, "config", "--get", "core.hooksPath") == "local hooks"
+
+    head = git_output(repository, "rev-parse", "HEAD")
+    for setup in (
+        "unset AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT",
+        "export AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT=''",
+        f"export AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT={shlex.quote(temporary.as_posix())}",
+        "unset AGENT_TOOLKIT_COMMIT_CLAUDE_UV",
+    ):
+        broken = _session_git(repository, stable_env, environment, *commit, command=f'{setup}; exec git "$@"')
+        assert broken.returncode != 0 and "local-hook" not in broken.stdout + broken.stderr
+    assert git_output(repository, "rev-parse", "HEAD") == head
+
+    child_trailer = co_author_trailer(RuntimeIdentity("claude", "claude-opus-5-5", "high", "observed"))
+    record = {
+        "tool_name": "Bash",
+        "tool_input": {"command": f"git commit --allow-empty -m 試験 -m {shlex.quote(child_trailer)}"},
+        "cwd": str(repository),
+        "session_id": "stable",
+        "agent_id": "child",
+        "model": "claude-opus-5-5",
+        "effort": "high",
+    }
+    assert dispatch.main(json.dumps(record)) == 0
+    hook_output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert "permissionDecision" not in hook_output, hook_output.get("permissionDecisionReason")
+    child_command = hook_output["updatedInput"]["command"]
+    assert child_command.startswith("export AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR=stable.child\n")
+    child_commit = _session_git(repository, stable_env, environment, command=child_command)
+    assert child_commit.returncode == 0, child_commit.stderr
+    assert child_trailer in git_output(repository, "show", "-s", "--format=%B")

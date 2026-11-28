@@ -62,8 +62,14 @@ def persist_claude_commit_actor(payload: dict) -> None:
 
 
 def commit_hook_installed(*, is_codex: bool) -> bool:
-    host = "codex" if is_codex else "claude"
-    return (_host_homes.commit_hook_directory(pathlib.Path.home(), host) / "commit-msg").is_file()
+    home = pathlib.Path.home()
+    if is_codex:
+        return (_host_homes.commit_hook_directory(home, "codex") / "commit-msg").is_file()
+    # プラグイン再読込だけでは、既存BashのSessionStart設定は置き換わらない。  # pyfltr: allow-comment
+    return any(
+        (directory / "commit-msg").is_file()
+        for directory in (commit_hook_environment.claude_directory(home), _host_homes.commit_hook_directory(home, "claude"))
+    )
 
 
 def static_commit_body_safe(command: str, cwd: str) -> bool:
