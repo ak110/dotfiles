@@ -91,6 +91,29 @@ def _turn(delivery: str | None, final: str | None, effort: str | None = "low") -
             "unidentified",
         ),
         ("直前の返却を受けて。" + _TAIL, "作業の途中経過", (), "delegate", "auto_unknown"),
+        (
+            "未完了の範囲を教えてください。",
+            "調べた範囲を返す",
+            ("未完了の範囲を教えてください。",),
+            "delegate",
+            "new_work_or_inquiry",
+        ),
+        (
+            "別の案件の残りを調べてください。",
+            "調べた範囲を返す",
+            ("別の案件の残りを調べてください。",),
+            "delegate",
+            "unidentified",
+        ),
+        (
+            "別の案件の残りを続けてください。",
+            "調べた範囲を返す",
+            ("別の案件の残りを続けてください。",),
+            "delegate",
+            "unidentified",
+        ),
+        ("続けてもらえますか？", "調べた範囲を返す", ("続けてもらえますか？",), "delegate", "unidentified"),
+        ("残りが気になる", "調べた範囲を返す", ("残りが気になる",), "delegate", "unidentified"),
     ],
     ids=[
         "auto-format",
@@ -111,6 +134,11 @@ def _turn(delivery: str | None, final: str | None, effort: str | None = "low") -
         "owner-quotes-auto",
         "quoted-marker-without-server-end",
         "auto-without-known-reason",
+        "inquiry-with-cue-after-partial",
+        "other-work-with-cue-after-partial",
+        "other-work-with-order-after-partial",
+        "question-with-order-after-partial",
+        "cue-without-order-after-partial",
     ],
 )
 def test_classify_input_separates_sources_and_reasons(body, previous, followups, role, expected) -> None:
@@ -189,6 +217,8 @@ def test_tally_attributes_each_event_to_the_turn_that_returned() -> None:
     medium = groups[("codex", "model-a", "medium", "chores", "delegate")]
     high = groups[("codex", "model-a", "high", "chores", "delegate")]
     assert low["continuations"]["auto_format"] == 1
+    assert low["auto_left_work_unidentified"] == 1
+    assert medium["auto_left_work_unidentified"] == 0
     assert low["delegations_with_continuation"] == 1
     assert low["continuation_turn_seconds"] == 2.0
     assert medium["uncounted"]["answer"] == 1

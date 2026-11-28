@@ -29,7 +29,8 @@ from session_evidence_stats import _parse_cli_timestamp
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 # 自動の回復の文面は`manager_resume.py`が送る本文の先頭で、試験が原本との一致を確かめる。  # pyfltr: allow-comment
-# 作業を残した返却への回復は区分を持たずどちらかの文面で届くため、別に数えられない。  # pyfltr: allow-comment
+# 文面が示すのは形式の診断か不足申告の有無だけで、担当内で続けられる作業を残した返却かは  # pyfltr: allow-comment
+# どの文面でも判別できない。このため回復は全件をその点で理由不明として別に数える。  # pyfltr: allow-comment
 AUTO_FORMAT_PREFIX = "直前の返却は返却形式の契約に適合しない。"
 AUTO_RECHECK_PREFIX = "直前の不足申告の前提を一度再確認する。"
 AUTO_RECOVERY_MARKER = "担当内で補える作業を完遂した上で所定の返却形式を返せ。"
@@ -42,6 +43,13 @@ INFRA_RESUME_PATTERN = re.compile(
 # 完了を示した返却の後の追送は、継続を求める語を含む時だけ新しい作業と区別できない。  # pyfltr: allow-comment
 CONTINUATION_CUE = re.compile(r"続け|続行|完遂|再開|最後まで|残り|残工程|未完了|途中")
 _CUE_NEGATION = re.compile(r"(?:続け|続行|再開)(?:せず|ず|ないで|しないで|不要)|だけ教えて|状況だけ|進捗だけ")
+# 未完了の返却への追送は、継続を命じる動詞があり照会と別の作業の語が無い時だけ継続指示とする。  # pyfltr: allow-comment
+# 語の出現だけでは同じ語を含む別の目的を除けないため、それ以外は照会か判別不能へ倒す。  # pyfltr: allow-comment
+_CONTINUE_ORDER = re.compile(
+    r"続けて|続けよ|続けろ|続行して|続行せよ|再開して|再開せよ|完遂して|完遂せよ|最後まで(?:進めて|終えて|やって)"
+)
+_INQUIRY = re.compile(r"教えて|知らせて|報告して|示して|ですか|ますか|[？?]|状況|進捗")
+_OTHER_WORK = re.compile(r"別の|他の|ほかの|新しい|追加で|追加の")
 # 作業契約の更新を伴う追送は、記録した原文の後に更新の通知が付いて届く。  # pyfltr: allow-comment
 _CONTRACT_UPDATE_OPENING = '\n\n<atk-auto source="agents-server" kind="work-contract-update">'
 _SUCCESS_LINE = "状態: completed"
@@ -148,8 +156,13 @@ def delivered_text(body: str) -> str:
     return body
 
 
-def _asks_to_continue(body: str) -> bool:
-    return CONTINUATION_CUE.search(body) is not None and _CUE_NEGATION.search(body) is None
+def _owner_input_after_incomplete(body: str) -> str:
+    if _CUE_NEGATION.search(body):
+        return "unidentified"
+    inquiry = _INQUIRY.search(body) is not None
+    if _CONTINUE_ORDER.search(body):
+        return "unidentified" if inquiry or _OTHER_WORK.search(body) else "owner_continue"
+    return "new_work_or_inquiry" if inquiry else "unidentified"
 
 
 def classify_input(body: str, previous: str | None, delegation: Delegation, *, occurrences: int = 1) -> str:
@@ -169,9 +182,8 @@ def classify_input(body: str, previous: str | None, delegation: Delegation, *, o
             return "unidentified" if CONTINUATION_CUE.search(body) else "new_work_or_inquiry"
         if state.removeprefix("cannot_continue:") in _ANSWER_CLASSIFICATIONS:
             return "answer"
-        # 未完了の返却の後でも照会などがあるため、継続を求める語がある時だけ継続指示とする。  # pyfltr: allow-comment
         if state.startswith("cannot_continue:") or state == "no_success_line":
-            return "owner_continue" if _asks_to_continue(body) else "unidentified"
+            return _owner_input_after_incomplete(body)
         return "unidentified"
     if body.startswith(AUTO_FORMAT_PREFIX):
         return "auto_format"
@@ -341,6 +353,7 @@ def _empty_group() -> dict[str, Any]:
         "final_returns": 0,
         "delegations_with_continuation": 0,
         "continuations": dict.fromkeys(CONTINUATION_REASONS, 0),
+        "auto_left_work_unidentified": 0,
         "unidentified": 0,
         "uncounted": dict.fromkeys(UNCOUNTED_KINDS, 0),
         "final_without_continuation": collections.Counter(),
@@ -388,6 +401,8 @@ def tally(delegations: list[Delegation]) -> tuple[dict[tuple, dict[str, Any]], d
                 if kind in CONTINUATION_REASONS:
                     consumed_returns.add(last_return)
                     group["continuations"][kind] += 1
+                    if kind.startswith("auto_"):
+                        group["auto_left_work_unidentified"] += 1
                     continued.add(key)
                     if turn.seconds is None:
                         group["continuation_turn_seconds_missing"] += 1
@@ -442,8 +457,10 @@ def main(argv: list[str] | None = None) -> int:
             "帰属するturnのengine・model・effort・model_type・役割別に数える。本文と識別子は出力しない。"
         ),
         epilog=(
-            "continuations: auto_format=返却形式の不適合への自動の回復、auto_insufficiency_recheck=不足の申告の再確認、"
-            "auto_unknown=理由を文面から判別できない自動の回復、owner_continue=未完了の返却への委譲元の継続指示。"
+            "continuations: auto_format=返却形式の診断を伴う自動の回復、auto_insufficiency_recheck=不足の申告の再確認、"
+            "auto_unknown=診断の種類を文面から判別できない自動の回復、owner_continue=未完了の返却への委譲元の継続指示。"
+            "auto_left_work_unidentifiedは自動の回復の件数で、担当内で続けられる作業を残した返却かはどの文面でも判別できない"
+            "（0件や形式だけの不適合と読まない）。"
             "unidentifiedは出所か目的を判別できない入力。uncountedは継続に数えない入力で、after_wait=待機の後、"
             "declared_stage=役割の定型の工程継続、answer=判断・入力・認可・外部の待ちを求めた返却への回答、"
             "new_work_or_inquiry=完了の後の新しい依頼や照会、infra_resume=障害の後の自動の再開、"
@@ -451,7 +468,11 @@ def main(argv: list[str] | None = None) -> int:
             "modelとeffortは記録の観測値（Codexはturn_context、Claudeはassistant行）だけを使い、無ければnullの欠測とする。"
         ),
     )
-    parser.add_argument("--since", required=True, help="起動日時の開始。YYYY-MM-DDかISO 8601日時。開始を含む。")
+    parser.add_argument(
+        "--since",
+        required=True,
+        help="実行ホストの登録簿にある委譲の起動日時の開始。YYYY-MM-DDかISO 8601日時。開始を含む。",
+    )
     parser.add_argument("--until", required=True, help="起動日時の終了日（その日を含む）またはISO 8601日時（終了を含まない）。")
     args = parser.parse_args(argv)
     try:
@@ -503,6 +524,10 @@ def main(argv: list[str] | None = None) -> int:
                 "unattributed_values": "modelとeffortのnullは該当turnの記録に観測値が無い欠測",
                 "acceptance": "欠測（登録簿と委譲先の記録に委譲元の受け入れが残らない）",
                 "tokens": "全件欠測（turnごとに集計していない）",
+                "auto_recovery_left_work": (
+                    "理由不明（auto_left_work_unidentified）。回復の文面は形式の診断と不足申告の有無だけを示し、"
+                    "担当内で続けられる作業を残した返却かは記録から判別できない"
+                ),
                 "groups": rows,
             },
             ensure_ascii=False,
