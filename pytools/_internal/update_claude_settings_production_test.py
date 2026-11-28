@@ -31,43 +31,19 @@ class TestProductionManagedSettings:
         """OS別設定の個人Stop hookが各プラットフォームの契約と一致する。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(f".{suffix}.json")
         data = json.loads(path.read_text(encoding="utf-8"))
-        stop_groups = data["hooks"].get("Stop", [])
-        commands = [hook["command"] for group in stop_groups for hook in group["hooks"]]
-        assert sum("dotfiles-claude-hook autonomous_exit" in command for command in commands) == 0
-        assert sum("dotfiles-claude-hook stop_bell" in command for command in commands) == (1 if suffix == "posix" else 0)
-        assert "dotfiles-claude-hook stop" not in commands
-        assert ("Stop" in data["hooks"]) is (suffix == "posix")
+        assert "Stop" not in data["hooks"]
+        assert all(group.get("matcher") != "AskUserQuestion" for group in data["hooks"]["PreToolUse"])
+        assert (data.get("env", {}).get("AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL") == "true") is (suffix == "posix")
 
     def test_managed_settings_declares_no_deny_rules(self):
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert "deny" not in data["permissions"]
 
-    @pytest.mark.parametrize(
-        ("event", "hook_exit_code", "expected_exit_code"),
-        [
-            ("PreToolUse", 0, 0),
-            ("PreToolUse", 1, 0),
-            ("PreToolUse", 2, 0),
-            ("Stop", 1, 0),
-            ("Stop", 2, 0),
-        ],
-    )
-    def test_posix_hook_commands_preserve_exit_contract(
-        self,
-        tmp_path: Path,
-        event: str,
-        hook_exit_code: int,
-        expected_exit_code: int,
-    ) -> None:
+    @pytest.mark.parametrize("hook_exit_code", [0, 1, 2])
+    def test_posix_hook_commands_preserve_exit_contract(self, tmp_path: Path, hook_exit_code: int) -> None:
         """POSIX個人hookは警告だけを返すため、どの終了コードも呼び出し元へ伝えず0で終える。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(".posix.json")
-        data = json.loads(path.read_text(encoding="utf-8"))
-        command = next(
-            hook["command"]
-            for group in data["hooks"][event]
-            for hook in group["hooks"]
-            if "dotfiles-claude-hook" in hook["command"]
-        )
+        command = json.loads(path.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         args_path = tmp_path / "hook-args.json"
@@ -88,24 +64,13 @@ class TestProductionManagedSettings:
 
         result = subprocess.run(["/bin/sh", "-c", command], check=False, env=env)
 
-        assert result.returncode == expected_exit_code
-        expected_subcommand = {
-            "PreToolUse": "pretooluse",
-            "Stop": "stop_bell",
-        }[event]
-        assert args_path.read_text(encoding="utf-8") == expected_subcommand
+        assert result.returncode == 0
+        assert args_path.read_text(encoding="utf-8") == "pretooluse"
 
-    @pytest.mark.parametrize("event", ["PreToolUse", "Stop"])
-    def test_posix_hook_commands_allow_missing_console_script(self, tmp_path: Path, event: str) -> None:
+    def test_posix_hook_commands_allow_missing_console_script(self, tmp_path: Path) -> None:
         """POSIX個人hookはconsole scriptが存在しない場合も通過させる。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(".posix.json")
-        data = json.loads(path.read_text(encoding="utf-8"))
-        command = next(
-            hook["command"]
-            for group in data["hooks"][event]
-            for hook in group["hooks"]
-            if "dotfiles-claude-hook" in hook["command"]
-        )
+        command = json.loads(path.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
         empty_bin = tmp_path / "bin"
         empty_bin.mkdir()
         env = os.environ.copy()
@@ -279,15 +244,7 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
 
     def test_posix_personal_hooks_converge_to_single_current_registration(self, tmp_path: Path) -> None:
         current = json.loads(_PROD_MANAGED_SETTINGS.with_suffix(".posix.json").read_text(encoding="utf-8"))["hooks"]
-        current_commands = {
-            event: next(
-                hook["command"]
-                for group in current[event]
-                for hook in group["hooks"]
-                if "dotfiles-claude-hook" in hook["command"]
-            )
-            for event in ("PreToolUse", "Stop")
-        }
+        current_pretooluse = current["PreToolUse"][0]["hooks"][0]["command"]
         existing_hooks = {
             "PreToolUse": [
                 {
@@ -299,7 +256,7 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
                         }
                     ],
                 },
-                {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": current_commands["PreToolUse"]}]},
+                {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": current_pretooluse}]},
             ],
             "PostToolUse": [
                 {
@@ -321,7 +278,6 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
             ],
             "Stop": [
                 {"hooks": [{"type": "command", "command": "sh -c 'dotfiles-claude-hook stop_bell; exit 0'"}]},
-                {"hooks": [{"type": "command", "command": current_commands["Stop"]}]},
             ],
         }
         target_path = tmp_path / "settings.json"
@@ -336,8 +292,8 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
             event: [hook["command"] for group in groups for hook in group["hooks"] if "dotfiles-claude-hook" in hook["command"]]
             for event, groups in hooks.items()
         }
-        assert personal["PreToolUse"] == [current_commands["PreToolUse"]]
-        assert personal["Stop"] == [current_commands["Stop"]]
+        assert personal["PreToolUse"] == [current_pretooluse]
+        assert "Stop" not in hooks
         assert not personal.get("PostToolUse")
 
 

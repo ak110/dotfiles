@@ -1,6 +1,7 @@
 # テスト方針（全言語共通）
 
-テストコードを書く・レビューする時、検証手法を選ぶ時、条件分岐と判定条件を新設・変更する時に、試験の要否、検証の層と手段、安定と速度を決める基準である。
+テストコードの作成・レビュー、検証手法の選択、条件分岐や判定条件の新設・変更に使う。
+重要な契約の破れを安定して検出するため、試験の要否、検証の層と手段、安定性と速度を判断する。
 検証の独立には原則6（`agent-basics:writing-standards/references/quality-principles-verification.md`）を適用する。
 保証の範囲の言い方には原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）を適用する。
 試験の費用には原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）を適用する。

@@ -156,6 +156,7 @@ MUTABLE_KEY_DEFAULTS = {
     "claude_payg_env": "",
     "weekly_research_x_env": "",
     "claude_usage_limit_wait": "five-hour",
+    "claude_stop_bell": "false",
     "codex_usage_limit_wait": "five-hour",
     "repositories": "{}",
     "session_review_auto_start": "true",
@@ -169,6 +170,7 @@ MUTABLE_KEY_DEFAULTS = {
 
 # 同じprivate-notesを使う端末は共有を既定とし、端末ごとに残す設定だけを理由とともに列挙する。  # pyfltr: allow-comment
 HOST_SETTING_REASONS = {
+    "claude_stop_bell": "端末ごとにベルの必要性が異なるため",
     "agents_concurrency": "CPU・メモリと他のプロセスの負荷に合わせる上限のため",
     "dotfiles_mode": "端末の役割に応じた導入範囲のため",
     "serve_host": "各端末の待受アドレスと到達を許す範囲のため",
@@ -464,6 +466,7 @@ SETTING_CHOICES = {
     "serve_web_push_details": ("true", "false"),
     "dotfiles_mode": ("full", "minimal"),
     "claude_usage_limit_wait": ("never", "five-hour", "always"),
+    "claude_stop_bell": ("true", "false"),
     "codex_usage_limit_wait": ("never", "five-hour", "always"),
     "codex_fast_mode": ("auto", "true", "false"),
     "session_review_auto_start": ("true", "false"),
@@ -487,6 +490,7 @@ _SETTING_DESCRIPTIONS = {
     "codex_orchestrator_connections": "Codexの統括で試す接続順",
     "codex_worker_connections": "Codexの委譲先で試す接続順",
     "claude_usage_limit_wait": "Claudeの利用上限に達した場合に回復を待つ範囲",
+    "claude_stop_bell": "Claude Codeで応答が終わり入力待ちになったときにベルを鳴らすか",
     "codex_usage_limit_wait": "Codexの利用上限に達した場合に回復を待つ範囲",
     "repositories": "処理対象リポジトリと編集可否・検証OS・系統の登録",
     "session_review_auto_start": "会話の終わりに振り返りの候補を自動で処理するか",

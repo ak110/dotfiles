@@ -371,6 +371,30 @@ def test_codex_stop_public_entry_returns_host_output(tmp_path: pathlib.Path) -> 
 
 
 @pytest.mark.parametrize(
+    ("setting", "background", "expected"),
+    [(None, [], {}), ("true", [], {"terminalSequence": "\a"}), ("true", [{"type": "subagent", "id": "child"}], {})],
+)
+def test_claude_stop_public_entry_returns_bell_only_for_input_wait(tmp_path, setting, background, expected) -> None:
+    payload, environment = _build_fixture("Stop", "stop", tmp_path)
+    environment.pop("AGENT_TOOLKIT_OWNER_SESSION", None)
+    if setting is not None:
+        environment["AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL"] = setting
+    payload.update({"stop_hook_active": True, "background_tasks": background, "last_assistant_message": "完了した。"})
+    result = subprocess.run(
+        [sys.executable, str(_HOOK_SCRIPT), "stop"],
+        input=json.dumps(payload, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert validate_hook_output("Stop", output) == []
+    assert output == expected
+
+
+@pytest.mark.parametrize(
     "specific",
     [
         {},

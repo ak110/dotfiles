@@ -1,16 +1,3 @@
-"""Claude Code dotfiles個人環境フック共通エントリポイント。
-
-`share/claude_settings_json_managed.*.json`に個別登録されていたフックスクリプト
-（`pretooluse.py`等）の起動処理を集約する。各モジュールは`main()`関数の定義だけを担う。
-第1引数でサブコマンド（イベント種別相当のモジュール名）を指定する。
-
-集約方針・例外要約1行の書式・モジュール読込失敗を対象外とする理由は
-`agent-toolkit/agent_toolkit/hook.py`と共通のため重複記載しない。
-パッケージ内のモジュール（`pretooluse.py`・`stop_bell.py`）は、agent-toolkitをpytoolsの依存パッケージとしてimportし、
-hookの出力の整形と判定の部品を共有する。本ファイルの起動と例外処理だけはagent-toolkitをimportせずに完結させ、
-agent-toolkitを含むモジュールの読み込みに失敗した場合も、ここでtracebackを出力してフックを通過させる。
-"""
-
 # 起動と例外処理はagent-toolkitに依存させないため、`agent_toolkit/hook.py`と意図的に重複する。
 
 import importlib
@@ -19,15 +6,11 @@ import pathlib
 import sys
 import traceback
 
-_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "stop_bell"})
+_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse"})
 
 _MODULE_NAMES: dict[str, str] = {
     "pretooluse": "pytools.claude_hook.pretooluse",
-    "stop_bell": "pytools.claude_hook.stop_bell",
 }
-
-
-_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop_bell"})
 
 
 def _configure_standard_output() -> None:
@@ -91,10 +74,6 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         traceback.print_exc()
-        if arguments[0] in _APPROVE_FALLBACK_SUBCOMMANDS:
-            approve = getattr(module, "_approve", None)
-            if callable(approve):
-                approve()
         return 0
 
 

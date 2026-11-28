@@ -1,6 +1,6 @@
 # キューの状態と依存の形式
 
-本書は、WIの保存先、状態、状態遷移、保留、依存、冷却期限、終了、private-notesの扱いを定める。
+WIの処理担当がユーザーの確定した要求を重複なく進められるよう、保存先、最新の状態・担当・依存の確認、状態遷移、保留、冷却期限、終了、private-notesの扱いを定める。
 状態を変えた者がその終了まで持つ原則7と、取り消せない操作の前で止まる原則4の適用である。
 原則7の本文は`agent-basics:writing-standards/references/quality-principles-ownership.md`にある。
 原則4の本文は`agent-basics:writing-standards/references/quality-principles-constraints.md`にある。

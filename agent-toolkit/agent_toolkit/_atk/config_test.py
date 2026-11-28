@@ -30,6 +30,22 @@ from agent_toolkit._testing.config_support import (
 __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
 
 
+def test_claude_stop_bell_is_opt_in_and_local(tmp_path, monkeypatch, capsys):
+    key = "claude_stop_bell"
+    assert _main(tmp_path, "config", "get", key) == 0
+    assert capsys.readouterr().out == "false\n"
+
+    assert _main(tmp_path, "config", "set", key, "true") == 0
+    capsys.readouterr()
+    assert _saved(tmp_path) == {key: "true"}
+    assert _main(tmp_path, "config", "get", key) == 0
+    assert capsys.readouterr().out == "true\n"
+
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL", "false")
+    assert _main(tmp_path, "config", "get", key) == 0
+    assert capsys.readouterr().out == "false\n"
+
+
 @pytest.mark.parametrize("losing_migration", [False, True])
 def test_shared_config_reaches_second_clone_and_preserves_local_override(tmp_path, monkeypatch, capsys, losing_migration):
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")

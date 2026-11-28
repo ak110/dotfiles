@@ -1,6 +1,6 @@
 # 設計判断
 
-設計案の選定と採否、構成の変更、設計品質の点検、外部資料に基づく改善案の評価で、設計者とレビュアーが共通に使う基準を、原則だけでは外れやすい場面に限定して置く。
+設計案の採否、構成変更、設計品質の点検、外部資料に基づく改善案の評価で、設計者とレビュアーが合意と公開契約を保ち、必要な利用結果を実現するための基準である。
 判定順と費用の比べ方は、原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）の設計への適用である。
 存在意義、自作機構、比例性の判断は、原則9（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）の適用である。
 外部資料の評価は、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）の適用である。

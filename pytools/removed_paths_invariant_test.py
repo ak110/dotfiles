@@ -1,6 +1,5 @@
-"""撤去表の全項目が登録日を持つことを確かめる不変条件テスト。
+"""撤去表の全項目が登録日を持つことを確かめる不変条件テスト。  pyfltr: allow-comment
 
-対象はpost-applyの撤去表2件と`update_claude_settings`の除去表5件。
 期限の判定は日付で結果が変わるため、ここでは行わず定期実行のAuditへ置く（規則は`pytools/_internal/removal_registry.py`）。
 """
 

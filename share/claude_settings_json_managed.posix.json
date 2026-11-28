@@ -11,15 +11,6 @@
             "command": "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; dotfiles-claude-hook pretooluse; exit 0'"
           }
         ]
-      },
-      {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "printf %s '{\"terminalSequence\":\"\\u0007\"}'"
-          }
-        ]
       }
     ],
     "Notification": [
@@ -32,16 +23,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; dotfiles-claude-hook stop_bell; exit 0'"
-          }
-        ]
-      }
     ]
   },
   "statusLine": {
@@ -49,5 +30,8 @@
     "command": "__HOME__/.local/bin/claude-statusline statusline",
     "padding": 0,
     "refreshInterval": 5
+  },
+  "env": {
+    "AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL": "true"
   }
 }

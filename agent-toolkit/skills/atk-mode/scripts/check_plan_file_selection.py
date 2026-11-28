@@ -5,7 +5,7 @@ import re
 
 import yaml
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
-from agent_toolkit._atk.wi.constants import DETAILED_SOURCES, WI_TYPE_AWI, is_detailed, normalized_wi_type
+from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, is_detailed, normalized_wi_type, requires_detail_for_plan
 from agent_toolkit._plan import locations as _plan_locations
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import structure
@@ -94,7 +94,7 @@ def wi_list_target_checks(
     """WIリスト形式の計画が列挙したWIの本文を読み、実装の着手前に要る検査を当てる。  pyfltr: allow-comment
 
     計画は本文を持たないため、計画本文に当てていた検査を一覧のWI本文の連結へ向ける。
-    詳細化の印の検査は、着手の時点で一覧の全AWIの本文を凍結するためである（対象外のsourceのAWIは置換自体を拒否する）。
+    計画で印を要する起票元だけを検査する。本文の置換は計画とは別の検査が扱う。
     選定結果を使わないため、選定の無い協調モードの計画にも同じ検査が働く。
     """
     metadata, metadata_errors = structure.parse_plan_metadata(text)
@@ -116,7 +116,7 @@ def wi_list_target_checks(
         bodies.append(body)
         if (
             normalized_wi_type(data.get("type")) == WI_TYPE_AWI
-            and data.get("source") not in DETAILED_SOURCES
+            and requires_detail_for_plan(data.get("source"))
             and not is_detailed(data)
         ):
             unmarked.append(name)
@@ -125,7 +125,6 @@ def wi_list_target_checks(
             f"詳細化が要るAWIに詳細化済みの印が無い: {', '.join(unmarked)}。"
             "`atk wi edit --detail`（回答から作るAWIは`atk wi add --detailed --hold`）で詳細化を保存してから実装に着手する"
         )
-    # 詳細化しないWIは本文を置き換えられないため、そのWIで編集するパスは引き継ぎ記録へ書く。  # pyfltr: allow-comment
     joined = "\n".join((*bodies, *handoff_texts))
     errors.extend(
         f"返却予定のエージェント向け文書のパスが計画の対象WIの本文にも引き継ぎ記録にもない: {relative}。"
