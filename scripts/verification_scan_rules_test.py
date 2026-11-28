@@ -19,6 +19,7 @@ _SCAN_MARKERS = re.compile(r"\b(?:r?glob|iterdir|os\.(?:walk|scandir))\s*\(|ls-f
 _ROOT_LOOKUP = "find_dotfiles_root"
 _COMMON_MODULE = "pytools._internal.common"
 _SCOPE_DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+_SCOPE_SCAN_NODES = frozenset({ast.Assign, ast.Call, ast.Import, ast.ImportFrom, ast.Name, *_SCOPE_DEFINITIONS})
 _TEMPORARY_FIXTURES = {"tmp_path", "tmp_path_factory", "tmpdir", "tmpdir_factory"}
 
 # 初期移行の範囲外の既存呼び出しだけを除外し、同じファイルへの別の走査の追加は検出する。 pyfltr: allow-comment
@@ -215,11 +216,16 @@ def _scope_nodes(body: Sequence[ast.stmt]) -> list[ast.AST]:
     pending: list[ast.AST] = list(reversed(body))
     while pending:
         node = pending.pop()
-        nodes.append(node)
-        children = list(ast.iter_child_nodes(node))
-        if isinstance(node, _SCOPE_DEFINITIONS):
-            children = [child for child in children if child not in node.body]
-        pending.extend(reversed(children))
+        if type(node) in _SCOPE_SCAN_NODES and not (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)):
+            nodes.append(node)
+        for field in reversed(node._fields):
+            if field == "body" and isinstance(node, _SCOPE_DEFINITIONS):
+                continue
+            value = getattr(node, field, None)
+            if isinstance(value, list):
+                pending.extend(child for child in reversed(value) if isinstance(child, ast.AST))
+            elif isinstance(value, ast.AST):
+                pending.append(value)
     return nodes
 
 
