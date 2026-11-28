@@ -119,9 +119,10 @@ async def test_settings_shows_supported_keys_and_saves_with_cli_validation(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SERVE_PORT", "54001")
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/settings")
-    await playwright.async_api.expect(page.locator("[data-setting]")).to_have_count(
-        len(config_settings.MUTABLE_KEY_DEFAULTS) - 1
-    )
+    ordinary_keys = config_settings.MUTABLE_KEY_DEFAULTS.keys() - {"repositories", "codex_auto_reset", "claude_auto_reset"}
+    rows = page.locator("[data-setting]")
+    await playwright.async_api.expect(rows).to_have_count(len(ordinary_keys))
+    assert set(await rows.evaluate_all("elements => elements.map(row => row.dataset.setting)")) == ordinary_keys
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     port = page.locator('[data-setting="serve_port"]')
     await playwright.async_api.expect(port.get_by_label("保存値")).to_be_hidden()
