@@ -120,12 +120,14 @@ def legacy_proposal_positions(private_notes: pathlib.Path, messages: list[tuple[
                 outcome.report_warning(
                     f"提案ID {proposal} のAWIは登録済みのため登録しなかった: {name}",
                     next_action=f"`atk wi show {name}`で登録済みの内容を確かめる",
+                    source="wi-draft-already-registered",
                 )
                 continue
             if proposal in seen:
                 outcome.report_warning(
                     f"提案ID {proposal} の原稿が同じ追加操作に複数あるため、最初の原稿だけを登録した",
                     next_action="原稿の提案IDを見直し、別の提案なら別のIDを付けて追加する",
+                    source="wi-draft-duplicate-proposal",
                 )
                 continue
             seen.add(proposal)
@@ -217,6 +219,7 @@ def _check_registered(draft: Draft, name: str, fingerprint: object, referenced: 
         outcome.report_warning(
             f"原稿の指紋が無い登録済みWIを再登録しなかった: {name}",
             next_action=f"`atk wi show {name}`で登録済みの内容を確かめる",
+            source="wi-draft-missing-fingerprint",
         )
     elif fingerprint != draft.fingerprint:
         raise WebInputError(
@@ -231,6 +234,7 @@ def warn_already_registered(name: str) -> None:
     outcome.report_warning(
         f"同じ原稿は登録済みのため再登録しなかった: {name}",
         next_action=f"`atk wi show {name}`で登録済みの内容を確かめる",
+        source="wi-draft-already-registered",
     )
 
 
