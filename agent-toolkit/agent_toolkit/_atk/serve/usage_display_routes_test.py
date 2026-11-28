@@ -1,5 +1,8 @@
 import asyncio
+import json
 import pathlib
+import shutil
+import subprocess
 import threading
 
 import pytest
@@ -7,7 +10,7 @@ import quart
 
 from agent_toolkit._atk import config, usage_refresh
 from agent_toolkit._atk.serve import usage_routes
-from agent_toolkit._common import state_paths, usage_observation, usage_settings
+from agent_toolkit._common import process_tree, state_paths, usage_observation, usage_settings
 
 
 @pytest.fixture(name="usage_client")
@@ -137,3 +140,157 @@ async def test_display_refresh_waits_for_cli_and_reuses_only_matching_context(
     payload = await response.get_json()
     assert payload["refresh_failures"] == (["Claude: CLIで取得できない"] if same_context else ["Codex: 画面で取得できない"])
     assert calls == (["cli"] if same_context else ["cli", "display"])
+
+
+@pytest.mark.asyncio
+async def test_antigravity_refresh_keeps_the_other_providers_independent(usage_client, monkeypatch: pytest.MonkeyPatch) -> None:
+    available = False
+    failure = False
+    calls: list[list[str]] = []
+    report = {
+        "status": "SUCCESS",
+        "command": {
+            "name": "usage",
+            "data": {
+                "groups": [
+                    {
+                        "name": "Gemini Models",
+                        "buckets": [
+                            {
+                                "id": "gemini-week",
+                                "window": "weekly",
+                                "name": "Weekly Remaining",
+                                "remaining_fraction": 1,
+                                "reset_time": "2033-05-18T06:00:00Z",
+                            },
+                            {
+                                "id": "gemini-invalid",
+                                "window": "weekly",
+                                "name": "Invalid",
+                                "remaining_fraction": 10**400,
+                                "reset_time": "2033-05-18T06:00:00",
+                            },
+                            {"id": "gemini-missing", "window": "daily", "name": "Missing", "remaining_fraction": None},
+                            {"id": "gemini-empty", "window": "daily", "name": "Empty", "remaining_fraction": 0},
+                            {"window": "weekly", "name": "Missing ID", "remaining_fraction": 1},
+                            {"id": "no-period", "name": "Missing Window", "remaining_fraction": 1},
+                            {"id": 1, "window": "weekly", "name": "Wrong ID Type", "remaining_fraction": 1},
+                            {"id": "wrong-period", "window": [], "name": "Wrong Window Type", "remaining_fraction": 1},
+                        ],
+                    }
+                ]
+            },
+        },
+    }
+
+    def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, int(failure), json.dumps(report), "private diagnostic")
+
+    monkeypatch.setattr(shutil, "which", lambda _command: "agy-fixture" if available else None)
+    monkeypatch.setattr(usage_refresh.process_tree, "run_with_timeout", run)
+
+    async def request(force: bool):
+        response = await usage_client.post("/api/usage/antigravity", json={"force": force})
+        assert response.status_code == 200
+        assert "private diagnostic" not in await response.get_data(as_text=True)
+        return await response.get_json()
+
+    assert await request(False) == {"windows": [], "observed_at": None, "stale": False}
+    assert calls == []
+    available = True
+    failure = True
+    assert await request(True) == {"windows": [], "observed_at": None, "stale": True}
+    failure = False
+    first = await request(True)
+    assert first["observed_at"] > 0 and first["stale"] is False
+    expected = {
+        "group": "Gemini Models",
+        "name": "Weekly Remaining",
+        "remaining_fraction": 1.0,
+        "resets_at": 2000008800.0,
+    }
+    assert first["windows"][0] == expected
+    assert [(row["name"], row["remaining_fraction"], row["resets_at"]) for row in first["windows"][1:]] == [
+        ("Invalid", None, None),
+        ("Missing", None, None),
+        ("Empty", 0.0, None),
+    ]
+    assert await request(False) == first
+    assert len(calls) == 2
+    failure = True
+    assert await request(True) == {**first, "stale": True}
+    standard = await usage_client.get("/api/usage")
+    assert standard.status_code == 200
+    assert set((await standard.get_json())["metadata"]) == {"claude", "codex"}
+    failure = False
+    assert (await request(True))["stale"] is False
+    assert calls == [["agy-fixture", "-p", "/usage", "--output-format=json"]] * 4
+
+
+@pytest.mark.asyncio
+async def test_antigravity_disconnect_keeps_ownership_of_the_active_read(usage_client, monkeypatch: pytest.MonkeyPatch) -> None:
+    started = threading.Event()
+    overlap = threading.Event()
+    release = threading.Event()
+
+    def read():
+        if started.is_set():
+            overlap.set()
+        started.set()
+        assert release.wait(5)
+        return []
+
+    monkeypatch.setattr(usage_refresh, "read_antigravity_usage", read)
+    second = None
+    try:
+        async with usage_client.request(
+            "/api/usage/antigravity", method="POST", headers={"Content-Type": "application/json"}
+        ) as first:
+            await first.send(b'{"force":true}')
+            await first.send_complete()
+            assert await asyncio.to_thread(started.wait, 2)
+            await first.disconnect()
+        second = asyncio.create_task(usage_client.post("/api/usage/antigravity", json={"force": True}))
+        assert (await usage_client.get("/api/usage")).status_code == 200
+        assert not await asyncio.to_thread(overlap.wait, 0.3)
+    finally:
+        release.set()
+        if second is not None:
+            assert (await second).status_code == 200
+    assert not overlap.is_set()
+
+
+@pytest.mark.asyncio
+async def test_antigravity_reclaims_the_same_child_before_retrying(usage_client, monkeypatch: pytest.MonkeyPatch) -> None:
+    windows = [{"group": "Gemini", "name": "Weekly", "remaining_fraction": 0.5, "resets_at": None}]
+    pending = process_tree.ReclaimError(["fixture"], [], context="fixture")
+    reads = 0
+    attempts = []
+
+    def read():
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            raise pending
+        return windows
+
+    def retry():
+        attempts.append(pending)
+        return ["fixture"] if len(attempts) == 1 else []
+
+    async def request():
+        response = await usage_client.post("/api/usage/antigravity", json={"force": True})
+        assert response.status_code == 200
+        return await response.get_json()
+
+    monkeypatch.setattr(usage_refresh, "read_antigravity_usage", read)
+    monkeypatch.setattr(pending, "retry", retry)
+    first = await request()
+    assert first["windows"] == windows and first["stale"] is False
+    assert await request() == {**first, "stale": True}
+    assert await request() == {**first, "stale": True}
+    assert reads == 2 and attempts == [pending]
+    assert (await usage_client.get("/api/usage")).status_code == 200
+    assert (await request())["stale"] is False
+    assert reads == 3 and attempts == [pending, pending]
