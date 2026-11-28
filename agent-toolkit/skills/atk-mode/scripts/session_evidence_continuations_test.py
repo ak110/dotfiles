@@ -82,7 +82,7 @@ def _turn(delivery: str | None, final: str | None, effort: str | None = "low") -
         ("あなたが起動した子は終了した。\n終了したsession/thread: x", "作業中", (), "delegate", "after_wait"),
         ("直前のturnはモデルの過負荷（serverOverloaded）で中断した。", "作業中", (), "delegate", "infra_resume"),
         ("出所を示さない入力", "作業中", (), "delegate", "unidentified"),
-        ("続けて。" + _FORMAT, "作業の途中経過", ("続けて。" + _FORMAT,), "delegate", "owner_continue"),
+        ("続けて。" + _FORMAT, "作業の途中経過", ("続けて。" + _FORMAT,), "delegate", "unidentified"),
         (
             "「担当内で補える作業を完遂した上で所定の返却形式を返せ。」の意味は？",
             "作業の途中経過",
@@ -114,6 +114,27 @@ def _turn(delivery: str | None, final: str | None, effort: str | None = "low") -
         ),
         ("続けてもらえますか？", "調べた範囲を返す", ("続けてもらえますか？",), "delegate", "unidentified"),
         ("残りが気になる", "調べた範囲を返す", ("残りが気になる",), "delegate", "unidentified"),
+        (
+            "B案件の調査を続けてください。",
+            "A案件を途中まで確認した",
+            ("B案件の調査を続けてください。",),
+            "delegate",
+            "unidentified",
+        ),
+        (
+            "「続けて」を英訳してください。",
+            "A案件を途中まで確認した",
+            ("「続けて」を英訳してください。",),
+            "delegate",
+            "unidentified",
+        ),
+        (
+            "では、残りを最後まで続けてください。",
+            "A案件を途中まで確認した",
+            ("では、残りを最後まで続けてください。",),
+            "delegate",
+            "owner_continue",
+        ),
     ],
     ids=[
         "auto-format",
@@ -139,6 +160,9 @@ def _turn(delivery: str | None, final: str | None, effort: str | None = "low") -
         "other-work-with-order-after-partial",
         "question-with-order-after-partial",
         "cue-without-order-after-partial",
+        "other-target-with-order-after-partial",
+        "quoted-order-after-partial",
+        "pure-order-with-lead-after-partial",
     ],
 )
 def test_classify_input_separates_sources_and_reasons(body, previous, followups, role, expected) -> None:

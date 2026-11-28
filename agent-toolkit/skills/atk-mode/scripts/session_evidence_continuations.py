@@ -43,13 +43,16 @@ INFRA_RESUME_PATTERN = re.compile(
 # 完了を示した返却の後の追送は、継続を求める語を含む時だけ新しい作業と区別できない。  # pyfltr: allow-comment
 CONTINUATION_CUE = re.compile(r"続け|続行|完遂|再開|最後まで|残り|残工程|未完了|途中")
 _CUE_NEGATION = re.compile(r"(?:続け|続行|再開)(?:せず|ず|ないで|しないで|不要)|だけ教えて|状況だけ|進捗だけ")
-# 未完了の返却への追送は、継続を命じる動詞があり照会と別の作業の語が無い時だけ継続指示とする。  # pyfltr: allow-comment
-# 語の出現だけでは同じ語を含む別の目的を除けないため、それ以外は照会か判別不能へ倒す。  # pyfltr: allow-comment
-_CONTINUE_ORDER = re.compile(
-    r"続けて|続けよ|続けろ|続行して|続行せよ|再開して|再開せよ|完遂して|完遂せよ|最後まで(?:進めて|終えて|やって)"
+# 未完了の返却への追送は、本文全体が対象を特定しない継続の命令だけの時に継続指示とする。  # pyfltr: allow-comment
+# 継続の語を含んでも別の対象や引用を伴う追送は前の返却の続きと確かめられないため判別不能へ倒す。  # pyfltr: allow-comment
+_PURE_CONTINUE = re.compile(
+    r"(?:(?:では|じゃあ|はい|了解|OK)[、。,]?)?"
+    r"(?:(?:残り|続き|残りの作業|残工程|作業|未完了の作業|未完了の部分|途中の作業)(?:を|は)?)?(?:最後まで)?"
+    r"(?:続けて|続行して|再開して|完遂して|進めて|終えて|やって|続けよ|続行せよ|再開せよ|完遂せよ|進めよ)"
+    r"(?:ください|下さい|くれ)?[。．.!！]?"
 )
 _INQUIRY = re.compile(r"教えて|知らせて|報告して|示して|ですか|ますか|[？?]|状況|進捗")
-_OTHER_WORK = re.compile(r"別の|他の|ほかの|新しい|追加で|追加の")
+_CONTINUE_VERB = re.compile(r"続け|続行|再開|完遂|進め")
 # 作業契約の更新を伴う追送は、記録した原文の後に更新の通知が付いて届く。  # pyfltr: allow-comment
 _CONTRACT_UPDATE_OPENING = '\n\n<atk-auto source="agents-server" kind="work-contract-update">'
 _SUCCESS_LINE = "状態: completed"
@@ -157,12 +160,11 @@ def delivered_text(body: str) -> str:
 
 
 def _owner_input_after_incomplete(body: str) -> str:
-    if _CUE_NEGATION.search(body):
+    if _PURE_CONTINUE.fullmatch("".join(body.split())):
+        return "owner_continue"
+    if _CUE_NEGATION.search(body) or _CONTINUE_VERB.search(body):
         return "unidentified"
-    inquiry = _INQUIRY.search(body) is not None
-    if _CONTINUE_ORDER.search(body):
-        return "unidentified" if inquiry or _OTHER_WORK.search(body) else "owner_continue"
-    return "new_work_or_inquiry" if inquiry else "unidentified"
+    return "new_work_or_inquiry" if _INQUIRY.search(body) else "unidentified"
 
 
 def classify_input(body: str, previous: str | None, delegation: Delegation, *, occurrences: int = 1) -> str:
@@ -463,7 +465,7 @@ def main(argv: list[str] | None = None) -> int:
             "（0件や形式だけの不適合と読まない）。"
             "unidentifiedは出所か目的を判別できない入力。uncountedは継続に数えない入力で、after_wait=待機の後、"
             "declared_stage=役割の定型の工程継続、answer=判断・入力・認可・外部の待ちを求めた返却への回答、"
-            "new_work_or_inquiry=完了の後の新しい依頼や照会、infra_resume=障害の後の自動の再開、"
+            "new_work_or_inquiry=完了の後の新しい依頼や照会と、未完了の後の照会、infra_resume=障害の後の自動の再開、"
             "duplicate_for_same_return=同じ返却への2回目以降の継続。継続は直前の返却、継続なしの未完了は最終の返却のturnに帰属させる。"
             "modelとeffortは記録の観測値（Codexはturn_context、Claudeはassistant行）だけを使い、無ければnullの欠測とする。"
         ),
