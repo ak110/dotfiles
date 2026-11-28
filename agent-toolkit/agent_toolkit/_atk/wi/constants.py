@@ -164,6 +164,11 @@ DETAILED_SOURCES = ("add-awi-by-user", "process-user-comments", "implement")
 この経路のAWIは計画を作る時点で詳細化せず、本文の置換も受け付けない。
 """
 
+
+def requires_detail_for_plan(source: object) -> bool:
+    return source != "user" and source not in DETAILED_SOURCES
+
+
 WI_TYPE_UWI = "uwi"
 """frontmatterの`type`がユーザーワークアイテムであることを示す値。"""
 

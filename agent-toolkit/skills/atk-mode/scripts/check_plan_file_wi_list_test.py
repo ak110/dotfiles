@@ -13,6 +13,7 @@ _UNMARKED = "20261101-000000-001.md"
 _MARKED = "20261101-000000-002.md"
 _EXEMPT = "20261101-000000-003.md"
 _UWI = "20261101-000000-004.md"
+_USER = "20261101-000000-005.md"
 _ABSENT = "20261101-000000-009.md"
 
 
@@ -25,6 +26,7 @@ def _notes(tmp_path: pathlib.Path) -> pathlib.Path:
         _MARKED: "type: awi\nsource: process-wi\ndetailed: true",
         _EXEMPT: "type: awi\nsource: add-awi-by-user",
         _UWI: "type: uwi\nsource: process-wi",
+        _USER: "type: awi\nsource: user",
     }
     for name, metadata in entries.items():
         body = (
@@ -49,8 +51,8 @@ def _check(
     return check_plan_file.check(plan_path, work_dir, private_notes=_notes(tmp_path), **kwargs)
 
 
-def test_marked_exempt_and_uwi_entries_pass(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
-    errors, _warnings = _check(repo, tmp_path, (_MARKED, _EXEMPT, _UWI))
+def test_marked_exempt_unmarked_user_and_uwi_entries_pass(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    errors, _warnings = _check(repo, tmp_path, (_MARKED, _EXEMPT, _UWI, _USER))
     assert not errors, errors
 
 

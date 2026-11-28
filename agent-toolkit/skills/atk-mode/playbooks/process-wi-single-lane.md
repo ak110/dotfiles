@@ -32,7 +32,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 ## 処理の振り分け
 
 本書「実行順」手順1の対応表へ、各項目の`詳細化要否`（選定と同じく`source`と詳細化済みの印で決まる）を書く。
-詳細化が要る項目は、計画を作る前に`agent-toolkit:atk-mode/playbooks/write-plan.md`「詳細化」で本文を詳細化する。
+`agent-toolkit:atk-mode/playbooks/write-plan.md`「詳細化」に従い、印の無い `source: user` のAWIも、本文が十分ならそのまま計画に載せる。
 同じファイル・節・主題を共有する項目は、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」の手順2のとおり、まとめて実装・検証する。
 保存済みの対応表をもとに、対象worktreeごとに全ての項目（マージ用AWIを除く）を列挙した1つの計画を作り、計画段階のレビューは省いて実装後の実行レビューで確かめる。
 対応表のworktreeで実装し、専用worktreeは作らない。
@@ -91,7 +91,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 2. `atk wi`の`adopt`や`reject`に`--commit`を渡す場合は`--target-repo`に対象worktreeの絶対パスを、それ以外の操作では保存された`target_repo`を使う。
    Gitの起点の比較、実装、検証、commit、レビューには対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
 3. frontmatterに`merge_branch`を持つマージ用AWIは計画・実装・実行レビューを省き、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従って直接取り込んで終了する。
-   残る項目があれば、対象worktreeごとに`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「詳細化と計画の対象」「計画の起草」で詳細化し、計画を作る。
+   残る項目があれば、対象worktreeごとに`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「詳細化と計画の対象」「計画の起草」で必要な本文だけを詳細化し、計画を作る。
    計画のfrontmatterの`target_repo`と計画構造の自動チェックの`--work-dir`にはそのworktreeを指定し、対応表のそのworktreeの全ての項目を`--expected-wi <WIファイル名>`で繰り返し指定して、実装前に過不足なく一致することを確かめる。
 4. 対応表のworktreeで、計画が列挙したWIの本文の`## 反映内容と反映先`と`## 完成条件`に従って実装する。
    - 本文の節を持つ保存済みの計画では、`agent-toolkit:atk-mode/references/plan-legacy-formats.md`の対応表で節を読み替える。

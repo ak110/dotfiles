@@ -23,14 +23,17 @@
 - `related_wis`: 作業で扱う対象WIのファイル名の一覧。
 
 対象WIの本文が実装と実行レビューの基準である。
-詳細化が要るAWIは、計画を作る前に`atk wi edit --detail`で本文を置き換えて詳細化済みの印を付ける（`write-plan.md`「詳細化」）。
-`plan-check`は、一覧のWI本文をprivate-notesから読み、詳細化済みの印と編集するエージェント向け文書のパス（`--agent-rule-path`）を検査する。
+本文を詳細化するAWIは、計画を作る前に `atk wi edit --detail` で変更した本文を保存する（`write-plan.md`「詳細化」）。
+`plan-check` は、一覧のWI本文をprivate-notesから読み、印が必要なAWIの印と、編集するエージェント向け文書のパス（`--agent-rule-path`）を検査する。
+`source: user` には事前の印を求めない。
 変更範囲の検証コマンド、進捗、検証結果、再開の情報、詳細化しないWIの`形式検証の判定:`の行は、引き継ぎ記録へ書く（`agent-toolkit:atk-mode/references/work-contract.md`「引き継ぎ記録」）。
 予測補正記録は対象AWIの本文へ保存する（`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「予測補正記録」）。
 WI実装commitの対応は対応記録ファイル（`agent-toolkit:atk-mode/references/commit-wi-records.md`）へ保存する。
 
-`plan-check`を通した後（実装の着手後）は、一覧の全AWIが詳細化済みの印を持つか、詳細化の対象外の`source`（add-awi-by-user、process-user-comments、implement）である。
-エージェント環境の`atk wi edit`は、processingの項目、保留中の詳細化済みのAWI、implementが保留で保存したAWIの本文の置換を拒否する（本文の凍結）。
+実装着手後は、計画に載せたAWIの基準本文を変えない。
+エージェント環境の `atk wi edit` はprocessingの項目の通常の本文置換を拒否し、所有者による着手前の詳細化は `write-plan.md`「詳細化」の条件で受け付ける。
+この検査は計画の有無を使わない。
+保留中の詳細化済みAWIとimplementが保留で保存したAWIの本文置換も拒否する。
 implementのAWIは、`merge_branch`と`merge_commit`を加えるマージ用への更新（`agent-toolkit:atk-mode/playbooks/implement.md`手順7、実行レビューの収束後）だけを受け付ける。
 実装中に確定した要件の変更と、記述の不整合に採った解釈は、実行レビュー指摘管理表へ記録する（基準を直すと実行レビューの指摘になり、不要な往復が生じるため）。
 凍結の後は、既存のレビュー指摘管理表と`review_contract`の原本を保持する。
