@@ -32,6 +32,9 @@ _MANAGED_SETTINGS_RELATIVE = Path("share") / "claude_settings_json_managed.json"
 _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 _MANAGED_CONFIG_RELATIVE = Path("share") / "claude_json_managed.json"
 _CONFIG_PATH = Path.home() / ".claude.json"
+_STOP_BELL_ENV = "AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL"
+_BELL_COMMAND = r"""printf %s '{"terminalSequence":"\u0007"}'"""
+_INPUT_BELL_MATCHER = "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input"
 
 _REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND = "uv run --no-project --script ~/dotfiles/scripts/claude_hook.py autonomous_exit"
 _REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND = (
@@ -94,6 +97,10 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
     removal_registry.Registered(
         "dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2", datetime.date(2026, 10, 7)
     ),
+    removal_registry.Registered("dotfiles-claude-hook stop_bell", datetime.date(2026, 11, 28)),
+)
+_REMOVED_HOOK_REGISTRATIONS: tuple[removal_registry.Registered[tuple[str, str, str]], ...] = (
+    removal_registry.Registered(("PreToolUse", "AskUserQuestion", _BELL_COMMAND), datetime.date(2026, 11, 28)),
 )
 
 # settings.json の env 配下から除去するキー。
@@ -296,6 +303,13 @@ def effective_managed_settings(base: dict, overrides: list[dict]) -> dict:
     managed = copy.deepcopy(base)
     for override in overrides:
         _merge(managed, override)
+    if not sys.platform.startswith("linux") and isinstance(env := managed.get("env"), dict):
+        # POSIX上書きはmacOSにも適用するが、Stopベルの既定値はLinuxだけへ配布する。  # pyfltr: allow-comment
+        if _STOP_BELL_ENV in env:
+            if remaining := {key: value for key, value in env.items() if key != _STOP_BELL_ENV}:
+                managed["env"] = remaining
+            else:
+                del managed["env"]
     return typing.cast("dict[str, typing.Any]", _substitute_home_placeholder(managed))
 
 
@@ -319,6 +333,13 @@ def _updated_settings_data(
     _strip_removed_keys(data, removed_keys)
     _strip_removed_list_items(data, removed_list_item_substrings)
     _strip_stale_labeled_list_items(data, managed, stale_labeled_list_paths)
+    if (
+        isinstance(env := data.get("env"), dict)
+        and _STOP_BELL_ENV in env
+        and isinstance(managed_env := managed.get("env"), dict)
+        and _STOP_BELL_ENV in managed_env
+    ):
+        managed = {**managed, "env": {**managed_env, _STOP_BELL_ENV: env[_STOP_BELL_ENV]}}
     _merge(data, managed)
     return data
 
@@ -502,11 +523,12 @@ def _value_summary(value: object) -> str:
 
 
 def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
-    if not substrings:
-        return
+    registrations = set(removal_registry.values(_REMOVED_HOOK_REGISTRATIONS))
     windows_autonomous_exit_pattern = _windows_autonomous_exit_pattern(substrings)
 
-    def should_remove(_event: str, command: str) -> bool:
+    def should_remove(event: str, matcher: object, command: str) -> bool:
+        if isinstance(matcher, str) and (event, matcher, command) in registrations:
+            return True
         if any(substring in command for substring in substrings):
             return True
         return windows_autonomous_exit_pattern is not None and windows_autonomous_exit_pattern.search(command) is not None
@@ -535,6 +557,7 @@ def _strip_managed_hooks(data: dict, managed: dict) -> None:
     if not isinstance(managed_hooks, dict):
         return
     commands_by_event: dict[str, set[str]] = {}
+    manages_input_bell = False
     for event_name, matchers in managed_hooks.items():
         if not isinstance(event_name, str) or not isinstance(matchers, list):
             continue
@@ -545,22 +568,29 @@ def _strip_managed_hooks(data: dict, managed: dict) -> None:
             inner_hooks = matcher.get("hooks")
             if not isinstance(inner_hooks, list):
                 continue
-            commands.update(
+            group_commands = {
                 hook["command"] for hook in inner_hooks if isinstance(hook, dict) and isinstance(hook.get("command"), str)
-            )
+            }
+            commands.update(group_commands)
+            if event_name == "Notification" and matcher.get("matcher") == _INPUT_BELL_MATCHER:
+                manages_input_bell |= _BELL_COMMAND in group_commands
+        if event_name == "Notification" and manages_input_bell:
+            commands.discard(_BELL_COMMAND)
         if commands:
             commands_by_event[event_name] = commands
-    if not commands_by_event:
+    if not commands_by_event and not manages_input_bell:
         return
 
-    def is_managed(event: str, command: str) -> bool:
+    def is_managed(event: str, matcher: object, command: str) -> bool:
+        if event == "Notification" and manages_input_bell and command == _BELL_COMMAND:
+            return matcher == _INPUT_BELL_MATCHER
         event_commands = commands_by_event.get(event)
         return event_commands is not None and command in event_commands
 
     _strip_hooks(data, is_managed)
 
 
-def _strip_hooks(data: dict, should_remove: typing.Callable[[str, str], bool]) -> None:
+def _strip_hooks(data: dict, should_remove: typing.Callable[[str, object, str], bool]) -> None:
     hooks_root = data.get("hooks")
     if not isinstance(hooks_root, dict):
         return
@@ -582,7 +612,7 @@ def _strip_hooks(data: dict, should_remove: typing.Callable[[str, str], bool]) -
             kept_inner = []
             for hook in inner_hooks:
                 command = hook.get("command") if isinstance(hook, dict) else None
-                if isinstance(command, str) and should_remove(event_name, command):
+                if isinstance(command, str) and should_remove(event_name, matcher.get("matcher"), command):
                     continue
                 kept_inner.append(hook)
             if not kept_inner:
