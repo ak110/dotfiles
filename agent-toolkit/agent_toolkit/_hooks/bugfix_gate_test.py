@@ -1,10 +1,13 @@
 """実検証失敗の案内を、報告書式やスキル取得の認定と切り離して確かめる。  pyfltr: allow-comment"""
 
+import json
+import pathlib
+
 import pytest
 
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import bugfix_gate
-from agent_toolkit._testing.pretooluse_support import codex_execution_payload
+from agent_toolkit._testing.pretooluse_support import codex_execution_payload, run_hook_with_notice_details
 
 
 @pytest.mark.parametrize("actor", ["main", "lane"])
@@ -48,6 +51,109 @@ def test_nonverification_exit_is_not_a_verification_failure(command):
         }
     )
     assert not bugfix_gate.verification_notice({}, "Read", {}, "ordinary-operation")
+
+
+@pytest.mark.parametrize(
+    ("code", "changed_field", "command", "expected"),
+    [
+        (1, None, "pytest sample_test.py", True),
+        (0, None, "pytest sample_test.py", False),
+        (None, None, "pytest sample_test.py", False),
+        (1, "tool_use_id", "pytest sample_test.py", False),
+        (1, "turn_id", "pytest sample_test.py", False),
+        (1, "session_id", "pytest sample_test.py", False),
+        (1, None, "cat missing.txt", False),
+        (1, None, "pytest sample_test.py && cat missing.txt", False),
+        (1, None, "cat missing.txt && pytest sample_test.py", False),
+        (1, None, "pytest sample_test.py | cat missing.txt", False),
+        (1, None, "pytest sample_test.py; cat missing.txt", False),
+        (1, None, "! pytest sample_test.py", False),
+        (1, None, "bash -c '! pytest sample_test.py'", False),
+        (1, None, "pytest sample_test.py &", False),
+        (1, None, "pytest sample_test.py 2>&1", True),
+        (1, None, "pyfltr run sample_test.py", True),
+        (1, None, "pytest sample_test.py > missing-dir/output.log", False),
+        (1, None, "pytest sample_test.py < missing-file", False),
+        (2, None, "make test artifact", False),
+        (1, None, "uv run --frozen pytest sample_test.py", False),
+        (1, None, "env pytest sample_test.py", False),
+        (127, None, "./missing/pytest sample_test.py", False),
+        (126, None, "./not-executable/pytest sample_test.py", False),
+        (130, None, "pytest sample_test.py", False),
+    ],
+)
+def test_codex_shell_verification_notifies_only_for_matching_failed_execution(tmp_path, code, changed_field, command, expected):
+    post = {
+        "session_id": "codex-verification",
+        "turn_id": "verification-turn",
+        "cwd": str(tmp_path),
+        "tool_use_id": "verification-exec",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "hook_event_name": "PostToolUse",
+        "tool_response": "exit_code: 1",
+    }
+    if code is not None:
+        post = codex_execution_payload(post, tmp_path, exit_code=code)
+    if changed_field is not None:
+        post[changed_field] = "different"
+    pre = {**post, "hook_event_name": "PreToolUse", "tool_use_id": "next-operation", "tool_input": {"command": "pwd"}}
+    del pre["tool_response"]
+
+    for warned in (expected, False):
+        assert run_hook_with_notice_details("posttooluse", post).returncode == 0
+        result = run_hook_with_notice_details("pretooluse", pre)
+        assert result.returncode == 0
+        assert ("verification-bugfix" in result.stdout) is warned
+
+
+@pytest.mark.parametrize(
+    ("command", "exit_code", "followed_by_output", "expected"),
+    [
+        ("pytest sample_test.py", 1, False, True),
+        ("pytest sample_test.py", 0, False, False),
+        ("pytest sample_test.py", 1, True, True),
+        ("atk run-script wait-ci -- --baseline baseline.json", 1, False, True),
+        ("atk run-script wait-ci -- --baseline baseline.json", 6, False, True),
+        ("atk run-script wait-ci -- --baseline baseline.json", 2, False, False),
+    ],
+)
+def test_verification_failure_uses_complete_codex_record_with_escaped_output(
+    tmp_path, command, exit_code, followed_by_output, expected
+):
+    post = codex_execution_payload(
+        {
+            "session_id": "codex-long-verification",
+            "turn_id": "long-verification-turn",
+            "cwd": str(tmp_path),
+            "tool_use_id": "long-verification-exec",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "hook_event_name": "PostToolUse",
+            "tool_response": "終了状態を含まない出力本文",
+        },
+        tmp_path,
+        exit_code=exit_code,
+    )
+    path = pathlib.Path(post["transcript_path"])
+    lines = path.read_text(encoding="utf-8").splitlines()
+    finished = json.loads(lines[-1])
+    # pyfltr: allow-comment -- Codex 0.172.0の記録では64KiB以下の出力中のESCもJSONで1文字が6バイトになる。
+    finished["payload"]["item"]["aggregated_output"] = "\x1b" * (40_000 if followed_by_output else 64 * 1024)
+    lines[-1] = json.dumps(finished)
+    if followed_by_output:
+        other = finished["payload"]["item"]
+        other.update(id="different-exec", exit_code=0, status="completed")
+        lines.append(json.dumps(finished))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    pre = {**post, "hook_event_name": "PreToolUse", "tool_use_id": "next-operation", "tool_input": {"command": "pwd"}}
+    del pre["tool_response"]
+    for warned in (expected, False):
+        assert run_hook_with_notice_details("posttooluse", post).returncode == 0
+        result = run_hook_with_notice_details("pretooluse", pre)
+        assert result.returncode == 0
+        assert ("verification-bugfix" in result.stdout) is warned
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
