@@ -6,6 +6,12 @@ const view = document.getElementById("usage-content");
 const refreshButton = document.getElementById("usage-refresh");
 const overview = document.getElementById("usage-overview");
 const attention = document.getElementById("usage-attention");
+const antigravity = document.getElementById("usage-antigravity");
+const antigravityStatus = document.getElementById("usage-antigravity-status");
+const antigravityWindows = document.getElementById("usage-antigravity-windows");
+const percent = new Intl.NumberFormat("ja-JP", {style: "percent", maximumFractionDigits: 1});
+let antigravityPending = false;
+let antigravityObservedAt;
 const providerNames = {claude: "Claude", codex: "Codex"};
 const providers = Object.keys(providerNames);
 let pending = false;
@@ -377,7 +383,7 @@ async function update(force) {
       overview.hidden = false;
     }
     refreshButton.hidden = true;
-    setDisplayedReadError("usage", "refresh", "利用枠を取得できません。", () => update(false), () => update(true));
+    setDisplayedReadError("usage", "refresh", "利用枠を取得できません。", () => update(false), () => updateProviders(true));
   } finally {
     pending = false;
     refreshButton.disabled = false;
@@ -385,15 +391,62 @@ async function update(force) {
   }
 }
 
+async function updateAntigravity(force) {
+  if (antigravityPending) return;
+  antigravityPending = true;
+  try {
+    const result = await request("/api/usage/antigravity", {force});
+    const groups = new Map();
+    for (const window of result.windows) {
+      if (!groups.has(window.group)) groups.set(window.group, []);
+      groups.get(window.group).push(window);
+    }
+    const content = document.createDocumentFragment();
+    for (const [name, windows] of groups) {
+      const group = element("div", "", "metric-section");
+      group.append(element("h4", name, "section-heading"));
+      for (const window of windows) {
+        const row = element("div", "", "metric-row");
+        row.append(element("h5", window.name, "section-heading"));
+        const showRemaining = Number.isFinite(window.remaining_fraction) &&
+          (!Number.isFinite(window.resets_at) || window.resets_at > Date.now() / 1000);
+        values(row, [
+          ["観測残量", showRemaining ? percent.format(window.remaining_fraction) : "不明"],
+          ["リセット時刻", dateJst(window.resets_at)],
+        ]);
+        group.append(row);
+      }
+      content.append(group);
+    }
+    antigravityObservedAt = result.observed_at;
+    antigravityWindows.replaceChildren(content);
+    antigravity.hidden = !groups.size;
+    antigravityStatus.textContent = result.stale ? staleAntigravity() : `取得時刻: ${dateJst(antigravityObservedAt)}`;
+  } catch {
+    if (!antigravity.hidden) antigravityStatus.textContent = staleAntigravity();
+  } finally {
+    antigravityPending = false;
+  }
+}
+
+function staleAntigravity() {
+  return `前回の観測: ${dateJst(antigravityObservedAt)}。最新の利用枠を取得できません。`;
+}
+
+function updateProviders(force) {
+  void update(force);
+  void updateAntigravity(force);
+}
+
 function visibility() {
   clearInterval(timer);
   if (document.hidden) return;
-  void update(false);
-  timer = setInterval(() => void update(false), 300000);
+  updateProviders(false);
+  timer = setInterval(() => updateProviders(false), 300000);
 }
 
 registerScreen("usage", {init: () => {
-  refreshButton.addEventListener("click", () => void update(true));
+  refreshButton.addEventListener("click", () => updateProviders(true));
   document.addEventListener("visibilitychange", visibility);
   visibility();
 }});

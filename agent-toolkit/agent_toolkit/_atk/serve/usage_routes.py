@@ -1,5 +1,6 @@
 import asyncio
 import json
+import subprocess
 import time
 from typing import Any
 
@@ -81,6 +82,12 @@ def _display_data(refresh: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def register_usage_routes(app: quart.Quart) -> None:
+    agy_lock = asyncio.Lock()
+    agy_windows: list[dict[str, Any]] = []
+    agy_checked_at = float("-inf")
+    agy_observed_at: float | None = None
+    agy_stale = False
+
     @app.get("/usage")
     async def usage_index() -> quart.Response:
         return no_store(
@@ -91,6 +98,26 @@ def register_usage_routes(app: quart.Quart) -> None:
     @app.get("/api/usage")
     async def usage_view() -> quart.Response:
         return json_no_store(await asyncio.to_thread(_display_data))
+
+    @app.post("/api/usage/antigravity")
+    async def usage_antigravity() -> quart.Response:
+        nonlocal agy_windows, agy_checked_at, agy_observed_at, agy_stale
+        payload = await quart.request.get_json(silent=True)
+        if not isinstance(payload, dict) or not isinstance(payload.get("force"), bool):
+            raise WebInputError("取得方法を指定してください", next_action="利用枠画面を開き直して再取得する")
+        requested_at = time.monotonic()
+        async with agy_lock:
+            due = requested_at - agy_checked_at >= usage_refresh.DISPLAY_REFRESH_INTERVAL_SEC
+            if agy_checked_at < requested_at and (due or payload["force"]):
+                try:
+                    agy_windows = await asyncio.to_thread(usage_refresh.read_antigravity_usage)
+                except OSError, ValueError, subprocess.TimeoutExpired:
+                    agy_stale = True
+                else:
+                    agy_observed_at = time.time() if agy_windows else None
+                    agy_stale = False
+                agy_checked_at = time.monotonic()
+            return json_no_store({"windows": agy_windows, "observed_at": agy_observed_at, "stale": agy_stale})
 
     @app.post("/api/usage/refresh")
     async def usage_refresh_request() -> quart.Response:
