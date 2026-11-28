@@ -50,6 +50,10 @@
   起動後に外部から変更された値は維持する。
   固定Git hookの起動では仮想環境の除去前の値を記録し、既存hookへの転送時だけ呼び出し元の探索環境を復元する。
 
+- `AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT`・`AGENT_TOOLKIT_COMMIT_CLAUDE_UV`: ClaudeのSessionStartが、その会話で使う配布ルートと`uv`をBash環境へ渡す。
+  共用のGit hookラッパーはこれらを読み、会話に対応する配布物を起動する。
+  既存Git hookへの転送時はこれらを除去する。
+
 ホストが規定する以下の環境変数は、`agent_toolkit/_common/host_homes.py`の関数のみが参照する。
 
 - `CLAUDE_CONFIG_DIR`: 空でない絶対パスが指定されている場合はClaude Codeの設定ディレクトリとして使用し、それ以外は`~/.claude`を使用する。

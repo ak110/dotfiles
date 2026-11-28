@@ -92,6 +92,8 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     "CLAUDE_ENV_FILE",
     "AGENT_TOOLKIT_COMMIT_HOOKS",
     "AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR",
+    "AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT",
+    "AGENT_TOOLKIT_COMMIT_CLAUDE_UV",
     "AGENT_TOOLKIT_RUN_SKILL_ID",
     # `atk run-skill`がClaudeの子へ渡す背景実行の無効化。継承されると、SessionStartの待機案内とCLIの待機期限が
     # 非対話起動の値へ変わる。値ごとの分岐を検証するテストは自身で設定する。
