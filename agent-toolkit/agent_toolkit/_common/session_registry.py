@@ -85,6 +85,7 @@ class LaunchInfo:
     label: str = ""
     prompt: str = ""
     explicit_role_model: bool | None = None
+    task_role: str | None = None
 
     created_at: str | None = None
     followup_prompts: tuple[str, ...] = ()
@@ -412,6 +413,7 @@ def _preserve_launch_info(current: LaunchInfo, previous: LaunchInfo) -> LaunchIn
         current,
         label=previous.label or current.label,
         prompt=previous.prompt or current.prompt,
+        task_role=previous.task_role or current.task_role,
         created_at=previous.created_at or current.created_at,
         followup_prompts=followups,
         final_responses=tuple(responses.items()),

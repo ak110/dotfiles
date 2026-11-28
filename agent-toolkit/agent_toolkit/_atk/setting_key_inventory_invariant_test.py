@@ -23,6 +23,7 @@ _SETTING_USES = {
     "codex_credits_provider": ("codex_connectionのprovider解決", "クレジット枠を持つproviderを指定する"),
     "codex_payg_provider": ("codex_connectionのprovider解決", "従量課金を許したproviderを指定する"),
     "claude_usage_limit_wait": ("config_usageのClaude使用量上限待機", "Claudeの上限待ちの時間枠を選ぶ"),
+    "claude_stop_bell": ("Stopフックの端末ベル出力", "入力待ちの端末通知の有無を選ぶ"),
     "codex_usage_limit_wait": ("config_usageのCodex使用量上限待機", "Codexの上限待ちの時間枠を選ぶ"),
     "repositories": ("config_settings.resolve_configured_repositories", "巡回と選定の対象を構成する"),
     "session_review_auto_start": ("run_skill_batchのセッションレビュー起動", "個別の振り返りを自動起動するか決める"),

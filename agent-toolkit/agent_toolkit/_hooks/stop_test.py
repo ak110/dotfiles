@@ -91,6 +91,111 @@ def test_all_approve_returns_empty_object(monkeypatch: pytest.MonkeyPatch) -> No
     assert not stop.evaluate("{}")
 
 
+@pytest.fixture
+def bell_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL", "true")
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
+    _replace_checks(monkeypatch, dict.fromkeys(stop.CHECK_MODULE_NAMES, ("approve", "")))
+
+
+@pytest.mark.usefixtures("bell_enabled")
+@pytest.mark.parametrize(
+    ("decision", "body", "expected"),
+    [
+        ("approve", "", {"terminalSequence": "\a"}),
+        ("block", "継続", {"decision": "block", "reason": "継続"}),
+        (
+            "notify",
+            "確認を続ける",
+            {"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": "確認を続ける"}},
+        ),
+        ("yield", "", {"continue": False}),
+    ],
+)
+def test_stop_bell_follows_final_output(monkeypatch, decision, body, expected) -> None:
+    _replace_checks(monkeypatch, {"run_skill_report_gate": (decision, body)})
+    if decision != "approve":
+        monkeypatch.setattr(stop, "pending_async_status", lambda *_args, **_kwargs: pytest.fail("不要な背景判定"))
+    assert stop.evaluate(json.dumps({"session_id": "bell-after-continuing", "stop_hook_active": True})) == expected
+
+
+@pytest.mark.usefixtures("bell_enabled")
+@pytest.mark.parametrize(("status", "rings"), [("exit_requested", False), ("terminating", False), ("failed", True)])
+def test_stop_bell_follows_halt_result(monkeypatch, status, rings) -> None:
+    _replace_checks(monkeypatch, {"run_skill_report_gate": ("halt", "3")})
+    monkeypatch.setattr(stop, "_call_halt", lambda *_args: (status, "終了処理"))
+
+    result = stop.evaluate(json.dumps({"session_id": "bell-halt"}))
+
+    assert result == ({"systemMessage": "終了処理", "terminalSequence": "\a"} if rings else {"systemMessage": "終了処理"})
+
+
+@pytest.mark.usefixtures("bell_enabled")
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "malformed",
+        '{"session_id": ""}',
+        '{"session_id": "codex-bell", "turn_id": "turn"}',
+        '{"session_id": "agy-bell", "runtime": "agy"}',
+    ],
+)
+def test_stop_bell_skips_non_claude_or_unusable_payload(monkeypatch, payload) -> None:
+    monkeypatch.setattr(stop, "resolve_mutable_setting", lambda *_args, **_kwargs: pytest.fail("不要な設定参照"))
+    assert "terminalSequence" not in stop.evaluate(payload)
+
+
+@pytest.mark.usefixtures("bell_enabled")
+@pytest.mark.parametrize("setting", ["false", "invalid"])
+def test_stop_bell_skips_background_scan_when_setting_is_not_enabled(monkeypatch, setting) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL", setting)
+    monkeypatch.setattr(stop, "pending_async_status", lambda *_args, **_kwargs: pytest.fail("不要な背景判定"))
+    assert not stop.evaluate('{"session_id": "bell-disabled"}')
+
+
+@pytest.mark.usefixtures("bell_enabled")
+@pytest.mark.parametrize(("session_id", "rings"), [("bell-owner", False), ("bell-other", True)])
+def test_stop_bell_respects_process_loop_session_identity(monkeypatch, session_id, rings) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "bell-owner")
+    assert ("terminalSequence" in stop.evaluate(json.dumps({"session_id": session_id}))) is rings
+
+
+@pytest.mark.usefixtures("bell_enabled")
+def test_stop_bell_waits_for_background_tasks_and_observation_without_transcript() -> None:
+    session_id = "bell-background"
+    payload = {"session_id": session_id, "background_tasks": [{"type": "subagent", "id": "child"}]}
+    assert not stop.evaluate(json.dumps(payload))
+
+    payload["background_tasks"] = []
+    session_state.update_state(
+        session_id,
+        lambda state: {
+            **state,
+            "agents_server_sessions": {"child": {"status": "completed", "owner_agent_id": "main", "pending_observation": True}},
+        },
+    )
+    assert not stop.evaluate(json.dumps(payload))
+
+    session_state.update_state(session_id, lambda state: {**state, "agents_server_sessions": {}})
+    assert stop.evaluate(json.dumps(payload)) == {"terminalSequence": "\a"}
+
+
+@pytest.mark.usefixtures("bell_enabled")
+def test_stop_bell_waits_for_transcript_async_work(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {"stop_reason": "end_turn", "content": [{"type": "tool_use", "name": "Agent"}]},
+            }
+        ],
+    )
+    assert not stop.evaluate(json.dumps({"session_id": "bell-async", "transcript_path": str(transcript)}))
+
+
 @pytest.mark.parametrize("stage", ["periodic-recheck", "halt"])
 def test_internal_stop_failure_keeps_approval_and_existing_log(tmp_path, monkeypatch, capsys, stage):
     _set_state_directory(monkeypatch, tmp_path)
@@ -262,6 +367,7 @@ def test_block_below_limit_increments_count(
     assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 7
 
 
+@pytest.mark.usefixtures("bell_enabled")
 def test_block_limit_approves_resets_count_and_logs_context(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -275,7 +381,7 @@ def test_block_limit_approves_resets_count_and_logs_context(
         encoding="utf-8",
     )
 
-    assert not stop.evaluate(json.dumps({"session_id": session_id, "stop_hook_active": True}))
+    assert stop.evaluate(json.dumps({"session_id": session_id, "stop_hook_active": True})) == {"terminalSequence": "\a"}
     assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 0
     log_text = (tmp_path / f"claude-agent-toolkit-stop-{session_id}.log").read_text(encoding="utf-8")
     assert "decision=approve_block_limit_reached" in log_text
