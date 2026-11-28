@@ -244,6 +244,12 @@ function renderResetSetting(parent, engine, setting) {
     const saved = setting?.enabled == null ? setting?.error ?? "設定を読み取れません。" :
       `現在: ${setting.enabled ? "有効" : "無効"}。`;
     message.textContent = [saved, write?.message].filter(Boolean).join(" ");
+    if (write?.pending) {
+      const progress = element("span", "", "inline-loading");
+      progress.setAttribute("role", "progressbar");
+      progress.setAttribute("aria-label", "保存中");
+      message.append(" ", progress);
+    }
     if (focusStatus) message.focus();
     choice.disabled = setting?.enabled == null || write?.pending === true;
     save.disabled = choice.disabled || choice.checked === setting.enabled;
@@ -257,7 +263,7 @@ function renderResetSetting(parent, engine, setting) {
     event.preventDefault();
     if (save.disabled) return;
     const enabled = choice.checked;
-    resetWrites.set(engine, {pending: true, message: "保存中です。"});
+    resetWrites.set(engine, {pending: true});
     reflect(form.contains(document.activeElement));
     let failed = false;
     try {
