@@ -45,7 +45,7 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 
 ## ターンの終え方
 
-- 作業完了報告の確定、対象作業での自動終了の要求、通常本文で報告した後の固定文の扱いは`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」に従う。
+- 作業完了報告の確定、送達と別の呼び出しで行う自動終了の要求、通常本文で報告する場合の固定文は`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」に従う。
 - 確認の前置きを送っただけでターンを閉じず、質問は本書「ユーザー確認（AskUserQuestion）」の手段で尋ねる。
   空の応答は再生成を求められるため、未送達でも伝える内容の無い待機は`…`を返し、ホストの無発話の注意を受けた時も同じ終え方を保つ。
 - process-loopの統括と`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`process-loop`か`run-skill`）では、担当の工程を終えた時だけ`…`を完了の1文に替え、報告の抜粋や補足は含めない。
