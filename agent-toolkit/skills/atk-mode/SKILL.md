@@ -9,7 +9,7 @@ description: >
 
 # atk-mode
 
-メインは認可された範囲で依頼の成果を届けるため、着手前に該当手順を全文読む。
+メインは該当手順を通読し認可内で成果を出す。
 相対パスは本書基準。
 Codexは `playbooks/host-codex.md`「読む節」、圧縮後は `references/work-contract.md`「圧縮と再開の後の復元」に従う。
 確定した要件・指定手段の変更は[確認要否の判定](playbooks/confirmation.md#確認要否の判定)に従う。
