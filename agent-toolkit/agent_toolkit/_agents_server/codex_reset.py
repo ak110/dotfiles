@@ -100,10 +100,10 @@ class CodexResetMixin:
         if not self._auto_reset_eligible(session):
             return False
         try:
-            return bool(await run_file_operation(codex_auto_reset.active_permissions))
+            return await run_file_operation(codex_auto_reset.enabled)
         except OSError, ValueError:
             _LOG.exception(
-                "Codex自動reset設定を解決できません: session_id=%s。atk config get usage_reset_permissionsを確認してください",
+                "Codex自動reset設定を解決できません: session_id=%s。atk config get codex_auto_resetを確認してください",
                 session.session_id,
             )
             return False
@@ -131,15 +131,14 @@ class CodexResetMixin:
             if session.result_available or session.interrupt_requested:
                 return
             try:
-                permissions = await run_file_operation(codex_auto_reset.active_permissions)
+                configured = await run_file_operation(codex_auto_reset.enabled)
             except ValueError:
                 _LOG.exception(
-                    "Codex自動reset設定を解決できません: session_id=%s。"
-                    "atk config get usage_reset_permissionsを確認してください",
+                    "Codex自動reset設定を解決できません: session_id=%s。atk config get codex_auto_resetを確認してください",
                     session.session_id,
                 )
                 continue
-            if permissions and not session.turn_control_lock.locked() and self._auto_reset_eligible(session):
+            if configured and not session.turn_control_lock.locked() and self._auto_reset_eligible(session):
                 self._start_auto_reset_check(session)
 
     def _start_auto_reset_check(self: CodexManager, session: SessionState) -> None:
@@ -182,13 +181,9 @@ class CodexResetMixin:
         def sent() -> None:
             progress.stage = "応答待ち"
 
-        async def permissions_unchanged() -> bool:
-            current = await run_file_operation(codex_auto_reset.active_permissions)
-            return all(permission in current for permission in permissions)
-
         async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
             progress.method, progress.stage = method, "設定確認"
-            if method == "account/rateLimitResetCredit/consume" and not await permissions_unchanged():
+            if method == "account/rateLimitResetCredit/consume" and not await run_file_operation(codex_auto_reset.enabled):
                 raise AppServerError("確認中にreset許可が変わった")
             ensure_current_turn()
             progress.stage = "送出確認待ち"
@@ -198,7 +193,7 @@ class CodexResetMixin:
             try:
                 async with permission_check:
                     root = await run_file_operation(state_paths.state_dir)
-                    permissions = await run_file_operation(codex_auto_reset.active_permissions)
+                    configured = await run_file_operation(codex_auto_reset.enabled)
                     observed = await run_file_operation(usage_observation.snapshot)
                     window_rates = observed.get("setting_rates", {}).get(usage_refresh.session_signature(session), {})
                     weekly_rates = [
@@ -210,12 +205,12 @@ class CodexResetMixin:
                     ratio = observed.get("activity_ratio")
                     if pace is not None and ratio is not None:
                         pace *= ratio
-                    if permissions:
+                    if configured:
                         result = await codex_auto_reset.check_auto_reset(
                             request,
                             state_dir=root,
                             rpc_timeout=AUTO_RESET_RPC_TIMEOUT,
-                            permissions=permissions,
+                            configured=configured,
                             active=not session.interrupt_requested,
                             pace=pace,
                             on_permission_confirmed=permission_confirmed,
@@ -285,7 +280,7 @@ class CodexResetMixin:
         if not task.cancelled() and (error := task.exception()) is not None:
             _LOG.error(
                 "Codex自動resetの監視・確認taskが失敗しました。"
-                "この例外ログとatk config get usage_reset_permissionsを確認し、"
+                "この例外ログとatk config get codex_auto_resetを確認し、"
                 "停止した会話は利用枠回復後にsend_messageで継続してください",
                 exc_info=error,
             )

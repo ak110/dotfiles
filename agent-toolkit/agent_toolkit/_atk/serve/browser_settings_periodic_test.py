@@ -19,11 +19,10 @@ pytestmark = [pytest.mark.browser]
 
 @pytest.mark.parametrize("can_observe", [True, False])
 @pytest.mark.asyncio(loop_scope="session")
-async def test_open_reset_details_do_not_replace_periodic_settings_read(
+async def test_periodic_settings_reads_neither_refresh_usage_nor_replace_a_draft(
     screen_harness: _ScreenHarness, tmp_path: pathlib.Path, can_observe: bool
 ) -> None:
     snapshot = config.settings_snapshot(tmp_path, read_only=True)
-    observed = asyncio.Event()
     started = asyncio.Event()
     release = asyncio.Event()
     finished = asyncio.Event()
@@ -48,8 +47,6 @@ async def test_open_reset_details_do_not_replace_periodic_settings_read(
             await route.fulfill(status=403, json={"error": "隔離試験の読み取り失敗"})
         else:
             await route.fulfill(json=data)
-        if host and observing:
-            observed.set()
         if host and state == "hold" and not observing:
             finished.set()
 
@@ -60,34 +57,25 @@ async def test_open_reset_details_do_not_replace_periodic_settings_read(
     picker = page.get_by_label("設定対象ホスト")
     await picker.select_option("demo-host")
     nav = page.get_by_role("navigation", name="設定の分類")
-    await nav.get_by_text("利用枠", exact=True).click()
-    await _open_setting(page.locator('[data-setting="usage_reset_permissions"]'))
-    details = page.locator('details[data-editor="usage_reset_permissions:"]')
-    await details.locator(":scope > summary").click()
-    await details.get_by_text("詳細: アカウントの直接入力", exact=True).click()
-    draft = details.get_by_label("アカウントを直接入力")
-    await draft.fill("draft-account")
-    if can_observe:
-        await asyncio.wait_for(observed.wait(), 5)
-        await playwright.async_api.expect(page.locator("#settings-host-progress")).to_be_hidden()
+    await nav.get_by_text("atk serve", exact=True).click()
+    editor = page.locator('[data-setting="serve_port"]')
+    await _open_setting(editor)
+    draft = editor.get_by_label("保存値")
+    await draft.fill("28777")
     host_setting = page.locator('[data-setting="serve_host"]').locator(":scope > summary")
     expect = playwright.async_api.expect
     await expect(host_setting).to_contain_text("before")
     reads_before = len(remote_reads)
     state = "changed"
-    observed.clear()
     await page.clock.fast_forward(30_000)
     await expect(host_setting).to_contain_text("after")
-    await expect(draft).to_have_value("draft-account")
-    if can_observe:
-        await asyncio.wait_for(observed.wait(), 5)
-    assert remote_reads[reads_before:] == (["settings", "usage"] if can_observe else ["settings"])
+    await expect(draft).to_have_value("28777")
+    assert remote_reads[reads_before:] == ["settings"]
 
-    if not can_observe:
-        state = "unavailable"
-        await page.clock.fast_forward(30_000)
-        await expect(page.locator("#settings-status")).to_contain_text("前回取得した設定を表示中")
-        await expect(draft).to_have_value("draft-account")
+    state = "unavailable"
+    await page.clock.fast_forward(30_000)
+    await expect(page.locator("#settings-status")).to_contain_text("前回取得した設定を表示中")
+    await expect(draft).to_have_value("28777")
 
     state = "hold"
     try:

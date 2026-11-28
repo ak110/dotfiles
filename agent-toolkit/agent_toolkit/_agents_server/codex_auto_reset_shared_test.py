@@ -6,15 +6,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import pathlib
 import subprocess
+import uuid
 
 import pytest
 
 from agent_toolkit._agents_server import codex_auto_reset
 from agent_toolkit._agents_server.codex_auto_reset import check_auto_reset
-from agent_toolkit._agents_server.codex_auto_reset_test import _RPC, _permission
+from agent_toolkit._agents_server.codex_auto_reset_test import _RPC
 from agent_toolkit._atk import config_settings, reset_reservations
 from agent_toolkit._atk.wi import sync
 from agent_toolkit._testing import git_repository
@@ -36,13 +38,10 @@ def _clones(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib
     return clones[0], clones[1], remote
 
 
-def _publish_permissions(notes: pathlib.Path, permissions: list[dict], *, issued: bool = True) -> None:
-    value = json.dumps(permissions)
-    if issued:
-        value = reset_reservations.mark_new_permissions({}, value)
+def _publish_settings(notes: pathlib.Path, *, configured: bool = True) -> None:
     path = notes / config_settings.SHARED_SETTINGS_FILENAME
-    path.write_text(json.dumps({reset_reservations.PERMISSIONS: value}), encoding="utf-8")
-    git_repository.commit_all(notes, "test: register permission")
+    path.write_text(json.dumps({"codex_auto_reset": str(configured).lower()}), encoding="utf-8")
+    git_repository.commit_all(notes, "test: register reset setting")
     git_repository.run_git(notes, "push")
 
 
@@ -52,22 +51,65 @@ def _upstream_records(clone: pathlib.Path) -> list[dict]:
     return json.loads(text)["reservations"]
 
 
+@pytest.mark.parametrize(("outcome", "terminal"), [("reset", "success"), ("noCredit", "closed")])
 @pytest.mark.asyncio
-async def test_count_is_shared_across_clones(tmp_path, monkeypatch, clones):
-    """片方の端末で消費した回数は、他方の端末の許可の残りから引かれる。  pyfltr: allow-comment"""
+async def test_restart_after_shared_completion_does_not_repeat_a_finished_attempt(
+    tmp_path, monkeypatch, clones, outcome, terminal
+):
+    notes_a, notes_b, _ = clones
+    state = tmp_path / "state"
+    _publish_settings(notes_a)
+    first = _RPC()
+    first.outcomes = [outcome]
+    window = first.limits["rateLimits"]["secondary"]["resetsAt"]
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: window - 600)
+    write_attempt = codex_auto_reset._write_attempt  # noqa: SLF001  # pylint: disable=protected-access
+
+    def interrupted(path, attempt):
+        if attempt.status == terminal:
+            raise OSError("共有確定後の停止")
+        write_attempt(path, attempt)
+
+    async def run(rpc):
+        return await check_auto_reset(rpc, state_dir=state, configured=True, shared_notes=notes_a)
+
+    with monkeypatch.context() as fault:
+        fault.setattr(codex_auto_reset, "_write_attempt", interrupted)
+        with pytest.raises(OSError, match="共有確定後の停止"):
+            await run(first)
+    [record] = _upstream_records(notes_b)
+    assert record["status"] == terminal
+    assert len(first.consumptions) == 1
+    [local] = (state / "agents-server" / "codex-auto-reset").glob("*.json")
+    assert json.loads(local.read_text(encoding="utf-8"))["status"] == "pending"
+
+    restarted = _RPC()
+    assert (await run(restarted)).reset_confirmed == (terminal == "success")
+    assert restarted.consumptions == []
+    assert json.loads(local.read_text(encoding="utf-8"))["status"] == terminal
+    if terminal == "success":
+        other = _RPC()
+        await check_auto_reset(other, state_dir=tmp_path / "other", configured=True, shared_notes=notes_b)
+        assert other.consumptions == []
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: window + 1)
+    restarted.limits["rateLimits"]["secondary"]["resetsAt"] = window + 7 * 86400
+    assert (await run(restarted)).reset_confirmed
+    assert len(restarted.consumptions) == 1
+    assert _upstream_records(notes_b)[-1]["key"] != record["key"]
+
+
+@pytest.mark.asyncio
+async def test_success_cannot_be_spent_twice_even_from_another_clone(tmp_path, monkeypatch, clones):
+    """片方の端末で消費した週次窓を、他方の端末から再消費しない。  pyfltr: allow-comment"""
     notes_a, notes_b, _ = clones
     monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    permissions = [_permission(count=1)]
-    _publish_permissions(notes_a, permissions)
+    _publish_settings(notes_a)
     _pulled(notes_b)
     rpc_a, rpc_b = _RPC(used=100), _RPC(used=100)
-    result = await check_auto_reset(rpc_a, state_dir=tmp_path / "state-a", permissions=permissions, shared_notes=notes_a)
+    result = await check_auto_reset(rpc_a, state_dir=tmp_path / "state-a", configured=True, shared_notes=notes_a)
     assert result.reset_confirmed
     assert [item["status"] for item in _upstream_records(notes_a)] == ["success"]
-    assert not codex_auto_reset.has_permission(
-        permissions, rpc_b.account["account"], None, state_dir=tmp_path / "state-b", shared_notes=_pulled(notes_b)
-    )
-    result = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", permissions=permissions, shared_notes=notes_b)
+    result = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", configured=True, shared_notes=notes_b)
     assert not result.reset_confirmed
     assert not rpc_b.consumptions
 
@@ -78,27 +120,24 @@ def _pulled(clone: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.mark.asyncio
-async def test_parallel_hosts_never_exceed_count(tmp_path, monkeypatch, clones):
+async def test_parallel_hosts_only_one_key_reaches_rpc(tmp_path, monkeypatch, clones):
     """両端末が古い台帳で判定しても、共有先の受理順で後の予約が拒否され、消費は送られない。  pyfltr: allow-comment"""
     notes_a, notes_b, _ = clones
     monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    permissions = [_permission(count=1)]
-    _publish_permissions(notes_a, permissions)
+    _publish_settings(notes_a)
     _pulled(notes_b)
     rpc_a, rpc_b = _RPC(used=100), _RPC(used=100)
     rpc_a.release = asyncio.Event()
-    task = asyncio.create_task(
-        check_auto_reset(rpc_a, state_dir=tmp_path / "state-a", permissions=permissions, shared_notes=notes_a)
-    )
+    task = asyncio.create_task(check_auto_reset(rpc_a, state_dir=tmp_path / "state-a", configured=True, shared_notes=notes_a))
     await rpc_a.entered.wait()
     # 端末bは端末aの予約を取り込む前の作業ツリーで判定を始める。  # pyfltr: allow-comment
     monkeypatch.setattr(sync, "pull", lambda _notes: None)
-    result_b = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", permissions=permissions, shared_notes=notes_b)
+    result_b = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", configured=True, shared_notes=notes_b)
     rpc_a.release.set()
     result_a = await task
     assert result_a.reset_confirmed
     assert not result_b.reset_confirmed
-    assert "予約できない" in result_b.diagnostic
+    assert "消費を見送った" in result_b.diagnostic
     assert not rpc_b.consumptions
     assert git_repository.git_output(notes_b, "status", "--porcelain") == ""
 
@@ -108,7 +147,7 @@ async def test_unsynced_reservation_does_not_consume(tmp_path, monkeypatch, clon
     """共有先が予約を受理したと確認できない間は、消費を送らない。  pyfltr: allow-comment"""
     notes_a, _, _ = clones
     monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    _publish_permissions(notes_a, [_permission()])
+    _publish_settings(notes_a)
     git = sync.run_git
 
     def fail_push(args, cwd, **kwargs):
@@ -118,30 +157,30 @@ async def test_unsynced_reservation_does_not_consume(tmp_path, monkeypatch, clon
 
     monkeypatch.setattr(sync, "run_git", fail_push)
     rpc = _RPC(used=100)
-    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", permissions=[_permission()], shared_notes=notes_a)
+    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", configured=True, shared_notes=notes_a)
     assert not result.reset_confirmed
     assert not rpc.consumptions
-    assert not list((tmp_path / "state-a" / "agents-server" / "codex-auto-reset").glob("*.json"))
+    saved = list((tmp_path / "state-a" / "agents-server" / "codex-auto-reset").glob("*.json"))
+    assert len(saved) == 1 and json.loads(saved[0].read_text())["status"] == "pending"
     assert git_repository.git_output(notes_a, "rev-list", "--count", "@{u}..HEAD") == "0"
 
 
 @pytest.mark.asyncio
-async def test_lost_response_retries_with_same_key_and_keeps_count(tmp_path, monkeypatch, clones):
+async def test_lost_response_retries_with_same_payload_on_original_host(tmp_path, monkeypatch, clones):
     """応答を失った消費は成功扱いせず、予約を数えたまま同じ冪等キーで再送する。  pyfltr: allow-comment"""
     notes_a, notes_b, _ = clones
     monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    permissions = [_permission(count=1)]
-    _publish_permissions(notes_a, permissions)
+    _publish_settings(notes_a)
     rpc = _RPC(used=100)
     rpc.outcomes = [TimeoutError("lost"), "alreadyRedeemed"]
     with pytest.raises(TimeoutError):
-        await check_auto_reset(rpc, state_dir=tmp_path / "state-a", permissions=permissions, shared_notes=notes_a)
+        await check_auto_reset(rpc, state_dir=tmp_path / "state-a", configured=True, shared_notes=notes_a)
     assert [item["status"] for item in _upstream_records(notes_a)] == ["pending"]
     # 応答不明の予約は他の端末でも回数に数える。  # pyfltr: allow-comment
     rpc_b = _RPC(used=100)
-    result_b = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", permissions=permissions, shared_notes=notes_b)
+    result_b = await check_auto_reset(rpc_b, state_dir=tmp_path / "state-b", configured=True, shared_notes=notes_b)
     assert not result_b.reset_confirmed and not rpc_b.consumptions
-    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", permissions=permissions, shared_notes=notes_a)
+    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", configured=True, shared_notes=notes_a)
     assert result.reset_confirmed
     first, second = rpc.consumptions
     assert first["idempotencyKey"] == second["idempotencyKey"]
@@ -152,41 +191,90 @@ async def test_lost_response_retries_with_same_key_and_keeps_count(tmp_path, mon
 async def test_rejected_consumption_releases_reservation(tmp_path, monkeypatch, clones):
     notes_a, _, _ = clones
     monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    _publish_permissions(notes_a, [_permission()])
+    _publish_settings(notes_a)
     rpc = _RPC(used=100)
     rpc.outcomes = ["noCredit"]
-    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", permissions=[_permission()], shared_notes=notes_a)
+    result = await check_auto_reset(rpc, state_dir=tmp_path / "state-a", configured=True, shared_notes=notes_a)
     assert not result.reset_confirmed
     assert [item["status"] for item in _upstream_records(notes_a)] == ["closed"]
-    assert reset_reservations.used(_upstream_records(notes_a), "permitted-period") == 0
 
 
-@pytest.mark.parametrize("source", ["a", "b"])
-@pytest.mark.parametrize("status", ["unused", "success", "pending"])
+@pytest.mark.parametrize(
+    ("shared_resets_at", "replays"),
+    [(1900000000, True), (True, False), (False, False), (1900000000.0, False), ("1900000000", False), (0, False), (-1, False)],
+)
 @pytest.mark.asyncio
-async def test_legacy_permission_never_creates_a_new_consumption(tmp_path, monkeypatch, clones, status, source):
+async def test_only_original_host_replays_frozen_legacy_payload(tmp_path, clones, shared_resets_at, replays):
     notes_a, notes_b, _ = clones
-    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
-    permissions = [_permission()]
-    rpc_a, rpc_b = _RPC(used=100), _RPC(used=100)
-    state_a, state_b = tmp_path / "state-a", tmp_path / "state-b"
-    if status == "success":
-        assert (await check_auto_reset(rpc_a, state_dir=state_a, permissions=permissions)).reset_confirmed
-    elif status == "pending":
-        rpc_a.outcomes = [TimeoutError("lost"), "alreadyRedeemed"]
-        with pytest.raises(TimeoutError):
-            await check_auto_reset(rpc_a, state_dir=state_a, permissions=permissions)
-
-    _publish_permissions(notes_a if source == "a" else notes_b, permissions, issued=False)
-    result = await check_auto_reset(rpc_b, state_dir=state_b, permissions=permissions, shared_notes=notes_b)
-    assert not result.reset_confirmed and not rpc_b.consumptions
-    assert "旧端末" in result.diagnostic
-    if status == "pending":
-        result = await check_auto_reset(rpc_a, state_dir=state_a, permissions=permissions, shared_notes=notes_a)
-        assert result.reset_confirmed
-        assert len({attempt["idempotencyKey"] for attempt in rpc_a.consumptions}) == 1
-        assert [item["status"] for item in _upstream_records(notes_a)] == ["success"]
+    _publish_settings(notes_a)
+    state = tmp_path / "state-a"
+    identity = hashlib.sha256(b"example@example.invalid").hexdigest()
+    local = state / "agents-server" / "codex-auto-reset" / f"{identity}.json"
+    local.parent.mkdir(parents=True)
+    key = str(uuid.uuid4())
+    local.write_text(
+        json.dumps(
+            {
+                "resets_at": 1900000000,
+                "idempotency_key": key,
+                "status": "pending",
+                "permission_id": "old",
+                "credit_id": "credit-original",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (notes_a / reset_reservations.FILENAME).write_text(
+        json.dumps(
+            {
+                "reservations": [
+                    {
+                        "permission_id": "old",
+                        "key": key,
+                        "account": identity,
+                        "resets_at": shared_resets_at,
+                        "status": "pending",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    git_repository.commit_all(notes_a, "test: old pending")
+    git_repository.run_git(notes_a, "push")
+    other = _RPC()
+    assert not (
+        await check_auto_reset(other, state_dir=tmp_path / "state-b", configured=True, shared_notes=notes_b)
+    ).reset_confirmed
+    assert not other.consumptions
+    original = _RPC()
+    original.outcomes = ["alreadyRedeemed"]
+    confirmations = []
+    result = await check_auto_reset(
+        original,
+        state_dir=state,
+        configured=True,
+        shared_notes=notes_a,
+        on_permission_confirmed=lambda: confirmations.append(key),
+    )
+    assert result.reset_confirmed is replays
+    [record] = _upstream_records(notes_a)
+    if replays:
+        assert confirmations == [key]
+        assert original.consumptions == [{"idempotencyKey": key, "creditId": "credit-original"}]
+        assert record["status"] == "success"
     else:
-        rpc_a.limits["rateLimits"]["secondary"]["resetsAt"] += 1
-        result = await check_auto_reset(rpc_a, state_dir=state_a, permissions=permissions, shared_notes=notes_a)
-        assert not result.reset_confirmed and len(rpc_a.consumptions) == (status == "success")
+        assert "試行の形式が不正" in result.diagnostic
+        assert not confirmations and not original.consumptions
+        assert record["status"] == "pending"
+        assert json.loads(local.read_text(encoding="utf-8"))["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_disabled_flags_and_missing_remote_never_send(tmp_path, clones):
+    notes_a, _, _ = clones
+    _publish_settings(notes_a, configured=False)
+    for configured, notes in ((False, notes_a), (True, notes_a), (True, None)):
+        rpc = _RPC()
+        result = await check_auto_reset(rpc, state_dir=tmp_path / "state", configured=configured, shared_notes=notes)
+        assert not result.reset_confirmed and not rpc.consumptions

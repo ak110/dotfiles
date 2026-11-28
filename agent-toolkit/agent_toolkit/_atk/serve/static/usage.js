@@ -217,6 +217,81 @@ function extra(parent, metadata) {
   ]);
 }
 
+const resetDrafts = new Map();
+const resetWrites = new Map();
+
+function renderResetSetting(parent, engine, setting) {
+  const form = element("form");
+  form.method = "post";
+  form.action = BASE_PATH + "/api/usage/reset-setting";
+  const choice = element("input");
+  choice.type = "checkbox";
+  choice.name = "enabled";
+  choice.id = `usage-${engine}-auto-reset`;
+  choice.checked = resetDrafts.get(engine) ?? (setting?.enabled === true);
+  const label = element("label", engine === "claude" ? "手動リセットを推奨する" : "リセット権を自動で使う");
+  label.htmlFor = choice.id;
+  const save = element("button", "保存");
+  save.id = `${choice.id}-save`;
+  save.type = "submit";
+  const message = element("p", "", "secondary-text");
+  message.id = `${choice.id}-status`;
+  message.tabIndex = -1;
+  message.setAttribute("role", "status");
+  choice.setAttribute("aria-describedby", message.id);
+  function reflect(focusStatus = false) {
+    const write = resetWrites.get(engine);
+    const saved = setting?.enabled == null ? setting?.error ?? "設定を読み取れません。" :
+      `現在: ${setting.enabled ? "有効" : "無効"}。`;
+    message.textContent = [saved, write?.message].filter(Boolean).join(" ");
+    if (write?.pending) {
+      const progress = element("span", "", "inline-loading");
+      progress.setAttribute("role", "progressbar");
+      progress.setAttribute("aria-label", "保存中");
+      message.append(" ", progress);
+    }
+    if (focusStatus) message.focus();
+    choice.disabled = setting?.enabled == null || write?.pending === true;
+    save.disabled = choice.disabled || choice.checked === setting.enabled;
+  }
+  choice.addEventListener("change", () => {
+    resetDrafts.set(engine, choice.checked);
+    resetWrites.delete(engine);
+    reflect();
+  });
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (save.disabled) return;
+    const enabled = choice.checked;
+    resetWrites.set(engine, {pending: true});
+    reflect(form.contains(document.activeElement));
+    let failed = false;
+    try {
+      const updated = await request("/api/usage/reset-setting", {engine, enabled});
+      resetWrites.set(engine, {message: "保存しました。"});
+      resetDrafts.delete(engine);
+      data = {...(data ?? updated), reset_settings: {...data?.reset_settings, [engine]: updated.reset_settings[engine]},
+        ...(engine === "claude" || updated.observation_error ?
+          {claude_reset_recommended: updated.claude_reset_recommended} : {})};
+      if (updated.observation_error) {
+        setDisplayedReadError("usage", "refresh", updated.observation_error, () => update(false), () => updateProviders(true));
+      }
+    } catch (error) {
+      failed = true;
+      resetWrites.set(engine, {message: `保存できませんでした。${error.message}`});
+    }
+    if (data) render(data);
+    const focused = document.activeElement;
+    if (focused?.id === message.id) {
+      focused.scrollIntoView({block: "nearest"});
+      if (failed) document.getElementById(choice.id)?.focus({preventScroll: true});
+    }
+  });
+  reflect();
+  form.append(choice, label, save, message);
+  parent.append(form);
+}
+
 function render(payload, reportFailure = false) {
   const now = Date.now() / 1000;
   const url = {
@@ -274,7 +349,7 @@ function render(payload, reportFailure = false) {
     recoveryHeading.tabIndex = -1;
     recovery.append(recoveryHeading);
     if (engine === "claude") {
-      recovery.append(element("p", "在庫は手入力の値です。リセット権は公式の利用状況画面で使います。"));
+      recovery.append(element("p", "在庫は手入力の値です。自動消費は未対応です。リセット権は公式の利用状況画面で手動で使います。"));
       if (!payload.claude_inventory.length) recovery.append(element("p", "登録した在庫はありません。"));
       for (const right of payload.claude_inventory) {
         const name = claudeResetScopeName(right.scope, payload.windows);
@@ -297,12 +372,11 @@ function render(payload, reportFailure = false) {
         recovery.append(element("p", `${kind} · ${state}`));
       }
     } else if (refreshUnavailable) recovery.append(element("p", "在庫は未取得です。", "secondary-text"));
-    const permissions = payload.permissions.filter(entry => entry.engine === engine);
-    recovery.append(element("h4", "リセットの許可", "section-heading"));
-    if (!permissions.length) recovery.append(element("p", "期間内または今後の許可はありません。"));
-    for (const entry of permissions) {
-      const scope = engine === "claude" ? claudeResetScopeName(entry.scope, payload.windows) : entry.scope;
-      recovery.append(element("p", `${scope} · ${entry.count}回 · ${dateJst(Date.parse(entry.from) / 1000)}〜${dateJst(Date.parse(entry.until) / 1000)}`));
+    renderResetSetting(recovery, engine, payload.reset_settings?.[engine]);
+    if (engine === "claude" && payload.claude_reset_recommended) {
+      const recommendation = element("p", "対象枠の使用率が高いため、利用可能なリセット権を手動で使うことを検討してください。");
+      recommendation.append(" ", link("Claudeの利用状況画面を開く", url.claude));
+      recovery.append(recommendation);
     }
     if (engine === "claude") {
       recovery.append(element("h4", "追加利用", "section-heading"));
@@ -312,6 +386,8 @@ function render(payload, reportFailure = false) {
     body.append(section);
   }
   const active = document.activeElement;
+  const activeSubmit = view.contains(active) && active.matches('button[type="submit"]') ? active.getBoundingClientRect() : null;
+  const wasVisibleSubmit = activeSubmit && activeSubmit.bottom > 0 && activeSubmit.top < window.innerHeight;
   const selected = active?.closest("[data-metric-detail]");
   const open = new Set([...view.querySelectorAll("[data-metric-detail][open]")].map(node => node.dataset.metricDetail));
   let focusTarget;
@@ -329,7 +405,10 @@ function render(payload, reportFailure = false) {
     if (child !== antigravity) child.remove();
   }
   antigravity.before(body);
-  if (focusTarget) focusTarget.focus({preventScroll: true});
+  if (focusTarget) {
+    focusTarget.focus({preventScroll: true});
+    if (wasVisibleSubmit) focusTarget.scrollIntoView({block: "nearest"});
+  }
   describeAttention(items.sort((a, b) => a.priority - b.priority).map(({item}) => item), payload.windows, refreshed || payload.last_refresh_at);
 }
 

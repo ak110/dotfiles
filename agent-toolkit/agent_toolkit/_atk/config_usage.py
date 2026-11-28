@@ -192,6 +192,36 @@ def display_windows(windows: list[dict[str, Any]], history: list[dict[str, Any]]
     return sorted(visible, key=lambda item: (item["engine"], item["duration_seconds"] or float("inf"), item["window_id"]))
 
 
+def claude_manual_reset_advice(
+    rights: list[dict[str, Any]], windows: list[dict[str, Any]], *, enabled: bool, now: float
+) -> list[dict[str, Any]]:
+    reset_advice = []
+    for right in rights:
+        tight = enabled and any(
+            window["engine"] == "claude"
+            and window["account"] == right["account"]
+            and window["used_percent"] is not None
+            and window["used_percent"] >= 90
+            and window["resets_at"] is not None
+            and window["resets_at"] - now > 300
+            and (right["scope"] in {"all", window["window_id"], window["scope"], *window.get("aliases", ())})
+            for window in windows
+        )
+        reset_advice.append(
+            {
+                "id": right["id"],
+                "until": right["until"],
+                "scope": right["scope"],
+                "recommended": tight and right["count"] > 0 and deadline(right["from"]) <= now < deadline(right["until"]),
+                "action": (
+                    "自動消費は未対応。https://claude.ai/settings/usage で対象と期限を確認して手動消費後、"
+                    "在庫を更新しconfig usage --refreshで再取得"
+                ),
+            }
+        )
+    return reset_advice
+
+
 def reset_editor_snapshot(
     windows: list[dict[str, Any]], history: list[dict[str, Any]], state: dict[str, Any]
 ) -> dict[str, Any]:
@@ -312,6 +342,9 @@ def dispatch(
     settings = read_settings()
     metadata = {engine: read_metadata(engine) for engine in ("claude", "codex")}
     claude_rights = settings.get("claude_reset_inventory", [])
+    reset_advice = claude_manual_reset_advice(
+        claude_rights, display_windows(visible_windows), enabled=resolve("claude_auto_reset") == "true", now=time.time()
+    )
     if not args.json:
         print(MODEL_ORDER_POLICY)
         for engine in ("claude", "codex"):
@@ -338,6 +371,9 @@ def dispatch(
         count_text = f"{count:g}" if count is not None else "不明"
         print(f"Codex reset在庫: {count_text}")
         print(f"Claude reset登録在庫: {sum(right['count'] for right in claude_rights)}（対象・期限はconfig usage --json）")
+        for advice in reset_advice:
+            if advice["recommended"]:
+                print(f"Claudeの手動リセットを推奨: {advice['action']}")
         failures = settings.get("refresh_failures", [])
         for failure in failures:
             print(f"取得失敗: {failure}")
@@ -367,40 +403,6 @@ def dispatch(
                     "fast_mode": info.fast_mode,
                 }
             )
-    permissions = json.loads(resolve("usage_reset_permissions"))
-    now = time.time()
-    reset_advice = []
-    for right in claude_rights:
-        allowed = any(
-            permission["engine"] == "claude"
-            and permission["account"] == right["account"]
-            and permission["scope"] == right["scope"]
-            and permission["count"] > 0
-            and deadline(permission["from"]) <= now < deadline(permission["until"])
-            for permission in permissions
-        )
-        tight = any(
-            window.engine == "claude"
-            and window.account == right["account"]
-            and window.used_percent is not None
-            and window.used_percent >= 90
-            and window.resets_at is not None
-            and window.resets_at - now > 300
-            and (right["scope"] == "all" or right["scope"] in {window.window_id, window.scope})
-            for window in [usage_observation.QuotaWindow(**item) for item in visible_windows]
-        )
-        reset_advice.append(
-            {
-                "id": right["id"],
-                "until": right["until"],
-                "scope": right["scope"],
-                "recommended": bool(running) and allowed and tight and right["count"] > 0 and now < deadline(right["until"]),
-                "action": (
-                    "https://claude.ai/settings/usage で対象と期限を確認して手動消費後、"
-                    "在庫を更新しconfig usage --refreshで再取得"
-                ),
-            }
-        )
     print(
         json.dumps(
             {

@@ -94,7 +94,11 @@ def test_every_mutable_key_has_one_storage() -> None:
     assert set().union(*groups) == keys
     assert sum(len(group) for group in groups) == len(keys)
     assert all(config_settings.HOST_SETTING_REASONS.values())
-    assert {"usage_reset_permissions", "codex_credits_provider", "codex_payg_provider"} <= config_settings.SHARED_SETTING_KEYS
+    assert {
+        *config_settings.AUTO_RESET_KEYS,
+        "codex_credits_provider",
+        "codex_payg_provider",
+    } <= config_settings.SHARED_SETTING_KEYS
 
 
 def test_every_repository_attribute_has_one_storage() -> None:
@@ -109,7 +113,7 @@ def test_every_repository_attribute_has_one_storage() -> None:
 
 def test_settings_reach_other_clone_but_host_values_stay(hosts, capsys):
     hosts.use("a")
-    assert _main(hosts.tmp_path, "config", "set", "usage_reset_permissions", "[]") == 0
+    assert _main(hosts.tmp_path, "config", "set", "claude_auto_reset", "true") == 0
     assert _main(hosts.tmp_path, "config", "set", "codex_payg_provider", "my-payg") == 0
     assert _main(hosts.tmp_path, "config", "set", "serve_port", "30001") == 0
     assert _main(hosts.tmp_path, "config", "set", "weekly_research_auto_start", "true") == 0
@@ -301,100 +305,49 @@ def test_migration_preserves_the_previewed_fast_mode(hosts, setting, already_sha
     assert config_module.resolve_mutable_setting("codex_fast_mode") == setting
 
 
-def test_reissue_transfers_only_remaining_known_count(hosts):
-    root = hosts.use("a")
-    state = root / "state" / "agents-server" / "codex-auto-reset"
-    state.mkdir(parents=True)
-    (state / "account.json").write_text('{"used_permissions":{"permitted-period":1}}', encoding="utf-8")
-    permissions = [
-        {
-            "id": "permitted-period",
-            "engine": "codex",
-            "account": "example@example.invalid",
-            "scope": "codex",
-            "count": 2,
-            "from": "2020-01-01T00:00:00Z",
-            "until": "2099-01-01T00:00:00Z",
-        }
-    ]
-    value = json.dumps(permissions)
-    hosts.write_local("a", {reset_reservations.PERMISSIONS: value})
-    plan = config_shared_migration.compare()
-    config_shared_migration.apply(plan["revision"], {})
-    snapshot = config_module.settings_snapshot(hosts.tmp_path, read_only=True)
-    assert snapshot["reset_reissue"] == {"permitted-period": 1}
-    corrupt = state / "invalid.json"
-    corrupt.write_text("{", encoding="utf-8")
-    assert config_module.settings_snapshot(hosts.tmp_path, read_only=True)["reset_reissue"] == {"permitted-period": None}
-    assert _main(hosts.tmp_path, "config", "reissue-reset", "permitted-period") == 2
-    corrupt.unlink()
-    assert _main(hosts.tmp_path, "config", "set", reset_reservations.PERMISSIONS, value) == 0
-    assert config_module.settings_snapshot(hosts.tmp_path, read_only=True)["reset_reissue"] == {"permitted-period": 1}
-    assert _main(hosts.tmp_path, "config", "reissue-reset", "permitted-period", "--count", "2") == 2
-    assert _main(hosts.tmp_path, "config", "reissue-reset", "permitted-period") == 0
-    assert _main(hosts.tmp_path, "config", "reissue-reset", "permitted-period") == 2
-    assert _main(hosts.tmp_path, "config", "set", reset_reservations.PERMISSIONS, value) == 2
-    hosts.use("b")
-    [refreshed] = json.loads(config_module.resolve_mutable_setting(reset_reservations.PERMISSIONS))
-    assert refreshed["id"] != "permitted-period"
-    assert refreshed["count"] == 1
-    assert reset_reservations.ISSUED not in refreshed
-    assert reset_reservations.is_issued(hosts.notes["b"], refreshed)
-
-
-@pytest.mark.parametrize("case", ["equal", "mixed", "changed", "retired"])
-def test_migration_preserves_only_the_same_issued_codex_permission(hosts, case):
+def test_legacy_shared_grant_is_not_promoted_and_ledger_survives_enable(hosts):
+    hosts.use("a")
     key = reset_reservations.PERMISSIONS
-    identifier = "shared-permission"
     grant = {
-        "id": identifier,
+        "id": "legacy",
         "engine": "codex",
         "account": "example@example.invalid",
         "scope": "codex",
         "count": 1,
         "from": "2020-01-01T00:00:00Z",
         "until": "2099-01-01T00:00:00Z",
+        reset_reservations.ISSUED: True,
     }
-    hosts.use("a")
-    if case == "retired":
-        hosts.write_local("a", {key: json.dumps([grant])})
-        plan = config_shared_migration.compare()
-        config_shared_migration.apply(plan["revision"], {})
-        assert _main(hosts.tmp_path, "config", "reissue-reset", identifier) == 0
-    else:
-        assert _main(hosts.tmp_path, "config", "set", key, json.dumps([grant])) == 0
-
-    hosts.use("b")
-    selected = [grant]
-    if case == "mixed":
-        selected.append(dict(grant, id="legacy-permission", account="legacy@example.invalid"))
-    elif case == "changed":
-        selected = [dict(grant, count=2)]
-    original = {key: reset_reservations.encode_permissions(selected)}
-    hosts.write_local("b", original)
-    plan = config_shared_migration.compare()
-    assert plan["required"] == ([] if case == "equal" else [key])
-    choices: dict[str, config_shared_migration.Choice] = {} if case == "equal" else {key: "local"}
-    if case == "retired":
-        with pytest.raises(ValueError, match="発行し直した旧許可は復元できません"):
-            config_shared_migration.apply(plan["revision"], choices)
-        assert hosts.local("b") == original
-        assert config_shared_migration.apply(plan["revision"], {key: "shared"}) == 1
-    else:
-        assert config_shared_migration.apply(plan["revision"], choices) == 1
-    assert hosts.local("b") == {}
-
-    for name in ("b", "a"):
+    ledger = {
+        "reservations": [
+            {
+                "permission_id": "legacy",
+                "key": "pending-key",
+                "account": "private-account",
+                "resets_at": 1,
+                "status": "pending",
+            }
+        ]
+    }
+    notes = hosts.notes["a"]
+    setting_path = notes / config_settings.SHARED_SETTINGS_FILENAME
+    ledger_path = notes / reset_reservations.FILENAME
+    setting_path.write_text(json.dumps({key: json.dumps([grant])}), encoding="utf-8")
+    ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
+    git.commit_all(notes, "test: seed legacy reset")
+    git.run_git(notes, "push")
+    hosts.write_local("a", {key: json.dumps([grant]), "codex_auto_reset": "true"})
+    assert config_module.resolve_mutable_setting("codex_auto_reset") == "false"
+    assert key not in {item["key"] for item in config_shared_migration.compare()["items"]}
+    assert _main(hosts.tmp_path, "config", "set", "claude_auto_reset", "true") == 0
+    assert key in config_settings.load_shared_settings(setting_path)
+    assert _main(hosts.tmp_path, "config", "set", "codex_auto_reset", "true") == 0
+    for name in ("a", "b"):
         hosts.use(name)
-        visible = json.loads(config_module.resolve_mutable_setting(key))
-        if case == "retired":
-            assert len(visible) == 1 and visible[0]["id"] != identifier
-            assert reset_reservations.is_issued(hosts.notes[name], visible[0])
-        else:
-            assert visible == selected
-            assert reset_reservations.is_issued(hosts.notes[name], visible[0]) == (case != "changed")
-            if case == "mixed":
-                assert not reset_reservations.is_issued(hosts.notes[name], visible[1])
+        assert config_module.resolve_mutable_setting("codex_auto_reset") == "true"
+        visible = config_settings.load_shared_settings(hosts.notes[name] / setting_path.name)
+        assert key not in visible
+        assert json.loads((hosts.notes[name] / ledger_path.name).read_text()) == ledger
 
 
 def test_startup_preserves_each_host_loop_and_does_not_inherit_it_on_new_link(hosts, capsys, monkeypatch):

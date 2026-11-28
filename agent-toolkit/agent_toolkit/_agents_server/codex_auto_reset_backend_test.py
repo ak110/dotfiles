@@ -154,13 +154,25 @@ class _MemoryAppServer(codex.JsonRpcProcess):
         return []
 
 
+def _confirm_shared_reservation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    reservations = codex_auto_reset.reset_reservations
+    monkeypatch.setattr(reservations, "shared_notes", lambda: tmp_path)
+    monkeypatch.setattr(reservations, "reserve_weekly", lambda *args, **kwargs: None)
+    monkeypatch.setattr(reservations, "finish", lambda *args: None)
+
+
+def _deny_shared_reservation(*_args, **_kwargs):
+    raise codex_auto_reset.reset_reservations.ReservationDenied("共有予約を拒否", next_action="予約を確認する")
+
+
 @contextlib.asynccontextmanager
 async def _environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, permitted: bool = True, policy: str | None = None
 ) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
     # リセット由来のaccount/readだけを観測し、速度判定のaccount/readは対象にしない。  # pyfltr: allow-comment
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", "false")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([_PERMISSION] if permitted else []))
+    monkeypatch.setattr(codex_auto_reset, "enabled", lambda: permitted)
+    _confirm_shared_reservation(tmp_path, monkeypatch)
     if policy is None:
         monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", raising=False)
     else:
@@ -462,19 +474,10 @@ async def test_ineligible_account_keeps_weekly_failure(
         assert session.usage_limit_wait_count == 0
 
 
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"account": "other@example.invalid"},
-        {"scope": "other"},
-        {"until": "2001-01-01T00:00:00+00:00"},
-        {"count": 0},
-    ],
-)
 @pytest.mark.asyncio
-async def test_inapplicable_permission_does_not_hold_weekly_failure(tmp_path, monkeypatch, override):
+async def test_denied_shared_reservation_does_not_hold_weekly_failure(tmp_path, monkeypatch):
     async with _environment(tmp_path, monkeypatch) as (_, backend, clients):
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([{**_PERMISSION, **override}]))
+        monkeypatch.setattr(codex_auto_reset.reset_reservations, "reserve_weekly", _deny_shared_reservation)
         session = await backend.start("作業", str(tmp_path))
         _fail(clients[0], session, tmp_path)
         await _until(backend, lambda: session.result_available)
@@ -572,15 +575,6 @@ async def test_refresh_failure_recovers_same_session_without_second_consumption(
 
 
 _LOCAL_ORIGIN = {"generation": "G1", "process": "local"}
-_PERMISSION = {
-    "id": "permitted-period",
-    "engine": "codex",
-    "account": "example@example.invalid",
-    "scope": "codex",
-    "count": 1,
-    "from": "2000-01-01T00:00:00+00:00",
-    "until": "2100-01-01T00:00:00+00:00",
-}
 
 
 class _Hub:
@@ -619,8 +613,7 @@ async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
     monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 8.0)
     async with _service_environment(tmp_path, monkeypatch, _no_save) as (_, backend, clients):
         if not permitted:
-            permission = {**_PERMISSION, "account": "other@example.invalid"}
-            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([permission]))
+            monkeypatch.setattr(codex_auto_reset.reset_reservations, "reserve_weekly", _deny_shared_reservation)
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
         loop = asyncio.get_running_loop()
@@ -765,6 +758,7 @@ def _timeout_record(caplog: pytest.LogCaptureFixture) -> logging.LogRecord:
 async def test_account_read_proceeds_while_save_waits_registration_under_event_flood(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, permitted: bool
 ) -> None:
+    _confirm_shared_reservation(tmp_path, monkeypatch)
     first = state.SessionState("first", str(tmp_path), engine="codex")
     second = state.SessionState("second", str(tmp_path), engine="codex")
     writer = service_projection.ServiceStatusWriter(
@@ -801,7 +795,7 @@ async def test_account_read_proceeds_while_save_waits_registration_under_event_f
     try:
         _flood(raws[0])
         result = await codex_auto_reset.check_auto_reset(
-            client.request, state_dir=tmp_path / "state", permissions=[_PERMISSION] if permitted else [], rpc_timeout=5
+            client.request, state_dir=tmp_path / "state", configured=permitted, shared_notes=tmp_path, rpc_timeout=5
         )
     finally:
         await client.close()
