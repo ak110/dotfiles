@@ -12350,7 +12350,6 @@
     "posix・win32いずれかの原本に存在するコマンドは警告しない。": 1,
     "update_claude_settings でマージしてターゲット結果を返す。": 1,
     "update_claude_settings: 管理対象フック検証テスト。 TestRemovedHookCommands、TestWarnOrphanDotfilesHookCommands、TestNormalizeManagedHooks を含む。 テストは update_claude_settings_test.py から分割。": 1,
-    "実在するOS別配布元で旧個別要素を正規化し、WindowsのStop不在も検証する。": 1,
     "旧コマンド（実在検査を持たない形式と終了コード2を引き継ぐ形式）だけを除き、配布原本の現行コマンドを1件だけ残す。": 1
   },
   "pytools/_internal/update_claude_settings_platform_test.py": {

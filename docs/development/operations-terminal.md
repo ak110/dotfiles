@@ -23,7 +23,7 @@ catppuccinが提供する`icon`の書式はcurrent・lastなど全フラグを�
 - 応答が終わって入力待ちに戻ったときは、agent-toolkitの`Stop`フックが最終判定と同じ応答でベルを返す。
   agent-toolkit単体の既定は無効で、Linuxの配布設定は`AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL=true`で有効にする。
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
-  利用者が独自に追加したStopフックによる継続は、agent-toolkitの判定対象外とする
+  ユーザーが独自に追加したStopフックによる継続は、agent-toolkitの判定対象外とする
 - ベルを鳴らすかどうかは、遮断・継続の判定と並行して決めない。
   判定後の通知か、判定する主体の出力で鳴らす
 - Windowsはtmux運用外のため、ベルの各設定は`share/claude_settings_json_managed.win32.json`へ追加しない

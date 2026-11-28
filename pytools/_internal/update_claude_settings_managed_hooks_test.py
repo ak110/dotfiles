@@ -209,21 +209,19 @@ class TestNormalizeManagedHooks:
         tmp_path: Path,
         override_path: Path,
     ):
-        """実在するOS別配布元で旧個別要素を正規化し、WindowsのStop不在も検証する。"""
         override = json.loads(override_path.read_text(encoding="utf-8"))
-        if "Stop" not in override["hooks"]:
-            assert override_path.name == "claude_settings_json_managed.win32.json"
-            return
-        managed_entries = override["hooks"]["Stop"]
+        managed_entries = override["hooks"]["PreToolUse"]
         expected_entries = typing.cast(
-            list[dict[str, list[dict[str, str]]]],
+            list[dict[str, typing.Any]],
             _substitute_home_placeholder(managed_entries),
         )
         managed_hooks = [hook for entry in expected_entries for hook in entry["hooks"]]
-        existing_entries = [{"hooks": [hook]} for hook in managed_hooks] + expected_entries
+        existing_entries = [
+            {"matcher": matcher, "hooks": [hook]} for matcher in ("Write", "Edit") for hook in managed_hooks
+        ] + expected_entries
         target_path = tmp_path / "target.json"
         target_path.write_text(
-            json.dumps({"hooks": {"Stop": existing_entries}}, ensure_ascii=False),
+            json.dumps({"hooks": {"PreToolUse": existing_entries}}, ensure_ascii=False),
             encoding="utf-8",
         )
 
@@ -246,7 +244,7 @@ class TestNormalizeManagedHooks:
         )
         second = json.loads(target_path.read_text(encoding="utf-8"))
 
-        assert first["hooks"]["Stop"] == expected_entries
+        assert first["hooks"]["PreToolUse"] == expected_entries
         assert second == first
         assert not changed_again
 
