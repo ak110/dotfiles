@@ -324,7 +324,10 @@ function render(payload, reportFailure = false) {
   if (!focusTarget && view.contains(active) && active.tagName === "A") {
     focusTarget = [...body.querySelectorAll("a")].find(link => link.href === active.href);
   }
-  view.replaceChildren(body);
+  for (const child of [...view.children]) {
+    if (child !== antigravity) child.remove();
+  }
+  antigravity.before(body);
   if (focusTarget) focusTarget.focus({preventScroll: true});
   describeAttention(items.sort((a, b) => a.priority - b.priority).map(({item}) => item), payload.windows, refreshed || payload.last_refresh_at);
 }
@@ -394,6 +397,10 @@ async function update(force) {
 async function updateAntigravity(force) {
   if (antigravityPending) return;
   antigravityPending = true;
+  if (!antigravity.hidden) {
+    antigravityStatus.textContent =
+      `Antigravityを再取得中です。この間、再取得はClaudeとCodexだけに適用されます。前回の観測: ${dateJst(antigravityObservedAt)}`;
+  }
   try {
     const result = await request("/api/usage/antigravity", {force});
     const groups = new Map();
@@ -403,17 +410,23 @@ async function updateAntigravity(force) {
     }
     const content = document.createDocumentFragment();
     for (const [name, windows] of groups) {
-      const group = element("div", "", "metric-section");
-      group.append(element("h4", name, "section-heading"));
+      const group = element("div");
+      group.setAttribute("role", "group");
+      group.setAttribute("aria-label", name);
+      group.append(element("p", name, "secondary-text"));
       for (const window of windows) {
-        const row = element("div", "", "metric-row");
-        row.append(element("h5", window.name, "section-heading"));
+        const row = element("article", "", "list-row metric-row");
+        row.append(element("h4", window.name));
         const showRemaining = Number.isFinite(window.remaining_fraction) &&
           (!Number.isFinite(window.resets_at) || window.resets_at > Date.now() / 1000);
-        values(row, [
-          ["観測残量", showRemaining ? percent.format(window.remaining_fraction) : "不明"],
-          ["リセット時刻", dateJst(window.resets_at)],
-        ]);
+        const amount = showRemaining ? percent.format(window.remaining_fraction) : "不明";
+        const observed = element("p");
+        observed.append(
+          element("span", "観測残量 ", "secondary-text"),
+          element("span", amount, showRemaining ? "metric-value" : "metric-unavailable"),
+        );
+        row.append(observed);
+        values(row, [["リセット時刻", dateJst(window.resets_at)]]);
         group.append(row);
       }
       content.append(group);

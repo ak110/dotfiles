@@ -270,9 +270,10 @@ async def test_repeated_usage_failure_has_only_one_recovery_action(
     0.8,
     reason="実ブラウザーで提供元別取得の失敗・復旧と、既存の操作が並行できることを確かめる。",
 )
+@pytest.mark.parametrize("width", [1440, 390])
 @pytest.mark.asyncio(loop_scope="session")
 async def test_antigravity_display_failure_does_not_block_existing_usage(
-    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
+    screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch, width: int
 ) -> None:
     mode = "missing"
     blocked = threading.Event()
@@ -306,13 +307,14 @@ async def test_antigravity_display_failure_does_not_block_existing_usage(
     monkeypatch.setattr(usage_refresh, "read_antigravity_usage", antigravity)
     monkeypatch.setattr(usage_refresh, "refresh_for_display", refresh_for_display)
     page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 900})
     expect = playwright.async_api.expect
     async with page.expect_response("**/api/usage/antigravity"):
         await page.goto(screen_harness.base_url + "/usage")
     main = page.locator("#usage-workspace")
     card = main.get_by_role("region", name="Antigravity")
     refresh = main.get_by_role("button", name="再取得")
-    headings = main.locator("#usage-content h3, #usage-antigravity h3")
+    headings = main.locator("#usage-content h3")
     await expect(main.get_by_role("heading", name="Codex", exact=True)).to_be_visible()
     await expect(card).to_have_count(0)
 
@@ -320,8 +322,8 @@ async def test_antigravity_display_failure_does_not_block_existing_usage(
     await refresh.click()
     await expect(card).to_be_visible()
     await expect(headings).to_have_text(["Claude", "Codex", "Antigravity"])
-    await expect(card.get_by_role("heading", name="Weekly Remaining")).to_be_visible()
-    await expect(card.get_by_text("50%", exact=True)).to_be_visible()
+    await expect(card.locator(".metric-row h4")).to_have_text("Weekly Remaining")
+    await expect(card.locator(".metric-value")).to_have_text("50%")
     await expect(card.get_by_text("JST")).to_have_count(2)
 
     mode = "failed"
@@ -329,11 +331,16 @@ async def test_antigravity_display_failure_does_not_block_existing_usage(
         await refresh.click()
         assert await asyncio.to_thread(blocked.wait, 5)
         await expect(refresh).to_be_enabled()
+        status = card.get_by_role("status")
+        await expect(status).to_contain_text("Antigravityを再取得中")
+        await expect(status).to_contain_text("前回の観測")
+        await expect(status).to_contain_text("ClaudeとCodexだけ")
         await expect(main.get_by_role("heading", name="Codex", exact=True)).to_be_visible()
         await expect(main.get_by_role("link", name="リセットの許可を設定")).to_be_enabled()
         await expect(card.get_by_text("50%", exact=True)).to_be_visible()
     finally:
         release.set()
+    await expect(card.get_by_role("status")).to_contain_text("最新の利用枠を取得できません")
     await expect(card.get_by_role("status")).to_contain_text("前回の観測")
     await expect(card.get_by_text("50%", exact=True)).to_be_visible()
     await expect(page.locator("#update-status")).to_be_hidden()
@@ -341,3 +348,4 @@ async def test_antigravity_display_failure_does_not_block_existing_usage(
     mode = "available"
     await refresh.click()
     await expect(card.get_by_role("status")).to_contain_text("取得時刻")
+    await expect(card.get_by_role("status")).not_to_contain_text("再取得中")
