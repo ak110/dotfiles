@@ -14,21 +14,20 @@ description: >
 
 # dotfilesの開発手順
 
-本リポジトリの検証と環境準備で読む資料の索引である。
-作業や条件に当たる行の資料を、その操作・判断の前に全文読む。
+環境準備・検証・commitを行う担当は、これから行う操作に当たる行を選び、判断や実行の前に該当資料を全文読む。
 リリース運用は`release-dotfiles`、配布元と配布先の対応は`dotfiles-repo-layout`が扱う。
 
 ## 作業と資料
 
 | 作業・条件 | 読む資料 |
 | --- | --- |
+| 専用worktree・回収予定の検証用複製・miseの状態ディレクトリを準備する、専用worktreeの変更を`atk`で動かす | `references/worktree.md` |
+| `make update`・`make update-actions`を実行の候補にする | `references/dependency-update.md`、更新後の検証は`references/verification.md`「変更範囲の検証の値」 |
 | テストを追加・変更・レビューする | `references/verification.md`「テスト配置」、`references/verification-execution.md`「テストとCIの所要基準」 |
 | 変更を検証する（対象の選定、pyfltr・MCPの`run`・pytest・`make test`・`make format`の実行、統合前の最終の実行） | `references/verification.md`「変更範囲の検証の値」、`references/verification-execution.md`「検証コマンドの実行」 |
 | 公開前・push前の検証、ローカルの`make test`が実行しないCIジョブの確認 | `references/verification.md`「公開前の検証」「push前のチェックとCIだけが実行するチェック」 |
 | テストやCIの結果を成功時も含めて判定する | `references/verification-execution.md`「テストとCIの所要基準」 |
 | `agent-doc-tone`の報告へ対処する | `references/verification-values-tone.md` |
-| 専用worktree・回収予定の検証用複製・miseの状態ディレクトリを準備する、専用worktreeの変更を`atk`で動かす | `references/worktree.md` |
-| `make update`・`make update-actions`を実行の候補にする | `references/dependency-update.md`、更新後の検証は`references/verification.md`「変更範囲の検証の値」 |
 | 画面を実描画で確認する、ブラウザーUI・ブラウザー経由のサーバー処理・静的ファイル・実ブラウザーテストを変える、ブラウザーとPowerShellの初期環境を準備する | `references/browser.md` |
 | `atk`のCLIの変更を、commit前に実プロセスで動かして確かめる | `.claude/skills/verify/SKILL.md` |
 | Claude Code・Codex本体のバイナリを検索する | `references/host-binaries.md` |
