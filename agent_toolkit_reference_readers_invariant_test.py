@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import unicodedata
+from bisect import bisect_left
 
 import pytest
 from agent_toolkit._plan.structure import is_agent_doc_target_file
@@ -74,10 +76,22 @@ def _read_paths(node: ast.AST, values: dict[str, list[pathlib.Path]], source: pa
     return paths
 
 
+def _read_name_lines(text: str) -> list[int]:
+    lines: list[int] = []
+    for line_number, line in enumerate(text.split("\n"), start=1):
+        # Pythonの識別子は物理行をまたがず、ASTではNFKCで正規化される。  # pyfltr: allow-comment
+        if not line.isascii():
+            line = unicodedata.normalize("NFKC", line)
+        if any(method in line for method in _READ_METHODS):
+            lines.append(line_number)
+    return lines
+
+
 def _function_reads(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     module_values: dict[str, list[pathlib.Path]],
     source: pathlib.Path,
+    read_lines: list[int],
 ) -> list[pathlib.Path]:
     reads: list[pathlib.Path] = []
 
@@ -91,7 +105,15 @@ def _function_reads(
                 visit(statement.body, nested)
                 visit(statement.orelse, dict(values))
                 continue
-            reads.extend(_read_paths(statement, values, source))
+            if not read_lines:
+                continue
+            # デコレータはstatementのlinenoより前でも、従来のast.walkは読む。  # pyfltr: allow-comment
+            start = statement.lineno
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and statement.decorator_list:
+                start = statement.decorator_list[0].lineno
+            position = bisect_left(read_lines, start)
+            if position < len(read_lines) and (statement.end_lineno is None or read_lines[position] <= statement.end_lineno):
+                reads.extend(_read_paths(statement, values, source))
 
     visit(function.body, dict(module_values))
     return reads
@@ -103,7 +125,9 @@ def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib
         if relative_source.name.endswith("_invariant_test.py"):
             continue
         source = repository / relative_source
-        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        text = source.read_text(encoding="utf-8")
+        tree = ast.parse(text, filename=str(source))
+        read_lines = _read_name_lines(text)
         module_values: dict[str, list[pathlib.Path]] = {}
         for statement in tree.body:
             if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
@@ -119,7 +143,7 @@ def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib
             )
             if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            for path in _function_reads(function, module_values, source):
+            for path in _function_reads(function, module_values, source, read_lines):
                 try:
                     relative = path.resolve().relative_to(repository)
                 except ValueError:
@@ -189,6 +213,41 @@ def test_agent_doc_reader_detector_keeps_nested_definitions(tmp_path, container,
     assert _agent_doc_reader_violations(tmp_path, [source.relative_to(tmp_path)]) == [
         f"example_test.py::{name} -> AGENTS.md" for name in names
     ]
+
+
+def test_agent_doc_reader_detector_keeps_multiline_decorators(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("# 規範\n", encoding="utf-8")
+    source = tmp_path / "sample_test.py"
+    source.write_text(
+        "from pathlib import Path\n"
+        "def outer():\n"
+        "    marker = '\u2028\u0085\v\f'\n"
+        "    @(Path(__file__).parent\n"
+        "      .joinpath('AGENTS.md').ｒｅａｄ＿ｔｅｘｔ())\n"
+        "    def nested():\n"
+        "        pass\n",
+        encoding="utf-8",
+    )
+
+    assert _agent_doc_reader_violations(tmp_path, [source.relative_to(tmp_path)]) == ["sample_test.py::outer -> AGENTS.md"]
+
+
+@pytest.mark.parametrize(
+    ("data", "error"),
+    [
+        (b"\xff", UnicodeDecodeError),
+        (b"def invalid(\n", SyntaxError),
+        (b"def invalid():\n    path = Path(__file__).parents[1000]\n", IndexError),
+    ],
+)
+def test_agent_doc_reader_detector_keeps_errors_without_read_names(
+    tmp_path: pathlib.Path, data: bytes, error: type[Exception]
+) -> None:
+    source = tmp_path / "sample_test.py"
+    source.write_bytes(data)
+
+    with pytest.raises(error):
+        _agent_doc_reader_violations(tmp_path, [source.relative_to(tmp_path)])
 
 
 _READ_METHODS = {"read_text", "read_bytes"}

@@ -229,12 +229,24 @@ def notice_cycle(session_id: str, scope: str, subject: str) -> Generator[None]:
         _warning_context.update(previous)
 
 
-def _claim_notice(session_id: str, hook_id: str, cause: str, body: str, fix: str | None, *, tag: str = "") -> bool:
+def _claim_notice(  # noqa: PLR0913 -- 同じ通知文でも影響する入力を別に識別する
+    session_id: str,
+    hook_id: str,
+    cause: str,
+    body: str,
+    fix: str | None,
+    *,
+    tag: str = "",
+    fingerprint_input: str | None = None,
+) -> bool:
     if not session_id:
         return True
     prefix = _warning_context.get("cycle") or f"{hook_id}|main|"
     key = f"{prefix}{hook_id}|{cause}"
-    fingerprint = hashlib.sha256(json.dumps([body, fix], ensure_ascii=False).encode("utf-8")).hexdigest()
+    fields = [body, fix]
+    if fingerprint_input is not None:
+        fields.append(fingerprint_input)
+    fingerprint = hashlib.sha256(json.dumps(fields, ensure_ascii=False).encode("utf-8")).hexdigest()
     notices = read_state(session_id).get("notice_fingerprints", {})
     values = notices.get(key, []) if isinstance(notices, dict) else []
     if isinstance(values, list) and fingerprint in values:
@@ -369,11 +381,12 @@ def warning_formatter(hook_id: str) -> Callable[..., str]:
         removable_cause: bool,
         escalate_on_repeat: bool = False,
         summary: str | None = None,
+        fingerprint_input: str | None = None,
     ) -> str:
         if not fix.strip():
             raise ValueError("warn通知のfixは空文字列以外で指定する必要がある")
         del removable_cause, escalate_on_repeat, summary
-        if not _claim_notice(session_id, hook_id, cause, body, fix, tag=_WARN_TAG):
+        if not _claim_notice(session_id, hook_id, cause, body, fix, tag=_WARN_TAG, fingerprint_input=fingerprint_input):
             return ""
         return _message_format.llm_notice(_with_fix(body, fix), hook_id, tag=_WARN_TAG)
 

@@ -818,6 +818,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error.reason}", next_action=error.next_action)
             sys.exit(1)
+        if not is_uwi:
+            _add_validation.warn_prevention_coverage(edited, original=original)
         _outcome.report_success(f"編集前の検証が成立した（--dry-runのため保存していない）: {path.name}")
         if not is_uwi:
             _add.print_deferral_candidates([message], [str(pathlib.Path(args.body_file).expanduser().resolve())])
@@ -850,6 +852,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(1)
     if tmp_path is not None:
         tmp_path.unlink(missing_ok=True)
+    if not is_uwi:
+        _add_validation.warn_prevention_coverage(finalized_content["content"], original=original)
     _outcome.report_success(f"編集を反映した: {path.name}")
     if merge_target is not None:
         _outcome.report_info(merge_verification.describe_ci(*merge_target))

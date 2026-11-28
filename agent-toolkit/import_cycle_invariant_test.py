@@ -16,11 +16,36 @@ _PACKAGE = Path(__file__).with_name("agent_toolkit")
 
 
 _IMPORT_END = re.compile(rb"(?m)^[ \t]*\)[ \t]*(?:#.*)?$")
+_ASCII_IDENTIFIER_BYTES = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
 
 
 def _source_tree(source: bytes, filename: str) -> ast.Module:
+    raw_last_import = source.rfind(b"import")
+    last_import = raw_last_import
+    while last_import >= 0:
+        after = last_import + len(b"import")
+        if (last_import == 0 or source[last_import - 1] not in _ASCII_IDENTIFIER_BYTES) and (
+            after == len(source) or source[after] not in _ASCII_IDENTIFIER_BYTES
+        ):
+            break
+        last_import = source.rfind(b"import", 0, last_import)
+    if last_import >= 0 and last_import != raw_last_import and b"\r" not in source:
+        first_newline = source.find(b"\n")
+        second_newline = source.find(b"\n", first_newline + 1) if first_newline >= 0 else -1
+        prefix_end = second_newline if second_newline >= 0 else len(source)
+        start = source.rfind(b"\n", 0, last_import) + 1
+        if b"coding" not in source[:prefix_end] and source.startswith((b"import", b"from", b"lazy"), start):
+            tree = _parse_to_import(source, filename, last_import)
+            line = source.count(b"\n", 0, last_import) + 1
+            if any(
+                isinstance(node, (ast.Import, ast.ImportFrom)) and node.lineno <= line <= (node.end_lineno or node.lineno)
+                for node in tree.body
+            ):
+                return tree
+    return _parse_to_import(source, filename, raw_last_import)
 
-    last_import = source.rfind(b"import")
+
+def _parse_to_import(source: bytes, filename: str, last_import: int) -> ast.Module:
     if last_import < 0:
         return ast.Module(body=[], type_ignores=[])
     end = source.find(b"\n", last_import)
@@ -277,8 +302,27 @@ def test_cycle_through_parent_initializer(tmp_path: Path) -> None:
 
 
 def test_source_tree_keeps_last_multiline_import() -> None:
-    source = b"def deferred():\n    import skip\nfrom package import (\n    member,\n)\nVALUE = 1\n"
+    source = b"def deferred():\n    import skip\nfrom package import (\n    member,\n)\nVALUE = 1\nimports_ready = True\n"
     tree = _source_tree(source, "<sample>")
     assert len(tree.body) == 2
     imports = list(_eager_imports(tree, {}))
     assert [node.names[0].name for node in imports] == ["member"]
+
+
+def test_source_tree_keeps_later_rebinding_in_loop_with_import() -> None:
+    source = (
+        b"from typing import TYPE_CHECKING\n"
+        b"for _ in (0, 1):\n"
+        b"    if TYPE_CHECKING:\n"
+        b"        import sample\n"
+        b"    TYPE_CHECKING = True\n"
+        b"    imports_ready = True\n"
+    )
+    sources = (
+        source,
+        source.replace(b"\n", b"\r", 3),
+        b"# coding: unicode_escape\n" + source.replace(b"\n", b"\\n", 3),
+    )
+    for sample in sources:
+        imports = _eager_imports(_source_tree(sample, "<sample>"), {})
+        assert [node.names[0].name for node in imports] == ["TYPE_CHECKING", "sample"]
