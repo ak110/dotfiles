@@ -16,6 +16,7 @@ from agent_toolkit._atk.wi import frontmatter, sync
 from agent_toolkit._atk.wi.mutations.targets import resolve_editable_targets
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
+from agent_toolkit._git import remote as git_remote
 
 _SHA = re.compile(r"[a-f0-9]{40}")
 _TIMEOUT = 15.0
@@ -27,10 +28,17 @@ _DOTFILES_PYTEST = frozenset(
         *(f"pytest-toolkit (3.15, {shard}/3)" for shard in range(1, 4)),
     }
 )
-_RETRY = "対象ブランチと完全OIDのCIを確認し、必要なジョブが成功した後で同じ操作を再実行する"
+_RETRY = (
+    "対象ブランチと完全OIDのCIを確認し、必要なジョブが成功した後で同じ操作を再実行する。"
+    "取り込み先の既知の失敗なら、処理中は `atk wi hold --state=processing <ファイル名>` で保留し、holdへの移行を確認する。"
+    "修正後のベースブランチを作業ブランチへmergeしてpushし、新しいOIDのCI成功後に"
+    "`atk wi edit`でmerge_commitを更新してから`atk wi unhold`で保留を解く"
+)
+
+type MergeInput = tuple[object, object, object, object, object]
 
 
-def merge_input(text: str) -> tuple[object, object, object, object, object] | None:
+def merge_input(text: str) -> MergeInput | None:
     parsed = frontmatter.parse_frontmatter(text)
     if parsed is None:
         return None
@@ -170,10 +178,7 @@ def _declared_github_exclusion(sha: str, branch: str) -> bool:
     return True
 
 
-def check(text: str, *, expected_head: str | None = None) -> str:
-    inputs = merge_input(text)
-    if inputs is None:
-        raise ActionableError("マージ用WIの情報が無い", next_action="対象ブランチと完全OIDを保存する")
+def validate_input(inputs: MergeInput) -> tuple[str, str, str, object, str]:
     repository, branch, sha, local, workflow = inputs
     if (
         not isinstance(repository, str)
@@ -186,8 +191,14 @@ def check(text: str, *, expected_head: str | None = None) -> str:
         or _SHA.fullmatch(sha) is None
     ):
         raise ActionableError("対象リポジトリ・ブランチ・完全OIDが必要", next_action=_RETRY)
-    if expected_head is not None and expected_head != sha:
-        raise ActionableError("取得した先端がマージ用WIの完全OIDと一致しない", next_action=_RETRY)
+    try:
+        git_remote.parse_remote_location(repository)
+    except ValueError as error:
+        raise ActionableError("対象リポジトリの形式が不正", next_action=_RETRY) from error
+    return repository, branch, sha, local, workflow
+
+
+def _check_ci(repository: str, branch: str, sha: str, workflow: str) -> str | None:
     try:
         forge, location = wait_ci_forge._resolve_forge("auto", repository)  # pylint: disable=protected-access
         fetch = wait_ci_forge._default_run_list_fn(forge, location, branch, _TIMEOUT)  # pylint: disable=protected-access
@@ -215,7 +226,7 @@ def check(text: str, *, expected_head: str | None = None) -> str:
                 else wait_ci_forge._gitlab_ci_exclusion(location, sha, branch, _TIMEOUT) is not None  # pylint: disable=protected-access
             )
             if absent:
-                return _check_local_evidence(local, repository, sha)
+                return None
             raise ActionableError(f"対象OID {sha} のpush CIが未確認", next_action=_RETRY)
         if any(run.get("status") != "completed" or run.get("conclusion") != "success" for run in runs):
             states = ", ".join(f"{run['databaseId']}:{run.get('status')}/{run.get('conclusion')}" for run in runs)
@@ -226,6 +237,26 @@ def check(text: str, *, expected_head: str | None = None) -> str:
     except wait_ci_forge.RunListError as error:
         raise ActionableError(f"対象OIDのCIを取得できない: {error}", next_action=_RETRY) from error
     return f"対象OID {sha} のpush CI成功: {', '.join(str(run['databaseId']) for run in runs)}"
+
+
+def describe_ci(repository: str, branch: str, sha: str, workflow: str) -> str:
+    try:
+        return _check_ci(repository, branch, sha, workflow) or f"対象OID {sha} はCI非対象"
+    except ActionableError as error:
+        return " ".join(str(error).splitlines())
+    except (OSError, subprocess.SubprocessError) as error:
+        detail = " ".join(str(error).splitlines())
+        return f"対象OID {sha} のCIを取得できない: {detail}"
+
+
+def check(text: str, *, expected_head: str | None = None) -> str:
+    inputs = merge_input(text)
+    if inputs is None:
+        raise ActionableError("マージ用WIの情報が無い", next_action="対象ブランチと完全OIDを保存する")
+    repository, branch, sha, local, workflow = validate_input(inputs)
+    if expected_head is not None and expected_head != sha:
+        raise ActionableError("取得した先端がマージ用WIの完全OIDと一致しない", next_action=_RETRY)
+    return _check_ci(repository, branch, sha, workflow) or _check_local_evidence(local, repository, sha)
 
 
 def cmd_verify_merge(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

@@ -3,7 +3,7 @@
 フックを作る担当がホストの入出力に合わせ、ユーザーとエージェントのそれぞれに次の判断に必要な通知を届ける。
 Claude CodeとCodexのhookの入出力、matcher、出力欄、`Stop`・`SubagentStop`、管理環境での実行、子のClaude Codeへの環境変数、auto modeのカスタムルールを扱う。
 hookを新設・変更する時と、ホストの機能の可否や入出力を調べる時に使う。
-ホストの仕様は版で変わるため、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従って入出力を公式資料と観測で確定し、Claude Code固有の上限値と出力契約にはホスト名を書く。
+ホストの仕様はバージョンで変わるため、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従って入出力を公式資料と観測で確定し、Claude Code固有の上限値と出力契約にはホスト名を書く。
 遮断と警告の判断、エージェント宛ての通知本文は`agent-basics:writing-standards/references/claude-hooks-block-warn.md`が扱う。
 
 ## 公式リファレンス（Claude Code）
@@ -14,7 +14,7 @@ hookを新設・変更する時と、ホストの機能の可否や入出力を�
 
 ## モデル別の公式プロンプトガイド
 
-モデルの更新などで指示文を点検する時は、対象のモデル・ホスト・版に合う提供元の公式ガイドを選び、モデル固有の推奨と対象環境で観測した効果を分ける。
+モデルの更新などで指示文を点検する時は、対象のモデル・ホスト・バージョンに合う提供元の公式ガイドを選び、モデル固有の推奨と対象環境で観測した効果を分ける。
 
 - Claude: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)と、同サイトのモデル別ガイド（[Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)、[Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)など。effort、完遂の指示、承認規則、委譲を扱う）を読む。
 - OpenAI: [Prompt engineering](https://platform.openai.com/docs/guides/prompt-engineering)から使うモデルのガイドと推論設定の資料へ進む。
@@ -23,9 +23,10 @@ hookを新設・変更する時と、ホストの機能の可否や入出力を�
 ## hookスクリプトの基本プロトコル
 
 - 入出力: 標準入力から呼び出しのJSONを受け取り、標準出力へホストの仕様に沿う応答のJSONを出し、正常終了は終了コード0とする。
-- 失敗時の扱い（Claude Code v2.1.295以降のcommand・HTTP hook）: 判定を返す前の失敗で操作を続けるか止めるかを、`onFailure`（指定なしは`"continue"`、止める時は`"block"`）で指定する。
+- 失敗時の扱い（Claude Codeのcommand・HTTP hookは2.1.295以降、`mcp_tool` hookは2.1.328以降）: 判定を返す前の失敗で操作を続けるか止めるかを、`onFailure`（指定なしは`"continue"`、止める時は`"block"`）で指定する。
   失敗は、起動不能、タイムアウト、0と2以外の終了コード、JSONの解析・検証の失敗、HTTPの接続エラーと2xx以外の応答など、ホストが検知した障害である。
   正常な判定による遮断・警告とは別の設定であり、`"block"`は動作不良の間も操作を止めるべき場合に選ぶ。
+  Claude Code 2.1.329以降はCode Mode内でも、`PreToolUse`の処理エラーだけでは操作を止めない。
   hookが例外を捕捉して終了コード0で終えるとホストは失敗を検知できず、`onFailure`の遮断も働かなくなる。
   `Stop`、`SubagentStop`、`TaskCompleted`、`TeammateIdle`と、`async`・`asyncRewake`の背景のcommand hookでは無効である（[Block the action when a hook fails](https://code.claude.com/docs/en/hooks#block-the-action-when-a-hook-fails)）。
 - `${CLAUDE_PLUGIN_ROOT}`: Claude Codeは現在のプラグインのルートへ置換し、Codexが置換するのはプラグインhookの`command`の中だけである。
@@ -38,11 +39,13 @@ hookを新設・変更する時と、ホストの機能の可否や入出力を�
 - 発火条件: `PostToolUse`はツールの実行が成功した時だけ発火する。
   `PostToolUseFailure`は実行を始めたツールの失敗で発火して`additionalContext`を受け付け、入力検証による拒否と実行前の権限拒否は対象外である。
   `PermissionDenied`はauto modeの拒否だけで発火し（deny規則への一致、手動の拒否、`PreToolUse`の遮断は対象外）、出力は`hookSpecificOutput.retry`だけを受け付けるため回復の案内は別の手段で届ける。
+  Claude Code 2.1.331以降の`retry: true`は、ユーザーがその呼び出しを求めた時に限り、モデルに同じ操作の再試行を促す。
+  拒否を撤回したり、再試行を新たに認可したりする値ではない。
 - Codexの`PostToolUse`: `tool_response`は任意のJSON値で、シェル実行では終了コードを含まず出力文字列だけが渡るため、状態を記録する条件からコマンドの成否を外す。
   `apply_patch`はパッチの適用が成功した時だけ発火するため、編集の成功後の状態記録に使える。
 - 起動パスの互換性維持: hook定義の`command`が指すスクリプトを改名・移動・削除する時は、旧パスに新しいエントリーポイントを呼ぶ互換スクリプトを残す（実行中のセッションは定義の再読込まで旧パスを使い続け、実体が無いとツール呼び出しが拒否される）。
   未知のサブコマンドを終了コード0で通す共通のエントリーポイントなら、サブコマンドの削除に互換スクリプトは不要である。
-  互換スクリプトの役割と撤去条件を追跡できるようにし、旧定義を読んだ全セッションが`/reload-plugins`か再起動で新しい定義を読んだことを確かめてから撤去する（配布物では、新しいエントリーポイントを含む版のリリース後の版の更新を最低の基準とする）。
+  互換スクリプトの役割と撤去条件を追跡できるようにし、旧定義を読んだ全セッションが`/reload-plugins`か再起動で新しい定義を読んだことを確かめてから撤去する（配布物では、新しいエントリーポイントを含むバージョンのリリース後のバージョンの更新を最低の基準とする）。
 - イベントごとのエントリーポイント集約: 同じイベントの判定は既存のエントリーポイントへ統合する（努力目標。登録の数だけプロセスが起動し、実行時間と画面のログ行が増える）。
   判定ごとに例外を隔離して1つの応答JSONへまとめ、`matcher`による対象の限定は各判定の早期リターンで行う。
 
@@ -97,6 +100,8 @@ Codexのシェル実行と統合実行（`exec_command`）はmatcherで`Bash`に
 JSONでは欄の値ごと、通常の標準出力では全体で数え、同じイベントの複数のhookも個別に数える。
 超えた全文はセッション内の一時ファイルへ保存されてパスと先頭最大2,000文字のプレビューに置き換わり、モデルへ読取は促されないため、確実に届ける情報は上限内に収める。
 `PreToolUse`が終了コード2で返す標準エラー出力はこの上限の対象外だが、無制限とはみなさない。
+ターン中や`/compact`後のhookが遮断・失敗した際の長いログは別で、Claude Code 2.1.332から短縮される。
+通常の出力上限の変更ではない。
 
 ## PermissionRequest
 
@@ -118,7 +123,7 @@ Codexでは`hookSpecificOutput.hookEventName`に`UserPromptSubmit`を指定し�
 ## 組織向け設定
 
 Claude Code 2.1.304以降で`cc-plugin-sec-default`が有効な管理環境（Team・Enterpriseなど）では、ユーザーが導入したプラグインの一部のFunction hooksの実行が省略される。
-組織のmodとして認識される条件は、[公式の組織向け設定](https://code.claude.com/docs/en/plugins/mods/admin#install-your-organizations-mods-and-set-the-order)で版ごとに確かめる。
+組織のmodとして認識される条件は、[公式の組織向け設定](https://code.claude.com/docs/en/plugins/mods/admin#install-your-organizations-mods-and-set-the-order)でバージョンごとに確かめる。
 2.1.324以降のremote marketplaceでは、管理設定の`enabledPlugins`・`extraKnownMarketplaces`と、`prependPlugins`か`appendPlugins`を組み合わせる。
 マーケットプレイスの許可リストは導入元を制限する設定であり、組織のmodの登録は前記の管理設定で行う。
 全ての配布先で実行する必要がある処理は、`hooks.json`のコマンドhookか、次の省略対象の外のイベントに置く。
@@ -131,7 +136,7 @@ Claude Code 2.1.304以降で`cc-plugin-sec-default`が有効な管理環境（Te
 任意の最適化だけを理由に登録すると、組織の環境では最適化が動かず毎セッションの省略通知も残るため、最適化は任意の処理として扱い組織側の制約を保つ。
 省略される登録を保つ要件がある時は、理由、通知の有無、代替で保証できる範囲を個別に記録する。
 コマンドの`PreCompact`は短い要約への指示を渡すが、要約モデルの呼び出しは残る。
-背景Bashの完了通知を`session.receive`で取得できない版では、`queue`と`delivery`を受け取る`session.append`を保ち、省略通知は組織のmodの登録で解消する。
+背景Bashの完了通知を`session.receive`で取得できないバージョンでは、`queue`と`delivery`を受け取る`session.append`を保ち、省略通知は組織のmodの登録で解消する。
 
 ## Stop/SubagentStopフック
 
@@ -155,10 +160,12 @@ hookが終了を止めると新しい応答で同じhookが再び発火し、条
 `Stop`と`SubagentStop`の共通入力は`session_id`、`prompt_id`、`transcript_path`、`cwd`、`permission_mode`、`effort`、`hook_event_name`である。
 両イベントとも`stop_hook_active`、`last_assistant_message`、`background_tasks`、`session_crons`も受け取る。
 `SubagentStop`は`agent_id`、`agent_type`、`agent_transcript_path`も受け取り、その`background_tasks`と`session_crons`は親セッション全体の範囲を表す。
+Claude Code 2.1.331の変更で最終応答の記録を待つようになったのはDesktopの`Stop`と`SubagentStop`である。
+他の起動形で最終応答が記録済みとは仮定しない。
 `background_tasks`の各要素は`id`、`type`、`status`、`description`を持ち、`type`はタスクを作った機能（`shell`、`subagent`、`monitor`、`workflow`、`teammate`、`cloud session`、`MCP task`）を表す。
 これでセッション全体の完了と、背景処理の完了待ちによる一時停止を区別する。
 `PostToolUse`はバックグラウンド実行へ移った時点で発火し、ジョブの完了時の再発火は公式資料に記載が無い。
-現行の版の入力に`background_tasks`が無ければ本項を失効とし、その版の観測で改訂する。
+現行のバージョンの入力に`background_tasks`が無ければ本項を失効とし、そのバージョンの観測で改訂する。
 
 可視テキストの判定は、`last_assistant_message`と現行形式の記録からアシスタントの可視テキストだけを取り出して行う。
 Claude Codeではアシスタントの`text`要素から取り出し、別の送信ツールを併用する時はそのツールが送った本文も同じ判定の対象に含める。

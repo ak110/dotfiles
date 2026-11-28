@@ -73,7 +73,7 @@ UWIを処理するエージェントが、ユーザーの回答を元の作業�
 
 確認UWIは、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」の保存規則で求めた起動単位か、SessionStartの起動入力の取込対象scopeが、保存済みのscopeと一致する時に取り込む。
 モード語以外の自由記述が違っても、同じ起動単位として扱う。
-作業名を修飾しない旧版が保存した形（`process-wi single-lane`、`review-session batch`など。先頭の`agent-toolkit:`が無い）も、起動入力の`accepted_scopes`に並ぶ。
+作業名を修飾しない古いバージョンが保存した形（`process-wi single-lane`、`review-session batch`など。先頭の`agent-toolkit:`が無い）も、起動入力の`accepted_scopes`に並ぶ。
 この形も同じ起動単位として読む。
 スキル名が`review-session`の時は起動入力の`accepted_scopes`に並ぶ旧scopeも同じ起動単位として読む。
 旧scopeの保存値は次の3形式で、1行目は通常の起動、残りはbatchモードに当たる。

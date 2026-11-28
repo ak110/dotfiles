@@ -7,7 +7,7 @@ TLS検証を外す設定は原則4（`agent-basics:writing-standards/references/
 
 ## 基本方針
 
-- 新しいキーワード、改訂の多いキーワード、構文が不確かな項目は、対象の版の公式資料で確かめてから使う。
+- 新しいキーワード、改訂の多いキーワード、構文が不確かな項目は、対象のバージョンの公式資料で確かめてから使う。
   起点は[キーワードの全リファレンス](https://docs.gitlab.com/ci/yaml/)、[事前定義変数](https://docs.gitlab.com/ci/variables/predefined_variables/)、[CI Lint API](https://docs.gitlab.com/api/lint/)である。
 - 機能の説明ページの`Tier`と`Offering`で、YAMLで書ける項目かAPI専用かを見分ける。
 - エディションは、対象のホストが確定していれば`glab api version`の`enterprise`で判定する（`false`はCommunity Edition）。

@@ -98,6 +98,51 @@ def test_cli_contrast_distinguishes_prose_from_preserved_data(
 
 
 @pytest.mark.parametrize(
+    ("name", "body", "warns"),
+    [
+        ("doc.md", "配布物の基準版と対象版を比較する。\n", True),
+        ("doc.md", "プラグインの版数とCLIの公開版を確認する。\n", True),
+        ("doc.md", "このプラグインを更新する前に、版数を確認する。\n", True),
+        ("doc.md", "CLIを動かし、基準版と対象版が同じ引数を受け取ることを確かめる。\n", True),
+        ("doc.md", "CLIを起動して対象版を確認する。\n", True),
+        ("doc.md", "CLIの操作手順書の修正版を読み、手順を確かめる。\n", False),
+        ("doc.md", "SDKの利用ガイドの公開版を読む。\n", False),
+        ("doc.md", "CLIの説明文の承認済みの修正版に差し替える。\n", False),
+        ("doc.md", "CLIを起動し、修正版の操作手順書を読む。\n", False),
+        ("doc.md", "CLIを起動し、修正版のチュートリアルを読みながら操作する。\n", False),
+        ("doc.md", "SDKを更新した後に、修正版のREADMEでセットアップ手順を確かめる。\n", False),
+        ("doc.md", "CLIを起動し、対象版の設定資料を確認する。\n", False),
+        ("doc.md", "SDKを更新し、修正版をレビューする。\n", False),
+        ("doc.md", "SDKを更新し、修正版を確認する。\n", False),
+        ("doc.md", "CLIの公開版の使い方をチュートリアルで読む。\n", False),
+        ("doc.md", "導入版のFAQを開き、変更点を確かめる。\n", False),
+        ("doc.md", "CLIの説明文の修正版を読んでから、起動コマンドを確認する。\n", False),
+        ("doc.md", "CLIが起動した。次に説明文の修正版と他の提案を読む。\n", False),
+        ("doc.md", "SDKの対象版で、実行ファイルの現行版に対する変更を確かめる。\n", True),
+        ("doc.md", "修正版をインストールする。\n", True),
+        ("doc.md", "CLIを起動し、修正版を実行する。\n", True),
+        ("doc.md", "SDKを更新した後に、対象版を記録する。\n", True),
+        ("doc.md", "確認版と公開版が引数を受け付けるか調べる。\n", True),
+        ("doc.md", "公開版と同じバージョンが使われることを確かめる。\n", True),
+        ("doc.md", "文書の対象版と公開版を読み比べる。\n", False),
+        ("doc.md", "レビューで直した説明文の修正版を読んで、誤記の修正を確認する。\n", False),
+        ("doc.md", "提案書の確認版を読んだあと、同じ版にコメントを加える。\n", False),
+        ("output.py", 'print("導入版を確認してください。")\n', True),
+        ("doc.md", "改訂版の方針を日本語版に反映する。\n", False),
+        ("doc.md", "同じ版の本文を使い、修正版の数を数える。\n", False),
+        ("doc.md", "ソフトウェアの修正版をインストールする。\n", True),
+        ("doc.md", "```text\n逐語引用: 同じ版を使う。\n```\n", False),
+        ("output.py", 'labels = {"取得版": 1}\n', False),
+    ],
+)
+def test_cli_warns_version_wording_only_in_prose(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str, body: str, warns: bool
+) -> None:
+    assert check_agent_doc_tone.main([str(_write(tmp_path, body, name=name))]) == 0
+    assert ("警告: 「版の定型」" in capsys.readouterr().err) is warns
+
+
+@pytest.mark.parametrize(
     ("term", "body", "reason", "direction"),
     [
         ("受け口", "APIの受け口を説明する。\n", "比喩や擬人化", "実体、状態または動作を直接書く"),

@@ -8,7 +8,7 @@ GitHub Actionsのワークフローを書く時とレビューする時の、外
 ## 基本
 
 - ワークフローは`actionlint`と`yamllint`で検証し、その診断に従う。
-- 外部actionは`uses: owner/repo@<commit-sha> # vX.Y.Z`の形で固定し、Renovateやpinactなどでメジャー版まで更新する。
+- 外部actionは`uses: owner/repo@<commit-sha> # vX.Y.Z`の形で固定し、Renovateやpinactなどでメジャーバージョンまで更新する。
 
 ## CIと公開の設計
 

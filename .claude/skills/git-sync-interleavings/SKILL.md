@@ -1,13 +1,15 @@
 ---
-verified-digest: d613fa7482b94477621de937b6307bc71be4f8a9a50919bd714962cf238e0059
+verified-digest: 940b32d72e7230cbc4a7b11a1551a4195296eb367e9b671a1ac9387c8fda8695
 name: git-sync-interleavings
 user-invocable: false
 description: >
-  private-notesのGit同期（`git_sync.py`、`wi/sync.py`、`wi/background_sync.py`）の
+  private-notesのGit同期（`git_sync.py`、`git_sync_lock.py`、`wi/sync.py`、`wi/background_sync.py`）の
   ロック、pull、push、commit、分岐とrebaseの扱いを変える時と、それらへ触れた変更を検査せずに統合した後に、
   並行する複数の実行主体の全ての順序で更新が失われないかを確かめる時に起動する。
 verifies:
   - agent-toolkit/agent_toolkit/_atk/git_sync.py
+  - agent-toolkit/agent_toolkit/_atk/git_sync_lock.py
+  - agent-toolkit/agent_toolkit/_atk/git_sync_diagnostics.py
   - agent-toolkit/agent_toolkit/_atk/wi/sync.py
   - agent-toolkit/agent_toolkit/_atk/wi/background_sync.py
   - agent-toolkit/agent_toolkit/_atk/wi/background_sync_test.py
@@ -56,7 +58,7 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 
 ## 対応と前提
 
-- 1手順は、`agent_toolkit._git.command._launch`を通る1回のGitの起動、`git_sync._RepoLock.acquire`の最初の取得、1つの項目の書き換えである。
+- 1手順は、`agent_toolkit._git.command._launch`を通る1回のGitの起動、`git_sync_lock._RepoLock.acquire`の最初の取得、1つの項目の書き換えである。
 - 止める手順は、remoteへの操作（`fetch`、`push`）、複数の主体が使うcloneのロックの取得、そのcloneへのロックの外の操作である。
   共有しないcloneへの操作と、ロックの保持者のそのcloneへの操作は止めずに続けて実行する。
   配置の照会（`rev-parse --git-common-dir`・`--git-path`）と、構成を変更しないシナリオでのupstreamの有無の照会も停止の対象外とする。

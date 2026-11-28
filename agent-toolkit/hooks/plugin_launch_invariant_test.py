@@ -4,6 +4,8 @@ import re
 
 import pytest
 
+from scripts.verification_scan_rules import scan_files
+
 _OLD_PROJECT_LAUNCH = re.compile(r"(?:uv\s+run\s+--project|[\"']uv[\"']\s*,\s*[\"']run[\"']\s*,\s*[\"']--project[\"'])")
 
 
@@ -67,12 +69,10 @@ def test_runtime_sources_do_not_launch_plugin_scripts_with_project_uv() -> None:
     plugin_root = pathlib.Path(__file__).parents[1]
     repository_root = plugin_root.parent
     paths = [
-        *(path for path in (plugin_root / "agent_toolkit").rglob("*.py") if not path.name.endswith("_test.py")),
-        *(path for path in (plugin_root / "hooks").glob("*.ts") if not path.name.endswith(".test.ts")),
-        *(path for path in (plugin_root / "hooks").glob("*.tsx") if not path.name.endswith(".test.tsx")),
-        *(plugin_root / "hooks").glob("*.json"),
-        *(plugin_root / "scripts").iterdir(),
-        *(repository_root / ".claude" / "skills" / "agent-toolkit-edit").rglob("*.md"),
+        *scan_files(__file__),
+        *scan_files(__file__, "hooks"),
+        *scan_files(__file__, "scripts"),
+        *scan_files(__file__, "editing-skill"),
     ]
     old_launches = [
         str(path.relative_to(repository_root))

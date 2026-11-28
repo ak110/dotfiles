@@ -112,7 +112,7 @@ def _check_free_text_start(mode: str, prompt: str) -> Decision:
                     "今回の起動結果を確認し、同じ作業を重複起動しないでください。"
                     f"次にこの役割を起動する際は、`agents_server`の`start`へ`mode`を指定せず、`subagent_md_path={role_name}`と"
                     "宣言済みの入力名だけを持つ`extra_params`を渡してください。"
-                    f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡してください。"
+                    f"サーバー自身のプラグインルートとは別のバージョンの文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡してください。"
                 ),
             ),
         )

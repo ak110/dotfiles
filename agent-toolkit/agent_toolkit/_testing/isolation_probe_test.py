@@ -100,11 +100,27 @@ def test_one_shot_probe_registers_pending_only_in_its_store(tmp_path: pathlib.Pa
     assert (len(in_probe), len(in_default)) == ((1, 0) if isolated else (0, 1))
 
 
-def test_isolated_development_state_applies_pytest_isolation_and_restores(tmp_path: pathlib.Path) -> None:
+def test_isolated_development_state_applies_pytest_isolation_and_restores(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    names = ("AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR", "AGENT_TOOLKIT_RUN_SKILL_ID")
+    for name in names:
+        monkeypatch.setenv(name, "parent")
     before = dict(os.environ)
 
     with isolation.isolated_development_state(tmp_path / "probe-root"):
         isolation.assert_development_state_isolated(tmp_path / "probe-root")
+        leaked = [name for name in names if name in os.environ]
+        assert not leaked, leaked
+        result = subprocess.run(
+            [sys.executable, "-c", "import os, sys; assert all(name not in os.environ for name in sys.argv[1:])", *names],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
 
     assert dict(os.environ) == before
 

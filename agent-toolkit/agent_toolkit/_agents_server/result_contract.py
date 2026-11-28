@@ -161,23 +161,54 @@ def _usability_result_reason(lines: list[str]) -> str | None:
     if verdicts[0] != "合格":
         return None
     missing: list[str] = []
-    observations: dict[str, str] = {}
+    observations: dict[str, list[str]] = {}
     for label in _USABILITY_EVIDENCE:
         prefix = f"{label}:"
-        values = [line.removeprefix(prefix).strip() for line in lines if line.startswith(prefix)]
-        status, separator, observation = values[0].partition(" | ") if len(values) == 1 else ("", "", "")
-        if status != "確認済み" or not separator or observation.strip(" ・—ー-") in {"", "なし", "対象外", "N/A"}:
+        positions = [index for index, line in enumerate(lines) if line.startswith(prefix)]
+        observation = _usability_observation(lines, positions[0], prefix) if len(positions) == 1 else []
+        if not any(map(_has_usability_evidence, observation)):
             missing.append(label)
         observations[label] = observation
     if "類例の比較" not in missing:
-        comparison = observations["類例の比較"]
-        compared, _, appearance = comparison.partition(" | 外見:")
-        absent = {"", "なし", "対象外", "N/A"}
-        if compared.strip(" ・—ー-") in absent or appearance.strip(" ・—ー-") in absent:
+        comparison = "\n".join(observations["類例の比較"])
+        observations_by_kind = re.split(r"(?: \| |^|\n)外見:", comparison, maxsplit=1)
+        if len(observations_by_kind) != 2 or not all(
+            any(map(_has_usability_evidence, part.splitlines())) for part in observations_by_kind
+        ):
             missing.append("類例の比較の外見")
     if missing:
-        return "ユーザビリティレビューの合格に必要な確認結果がありません: " + "、".join(missing)
+        return (
+            "ユーザビリティレビューの合格に必要な確認結果がありません: "
+            + "、".join(missing)
+            + "。「欄名: 確認済み | 観測」の形で書いてください。"
+            "複数行なら「欄名: 確認済み」の続く箇条書きか字下げ行に観測を書いてください。"
+            + (
+                "類例の比較では比較の後に「 | 外見: 観測」を付けるか、同じ欄の次の行に「- 外見: 観測」を書いてください。"
+                if "類例の比較" in missing or "類例の比較の外見" in missing
+                else ""
+            )
+        )
     return None
+
+
+def _has_usability_evidence(line: str) -> bool:
+    return line.strip(" \t・—ー-|") not in {"", "確認済み", "なし", "対象外", "N/A"}
+
+
+def _usability_observation(lines: list[str], index: int, prefix: str) -> list[str]:
+    inline = lines[index].removeprefix(prefix).strip()
+    values = [inline] if inline else []
+    for line in lines[index + 1 :]:
+        if not (_field_continuation(line, indent=0) or (line.startswith("\t") and line.strip())):
+            break
+        values.append(line.strip().removeprefix("- ").strip())
+    if not values:
+        return []
+    head, *rest = values
+    if head in {"確認済み", "確認済み |"}:
+        return rest
+    status, separator, observation = head.partition(" | ")
+    return [observation, *rest] if status == "確認済み" and separator else []
 
 
 def _role_head_reason(document: pathlib.Path, message: str) -> str | None:
@@ -239,6 +270,11 @@ _MULTILINE_VALUE_HINT = "値は欄名と同じ行の`:`の後に書くか、次�
 _READER_FIT_FIELD = re.compile(r"^  ([^\s:-][^:\n]*):(?: (.*))?$")
 
 
+def _field_continuation(line: str, *, indent: int) -> bool:
+    prefix = " " * indent
+    return bool(line.strip()) and line.startswith((prefix + " ", prefix + "- "))
+
+
 def _reader_fit_fields(item_lines: list[str]) -> list[tuple[str, str, str]]:
     entries: list[tuple[str, str, str]] = []
     for line in item_lines:
@@ -246,7 +282,7 @@ def _reader_fit_fields(item_lines: list[str]) -> list[tuple[str, str, str]]:
         if field is not None:
             inline = field[2] or ""
             entries.append((field[1], inline, inline))
-        elif entries and line.strip() and (line.startswith("   ") or line.startswith("  - ")):
+        elif entries and _field_continuation(line, indent=2):
             key, inline, value = entries[-1]
             entries[-1] = (key, inline, value + "\n" + line.strip())
     return entries

@@ -1,6 +1,6 @@
 # SQLAlchemy
 
-対象の版: SQLAlchemy 2.0系のORM。
+対象のバージョン: SQLAlchemy 2.0系のORM。
 本書は、SQLAlchemyのORMでクエリと更新を書く時に読み、autoflushで入力の検証エラーより先にDBの制約違反の例外が送出される誤りを防ぐ処理の順序を示す。
 一般知識で導けない固有の挙動だけを書くのは`agent-basics:writing-standards/references/quality-principles-subtraction.md`の適用である。
 

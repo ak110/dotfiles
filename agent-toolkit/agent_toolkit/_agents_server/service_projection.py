@@ -298,7 +298,7 @@ class ProjectionHub:
                 ):
                     raise ActionableError(
                         "同じ会話の状態は旧MCP接続が所有しています。旧側の仕事と結果を保持しました",
-                        next_action="初回移行では起動中の会話を旧接続のまま使う。会話終了後の通常起動で新版へ移る",
+                        next_action="初回移行では起動中の会話を旧接続のまま使う。会話終了後の通常起動で新しいバージョンへ移る",
                     )
 
                 writer._active = True

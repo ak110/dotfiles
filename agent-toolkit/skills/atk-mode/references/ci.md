@@ -91,6 +91,7 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
   GitHub Actionsの所要時間は`updatedAt - startedAt`で、`gh run view <run ID> --json startedAt,updatedAt,jobs`などでジョブ構成と合わせて確かめる。
   直近の成功runが軽量実行か一部のジョブだけなら、通常の作業量を含む成功runまで遡る。
   所要時間を取得できない時は`--timeout`を省き、省略時の270秒を使う。
+- 待機予算と上限に達した後の判断は[統合実行ツール経由の起動](../playbooks/verification.md#統合実行ツール経由の起動)に従って既存の検証記録に残す。
 - ホストがバックグラウンドコマンドを止める上限は、`--timeout`より長くする（ホストが先に止めると判定の結果が失われる）。
   見積もった総待機がホストのバックグラウンド実行の最大（Claude Codeの`Bash`では7,200,000ミリ秒）を超える時は、最大より短い`--timeout`で起動し、終了コード2を受けてから同じ対象を待ち直す。
 - Codexでは`agent-toolkit:atk-mode/playbooks/host-codex.md`「agents_serverの二層待機」に従い、未起動の監視を通知で再開できる小さい担当へ渡す案と、元の担当での二層の回収を総コストで選ぶ。

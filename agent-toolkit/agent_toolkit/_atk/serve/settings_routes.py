@@ -141,7 +141,7 @@ def _remote_snapshot(
             "read_only": not known or key == "repositories" or not _LEGACY_TOKEN.fullmatch(value),
         }
     if not settings:
-        raise ValueError("SSH先の設定を解釈できません。SSH先のatkの版を確認してください")
+        raise ValueError("SSH先の設定を解釈できません。SSH先のatkのバージョンを確認してください")
     return {"legacy": True, "settings": settings, "paths": paths}, runner
 
 
@@ -204,14 +204,14 @@ def _shared_migration(host: str, payload: dict[str, typing.Any]) -> dict[str, ty
         snapshot, runner = {"legacy": True}, _ssh
     capability = snapshot.get("shared_migration")
     if snapshot.get("legacy") or not isinstance(capability, dict) or capability.get("format") != config_shared_migration.FORMAT:
-        raise ValueError("SSH先のatkが旧版のため移行できません。SSH先のatkを更新してください")
+        raise ValueError("SSH先のatkが旧バージョンのため移行できません。SSH先のatkを更新してください")
     if action == "compare":
         result = runner(host, "atk config migrate-shared --json", None)
         if result.returncode != 0:
             raise ValueError("SSH先で共有設定との差を確認できません。SSH先のprivate-notesの同期を確認してください")
         plan = json.loads(result.stdout)
         if not isinstance(plan, dict) or plan.get("format") != config_shared_migration.FORMAT:
-            raise ValueError("SSH先のatkが旧版のため移行できません。SSH先のatkを更新してください")
+            raise ValueError("SSH先のatkが旧バージョンのため移行できません。SSH先のatkを更新してください")
         return plan
     options = "".join(f" --keep-{value} {key}" for key, value in sorted(choices.items()))
     try:
@@ -413,7 +413,9 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
                 hosts = await asyncio.to_thread(_remote_hosts, read_only=True)
                 return with_host_status(snapshot, hosts)
         except _ReadOnlyUnsupported as error:
-            raise web_input_error_from(ValueError("SSH先のatkが旧版です"), next_action="SSH先のatkを更新する") from error
+            raise web_input_error_from(
+                ValueError("SSH先のatkが旧バージョンです"), next_action="SSH先のatkを更新する"
+            ) from error
         except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
             message = error if isinstance(error, ValueError) else ValueError("設定を読み込めませんでした")
             raise web_input_error_from(message, next_action="ホストの設定とSSHの接続を確認する") from error

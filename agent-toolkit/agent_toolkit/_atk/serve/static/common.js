@@ -32,7 +32,7 @@ if (bootstrap.runtime_versions === true) {
     const unchecked = warnings.some(item => item.status === "unavailable");
     const summary = [
       mismatches.length && `${mismatches.join("・")}：更新の反映待ち`,
-      unchecked && "公開版との一致を確認できません",
+      unchecked && "公開されたバージョンとの一致を確認できません",
     ].filter(Boolean).join("。");
     if (status.textContent !== summary) status.textContent = summary;
     const next = warnings.map(item => item.detail).join("\n");
@@ -61,7 +61,7 @@ if (bootstrap.runtime_versions === true) {
       if (!Array.isArray(warnings)) throw new Error("runtime versions unavailable");
       renderVersions(warnings);
     } catch {
-      renderVersions([{status: "unavailable", detail: "接続してから版を再確認してください。"}]);
+      renderVersions([{status: "unavailable", detail: "接続してからバージョンを再確認してください。"}]);
     } finally {
       button.removeAttribute("aria-disabled");
     }

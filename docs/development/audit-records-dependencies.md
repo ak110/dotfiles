@@ -33,7 +33,7 @@
   `packageManager`の`+sha512.<hash>`を除去する挙動は[pnpm 12.18.0のパーサー](https://github.com/pnpm/pnpm/blob/v12.18.0/pnpm/crates/cli/src/cli_args/package_manager.rs)と[pin処理](https://github.com/pnpm/pnpm/blob/v12.18.0/pnpm/crates/cli/src/engine_pm/pin.rs)を照合する。
   pnpmの版管理・署名検証・公開待機の仕様が変わったときに再検証する。
 
-## agent-basics/skills/writing-standards/references/dependency-management.md：Python対応版の追加：2026年10月10日
+## agent-basics/skills/writing-standards/references/dependency-management.md：対応するPythonのバージョンの追加：2026年10月10日
 
 2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。
 停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。

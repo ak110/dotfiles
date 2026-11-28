@@ -231,13 +231,13 @@ def _legacy_marker(area: pathlib.Path) -> dict[str, typing.Any] | None:
     except FileNotFoundError:
         return None
     if not stat.S_ISREG(metadata.st_mode) or paths.is_link(metadata):
-        raise ManagedTempError(f"旧版の管理記録が通常ファイルではない: {marker}")
+        raise ManagedTempError(f"旧形式の管理記録が通常ファイルではない: {marker}")
     try:
         record = json.loads(marker.read_text(encoding="utf-8"))
     except (UnicodeError, ValueError) as error:
-        raise ManagedTempError(f"旧版の管理記録を読めない: {marker}: {error}") from error
+        raise ManagedTempError(f"旧形式の管理記録を読めない: {marker}: {error}") from error
     if not isinstance(record, dict):
-        raise ManagedTempError(f"旧版の管理記録がオブジェクトではない: {marker}")
+        raise ManagedTempError(f"旧形式の管理記録がオブジェクトではない: {marker}")
     return record
 
 

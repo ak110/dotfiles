@@ -8,20 +8,16 @@
 import pathlib
 import re
 
+from scripts.verification_scan_rules import scan_files
+
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SOURCES = (_ROOT / "agent_toolkit" / "_hooks", _ROOT / "agent_toolkit" / "_agents_server", _ROOT / "hooks")
 _ESCAPE = re.compile(
     r"(?:当たるか|妥当性|採否と内容|内容が足りるか)[^。\n]{0,20}は担当が判断|担当が判断せよ|担当が判断してください"
 )
 
 
 def _sources() -> list[pathlib.Path]:
-    return [
-        path
-        for base in _SOURCES
-        for path in sorted(base.rglob("*"))
-        if path.suffix in {".py", ".ts", ".tsx"} and not path.name.endswith(("_test.py", ".test.ts", ".test.tsx"))
-    ]
+    return scan_files(__file__)
 
 
 def test_sources_are_found() -> None:

@@ -794,7 +794,7 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     config_repositories_cli.build_parser(sub)
     migrate = _atk_help.add_command(sub, "migrate-shared", **_atk_help.HELP["atk config migrate-shared"])
     migrate.add_argument("--json", action="store_true", help="比較の結果をJSONで表示する")
-    migrate.add_argument("--apply", metavar="REVISION", help="比較で取得した版を指定して適用する。")
+    migrate.add_argument("--apply", metavar="REVISION", help="比較で得たリビジョンを指定して適用する。")
     migrate.add_argument("--keep-local", action="append", default=[], metavar="KEY", help="手元の値を全ホストで使う。")
     migrate.add_argument("--keep-shared", action="append", default=[], metavar="KEY", help="共有側の値を使う。")
     reissue = _atk_help.add_command(sub, "reissue-reset", **_atk_help.HELP["atk config reissue-reset"])

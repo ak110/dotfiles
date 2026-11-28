@@ -57,4 +57,4 @@ description: >
   撤去テーブル（この2つと`update_claude_settings.py`の除去テーブル）の登録日と6か月後の削除は`.claude/skills/dotfiles-repo-layout/SKILL.md`「ディレクトリ構造に関する注意点」に従う。
   登録日の有無は`pytools/removed_paths_invariant_test.py`が確かめ、期限は定期実行のAudit workflowが14日前から報告する。
 - 通常の`make test`は`rust/`配下を検証しないため、変えたクレートで`cargo fmt --check`、`cargo clippy`、`cargo test`を実行する（CIでは`rust-lint`ジョブが検証する）。
-  クレートの版数の更新は`.claude/skills/release-dotfiles/SKILL.md`の手順1に従う。
+  クレートのバージョンの更新は`.claude/skills/release-dotfiles/SKILL.md`の手順1に従う。

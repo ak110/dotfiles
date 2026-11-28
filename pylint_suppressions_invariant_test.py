@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 import pytest
+
+from scripts.verification_scan_rules import scan_files
 
 REPO_ROOT = Path(__file__).resolve().parent
 FORBIDDEN_TOKEN = "duplicate-code"
@@ -24,13 +25,7 @@ def _forbidden_suppressions(source: str) -> list[int]:
 
 
 def _tracked_python_files() -> list[Path]:
-    result = subprocess.run(
-        ["git", "ls-files", "-z", "--", "*.py"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-    )
-    return [REPO_ROOT / path for path in result.stdout.decode().split("\0") if path and (REPO_ROOT / path).is_file()]
+    return scan_files(__file__)
 
 
 def test_forbidden_suppression_is_detected_at_each_list_position() -> None:

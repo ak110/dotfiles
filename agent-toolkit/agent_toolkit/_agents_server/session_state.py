@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import uuid
+from collections.abc import Iterable
 from typing import Any
 
 from agent_toolkit._agents_server import state as contracts  # pylint: disable=cyclic-import
@@ -77,6 +79,8 @@ class SessionState:
     live_tasks: dict[str, contracts.LiveTask] = dataclasses.field(default_factory=dict)
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
+    claude_child_completion_tokens: dict[str, str] = dataclasses.field(default_factory=dict)
+    claude_child_resume_retry_turn: int | None = None
 
     agents_wait_background_outputs: set[str] = dataclasses.field(default_factory=set)
     child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
@@ -150,6 +154,22 @@ class SessionState:
 
     def hold_result(self, hold: turn_state.ResultHold) -> None:
         self.hold = hold
+
+    def record_child_activity(self, child: str) -> None:
+        self.live_child_session_ids.add(child)
+        self.terminal_child_session_ids.discard(child)
+        if self.engine == "claude":
+            self.claude_child_completion_tokens[child] = uuid.uuid4().hex
+
+    def record_child_completion(self, child: str) -> None:
+        if self.engine == "claude" and child not in self.claude_child_completion_tokens:
+            self.claude_child_completion_tokens[child] = uuid.uuid4().hex
+        self.terminal_child_session_ids.add(child)
+
+    def discard_child_completions(self, children: Iterable[str]) -> None:
+        for child in tuple(children):
+            self.terminal_child_session_ids.discard(child)
+            self.claude_child_completion_tokens.pop(child, None)
 
     def clear_hold(self) -> None:
         self.hold = None

@@ -231,25 +231,25 @@ def _unavailable(reason: str, output: pathlib.Path | None) -> None:
 
 def _export_legacy(rows: object, notes: pathlib.Path, scope: list[tuple[str, str | None]] | None, output: pathlib.Path) -> None:
     if not isinstance(rows, dict) or not rows:
-        _unavailable("旧版の開始時集合を参照できない", output)
+        _unavailable("旧形式の開始時集合を参照できない", output)
         return
     values_by_source = set()
     paths = []
     if scope is not None and any(branch is not None for _, branch in scope):
-        _unavailable("旧版の開始時集合から登録系統別の識別子を区別できない", output)
+        _unavailable("旧形式の開始時集合から登録系統別の識別子を区別できない", output)
         return
     for row in rows.values():
         if not isinstance(row, dict) or row.get("notes") != str(notes.resolve()):
-            _unavailable("旧版の開始時集合の保存先が一致しない", output)
+            _unavailable("旧形式の開始時集合の保存先が一致しない", output)
             return
         if not isinstance(row.get("digest"), str) or not isinstance(row.get("path"), str):
-            _unavailable("旧版の開始時集合の参照が不正", output)
+            _unavailable("旧形式の開始時集合の参照が不正", output)
             return
         path = pathlib.Path(row["path"])
         values_by_source.add(read(path, expected_digest=row["digest"]))
         paths.append(path)
     if len(values_by_source) != 1:
-        _unavailable("旧版の開始時集合が複数あり、共通の受け渡し元を確定できない", output)
+        _unavailable("旧形式の開始時集合が複数あり、共通の受け渡し元を確定できない", output)
         return
     values = next(iter(values_by_source))
     if scope is not None:

@@ -30,7 +30,7 @@ from typing import Any, cast
 import pytest
 from pytilpack import modelcheck
 
-from agent_toolkit._atk import git_sync
+from agent_toolkit._atk import git_sync, git_sync_lock
 from agent_toolkit._atk.wi import background_sync, frontmatter, processing_owner
 from agent_toolkit._atk.wi import sync as wi_sync
 from agent_toolkit._atk.wi.mutations import transitions
@@ -236,10 +236,10 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
             run.commits[name] = _ref(pathlib.Path(str(kwargs["cwd"])), "refs/heads/main") or ""
         return result
 
-    real_acquire = git_sync._RepoLock.acquire  # pylint: disable=protected-access
-    real_release = git_sync._RepoLock.release  # pylint: disable=protected-access
+    real_acquire = git_sync_lock._RepoLock.acquire  # pylint: disable=protected-access
+    real_release = git_sync_lock._RepoLock.release  # pylint: disable=protected-access
 
-    def acquire(self: git_sync._RepoLock, *args: Any, **kwargs: Any) -> Any:  # pylint: disable=protected-access
+    def acquire(self: git_sync_lock._RepoLock, *args: Any, **kwargs: Any) -> Any:  # pylint: disable=protected-access
         run = _CURRENT[0]
         first = not self.is_locked
         resource = ("clone", str(pathlib.Path(self._repo_path).resolve()))  # pylint: disable=protected-access
@@ -250,7 +250,7 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
             run.note_lock(self.lock_file, resource, held=True)
         return result
 
-    def release(self: git_sync._RepoLock, force: bool = False) -> None:  # pylint: disable=protected-access
+    def release(self: git_sync_lock._RepoLock, force: bool = False) -> None:  # pylint: disable=protected-access
         was_locked = self.is_locked
         real_release(self, force)
         run = _CURRENT[0]
@@ -262,8 +262,8 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-11-19T00:00:00+00:00")
     monkeypatch.setattr(background_sync, "_files", lambda notes: (notes.parent / "worker.lock", notes.parent / "worker.json"))
     monkeypatch.setattr(git_command, "_launch", launch)
-    monkeypatch.setattr(git_sync._RepoLock, "acquire", acquire)  # pylint: disable=protected-access
-    monkeypatch.setattr(git_sync._RepoLock, "release", release)  # pylint: disable=protected-access
+    monkeypatch.setattr(git_sync_lock._RepoLock, "acquire", acquire)  # pylint: disable=protected-access
+    monkeypatch.setattr(git_sync_lock._RepoLock, "release", release)  # pylint: disable=protected-access
 
 
 class _Repositories:

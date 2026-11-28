@@ -179,6 +179,7 @@ def check(repo_root: pathlib.Path, *, base: str | None = None, current: str | No
             listed = "、".join(changed[:5]) + (f"ほか{len(changed) - 5}件" if len(changed) > 5 else "")
             failures.append(
                 f"{name}の配布物に差分があるが版数が{base_version}のまま据え置かれている（{listed}）。"
+                f"基点: {base}。"
                 f"`scripts/agent_toolkit_bump.py --plugin {name} <patch|minor|major>`で版数を更新してから再検査してください。"
             )
     return failures

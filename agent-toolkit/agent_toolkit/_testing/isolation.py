@@ -87,7 +87,12 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     # Codexの会話識別子。ownerを持たないCodex最上位では計画の所有会話・UWIの投入元・会話ルートの解決元になるため、
     # 継承されるとCodex上で実行したテストだけが別の会話として解決する。解決を検証するテストは自身で設定する。
     "CODEX_THREAD_ID",
+    "CODEX_SESSION_ID",
     "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_ENV_FILE",
+    "AGENT_TOOLKIT_COMMIT_HOOKS",
+    "AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR",
+    "AGENT_TOOLKIT_RUN_SKILL_ID",
     # `atk run-skill`がClaudeの子へ渡す背景実行の無効化。継承されると、SessionStartの待機案内とCLIの待機期限が
     # 非対話起動の値へ変わる。値ごとの分岐を検証するテストは自身で設定する。
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
@@ -391,7 +396,8 @@ def import_time_home(home: pathlib.Path) -> Generator[None]:
             if name != "AGENT_TOOLKIT_RUNTIME_DATA":
                 patch.setenv(name, str(home / name.lower()))
 
-        patch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+        for name in DEVELOPMENT_SESSION_ENVIRONMENT_NAMES:
+            patch.delenv(name, raising=False)
         yield
 
 

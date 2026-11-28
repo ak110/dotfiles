@@ -279,7 +279,7 @@ async def test_explore_role_and_free_text_share_investigation_capability(
             str(repository), subagent_md_path="reader-fit-review", extra_params={**rereview, "未解決事項": "なし"}
         )
         artifact.write_text("未commitの異なる版\n", encoding="utf-8")
-        with pytest.raises(ValueError, match="同じ版"):
+        with pytest.raises(ValueError, match="指定のheadの内容と一致しない"):
             await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=params)
         assert len(backend.start_calls) == 3
 

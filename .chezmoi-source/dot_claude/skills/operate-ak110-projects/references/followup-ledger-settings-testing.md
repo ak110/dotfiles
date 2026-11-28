@@ -42,7 +42,7 @@ pyfltr 3.33.2にそろえた [別runのPylint](https://github.com/ak110/dotfiles
 - 項目ID: ci-cache-by-dependency-inputs
 - 実施日: 2026年11月
 - 内容: 必要なサブディレクトリだけを保存し、依存入力が同じ実行では保存を省く
-- 理由: イメージ同梱分の再圧縮と、不要になった版の累積を減らす
+- 理由: イメージ同梱分の再圧縮と、不要になったバージョンの累積を減らす
 - 当てはまる条件: GitHub Actionsで実行ごとに変わるキーや前方一致の復元を使い、キャッシュを毎回保存している
 - 適用方法: 推奨ガイドのCI節に沿って増分と再取得時間を測り、対象・入力ハッシュ・イメージ識別・保存するジョブを決め、同じ入力の2回目で保存が無いことを確認する
 - 参照先: `github.com/ak110/pyfltr`の`docs/guide/recommended.md`「CI」と`.github/workflows/ci.yaml`
@@ -114,7 +114,7 @@ pyfltr 3.33.2にそろえた [別runのPylint](https://github.com/ak110/dotfiles
 - 参照先: `github.com/ak110/pyfltr`の`AGENTS.md`と`tests/`、`github.com/ak110/glatasks`の`vitest.config.ts`と`app/tests/helpers/`
 - 適用済みの見分け方: 配置から対象実装を引け、純粋関数をE2E環境なしで検証でき、共有の準備を使い、再配置後も既存の入力と期待値が維持される
 
-## 前の版との比較を使うCIにベースコミットを渡す
+## 変更前のcommitと比べるCIにベースコミットを渡す
 
 - 項目ID: ci-select-base-for-change-comparison
 - 実施日: 2026年11月

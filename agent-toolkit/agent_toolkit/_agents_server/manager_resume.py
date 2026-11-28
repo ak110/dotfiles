@@ -16,14 +16,16 @@ from agent_toolkit._agents_server import (
     launch_requests,
     manager_registry,
     result_contract,
+    resume_waits,
     retained_results,
     service_io,
     service_turns,
     shared_layout,
     wait_run,
 )
+from agent_toolkit._agents_server.claude_channels import ChildCompletionDelivery, child_delivery_error
 from agent_toolkit._agents_server.cli_turn import CliTurnManager
-from agent_toolkit._agents_server.file_operations import run_file_operation
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.launch_requests import (
     wrap_delivery_body,
 )
@@ -83,7 +85,12 @@ class ManagerResume(manager_registry.ManagerRegistry):
             await cast(Any, self._backend("claude")).set_effort(session, value)
 
     async def _send_with_resources(
-        self, session: SessionState, prompt: str, *, result_recovery: bool = False
+        self,
+        session: SessionState,
+        prompt: str,
+        *,
+        result_recovery: bool = False,
+        child_delivery: ChildCompletionDelivery | None = None,
     ) -> dict[str, Any]:
         backend = self._backend(session.engine)
         if result_recovery and isinstance(backend, CliTurnManager):
@@ -103,7 +110,12 @@ class ManagerResume(manager_registry.ManagerRegistry):
         )
         try:
             async with service_io.next_input(session):
-                result = await send(session, resources + "\n\n" + prompt)
+                body = resources + "\n\n" + prompt
+                if child_delivery is None:
+                    result = await send(session, body)
+                else:
+                    assert isinstance(backend, claude.ClaudeServerManager)
+                    result = await backend.send_message(session, body, child_delivery=child_delivery)
         finally:
             if ticket is not None:
                 ticket.release()
@@ -131,6 +143,40 @@ class ManagerResume(manager_registry.ManagerRegistry):
             await self._advance_pending_result(session)
         finally:
             self._auto_resume_in_flight.remove(session_id)
+
+    async def _advance_claude_child_completion(
+        self,
+        session: SessionState,
+        prompt: str,
+        attempt: ChildCompletionDelivery,
+    ) -> None:
+        async def deliver() -> None:
+            try:
+                delivery = await self._send_with_resources(session, prompt, child_delivery=attempt)
+            except Exception as error:
+                attempt.cause = attempt.cause or child_delivery_error(error)
+                if attempt.outcome == "sent" and not attempt.settled:
+                    attempt.outcome = "unconfirmed"
+            else:
+                if attempt.settled:
+                    await self._discard_automatic_reply(session, delivery)
+            if attempt.settled:
+                return
+            if attempt.outcome == "unconfirmed":
+                attempt.fail(session)
+            elif attempt.available(session):
+                attempt.retry_or_fail(session)
+
+        task = asyncio.create_task(deliver())
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if not attempt.accepted:
+                attempt.revoked = True
+                task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception, service_turns.MoveRequired):
+                await finish_task(task)
+            raise
 
     async def _advance_pending_result(self, session: SessionState) -> None:
         expiry = session.usage_limit_resume_at
@@ -241,9 +287,15 @@ class ManagerResume(manager_registry.ManagerRegistry):
         await consume_agents_wait_background_outputs_async(session)
 
         own_pending = session.pending_result
+        live_children = {child: session.claude_child_completion_tokens.get(child) for child in session.live_child_session_ids}
+
+        def still_tracking(child: str) -> bool:
+            return child in session.live_child_session_ids and (
+                session.engine != "claude" or session.claude_child_completion_tokens.get(child) == live_children[child]
+            )
+
         resolutions = {
-            session_id: (await run_file_operation(session_registry.resolve, session_id))
-            for session_id in tuple(session.live_child_session_ids)
+            session_id: (await run_file_operation(session_registry.resolve, session_id)) for session_id in live_children
         }
         writer = self._status_writer
         tracked_turns = {
@@ -268,8 +320,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 if current.resume_pending or current.recorded_turn_seq != tracked_turns[child_id]:
                     delivered.remove(child_id)
                     continue
+                if session.engine == "claude" and not still_tracking(child_id):
+                    delivered.remove(child_id)
+                    continue
                 session.live_child_session_ids.discard(child_id)
-                session.terminal_child_session_ids.discard(child_id)
+                session.discard_child_completions((child_id,))
         if session.pending_result is not own_pending:
             return
 
@@ -306,12 +361,13 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 terminal.add(session_id)
                 continue
             unobserved.add(session_id)
-        # 照会のawait中にCLIが回収した子は、照会前の写しから追跡・再配送へ戻さない。
-        terminal.intersection_update(session.live_child_session_ids)
-        unobserved.intersection_update(session.live_child_session_ids)
+        if session.engine == "claude" and session.pending_result is not own_pending:
+            return
+        terminal = {child for child in terminal if still_tracking(child)}
+        unobserved = {child for child in unobserved if still_tracking(child)}
         for session_id in terminal:
             session.live_child_session_ids.discard(session_id)
-            session.terminal_child_session_ids.add(session_id)
+            session.record_child_completion(session_id)
 
         if not has_pending_auto_resume_targets(session) and (
             session.terminal_child_session_ids
@@ -341,6 +397,17 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.codex_self_message_repair_consumed = True
             pending_result = session.pending_result
             assert pending_result is not None
+            if (
+                session.terminal_child_session_ids
+                and isinstance(self._backends.get(session.engine), claude.ClaudeServerManager)
+                and (held := resume_waits.HeldTurn.capture(session)) is not None
+            ):
+                attempt = ChildCompletionDelivery(
+                    held,
+                    {child: session.claude_child_completion_tokens.get(child) for child in session.terminal_child_session_ids},
+                )
+                await self._advance_claude_child_completion(session, prompt, attempt)
+                return
             try:
                 delivery = await self._send_with_resources(session, prompt)
                 if delivery.get("delivery") == "reply_failed":
@@ -360,7 +427,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.touch()
                 return
 
-            session.terminal_child_session_ids.difference_update(identifiers)
+            session.discard_child_completions(identifiers)
             session.codex_terminal_subagent_thread_ids.difference_update(identifiers)
             await self._discard_automatic_reply(session, delivery)
             return

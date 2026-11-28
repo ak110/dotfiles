@@ -254,7 +254,7 @@ def plugin_resource_instructions(toolkit_root: pathlib.Path, host: str, project:
         toolkit_notice + f"agent-basics plugin root: {basics_root}\n"
         "`agent-basics:`で始まる品質資料はagent-basicsのroot、"
         "`agent-toolkit:`のスキルと実行基盤の内部資源はagent-toolkitのrootから読んでください。"
-        "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てないでください。" + completion,
+        "それぞれの実在する絶対パスを使い、他方のバージョンからcacheパスを組み立てないでください。" + completion,
         kind="plugin-resources",
     )
     caller = caller_runtime_instructions(toolkit_root)
@@ -292,8 +292,8 @@ def caller_runtime_instructions(toolkit_root: pathlib.Path) -> str | None:
     if caller_version is None:
         command, _argument_note = plugin_environment.launcher_command(toolkit_root)
         return _normative(
-            "委譲元のCLIの版は不明であり、"
-            f"この委譲先の配布物（版{server_version or '不明'}、起動部分: {command}）と異なる場合がある。\n"
+            "委譲元のCLIのバージョンは不明であり、"
+            f"この委譲先の配布物（バージョン {server_version or '不明'}、起動部分: {command}）と異なる場合がある。\n"
             "委譲元がやり直す検査（WI原稿のdry-run、保存時の書式の検査など）は、"
             "委譲元が当該作業で使うと明示した起動部分で実行するか、委譲元が同じ原稿・引数で実行した結果を使え。"
             "委譲先の起動部分での結果だけで合否を確定したり、原稿を差し戻したりしてはいけない。\n"
@@ -305,14 +305,14 @@ def caller_runtime_instructions(toolkit_root: pathlib.Path) -> str | None:
         return None
     command, _argument_note = plugin_environment.launcher_command(caller_root)
     comparison = (
-        f"この委譲先の配布物（版{server_version}）と版が異なる。"
+        f"この委譲先の配布物（バージョン {server_version}）とはバージョンが異なる。"
         if server_version is not None
-        else "この委譲先の配布物と同じ版か確認できない。"
+        else "この委譲先の配布物とバージョンが同じか確認できない。"
     )
     return _normative(
-        f"委譲元のCLIは版{caller_version}（起動部分: {command}）であり、{comparison}\n"
+        f"委譲元のCLIのバージョンは {caller_version}（起動部分: {command}）であり、{comparison}\n"
         "委譲元がやり直す検査（WI原稿のdry-run、保存時の書式の検査など）の合否は、委譲元の起動部分で実行した結果で決めよ。"
-        "委譲先の結果は比較にだけ使い、異なった時は両方の版と結果を返せ。"
+        "委譲先の結果は比較にだけ使い、異なった時は両方のバージョンと結果を返せ。"
         "委譲元の起動部分で実行できなければ、CLIの判定は未確認とし、委譲元へ再実行に必要なサブコマンド・引数を返せ。",
         kind="caller-runtime",
     )

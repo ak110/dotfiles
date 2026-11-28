@@ -366,6 +366,42 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
         assert settings["name"] == "${{ steps.pytest.outputs.artifact }}"
 
 
+def test_browser_e2e_preserves_junit_cpu_data_without_changing_test_result(workflow_data: dict[str, object]) -> None:
+    job = workflow_mapping(workflow_jobs(workflow_data)["browser-e2e"])
+    steps = expanded_workflow_steps(job)
+    e2e = next(step for step in steps if step.get("uses") == "./.github/actions/ci-browser-e2e")
+    assert e2e["if"] == "steps.selection.outputs.selected == 'true'"
+    names = [step.get("name") for step in steps]
+    pytest_index = names.index("ブラウザーE2E")
+    pytest_step, failure, upload = steps[pytest_index : pytest_index + 3]
+    assert pytest_step["id"] == "pytest"
+    assert "continue-on-error" not in pytest_step
+    command = str(pytest_step["run"])
+    assert 'junit="$RUNNER_TEMP/browser-e2e-junit.xml"' in command
+    assert '>> "$GITHUB_OUTPUT"' in command
+    assert command.index('>> "$GITHUB_OUTPUT"') < command.index("--junitxml=")
+    assert "-p agent_toolkit._testing.pytest_plugin" in command
+    assert command.strip().endswith('--junitxml="$junit"')
+    assert failure["if"] == "${{ failure() }}"
+    assert workflow_mapping(failure["with"]) == {
+        "name": "browser-failure-${{ github.job }}-${{ strategy.job-index }}",
+        "path": "${{ runner.temp }}/browser-failure-*",
+        "if-no-files-found": "ignore",
+    }
+    assert upload["uses"] == failure["uses"]
+    assert str(upload["uses"]).startswith("actions/upload-artifact@")
+    assert " ".join(str(upload["if"]).split()) == (
+        "${{ !cancelled() && steps.pytest.outputs.junit != '' && "
+        "(steps.pytest.outcome == 'success' || steps.pytest.outcome == 'failure') }}"
+    )
+    assert upload["continue-on-error"] == "true"
+    assert workflow_mapping(upload["with"]) == {
+        "name": "browser-e2e-junit",
+        "path": "${{ steps.pytest.outputs.junit }}",
+        "if-no-files-found": "ignore",
+    }
+
+
 def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str, object]) -> None:
     """test-linuxは大容量の一時物を生成する全stepより前に、job全体の一時領域をrunnerの作業ディスクへ向ける。
 

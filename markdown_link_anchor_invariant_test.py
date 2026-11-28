@@ -3,13 +3,14 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import re
-import subprocess
 import unicodedata
 import urllib.parse
 
 import pytest
 from agent_toolkit import atk
 from markdown_it import MarkdownIt
+
+from scripts.verification_scan_rules import scan_files
 
 _FENCE_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})")
 _HEADING_PATTERN = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+(?P<text>.*?))?(?:[ \t]+#+)?[ \t]*$")
@@ -36,9 +37,7 @@ class _UnresolvedAnchor:
 
 
 def _tracked_markdown_paths(root: pathlib.Path) -> list[pathlib.Path]:
-    result = subprocess.run(["git", "ls-files", "-z", "--", "*.md"], cwd=root, check=True, capture_output=True)
-    paths = (pathlib.Path(raw.decode("utf-8")) for raw in result.stdout.split(b"\0") if raw)
-    return sorted(path for path in paths if (root / path).is_file())
+    return [path.relative_to(root) for path in scan_files(__file__, repository=root)]
 
 
 def _lines_outside_fences(content: str) -> list[tuple[int, str]]:

@@ -173,7 +173,7 @@ def _check_patch_consistency(name: str, before: str, patch_path: pathlib.Path, c
         raise _material_error(
             name,
             "比較元本文へ今回差分を適用した結果が現行本文と一致しない。今回差分は比較元と現行本文の本文間の完全な差分にし、"
-            "計画別の差分は`判定範囲差分`へ分ける。現行本文はレビューHEADの同じ版を渡す",
+            "計画別の差分は`判定範囲差分`へ分ける。現行本文はレビューHEADの本文を渡す",
         )
 
 
@@ -214,7 +214,7 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
             covered.add(actual[0])
             is_new = material["比較元本文"] == "新規"
             if review_kind != "初回レビュー" and is_new:
-                raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+                raise _material_error("比較元本文", "再レビューでは前回確認した本文が必要")
             before = ""
             if not is_new:
                 before = _material_paths("比較元本文", material["比較元本文"])[0].read_text(encoding="utf-8")
@@ -250,7 +250,7 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
                     "修正範囲（比較元本文・今回差分）", before_path.read_text(encoding="utf-8"), patches[0], current[0]
                 )
         if review_kind != "初回レビュー" and is_new:
-            raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+            raise _material_error("比較元本文", "再レビューでは前回確認した本文が必要")
     _check_reader_unresolved(params, review_kind)
 
 
@@ -483,4 +483,4 @@ def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib
             check=False,
         )
         if shown.returncode != 0 or shown.stdout != (pathlib.Path(repository) / path).read_bytes():
-            raise _material_error("比較資料", f"現行本文がheadの同じ版に一致しない: {path}")
+            raise _material_error("比較資料", f"現行本文が指定のheadの内容と一致しない: {path}")

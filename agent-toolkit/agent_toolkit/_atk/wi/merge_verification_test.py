@@ -57,8 +57,11 @@ def test_ci_success_requires_exact_oid_and_execution(monkeypatch, runs, jobs, al
     if allowed:
         assert merge_verification.check(_body(), expected_head=_COMMIT).startswith(f"対象OID {_COMMIT} のpush CI成功")
     else:
-        with pytest.raises(ActionableError):
+        with pytest.raises(ActionableError) as failure:
             merge_verification.check(_body(), expected_head=_COMMIT)
+        if runs and runs[0][2:] == ("completed", "failure"):
+            assert "atk wi hold --state=processing" in failure.value.next_action
+            assert "merge_commitを更新" in failure.value.next_action
 
 
 def test_expected_head_mismatch_stops_before_ci(monkeypatch):
@@ -176,15 +179,17 @@ def test_cmd_edit_checks_merge_metadata_before_persisting_it(tmp_path, monkeypat
     path = _write_awi_file(notes, name, target_repo=_REPO)
     original = path.read_bytes()
     proposal = tmp_path / "merge.md"
-    proposal.write_text(_body(), encoding="utf-8")
+    proposal.write_text(_body().replace(_COMMIT, "bad-oid"), encoding="utf-8")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    monkeypatch.setattr(wait_ci_forge, "_default_run_list_fn", lambda *_args: lambda _sha: [])
-    monkeypatch.setattr(wait_ci_forge, "_github_ci_configured", lambda *_args: True)
-    monkeypatch.setattr(merge_verification, "_declared_github_exclusion", lambda *_args: False)
+
+    def unexpected(*_args):
+        pytest.fail("形式が不正なOIDで照会した")
+
+    monkeypatch.setattr(wait_ci_forge, "_default_run_list_fn", unexpected)
     with pytest.raises(SystemExit) as exit_info:
         atk.main(["wi", "edit", name, "--target-repo", _REPO, "--body-file", str(proposal)], home=tmp_path)
     assert exit_info.value.code != 0
-    assert "CIが未確認" in capsys.readouterr().err
+    assert "完全OIDが必要" in capsys.readouterr().err
     assert path.read_bytes() == original
 
 

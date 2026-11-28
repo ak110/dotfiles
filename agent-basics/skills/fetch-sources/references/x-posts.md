@@ -19,11 +19,19 @@ X（旧Twitter）の投稿を調査資料として参照する時に、投稿を
    - `tweet.article`がオブジェクトなら記事形式で、`tweet.article.title`が表題、`tweet.article.content.blocks[].text`を配列順に改行で連結したものが本文である。
      `tweet.text`と`tweet.article.preview_text`はプレビューであり本文と区別する。
    - `tweet.created_at`は投稿日時、`tweet.article.created_at`は記事作成日時である。
-     引用投稿は別の投稿として取得する。
+   - 返信先は `tweet.replying_to_status`（投稿ID）と `tweet.replying_to`（アカウント名）を記録する。
+     両方が `null` なら返信先なしとし、属性の欠落や取得失敗とは区別する。
+   - `tweet.quote` があれば `id` と `url` を残し、引用投稿は別の投稿として取得する。
+     本文・記事・メディアに現れる外部リンクも保存し、短縮URLは手順1に従って扱う。
 4. 写真は`tweet.media.photos[].url`から取得し、「添付写真の保存と確認」へ進む。
    配列が空か写真メディアが無ければ「写真なし」とし、通信の失敗と区別する。
    記事の`blocks[].text`の連結だけでは、記事内の画像や埋め込みを取得したと扱わない。
-5. 本文と写真の取得状況を別々に記録し、画像は実際に確認した範囲を残す。
+5. 投稿IDを基準に、本文、日時、写真、返信先、引用、外部リンクの取得状況を記録する。
+   画像は実際に確認した範囲を残す。
+   改善方法が本文から分からない時は、保存した返信先・引用投稿・リンクをたどる。
+   必要なら投稿者と主題で関連投稿や公開実装を探す。
+   採否や方法を判断できる具体例までを対象とし、全履歴や全リンクの取得は求めない。
+   許可された経路で入手できなかった資料と、それによって判断できない範囲を引き継ぐ。
 
 上の属性名はFxTwitterのv1形式であり、`/2/`を含むv2形式と区別する。
 仕様は[FxEmbedのAPIドキュメント](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)と[レスポンスの実装](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)にある。

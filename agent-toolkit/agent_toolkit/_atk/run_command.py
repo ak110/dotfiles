@@ -88,7 +88,7 @@ def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
     except (OSError, subprocess.SubprocessError) as error:
         outcome.report_warning(
             f"作業ツリーの状態を取得できない: {error}",
-            next_action="観測の版を根拠に使う場合は、同じcwdで`git rev-parse HEAD`と`git status`を確かめて記録する",
+            next_action="観測の根拠にするなら同じcwdで`git rev-parse HEAD`と`git status`を確かめて記録する",
         )
         return None, None
     if inside.returncode != 0 or inside.stdout.strip() != "true":
@@ -108,7 +108,7 @@ def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
     if head is None or status_lines is None:
         outcome.report_warning(
             "作業ツリーのHEADまたは`git status`を取得できない",
-            next_action="観測の版を根拠に使う場合は、同じcwdで`git rev-parse HEAD`と`git status`を確かめて記録する",
+            next_action="観測の根拠にするなら同じcwdで`git rev-parse HEAD`と`git status`を確かめて記録する",
         )
     return head, status_lines
 

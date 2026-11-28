@@ -36,7 +36,7 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - 保留中のAWIを列挙した計画を`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って作る（`source: implement`のAWIは詳細化の対象外で、本文をそのまま実装と実行レビューの基準にする）。
      実行レビュー指摘管理表と対応記録は計画と同じstemに置き、手順7で一時資源を回収する前に`atk plans commit`で計画バンドルを保存する。
    - 実装・テスト・変更範囲の検証（`agent-basics:check-execution`と対象リポジトリの検証規範）を行い、`agent-toolkit:atk-mode/playbooks/commit.md`に従って一時ブランチへcommitする。
-   - 配布物の版数はマージ用ブランチで上げない。
+   - 配布物のバージョンはマージ用ブランチで上げない。
      更新が必要な場合は、更新種別と根拠をAWIへ書く。
 5. 独立文脈の実行レビューを受けて収束させる。
    - `agent-toolkit:atk-mode/roles/exec-review.parent.md`に従い、実装を担当していない実行レビュー担当を、レビュー基準`計画`と`WI`で、手順4の計画と保留中のAWIを渡して起動する（指摘管理表は計画と同じstemに解決される）。
@@ -48,10 +48,13 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - 同等のローカル検証が必要な場合は、証拠を作業ツリーの外に保存してから回収する。
 7. AWIをマージ用へ更新して保留を解く。
    - `atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で、frontmatterへ`merge_branch: <push済みブランチ名>`と`merge_commit: <push済みHEADの完全OID>`を加える。
-   - `edit`が対象OIDのCI未完了・取消・失敗を返した場合は、保留を解かず、同じOIDの必要なCIの成功後に再実行する。
+   - `edit`はCIの結果を`情報:`行で示す。
+     CIが失敗・未完了でもマージ用へ更新し、保留を解ける。
+     CIの状態と、失敗した場合は原因についてどこまで判断できたかを`## 調査結果と判断根拠`へ書く。
+     共有ブランチに原因があり、別のセッションが対処している可能性がある時は、[独立したセッションへの連絡](host-claude-code.md#実行時能力と通信scope)に従い、状況を確かめて自分から連絡し、段取りを調整する。
    - CI非対象とCLIが確定した場合は、同じ完全OIDの同等検証と独立文脈レビューを終えてから保存する。
      証拠の書式は `atk wi verify-merge --help` に従う。
-   - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
+   - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・バージョン更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
    - `agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」に従う。
    - 必要な証拠を確保した後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。
 8. 完了を報告する。
@@ -74,6 +77,13 @@ AWIは保存・保留した項目だけを戻す。
    条件を満たしたら`git fetch origin <merge_branch>`で取得し、`FETCH_HEAD`の完全OIDが`merge_commit`と一致することを確かめる。
    取り込み前に`atk wi verify-merge <ファイル名> --head <FETCH_HEADの完全OID>`を実行する。
    ブランチ不在やOID不一致がある場合もマージせず、原因を調べて報告または保留する。
+   - 対象OIDのCIが成功していないため拒否された場合はマージしない。
+     処理中のセッションが`atk wi hold --state=processing <ファイル名>`を実行し、`hold`への移行を確認する。
+     保留に失敗したら後続の操作へ進まない。
+   - 取り込み先のブランチに既にある失敗が原因なら、そのブランチで修正された後に、修正済みのベースブランチを作業ブランチへmergeしてpushする。
+     取り込み先でも直っていない失敗は[CI失敗への対処](../references/ci.md)に従う。
+   - mergeで競合を解消した場合は、解消の差分を実行レビューへ出して指摘を解消する。
+     新しい完全OIDのCI成功後に`atk wi edit`で`merge_commit`を更新し、`atk wi unhold <ファイル名>`で保留を解く。
 3. 主作業ツリーのベースブランチへ取り込む。
    - ベースブランチが`merge_commit`の祖先なら`git merge --ff-only FETCH_HEAD`で取り込む。
    - 分岐していれば、ベースと取得済みOIDから隔離worktreeで`git merge --no-edit`し、できた統合候補を検証してから取り込む。
@@ -83,7 +93,7 @@ AWIは保存・保留した項目だけを戻す。
    - 分岐からのmergeとなった場合は、変更箇所と関連する利用側を検証する。
    - 競合または全体検証の失敗が起きた場合は、メイン自身が解消・再検証・実行レビューを進める（解消の規模が大きい場合は通常レーンへ切り替えてよい）。
 5. 終了と公開後の後始末をする。
-   - `atk wi adopt <WIファイル名> --commit <統合後の対象OID> --target-repo=<主作業ツリー>`でAWIを終了し、取り込んだcommitを他の処理対象WIと同じ通常の公開工程（版数更新、push、CIの検収、リリース）へ合流させる。
+   - `atk wi adopt <WIファイル名> --commit <統合後の対象OID> --target-repo=<主作業ツリー>`でAWIを終了し、取り込んだcommitを他の処理対象WIと同じ通常の公開工程（バージョン更新、push、CIの検収、リリース）へ合流させる。
    - AWIに書いた更新種別と根拠は、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の公開担当へ渡す。
    - リモート作業ブランチの削除は、公開工程でベースブランチへの`git push`成功を確認した後に公開担当が実行する。
      削除前に`merge_branch`が共有ブランチでないことと、リモート先端が`merge_commit`のまま変わっていないことを再確認し、`git push origin --delete <merge_branch>`を実行する（同名のローカルブランチがあれば`git branch -D`で削除する）。

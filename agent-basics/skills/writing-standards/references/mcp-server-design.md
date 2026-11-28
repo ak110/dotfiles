@@ -2,14 +2,15 @@
 
 MCP（Model Context Protocol）サーバーのツール定義、説明文、応答を設計・実装・変更・レビューする時の基準を定める。
 ホストが登録するモデル向けツール（Function hooksなど）にも説明文、引数スキーマ、実行時の入力検証、エラー応答の指針を適用し、応答の形式は各ホストの契約に従う（MCPのJSON-RPC・トランスポート・サーバー通知の規定は対象外）。
-仕様の要求は硬い制約、開発元の推奨は努力目標、ホスト固有の機能と制限はそのホストを対象に含める時の条件とし、版で変わる事実は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従い一次資料で確かめる。
+仕様の要求は硬い制約、開発元の推奨は努力目標、ホスト固有の機能と制限はそのホストを対象に含める時の条件とする。
+バージョンで変わる事実は原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従い一次資料で確かめる。
 説明文、引数スキーマ、応答はモデルの文脈を消費するため、粒度と応答量は完遂率とツールの選択精度への影響を確かめて選び、両者を保ったままトークンと呼び出し回数を減らす。
 
 ## 典拠
 
-MCP仕様は現行の版`2026-07-28`を対象とし、使うSDKが対応する仕様の版を実装の前に確かめる。
-各リクエストの`_meta`でプロトコルの版を指定し、サーバーの対応版と機能は`server/discover`で取得できる。
-初期化を伴う版（`2025-11-25`以前）の相手との互換は、[Versioning and Compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)の「Backward Compatibility」に従う。
+MCP仕様は現行のバージョン`2026-07-28`を対象とし、使うSDKが対応する仕様のバージョンを実装の前に確かめる。
+各リクエストの`_meta`でプロトコルのバージョンを指定し、サーバーの対応バージョンと機能は`server/discover`で取得できる。
+初期化を伴うバージョン（`2025-11-25`以前）の相手との互換は、[Versioning and Compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)の「Backward Compatibility」に従う。
 
 - 仕様: [Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)、[Schema Reference](https://modelcontextprotocol.io/specification/2026-07-28/schema)、[Resources](https://modelcontextprotocol.io/specification/2026-07-28/server/resources)、[Prompts](https://modelcontextprotocol.io/specification/2026-07-28/server/prompts)、[Transports](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)
 - 開発元の推奨: [MCP Security Best Practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices)、[Anthropic: Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents)

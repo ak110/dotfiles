@@ -230,7 +230,7 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "を指定する。通常は候補列を直書きせず、画像・画面レビューでもreviewまたはreview_fastを選ぶ。"
     "工程名は対応する`<工程>_model`の候補列を使う。"
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
-    "agyの委譲にはGemini APIキー方式の明示選択・APIキー・対応版が必要で、個人ログインへ切り替えない。"
+    "agyの委譲にはGemini APIキー方式の明示選択・APIキー・対応するagyのバージョンが必要で、個人ログインへ切り替えない。"
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
     "候補列の直接指定と役割の工程を`write`以外へ変える場合はmodel_overrideとmodel_override_evidenceが必須。"

@@ -8,7 +8,7 @@ from typing import Any
 
 import pyfltr_precommit
 import pytest
-from agent_toolkit._testing.git_repository import commit_all, init_repository
+from agent_toolkit._testing.git_repository import commit_all, init_repository, run_git
 
 _VERSION = "3.30.1"
 
@@ -100,6 +100,110 @@ def test_document_consumers_are_required_by_both_verification_operations(
     _install_pyfltr(monkeypatch, root, pytest_started_at=_iso(60), argv=argv)
     assert pyfltr_precommit.main(["--check-argv", json.dumps(argv), *options]) == int(not include)
     assert pyfltr_precommit.main(["--verify-run", "01RUN", *options]) == int(not include)
+
+
+@pytest.mark.parametrize("base_given", [False, True], ids=["individual", "composed"])
+def test_scan_contract_required_in_scoped_argv_and_run(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], base_given: bool
+) -> None:
+    source = "pytools/agents_exit_session.py"
+    test = "agent-toolkit/agent_toolkit/warning_actionability_invariant_test.py"
+    other_test = "unrelated_test.py"
+    root = init_repository(
+        tmp_path / "repo", files={source: "before = True\n", test: "", other_test: ""}, commit_message="基点"
+    )
+    base = run_git(root, "rev-parse", "HEAD").stdout.strip()
+    (root / source).rename(root / "changed.py")
+    run_git(root, "add", "-A", "--", source, "changed.py")
+    if base_given:
+        commit_all(root, "候補")
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: name)
+    options = ["--against", base] if base_given else []
+    assert pyfltr_precommit.main(["--consumer-tests", *options, "changed.py"]) == 0
+    candidate = json.loads(capsys.readouterr().out)
+    assert test in {row["test"] for row in candidate["cross_contracts"]}
+    assert pyfltr_precommit.main(["--consumer-tests", *options, source, "changed.py", other_test, test]) == 0
+    more_targets = json.loads(capsys.readouterr().out)
+    assert more_targets["cross_contracts"] == candidate["cross_contracts"]
+    for targets in ([other_test], [other_test, test]):
+        complete = test in targets
+        argv = ["run", "--no-always-targets", "changed.py", *targets]
+        assert pyfltr_precommit.main(["--check-argv", json.dumps(argv), *options]) == int(not complete)
+        if not complete:
+            assert test in capsys.readouterr().err
+        if base_given:
+            _install_pyfltr(monkeypatch, root, pytest_started_at=_iso(60), argv=argv)
+            assert pyfltr_precommit.main(["--verify-run", "01RUN", *options]) == int(not complete)
+
+
+@pytest.mark.parametrize("base_given", [False, True], ids=["individual", "composed"])
+@pytest.mark.parametrize("remap", [False, True], ids=["entry", "registration"])
+def test_registered_local_dispatch_is_required_in_scoped_argv_and_run(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], base_given: bool, remap: bool
+) -> None:
+    registry = "agent-toolkit/agent_toolkit/_atk/run_script.py"
+    package = pathlib.PurePosixPath(registry).parents[1]
+    entry = (package / "old_entry.py").as_posix()
+    other_contracts = (
+        "agent-toolkit/agent_toolkit/hook_budget_test.py",
+        "agent-toolkit/agent_toolkit/atk_help_test.py",
+        "markdown_link_anchor_invariant_test.py",
+    )
+    registration = 'from pathlib import Path\nSCRIPT_PATHS = {"task-name": Path("agent_toolkit/old_entry.py")}\n'
+    imports = "from argparse import Namespace\nfrom agent_toolkit._atk.run_script import dispatch\n"
+    local = imports + '\ndef test_command():\n    args = Namespace(script_name="task-name")\n    assert dispatch(args) == 0\n'
+    inline = imports + '\ndef test_command():\n    assert dispatch(Namespace(script_name="task-name")) == 0\n'
+    root = init_repository(
+        tmp_path / "repo",
+        files={
+            registry: registration,
+            entry: "",
+            **dict.fromkeys(other_contracts, ""),
+            entry.replace("old_entry", "new_entry"): "",
+            "inline_test.py": inline,
+            "local_test.py": local,
+            "dynamic_test.py": local.replace('"task-name"', "name()"),
+            "unregistered_test.py": local.replace('"task-name"', '"test-double"'),
+            "unused_test.py": imports,
+        },
+        commit_message="基点",
+    )
+    base = run_git(root, "rev-parse", "HEAD").stdout.strip()
+    source, value = (registry, registration.replace("old_entry", "new_entry")) if remap else (entry, "updated = True\n")
+    (root / source).write_text(value, encoding="utf-8")
+    if base_given:
+        commit_all(root, "候補")
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: name)
+    options = ["--against", base] if base_given else []
+    assert pyfltr_precommit.main(["--consumer-tests", *options, source]) == 0
+    candidate = json.loads(capsys.readouterr().out)
+    assert {row["test"] for row in candidate["cross_contracts"] if row["reason"] == "registered-script:task-name"} == {
+        "inline_test.py",
+        "local_test.py",
+    }
+    review = tmp_path / "consumer-review.json"
+    candidate["decisions"] = [
+        {
+            "source": row["source"],
+            "test": row["test"],
+            "include": False,
+            "reason": "dispatch自体は変わらず、個々の登録コマンドの利用は静的選定で判定する",
+        }
+        for row in candidate["candidates"]
+        if not row["required"]
+    ]
+    review.write_text(json.dumps(candidate), encoding="utf-8")
+    options += ["--consumer-review", str(review)]
+    for extra in ([], ["local_test.py"]):
+        argv = ["run", "--no-always-targets", source, *other_contracts, "inline_test.py", *extra]
+        assert pyfltr_precommit.main(["--check-argv", json.dumps(argv), *options]) == int(not extra)
+        if not extra:
+            assert "local_test.py" in capsys.readouterr().err
+        if base_given:
+            _install_pyfltr(monkeypatch, root, pytest_started_at=_iso(60), argv=argv)
+            assert pyfltr_precommit.main(["--verify-run", "01RUN", *options]) == int(not extra)
 
 
 @pytest.mark.parametrize("include_consumer", [False, True])
@@ -238,15 +342,25 @@ def test_reuses_successful_pytest_on_unchanged_tree(tmp_path: pathlib.Path, monk
     assert pyfltr_precommit.find_reusable_run(repository, "pyfltr") == pyfltr_precommit.Reuse("01RUN", "")
 
 
-@pytest.mark.parametrize("scope", ["none", "incomplete", "covering"])
+@pytest.mark.parametrize("scope", ["none", "incomplete", "covering", "scan-incomplete", "scan-covering"])
 def test_integration_cross_contracts_runs_only_uncovered_scope(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, scope: str
 ) -> None:
     repository = _repository(tmp_path)
     base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
-    (repository / "src" / "a.py").write_text("child.terminate()\n" if scope != "none" else "x = 2\n", encoding="utf-8")
-    required = "subprocess_stop_invariant_test.py"
+    scanning = scope.startswith("scan-")
+    if scanning:
+        (repository / "pytools").mkdir()
+        (repository / "src" / "a.py").rename(repository / "pytools" / "a.py")
+    else:
+        (repository / "src" / "a.py").write_text("child.terminate()\n" if scope != "none" else "x = 2\n", encoding="utf-8")
+    required = (
+        "agent-toolkit/agent_toolkit/warning_actionability_invariant_test.py"
+        if scanning
+        else "subprocess_stop_invariant_test.py"
+    )
     if scope != "none":
+        (repository / required).parent.mkdir(parents=True, exist_ok=True)
         (repository / required).touch()
     commit_all(repository, "合成候補")
     monkeypatch.chdir(repository)
@@ -255,7 +369,7 @@ def test_integration_cross_contracts_runs_only_uncovered_scope(
         monkeypatch,
         repository,
         pytest_started_at=_iso(60),
-        argv=["run", "--no-always-targets", required if scope == "covering" else "src/a.py"],
+        argv=["run", "--no-always-targets", required if scope.endswith("covering") else "unrelated_test.py"],
     )
     native = subprocess.run
 
@@ -266,13 +380,14 @@ def test_integration_cross_contracts_runs_only_uncovered_scope(
         return native(argv, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(pyfltr_precommit.subprocess, "run", run)
-    assert pyfltr_precommit.main(["--integration-cross-contracts", base]) == (7 if scope == "incomplete" else 0)
+    incomplete = scope.endswith("incomplete")
+    assert pyfltr_precommit.main(["--integration-cross-contracts", base]) == (7 if incomplete else 0)
     if scope == "none":
         assert not calls
     else:
         assert any(call[0] == "show-run" for call in calls)
         assert [call for call in calls if call[0] == "run"] == (
-            [["run", "--no-fix", "--commands=pytest", "--no-always-targets", required]] if scope == "incomplete" else []
+            [["run", "--no-fix", "--commands=pytest", "--no-always-targets", required]] if incomplete else []
         )
 
 

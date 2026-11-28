@@ -81,7 +81,7 @@ def _data(state: dict[str, Any], session_id: str) -> dict[str, Any]:
         or not isinstance(current.get("sequence"), int)
     ):
         if current is not None:
-            append_stop_log(session_id, "termination_evidence_unavailable", {"reason": "状態の版または形式が異なる"})
+            append_stop_log(session_id, "termination_evidence_unavailable", {"reason": "状態のバージョンまたは形式が異なる"})
         current = {"version": 1, "session_id": session_id, "sequence": 0, "works": {}, "calls": {}, "inputs": {}}
         state[STATE_KEY] = current
     return current

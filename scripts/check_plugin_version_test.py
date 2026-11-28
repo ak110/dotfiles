@@ -96,6 +96,58 @@ def test_pre_push_checks_develop_destination_and_ignores_worktree(tmp_path: Path
     assert result.returncode == 0, result.stderr
 
 
+def test_bump_and_pre_push_use_the_same_published_develop(tmp_path: Path) -> None:
+    checkout, master = _repository(tmp_path)
+    origin = tmp_path / "origin"
+    _git(origin, "branch", "master", master)
+    _set_version(origin, "agent-toolkit", "1.0.1")
+    published = _commit(origin)
+    _git(checkout, "fetch", "origin")
+    _git(checkout, "remote", "set-head", "origin", "master")
+    _git(checkout, "switch", "--no-track", "-c", "candidate", "origin/develop")
+
+    bump_source = _SCRIPT.with_name("agent_toolkit_bump.py")
+    bump_script = checkout / "scripts" / bump_source.name
+    _write(bump_script, bump_source.read_text(encoding="utf-8"))
+    _write(checkout / "agent-toolkit/agent_toolkit/hook.py", "VALUE = 2\n")
+
+    def pre_push() -> subprocess.CompletedProcess[str]:
+        current = _commit(checkout)
+        return _run(checkout, push_input=f"refs/heads/candidate {current} refs/heads/develop {published}\n")
+
+    def bump_patch() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(bump_script), "patch"],
+            cwd=checkout,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+
+    rejected = pre_push()
+    assert rejected.returncode == 1, rejected.stderr
+    assert "版数が1.0.1のまま" in rejected.stderr
+    assert f"基点: {published}" in rejected.stderr
+    bumped = bump_patch()
+    assert bumped.returncode == 0, bumped.stderr
+    assert "1.0.1 -> 1.0.2" in bumped.stdout
+    assert "基準: 1.0.1 [refs/remotes/origin/develop]" in bumped.stdout
+    manifest = checkout / "agent-toolkit/.claude-plugin/plugin.json"
+    marketplace = checkout / ".claude-plugin/marketplace.json"
+    manifest_snapshot, marketplace_snapshot = manifest.read_bytes(), marketplace.read_bytes()
+    assert json.loads(manifest_snapshot)["version"] == "1.0.2"
+    toolkit = next(entry for entry in json.loads(marketplace_snapshot)["plugins"] if entry["name"] == "agent-toolkit")
+    assert toolkit["version"] == "1.0.2"
+    repeated = bump_patch()
+    assert repeated.returncode == 0, repeated.stderr
+    assert "何もしない" in repeated.stdout
+    assert (manifest.read_bytes(), marketplace.read_bytes()) == (manifest_snapshot, marketplace_snapshot)
+    accepted = pre_push()
+    assert accepted.returncode == 0, accepted.stderr
+
+
 def test_pre_push_rejects_missing_base_but_accepts_deletion(tmp_path: Path) -> None:
     checkout, published = _repository(tmp_path)
     zero = "0" * len(published)

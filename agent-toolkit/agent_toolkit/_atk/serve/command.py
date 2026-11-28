@@ -31,7 +31,9 @@ def _port_type(value: str) -> int:
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("serve_action", nargs="?", choices=("logs", "versions"), help="ログの表示、または公開版との照合")
+    parser.add_argument(
+        "serve_action", nargs="?", choices=("logs", "versions"), help="ログの表示、または公開バージョンとの照合"
+    )
     parser.add_argument("-f", "--follow", action="store_true", help="直近100行を表示して追従")
     parser.add_argument("--published", help="検収する公開コミットの完全OID（省略時はdotfilesのupstreamの公開先を照会）")
     parser.add_argument("--skip-serve", action="store_true", help="atk serveが未導入のホストでversionsの対象から外す")

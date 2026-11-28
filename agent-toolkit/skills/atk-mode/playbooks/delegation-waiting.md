@@ -17,7 +17,7 @@
 | 待機だけを理由にターンを終える、完了通知でターンが始まった | 本書「完了通知を待ってターンを終える場合」 |
 | CI、デプロイ、ユーザーの回答など外部の状態を待つ | 本書「外部サービスの状態変化を待つ場合」 |
 | 完了通知が届かない、委譲先の活動の観測値が変わらない | 本書「停滞の検知と巻き取り」 |
-| `atk agents wait`が0と3以外で終わった、待機の起動が拒否された、ホストがバックグラウンド待機を止めた、起動前に版の違いが示された | `agent-toolkit:atk-mode/references/delegation-wait-anomalies.md` |
+| `atk agents wait`が0と3以外で終わった、待機の起動が拒否された、ホストがバックグラウンド待機を止めた、起動前にバージョンの不一致が示された | `agent-toolkit:atk-mode/references/delegation-wait-anomalies.md` |
 | MCPサーバーが再起動した、`show`が`ownership: owner_lost`を示した | `agent-toolkit:atk-mode/playbooks/delegation-recovery.md` |
 | Claude Code固有の操作（バックグラウンド実行の起動形、定期の再確認、完了通知の中継、Code Mode） | `agent-toolkit:atk-mode/playbooks/host-claude-code.md` |
 | Codex固有の操作（cell IDとsession IDの回収、二層待機、実行中の担当への後続操作） | `agent-toolkit:atk-mode/playbooks/host-codex.md` |

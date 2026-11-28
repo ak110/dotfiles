@@ -46,7 +46,7 @@ CI成功、既存の手順の安全確認、配備後のhealthcheckと結果の�
 - 該当しない: 配布コードでも利用主体がエージェントだけで、エンドユーザーが配布物を通じて観測する挙動や内容を変えないもの（MCPツールの入力スキーマの許容値・項目説明、エージェントだけが読むメッセージなど）。
   エンドユーザー向けの結果も変わる差分は、前項の基準で判定する。
   dotfilesではこの利用主体による除外を適用せず、エージェント向けの変更もリリース影響に含める（`develop`から`master`への公開は`release-dotfiles`が扱う）。
-- 該当しない: 実行時依存の版指定の更新（`pyproject.toml`の`dependencies`、`package.json`の`dependencies`など）、テスト、CIとworkflow、開発手順と開発用ツールの設定（`Makefile`・`mise.toml`・pre-commit・lint設定）。
+- 該当しない: 実行時依存のバージョン指定の更新（`pyproject.toml`の`dependencies`、`package.json`の`dependencies`など）、テスト、CIとworkflow、開発手順と開発用ツールの設定（`Makefile`・`mise.toml`・pre-commit・lint設定）。
 - 該当しない: エージェント向け文書（`AGENTS.md`・`CLAUDE.md`・`.claude/`配下）、開発者向け文書（`docs/development/`）、開発専用のロックファイルの更新、docsサイトだけの変更（`master`へのpushで`docs.yaml`が公開するため）。
 - どれとも判別できない変更は、配布物に含まれてエンドユーザーから観測できるかで判定する。
 
@@ -59,7 +59,7 @@ CI成功、既存の手順の安全確認、配備後のhealthcheckと結果の�
 2. バージョン付けはSemVerに従わない。
    ほぼ全面的な書き直しや再構築の場合だけメジャーを使い、それ以外は互換性を壊す変更も含めてマイナーかパッチにする。
    エージェントはメジャーを選ばず、ユーザーが明示的に指示した場合だけ`releaser major`を実行する。
-   リリースworkflowの対象外の版数（dotfilesが配布するagent-toolkit・agent-basicsなどのプラグインの版数）の更新にも、同じ方針を使う。
+   リリースworkflowの対象外のバージョン（dotfilesが配布するagent-toolkit・agent-basicsなどのプラグインのバージョン）の更新にも、同じ方針を使う。
 3. `releaser`はdotfilesの`pytools/releaser.py`が提供するコマンドで、default branchで実行しているかと未commitの変更の有無を確かめ、未pushのcommitをpushする。
    続けてCIの完了を待ち、`release.yaml`のworkflow_dispatchを起動してrunを監視し、上流branchへのfast-forwardでローカルを最新にする。
    引数を省いた`releaser`は、ヘルプと未リリースのcommitの一覧を表示するだけで終わる。

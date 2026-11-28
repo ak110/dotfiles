@@ -10,6 +10,8 @@ import sys
 
 import pytest
 
+from scripts.verification_scan_rules import local_import_exists, scan_files
+
 _ROOT = pathlib.Path(__file__).resolve().parent
 
 
@@ -50,24 +52,13 @@ def _unresolved_imports(path: pathlib.Path, search_path: tuple[str, ...]) -> lis
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     unresolved = []
     for name in sorted(_ordinary_imports(tree)):
-        if (path.parent / f"{name}.py").is_file() or (path.parent / name).is_dir():
+        if local_import_exists(path.parent, name):
             continue
         if name in sys.stdlib_module_names or name in sys.builtin_module_names:
             continue
         if importlib.machinery.PathFinder.find_spec(name, list(search_path)) is None:
             unresolved.append(name)
     return unresolved
-
-
-def _tracked_tests(root: pathlib.Path) -> list[pathlib.Path]:
-    """Git追跡ファイルのうち`*_test.py`と`conftest.py`を返す。"""
-    result = subprocess.run(
-        ["git", "ls-files", "-z", "--", "*_test.py", "*conftest.py"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-    )
-    return sorted(root / raw.decode("utf-8") for raw in result.stdout.split(b"\0") if raw)
 
 
 def _violations(root: pathlib.Path, tests: list[pathlib.Path], search_path: tuple[str, ...]) -> list[str]:
@@ -83,7 +74,7 @@ def _violations(root: pathlib.Path, tests: list[pathlib.Path], search_path: tupl
     9.5, reason="全追跡試験のASTと導入済み検索パスを照合し、実行組合せ依存のimportを検出する（Linux CI CPU4.422秒）"
 )
 def test_tracked_tests_resolve_imports_without_run_state() -> None:
-    violations = _violations(_ROOT, _tracked_tests(_ROOT), _installed_search_path())
+    violations = _violations(_ROOT, scan_files(__file__), _installed_search_path())
     assert not violations, (
         "別ディレクトリのモジュールを裸の名前でimportしている。"
         "次の操作: 公開されたCLI（`agent_toolkit._atk.run_script.dispatch`など）経由で呼ぶか、"

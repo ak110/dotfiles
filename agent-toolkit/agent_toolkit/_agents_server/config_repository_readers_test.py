@@ -84,5 +84,5 @@ def test_repository_format_changes_after_legacy_service_and_writer_finish(tmp_pa
     running.remove("new-restarted")
     restored = registry.restore()
     assert restored is not None and restored["generation"] == "new"
-    with pytest.raises(ValueError, match="旧版を受付先"):
+    with pytest.raises(ValueError, match="旧バージョンを受付先"):
         registry.publish("old", endpoint="old-endpoint", process="old-restarted")

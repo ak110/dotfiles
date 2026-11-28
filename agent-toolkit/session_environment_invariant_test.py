@@ -5,6 +5,8 @@ import re
 import pytest
 from agent_toolkit._testing import isolation
 
+from scripts.verification_scan_rules import scan_files
+
 
 @pytest.mark.cpu_limit(
     1.5,
@@ -21,11 +23,13 @@ def test_session_environment_inputs_are_isolated() -> None:
     テスト専用パッケージとテスト入力は製品入力の母集団から除く。
     """
     root = pathlib.Path(__file__).parent / "agent_toolkit"
-    pattern = re.compile(r"AGENT_TOOLKIT_[A-Z_]*(?:SESSION|DELEGATED|HANDOFF)[A-Z_]*|CLAUDE_CODE_SESSION_ID|CODEX_THREAD_ID")
+    pattern = re.compile(
+        r"AGENT_TOOLKIT_[A-Z_]*(?:SESSION|DELEGATED|HANDOFF)[A-Z_]*"
+        r"|AGENT_TOOLKIT_(?:COMMIT_CLAUDE_ACTOR|COMMIT_HOOKS|RUN_SKILL_ID)"
+        r"|CLAUDE_CODE_SESSION_ID|CLAUDE_ENV_FILE|CODEX_(?:THREAD|SESSION)_ID"
+    )
     names: dict[str, list[str]] = {}
-    for path in root.rglob("*.py"):
-        if path.name.endswith("_test.py") or "_testing" in path.parts:
-            continue
+    for path in scan_files(__file__):
         source = path.read_text(encoding="utf-8")
         if not pattern.search(source):
             continue

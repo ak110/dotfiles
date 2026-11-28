@@ -1,9 +1,10 @@
 import ast
 import pathlib
-import subprocess
 from collections import deque
 
 import pytest
+
+from scripts.verification_scan_rules import scan_files
 
 _ALLOWED: dict[tuple[str, str], str] = {
     (
@@ -188,19 +189,11 @@ def _violations(path: pathlib.Path, source: str) -> list[str]:
 )
 def test_timeouts_and_kills_use_process_tree_helpers():
     root = pathlib.Path(__file__).resolve().parent
-    result = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "-z", "--", "agent-toolkit", "pytools", "libexec", "scripts"],
-        check=True,
-        capture_output=True,
-    )
-    paths = [pathlib.Path(value) for value in result.stdout.decode("utf-8").split("\0") if value]
+    paths = scan_files(__file__)
     assert paths
-    failures = []
-    for path in paths:
-        if not (root / path).exists():
-            continue
-        if path.suffix == ".py" and not path.name.endswith(("_test.py", "_test_helpers.py")) and "_testing" not in path.parts:
-            failures.extend(_violations(path, (root / path).read_text(encoding="utf-8")))
+    failures = [
+        violation for path in paths for violation in _violations(path.relative_to(root), path.read_text(encoding="utf-8"))
+    ]
     assert not failures, "共通関数を経由しない停止・時間上限:\n" + "\n".join(failures)
 
 

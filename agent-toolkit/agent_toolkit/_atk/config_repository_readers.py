@@ -19,8 +19,8 @@ def prepare_separated_format(*, required: bool = False) -> bool:
         return True
     if required:
         raise ActionableError(
-            "旧版の委譲先がリポジトリ登録を利用できるか確かめられないため、登録の変更を保留しました",
-            next_action="管理サービスの新版を受付先にし、旧版の作業の終了または引継ぎ後に登録操作を再実行する",
+            "旧バージョンの委譲先がリポジトリ登録を利用できるか確かめられないため、登録の変更を保留しました",
+            next_action="管理サービスの新しいバージョンを受付先にし、旧バージョンの作業の終了または引継ぎ後に登録操作を再実行する",
         )
     return False
 

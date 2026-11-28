@@ -3,9 +3,10 @@ import pathlib
 import textwrap
 
 import pytest
-from agent_toolkit._git import command
 
-_ROOT = pathlib.Path(__file__).resolve().parent.parent
+from scripts.verification_scan_rules import scan_files
+
+_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STREAM_LINE_DECODERS = {
     "agent_toolkit._common.claude_usage_limit": {
         "from_stream_lines",
@@ -128,23 +129,14 @@ def _violations(source: str, filename: str = "<sample>") -> list[int]:
     reason=("追跡本体Python全量を読み、JSON Lines読取でLF以外を行区切りにする処理を検出する（Linux CI CPU合計最大2.834秒）。"),
 )
 def test_json_lines_readers_use_lf() -> None:
-    result = command.run(["ls-files", "-z", "--", "*.py"], _ROOT, capture_output=True, text=True, check=True)
-    paths = [pathlib.Path(name) for name in result.stdout.split("\0") if name]
+    paths = scan_files(__file__)
     assert paths
     violations: list[str] = []
     for path in paths:
-        if (
-            not (_ROOT / path).is_file()
-            or path.name.endswith("_test.py")
-            or path.name.startswith("test_")
-            or path.name == "conftest.py"
-            or {"_testing", "tests"} & set(path.parts)
-        ):
-            continue
-        source = (_ROOT / path).read_text(encoding="utf-8-sig")
+        source = path.read_text(encoding="utf-8-sig")
         if "splitlines" not in source:
             continue
-        violations.extend(f"{path}:{line}" for line in _violations(source, str(path)))
+        violations.extend(f"{path}:{line}" for line in _violations(source, str(path.relative_to(_ROOT))))
     assert not violations, "JSON Linesの分割には_common.json_lines.split_linesを使う:\n" + "\n".join(violations)
 
 
