@@ -508,9 +508,14 @@ def request_completion_exit() -> int:
             return 0
         record = completion_exit.record_path(session)
         entries = transcript.read_transcript_entries(str(record)) if record is not None else []
-        delivered = completion_exit.current_reports(entries)
+        delivered = completion_exit.current_reports(entries, session=session)
         if not delivered:
             print("自動終了しない: このターンに送達済みの完了報告がない")
+            print(
+                "送信と同じREPLスクリプト内では、ツールの結果はスクリプトが終わるまでセッション記録に書かれません。"
+                "送信の成功（ok: true）を確かめた後、別のツール呼び出しで "
+                "atk agents-exit-session --after-completion を実行してください。"
+            )
             return 0
         completion_exit.write_state(path, {"status": "requested", "session": session, "call": next(reversed(delivered))})
     except OSError as error:

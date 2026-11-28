@@ -443,7 +443,16 @@ def test_queued_notifications_yield_without_overriding_block(
 
 @pytest.mark.parametrize(
     ("case", "approved"),
-    [("clear", True), ("blocked", False), ("background", False), ("unrelated", False), ("repl", True), ("repl-error", False)],
+    [
+        ("clear", True),
+        ("blocked", False),
+        ("background", False),
+        ("unrelated", False),
+        ("repl", True),
+        ("repl-error", False),
+        ("repl-body-ref", True),
+        ("repl-body-ref-unrecorded", False),
+    ],
 )
 def test_stop_completion_exit_verdict(case, approved, monkeypatch, tmp_path):
     _set_state_directory(monkeypatch, tmp_path)
@@ -488,10 +497,20 @@ def test_stop_completion_exit_verdict(case, approved, monkeypatch, tmp_path):
         ],
     )
     if case.startswith("repl"):
-        transcript = _write_transcript(
-            tmp_path,
-            repl_send_to_user_entries("call-a", {"kind": "completion", "message": "完了しました。"}, ok=case == "repl"),
+        args = (
+            {"kind": "completion", "body_ref": "draft"}
+            if case.startswith("repl-body-ref")
+            else {
+                "kind": "completion",
+                "message": "完了しました。",
+            }
         )
+        entries = repl_send_to_user_entries("call-a", args, ok=case != "repl-error")
+        if case.startswith("repl-body-ref"):
+            entries[-1]["toolUseResult"] = json.dumps({"ok": True, "id": "b" * 32})
+        if case == "repl-body-ref":
+            assert completion_exit.save_receipt("stop-completion", "b" * 32, "最新の報告。", root=tmp_path)
+        transcript = _write_transcript(tmp_path, entries)
     stop.evaluate(
         json.dumps(
             {
@@ -513,4 +532,6 @@ def test_completion_report_text_accepts_repl_delivery(ok, expected, tmp_path):
     record.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
 
     state = {"session": session, "call": "call-a", "status": "exiting"}
+    if expected is not None:
+        expected += "\n\n以上で、このセッションの作業は全て終わった。"
     assert completion_exit.report_text(state, root=tmp_path) == expected
