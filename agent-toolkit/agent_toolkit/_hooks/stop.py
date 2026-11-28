@@ -33,6 +33,7 @@ lazy import asyncio
 from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
 from agent_toolkit._hooks import timing
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
+lazy from agent_toolkit._atk.config_resolution import resolve_mutable_setting
 lazy from agent_toolkit._common import completion_exit, function_hook_requests
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.function_hook_requests import cleanup, enqueue
@@ -42,6 +43,7 @@ lazy from agent_toolkit._common.periodic_recheck import (
     PERIODIC_RECHECK_MARKER,
     PERIODIC_RECHECK_PROMPT,
 )
+lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.send_to_user import is_completion
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
 lazy from agent_toolkit._hooks import agents_server_observations, delivered_repost_gate
@@ -323,7 +325,7 @@ def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.
 
     finalize_started = time.monotonic()
 
-    def _finalize(result: dict[str, object]) -> dict[str, object]:
+    def _finalize(result: dict[str, object], *, terminating: bool = False) -> dict[str, object]:
         stages.rows.append(("aggregate_result", time.monotonic() - finalize_started, "ok"))
         if is_codex_payload(payload):
             result = {key: value for key, value in result.items() if key in {"decision", "reason"}}
@@ -342,6 +344,16 @@ def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.
                 )
             if user_messages:
                 result["systemMessage"] = "\n\n".join(user_messages)
+            if (
+                session_id
+                and not terminating
+                and not is_antigravity_payload(payload)
+                and result.get("decision") != "block"
+                and result.get("continue") is not False
+                and "hookSpecificOutput" not in result
+                and _waits_for_input(session_id, payload)
+            ):
+                result["terminalSequence"] = "\a"
         timing.record_stages(payload, "stop", stages.rows)
         return result
 
@@ -379,7 +391,7 @@ def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.
                     {"status": status, "suppressed_checks": ",".join(blocking_checks)},
                 )
                 update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
-                return _finalize({})
+                return _finalize({}, terminating=True)
     if block_reasons:
         if session_id:
             if limit_reached:
@@ -409,6 +421,27 @@ def _evaluate(payload_text: str, session_id: str, payload: dict, stages: timing.
             "additionalContext": "\n\n".join([*notifications, *_continuation_notice()]),
         }
     return _finalize(result)
+
+
+def _waits_for_input(session_id: str, payload: dict) -> bool:
+    try:
+        if resolve_mutable_setting("claude_stop_bell", read_only=True) != "true":
+            return False
+        if is_process_loop_session(session_id, os.environ):
+            return False
+        source = payload.get("transcript_path")
+        return (
+            pending_async_status(
+                source if isinstance(source, str) else "",
+                session_id,
+                background_tasks=payload.get("background_tasks"),
+                session_state=read_state(session_id),
+            )
+            == "complete"
+        )
+    except (OSError, ValueError) as error:
+        append_stop_log(session_id, "stop_bell_error", {"error": str(error)})
+        return False
 
 
 def _call_halt(module: Any, session_id: str, count: int) -> tuple[str, str]:

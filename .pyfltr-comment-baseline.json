@@ -11721,7 +11721,6 @@
     "表名ごとの項目から期限切れと期限間近の項目を探し、項目と対処を示す行を返す。該当が無ければ空。": 1
   },
   "pytools/_internal/removal_registry_report.py": {
-    "post-applyの撤去表2件と`update_claude_settings`の除去表5件を、表名ごとの項目の列で返す。": 1,
     "基準日で期限切れ・期限間近の項目を報告し、該当があれば1を返す。": 1,
     "撤去表の期限切れ・期限間近の項目を報告するCLI。 定期実行のAudit workflowが`uv run --frozen python -m pytools._internal.removal_registry_report`で毎日実行する。 該当項目があれば項目と対処を標準エラーへ出して終了1、無ければ終了0とする。 規則と、commit hookで判定しない理由は`removal_registry.py`の説明を参照する。": 1
   },
@@ -12592,7 +12591,6 @@
     "PYTHON_ARGCOMPLETE_OK": 1
   },
   "pytools/claude_hook/__init__.py": {
-    "Claude Code dotfiles個人環境フック共通エントリポイント。 `share/claude_settings_json_managed.*.json`に個別登録されていたフックスクリプト （`pretooluse.py`等）の起動処理を集約する。各モジュールは`main()`関数の定義だけを担う。 第1引数でサブコマンド（イベント種別相当のモジュール名）を指定する。 集約方針・例外要約1行の書式・モジュール読込失敗を対象外とする理由は `agent-toolkit/agent_toolkit/hook.py`と共通のため重複記載しない。 パッケージ内のモジュール（`pretooluse.py`・`stop_bell.py`）は、agent-toolkitをpytoolsの依存パッケージとしてimportし、 hookの出力の整形と判定の部品を共有する。本ファイルの起動と例外処理だけはagent-toolkitをimportせずに完結させ、 agent-toolkitを含むモジュールの読み込みに失敗した場合も、ここでtracebackを出力してフックを通過させる。": 1,
     "サブコマンド名から対象モジュールを解決し`main()`を呼び出す。 標準入力は生バイト列として本関数で1回だけ読み、UTF-8で厳密にデコードして各モジュールへ渡す。 符号化を指定せずPythonが環境から選ぶ文字コードに委ねると、UTF-8で送られたpayload内の非ASCII文字が 別の符号化でデコードされ、判定対象の文字列が一致しなくなる。 デコードできない入力は判定処理へ渡さず通過扱いで終了する。": 1,
     "標準出力と標準エラーをUTF-8へ統一する。": 1,
     "起動と例外処理はagent-toolkitに依存させないため、`agent_toolkit/hook.py`と意図的に重複する。": 1
@@ -12642,14 +12640,6 @@
     "先頭コメントブロックの後に書かれていても 50 行以内なら許可。": 1,
     "単語境界マッチで部分一致は検出しない (短い名前 `gv` / `lc` の誤検出回避)。": 1,
     "行頭にインデントされたディレクティブは検出されること (I-2)。 関数/条件ブロック内に書かれている可能性があり、スクリプト全体には適用されないため。": 1
-  },
-  "pytools/claude_hook/stop_bell.py": {
-    "Claude Code Stopフック: 応答終了で入力待ちになったときに端末ベルを鳴らす。 `Notification`の入力待ち系種別のうち`idle_prompt`は応答終了の約60秒後に発火するため、 背景のサブエージェント・コマンドの完了を待ってターンを終えた場合も同じ扱いで発火し、 ユーザーの入力を要さない待機でベルが鳴っていた。そのため`idle_prompt`をベルの対象から外し、 代わりに本hookがStopイベントで「ユーザーの入力を待つ状態になった場合だけ」ベルを鳴らす。 判定順序は以下のとおり。 1. ペイロード解析失敗または`session_id`欠落: 判定材料が無いためベルを鳴らさない 2. 他のStop系hookがターン継続をblockした後の再呼び出し（`stop_hook_active`が真）: 応答は終了しておらずベルを鳴らさない 3. 常駐ループから起動された自律セッション: ユーザーの入力を待たないためベルを鳴らさない 4. 背景のサブエージェント・コマンド等が未完了: 待機の継続でありベルを鳴らさない 5. 上記いずれでもない: ベルを鳴らす ベルはフック出力JSONの`terminalSequence`フィールドで返し、Claude Code自身の端末書き込み経路で 送出させる。フックは制御端末のない独立セッションで実行され`/dev/tty`を開けないためである。 他のStop系hookの判定とは独立に動くため、同一Stopサイクルの1回目では他のhookによる遮断より先に ベルが鳴り得る。block後の再呼び出しは`stop_hook_active`により鳴らさない。": 1,
-    "Claude Codeの端末書き込み経路でベルを送出させる。": 1
-  },
-  "pytools/claude_hook/stop_bell_test.py": {
-    "pytools/claude_hook/stop_bell.py のテスト。 応答終了で入力待ちになった場合だけ端末ベルを鳴らすStopフックのテスト。独立スクリプトなので fork-server経由（フォールバック時はsubprocess）で起動しstdout（JSON）を検証する。 判定分岐は再帰呼び出し・自律セッション・非同期待機中・通常終了・入力不正を検証する。": 1,
-    "直前ターンの最後のtool_useが非同期待機系 → 待機の継続のため鳴らさない。": 1
   },
   "pytools/clonedir.py": {
     "PYTHON_ARGCOMPLETE_OK": 1,
@@ -12993,9 +12983,6 @@
     "リリース後の同期は、所有者のいない`index.lock`を回収して1回だけ再実行し、上流へ追従する。": 1,
     "上流に新しいcommitがあるローカルリポジトリを作り、その`.git/index.lock`のパスを返す。": 1,
     "生存中の所有者のロックは回収せず、判定結果を標準エラーへ示して失敗する。": 1
-  },
-  "pytools/removed_paths_invariant_test.py": {
-    "撤去表の全項目が登録日を持つことを確かめる不変条件テスト。 対象はpost-applyの撤去表2件と`update_claude_settings`の除去表5件。 期限の判定は日付で結果が変わるため、ここでは行わず定期実行のAuditへ置く（規則は`pytools/_internal/removal_registry.py`）。": 1
   },
   "pytools/rename.py": {
     "PYTHON_ARGCOMPLETE_OK": 1,

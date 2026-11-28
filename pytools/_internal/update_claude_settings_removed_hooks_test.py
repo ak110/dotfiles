@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from pytools._internal import update_claude_settings as mod
 from pytools._internal.update_claude_settings import update_claude_settings
 from pytools._internal.update_claude_settings_test_helpers import (
     _LEGACY_WINDOWS_AUTONOMOUS_EXIT_COMMAND,
@@ -17,6 +18,63 @@ from pytools._internal.update_claude_settings_test_helpers import (
 
 
 class TestStripRemovedHooks:
+    @pytest.mark.parametrize("platform", ["linux", "darwin"])
+    @pytest.mark.parametrize("user_setting", [{}, {"AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL": "false"}])
+    def test_bell_migration_preserves_other_registrations_and_matches_preview(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, user_setting: dict
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", platform)
+        bell = {"type": "command", "command": r"""printf %s '{"terminalSequence":"\u0007"}'"""}
+        notify_matcher = "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input"
+        managed_notification = {"matcher": notify_matcher, "hooks": [bell]}
+        user_question = {"type": "command", "command": "keep-question"}
+        user_question_group = {"matcher": "AskUserQuestion", "hooks": [user_question]}
+        user_pretooluse = {"matcher": "Bash", "hooks": [bell]}
+        user_notification = {"matcher": "idle_prompt", "hooks": [{**bell, "timeout": 3}]}
+        user_stop = {"hooks": [{"type": "command", "command": "keep-stop"}]}
+        old = {
+            "env": {"USER_KEY": "keep", **user_setting},
+            "hooks": {
+                "PreToolUse": [{**user_question_group, "hooks": [bell, user_question]}, user_pretooluse],
+                "Notification": [managed_notification, user_notification, managed_notification],
+                "Stop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": (
+                                    "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; "
+                                    "dotfiles-claude-hook stop_bell; exit 0'"
+                                ),
+                            }
+                        ]
+                    },
+                    user_stop,
+                ],
+            },
+        }
+        target = tmp_path / "settings.json"
+        target.write_text(json.dumps(old), encoding="utf-8")
+        overrides = mod._platform_overrides(_PROD_MANAGED_SETTINGS)
+        managed = mod.effective_managed_settings(
+            json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8")),
+            [json.loads(path.read_text(encoding="utf-8")) for path in overrides],
+        )
+
+        assert update_claude_settings(_PROD_MANAGED_SETTINGS, target, overrides=overrides) is True
+        updated = json.loads(target.read_text(encoding="utf-8"))
+
+        assert updated == mod.preview_managed_settings_update(old, managed)
+        hooks = updated["hooks"]
+        assert [group for group in hooks["PreToolUse"] if group.get("matcher") == "AskUserQuestion"] == [user_question_group]
+        assert user_pretooluse in hooks["PreToolUse"]
+        assert hooks["Notification"] == [user_notification, managed_notification]
+        assert hooks["Stop"] == [user_stop]
+        expected_default = {"AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL": "true"} if platform == "linux" else {}
+        assert updated["env"] == {**managed.get("env", {}), **expected_default, "USER_KEY": "keep", **user_setting}
+        assert ("AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL" in managed.get("env", {})) is (platform == "linux")
+        assert update_claude_settings(_PROD_MANAGED_SETTINGS, target, overrides=overrides) is False
+
     def test_removed_hook_is_dropped_from_existing(self, tmp_path: Path):
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(

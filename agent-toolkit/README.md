@@ -121,6 +121,11 @@ atk serve
 警告や遮断が表示された場合は、本文が示す次の操作に従う。
 ホストごとのフックの対応範囲は[フックの設計資料](https://github.com/ak110/dotfiles/blob/master/docs/development/design-hooks-host-support.md)を参照。
 
+Claude Codeで応答が終わって入力待ちになったとき、端末ベルを鳴らすには
+`atk config set claude_stop_bell true`を実行する。
+端末ごとの設定で、既定値は`false`。
+`AGENT_TOOLKIT_CONFIG_CLAUDE_STOP_BELL`で保存値を上書きできる。
+
 ## 更新と削除
 
 統合インストーラーの導入コマンドを再実行すると最新版へ更新される。
