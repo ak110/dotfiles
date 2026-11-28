@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import pathlib
 import shutil
@@ -19,7 +20,6 @@ def _usage_client_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(usage_observation, "state_dir", lambda: tmp_path)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", "[]")
     app = quart.Quart(__name__)
     usage_routes.register_usage_routes(app)
     return app.test_client()
@@ -54,7 +54,65 @@ async def test_usage_api_only_exposes_public_reset_credit_fields(usage_client) -
 
 
 @pytest.mark.asyncio
-async def test_display_refresh_at_five_minutes_without_permissions(usage_client, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_claude_manual_recommendation_requires_enabled_matching_live_inventory(
+    usage_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 2000000000
+    monkeypatch.setattr(usage_refresh.time, "time", lambda: now)
+    usage_settings.record_metadata("claude", {"account": "fixture-claude", "contract": "max"})
+    scope = {"model": {"display_name": "Opus"}, "surface": "CLI"}
+    usage_refresh.record_claude_report(
+        {"rate_limits": {"limits": [{"kind": "weekly_scoped", "scope": scope, "percent": 95, "resets_at": now + 3600}]}},
+        contract="max",
+    )
+    enabled = False
+    resolve = config.resolve_mutable_setting
+    monkeypatch.setattr(
+        config, "resolve_mutable_setting", lambda key: str(enabled).lower() if key == "claude_auto_reset" else resolve(key)
+    )
+
+    original_scope = json.dumps(scope, sort_keys=True)
+
+    def save_right(*, account="fixture-claude", scope_name=original_scope, ends=now + 1800):
+        usage_settings.save_claude_reset_inventory(
+            json.dumps(
+                [
+                    {
+                        "id": "fixture-right",
+                        "engine": "claude",
+                        "account": account,
+                        "scope": scope_name,
+                        "count": 1,
+                        "from": datetime.datetime.fromtimestamp(now - 600, datetime.UTC).isoformat(),
+                        "until": datetime.datetime.fromtimestamp(ends, datetime.UTC).isoformat(),
+                    }
+                ]
+            )
+        )
+
+    async def recommended() -> bool:
+        response = await usage_client.get("/api/usage")
+        assert response.status_code == 200
+        body = await response.get_json()
+        [window] = body["windows"]
+        assert window["used_percent"] == 95
+        assert body["claude_inventory"][0]["count"] == 1
+        return body["claude_reset_recommended"]
+
+    save_right()
+    assert await recommended() is False
+    enabled = True
+    assert await recommended() is True
+    save_right(scope_name="model:sonnet")
+    assert await recommended() is False
+    save_right(account="unrelated-claude")
+    assert await recommended() is False
+    save_right(ends=now)
+    assert await recommended() is False
+
+
+@pytest.mark.asyncio
+async def test_display_refresh_at_five_minutes_with_reset_disabled(usage_client, monkeypatch: pytest.MonkeyPatch) -> None:
     now = 2000000000
     calls = []
     monkeypatch.setattr(usage_refresh.time, "time", lambda: now)
@@ -64,7 +122,7 @@ async def test_display_refresh_at_five_minutes_without_permissions(usage_client,
         return []
 
     monkeypatch.setattr(usage_refresh, "refresh", refresh)
-    assert config.resolve_mutable_setting("usage_reset_permissions") == "[]"
+    assert config.resolve_mutable_setting("codex_auto_reset") == "false"
     initial = await usage_client.post("/api/usage/refresh", json={"force": False})
     assert initial.status_code == 200
     now += 299

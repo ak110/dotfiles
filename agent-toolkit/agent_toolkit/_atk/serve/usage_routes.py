@@ -1,5 +1,4 @@
 import asyncio
-import json
 import subprocess
 import time
 from typing import Any
@@ -47,12 +46,20 @@ _METADATA_FIELDS = {
 }
 
 
+def _reset_setting(engine: str) -> dict[str, Any]:
+    try:
+        enabled = config.resolve_mutable_setting(f"{engine}_auto_reset") == "true"
+    except (OSError, ValueError) as error:
+        return {"enabled": None, "error": f"設定を読み取れません: {error}"}
+    return {"enabled": enabled}
+
+
 def _display_data(refresh: dict[str, Any] | None = None) -> dict[str, Any]:
     state = usage_settings.read_settings() if refresh is None else refresh
     profiles = {engine: usage_settings.read_metadata(engine) for engine in _METADATA_FIELDS}
     observed = usage_observation.snapshot(include_history=True)
     windows = config_usage.display_windows(config_usage.profile_windows(observed), observed["history"])
-    permissions = json.loads(config.resolve_mutable_setting("usage_reset_permissions"))
+    reset_settings = {engine: _reset_setting(engine) for engine in _METADATA_FIELDS}
     now = time.time()
     result: dict[str, Any] = {
         "windows": [{key: window[key] for key in _WINDOW_FIELDS if key in window} for window in windows],
@@ -60,11 +67,16 @@ def _display_data(refresh: dict[str, Any] | None = None) -> dict[str, Any]:
             engine: {key: profiles[engine][key] for key in fields if key in profiles[engine]}
             for engine, fields in _METADATA_FIELDS.items()
         },
-        "permissions": [
-            {key: entry[key] for key in ("engine", "scope", "count", "from", "until")}
-            for entry in permissions
-            if usage_settings.deadline(entry["until"]) > now
-        ],
+        "reset_settings": reset_settings,
+        "claude_reset_recommended": any(
+            advice["recommended"]
+            for advice in config_usage.claude_manual_reset_advice(
+                state.get("claude_reset_inventory", []),
+                windows,
+                enabled=reset_settings["claude"]["enabled"] is True,
+                now=now,
+            )
+        ),
         "claude_inventory": [
             {key: entry[key] for key in ("scope", "count", "until")} for entry in state.get("claude_reset_inventory", [])
         ],
@@ -132,6 +144,29 @@ def register_usage_routes(app: quart.Quart) -> None:
             # HTTP要求が取り消されても、取得または同じ子の回収が終わるまで所有を保つ。 pyfltr: allow-comment
             await asyncio.shield(agy_task)
         return json_no_store({"windows": agy_windows, "observed_at": agy_observed_at, "stale": agy_stale})
+
+    @app.post("/api/usage/reset-setting")
+    async def usage_reset_setting() -> quart.Response:
+        payload = await quart.request.get_json(silent=True)
+        if (
+            not isinstance(payload, dict)
+            or payload.get("engine") not in ("claude", "codex")
+            or not isinstance(payload.get("enabled"), bool)
+        ):
+            raise WebInputError("リセット設定が不正です", next_action="利用枠画面で有効か無効を選ぶ")
+        engine = payload["engine"]
+        try:
+            await asyncio.to_thread(
+                config.update_settings,
+                {
+                    "action": "set",
+                    "key": f"{engine}_auto_reset",
+                    "value": str(payload["enabled"]).lower(),
+                },
+            )
+            return json_no_store(await asyncio.to_thread(_display_data))
+        except (OSError, ValueError) as error:
+            raise WebInputError(str(error), next_action="設定と共有先を確認してから利用枠画面で再取得する") from error
 
     @app.post("/api/usage/refresh")
     async def usage_refresh_request() -> quart.Response:

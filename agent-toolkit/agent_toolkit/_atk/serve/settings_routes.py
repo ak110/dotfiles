@@ -440,6 +440,11 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
         payload = await quart.request.get_json(silent=True)
         if not isinstance(payload, dict):
             raise WebInputError("JSONオブジェクトを指定してください", next_action="画面から値を入力して保存する")
+        if payload.get("action") == "reset-reissue" or payload.get("key") in (
+            *config_settings.AUTO_RESET_KEYS,
+            config_settings.LEGACY_RESET_PERMISSIONS,
+        ):
+            raise WebInputError("設定画面ではリセット設定を変更できません", next_action="利用枠画面から変更する")
         try:
             host = await asyncio.to_thread(_request_host)
             revision = payload.pop("settings_revision", None)

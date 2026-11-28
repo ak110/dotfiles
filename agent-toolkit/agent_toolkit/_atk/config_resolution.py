@@ -6,7 +6,6 @@ from agent_toolkit._atk import config_migration, config_settings
 from agent_toolkit._common import env_values, runtime_environment
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.usage_settings import temporary_settings
-lazy from agent_toolkit._atk import reset_reservations
 
 
 def connection_order(engine: str, role: str) -> tuple[str, ...]:
@@ -78,7 +77,11 @@ def resolve_mutable_setting(
         if key == "remote_hosts"
         else (runtime_environment.environment().get(env_name, ""), env_name)
     )
-    value = env_value or (temporary_settings() if temporary is None else temporary).get(key)
+    value = (
+        None
+        if key in config_settings.AUTO_RESET_KEYS
+        else (env_value or (temporary_settings() if temporary is None else temporary).get(key))
+    )
     if value is None:
         if local_error is not None:
             raise local_error
@@ -94,5 +97,4 @@ def resolve_mutable_setting(
         )
         displayed = "[REDACTED]" if key in env_values.SETTING_FILES else value
         raise ActionableError(f"{source}の値が不正です（値: {displayed}）。{error}", next_action=next_action) from error
-    value = config_settings.normalize_setting(key, value)
-    return reset_reservations.public_permissions(value) if key == reset_reservations.PERMISSIONS else value
+    return config_settings.normalize_setting(key, value)

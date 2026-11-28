@@ -81,7 +81,6 @@ SCRIPTS = {
         "settings_view.js",
         "usage.js",
         "usage_display.js",
-        "reset_permissions.js",
     )
 }
 """`/static/<name>.js`で配信するESモジュール。ファイル名を指定して本文を取得する。"""

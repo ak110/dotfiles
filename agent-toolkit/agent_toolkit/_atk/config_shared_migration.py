@@ -9,7 +9,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Any, Literal
 
-from agent_toolkit._atk import config_repositories, outcome, reset_reservations
+from agent_toolkit._atk import config_repositories, outcome
 from agent_toolkit._atk import config_settings as _settings
 from agent_toolkit._common import env_values
 from agent_toolkit._common import next_action as _next_action
@@ -46,7 +46,11 @@ _REPOSITORIES = "repositories"
 
 
 def pending(local: dict[str, Any]) -> dict[str, Any]:
-    return {key: local[key] for key in _settings.SHARED_FILE_KEYS if key in local}
+    return {
+        key: local[key]
+        for key in _settings.SHARED_SETTING_KEYS | _settings.SPLIT_SETTING_KEYS
+        if (key in local and (key not in _settings.AUTO_RESET_KEYS or isinstance(local[key], bool)))
+    }
 
 
 def _shared_repositories(shared: dict[str, str]) -> dict[str, dict[str, Any]]:
@@ -54,11 +58,12 @@ def _shared_repositories(shared: dict[str, str]) -> dict[str, dict[str, Any]]:
 
 
 def _local_value(key: str, value: Any) -> str:
+    if key in _settings.AUTO_RESET_KEYS and isinstance(value, bool):
+        value = str(value).lower()
     if not isinstance(value, str):
         raise ValueError(f"{key}の保存値は文字列で指定してください")
     _settings.validate_mutable_setting(key, value)
-    normalized = _settings.normalize_setting(key, value)
-    return reset_reservations.public_permissions(normalized) if key == reset_reservations.PERMISSIONS else normalized
+    return _settings.normalize_setting(key, value)
 
 
 def _item(
@@ -77,10 +82,7 @@ def _item(
 
 
 def _safe_missing(key: str, value: str) -> bool:
-    if key == reset_reservations.PERMISSIONS:
-        # Codexの旧許可は再発行するまで共有から使えない。  # pyfltr: allow-comment
-        return all(entry["engine"] == "codex" for entry in json.loads(value))
-    if key in {"serve_web_push", "serve_web_push_details", "codex_fast_mode"}:
+    if key in {"serve_web_push", "serve_web_push_details", "codex_fast_mode", *_settings.AUTO_RESET_KEYS}:
         return value == "false"
     return True
 
@@ -94,10 +96,6 @@ def _settings_items(local: dict[str, Any], shared: dict[str, str]) -> list[dict[
             value = _local_value(key, local[key])
             if current is not None:
                 current = _local_value(key, current)
-            if key == reset_reservations.PERMISSIONS:
-                value = reset_reservations.encode_permissions(json.loads(value))
-                if current is not None:
-                    current = reset_reservations.encode_permissions(json.loads(current))
         except ValueError as error:
             items.append(_item(key, local[key], current, current, error=str(error), fields=(key,)))
             continue
@@ -302,12 +300,11 @@ def _transfer(
             if use_local:
                 if key in _CONNECTION_GROUPS:
                     values.update({field: item["local"][field] for field in fields if field in local})
-                elif key == reset_reservations.PERMISSIONS:
-                    values[key] = reset_reservations.migrate_permissions(shared, item["local"])
                 else:
                     values[key] = item["local"]
             for field in fields:
                 retained.pop(field, None)
+    _retire_legacy_reset_permissions(values)
     if incoming != repositories:
         values[_REPOSITORIES] = json.dumps(repositories, ensure_ascii=False, sort_keys=True)
     raw = local.get(_REPOSITORIES)
@@ -549,6 +546,11 @@ def _blocked(
     return blocked
 
 
+def _retire_legacy_reset_permissions(values: dict[str, str]) -> None:
+    if values.get("codex_auto_reset") == "true":
+        values.pop(_settings.LEGACY_RESET_PERMISSIONS, None)
+
+
 def update_shared_settings(
     path: pathlib.Path,
     update: Callable[[dict[str, str]], dict[str, str]],
@@ -565,6 +567,7 @@ def update_shared_settings(
             _startup_failures.discard(path)
             local, current = _read(path)
             changed = update(dict(current))
+            _retire_legacy_reset_permissions(changed)
             if changed.get(_REPOSITORIES) != current.get(_REPOSITORIES):
                 config_repository_readers.require_compatible_readers()
             if blocked := _blocked(_plan(path, local, current), current, changed, touched or set(), touched_repositories or {}):

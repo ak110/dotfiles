@@ -195,20 +195,12 @@ async def test_model_quota_displays_names_and_claude_states_after_refresh(
         )
     )
     await page.set_viewport_size({"width": 320, "height": 720})
-    await page.get_by_role("link", name="リセットの許可を設定").click()
-    section = page.locator('[data-setting="usage_reset_permissions"]')
-    await section.get_by_text("許可を追加", exact=True).click()
-    await section.get_by_label("エンジン").select_option("claude")
-    scope_choice = section.get_by_label("範囲")
-    await scope_choice.select_option(label=name)
-    await expect(scope_choice).to_have_value(saved_scope)
-    await expect(scope_choice.locator("option:checked")).to_have_text(name)
-    assert await scope_choice.evaluate("(select) => select.getBoundingClientRect().right <= innerWidth")
-    await expect(section.get_by_text(f"{name}: ", exact=False)).to_contain_text("にリセット予定")
-    for value, surface in ((unknown_cli, "CLI"), (unknown_web, "Web")):
-        await scope_choice.select_option(value=value)
-        await expect(scope_choice.locator("option:checked")).to_have_text(f"週 · モデル不明（{surface}）")
-        await expect(scope_choice).to_have_value(value)
+    await page.get_by_role("button", name="再取得").click()
+    for scope_name in (name, "週 · モデル不明（CLI）", "週 · モデル不明（Web）"):
+        await expect(page.get_by_text(scope_name, exact=False).last).to_be_visible()
+    checkbox = page.get_by_role("checkbox", name="手動リセットを推奨する")
+    await expect(checkbox).to_be_enabled()
+    assert await checkbox.evaluate("(input) => input.getBoundingClientRect().right <= innerWidth")
 
 
 async def test_failed_refresh_displays_newer_independent_observation(
@@ -259,7 +251,7 @@ async def test_failed_refresh_displays_newer_independent_observation(
     reason="実Chromium・HTTPでのナビゲーションを測る。共有ブラウザーの準備と終了は全体上限だけに計上する",
     call_limit=0.65,
 )
-async def test_usage_settings_link_selects_local_with_permission_editor(
+async def test_settings_link_opens_the_local_usage_screen(
     screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:
     config_settings.save_config({"remote_hosts": '["fixture-remote"]'})
@@ -279,10 +271,9 @@ async def test_usage_settings_link_selects_local_with_permission_editor(
     await expect(picker).to_have_value("fixture-remote")
     settings = page.locator("#screen-settings")
     await expect(settings).not_to_contain_text("fixture-remote-window")
-    await settings.get_by_role("link", name="利用枠の使用率とリセット権を見る").click()
     navigation_started = time.monotonic()
-    await page.get_by_role("link", name="リセットの許可を設定").click()
-    await expect(picker).to_have_value("")
-    editor = settings.locator('[data-setting="usage_reset_permissions"]')
-    await expect(editor.get_by_text("許可を追加", exact=True)).to_be_visible()
+    await settings.get_by_role("link", name="利用枠の使用率とリセット権を見る").click()
+    usage = page.locator("#screen-usage")
+    await expect(usage.get_by_role("checkbox", name="リセット権を自動で使う")).to_be_enabled()
+    await expect(usage).not_to_contain_text("fixture-remote-window")
     request.node.user_properties.append(("usage_settings_navigation_seconds", time.monotonic() - navigation_started))

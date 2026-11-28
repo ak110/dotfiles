@@ -292,7 +292,7 @@ LEGACY_SETTING_GROUPS = {
     "research-repositories": (_RESEARCH_REPOS,),
     "model": tuple(_config_settings.RETIRED_MODEL_KEYS),
     "remote-hosts": _config_settings.LEGACY_REMOTE_HOSTS_KEYS,
-    "retired": ("codex_auto_reset", "usage_auto_allocation", *_config_settings.RETIRED_SERVE_HOME_KEYS),
+    "retired": ("usage_auto_allocation", *_config_settings.RETIRED_SERVE_HOME_KEYS),
     "fixed-state": tuple(_config_settings.RETIRED_FIXED_KEYS),
     "research-subscriptions": tuple(_RESEARCH_SUBSCRIPTIONS.values()),
 }
@@ -352,6 +352,9 @@ def _legacy_values(
     old_hosts = [migrated.pop(key) for key in _config_settings.LEGACY_REMOTE_HOSTS_KEYS if key in migrated]
     for key in LEGACY_SETTING_GROUPS["retired"]:
         migrated.pop(key, None)
+    for key in _config_settings.AUTO_RESET_KEYS:
+        if key in migrated and not isinstance(migrated[key], bool):
+            migrated.pop(key)
     if old_hosts and "remote_hosts" not in migrated and "remote_hosts" not in changes:
         with _conversion(("remote_hosts",), errors):
             if any(not isinstance(value, str) for value in old_hosts):
@@ -415,10 +418,14 @@ def _apply_legacy_side_effects(config: dict[str, str]) -> dict[str, str]:
 
 def has_legacy_settings(config: dict[str, Any]) -> bool:
     env = runtime_environment.environment()
-    return any(key in config for keys in LEGACY_SETTING_GROUPS.values() for key in keys) or any(
-        env.get(_config_settings.config_env_name(key))
-        for key in (*_config_settings.RETIRED_FIXED_KEYS, "claude_api_env_file")
-        if key != "usage_activity_mode"
+    return (
+        any(key in config and not isinstance(config[key], bool) for key in _config_settings.AUTO_RESET_KEYS)
+        or any(key in config for keys in LEGACY_SETTING_GROUPS.values() for key in keys)
+        or any(
+            env.get(_config_settings.config_env_name(key))
+            for key in (*_config_settings.RETIRED_FIXED_KEYS, "claude_api_env_file")
+            if key != "usage_activity_mode"
+        )
     )
 
 
@@ -432,10 +439,10 @@ def migrate_legacy_settings() -> None:
     config_env.migrate()
     if migrated != config:
         _config_settings.save_config(migrated)
-        if "codex_auto_reset" in config:
+        if any(key in config and not isinstance(config[key], bool) for key in _config_settings.AUTO_RESET_KEYS):
             _outcome.report_warning(
-                "廃止したcodex_auto_resetを設定から削除した。利用枠の消費許可は作成していない",
-                next_action="明示許可はusage_reset_permissionsで確認してください。",
+                "旧リセット設定を除いた。新設定は有効にしていない",
+                next_action="共有する全端末を更新後、利用枠画面で必要な設定を明示する。",
             )
 
 
@@ -535,7 +542,7 @@ def preview_local_settings(config: dict[str, Any]) -> tuple[dict[str, str], dict
         )
     errors.update({key: error for key, error in serve_errors.items() if key not in config and key not in migrated})
     check_legacy_environment(errors=errors)
-    return {key: value for key, value in migrated.items() if isinstance(value, str)}, errors
+    return _config_settings.local_setting_strings(migrated), errors
 
 
 def migrate_serve_settings() -> None:

@@ -1,11 +1,12 @@
 import {BASE_PATH} from "./common.js";
-import {renderResetPermissions} from "./reset_permissions.js";
+
+const resetSettings = new Set(["usage_reset_permissions", "codex_auto_reset", "claude_auto_reset"]);
 
 const SETTING_NAMES = {
   execute_model: "実装のモデル", review_model: "レビューのモデル", review_fast_model: "一括置換後レビューのモデル",
   chores_model: "補助作業のモデル", chores_fast_model: "軽量な補助作業のモデル",
   orchestrate_model: "統括のモデル", write_model: "文書執筆のモデル",
-  codex_fast_mode: "Codexの高速モード", usage_reset_permissions: "利用枠のリセット許可",
+  codex_fast_mode: "Codexの高速モード",
   codex_credits_provider: "Codexの有限クレジットの接続先", codex_payg_provider: "Codexの従量課金の接続先",
   claude_orchestrator_connections: "Claudeの統括で使う接続順", claude_worker_connections: "Claudeの委譲先で使う接続順",
   codex_orchestrator_connections: "Codexの統括で使う接続順", codex_worker_connections: "Codexの委譲先で使う接続順",
@@ -35,7 +36,6 @@ function choiceLabels(key, item) {
 
 function valueLabel(key, item, value) {
   if (!value) return "未指定";
-  if (key === "usage_reset_permissions") return `${JSON.parse(value).length}件の許可`;
   if (item.array) return JSON.parse(value).join("、") || "なし";
   return displayName(choiceLabels(key, item), value);
 }
@@ -54,15 +54,12 @@ export function savedSettingMessage(payload, before, after) {
   const {key} = payload;
   const old = before?.settings[key];
   const item = after.settings[key];
-  if (!old || !item || payload.action === "reset-reissue") return "設定を保存しました。";
+  if (!old || !item) return "設定を保存しました。";
   const from = valueLabel(key, old, old.saved);
   const to = valueLabel(key, item, item.saved);
   const change = from === to ? to : `${from} → ${to}`;
   const target = item.shared ? (item.shared_sync ? "共有" : "このホストの共有ファイル") : "このホスト";
   const timing = reflection(key, item, after) ?? "次にこの設定を使うとき";
-  if (key === "usage_reset_permissions" && from === to && old.saved !== item.saved) {
-    return `許可を更新しました（${target}）。反映: ${timing}。`;
-  }
   return `保存済み（${target}）: ${change}。反映: ${timing}。`;
 }
 
@@ -207,7 +204,7 @@ export function createSettingsView({
     const unsaved = element("span", "未保存", "settings-draft-state secondary-text");
     unsaved.hidden = true;
     name.append(unsaved);
-    const readOnly = item.read_only || (key === "usage_reset_permissions" && !data.reset_editor && state.host);
+    const readOnly = item.read_only;
     if (item.invalid_local) name.append(element("span", "設定値に問題あり", "secondary-text"));
     else if (readOnly) name.append(element("span", "読み取り専用", "secondary-text"));
     const current = element("span", "", "settings-current-values");
@@ -250,9 +247,6 @@ export function createSettingsView({
       return block;
     }
     if (readOnly) {
-      if (key === "usage_reset_permissions" && state.host) {
-        description.append(element("p", "このホストのatkを更新すると画面で許可を編集できます。CLIで設定するには atk config set usage_reset_permissions を使います。"));
-      }
       description.append(details);
       block.append(description);
       parent.append(block);
@@ -261,12 +255,7 @@ export function createSettingsView({
     const controls = element("div", "", "settings-setting-controls");
     block.append(controls);
     const output = settingResult();
-    if (key === "usage_reset_permissions") {
-      renderResetPermissions(controls, JSON.parse(item.saved), data.reset_editor,
-        (entries, editor) => save({action: "set", key, value: JSON.stringify(entries)}, output, editor),
-        {element, field, form, button, submit, setWriteUnavailable},
-        data.reset_reissue, (id, count) => save({action: "reset-reissue", key, id, count}, output));
-    } else if (item.array) {
+    if (item.array) {
       const list = element("ul");
       for (const value of JSON.parse(item.saved)) {
         const row = element("li", value + " ");
@@ -492,7 +481,7 @@ export function createSettingsView({
     const note = element("p");
     note.dataset.sharedComparison = "";
     for (const [key, item] of Object.entries(data.settings)) {
-      if (!item.shared) continue;
+      if (!item.shared || resetSettings.has(key)) continue;
       const target = scope(groupId(key), "shared");
       const prior = old.get(key);
       if (prior && !item.invalid_local && key !== savedKey &&
@@ -673,7 +662,7 @@ export function createSettingsView({
       migration: section(root, "共有設定の選択", "claude-code-settings.md#共有設定への移行"),
       models: section(root, "工程別モデル", "claude-code-models.md#工程別モデル設定"),
       connections: section(root, "接続", "claude-code-connections.md#接続の使い分け"),
-      usage: section(root, "利用枠", "claude-code-models.md#利用枠とreset許可"),
+      usage: section(root, "利用枠", "claude-code-models.md#利用枠とリセット設定"),
       repos: section(root, "リポジトリ", "claude-code-wi.md#処理対象と検証os"),
       serve: section(root, "atk serve", "claude-code-serve.md#atk-serveの画面"),
       other: section(root, "その他の設定とパス", "claude-code-settings.md#atk-config"),
@@ -689,7 +678,7 @@ export function createSettingsView({
     for (const warning of data.provider_warnings ?? []) {
       groups.connections.append(element("p", `${state.host || "ローカル"}: ${warning.message}`, "notice notice-warning"));
     }
-    const settings = Object.entries(data.settings).sort(([left], [right]) =>
+    const settings = Object.entries(data.settings).filter(([key]) => !resetSettings.has(key)).sort(([left], [right]) =>
       Number(right === "remote_hosts") - Number(left === "remote_hosts"));
     const hostTitle = `このホストだけ（${state.host || "ローカル"}）`;
     const scopes = {};
