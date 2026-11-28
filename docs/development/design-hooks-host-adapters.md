@@ -67,7 +67,9 @@ Claude Codeのhookが返すJSONで受理されるフィールドはイベント�
 これを実装の時点で検出するため、イベントごとの出力契約を`agent-toolkit/agent_toolkit/_testing/hook_output_contract.py`へJSON Schemaで定義する。
 契約の検証は`jsonschema`（開発用の依存）を使い、テストだけが使うため、本番のパッケージから到達しない`_testing`に置く。
 `agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が`agent-toolkit/hooks/hooks.json`の全登録エントリの出力がJSON Schemaの契約と一致するか確かめる。
-CodexのStopは受理する出力が異なるため、`validate_hook_output`の`host`引数でCodexの契約（空のJSONか`decision`と`reason`だけ）を選ぶ。
+CodexのStopは受理する出力が異なるため、`validate_hook_output`の`host`引数でCodexの契約を選ぶ。
+出力は空のJSONか`decision`と`reason`で、再発防止を見送る句の警告があるときだけ文字列の`systemMessage`を添える。
+この警告はCodex 0.172.0のStopで`hook/completed`の警告として届き、応答本文・終了の可否を変えない。
 
 知識境界は次のとおりとする。
 契約の値は公式のHooksリファレンスが定め、agent-toolkitは公式の契約値を写して保持する。

@@ -8,10 +8,39 @@ from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
 from agent_toolkit._atk.wi import uwi
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import content as mutation_content
+from agent_toolkit._testing import plan_fixture
 from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit._testing.wi_mutations_content_support import _edit_body_args, _next_action_lines
 from agent_toolkit._testing.wi_mutations_support import _write_uwi_entry
 from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_notes, _write_awi_file
+
+
+@pytest.mark.parametrize(
+    ("coverage", "cause_changes", "warned"),
+    [
+        ("- **再発防止:** 被覆: `AGENTS.md`「CI: `verify` で保護」", True, True),
+        ("- 再発防止: 被覆（既存の規範に定めた。）", True, True),
+        ("- 再発防止: 被覆: `feature_test.py`で観測した。", True, False),
+        ("- 再発防止: 被覆: `docs/case.md`:12 の実測結果。", True, False),
+        ("- 再発防止: 被覆: claude:ab12cd34-ea31:25 の観測。", True, False),
+        ("- 再発防止: 被覆: CI: `verify` の成功を確認した。", True, False),
+        ("- 再発防止: 被覆: 根拠なし。", False, False),
+    ],
+)
+def test_edit_reports_coverage_warning_only_for_changed_cause(tmp_path, monkeypatch, capsys, coverage, cause_changes, warned):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    record = plan_fixture.cause_record()
+    changed = record.replace(plan_fixture.cause_record_line("再発防止"), coverage)
+    old = record if cause_changes else changed
+    body = "# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n"
+    path = _write_awi_file(notes, "fb-001.md", body=body + old, source="test")
+    with pytest.raises(SystemExit) as finished:
+        atk.main(_edit_body_args(tmp_path, "fb-001.md", body.replace("対象", "更新対象") + changed), home=tmp_path)
+    assert finished.value.code == 0
+    assert coverage in path.read_text(encoding="utf-8")
+    assert ('<atk-auto source="prevention_coverage" kind="warn">' in capsys.readouterr().err) is warned
 
 
 class TestEditBodyFile:

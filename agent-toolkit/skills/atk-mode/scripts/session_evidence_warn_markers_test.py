@@ -1,12 +1,186 @@
 from __future__ import annotations
 
+import datetime
+import hashlib
 import json
+import os
 import pathlib
 
 import pytest
 import session_review_evidence as evidence
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import read_jsonl
+from session_evidence_warn import warning_count_main
+
+
+def test_warning_count_codex_stop_counts_direct_output_not_replays_or_quotes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    archive = tmp_path / "archived_sessions"
+    archive.mkdir()
+    active = tmp_path / "sessions" / "2026" / "11" / "28"
+    active.mkdir(parents=True)
+    sid = "01234567-89ab-7abc-8def-123456789abc"
+    tape = f"rollout-2026-11-28T00-00-00-{sid}.jsonl"
+    metadata = {"type": "session_meta", "timestamp": "2026-11-28T00:00:00Z"}
+    observed_at = "2026-11-28T00:12:00Z"
+    quoted = {
+        "type": "response_item",
+        "timestamp": observed_at,
+        "payload": {
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "output_text",
+                    "text": '<atk-auto source="norm_excuse_gate" kind="warn">引用</atk-auto>',
+                }
+            ],
+        },
+    }
+    for root in (archive, active):
+        rollout = root / tape
+        rollout.write_text(f"{json.dumps(metadata)}\n{json.dumps(quoted)}\n", encoding="utf-8")
+        last_record = datetime.datetime.fromisoformat(observed_at).timestamp()
+        os.utime(rollout, (last_record, last_record))
+
+    def event(at: str, character: str, source: str = "norm_excuse_gate") -> str:
+        return f"{at} decision=codex_stop_warning source={source} occurrence={character * 64}\n"
+
+    stop = tmp_path / f"claude-agent-toolkit-stop-{sid}.log"
+    duplicate = event("2026-11-28T00:14:01Z", "a")
+    stop.with_suffix(".log.1").write_text(event("2026-11-28T00:00:01Z", "e") + duplicate, encoding="utf-8")
+    stop.write_text(
+        duplicate
+        + event("2026-11-28T00:14:02Z", "b")
+        + event("2026-11-28T00:14:03Z", "c", "other")
+        + event("2026-11-28T00:15:00Z", "d")
+        + event("2026-11-28T00:14:08Z", "e")
+        + event("2026-11-28T00:13:59Z", "f").replace(" decision=", " quoted decision=")
+        + event("2026-11-28T00:14:05Z", "0").rstrip("\n"),
+        encoding="utf-8",
+    )
+    assert (
+        warning_count_main(
+            ["--since", "2026-11-28T00:10:00Z", "--until", "2026-11-28T00:15:00Z", "--source", "norm_excuse_gate"]
+        )
+        == 0
+    )
+    row = read_jsonl(capsys)[0]
+    assert row["sources"]["norm_excuse_gate"] == {"occurrences": 2, "conversations": 1}
+    assert row["partial_records"] == 1
+    assert sorted(item["record"] for item in row["occurrences"]) == sorted([f"{stop.with_suffix('.log.1')}:2", f"{stop}:2"])
+    assert all(item["engine"] == "codex" and item["kind"] == "warn" for item in row["occurrences"])
+    assert all(item["previous_speech"] is None and item["next_operation"] is None for item in row["occurrences"])
+
+
+@pytest.mark.parametrize(
+    ("state", "partial"),
+    [("missing", 1), ("broken-rollout", 1), ("truncated", 1), ("stale", 1), ("available", 0), ("old", 0)],
+)
+def test_warning_count_distinguishes_unavailable_codex_stop_history_from_no_warning(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], state: str, partial: int
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    archive = tmp_path / "archived_sessions"
+    archive.mkdir()
+    sid = "01234567-89ab-7abc-8def-123456789abc"
+    rollout = archive / f"rollout-2026-11-28T00-00-00-{sid}.jsonl"
+    rollout.write_text('{"type":"session_meta","timestamp":"2026-11-28T00:00:00Z"}\n', encoding="utf-8")
+    if state == "broken-rollout":
+        with rollout.open("a", encoding="utf-8") as stream:
+            stream.write('{"source":"norm_excuse_gate"\n')
+    stop = tmp_path / f"claude-agent-toolkit-stop-{sid}.log"
+    if state in {"truncated", "available"}:
+        stop.write_text("2026-11-28T00:14:03Z decision=approve_input_wait\n", encoding="utf-8")
+    if state == "stale":
+        stop.write_text("2026-11-28T00:09:59Z decision=approve_input_wait\n", encoding="utf-8")
+    if state == "truncated":
+        stop.with_suffix(".log.1").write_text("2026-11-28T00:14:01Z decision=approve_input_wait\n", encoding="utf-8")
+    modified = 0 if state == "old" else datetime.datetime.fromisoformat("2026-11-28T00:14:00Z").timestamp()
+    os.utime(rollout, (modified, modified))
+    assert (
+        warning_count_main(
+            ["--since", "2026-11-28T00:10:00Z", "--until", "2026-11-28T00:15:00Z", "--source", "norm_excuse_gate"]
+        )
+        == 0
+    )
+    row = read_jsonl(capsys)[0]
+    assert row["sources"]["norm_excuse_gate"] == {"occurrences": 0, "conversations": 0}
+    assert row["records"] == 1 and row["partial_records"] == partial
+
+
+@pytest.mark.parametrize("lost_second_answer", [False, True])
+def test_warning_count_codex_stop_joins_diagnostic_events_to_native_turn_evidence(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], lost_second_answer: bool
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    archive = tmp_path / "archived_sessions"
+    archive.mkdir()
+    sid = "01234567-89ab-7abc-8def-123456789abc"
+    rollout = archive / f"rollout-2026-11-28T00-00-00-{sid}.jsonl"
+    turn_id = "native-turn"
+    timestamp = "2026-11-28T00:11:00Z"
+    first, second = "最初の実応答。", "同じターンの別応答。"
+
+    def response(text: str) -> dict:
+        return {
+            "type": "event_msg",
+            "timestamp": timestamp,
+            "payload": {
+                "type": "item_completed",
+                "turn_id": turn_id,
+                "item": {"type": "AgentMessage", "content": [{"type": "Text", "text": text}]},
+            },
+        }
+
+    records = [
+        {"type": "session_meta", "timestamp": "2026-11-28T00:00:00Z"},
+        response(first),
+        {
+            "type": "response_item",
+            "timestamp": timestamp,
+            "payload": {
+                "type": "function_call",
+                "name": "example_check",
+                "call_id": "call-1",
+                "arguments": "{}",
+            },
+        },
+    ]
+    if not lost_second_answer:
+        records.append(response(second))
+    rollout.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    log = tmp_path / f"claude-agent-toolkit-stop-{sid}.log"
+    diagnostics = []
+    for answer in (first, second):
+        digest = hashlib.sha256(json.dumps((turn_id, answer)).encode()).hexdigest()
+        diagnostics.append(f"{timestamp} decision=codex_stop_warning source=norm_excuse_gate occurrence={digest}\n")
+    log.write_text("".join(diagnostics), encoding="utf-8")
+    assert (
+        warning_count_main(
+            ["--since", "2026-11-28T00:10:00Z", "--until", "2026-11-28T00:15:00Z", "--source", "norm_excuse_gate"]
+        )
+        == 0
+    )
+    row = read_jsonl(capsys)[0]
+    assert row["sources"]["norm_excuse_gate"] == {"occurrences": 2, "conversations": 1}
+    assert row["partial_records"] == lost_second_answer
+    before_tool, after_tool = row["occurrences"]
+    assert before_tool["record"] == f"{rollout}:2" and before_tool["previous_speech"] == first
+    assert before_tool["next_operation"]
+    assert after_tool["next_operation"] is None
+    if lost_second_answer:
+        assert after_tool["record"] == f"{log}:2" and after_tool["previous_speech"] is None
+    else:
+        assert after_tool["record"] == f"{rollout}:4" and after_tool["previous_speech"] == second
 
 
 def test_warn_mode_ignores_identifier_only_management_values(

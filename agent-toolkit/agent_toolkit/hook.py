@@ -27,6 +27,8 @@ import sys
 import time
 import types
 lazy import datetime
+lazy import hashlib
+lazy import re
 
 from agent_toolkit._common import inherited_venv
 from agent_toolkit._common.next_action import recover_from_failure
@@ -39,6 +41,7 @@ lazy from agent_toolkit._hooks import timing
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._hooks.pretooluse.warning_context import CODEX_CONTEXT_BYTES, bounded_codex_context
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
 
 _SUBCOMMANDS: frozenset[str] = frozenset(
     {
@@ -266,6 +269,18 @@ def _add_user_copy(
     return True
 
 
+def _record_codex_stop_warning(payload: dict) -> None:
+    """通常のrolloutに残らない、送出済みのCodex Stop警告の識別子だけを診断ログへ残す。  pyfltr: allow-comment"""
+    session_id, turn_id = payload.get("session_id"), payload.get("turn_id")
+    if not isinstance(session_id, str) or re.fullmatch(r"[A-Za-z0-9_-]+", session_id) is None:
+        return
+    answer = payload.get("last_assistant_message")
+    if not isinstance(turn_id, str) or not turn_id or not isinstance(answer, str):
+        return
+    occurrence = hashlib.sha256(json.dumps((turn_id, answer)).encode()).hexdigest()
+    append_stop_log(session_id, "codex_stop_warning", {"source": "norm_excuse_gate", "occurrence": occurrence})
+
+
 def _invoke_module(
     module: types.ModuleType,
     payload_text: str,
@@ -331,9 +346,23 @@ def _invoke_module(
     if raw:
         sys.stdout.write(raw)
         if response is not None:
+            system_message = response.get("systemMessage")
+            stop_warnings = (
+                [
+                    item.text
+                    for item in generated
+                    if item.source == "norm_excuse_gate" and item.kind == "warn" and item.text in system_message
+                ]
+                if argv[0] == "stop" and isinstance(system_message, str)
+                else []
+            )
+            if result == 0 and stop_warnings and isinstance(payload, dict) and is_codex_payload(payload):
+                sys.stdout.flush()
+                with contextlib.suppress(Exception):
+                    _record_codex_stop_warning(payload)
             # 配送後の状態記録失敗で、同じ応答へ別のJSONを追加しない。
             with contextlib.suppress(Exception):
-                _notice.record_delivery(_notice.output_text(response))
+                _notice.record_delivery("\n\n".join([_notice.output_text(response), *stop_warnings]))
     if argv[0] in {"stop", "subagent_stop_advisor"}:
         _record_activity(payload, output=raw, returncode=result)
     timing.record(

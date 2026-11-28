@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import sys
@@ -336,8 +337,16 @@ def test_permission_request_union_accepts_each_branch(decision: dict[str, object
     assert validate_hook_output("PermissionRequest", output) == []
 
 
-@pytest.mark.parametrize("output", [{}, {"decision": "block", "reason": "残る報告を発話する"}])
-def test_codex_stop_accepts_only_approval_or_continuation(output: dict[str, object]) -> None:
+@pytest.mark.parametrize(
+    "output",
+    [
+        {},
+        {"systemMessage": "通知"},
+        {"decision": "block", "reason": "残る報告を発話する"},
+        {"decision": "block", "reason": "残る報告を発話する", "systemMessage": "通知"},
+    ],
+)
+def test_codex_stop_accepts_completion_or_continuation_with_optional_warning(output: dict[str, object]) -> None:
     assert validate_hook_output("Stop", output, host="codex") == []
 
 
@@ -346,7 +355,10 @@ def test_codex_stop_accepts_only_approval_or_continuation(output: dict[str, obje
     [
         {"decision": "block"},
         {"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": "通知"}},
-        {"systemMessage": "通知"},
+        {"systemMessage": {"text": "通知"}},
+        {"decision": "block", "systemMessage": "通知"},
+        {"continue": False, "systemMessage": "通知"},
+        {"terminalSequence": "\a"},
         {"decision": "approve"},
     ],
 )
@@ -354,10 +366,19 @@ def test_codex_stop_rejects_claude_only_output(output: dict[str, object]) -> Non
     assert validate_hook_output("Stop", output, host="codex")
 
 
-def test_codex_stop_public_entry_returns_host_output(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    ("answer", "fields"),
+    [
+        ("完了した。", set()),
+        ("既存の条文で足りるため、再発防止のWIは作らない。", {"systemMessage"}),
+        ("「既存の条文で足りる」は再発防止の理由にならない。", set()),
+        ("The work is complete.", {"decision", "reason"}),
+    ],
+)
+def test_codex_stop_public_entry_returns_host_output(tmp_path: pathlib.Path, answer: str, fields: set[str]) -> None:
     payload, environment = _build_fixture("Stop", "stop", tmp_path)
     environment.pop("AGENT_TOOLKIT_OWNER_SESSION", None)
-    payload.update({"turn_id": "codex-turn", "last_assistant_message": "完了した。"})
+    payload.update({"turn_id": "codex-turn", "last_assistant_message": answer})
     result = subprocess.run(
         [sys.executable, str(_HOOK_SCRIPT), "stop"],
         input=json.dumps(payload, ensure_ascii=False),
@@ -367,7 +388,77 @@ def test_codex_stop_public_entry_returns_host_output(tmp_path: pathlib.Path) -> 
         env=environment,
     )
     assert result.returncode == 0, result.stderr
-    assert validate_hook_output("Stop", json.loads(result.stdout), host="codex") == []
+    output = json.loads(result.stdout)
+    assert validate_hook_output("Stop", output, host="codex") == []
+    assert set(output) == fields
+    diagnostic = tmp_path / f"claude-agent-toolkit-stop-{payload['session_id']}.log"
+    rows = diagnostic.read_text(encoding="utf-8").splitlines() if diagnostic.exists() else []
+    events = [row for row in rows if "decision=codex_stop_warning" in row]
+    if "systemMessage" in output:
+        assert '<atk-auto source="norm_excuse_gate" kind="warn">' in output["systemMessage"]
+        assert len(events) == 1
+        assert re.fullmatch(r"\S+ decision=codex_stop_warning source=norm_excuse_gate occurrence=[0-9a-f]{64}", events[0])
+    else:
+        assert not events
+    if "decision" in output:
+        assert output["decision"] == "block" and output["reason"]
+
+
+@pytest.mark.parametrize("host", ["claude-code", "codex"])
+def test_stop_records_only_delivered_warnings_and_allows_later_occurrences(tmp_path: pathlib.Path, host: str) -> None:
+    payload, environment = _build_fixture("Stop", "stop", tmp_path)
+    environment.pop("AGENT_TOOLKIT_OWNER_SESSION", None)
+    first = "既存の条文で足りるため、再発防止のWIは作らない。"
+    other = "別の障害についても既存の条文で足りるため、再発防止のWIは作らない。"
+    for answer, event_id, active, warns in (
+        (first, "turn-1", False, True),
+        (first, "turn-1", True, False),
+        (other, "turn-1", False, True),
+        (other, "turn-1", True, False),
+        (other, "turn-3", False, True),
+        (other, "turn-3", False, False),
+        ("次は検査を足して検証します。", "turn-4", False, False),
+        (first, "turn-5", False, True),
+    ):
+        if host == "codex":
+            payload["turn_id"] = event_id
+        else:
+            payload["transcript_path"] = str(
+                _write_transcript(
+                    tmp_path,
+                    [
+                        *_FINISHED_TURN_ENTRIES,
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "id": event_id,
+                                "role": "assistant",
+                                "content": [{"type": "text", "text": answer}],
+                                "stop_reason": "end_turn",
+                            },
+                        },
+                    ],
+                )
+            )
+        payload.update({"last_assistant_message": answer, "stop_hook_active": active})
+        result = subprocess.run(
+            [sys.executable, str(_HOOK_SCRIPT), "stop"],
+            input=json.dumps(payload, ensure_ascii=False),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            env=environment,
+        )
+        assert result.returncode == 0, result.stderr
+        output = json.loads(result.stdout)
+        assert validate_hook_output("Stop", output, host=host) == []
+        assert "decision" not in output
+        assert ('<atk-auto source="norm_excuse_gate" kind="warn">' in output.get("systemMessage", "")) is warns
+    diagnostic = tmp_path / f"claude-agent-toolkit-stop-{payload['session_id']}.log"
+    rows = diagnostic.read_text(encoding="utf-8").splitlines() if diagnostic.exists() else []
+    events = [row.partition("occurrence=")[2] for row in rows if "decision=codex_stop_warning" in row]
+    assert len(events) == len(set(events)) == (4 if host == "codex" else 0)
 
 
 @pytest.mark.parametrize(
