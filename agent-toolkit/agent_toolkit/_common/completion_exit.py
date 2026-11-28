@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 from collections.abc import Iterator, Mapping
+from typing import Literal
 
 from agent_toolkit._common import host_homes, session_record_paths, transcript
 from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
@@ -12,6 +13,8 @@ from agent_toolkit._common.send_to_user import COMPLETION_KIND, normalize_comple
 
 LAUNCH_ENV = "AGENT_TOOLKIT_COMPLETION_LAUNCH_ID"
 DISABLE_ENV = "AGENT_TOOLKIT_KEEP_SESSION"
+
+MissingDelivery = Literal["failed", "previous-turn", "missing-copy", "unconfirmed"]
 
 
 def state_path(launch: str, *, root: pathlib.Path | None = None) -> pathlib.Path | None:
@@ -90,9 +93,7 @@ def conversation_tool_blocks(entries: list[dict]) -> Iterator[tuple[dict, dict]]
             yield from ((entry, item) for item in content if isinstance(item, dict))
 
 
-def ui_receipt(entry: dict, block: dict) -> dict | None:
-    if block.get("is_error") is True:
-        return None
+def _result_objects(entry: dict, block: dict) -> Iterator[dict]:
     content = block.get("content")
     items = content if isinstance(content, list) else [{"text": content}]
     # REPL内のMCP呼び出しは同じIDの仮想tool_resultの本文が空で、応答はtoolUseResultに残る。pyfltr: allow-comment
@@ -106,8 +107,27 @@ def ui_receipt(entry: dict, block: dict) -> dict | None:
             value = json.loads(body)
         except ValueError, RecursionError:
             continue
-        if isinstance(value, dict) and value.get("ok") is True:
-            return value
+        if isinstance(value, dict):
+            yield value
+
+
+def ui_receipt(entry: dict, block: dict) -> dict | None:
+    if block.get("is_error") is True:
+        return None
+    return next((value for value in _result_objects(entry, block) if value.get("ok") is True), None)
+
+
+def _completion_call(block: dict) -> tuple[str, str | None] | None:
+    if block.get("type") != "tool_use" or not is_send_to_user_tool(block.get("name")):
+        return None
+    args, identifier = block.get("input"), block.get("id")
+    if not isinstance(args, dict) or args.get("kind") != COMPLETION_KIND or not isinstance(identifier, str):
+        return None
+    message, reference = args.get("message"), args.get("body_ref")
+    if isinstance(message, str) and reference is None:
+        return identifier, message
+    if message is None and isinstance(reference, str):
+        return identifier, None
     return None
 
 
@@ -115,15 +135,8 @@ def reports(entries: list[dict], *, session: str = "", root: pathlib.Path | None
     calls: dict[str, str | None] = {}
     delivered: dict[str, str] = {}
     for entry, block in conversation_tool_blocks(entries):
-        if block.get("type") == "tool_use" and is_send_to_user_tool(block.get("name")):
-            args = block.get("input")
-            identifier = block.get("id")
-            if isinstance(args, dict) and args.get("kind") == COMPLETION_KIND and isinstance(identifier, str):
-                message, reference = args.get("message"), args.get("body_ref")
-                if isinstance(message, str) and reference is None:
-                    calls[identifier] = message
-                elif message is None and isinstance(reference, str):
-                    calls[identifier] = None
+        if (call := _completion_call(block)) is not None:
+            calls[call[0]] = call[1]
         if (
             block.get("type") == "tool_result"
             and isinstance(identifier := block.get("tool_use_id"), str)
@@ -138,21 +151,21 @@ def reports(entries: list[dict], *, session: str = "", root: pathlib.Path | None
     return delivered
 
 
-def current_reports(entries: list[dict], *, session: str = "") -> dict[str, str]:
+def _current_turn_start(entries: list[dict]) -> int:
     for index in range(len(entries) - 1, -1, -1):
         entry = entries[index]
         if entry.get("isSidechain"):
             continue
         kind = entry.get("type")
         if entry.get("isCompactSummary") or (kind == "system" and entry.get("subtype") == "compact_boundary"):
-            return reports(entries[index + 1 :], session=session)
+            return index + 1
         attachment = entry.get("attachment")
         if (
             kind == "attachment"
             and isinstance(attachment, dict)
             and (attachment.get("type") == "queued_command" or attachment.get("commandMode") == "task-notification")
         ):
-            return reports(entries[index + 1 :], session=session)
+            return index + 1
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if (
@@ -164,8 +177,37 @@ def current_reports(entries: list[dict], *, session: str = "") -> dict[str, str]
                 and any(isinstance(item, dict) and item.get("type") == "text" for item in content)
             )
         ):
-            return reports(entries[index + 1 :], session=session)
-    return reports(entries, session=session)
+            return index + 1
+    return 0
+
+
+def current_reports(entries: list[dict], *, session: str = "") -> dict[str, str]:
+    return reports(entries[_current_turn_start(entries) :], session=session)
+
+
+def missing_delivery(entries: list[dict], *, session: str) -> MissingDelivery:
+    start = _current_turn_start(entries)
+    calls: dict[str, str | None] = {}
+    failed = False
+    for entry, block in conversation_tool_blocks(entries[start:]):
+        if (call := _completion_call(block)) is not None:
+            calls[call[0]] = call[1]
+        if (
+            block.get("type") != "tool_result"
+            or not isinstance(identifier := block.get("tool_use_id"), str)
+            or identifier not in calls
+        ):
+            continue
+        if ui_receipt(entry, block) is not None:
+            if calls[identifier] is None:
+                return "missing-copy"
+        elif block.get("is_error") is True or any(value.get("ok") is False for value in _result_objects(entry, block)):
+            failed = True
+    if failed:
+        return "failed"
+    if not calls and start and reports(entries[:start], session=session):
+        return "previous-turn"
+    return "unconfirmed"
 
 
 def report_text(state: dict, *, root: pathlib.Path | None = None) -> str | None:
