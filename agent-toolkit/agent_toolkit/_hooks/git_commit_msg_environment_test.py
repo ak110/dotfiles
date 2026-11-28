@@ -226,7 +226,8 @@ def _start_claude_session(root: pathlib.Path, env_file: pathlib.Path, environmen
     target = root / "agent_toolkit/_hooks/git_commit_msg.py"
     text = target.read_text(encoding="utf-8")
     entrypoint = 'if __name__ == "__main__":\n'
-    target.write_text(text.replace(entrypoint, entrypoint + f"    print({root.name!r})\n"), encoding="utf-8")
+    probe_source = f"    import sys\n    if sys.argv[2] == 'commit-msg':\n        print({root.name!r}, file=sys.stderr)\n"
+    target.write_text(text.replace(entrypoint, entrypoint + probe_source), encoding="utf-8")
     probe = root / "session_start.py"
     probe.write_text(
         "import json, sys\n"
@@ -265,12 +266,20 @@ def _session_git(
     )
 
 
-def test_temporary_claude_distribution_does_not_replace_other_sessions_hooks(
-    tmp_path: pathlib.Path,
-    host_environ: Callable[[], dict[str, str]],
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@dataclasses.dataclass(frozen=True)
+class ClaudeSession:
+    repository: pathlib.Path
+    distribution: pathlib.Path
+    env_file: pathlib.Path
+    environment: dict[str, str]
+    commit: tuple[str, ...]
+    trailer: str
+
+
+@pytest.fixture(name="claude_session")
+def _claude_session(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> ClaudeSession:
     host = host_environ()
     environment = _hook_environment(tmp_path, host)
     environment["PATH"] = str(_uv_path(host).parent) + os.pathsep + environment["PATH"]
@@ -286,7 +295,7 @@ def test_temporary_claude_distribution_does_not_replace_other_sessions_hooks(
         '[ "$(git config --get core.hooksPath)" = "local hooks" ] && [ "$(git config --get color.ui)" = never ] || exit 42\n'
         '[ -z "${AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT+x}${AGENT_TOOLKIT_COMMIT_CLAUDE_UV+x}" ] || exit 43\n'
         "if [ -f reject ]; then echo local-hook-rejected >&2; exit 41; fi\n"
-        "echo local-hook\n",
+        "echo local-hook >&2\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -294,97 +303,151 @@ def test_temporary_claude_distribution_does_not_replace_other_sessions_hooks(
     assert not commit_identity.commit_hook_installed(is_codex=False)
 
     stable = tmp_path / "stable root"
-    temporary = tmp_path / "temporary root's"
     _copy_distribution(stable)
-    _copy_distribution(temporary)
     _prepare_runtime(stable, environment)
-
     stable_env = tmp_path / "stable.env"
-    temporary_env = tmp_path / "temporary.env"
     _start_claude_session(stable, stable_env, environment, actor="stable")
     assert commit_identity.commit_hook_installed(is_codex=False)
     trailer = co_author_trailer(RuntimeIdentity("claude", "claude-opus-5-5", "low", "observed"))
-    commit = ("commit", "--allow-empty", "-m", "試験", "-m", trailer)
-    before = _session_git(repository, stable_env, environment, *commit)
-    assert before.returncode == 0, before.stderr
+    return ClaudeSession(
+        repository, stable, stable_env, environment, ("commit", "--allow-empty", "-m", "試験", "-m", trailer), trailer
+    )
 
+
+def _install_legacy_hosts(session: ClaudeSession) -> tuple[pathlib.Path, pathlib.Path]:
     home = pathlib.Path.home()
     legacy = host_homes.commit_hook_directory(home, "claude")
     codex = host_homes.commit_hook_directory(home, "codex")
     with pytest.MonkeyPatch.context() as patch:
-        patch.setenv("PATH", environment["PATH"])
+        patch.setenv("PATH", session.environment["PATH"])
         for directory in (legacy, codex):
-            commit_hook_environment.install(directory, stable)
-    legacy_pre_commit = legacy / "pre-commit"
-    legacy_before = legacy_pre_commit.read_bytes()
+            commit_hook_environment.install(directory, session.distribution)
+    return legacy, codex
 
-    _start_claude_session(temporary, temporary_env, environment, actor="temporary")
-    during = _session_git(repository, stable_env, environment, *commit)
-    temp_commit = _session_git(repository, temporary_env, environment, *commit)
-    assert temp_commit.returncode == 0, temp_commit.stderr
-    bad_commit = ("commit", "--allow-empty", "-m", "帰属がない")
-    blocked_temporary = _session_git(repository, temporary_env, environment, *bad_commit)
-    assert blocked_temporary.returncode != 0 and trailer in blocked_temporary.stderr
+
+def _start_temporary_session(tmp_path: pathlib.Path, session: ClaudeSession) -> tuple[pathlib.Path, pathlib.Path]:
+    temporary = tmp_path / "temporary root's"
+    temporary_env = tmp_path / "temporary.env"
+    _copy_distribution(temporary)
+    _start_claude_session(temporary, temporary_env, session.environment, actor="temporary")
+    return temporary, temporary_env
+
+
+def _assert_session_commit(result: subprocess.CompletedProcess[str], root: pathlib.Path) -> None:
+    assert result.returncode == 0, result.stderr
+    output = result.stderr.splitlines()
+    assert output.count("local-hook") == 1
+    assert output.count(root.name) == 1
+    assert output.index("local-hook") < output.index(root.name)
+
+
+def test_temporary_claude_distribution_does_not_replace_other_sessions_hooks(
+    tmp_path: pathlib.Path, claude_session: ClaudeSession
+) -> None:
+    session = claude_session
+    before = _session_git(session.repository, session.env_file, session.environment, *session.commit)
+    _assert_session_commit(before, session.distribution)
+
+    legacy, _ = _install_legacy_hosts(session)
+    legacy_before = {path.name: path.read_bytes() for path in legacy.iterdir() if path.is_file()}
+
+    temporary, temporary_env = _start_temporary_session(tmp_path, session)
+    during = _session_git(session.repository, session.env_file, session.environment, *session.commit)
+    _assert_session_commit(during, session.distribution)
+    temp_commit = _session_git(session.repository, temporary_env, session.environment, *session.commit)
+    _assert_session_commit(temp_commit, temporary)
+
     shutil.rmtree(temporary)
     assert not temporary.exists()
-    after = _session_git(repository, stable_env, environment, *commit)
-    assert after.returncode == 0, after.stderr
-    assert during.returncode == 0, during.stderr
-    for result, root in ((before, stable), (during, stable), (temp_commit, temporary), (after, stable)):
-        output = (result.stdout + result.stderr).splitlines()
-        assert root.name in output
-        assert output.count("local-hook") == 1
+    after = _session_git(session.repository, session.env_file, session.environment, *session.commit)
+    _assert_session_commit(after, session.distribution)
+    assert {path.name: path.read_bytes() for path in legacy.iterdir() if path.is_file()} == legacy_before
 
-    head = git_output(repository, "rev-parse", "HEAD")
-    assert legacy_pre_commit.read_bytes() == legacy_before
-    blocked = _session_git(repository, stable_env, environment, *bad_commit)
-    assert blocked.returncode != 0
-    assert trailer in blocked.stderr
-    assert git_output(repository, "rev-parse", "HEAD") == head
+    head = git_output(session.repository, "rev-parse", "HEAD")
+    quoted_temporary = shlex.quote(temporary.as_posix())
+    missing_root = _session_git(
+        session.repository,
+        session.env_file,
+        session.environment,
+        *session.commit,
+        command=f'export AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT={quoted_temporary}; exec git "$@"',
+    )
+    assert missing_root.returncode != 0 and "local-hook" not in missing_root.stdout + missing_root.stderr
+    assert git_output(session.repository, "rev-parse", "HEAD") == head
 
-    reject = repository / "reject"
-    reject.touch()
-    rejected = _session_git(repository, stable_env, environment, *commit)
-    assert rejected.returncode != 0 and "local-hook-rejected" in rejected.stderr
-    assert git_output(repository, "rev-parse", "HEAD") == head
-    reject.unlink()
+
+def test_claude_session_hooks_preserve_original_and_legacy_hooks(tmp_path: pathlib.Path, claude_session: ClaudeSession) -> None:
+    session = claude_session
+    legacy, codex = _install_legacy_hosts(session)
+    temporary, temporary_env = _start_temporary_session(tmp_path, session)
+
+    head = git_output(session.repository, "rev-parse", "HEAD")
+    bad_commit = ("commit", "--allow-empty", "-m", "帰属がない")
+    blocked = _session_git(session.repository, temporary_env, session.environment, *bad_commit)
+    assert blocked.returncode != 0 and session.trailer in blocked.stderr
+    assert git_output(session.repository, "rev-parse", "HEAD") == head
+
+    shutil.rmtree(temporary)
 
     old_env = {
-        **environment,
+        **session.environment,
         commit_hook_environment.CLAUDE_ACTOR_ENV: "stable",
         commit_hook_environment.HOOKS_ENV: legacy.as_posix(),
-        "GIT_CONFIG_PARAMETERS": environment["GIT_CONFIG_PARAMETERS"] + " " + commit_hook_environment.config_parameter(legacy),
+        "GIT_CONFIG_PARAMETERS": session.environment["GIT_CONFIG_PARAMETERS"]
+        + " "
+        + commit_hook_environment.config_parameter(legacy),
     }
-    old_commit = run_git(repository, *commit, env=old_env, check=False)
-    assert old_commit.returncode == 0 and stable.name in old_commit.stdout + old_commit.stderr, old_commit.stderr
+    old_commit = run_git(session.repository, *session.commit, env=old_env, check=False)
+    _assert_session_commit(old_commit, session.distribution)
 
     inherited = {
-        **environment,
+        **session.environment,
         "GIT_CONFIG_PARAMETERS": " ".join(
-            (environment["GIT_CONFIG_PARAMETERS"], *(commit_hook_environment.config_parameter(d) for d in (legacy, codex)))
+            (
+                session.environment["GIT_CONFIG_PARAMETERS"],
+                *(commit_hook_environment.config_parameter(d) for d in (legacy, codex)),
+            )
         ),
     }
-    nested = _session_git(repository, stable_env, inherited, *commit)
-    assert nested.returncode == 0, nested.stderr
-    assert (nested.stdout + nested.stderr).splitlines().count("local-hook") == 1
-    assert git_output(repository, "config", "--get", "core.hooksPath") == "local hooks"
+    nested = _session_git(session.repository, session.env_file, inherited, *session.commit)
+    _assert_session_commit(nested, session.distribution)
+    assert git_output(session.repository, "config", "--get", "core.hooksPath") == "local hooks"
 
-    head = git_output(repository, "rev-parse", "HEAD")
+    head = git_output(session.repository, "rev-parse", "HEAD")
+    reject = session.repository / "reject"
+    reject.touch()
+    rejected = _session_git(session.repository, session.env_file, session.environment, *session.commit)
+    assert rejected.returncode != 0 and "local-hook-rejected" in rejected.stderr
+    assert session.distribution.name not in (rejected.stdout + rejected.stderr).splitlines()
+    assert git_output(session.repository, "rev-parse", "HEAD") == head
+
+
+def test_claude_session_hooks_require_environment_and_match_child_attribution(
+    claude_session: ClaudeSession, capsys: pytest.CaptureFixture[str]
+) -> None:
+    session = claude_session
+    head = git_output(session.repository, "rev-parse", "HEAD")
+    bad_commit = ("commit", "--allow-empty", "-m", "帰属がない")
+    blocked = _session_git(session.repository, session.env_file, session.environment, *bad_commit)
+    assert blocked.returncode != 0 and session.trailer in blocked.stderr
+    assert git_output(session.repository, "rev-parse", "HEAD") == head
+
     for setup in (
         "unset AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT",
         "export AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT=''",
-        f"export AGENT_TOOLKIT_COMMIT_CLAUDE_ROOT={shlex.quote(temporary.as_posix())}",
         "unset AGENT_TOOLKIT_COMMIT_CLAUDE_UV",
     ):
-        broken = _session_git(repository, stable_env, environment, *commit, command=f'{setup}; exec git "$@"')
+        broken = _session_git(
+            session.repository, session.env_file, session.environment, *session.commit, command=f'{setup}; exec git "$@"'
+        )
         assert broken.returncode != 0 and "local-hook" not in broken.stdout + broken.stderr
-    assert git_output(repository, "rev-parse", "HEAD") == head
+    assert git_output(session.repository, "rev-parse", "HEAD") == head
 
     child_trailer = co_author_trailer(RuntimeIdentity("claude", "claude-opus-5-5", "high", "observed"))
     record = {
         "tool_name": "Bash",
         "tool_input": {"command": f"git commit --allow-empty -m 試験 -m {shlex.quote(child_trailer)}"},
-        "cwd": str(repository),
+        "cwd": str(session.repository),
         "session_id": "stable",
         "agent_id": "child",
         "model": "claude-opus-5-5",
@@ -395,6 +458,6 @@ def test_temporary_claude_distribution_does_not_replace_other_sessions_hooks(
     assert "permissionDecision" not in hook_output, hook_output.get("permissionDecisionReason")
     child_command = hook_output["updatedInput"]["command"]
     assert child_command.startswith("export AGENT_TOOLKIT_COMMIT_CLAUDE_ACTOR=stable.child\n")
-    child_commit = _session_git(repository, stable_env, environment, command=child_command)
-    assert child_commit.returncode == 0, child_commit.stderr
-    assert child_trailer in git_output(repository, "show", "-s", "--format=%B")
+    child_commit = _session_git(session.repository, session.env_file, session.environment, command=child_command)
+    _assert_session_commit(child_commit, session.distribution)
+    assert child_trailer in git_output(session.repository, "show", "-s", "--format=%B")
