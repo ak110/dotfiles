@@ -486,6 +486,24 @@ def main(repo: pathlib.Path | None = None) -> int:
     return 0
 
 
+_COMPLETION_RETRY = (
+    "送信の成功（ok: true）を確かめた後、別のツール呼び出しで atk agents-exit-session --after-completion を実行してください。"
+)
+_COMPLETION_MISSING_NEXT_ACTION: dict[completion_exit.MissingDelivery, str] = {
+    "failed": "このターンの完了報告の送達に失敗しました。送達結果のエラーを解消し、" + _COMPLETION_RETRY,
+    "previous-turn": (
+        "前のターンの完了報告では自動終了できないため、このターンの完了報告が未送信なら送信してください。" + _COMPLETION_RETRY
+    ),
+    "missing-copy": (
+        "完了報告の送達は成功しましたが、この会話の本文の写しを確認できません。本文は再送しないで、/exitで終了してください。"
+    ),
+    "unconfirmed": (
+        "今の記録では送達の成功を確認できません。送信と終了要求を同じREPLスクリプトに置いた場合は、"
+        "スクリプトの完了を待ってください。送達結果を確認し、未送信と分かったら完了報告を送信してください。" + _COMPLETION_RETRY
+    ),
+}
+
+
 def request_completion_exit() -> int:
     launch = os.environ.get(completion_exit.LAUNCH_ENV, "")
     session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
@@ -510,12 +528,8 @@ def request_completion_exit() -> int:
         entries = transcript.read_transcript_entries(str(record)) if record is not None else []
         delivered = completion_exit.current_reports(entries, session=session)
         if not delivered:
-            print("自動終了しない: このターンに送達済みの完了報告がない")
-            print(
-                "送信と同じREPLスクリプト内では、ツールの結果はスクリプトが終わるまでセッション記録に書かれません。"
-                "送信の成功（ok: true）を確かめた後、別のツール呼び出しで "
-                "atk agents-exit-session --after-completion を実行してください。"
-            )
+            reason = completion_exit.missing_delivery(entries)
+            print(f"自動終了しない: {_COMPLETION_MISSING_NEXT_ACTION[reason]}")
             return 0
         completion_exit.write_state(path, {"status": "requested", "session": session, "call": next(reversed(delivered))})
     except OSError as error:

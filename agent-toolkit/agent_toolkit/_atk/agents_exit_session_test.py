@@ -376,17 +376,25 @@ def test_sweep_function_hook_files_includes_recheck(
         ("delegated", False),
         ("previous-turn", False),
         ("delivery-error", False),
+        ("delivery-error-other-call", False),
+        ("ordinary-message-error", False),
+        ("no-report", False),
         ("repl", True),
         ("repl-error", False),
         ("repl-not-completion", False),
         ("repl-previous-turn", False),
         ("repl-unwritten", False),
+        ("repl-unwritten-with-old-success", False),
         ("repl-body-ref", True),
         ("repl-body-ref-unrecorded", False),
         ("repl-body-ref-other-session", False),
         ("repl-body-ref-other-id", False),
         ("repl-body-ref-error", False),
         ("repl-body-ref-previous-turn", False),
+        ("repl-body-ref-unrecorded-previous-turn", False),
+        ("repl-body-ref-other-session-previous-turn", False),
+        ("repl-body-ref-other-id-previous-turn", False),
+        ("repl-body-ref-error-previous-turn", False),
     ],
 )
 def test_request_completion_exit_is_fail_closed(
@@ -441,14 +449,18 @@ def test_request_completion_exit_is_fail_closed(
                 "content": [
                     {
                         "type": "tool_result",
-                        "tool_use_id": "call-a",
-                        "is_error": case == "delivery-error",
-                        "content": [{"type": "text", "text": '{"ok": true}'}],
+                        "tool_use_id": "call-b" if case == "delivery-error-other-call" else "call-a",
+                        "is_error": case in {"delivery-error", "delivery-error-other-call", "ordinary-message-error"},
+                        "content": [{"type": "text", "text": '{"ok": true, "detail": "私的なエラー詳細"}'}],
                     }
                 ]
             },
         },
     ]
+    if case == "ordinary-message-error":
+        entries[0]["message"]["content"][0]["input"].pop("kind")
+    if case == "no-report":
+        entries.clear()
     if case.startswith("repl"):
         entries = repl_send_to_user_entries(
             "call-a",
@@ -457,15 +469,22 @@ def test_request_completion_exit_is_fail_closed(
         )
     if case == "repl-unwritten":
         entries = [entry for entry in entries if not entry.get("isVirtual")]
+    if case == "repl-unwritten-with-old-success":
+        entries = [
+            *repl_send_to_user_entries("call-old", {"kind": "completion", "message": "前回の報告"}, ok=True),
+            {"type": "user", "message": {"content": "新しい依頼"}},
+            *(entry for entry in entries if not entry.get("isVirtual") or entry["type"] == "assistant"),
+        ]
     if case.startswith("repl-body-ref"):
         call = next(entry for entry in entries if entry.get("isVirtual") and entry["type"] == "assistant")
         call["message"]["content"][0]["input"] = {"kind": "completion", "body_ref": "existing-draft"}
         receipt = next(entry for entry in entries if entry.get("isVirtual") and entry["type"] == "user")
-        receipt["toolUseResult"] = json.dumps({"ok": not case.endswith("-error"), "id": "a" * 32})
-        if not case.endswith("-unrecorded"):
+        receipt_case = case.removesuffix("-previous-turn")
+        receipt["toolUseResult"] = json.dumps({"ok": not receipt_case.endswith("-error"), "id": "a" * 32})
+        if not receipt_case.endswith("-unrecorded"):
             assert completion_exit.save_receipt(
-                "other-session" if case.endswith("-other-session") else session,
-                "b" * 32 if case.endswith("-other-id") else "a" * 32,
+                "other-session" if receipt_case.endswith("-other-session") else session,
+                "b" * 32 if receipt_case.endswith("-other-id") else "a" * 32,
                 "送達済みの本文。",
                 root=tmp_path,
             )
@@ -479,8 +498,32 @@ def test_request_completion_exit_is_fail_closed(
         assert "追加のツールを呼ばず、通常どおりターンを終えてください。" in output
     else:
         assert output.startswith("自動終了しない: ")
-    if case in {"repl-unwritten", "repl-body-ref-unrecorded"}:
-        assert "同じREPL" in output and "ok: true" in output and "別のツール呼び出し" in output
+    if case in {"delivery-error", "repl-error", "repl-body-ref-error"}:
+        assert "このターンの完了報告の送達に失敗" in output
+        assert "エラーを解消し" in output and "ok: true" in output
+        assert "同じREPL" not in output and "前のターン" not in output
+    if case.endswith("previous-turn") and not case.endswith("-error-previous-turn"):
+        assert "前のターンの完了報告では自動終了できない" in output
+        assert "このターンの完了報告が未送信なら送信" in output and "別のツール呼び出し" in output
+        assert "同じREPL" not in output and "送達に失敗" not in output
+    if case in {
+        "repl-unwritten",
+        "repl-unwritten-with-old-success",
+        "repl-not-completion",
+        "no-report",
+        "delivery-error-other-call",
+        "ordinary-message-error",
+        "repl-body-ref-error-previous-turn",
+    }:
+        assert "今の記録では送達の成功を確認できません" in output
+        assert "同じREPLスクリプトに置いた場合" in output and "別のツール呼び出し" in output
+        assert "送達結果を確認し、未送信と分かったら完了報告を送信" in output
+        assert "送達に失敗" not in output and "前のターン" not in output
+    if case in {"repl-body-ref-unrecorded", "repl-body-ref-other-session", "repl-body-ref-other-id"}:
+        assert "送達は成功" in output and "本文の写し" in output and "本文は再送しない" in output
+        assert "同じREPL" not in output and "送達に失敗" not in output
+        assert "送達済みの完了報告がない" not in output and "/exitで終了" in output
+    assert "私的なエラー詳細" not in output
     state = completion_exit.state_path(launch, root=tmp_path)
     assert state is not None
     assert state.exists() is requested
