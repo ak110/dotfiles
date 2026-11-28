@@ -498,8 +498,8 @@ _COMPLETION_MISSING_NEXT_ACTION: dict[completion_exit.MissingDelivery, str] = {
         "完了報告の送達は成功しましたが、この会話の本文の写しを確認できません。本文は再送しないで、/exitで終了してください。"
     ),
     "unconfirmed": (
-        "今の記録では送達の成功を確認できない状態です。送信と終了要求を同じREPLスクリプトに置いた場合は、"
-        "スクリプトの完了を待ち、" + _COMPLETION_RETRY
+        "今の記録では送達の成功を確認できません。送信と終了要求を同じREPLスクリプトに置いた場合は、"
+        "スクリプトの完了を待ってください。送達結果を確認し、未送信と分かったら完了報告を送信してください。" + _COMPLETION_RETRY
     ),
 }
 
@@ -528,8 +528,8 @@ def request_completion_exit() -> int:
         entries = transcript.read_transcript_entries(str(record)) if record is not None else []
         delivered = completion_exit.current_reports(entries, session=session)
         if not delivered:
-            print("自動終了しない: このターンに送達済みの完了報告がない")
-            print(_COMPLETION_MISSING_NEXT_ACTION[completion_exit.missing_delivery(entries, session=session)])
+            reason = completion_exit.missing_delivery(entries)
+            print(f"自動終了しない: {_COMPLETION_MISSING_NEXT_ACTION[reason]}")
             return 0
         completion_exit.write_state(path, {"status": "requested", "session": session, "call": next(reversed(delivered))})
     except OSError as error:

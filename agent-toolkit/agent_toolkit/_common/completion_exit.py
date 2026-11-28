@@ -185,7 +185,22 @@ def current_reports(entries: list[dict], *, session: str = "") -> dict[str, str]
     return reports(entries[_current_turn_start(entries) :], session=session)
 
 
-def missing_delivery(entries: list[dict], *, session: str) -> MissingDelivery:
+def _has_delivered_result(entries: list[dict]) -> bool:
+    calls: set[str] = set()
+    for entry, block in conversation_tool_blocks(entries):
+        if (call := _completion_call(block)) is not None:
+            calls.add(call[0])
+        if (
+            block.get("type") == "tool_result"
+            and isinstance(identifier := block.get("tool_use_id"), str)
+            and identifier in calls
+            and ui_receipt(entry, block) is not None
+        ):
+            return True
+    return False
+
+
+def missing_delivery(entries: list[dict]) -> MissingDelivery:
     start = _current_turn_start(entries)
     calls: dict[str, str | None] = {}
     failed = False
@@ -205,7 +220,7 @@ def missing_delivery(entries: list[dict], *, session: str) -> MissingDelivery:
             failed = True
     if failed:
         return "failed"
-    if not calls and start and reports(entries[:start], session=session):
+    if not calls and start and _has_delivered_result(entries[:start]):
         return "previous-turn"
     return "unconfirmed"
 
