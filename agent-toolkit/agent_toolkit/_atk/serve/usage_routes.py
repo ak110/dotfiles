@@ -9,7 +9,7 @@ import quart
 from agent_toolkit._atk import config, config_usage, usage_refresh
 from agent_toolkit._atk.serve.shell_routes import json_no_store, no_store, render_index, safe_base_path
 from agent_toolkit._atk.wi.web_input import WebInputError
-from agent_toolkit._common import usage_observation, usage_settings
+from agent_toolkit._common import process_tree, usage_observation, usage_settings
 
 _WINDOW_FIELDS = (
     "engine",
@@ -82,11 +82,31 @@ def _display_data(refresh: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def register_usage_routes(app: quart.Quart) -> None:
-    agy_lock = asyncio.Lock()
+    agy_task: asyncio.Task[None] | None = None
+    agy_reclaim: process_tree.ReclaimError | None = None
     agy_windows: list[dict[str, Any]] = []
     agy_checked_at = float("-inf")
     agy_observed_at: float | None = None
     agy_stale = False
+
+    async def refresh_antigravity() -> None:
+        nonlocal agy_windows, agy_checked_at, agy_observed_at, agy_stale, agy_reclaim
+        try:
+            if agy_reclaim is not None:
+                if await asyncio.to_thread(agy_reclaim.retry):
+                    return
+                agy_reclaim = None
+            agy_windows = await asyncio.to_thread(usage_refresh.read_antigravity_usage)
+        except process_tree.ReclaimError as error:
+            agy_reclaim = error
+            agy_stale = True
+        except OSError, ValueError, subprocess.TimeoutExpired:
+            agy_stale = True
+        else:
+            agy_observed_at = time.time() if agy_windows else None
+            agy_stale = False
+        finally:
+            agy_checked_at = time.monotonic()
 
     @app.get("/usage")
     async def usage_index() -> quart.Response:
@@ -101,23 +121,17 @@ def register_usage_routes(app: quart.Quart) -> None:
 
     @app.post("/api/usage/antigravity")
     async def usage_antigravity() -> quart.Response:
-        nonlocal agy_windows, agy_checked_at, agy_observed_at, agy_stale
+        nonlocal agy_task
         payload = await quart.request.get_json(silent=True)
         if not isinstance(payload, dict) or not isinstance(payload.get("force"), bool):
             raise WebInputError("取得方法を指定してください", next_action="利用枠画面を開き直して再取得する")
-        requested_at = time.monotonic()
-        async with agy_lock:
-            due = requested_at - agy_checked_at >= usage_refresh.DISPLAY_REFRESH_INTERVAL_SEC
-            if agy_checked_at < requested_at and (due or payload["force"]):
-                try:
-                    agy_windows = await asyncio.to_thread(usage_refresh.read_antigravity_usage)
-                except OSError, ValueError, subprocess.TimeoutExpired:
-                    agy_stale = True
-                else:
-                    agy_observed_at = time.time() if agy_windows else None
-                    agy_stale = False
-                agy_checked_at = time.monotonic()
-            return json_no_store({"windows": agy_windows, "observed_at": agy_observed_at, "stale": agy_stale})
+        due = time.monotonic() - agy_checked_at >= usage_refresh.DISPLAY_REFRESH_INTERVAL_SEC
+        if (agy_task is None or agy_task.done()) and (due or payload["force"]):
+            agy_task = asyncio.create_task(refresh_antigravity())
+        if agy_task is not None and not agy_task.done():
+            # HTTP要求が取り消されても、取得または同じ子の回収が終わるまで所有を保つ。 pyfltr: allow-comment
+            await asyncio.shield(agy_task)
+        return json_no_store({"windows": agy_windows, "observed_at": agy_observed_at, "stale": agy_stale})
 
     @app.post("/api/usage/refresh")
     async def usage_refresh_request() -> quart.Response:

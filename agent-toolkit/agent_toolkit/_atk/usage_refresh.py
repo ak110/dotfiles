@@ -506,7 +506,12 @@ def read_antigravity_usage() -> list[dict[str, Any]]:
         if not isinstance(buckets, list):
             continue
         for item in buckets:
-            if not isinstance(item, dict) or not (label := _text(item.get("name"))):
+            if (
+                not isinstance(item, dict)
+                or not _text(item.get("id"))
+                or not _text(item.get("window"))
+                or not (label := _text(item.get("name")))
+            ):
                 continue
             fraction = item.get("remaining_fraction")
             remaining = _number(fraction, 1) if isinstance(fraction, (int, float)) and 0 <= fraction <= 1 else None
