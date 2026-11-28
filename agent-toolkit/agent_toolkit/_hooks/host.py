@@ -1,9 +1,3 @@
-"""hookの入力を送ったホスト（Claude CodeかCodexか）を判定する。
-
-各イベントのエントリーポイントは本モジュールの`is_codex_payload`だけでホストを判定し、判定の規則を1か所に保つ。
-"""
-
-
 def is_antigravity_payload(payload: object) -> bool:
     """アダプターが正規化したAntigravityの入力かを返す。"""
     return isinstance(payload, dict) and payload.get("runtime") == "agy"
