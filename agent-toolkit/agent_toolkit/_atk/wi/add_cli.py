@@ -33,6 +33,7 @@ from agent_toolkit._atk.wi.add_validation import (
     require_cause_analysis_format,
     require_confirmed_cause,
     validate_retrospective_report,
+    warn_prevention_coverage,
 )
 from agent_toolkit._atk.wi.constants import (
     QUESTION_TYPE_REPORT,
@@ -282,6 +283,8 @@ def cmd_add(
             )
             for key, name in key_names.items():
                 print(f"  原稿キー: {key} → {name}")
+            for message in messages:
+                warn_prevention_coverage(message, entry_type=args.type)
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             if args.type == WI_TYPE_AWI:
                 print_deferral_candidates(messages, sources)
@@ -329,6 +332,8 @@ def cmd_add(
     inbox_dir = private_notes
     for warning in add.missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION, source="wi-missing-dependency")
+    for message in messages:
+        warn_prevention_coverage(message, entry_type=args.type)
     _outcome.report_success(
         f"{count}件をholdへ保存した" if hold else f"{count}件を報告として保存した" if report else f"{count}件をinboxへ投入した"
     )

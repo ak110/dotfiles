@@ -87,6 +87,51 @@ _RECURRENCE_CASES: dict[str, tuple[str, str | None]] = {
 _SECTIONS.update(_RECURRENCE_CASES)
 
 
+@pytest.mark.parametrize(
+    ("reason", "warned"),
+    [
+        ("`agent-basics/skills/bugfix/references/prevention.md`「再発防止を採用しない場合」", True),
+        ("以前からある規範で防げる。", True),
+        ("`docs/guide/general.md`の手順にある。", True),
+        ("`AGENTS.md`「CI: `verify` の使い方」", True),
+        ("`docs/procedures.md`「記録の書き方」だけが根拠。", True),
+        ("`docs/case.md`:12", False),
+        ("`feature_test.py`で今回の動作を確認した。", False),
+        ("`scripts/check_feature.py`で今回の動作を確認した。", False),
+        ("claude:11111111-1111-1111-1111-111111111111:4 で観測した。", False),
+        ("`docs/development/verification.md`「対照の結果」で観測した。", False),
+        ("commit `1a2b3c4d` の修正後に再実行した。", False),
+        ("`.github/workflows/verify.yaml` の試験で検出した。", False),
+    ],
+)
+def test_add_dry_run_warns_about_unsupported_coverage_without_rejecting(tmp_path, monkeypatch, capsys, reason, warned):
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    section = _RECORD.replace(_TEXT_ONLY_PREVENTION, f"- 再発防止: 被覆: {reason}")
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{section}\n"
+    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    captured = capsys.readouterr()
+    assert "成功:" in captured.out
+    assert ('<atk-auto source="prevention_coverage" kind="warn">' in captured.err) is warned
+    assert not list(notes.rglob("*.md"))
+
+
+@pytest.mark.parametrize(
+    "line", ["- **再発防止:** 被覆: `AGENTS.md`「既存保護」", "- 再発防止: 被覆（`AGENTS.md`「既存保護」）"]
+)
+def test_add_dry_run_warns_for_coverage_in_accepted_cause_record_notation(tmp_path, monkeypatch, capsys, line):
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    section = _RECORD.replace(_TEXT_ONLY_PREVENTION, line)
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{section}\n"
+    _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    captured = capsys.readouterr()
+    assert "成功:" in captured.out
+    assert '<atk-auto source="prevention_coverage" kind="warn">' in captured.err
+
+
 @pytest.mark.parametrize("case", list(_SECTIONS))
 @pytest.mark.parametrize("agent", [False, True])
 @pytest.mark.parametrize("operation", ["add", "edit"])

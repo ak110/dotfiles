@@ -18,6 +18,7 @@ lazy from agent_toolkit._atk.wi import cli, entries
 lazy from agent_toolkit._common import private_notes
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
+lazy from agent_toolkit._hooks.norm_excuse_gate import warning_for_texts
 lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
 lazy from agent_toolkit._plan.owner_records import resolve_conversation_session_id
 
@@ -300,4 +301,12 @@ def decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: dic
                 )
             )
     warnings = [warning for warning in (_warn_mojibake(tool_name, fields),) if warning is not None]
+    if fields:
+        session_id = _payload.get("session_id")
+        if warning := warning_for_texts(
+            (text for _, text in fields),
+            session_id if isinstance(session_id, str) else "",
+            event_id=_payload.get("tool_use_id"),
+        ):
+            warnings.append(warning)
     return Decision(context=format_warning_context(warnings) if warnings else None)

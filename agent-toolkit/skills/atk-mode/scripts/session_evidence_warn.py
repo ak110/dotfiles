@@ -4,6 +4,7 @@ import argparse
 import bisect
 import dataclasses
 import datetime
+import hashlib
 import json
 import re
 import socket
@@ -606,6 +607,150 @@ def _has_warning_candidate(path: Path, needles: tuple[bytes, ...]) -> bool:
     return False
 
 
+_CODEX_STOP_SOURCE = "norm_excuse_gate"
+_CODEX_STOP_MARKER = f" decision=codex_stop_warning source={_CODEX_STOP_SOURCE} "
+_CODEX_STOP_ID = re.compile(r"occurrence=([0-9a-f]{64})")
+
+
+def _codex_rollout_start(path: Path) -> datetime.datetime | None:
+    try:
+        with path.open("rb") as stream:
+            metadata = json.loads(stream.readline())
+        if isinstance(metadata, dict) and metadata.get("type") == "session_meta":
+            timestamp = metadata.get("timestamp")
+            if isinstance(timestamp, str):
+                return _parse_cli_timestamp(timestamp)
+    except OSError, ValueError, OverflowError:
+        pass
+    return None
+
+
+def _codex_stop_contexts(rollout: Path, occurrences: set[str]) -> tuple[dict[str, tuple[int, str, str | None]], bool]:
+    loaded = _load_records_checked(str(rollout), allow_partial_records=True)
+    if loaded.records is None:
+        return {}, True
+    answers: dict[str, tuple[int, str]] = {}
+    repeated: set[str] = set()
+    for record in loaded.records:
+        payload = record.entry.get("payload")
+        if record.entry.get("type") != "event_msg" or not isinstance(payload, dict):
+            continue
+        turn_id, item = payload.get("turn_id"), payload.get("item")
+        if payload.get("type") != "item_completed" or not isinstance(turn_id, str) or not isinstance(item, dict):
+            continue
+        if item.get("type") != "AgentMessage":
+            continue
+        blocks = item.get("content")
+        if not isinstance(blocks, list):
+            continue
+        answer = "\n".join(
+            block["text"]
+            for block in blocks
+            if isinstance(block, dict) and block.get("type") == "Text" and isinstance(block.get("text"), str)
+        )
+        if not answer:
+            continue
+        digest = hashlib.sha256(json.dumps((turn_id, answer)).encode()).hexdigest()
+        if digest in occurrences:
+            if digest in answers:
+                repeated.add(digest)
+            answers[digest] = record.line, _clip(answer)
+    calls = _record_tool_calls(_scannable_records(loaded.records))
+    operation_lines = [call.line for call in calls]
+    contexts = {}
+    for digest, (line, speech) in answers.items():
+        if digest in repeated:
+            continue
+        following = bisect.bisect_right(operation_lines, line)
+        call = calls[following] if following < len(calls) else None
+        contexts[digest] = line, speech, _clip(call.text or call.tool) if call is not None else None
+    return contexts, bool(loaded.gaps) or len(contexts) != len(occurrences)
+
+
+def _codex_stop_warnings(
+    paths: list[tuple[str, Path, str]], since: datetime.datetime, until: datetime.datetime, found: dict[tuple, dict[str, Any]]
+) -> tuple[set[Path], int]:
+    """直接Stopの診断ログは会話単位で読み、旧世代と現行に重複する事象を一度だけ数える。  pyfltr: allow-comment"""
+    partial: set[Path] = set()
+    undated = 0
+    seen: set[str] = set()
+    for engine, rollout, session in paths:
+        if engine != "codex" or session in seen or re.fullmatch(r"[A-Za-z0-9_-]+", session) is None:
+            continue
+        seen.add(session)
+        start = _codex_rollout_start(rollout)
+        if start is not None and start >= until:
+            continue
+        active = session_record_paths.stop_log_path(session)
+        rotated = active.with_suffix(".log.1")
+        first: datetime.datetime | None = None
+        observed_in_window = False
+        has_rotated = incomplete = False
+        events: dict[str, tuple[datetime.datetime, Path, int]] = {}
+        for path in (rotated, active):
+            try:
+                data = path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                incomplete |= path == active
+                continue
+            except OSError, UnicodeError:
+                incomplete = True
+                continue
+            has_rotated |= path == rotated
+            for number, row in enumerate(data.splitlines(keepends=True), 1):
+                raw_timestamp, _, _ = row.partition(" ")
+                try:
+                    timestamp = _parse_cli_timestamp(raw_timestamp)
+                except ValueError, OverflowError:
+                    undated += _CODEX_STOP_MARKER in row
+                    continue
+                first = timestamp if first is None else min(first, timestamp)
+                in_window = since <= timestamp < until
+                observed_in_window |= in_window
+                prefix = raw_timestamp + _CODEX_STOP_MARKER
+                if not row.startswith(prefix):
+                    continue
+                digest = _CODEX_STOP_ID.fullmatch(row.removeprefix(prefix).removesuffix("\n"))
+                if not row.endswith("\n") or digest is None:
+                    incomplete |= in_window
+                    continue
+                key = digest[1]
+                previous = events.get(key)
+                if previous is None or previous[0] > timestamp:
+                    events[key] = (timestamp, path, number)
+        occurrences = {key for key, (timestamp, _, _) in events.items() if since <= timestamp < until}
+        contexts, missing_context = _codex_stop_contexts(rollout, occurrences) if occurrences else ({}, False)
+        incomplete |= missing_context
+        for key in sorted(occurrences, key=events.__getitem__):
+            _, diagnostic_path, diagnostic_line = events[key]
+            if key in contexts:
+                line, speech, operation = contexts[key]
+                evidence_path = rollout
+            else:
+                line, speech, operation = diagnostic_line, None, None
+                evidence_path = diagnostic_path
+            found[(engine, session, _CODEX_STOP_SOURCE, "warn", "codex_stop", key)] = {
+                "source": _CODEX_STOP_SOURCE,
+                "kind": "warn",
+                "line": line,
+                "text": "Codex Stopが送出した再発防止の見送りに関する警告",
+                "previous_speech": speech,
+                "next_operation": operation,
+                "engine": engine,
+                "conversation": session,
+                "record": f"{evidence_path}:{line}",
+            }
+        try:
+            if not observed_in_window and rollout.stat().st_mtime < since.timestamp():
+                continue
+        except OSError:
+            incomplete = True
+        lost_beginning = has_rotated and first is not None and first > max(since, start or since)
+        if incomplete or not observed_in_window or lost_beginning:
+            partial.add(rollout)
+    return partial, undated
+
+
 def warning_count_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="このホストで記録した警告・遮断を発行元と期間で集計する。")
     parser.add_argument("--source", action="append", required=True, help="発行元。複数回指定できる。")
@@ -625,7 +770,8 @@ def warning_count_main(argv: list[str] | None = None) -> int:
         parser.error("sourceには英数字・ピリオド・アンダースコア・ハイフンを指定する。")
     needles = (*[source.encode("ascii") for source in sources], b"persistedOutputPath", PERSISTED_OUTPUT_PREFIX.encode())
     found: dict[tuple, dict[str, Any]] = {}
-    candidates = unresolved = undated = 0
+    candidates = undated = 0
+    unresolved: set[Path] = set()
     paths = _warning_records()
     for engine, path, session in paths:
         if not _has_warning_candidate(path, needles):
@@ -635,9 +781,10 @@ def warning_count_main(argv: list[str] | None = None) -> int:
         if loaded.records is None and loaded.failure is not None and loaded.failure.line is not None:
             loaded = _load_records_checked(str(path), allow_partial_records=True)
         if loaded.records is None:
-            unresolved += 1
+            unresolved.add(path)
             continue
-        unresolved += bool(loaded.gaps)
+        if loaded.gaps:
+            unresolved.add(path)
         timestamps = (_record_timestamp(record) for record in loaded.records)
         if not any(since <= timestamp < until for timestamp in timestamps if timestamp is not None):
             continue
@@ -658,6 +805,10 @@ def warning_count_main(argv: list[str] | None = None) -> int:
             found.setdefault(
                 identity, {**event, "engine": engine, "conversation": session, "record": f"{path}:{event['line']}"}
             )
+    if _CODEX_STOP_SOURCE in sources:
+        stop_partial, stop_undated = _codex_stop_warnings(paths, since, until, found)
+        unresolved.update(stop_partial)
+        undated += stop_undated
     counts = {}
     for source in sorted(sources):
         matching = [event for event in found.values() if event["source"] == source]
@@ -673,7 +824,7 @@ def warning_count_main(argv: list[str] | None = None) -> int:
                 "until_exclusive": until.isoformat(),
                 "records": len(paths),
                 "candidate_records": candidates,
-                "partial_records": unresolved,
+                "partial_records": len(unresolved),
                 "undated_occurrences": undated,
                 "sources": counts,
                 "occurrences": list(found.values()),

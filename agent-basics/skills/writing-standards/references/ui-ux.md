@@ -45,12 +45,12 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
 | 主内容・視線：[NN/gの視覚的階層](https://www.nngroup.com/articles/visual-hierarchy-ux-definition/)、[Apple HIGのLayout](https://developer.apple.com/design/human-interface-guidelines/layout) | 大きさ・対比・まとまりで主内容から次の判断へ導く。ナビゲーションで分かる名称や同じ値の再掲より本文・値・操作に面積を使い、意味のある見出しと現在地は保つ | 最初に目が行く内容から次の操作と結果をたどれる。大見出しの重複、補助操作の強調、片側だけに余る空白で主内容が押し出されない |
 | 段階的開示：[NN/gの段階的開示](https://www.nngroup.com/articles/progressive-disclosure/)、[GOV.UK Details](https://design-system.service.gov.uk/components/details/)、[Carbon Disclosures](https://www.carbondesignsystem.com/building-blocks/core/patterns/disclosures) | 低頻度の条件・操作・補足は使う場所から開けるようにし、その面積を常時取らない。通常の判断・危険の回避に必要な情報や有効な条件と解除を隠さない | 閉じた状態で主作業が進み、必要時は入口を見つけて開閉できる。補助の検索欄などが、通常読む内容より画面を占めない |
 | 内容に合う幅：[GOV.UK Layout](https://design-system.service.gov.uk/styles/layout/#screen-size)・[Table](https://design-system.service.gov.uk/components/table/)、[Carbon Data table](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines) | 読み物は行長、比較表は列の整列と必要な幅を優先する。記事の幅や製品固有の寸法を表に流用せず、表に作用する操作はその近くに置く | 通常と長いデータで本文の次行・表の主要列・次の操作を追える。列名・識別に必要な部分は押しつぶされず、補助操作が表より目立たない |
-| 状態と回復：[NN/gのヒューリスティクス 1・3・5・9](https://www.nngroup.com/articles/ten-usability-heuristics/)、[Carbon Inline loading](https://www.carbondesignsystem.com/building-blocks/core/components/inline-loading/guidelines)、[USWDS Alert](https://designsystem.digital.gov/components/alert/#guidance) | 対象近くの進捗・無効状態・結果で伝え、部品だけでは不明な差、影響、次の行動だけを説明する。続行が危険な判断以外は通常の通知で割り込まない | 長文を読まずに待機・完了・空・失敗を見分け、必要なら入力を保ったまま回復できる。簡潔な状態表示や重要な注意は残す |
+| 状態と回復：[NN/gのヒューリスティクス 1・3・5・9](https://www.nngroup.com/articles/ten-usability-heuristics/)、[Carbon Inline loading](https://www.carbondesignsystem.com/building-blocks/core/components/inline-loading/guidelines)、[USWDS Alert](https://designsystem.digital.gov/components/alert/#guidance) | 対象近くの進捗・非活性化・結果で伝え、通常の待機に説明文を足さない。部品だけでは不明な差、影響、次の行動は説明する。続行が危険な判断以外は通常の通知で割り込まない | 待機・完了・空・失敗を見分け、必要なら入力を保ったまま回復できる。判断に必要な状態や注意は残す |
 | 通常の表示切替：[W3C APG Tabs](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/#keyboard_interaction) | 遅延なく表示できる範囲を先に準備する。適用はWeb規則の「コンテンツ、状態、画面遷移」に従い、ページリンクにタブのロールを強制しない | 準備後の最初の切替と再訪で、背景更新とは別に切替が取得や組み立てを起こして待たせない |
-| 入力とアイコン：[Apple HIGのIcons](https://developer.apple.com/design/human-interface-guidelines/icons)・[macOSの入力](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos)、[WCAG 2.2](https://www.w3.org/TR/WCAG22/)、[ARIA APG Dialog](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) | 見慣れた図形で操作と対象を見分けられるなら線幅・大きさ・重さをそろえたアイコンを使う。文脈で足りない意味は文字とアクセシブルな名前で保つ。OS固有の外見は模倣せず、適合条件と実装例を区別する | ポインター・キー・提供する他の入力手段で意味と操作を確かめられる。モーダルを閉じて起点か結果へ戻り、拡大や狭い幅でも操作を失わない |
+| 入力とアイコン：[Apple HIGのIcons](https://developer.apple.com/design/human-interface-guidelines/icons)・[macOSの入力](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos)、[WCAG 2.2](https://www.w3.org/TR/WCAG22/)、[ARIA APG Dialog](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) | 見慣れた図形で操作と対象を見分けられるなら線幅・大きさ・重さをそろえたアイコンを使う。入力欄の可視ラベルと、文脈で分からない操作を識別できる名前は残す。アクセシブルな名前は、可視の説明を省いても保つ。OS固有の外見は模倣せず、適合条件と実装例を区別する | ポインター・キー・提供する他の入力手段で意味と操作を確かめられる。モーダルを閉じて起点か結果へ戻り、拡大や狭い幅でも操作を失わない |
 
-[unslop-ui 1.0.2](https://github.com/felipebasurto/unslop-ui/blob/v1.0.2/skills/unslop-ui/SKILL.md)は、重複した補足、状態の根拠、整列、図の直接ラベルを検討する比較例とする。
-固定の語数や系列数、固定表示を一律に装飾とする判断、入力ラベルの代替、専用の確認工程は採らない。
+[unslop-ui 1.0.2](https://github.com/felipebasurto/unslop-ui/blob/78cf65d311da128c7f0a9ea25f62731056834251/skills/unslop-ui/SKILL.md)からは、見出しや自明な操作の言い直し、判断に寄与しない状態の再掲を省き、選択の手掛かり・操作名・意味のある状態を残す観点を取り入れる。
+英語表記・語数・装飾などの一律の規則、外部スキルの導入、本文・コードの転載は行わない。
 
 ## 判断の順序
 
@@ -85,11 +85,13 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
 情報の過不足は説明の有無や要素の数ではなくエンドユーザーの判断と操作から評価し、必要な情報の欠落と、判断に寄与しない情報の常時表示を使いやすさの不具合として扱う。
 通常の使いやすさは通常の状態の判断と操作で確かめ、狭い表示幅や極端な値での退避表示は別に評価する。
 0、空、該当なし、旧仕様の情報も判断に要るかで表示を決め、0が現在の状態を伝える場合は表示を保つ。
-操作の結果、現在の状態、取り消し方、エラーからの復旧手順は、ひと目で分かる位置に示し、文言はエンドユーザーが使う用語に合わせる。
+操作の結果、現在の状態、取り消し方、エラーからの復旧手順は、ひと目で分かる位置に示す。
+標準の部品、配置、意味の分かるアイコンで先に伝え、文章が必要なときはエンドユーザーが使う用語に合わせる。
 
-- スローガン調の副題、見出し直下の冗長な解説、見れば分かる操作を言い直す補助テキストは省く。
-  補足は、配置とラベルから分からない対象範囲、入力形式、制約、不可逆な影響、単位に限る。
-  操作の判断に必須ならラベルか近くの常時表示で伝える
+- スローガン調の副題、同じ役割の見出し、見出しや自明な操作を言い直す補足は省く。
+  現在地や内容の区別に役立つ見出し、入力欄のラベルと意味のある操作名は残す。
+  部品や配置から分からない対象範囲、入力形式、制約、不可逆な影響、単位や回復方法などは、判断に必要な分だけ補う。
+  操作の判断に必須なら名前か近くの常時表示で伝える
 - 取り消せない操作はよく使う操作から離し、影響に応じて確認か取り消しの猶予を設ける
 - 入力途中のデータは保持し、安全に再開できるようにする
 
@@ -107,7 +109,8 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
 - サンプル・初期データ・デモの文言は、ダミーの欧文や仮の文言（「見出しをここに」など）ではなく、製品のエンドユーザーと用途に合う実際の文で書く
 - サンプルの人名・組織名・数値・日付は利用場面に合う自然な値にし、不自然に丸い数値や同じ値の繰り返しを避け、名前は実在と取り違えられない架空のものにする
 - 入力不足を理由に送信ボタンを無効にしない。
-  それ以外で操作できないボタンは無効にし、対象近くの進捗などで理由が自明でない場合は、理由と次にできることを示す
+  通常の待機は操作箇所の進捗と必要なボタンの非活性化で示し、画面に待機文を足さない。
+  それ以外で操作できないボタンは無効にし、部品や配置で分からない理由や回復方法が次の判断に必要なら短く示す
 
 ## 視覚と構造
 
@@ -130,8 +133,8 @@ HTML・CSS・JavaScriptでの実装手段と、コードから判定できる条
 デザインシステムに文字の段があればそれに従い、無い場合は本文・一覧・フォーム・ナビゲーション・ボタンの文字をブラウザー既定の16px（1rem）以上、日時・件数・補足などの補助情報とバッジを14px（既定の0.875rem）以上にする。
 読み物の本文や見出しなど、既に大きい文字は縮めない。
 区切りは薄い線と余白で示し、役割の無いカードの入れ子や強い影は省く。
-状態の区分を併記する場合は、薄い背景の小さなバッジと状態名で示す。
-選択やホバーの面の上でも、バッジの状態名と境界を読み分けられるようにする。
+状態の違いは、色だけでなく部品の形、配置、必要な名前などで見分けられるようにし、すでに分かる区分はバッジで言い直さない。
+判断に役立つ区分をバッジで添える場合は、薄い背景の小さなバッジに状態名を置き、選択やホバーの面の上でも名前と境界を読み分けられるようにする。
 一覧は1件を少ない行に収める。
 副情報を1行へ置く場合は、区切りを次の行に残さず、短い表示と詳細で読める完全な値を使い分ける。
 情報密度は余白、行数、表示する情報の選別、列の構成で上げ、文字を基準より小さくしない。

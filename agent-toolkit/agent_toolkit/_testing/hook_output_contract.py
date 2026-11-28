@@ -254,10 +254,14 @@ def validate_hook_output(event_name: str, output: object, *, host: str = "claude
     if host == "codex" and event_name == "Stop":
         schema = {
             "oneOf": [
-                {"type": "object", "maxProperties": 0},
                 {
                     "type": "object",
-                    "properties": _BLOCK_PROPERTIES,
+                    "properties": {"systemMessage": _COMMON_PROPERTIES["systemMessage"]},
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "properties": {**_BLOCK_PROPERTIES, "systemMessage": _COMMON_PROPERTIES["systemMessage"]},
                     "required": ["decision", "reason"],
                     "additionalProperties": False,
                 },
