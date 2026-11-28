@@ -1,2 +1,5 @@
 # githubstatus.com はCI等の自動アクセスへ418を返すため検査対象から除外する
 https://www\.githubstatus\.com/api/
+
+# Claudeの利用状況画面はログインが必要なため、このURLだけを検査対象から除外する
+^https://claude\.ai/settings/usage$
